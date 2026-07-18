@@ -524,45 +524,73 @@ where
         method_name,
         args.len(),
         move |native, resolved_method, engine| {
-            if let Some(result) = native.try_invoke_resolved_stack_items(
+            let access = engine
+                .execution_observations_enabled()
+                .then(|| engine.native_call_access(native, resolved_method, args.len()))
+                .flatten();
+            let observed_arguments = access.as_ref().map(|_| args.clone());
+            let result = if let Some(result) = native.try_invoke_resolved_stack_items(
                 engine,
                 resolved_method.method_index(),
                 resolved_method.method(),
                 &args,
             ) {
-                return result;
-            }
+                result
+            } else {
+                (|| {
+                    let mut encoded_args = Vec::with_capacity(args.len());
+                    for (index, item) in args.into_iter().enumerate() {
+                        let parameter_type = resolved_method.method().parameters.get(index);
+                        let bytes = match parameter_type {
+                            Some(ContractParameterType::Any) => {
+                                BinarySerializer::serialize(&item, engine.execution_limits())?
+                            }
+                            Some(ContractParameterType::InteropInterface) => {
+                                stack_item_to_interop_bytes(item)?
+                            }
+                            _ => ApplicationEngine::<P, D>::stack_item_to_bytes(item)?,
+                        };
+                        if trace_native_call {
+                            let preview_len = bytes.len().min(24);
+                            eprintln!(
+                                "call_native arg[{index}] type={parameter_type:?} len={} preview=0x{}",
+                                bytes.len(),
+                                hex_util::encode_hex(&bytes[..preview_len])
+                            );
+                        }
+                        encoded_args.push(bytes);
+                    }
 
-            let mut encoded_args = Vec::with_capacity(args.len());
-            for (index, item) in args.into_iter().enumerate() {
-                let parameter_type = resolved_method.method().parameters.get(index);
-                let bytes = match parameter_type {
-                    Some(ContractParameterType::Any) => {
-                        BinarySerializer::serialize(&item, engine.execution_limits())?
+                    let result = native.invoke_resolved(
+                        engine,
+                        resolved_method.method_index(),
+                        resolved_method.method(),
+                        &encoded_args,
+                    )?;
+                    decode_native_result(resolved_method.method().return_type, result)
+                })()
+            };
+            if let (Some(access), Some(observed_arguments)) = (access, observed_arguments) {
+                let outcome = match &result {
+                    Ok(_) if access.result_count() == 0 => {
+                        crate::execution_artifact::CallObservationOutcome::Returned(Vec::new())
                     }
-                    Some(ContractParameterType::InteropInterface) => {
-                        stack_item_to_interop_bytes(item)?
+                    Ok(_) if engine.native_return_is_null() => {
+                        crate::execution_artifact::CallObservationOutcome::Returned(vec![
+                            StackItem::null(),
+                        ])
                     }
-                    _ => ApplicationEngine::<P, D>::stack_item_to_bytes(item)?,
+                    Ok(value) => crate::execution_artifact::CallObservationOutcome::Returned(
+                        value.iter().cloned().collect(),
+                    ),
+                    Err(error) => crate::execution_artifact::CallObservationOutcome::Fault {
+                        message: error.to_string(),
+                        exception: None,
+                    },
                 };
-                if trace_native_call {
-                    let preview_len = bytes.len().min(24);
-                    eprintln!(
-                        "call_native arg[{index}] type={parameter_type:?} len={} preview=0x{}",
-                        bytes.len(),
-                        hex_util::encode_hex(&bytes[..preview_len])
-                    );
-                }
-                encoded_args.push(bytes);
+                engine.observe_completed_call(access, observed_arguments, outcome);
             }
-
-            let result = native.invoke_resolved(
-                engine,
-                resolved_method.method_index(),
-                resolved_method.method(),
-                &encoded_args,
-            )?;
-            decode_native_result(resolved_method.method().return_type, result)
+            result
         },
     )
 }

@@ -22,6 +22,9 @@ pub enum MdbxCommitStage {
     /// Estimated time spent inside MDBX cursor put/delete operations. Dense
     /// overlays use systematic samples after a small exact prefix.
     CursorWrite,
+    /// Time spent resolving cursor-driven overlay entries (deferred full-state
+    /// MPT reference resolution) through read-modify-write at the write cursor.
+    CursorResolve,
     /// Time spent committing the MDBX transaction with durable sync semantics.
     Commit,
 }
@@ -36,6 +39,7 @@ impl MdbxCommitStage {
             Self::OverlaySort => "overlay_sort",
             Self::OverlayVisit => "overlay_visit",
             Self::CursorWrite => "cursor_write",
+            Self::CursorResolve => "cursor_resolve",
             Self::Commit => "commit",
         }
     }
@@ -49,7 +53,8 @@ impl MdbxCommitStage {
             Self::OverlaySort => 4,
             Self::OverlayVisit => 5,
             Self::CursorWrite => 6,
-            Self::Commit => 7,
+            Self::CursorResolve => 7,
+            Self::Commit => 8,
         }
     }
 }
@@ -69,6 +74,34 @@ pub enum MdbxCommitCountKind {
     KeyBytes,
     /// Value bytes supplied to cursor put operations.
     ValueBytes,
+    /// Cursor-resolved keys already present in the authoritative table.
+    CursorResolvePresent,
+    /// Cursor-resolved keys absent from the authoritative table.
+    CursorResolveAbsent,
+    /// Process-attributed physical read bytes during non-empty cursor resolution.
+    CursorResolveReadBytes,
+    /// Process-attributed physical write bytes during non-empty cursor resolution.
+    CursorResolveWriteBytes,
+    /// Process minor faults observed during non-empty cursor resolution.
+    CursorResolveMinorFaults,
+    /// Process major faults observed during non-empty cursor resolution.
+    CursorResolveMajorFaults,
+    /// Put values from zero through 64 bytes.
+    ValueSize0To64,
+    /// Put values from 65 through 128 bytes.
+    ValueSize65To128,
+    /// Put values from 129 through 256 bytes.
+    ValueSize129To256,
+    /// Put values from 257 through 512 bytes.
+    ValueSize257To512,
+    /// Put values from 513 through 1,024 bytes.
+    ValueSize513To1024,
+    /// Put values from 1,025 through 4,096 bytes.
+    ValueSize1025To4096,
+    /// Put values from 4,097 through 16,384 bytes.
+    ValueSize4097To16384,
+    /// Put values larger than 16,384 bytes.
+    ValueSizeOver16384,
 }
 
 impl MdbxCommitCountKind {
@@ -80,6 +113,20 @@ impl MdbxCommitCountKind {
             Self::Deletes => "deletes",
             Self::KeyBytes => "key_bytes",
             Self::ValueBytes => "value_bytes",
+            Self::CursorResolvePresent => "cursor_resolve_present",
+            Self::CursorResolveAbsent => "cursor_resolve_absent",
+            Self::CursorResolveReadBytes => "cursor_resolve_read_bytes",
+            Self::CursorResolveWriteBytes => "cursor_resolve_write_bytes",
+            Self::CursorResolveMinorFaults => "cursor_resolve_minor_faults",
+            Self::CursorResolveMajorFaults => "cursor_resolve_major_faults",
+            Self::ValueSize0To64 => "value_size_0_64",
+            Self::ValueSize65To128 => "value_size_65_128",
+            Self::ValueSize129To256 => "value_size_129_256",
+            Self::ValueSize257To512 => "value_size_257_512",
+            Self::ValueSize513To1024 => "value_size_513_1024",
+            Self::ValueSize1025To4096 => "value_size_1025_4096",
+            Self::ValueSize4097To16384 => "value_size_4097_16384",
+            Self::ValueSizeOver16384 => "value_size_over_16384",
         }
     }
 
@@ -91,7 +138,45 @@ impl MdbxCommitCountKind {
             Self::Deletes => 3,
             Self::KeyBytes => 4,
             Self::ValueBytes => 5,
+            Self::ValueSize0To64 => 6,
+            Self::ValueSize65To128 => 7,
+            Self::ValueSize129To256 => 8,
+            Self::ValueSize257To512 => 9,
+            Self::ValueSize513To1024 => 10,
+            Self::ValueSize1025To4096 => 11,
+            Self::ValueSize4097To16384 => 12,
+            Self::ValueSizeOver16384 => 13,
+            Self::CursorResolvePresent => 14,
+            Self::CursorResolveAbsent => 15,
+            Self::CursorResolveReadBytes => 16,
+            Self::CursorResolveWriteBytes => 17,
+            Self::CursorResolveMinorFaults => 18,
+            Self::CursorResolveMajorFaults => 19,
         }
+    }
+}
+
+pub(super) const VALUE_SIZE_COUNT_KINDS: [MdbxCommitCountKind; 8] = [
+    MdbxCommitCountKind::ValueSize0To64,
+    MdbxCommitCountKind::ValueSize65To128,
+    MdbxCommitCountKind::ValueSize129To256,
+    MdbxCommitCountKind::ValueSize257To512,
+    MdbxCommitCountKind::ValueSize513To1024,
+    MdbxCommitCountKind::ValueSize1025To4096,
+    MdbxCommitCountKind::ValueSize4097To16384,
+    MdbxCommitCountKind::ValueSizeOver16384,
+];
+
+pub(super) const fn value_size_bucket_index(value_len: usize) -> usize {
+    match value_len {
+        0..=64 => 0,
+        65..=128 => 1,
+        129..=256 => 2,
+        257..=512 => 3,
+        513..=1_024 => 4,
+        1_025..=4_096 => 5,
+        4_097..=16_384 => 6,
+        _ => 7,
     }
 }
 
@@ -173,7 +258,7 @@ impl CountSlot {
     }
 }
 
-const STAGE_ORDER: [MdbxCommitStage; 8] = [
+const STAGE_ORDER: [MdbxCommitStage; 9] = [
     MdbxCommitStage::Total,
     MdbxCommitStage::TransactionOpen,
     MdbxCommitStage::TableOpen,
@@ -181,21 +266,39 @@ const STAGE_ORDER: [MdbxCommitStage; 8] = [
     MdbxCommitStage::OverlaySort,
     MdbxCommitStage::OverlayVisit,
     MdbxCommitStage::CursorWrite,
+    MdbxCommitStage::CursorResolve,
     MdbxCommitStage::Commit,
 ];
-const COUNT_ORDER: [MdbxCommitCountKind; 6] = [
+const COUNT_ORDER: [MdbxCommitCountKind; 20] = [
     MdbxCommitCountKind::Tables,
     MdbxCommitCountKind::Entries,
     MdbxCommitCountKind::Puts,
     MdbxCommitCountKind::Deletes,
     MdbxCommitCountKind::KeyBytes,
     MdbxCommitCountKind::ValueBytes,
+    MdbxCommitCountKind::ValueSize0To64,
+    MdbxCommitCountKind::ValueSize65To128,
+    MdbxCommitCountKind::ValueSize129To256,
+    MdbxCommitCountKind::ValueSize257To512,
+    MdbxCommitCountKind::ValueSize513To1024,
+    MdbxCommitCountKind::ValueSize1025To4096,
+    MdbxCommitCountKind::ValueSize4097To16384,
+    MdbxCommitCountKind::ValueSizeOver16384,
+    MdbxCommitCountKind::CursorResolvePresent,
+    MdbxCommitCountKind::CursorResolveAbsent,
+    MdbxCommitCountKind::CursorResolveReadBytes,
+    MdbxCommitCountKind::CursorResolveWriteBytes,
+    MdbxCommitCountKind::CursorResolveMinorFaults,
+    MdbxCommitCountKind::CursorResolveMajorFaults,
 ];
 
 static ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 static FAILURES: AtomicU64 = AtomicU64::new(0);
 static COMMITTED_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
-static STAGES: [TimingSlot; 8] = [
+static SHADOW_COMMIT_FAILURES: AtomicU64 = AtomicU64::new(0);
+static SHADOW_MARKERS_COMMITTED: AtomicU64 = AtomicU64::new(0);
+static STAGES: [TimingSlot; 9] = [
+    TimingSlot::new(),
     TimingSlot::new(),
     TimingSlot::new(),
     TimingSlot::new(),
@@ -205,7 +308,21 @@ static STAGES: [TimingSlot; 8] = [
     TimingSlot::new(),
     TimingSlot::new(),
 ];
-static COUNTS: [CountSlot; 6] = [
+static COUNTS: [CountSlot; 20] = [
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
+    CountSlot::new(),
     CountSlot::new(),
     CountSlot::new(),
     CountSlot::new(),
@@ -232,6 +349,19 @@ impl MdbxCommitMetrics {
     /// Returns cumulative commit outcomes.
     pub fn stats() -> MdbxCommitStats {
         Self::snapshot().stats
+    }
+
+    /// Returns how often a coordinated-commit shadow dual-write failed.
+    /// Failures are counted, not propagated: the canonical commit always
+    /// continues without the pack high-water marker.
+    pub fn shadow_commit_failures() -> u64 {
+        SHADOW_COMMIT_FAILURES.load(Ordering::Relaxed)
+    }
+
+    /// Returns how many pack high-water markers were committed atomically
+    /// with their mirrored overlays.
+    pub fn shadow_markers_committed() -> u64 {
+        SHADOW_MARKERS_COMMITTED.load(Ordering::Relaxed)
     }
 
     fn load_stats() -> MdbxCommitStats {
@@ -292,9 +422,9 @@ pub(super) struct MdbxCommitRecorder {
     started_at: Instant,
     succeeded: bool,
     committed: bool,
-    stage_calls: [u64; 8],
-    stage_totals_us: [u64; 8],
-    counts: [u64; 6],
+    stage_calls: [u64; 9],
+    stage_totals_us: [u64; 9],
+    counts: [u64; 20],
 }
 
 impl MdbxCommitRecorder {
@@ -303,9 +433,9 @@ impl MdbxCommitRecorder {
             started_at: Instant::now(),
             succeeded: false,
             committed: false,
-            stage_calls: [0; 8],
-            stage_totals_us: [0; 8],
-            counts: [0; 6],
+            stage_calls: [0; 9],
+            stage_totals_us: [0; 9],
+            counts: [0; 20],
         }
     }
 
@@ -359,6 +489,43 @@ pub(super) fn elapsed_us(started_at: Instant) -> u64 {
     started_at.elapsed().as_micros().min(u128::from(u64::MAX)) as u64
 }
 
+pub(super) fn record_shadow_commit_failure() {
+    SHADOW_COMMIT_FAILURES.fetch_add(1, Ordering::Relaxed);
+}
+
+pub(super) fn record_shadow_marker_committed() {
+    SHADOW_MARKERS_COMMITTED.fetch_add(1, Ordering::Relaxed);
+}
+
 fn average(total: u64, samples: u64) -> u64 {
     total.checked_div(samples).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::value_size_bucket_index;
+
+    #[test]
+    fn value_size_buckets_cover_every_boundary_without_gaps() {
+        for (value_len, expected) in [
+            (0, 0),
+            (64, 0),
+            (65, 1),
+            (128, 1),
+            (129, 2),
+            (256, 2),
+            (257, 3),
+            (512, 3),
+            (513, 4),
+            (1_024, 4),
+            (1_025, 5),
+            (4_096, 5),
+            (4_097, 6),
+            (16_384, 6),
+            (16_385, 7),
+            (usize::MAX, 7),
+        ] {
+            assert_eq!(value_size_bucket_index(value_len), expected);
+        }
+    }
 }

@@ -242,12 +242,22 @@ where
     ///
     /// Public wrapper for C# `CheckWitness(UInt160)` semantics.
     pub fn check_witness(&self, hash: &UInt160) -> CoreResult<bool> {
-        self.check_witness_internal(hash)
+        let result = self.check_witness_internal(hash);
+        if self.execution_observations_enabled() {
+            let outcome = match &result {
+                Ok(value) => crate::execution_artifact::WitnessObservationOutcome::Returned(*value),
+                Err(error) => {
+                    crate::execution_artifact::WitnessObservationOutcome::Fault(error.to_string())
+                }
+            };
+            self.observe_witness(*hash, outcome);
+        }
+        result
     }
 
     /// Backwards-compatible alias mirroring `check_witness`.
     pub fn check_witness_hash(&self, hash: &UInt160) -> CoreResult<bool> {
-        self.check_witness_internal(hash)
+        self.check_witness(hash)
     }
 
     /// Evaluates a witness condition in the current execution context.
@@ -540,7 +550,14 @@ where
 
     /// Gets a storage item directly (for testing and internal use).
     pub fn get_storage(&self, key: &StorageKey) -> Option<StorageItem> {
-        self.snapshot_cache.get(key)
+        let value = self.snapshot_cache.get(key);
+        if self.execution_observations_enabled() {
+            self.observe_storage_read(
+                key.clone(),
+                value.as_ref().map(|item| item.value_bytes().into_owned()),
+            );
+        }
+        value
     }
 
     /// Deletes a storage item directly (for testing and internal use).

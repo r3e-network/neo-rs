@@ -6,10 +6,10 @@ from pathlib import Path
 metadata = json.loads(
     subprocess.check_output(["cargo", "metadata", "--format-version", "1"], text=True)
 )
-neo_vm_rs = next(
-    package for package in metadata["packages"] if package["name"] == "neo-vm-rs"
+neo_vm = next(
+    package for package in metadata["packages"] if package["name"] == "neo-vm"
 )
-opcode_path = Path(neo_vm_rs["manifest_path"]).parent / "src" / "vm" / "opcode.rs"
+opcode_path = Path(neo_vm["manifest_path"]).parent / "src" / "vm_types" / "opcode.rs"
 
 with opcode_path.open("r") as f:
     rust_code = f.read()

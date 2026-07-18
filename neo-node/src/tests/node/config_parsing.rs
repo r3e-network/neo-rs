@@ -189,6 +189,7 @@ StorePath = "Indexer_{0}"
         Some(std::path::Path::new("StateRoot"))
     );
     assert!(config.state_service.full_state);
+    assert!(!config.state_service.defer_full_state_finalization);
     assert!(config.state_service.track_during_catchup);
     assert!(config.state_service.coordinated);
     assert!(config.indexer.enabled);
@@ -636,7 +637,13 @@ backend = "rockdb"
     assert!(err.to_string().contains("unsupported [storage].backend"));
 }
 
+#[path = "config_parsing/append_shadow.rs"]
+mod append_shadow;
+#[path = "config_parsing/execution.rs"]
+mod execution;
 #[path = "config_parsing/observability.rs"]
 mod observability;
 #[path = "config_parsing/services.rs"]
 mod services;
+#[path = "config_parsing/state_packs.rs"]
+mod state_packs;

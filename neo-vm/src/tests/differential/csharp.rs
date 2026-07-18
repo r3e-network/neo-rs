@@ -1,3 +1,4 @@
+// Pinned upstream differential fixture coverage lives under a domain folder.
 use std::collections::BTreeSet;
 
 use serde_json::Value;

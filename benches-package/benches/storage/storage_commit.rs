@@ -4,7 +4,7 @@ use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_storage::mdbx::{MdbxStore, MdbxStoreProvider};
 use neo_storage::{
     StorageItem, StorageKey,
-    persistence::{Store, StoreCache, storage::StorageConfig},
+    persistence::{RawReadOnlyStore, Store, StoreCache, storage::StorageConfig},
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -123,9 +123,45 @@ fn bench_import_shaped_store_cache_commit(c: &mut Criterion) {
     mdbx_group.finish();
 }
 
+fn bench_sorted_mdbx_batch_read(c: &mut Criterion) {
+    const STORED_ROWS: usize = 32_768;
+    let (store, _tempdir) = open_mdbx("sorted-batch-read");
+    let entries = (0..STORED_ROWS)
+        .map(|index| {
+            let key = (index as u32 * 2).to_be_bytes().to_vec();
+            let value = [0xA5, (index & 0xff) as u8].to_vec();
+            (key, value)
+        })
+        .collect::<Vec<_>>();
+    store
+        .commit_raw_overlay(
+            entries
+                .iter()
+                .map(|(key, value)| (key.as_slice(), Some(value.as_slice()))),
+        )
+        .expect("seed sorted MDBX batch-read rows");
+    let snapshot = store.snapshot();
+    let keys = (0..STORED_ROWS * 2)
+        .map(|index| (index as u32).to_be_bytes().to_vec())
+        .collect::<Vec<_>>();
+
+    let mut group = c.benchmark_group("storage/mdbx_sorted_batch_read");
+    group.throughput(Throughput::Elements(keys.len() as u64));
+    group.bench_function("64k_keys_half_missing", |b| {
+        b.iter(|| {
+            let values = snapshot
+                .try_get_many_bytes_sorted(&keys)
+                .expect("sorted MDBX batch read");
+            black_box(values);
+        });
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_store_cache_commit,
     bench_import_shaped_store_cache_commit,
+    bench_sorted_mdbx_batch_read,
 );
 criterion_main!(benches);

@@ -140,10 +140,11 @@ where
 
     /// Charges an execution fee in datoshi.
     pub fn charge_execution_fee(&mut self, fee: u64) -> CoreResult<()> {
-        self.add_fee_datoshi(
-            i64::try_from(fee)
-                .map_err(|_| CoreError::invalid_operation("Fee does not fit into i64"))?,
-        )
+        let fee_datoshi = i64::try_from(fee)
+            .map_err(|_| CoreError::invalid_operation("Fee does not fit into i64"))?;
+        let result = self.add_fee_datoshi(fee_datoshi);
+        self.observe_fee_charge(fee);
+        result
     }
 
     fn add_native_method_fee(&mut self, cpu_fee: i64, storage_fee: i64) -> CoreResult<()> {
@@ -360,17 +361,44 @@ where
         method: &str,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
+        let observed_arguments = self.execution_observations_enabled().then(|| {
+            args.iter()
+                .cloned()
+                .map(StackItem::from_byte_string)
+                .collect::<Vec<_>>()
+        });
         self.with_resolved_native_method(
             contract_hash,
             method,
             args.len(),
-            |native, resolved_method, engine| {
-                native.invoke_resolved(
+            move |native, resolved_method, engine| {
+                let access = observed_arguments
+                    .as_ref()
+                    .and_then(|_| engine.native_call_access(native, resolved_method, args.len()));
+                let result = native.invoke_resolved(
                     engine,
                     resolved_method.method_index(),
                     resolved_method.method(),
                     args,
-                )
+                );
+                if let (Some(access), Some(observed_arguments)) = (access, observed_arguments) {
+                    let outcome = match &result {
+                        Ok(_) if access.result_count() == 0 => {
+                            crate::execution_artifact::CallObservationOutcome::Returned(Vec::new())
+                        }
+                        Ok(value) => {
+                            crate::execution_artifact::CallObservationOutcome::Returned(vec![
+                                StackItem::from_byte_string(value.clone()),
+                            ])
+                        }
+                        Err(error) => crate::execution_artifact::CallObservationOutcome::Fault {
+                            message: error.to_string(),
+                            exception: None,
+                        },
+                    };
+                    engine.observe_completed_call(access, observed_arguments, outcome);
+                }
+                result
             },
         )
     }

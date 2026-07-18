@@ -45,6 +45,10 @@ where
         let call_flags = state_arc.lock().call_flags;
         engine.set_call_flags(call_flags);
 
+        self.observe_diagnostic_context(
+            crate::execution_artifact::DiagnosticObservationKind::ContextLoaded,
+            context,
+        );
         self.diagnostic.context_loaded(context);
         Ok(())
     }
@@ -145,6 +149,11 @@ where
         self.refresh_context_tracking()
             .map_err(|e| VmError::invalid_operation_msg(e.to_string()))?;
 
+        self.complete_observed_contract_call(engine, context);
+        self.observe_diagnostic_context(
+            crate::execution_artifact::DiagnosticObservationKind::ContextUnloaded,
+            context,
+        );
         self.diagnostic.context_unloaded(context);
 
         if let Some(current_context) = engine.current_context() {
@@ -187,6 +196,10 @@ where
                 .map_err(map_core_error_to_vm_error)?;
         }
 
+        self.observe_diagnostic_instruction(
+            crate::execution_artifact::DiagnosticObservationKind::PreInstruction,
+            instruction,
+        );
         self.diagnostic.pre_execute_instruction(instruction);
         Ok(())
     }
@@ -196,6 +209,10 @@ where
         _engine: &mut ExecutionEngine<B>,
         instruction: &Instruction,
     ) -> VmResult<()> {
+        self.observe_diagnostic_instruction(
+            crate::execution_artifact::DiagnosticObservationKind::PostInstruction,
+            instruction,
+        );
         self.diagnostic.post_execute_instruction(instruction);
         Ok(())
     }

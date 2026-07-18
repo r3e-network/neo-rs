@@ -38,12 +38,18 @@ fn validate_config_with_local_replay_services(
     let _ = config.p2p.channels_config()?;
     if validate_local_replay_services {
         validate_static_files_config(config, storage_override)?;
+        validate_append_shadow_config(config, network, storage_override)?;
+        validate_state_packs_config(config, network, storage_override)?;
         validate_indexer_config(config, network)?;
         validate_service_store_paths(config, network)?;
     }
     validate_telemetry_config(&config.telemetry)?;
     validate_logging_config(&config.logging)?;
     validate_observability_config(&config.observability)?;
+    config
+        .execution
+        .specialization_shadow
+        .validate(validate_local_replay_services)?;
 
     if let Some(bind_address) = config.p2p.bind_address.as_deref() {
         bind_address
@@ -93,8 +99,86 @@ fn validate_static_files_config(
     Ok(())
 }
 
+fn validate_append_shadow_config(
+    config: &NodeConfig,
+    network: u32,
+    storage_override: Option<&Path>,
+) -> anyhow::Result<()> {
+    let shadow = &config.storage.append_shadow;
+    if !shadow.enabled {
+        return Ok(());
+    }
+    let Some(path) = shadow.path.as_deref() else {
+        anyhow::bail!("[storage.append_shadow].path is required when the shadow is enabled");
+    };
+    let path = network_scoped_path(path, network);
+    validate_non_empty_service_path(&path, "[storage.append_shadow].path")?;
+    if persistent_store_provider(config, storage_override)?.is_none() {
+        anyhow::bail!("[storage.append_shadow] requires the durable canonical MDBX backend");
+    }
+    if config.storage.read_only {
+        anyhow::bail!(
+            "[storage.append_shadow] cannot be enabled while [storage].read_only is true"
+        );
+    }
+    if !config.state_service.enabled || !config.state_service.coordinated {
+        anyhow::bail!(
+            "[storage.append_shadow] requires [state_service].enabled=true with coordinated commits"
+        );
+    }
+    if shadow.max_index_memory_mb == Some(0) {
+        anyhow::bail!("[storage.append_shadow].max_index_memory_mb must be greater than zero");
+    }
+    Ok(())
+}
+
+fn validate_state_packs_config(
+    config: &NodeConfig,
+    network: u32,
+    storage_override: Option<&Path>,
+) -> anyhow::Result<()> {
+    let packs = &config.storage.state_packs;
+    if !packs.enabled {
+        return Ok(());
+    }
+    let Some(path) = packs.path.as_deref() else {
+        anyhow::bail!("[storage.state_packs].path is required when authority is enabled");
+    };
+    let path = network_scoped_path(path, network);
+    validate_non_empty_service_path(&path, "[storage.state_packs].path")?;
+    if persistent_store_provider(config, storage_override)?.is_none() {
+        anyhow::bail!("[storage.state_packs] requires the durable canonical MDBX backend");
+    }
+    if config.storage.read_only {
+        anyhow::bail!("[storage.state_packs] cannot be enabled with read-only storage");
+    }
+    if config.storage.append_shadow.enabled {
+        anyhow::bail!(
+            "authoritative [storage.state_packs] and append shadow are mutually exclusive"
+        );
+    }
+    if !config.state_service.enabled
+        || !config.state_service.coordinated
+        || !config.state_service.full_state
+        || !config.state_service.track_during_catchup
+    {
+        anyhow::bail!(
+            "[storage.state_packs] requires coordinated full-state StateService tracking during catch-up"
+        );
+    }
+    if packs.max_index_memory_mb == Some(0) {
+        anyhow::bail!("[storage.state_packs].max_index_memory_mb must be greater than zero");
+    }
+    Ok(())
+}
+
 fn validate_service_store_paths(config: &NodeConfig, network: u32) -> anyhow::Result<()> {
     if config.state_service.enabled {
+        if config.state_service.defer_full_state_finalization && !config.state_service.full_state {
+            anyhow::bail!(
+                "[state_service].defer_full_state_finalization requires [state_service].full_state=true"
+            );
+        }
         match (&config.state_service.path, config.state_service.coordinated) {
             (Some(path), _) => {
                 let path = network_scoped_path(path, network);

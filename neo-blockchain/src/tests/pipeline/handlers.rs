@@ -427,7 +427,7 @@ fn header_inventory_verification_uses_system_native_provider() {
 }
 
 #[test]
-fn initialize_uses_system_native_provider_for_genesis_persist() {
+fn initialize_uses_system_native_resources_for_genesis_persist() {
     let source = include_str!("../../handlers/initialize.rs");
     let start = source
         .find("pub(crate) async fn initialize")
@@ -435,12 +435,8 @@ fn initialize_uses_system_native_provider_for_genesis_persist() {
     let initialize = &source[start..];
 
     assert!(
-        initialize.contains("self.system.native_contract_provider()"),
-        "genesis initialization must use the provider exposed by SystemContext"
-    );
-    assert!(
-        initialize.contains("NativePersistResources::from_provider"),
-        "genesis initialization must build native resources from the explicit provider"
+        initialize.contains("self.system.native_persist_resources()"),
+        "genesis initialization must preserve resources composed by SystemContext"
     );
     assert!(
         initialize.contains("stage_block_natives_with_resources"),

@@ -21,6 +21,18 @@ path = "src/main.rs"
 name = "neo-db-probe"
 path = "src/bin/neo-db-probe.rs"
 
+[[bin]]
+name = "neo-pack-verify"
+path = "src/bin/neo-pack-verify.rs"
+
+[[bin]]
+name = "neo-pack-build"
+path = "src/bin/neo-pack-build.rs"
+
+[[bin]]
+name = "neo-mdbx-rebase"
+path = "src/bin/neo-mdbx-rebase.rs"
+
 [features]
 default = []
 # Optional HSM-backed consensus signing (PKCS#11: AWS/Azure/GCP).
@@ -84,6 +96,7 @@ neo-network = { workspace = true }
 neo-payloads = { workspace = true }
 neo-primitives = { workspace = true }
 neo-runtime = { workspace = true }
+neo-state-packs = { workspace = true }
 neo-state-service = { workspace = true }
 neo-storage = { workspace = true }
 neo-static-files = { workspace = true }

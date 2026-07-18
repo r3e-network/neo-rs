@@ -45,6 +45,7 @@ pub(super) struct OperationalServices {
         Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTrackerService<RuntimeStore>>>,
     pub(super) tokens_tracker_runtime: Option<TokensTrackerRuntime>,
     pub(super) durable_stores: Vec<ServiceStore>,
+    pub(super) authoritative_pack: Option<Arc<crate::node::state_packs::AuthoritativeNodePack>>,
 }
 
 pub(super) fn build_operational_services(
@@ -67,6 +68,7 @@ pub(super) fn build_operational_services(
             tokens_tracker_service: None,
             tokens_tracker_runtime: None,
             durable_stores: Vec::new(),
+            authoritative_pack: None,
         });
     }
 
@@ -84,6 +86,7 @@ pub(super) fn build_operational_services(
         state_store,
         state_service,
         durable_store: state_service_store,
+        authoritative_pack,
     } = state_runtime;
     let ReadSideServices {
         indexer_service,
@@ -101,5 +104,6 @@ pub(super) fn build_operational_services(
         tokens_tracker_service,
         tokens_tracker_runtime,
         durable_stores,
+        authoritative_pack,
     })
 }

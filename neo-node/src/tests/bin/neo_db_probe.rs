@@ -143,6 +143,62 @@ fn contract_state_key_reverses_display_hash_for_storage() {
 }
 
 #[test]
+fn cli_accepts_repeated_contract_script_hash_queries() {
+    let cli = Cli::try_parse_from([
+        "neo-db-probe",
+        "--db",
+        "data/mainnet",
+        "--find-contract-script-hash",
+        "0x1111111111111111111111111111111111111111",
+        "--find-contract-script-hash",
+        "0x2222222222222222222222222222222222222222",
+    ])
+    .expect("parse contract script lookup");
+
+    assert_eq!(cli.find_contract_script_hash.len(), 2);
+}
+
+#[test]
+fn contract_script_hash_scan_returns_exact_versioned_contract_metadata() {
+    let temp = tempfile::tempdir().expect("temporary MDBX directory");
+    let script = vec![neo_vm::OpCode::PUSH1.byte(), neo_vm::OpCode::RET.byte()];
+    let contract_hash = UInt160::from([0x55; 20]);
+    let mut state = ContractState::new(
+        42,
+        contract_hash,
+        neo_manifest::NefFile::new("probe-test".to_string(), script.clone()),
+        neo_manifest::ContractManifest::new("ProbeContract".to_string()),
+    );
+    state.update_counter = 7;
+    write_storage_value(
+        temp.path(),
+        -1,
+        contract_state_key_from_hash(&contract_hash.to_string()).expect("contract state key"),
+        state
+            .serialize_contract_record()
+            .expect("contract state record"),
+    )
+    .expect("write contract state");
+    let raw_script_hash = UInt160::from(Crypto::hash160(&script)).to_string();
+
+    let output = find_contracts_by_script_hash(temp.path(), std::slice::from_ref(&raw_script_hash))
+        .expect("find contract by raw script hash");
+
+    assert_eq!(output["scanned_contracts"], 1);
+    assert_eq!(output["matched_contracts"], 1);
+    assert_eq!(output["matches"][0]["raw_script_hash"], raw_script_hash);
+    assert_eq!(
+        output["matches"][0]["contract_hash"],
+        contract_hash.to_string()
+    );
+    assert_eq!(output["matches"][0]["contract_id"], 42);
+    assert_eq!(output["matches"][0]["contract_update_counter"], 7);
+    assert_eq!(output["matches"][0]["nef_checksum"], state.nef.checksum);
+    assert_eq!(output["matches"][0]["manifest_name"], "ProbeContract");
+    assert_eq!(output["missing_script_hashes"], json!([]));
+}
+
+#[test]
 fn decode_nep17_account_state_balance() {
     let bytes = base64_decode("QQEhBEGk/QI=").expect("base64");
 

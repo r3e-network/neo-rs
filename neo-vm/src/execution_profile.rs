@@ -5,10 +5,13 @@
 //! read-only observations of opcode dispatch and evaluation-stack operations.
 
 use crate::OpCode;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const OPCODE_COUNT: usize = 256;
+const MAX_PROFILED_SCRIPTS: usize = 64;
+const MAX_PROFILED_ENTRY_POINTS: usize = 32;
 
 /// Broad NeoVM opcode families used to identify execution workload shape.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -117,6 +120,128 @@ pub struct StackOperationProfile {
     pub moved_items: u64,
     /// Largest individual evaluation/result stack depth observed.
     pub max_depth: u64,
+}
+
+/// One entry offset observed while loading a profiled script context.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ScriptEntryProfile {
+    entry_offset: usize,
+    context_loads: u64,
+}
+
+impl ScriptEntryProfile {
+    /// Byte offset at which the context started execution.
+    #[must_use]
+    pub const fn entry_offset(&self) -> usize {
+        self.entry_offset
+    }
+
+    /// Number of contexts loaded at this offset.
+    #[must_use]
+    pub const fn context_loads(&self) -> u64 {
+        self.context_loads
+    }
+}
+
+/// Bounded profile for one immutable NeoVM bytecode script.
+///
+/// `script_hash` is Neo's protocol `Hash160` of the bytecode. It is an
+/// observational fingerprint, not authority for memoizing execution results;
+/// any future decoded-script cache must also compare the exact bytes and bind
+/// its validation/protocol context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScriptExecutionProfile {
+    script_hash: [u8; 20],
+    script_len: usize,
+    instructions: u64,
+    context_loads: u64,
+    entry_points: Vec<ScriptEntryProfile>,
+    other_entry_context_loads: u64,
+}
+
+impl ScriptExecutionProfile {
+    /// Neo protocol `Hash160` of the immutable bytecode.
+    #[must_use]
+    pub const fn script_hash(&self) -> &[u8; 20] {
+        &self.script_hash
+    }
+
+    /// Byte length of the immutable script.
+    #[must_use]
+    pub const fn script_len(&self) -> usize {
+        self.script_len
+    }
+
+    /// Instructions dispatched from this script, including faulting handlers.
+    #[must_use]
+    pub const fn instructions(&self) -> u64 {
+        self.instructions
+    }
+
+    /// Total invocation contexts loaded for this script.
+    #[must_use]
+    pub const fn context_loads(&self) -> u64 {
+        self.context_loads
+    }
+
+    /// Entry offsets retained by the bounded collector, ordered by descending
+    /// context count and then ascending byte offset.
+    #[must_use]
+    pub fn entry_points(&self) -> &[ScriptEntryProfile] {
+        &self.entry_points
+    }
+
+    /// Context loads whose distinct entry offset exceeded the per-script bound.
+    #[must_use]
+    pub const fn other_entry_context_loads(&self) -> u64 {
+        self.other_entry_context_loads
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct ScriptProfileKey {
+    script_hash: [u8; 20],
+    script_len: usize,
+}
+
+#[derive(Debug)]
+struct ScriptProfileCounters {
+    instructions: u64,
+    context_loads: u64,
+    entry_points: Vec<ScriptEntryProfile>,
+    other_entry_context_loads: u64,
+}
+
+impl ScriptProfileCounters {
+    fn new(entry_offset: usize) -> Self {
+        Self {
+            instructions: 0,
+            context_loads: 1,
+            entry_points: vec![ScriptEntryProfile {
+                entry_offset,
+                context_loads: 1,
+            }],
+            other_entry_context_loads: 0,
+        }
+    }
+
+    fn record_context_load(&mut self, entry_offset: usize) {
+        self.context_loads = self.context_loads.saturating_add(1);
+        if let Some(entry) = self
+            .entry_points
+            .iter_mut()
+            .find(|entry| entry.entry_offset == entry_offset)
+        {
+            entry.context_loads = entry.context_loads.saturating_add(1);
+        } else if self.entry_points.len() < MAX_PROFILED_ENTRY_POINTS {
+            self.entry_points.push(ScriptEntryProfile {
+                entry_offset,
+                context_loads: 1,
+            });
+        } else {
+            self.other_entry_context_loads = self.other_entry_context_loads.saturating_add(1);
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -240,6 +365,10 @@ impl StackProfileHandle {
 pub struct VmExecutionProfile {
     opcode_counts: [u64; OPCODE_COUNT],
     stack_operations: StackOperationProfile,
+    max_reference_count: u64,
+    scripts: Vec<ScriptExecutionProfile>,
+    other_script_instructions: u64,
+    other_script_context_loads: u64,
 }
 
 impl VmExecutionProfile {
@@ -291,6 +420,32 @@ impl VmExecutionProfile {
     pub const fn stack_operations(&self) -> StackOperationProfile {
         self.stack_operations
     }
+
+    /// Largest recursive StackItem reference count observed after an
+    /// instruction in this execution.
+    #[must_use]
+    pub const fn max_reference_count(&self) -> u64 {
+        self.max_reference_count
+    }
+
+    /// Bounded script profiles, ordered by descending instruction count and
+    /// then protocol script hash and byte length.
+    #[must_use]
+    pub fn scripts(&self) -> &[ScriptExecutionProfile] {
+        &self.scripts
+    }
+
+    /// Instructions from scripts beyond the collector's distinct-script bound.
+    #[must_use]
+    pub const fn other_script_instructions(&self) -> u64 {
+        self.other_script_instructions
+    }
+
+    /// Context loads from scripts beyond the collector's distinct-script bound.
+    #[must_use]
+    pub const fn other_script_context_loads(&self) -> u64 {
+        self.other_script_context_loads
+    }
 }
 
 /// Mutable engine-local collector. Opcode counters need no atomics because an
@@ -298,6 +453,10 @@ impl VmExecutionProfile {
 pub(crate) struct ExecutionProfileCollector {
     opcode_counts: [u64; OPCODE_COUNT],
     stack: StackProfileHandle,
+    max_reference_count: u64,
+    scripts: HashMap<ScriptProfileKey, ScriptProfileCounters>,
+    other_script_instructions: u64,
+    other_script_context_loads: u64,
 }
 
 impl ExecutionProfileCollector {
@@ -305,22 +464,228 @@ impl ExecutionProfileCollector {
         Self {
             opcode_counts: [0; OPCODE_COUNT],
             stack: StackProfileHandle::default(),
+            max_reference_count: 0,
+            scripts: HashMap::with_capacity(MAX_PROFILED_SCRIPTS),
+            other_script_instructions: 0,
+            other_script_context_loads: 0,
         }
     }
 
     #[inline(always)]
-    pub(crate) fn record_opcode(&mut self, opcode: OpCode) {
+    pub(crate) fn record_opcode(
+        &mut self,
+        script_hash: [u8; 20],
+        script_len: usize,
+        opcode: OpCode,
+    ) {
         self.opcode_counts[opcode.byte() as usize] += 1;
+        let key = ScriptProfileKey {
+            script_hash,
+            script_len,
+        };
+        if let Some(script) = self.scripts.get_mut(&key) {
+            script.instructions = script.instructions.saturating_add(1);
+        } else {
+            self.other_script_instructions = self.other_script_instructions.saturating_add(1);
+        }
+    }
+
+    pub(crate) fn record_context_load(
+        &mut self,
+        script_hash: [u8; 20],
+        script_len: usize,
+        entry_offset: usize,
+    ) {
+        let key = ScriptProfileKey {
+            script_hash,
+            script_len,
+        };
+        if let Some(script) = self.scripts.get_mut(&key) {
+            script.record_context_load(entry_offset);
+        } else if self.scripts.len() < MAX_PROFILED_SCRIPTS {
+            self.scripts
+                .insert(key, ScriptProfileCounters::new(entry_offset));
+        } else {
+            self.other_script_context_loads = self.other_script_context_loads.saturating_add(1);
+        }
     }
 
     pub(crate) fn stack_handle(&self) -> StackProfileHandle {
         self.stack.clone()
     }
 
+    #[inline(always)]
+    pub(crate) fn observe_reference_count(&mut self, count: usize) {
+        self.max_reference_count = self.max_reference_count.max(count as u64);
+    }
+
     pub(crate) fn snapshot(&self) -> VmExecutionProfile {
+        let mut scripts = self
+            .scripts
+            .iter()
+            .map(|(key, counters)| {
+                let mut entry_points = counters.entry_points.clone();
+                entry_points.sort_unstable_by(|left, right| {
+                    right
+                        .context_loads
+                        .cmp(&left.context_loads)
+                        .then_with(|| left.entry_offset.cmp(&right.entry_offset))
+                });
+                ScriptExecutionProfile {
+                    script_hash: key.script_hash,
+                    script_len: key.script_len,
+                    instructions: counters.instructions,
+                    context_loads: counters.context_loads,
+                    entry_points,
+                    other_entry_context_loads: counters.other_entry_context_loads,
+                }
+            })
+            .collect::<Vec<_>>();
+        scripts.sort_unstable_by(|left, right| {
+            right
+                .instructions
+                .cmp(&left.instructions)
+                .then_with(|| left.script_hash.cmp(&right.script_hash))
+                .then_with(|| left.script_len.cmp(&right.script_len))
+        });
+
         VmExecutionProfile {
             opcode_counts: self.opcode_counts,
             stack_operations: self.stack.snapshot(),
+            max_reference_count: self.max_reference_count,
+            scripts,
+            other_script_instructions: self.other_script_instructions,
+            other_script_context_loads: self.other_script_context_loads,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn populated_collector(script_order: &[u8], entry_order: &[usize]) -> VmExecutionProfile {
+        let mut collector = ExecutionProfileCollector::new();
+        for &discriminator in script_order {
+            let script_hash = [discriminator; 20];
+            collector.record_context_load(script_hash, 3, 0);
+            collector.record_opcode(script_hash, 3, OpCode::NOP);
+        }
+
+        let repeated_script = [0xF0; 20];
+        for &entry_offset in entry_order {
+            collector.record_context_load(repeated_script, 64, entry_offset);
+        }
+        collector.snapshot()
+    }
+
+    #[test]
+    fn snapshot_order_is_deterministic_across_observation_order() {
+        let forward = populated_collector(&[3, 1, 2], &[7, 1, 4]);
+        let reverse = populated_collector(&[2, 1, 3], &[4, 1, 7]);
+
+        assert_eq!(forward, reverse);
+        assert_eq!(
+            forward
+                .scripts()
+                .iter()
+                .map(|script| *script.script_hash())
+                .collect::<Vec<_>>(),
+            vec![[1; 20], [2; 20], [3; 20], [0xF0; 20]]
+        );
+        assert_eq!(
+            forward.scripts()[3]
+                .entry_points()
+                .iter()
+                .map(ScriptEntryProfile::entry_offset)
+                .collect::<Vec<_>>(),
+            vec![1, 4, 7]
+        );
+    }
+
+    #[test]
+    fn collector_enforces_script_and_entry_capacity() {
+        let mut scripts = ExecutionProfileCollector::new();
+        for discriminator in 0..=MAX_PROFILED_SCRIPTS {
+            let mut script_hash = [0; 20];
+            script_hash[..std::mem::size_of::<usize>()]
+                .copy_from_slice(&discriminator.to_le_bytes());
+            scripts.record_context_load(script_hash, discriminator + 1, 0);
+            scripts.record_opcode(script_hash, discriminator + 1, OpCode::NOP);
+        }
+
+        let snapshot = scripts.snapshot();
+        assert_eq!(snapshot.scripts().len(), MAX_PROFILED_SCRIPTS);
+        assert_eq!(snapshot.other_script_context_loads(), 1);
+        assert_eq!(snapshot.other_script_instructions(), 1);
+        assert_eq!(
+            snapshot
+                .scripts()
+                .iter()
+                .map(ScriptExecutionProfile::instructions)
+                .sum::<u64>(),
+            MAX_PROFILED_SCRIPTS as u64
+        );
+
+        let mut entries = ExecutionProfileCollector::new();
+        let script_hash = [0xA5; 20];
+        for entry_offset in 0..=MAX_PROFILED_ENTRY_POINTS {
+            entries.record_context_load(script_hash, 64, entry_offset);
+        }
+        let snapshot = entries.snapshot();
+        let script = &snapshot.scripts()[0];
+        assert_eq!(script.entry_points().len(), MAX_PROFILED_ENTRY_POINTS);
+        assert_eq!(script.other_entry_context_loads(), 1);
+        assert_eq!(
+            script.context_loads(),
+            (MAX_PROFILED_ENTRY_POINTS + 1) as u64
+        );
+    }
+
+    #[test]
+    fn shared_stack_counters_are_exact_under_concurrency() {
+        const WORKERS: usize = 8;
+        const OPERATIONS_PER_WORKER: usize = 2_000;
+
+        let collector = ExecutionProfileCollector::new();
+        let handle = collector.stack_handle();
+        std::thread::scope(|scope| {
+            for worker in 0..WORKERS {
+                let handle = handle.clone();
+                scope.spawn(move || {
+                    for operation in 0..OPERATIONS_PER_WORKER {
+                        handle.record_push(worker * OPERATIONS_PER_WORKER + operation + 1);
+                        handle.record_pop();
+                        handle.record_peek();
+                        handle.record_mutable_peek();
+                        handle.record_insert(1);
+                        handle.record_remove();
+                        handle.record_swap();
+                        handle.record_reverse();
+                        handle.record_clear(2);
+                        handle.record_copy(3);
+                        handle.record_move(4);
+                    }
+                });
+            }
+        });
+
+        let stack = collector.snapshot().stack_operations();
+        let operations = (WORKERS * OPERATIONS_PER_WORKER) as u64;
+        assert_eq!(stack.pushes, operations);
+        assert_eq!(stack.pops, operations);
+        assert_eq!(stack.peeks, operations);
+        assert_eq!(stack.mutable_peeks, operations);
+        assert_eq!(stack.inserts, operations);
+        assert_eq!(stack.removes, operations);
+        assert_eq!(stack.swaps, operations);
+        assert_eq!(stack.reverses, operations);
+        assert_eq!(stack.clears, operations);
+        assert_eq!(stack.cleared_items, operations * 2);
+        assert_eq!(stack.copies, operations);
+        assert_eq!(stack.copied_items, operations * 3);
+        assert_eq!(stack.moves, operations);
+        assert_eq!(stack.moved_items, operations * 4);
+        assert_eq!(stack.max_depth, operations);
     }
 }

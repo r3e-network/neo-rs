@@ -41,12 +41,10 @@ where
         let genesis_hash = genesis
             .try_hash()
             .map_err(|error| format!("genesis block hash failed: {error}"))?;
-        let native_contract_provider = self.system.native_contract_provider().ok_or_else(|| {
-            "genesis native persistence requires a native-contract provider from SystemContext"
+        let native_persist = self.system.native_persist_resources().ok_or_else(|| {
+            "genesis native persistence requires native persistence resources from SystemContext"
                 .to_string()
         })?;
-        let native_persist =
-            crate::native_persist::NativePersistResources::from_provider(native_contract_provider);
         let staged = crate::native_persist::stage_block_natives_with_resources(
             Arc::clone(&snapshot),
             Arc::clone(&genesis),

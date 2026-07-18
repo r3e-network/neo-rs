@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! Layer 0 (Foundation): neo-primitives
-//! Layer 1 (Infrastructure): neo-io, neo-error, neo-crypto, neo-storage, neo-static-files, neo-config, neo-vm, neo-serialization, neo-manifest
+//! Layer 1 (Infrastructure): neo-io, neo-error, neo-crypto, neo-storage, neo-static-files, neo-state-packs, neo-checkpoint, neo-config, neo-vm, neo-serialization, neo-manifest
 //! Layer 2 (Protocol): neo-payloads, neo-consensus, neo-hsm
 //! Layer 3 (Domain services): neo-execution, neo-native-contracts, neo-mempool, neo-state-service, neo-runtime
 //! Layer 4 (Node services): neo-blockchain, neo-network, neo-wallets, neo-indexer, neo-oracle-service
@@ -50,9 +50,8 @@ impl Layer {
             "neo-primitives" => Some(Layer::Foundation),
             // Layer 1: Infrastructure and shared data tooling.
             "neo-io" | "neo-error" | "neo-crypto" | "neo-storage" | "neo-static-files"
-            | "neo-config" | "neo-vm" | "neo-serialization" | "neo-manifest" => {
-                Some(Layer::Infrastructure)
-            }
+            | "neo-state-packs" | "neo-checkpoint" | "neo-config" | "neo-vm"
+            | "neo-serialization" | "neo-manifest" => Some(Layer::Infrastructure),
             // Layer 2: Protocol payloads and consensus message vocabulary.
             "neo-payloads" | "neo-consensus" | "neo-hsm" => Some(Layer::Protocol),
             // Layer 3: Domain logic with no node composition dependency.

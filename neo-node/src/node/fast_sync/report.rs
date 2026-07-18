@@ -71,6 +71,7 @@ impl FastSyncReport {
                 finalization_commit_handlers_seconds: import.finalization_commit_handlers_seconds,
                 finalization_store_commit_seconds: import.finalization_store_commit_seconds,
                 unclassified_import_seconds: import.unclassified_import_seconds,
+                native_persist_tx: import.native_persist_tx.clone(),
                 throughput_status: fast_sync_throughput_status(&import),
                 profile_windows: import.profile_windows.clone(),
             },
@@ -151,6 +152,7 @@ pub(in crate::node) struct FastSyncImportReport {
     pub(in crate::node) finalization_commit_handlers_seconds: f64,
     pub(in crate::node) finalization_store_commit_seconds: f64,
     pub(in crate::node) unclassified_import_seconds: f64,
+    pub(in crate::node) native_persist_tx: super::super::chain_acc::NativePersistTxWindowMetrics,
     pub(in crate::node) throughput_status: FastSyncThroughputStatus,
     pub(in crate::node) profile_windows: Vec<super::super::chain_acc::ChainAccProfileWindow>,
 }
@@ -183,14 +185,18 @@ pub(in crate::node) struct FastSyncHotMetricsReport {
 pub(in crate::node) struct FastSyncStageMetricReport {
     pub(in crate::node) stage: String,
     pub(in crate::node) calls: u64,
+    pub(in crate::node) total_us: u64,
     pub(in crate::node) avg_us: u64,
 }
 
 impl FastSyncStageMetricReport {
-    fn from_native_tx_stage(stat: neo_runtime::sync_metrics::NativePersistTxStageStats) -> Self {
+    pub(super) fn from_native_tx_stage(
+        stat: neo_runtime::sync_metrics::NativePersistTxStageStats,
+    ) -> Self {
         Self {
             stage: stat.stage.to_string(),
             calls: stat.calls,
+            total_us: stat.total_us,
             avg_us: stat.avg_us,
         }
     }

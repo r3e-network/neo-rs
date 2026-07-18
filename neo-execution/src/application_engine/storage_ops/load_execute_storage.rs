@@ -30,12 +30,17 @@ where
         // evaluation stack items (`rvcount = -1`) so that witness invocation
         // scripts can pass parameters to verification scripts and invocation
         // results are preserved on `ResultStack`.
-        self.load_script_with_state(Script::new_relaxed_from_slice(script), -1, 0, move |state| {
-            state.call_flags = call_flags;
-            if let Some(hash) = script_hash {
-                state.script_hash = Some(hash);
-            }
-        })?;
+        self.load_script_with_state(
+            Script::new_relaxed_from_slice(script),
+            -1,
+            0,
+            move |state| {
+                state.call_flags = call_flags;
+                if let Some(hash) = script_hash {
+                    state.script_hash = Some(hash);
+                }
+            },
+        )?;
         Ok(())
     }
 
@@ -96,8 +101,9 @@ where
         self.fault_exception = Some(format!("{exception:?}"));
     }
 
-    fn finalize_fault(&mut self) {
+    pub(in crate::application_engine) fn finalize_fault(&mut self) {
         self.capture_fault_exception_from_vm();
+        self.fault_pending_observed_calls();
         self.notifications.clear();
     }
 
@@ -296,7 +302,7 @@ where
 
     /// Finds storage entries with options (matches C# Find method exactly).
     pub fn find_storage_entries(
-        &self,
+        &mut self,
         context: &StorageContext,
         prefix: &[u8],
         options: FindOptions,
@@ -314,6 +320,32 @@ where
             .snapshot_cache
             .find(Some(&search_key), direction)
             .collect::<Vec<_>>();
+        if self.execution_observations_enabled() {
+            let row_count = match u32::try_from(entries.len()) {
+                Ok(row_count) => row_count,
+                Err(_) => {
+                    self.fail_execution_observation(
+                        crate::execution_artifact::ExecutionArtifactError::NumericOverflow {
+                            field: "storage range row count",
+                        },
+                    );
+                    u32::MAX
+                }
+            };
+            let range_direction = if options.contains(FindOptions::Backwards) {
+                neo_vm::RangeDirection::Reverse
+            } else {
+                neo_vm::RangeDirection::Forward
+            };
+            let access = crate::host_access_audit::StorageRangeAccess::prefix(
+                context.id,
+                prefix.to_vec(),
+                range_direction,
+                options,
+                row_count,
+            );
+            self.observe_storage_range(access, &entries);
+        }
         Ok(StorageIterator::new(entries, prefix.len(), options))
     }
 

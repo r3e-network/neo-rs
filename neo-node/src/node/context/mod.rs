@@ -45,6 +45,33 @@ where
     where
         P: RawOverlaySource + ?Sized,
         Q: RawOverlaySource + ?Sized;
+
+    /// Coordinated commit that additionally feeds the secondary overlay's
+    /// entries to a shadow dual-writer. The default falls back to the plain
+    /// coordinated commit for stores without a shadow-capable backend.
+    fn commit_node_overlays_with_shadow<P, Q>(
+        &self,
+        primary: &mut P,
+        secondary_store: &S,
+        secondary: &mut Q,
+        shadow: Option<&mut neo_storage::persistence::ShadowCommitHook<'_>>,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized;
+
+    /// Coordinated commit with a mandatory maintenance marker. Any marker
+    /// failure aborts both overlays.
+    fn commit_node_overlays_with_required_marker<P, Q>(
+        &self,
+        primary: &mut P,
+        secondary_store: &S,
+        secondary: &mut Q,
+        marker: &neo_storage::persistence::CoordinatedCommitMarker,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized;
 }
 
 impl CoordinatedNodeStoreWith<RuntimeStore> for RuntimeStore {
@@ -59,6 +86,39 @@ impl CoordinatedNodeStoreWith<RuntimeStore> for RuntimeStore {
         Q: RawOverlaySource + ?Sized,
     {
         self.commit_coordinated_overlays(primary, secondary_store, secondary)
+    }
+
+    fn commit_node_overlays_with_shadow<P, Q>(
+        &self,
+        primary: &mut P,
+        secondary_store: &RuntimeStore,
+        secondary: &mut Q,
+        shadow: Option<&mut neo_storage::persistence::ShadowCommitHook<'_>>,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized,
+    {
+        self.commit_coordinated_overlays_with_shadow(primary, secondary_store, secondary, shadow)
+    }
+
+    fn commit_node_overlays_with_required_marker<P, Q>(
+        &self,
+        primary: &mut P,
+        secondary_store: &RuntimeStore,
+        secondary: &mut Q,
+        marker: &neo_storage::persistence::CoordinatedCommitMarker,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized,
+    {
+        self.commit_coordinated_overlays_with_required_marker(
+            primary,
+            secondary_store,
+            secondary,
+            marker,
+        )
     }
 }
 
@@ -78,6 +138,38 @@ impl CoordinatedNodeStoreWith<MemoryStore> for MemoryStore {
             "test MemoryStore does not provide coordinated namespaces",
         ))
     }
+
+    fn commit_node_overlays_with_shadow<P, Q>(
+        &self,
+        _primary: &mut P,
+        _secondary_store: &MemoryStore,
+        _secondary: &mut Q,
+        _shadow: Option<&mut neo_storage::persistence::ShadowCommitHook<'_>>,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized,
+    {
+        Err(StorageError::invalid_operation(
+            "test MemoryStore does not provide coordinated namespaces",
+        ))
+    }
+
+    fn commit_node_overlays_with_required_marker<P, Q>(
+        &self,
+        _primary: &mut P,
+        _secondary_store: &MemoryStore,
+        _secondary: &mut Q,
+        _marker: &neo_storage::persistence::CoordinatedCommitMarker,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized,
+    {
+        Err(StorageError::invalid_operation(
+            "test MemoryStore does not provide coordinated namespaces",
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -87,6 +179,38 @@ impl CoordinatedNodeStoreWith<RuntimeStore> for MemoryStore {
         _primary: &mut P,
         _secondary_store: &RuntimeStore,
         _secondary: &mut Q,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized,
+    {
+        Err(StorageError::invalid_operation(
+            "test stores do not share a coordinated namespace",
+        ))
+    }
+
+    fn commit_node_overlays_with_shadow<P, Q>(
+        &self,
+        _primary: &mut P,
+        _secondary_store: &RuntimeStore,
+        _secondary: &mut Q,
+        _shadow: Option<&mut neo_storage::persistence::ShadowCommitHook<'_>>,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized,
+    {
+        Err(StorageError::invalid_operation(
+            "test stores do not share a coordinated namespace",
+        ))
+    }
+
+    fn commit_node_overlays_with_required_marker<P, Q>(
+        &self,
+        _primary: &mut P,
+        _secondary_store: &RuntimeStore,
+        _secondary: &mut Q,
+        _marker: &neo_storage::persistence::CoordinatedCommitMarker,
     ) -> StorageResult<()>
     where
         P: RawOverlaySource + ?Sized,
@@ -124,6 +248,8 @@ pub(super) struct DaemonCommitHooks<
     pending_static_records: Mutex<Vec<neo_static_files::StaticRecord>>,
     hot_ledger_pruning: RwLock<Option<HotLedgerPruning>>,
     replay_guard: Arc<LocalReplayGuard>,
+    append_shadow: Option<Arc<crate::node::append_shadow::AppendShadow>>,
+    authoritative_pack: Option<Arc<crate::node::state_packs::AuthoritativeNodePack>>,
 }
 
 impl<P, S, L, T, C> std::fmt::Debug for DaemonCommitHooks<P, S, L, T, C>
@@ -160,6 +286,8 @@ where
         tokens_tracker: Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTracker<P, T>>>,
         static_archive: Option<neo_blockchain::StaticLedgerArchive>,
         replay_guard: Arc<LocalReplayGuard>,
+        append_shadow: Option<Arc<crate::node::append_shadow::AppendShadow>>,
+        authoritative_pack: Option<Arc<crate::node::state_packs::AuthoritativeNodePack>>,
     ) -> (
         Arc<Self>,
         neo_system::FinalizedBlockStream<
@@ -186,6 +314,8 @@ where
             pending_static_records: Mutex::new(Vec::new()),
             hot_ledger_pruning: RwLock::new(None),
             replay_guard,
+            append_shadow,
+            authoritative_pack,
         });
         (hooks, finalized_stream)
     }
@@ -211,6 +341,8 @@ where
             None,
             static_archive,
             replay_guard,
+            None,
+            None,
         );
         Arc::into_inner(hooks).expect("newly composed commit hooks have one owner")
     }

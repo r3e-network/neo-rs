@@ -25,8 +25,10 @@ flowchart LR
 
 Two important behaviors:
 
-- **Forward compatibility.** Every section and key is optional, and unknown
-  sections/keys are ignored.
+- **Forward compatibility.** Every section and key is optional. Most unknown
+  sections/keys are ignored, while safety-critical opt-in sections such as
+  `[execution.specialization_shadow]` reject unknown keys instead of silently
+  accepting a misspelled control.
 - **Presets plus overrides.** `[network] network_type` selects a built-in
   protocol preset (committee, seeds, hardfork schedule). Individual keys in
   `[network]`, `[blockchain]`, and `[mempool]` then override fields of that
@@ -36,6 +38,7 @@ Two important behaviors:
 
 These sections drive node behavior: `[network]`, `[storage]`, `[p2p]`, `[rpc]`,
 `[consensus]` (alias `[dbft]`), `[blockchain]`, `[mempool]`,
+`[execution.specialization_shadow]`,
 `[state_service]`, `[indexer]`, `[application_logs]`, and
 `[tokens_tracker]`, `[telemetry.metrics]`, `[logging]`, and
 `[observability]`.
@@ -66,6 +69,149 @@ Persistence backend.
 | `static_files_cache_capacity` | integer | `64` | Number of decompressed height frames retained by the LRU cache; must be greater than zero. |
 | `static_files_max_segment_mb` | integer | `4096` | Target maximum size of one height-addressed archive segment in MiB; must be greater than zero. Frames are never split, so one oversized frame may exceed the target. |
 | `static_files_recovery_batch_blocks` | integer | `1024` | Maximum hot Ledger blocks appended per startup reconciliation sync; must be greater than zero. |
+
+#### `[storage.append_shadow]` — append-frame shadow dual-write (opt-in)
+
+Phase 1 verification mode for the `neo-state-packs` append engine. MDBX
+remains authoritative for every StateService row. When enabled, each
+coordinated commit also mirrors the window's MPT node entries
+(`0xf0 || node_hash`) into a pack store at `path` (one frame plus one
+immutable index run per co-commit window) and persists a pack high-water
+record (`neo_state_packs_high_water`) into the MDBX maintenance table inside
+the same transaction (cold-first: the frame is synced before the marker can
+commit). Shadow failures are logged and counted
+(`MdbxCommitMetrics::shadow_commit_failures`) and never fail the canonical
+commit; the transaction simply commits without the marker. Requires the
+durable MDBX backend, `[state_service].enabled=true` with coordinated
+commits, and a writable node (`read_only=false`).
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `enabled` | bool | `false` | Enable the shadow dual-write. Alias: `Enabled`. |
+| `path` | path | none (required when enabled) | Shadow pack-store directory. `{0}` is replaced with uppercase 8-digit network magic. Alias: `Path`. |
+| `max_index_memory_mb` | integer | `256` | Decoded index-memory bound in MiB for the shadow store; must be greater than zero. Alias: `MaxIndexMemoryMb`. |
+
+#### `[storage.state_packs]` — authoritative MPT node packs (opt-in)
+
+Moves only exact StateService MPT node rows (`0xf0 || node_hash`) to the
+append-frame store. Ledger rows, StateService root records/current-height
+metadata, and the mandatory pack marker stay in MDBX. A commit is published in
+strict order: sync and seal the pack generation, atomically commit Ledger plus
+StateService metadata plus marker in MDBX, then swap the already-created pinned
+pack snapshot. A pack miss or error never falls back to stale MDBX node rows.
+Immutable index compaction is derived maintenance: one coalescing worker builds
+and syncs merge output without holding the pack writer, then briefly validates
+its leased source runs and publishes an equivalent manifest/snapshot. It does
+not alter the MDBX marker or StateService generation. Run debt is bounded per
+level; producers wait only after a level reaches its hard debt threshold.
+
+Startup requires `checkpoint.json` with `complete=true` and
+`authoritative_ready=true`, the configured network and current pack formats,
+an exact StateService height/root match, the expected namespace identity and
+tip receipt, and a resolvable current root node. Existing shadow packs are not
+complete checkpoints and are rejected. This mode requires writable MDBX,
+coordinated `full_state` StateService tracking during catch-up and is mutually
+exclusive with `[storage.append_shadow]`. The default
+`defer_full_state_finalization=false` keeps eager finalization. When explicitly
+enabled, deferred journals are resolved in bounded sorted batches against the
+exact pinned pack generation used to prepare the batch; they are never resolved
+through or allowed to fall back to stale MDBX node rows.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `enabled` | bool | `false` | Enable fail-closed authoritative pack mode. Alias: `Enabled`. |
+| `path` | path | none (required when enabled) | Complete checkpoint directory. `{0}` is replaced with uppercase 8-digit network magic. Alias: `Path`. |
+| `max_index_memory_mb` | integer | `512` | Decoded immutable-index memory bound in MiB; must be greater than zero. Alias: `MaxIndexMemoryMb`. |
+| `random_point_mmap` | bool | `false` | Experimental host-specific optimization: index-located payload reads and sparse index-window probes use separate mappings with `MADV_RANDOM`; compaction, validation, and scrub retain ordinary mappings. Explicit enablement fails startup if the OS rejects the advice. Alias: `RandomPointMmap`. |
+
+`neo-pack-build --network-magic <u32-or-hex> --mdbx <store> --pack <new-dir>`
+is offline migration tooling, not a node mode. It streams a frozen StateService
+node namespace into bounded frames and publishes `checkpoint.json` only after
+stable height/root and pack reopen checks. The marker binds network magic,
+format versions, source digest/root, and the exact tip-frame checksum.
+Before the first frame, the builder also durably publishes
+`checkpoint-build.json`, binding the network magic, source height/root,
+`--rows-per-frame`, and all three pack format versions used by an interrupted
+build.
+`--max-rows` always produces `"complete": false` and
+`"authoritative_ready": false` smoke evidence; such output cannot authorize
+pack-backed reads. An uncapped build publishes `"authoritative_ready": true`
+only after its complete source scan, stable height/root check, full payload
+scrub, tip checksum validation, and reopen all pass. Keep the syncing node stopped during an uncapped
+checkpoint build so the before/after height/root guard represents one canonical
+source generation. If a build stops after complete frames but before marker
+publication, rerun it with the same network magic, source generation, and
+`--rows-per-frame`: the builder validates the durable build identity, proves
+that every prior frame has the declared row geometry, then compares every
+stored prefix value with the frozen source before appending. A missing legacy
+identity or any mismatch aborts instead of silently adopting a partial pack.
+Before publishing a complete marker, the builder also sequentially re-hashes
+and decodes every committed frame payload. The report records scrubbed frames,
+rows, puts, tombstones, payload/value bytes, and scrub wall time.
+
+One compatibility operation is explicit and disabled by default:
+
+```text
+neo-pack-build --network-magic <u32-or-hex> --mdbx <frozen-store> \
+  --pack <legacy-complete-pack> --rows-per-frame <original-size> \
+  --adopt-legacy-complete-pack
+```
+
+This flag accepts only an uncapped, complete schema-v1 checkpoint produced by
+the earlier offline builder; it never adopts a partial pack. The builder
+requires the legacy height, displayed/internal root, row count, value bytes,
+frame count, frame geometry, pack length, and namespace digest to match the
+frozen MDBX source and reopened pack. It then compares every namespace value,
+recomputes the namespace digest, reads and hashes the physical tip payload, and
+checks any optional legacy tip fields. Only after all checks pass does it write
+`checkpoint-build.json` and atomically replace the old marker with schema v2,
+including current pack format versions and the verified tip identity. Any
+network magic in the legacy report is ignored; the required CLI value is the
+only magic written into the new identity and marker. Run adoption only after
+the legacy builder has exited and its complete marker is durable.
+
+A legacy build that stopped before publishing any marker requires a different,
+also disabled-by-default recovery mode:
+
+```text
+neo-pack-build --network-magic <u32-or-hex> --mdbx <frozen-store> \
+  --pack <legacy-partial-pack> --rows-per-frame <original-size> \
+  --max-index-memory-mb <explicit-bound> --adopt-legacy-partial-pack
+```
+
+Partial adoption requires both `checkpoint.json` and `checkpoint-build.json`
+to be absent, every visible frame to contain exactly the original row count,
+and an uncapped source scan. It compares the complete existing prefix with the
+frozen MDBX source, atomically republishes the unchanged run set in the current
+manifest format, then publishes the new build identity; no later frame may be
+appended before that durable identity exists. If adoption is interrupted
+after identity publication, rerun without the adoption flag. A short final
+frame, source drift, value mismatch, existing marker, or ambiguous identity
+fails closed.
+
+The ordered MPT finalizer keeps batch reads serial by default. For a controlled
+catch-up profile, `NEO_MDBX_WRITE_INTENT_READ_THREADS` enables bounded parallel
+readers only for the sparse lookup set immediately before an MPT write. It is
+clamped to 16 and falls back to `NEO_MDBX_BATCH_READ_THREADS` when unset; both
+environment variables default to one reader. Benchmark this setting on the
+actual storage host before enabling it permanently.
+
+`NEO_MDBX_SYNC_MODE` defaults to `durable`. A bounded replay or bootstrap job
+may set `no_meta_sync` or `safe_no_sync` to reduce commit latency; both modes
+preserve MDBX atomicity and database integrity but can lose the newest commits
+after a crash, so restart from the last steady checkpoint. `utterly_no_sync` is
+rejected and falls back to `durable`.
+
+`NEO_MDBX_CURSOR_WRITE_MODE` defaults to `search`, which performs one MDBX
+cursor lookup per overlay entry. A controlled catch-up A/B may set it to
+`merge_cursor` (or `merge`) to walk sorted overlays once and update exact rows
+with `CURRENT`; keep it opt-in until the target filesystem has matching
+state-root and restart evidence.
+
+The Cargo feature `neo-storage/mdbx-write-map` is an experimental backend
+variant for hardware-specific A/B testing. The shipped node uses `NoWriteMap`;
+enable the feature only after validating restart durability and state-root
+parity on the target filesystem.
 
 Notes:
 
@@ -255,6 +401,41 @@ Transaction pool sizing.
 |-----|------|---------|---------|
 | `max_transactions` | i32 | preset (`50000`) | Maximum transactions retained in the memory pool (`MemoryPoolMaxTransactions`). Aliases: `memory_pool_max_transactions`, `MemoryPoolMaxTransactions`. |
 
+### `[execution.specialization_shadow]`
+
+Ordinary-authoritative differential execution for exact audited
+specializations. This section is disabled by default. When it is absent or
+`enabled = false`, the node constructs no specialization control and every
+transaction follows the ordinary sequential `neo-vm` persistence path.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `enabled` | bool | `false` | Construct the bounded process control and evaluate explicitly listed candidates in isolated Shadow mode. Requires local ledger execution. |
+| `strict_replay` | bool | `false` | Reject block publication when Shadow infrastructure cannot prove equality or when artifacts differ. Use `true` for bounded promotion replays; a mismatch still latches the candidate off when this is false. |
+| `candidates` | array of string | empty | Exact candidate versions to observe. The only accepted value is currently `"flamingo_factory_pair_key_v1"`; no candidate is selected implicitly. |
+| `max_reproducers` | usize | `64` | Maximum retained first-mismatch reproducers. Values above 64 are rejected. |
+| `max_reproducer_bytes` | usize | `1048576` | Maximum aggregate retained reproducer payload-prefix bytes. Larger values are rejected. |
+| `max_artifact_bytes` | usize | `16777216` | Maximum dynamic payload bytes retained by one comparison artifact. Larger values are rejected; all artifact counts and graph traversal dimensions retain their own fixed hard bounds. |
+
+```toml
+[execution.specialization_shadow]
+enabled = true
+strict_replay = true
+candidates = ["flamingo_factory_pair_key_v1"]
+max_reproducers = 16
+max_reproducer_bytes = 262144
+max_artifact_bytes = 8388608
+```
+
+The node configuration intentionally has no authoritative specialization mode.
+Shadow branches run from isolated overlays, complete artifacts are compared,
+and only the ordinary sequential branch can commit. A first mismatch retains a
+bounded reproducer and latches that exact candidate off for the rest of the
+process. The shared process control also retains global and candidate kill
+switches across block batches. Operational rollback is immediate on restart:
+set `enabled = false` or remove the section; no persisted-state migration or
+cache cleanup is required.
+
 ### `[state_service]`
 
 State-root/MPT support used by Neo's StateService RPC methods.
@@ -263,6 +444,7 @@ State-root/MPT support used by Neo's StateService RPC methods.
 |-----|------|---------|---------|
 | `enabled` | bool | `false` | Start the state-root service and register its state store. Alias: `Enabled`. |
 | `full_state` | bool | `false` | Retain historical trie nodes for old-root proofs/state reads. Alias: `FullState`. |
+| `defer_full_state_finalization` | bool | `false` | Opt-in performance mode that batches full-state finalization lookups while preserving every serialized mutation and reference count. The eager path remains the default. Alias: `DeferFullStateFinalization`. |
 | `track_during_catchup` | bool | `false` | Keep computing local MPT state roots even while the node is far behind the peer tip. Enable this for full MainNet state-root validation or bootstrap jobs that must produce every historical root. Alias: `TrackDuringCatchup`. |
 | `path` | path | none | Optional auxiliary MDBX directory when the canonical node itself is using the in-memory provider. Persistent MDBX nodes use the canonical environment's `neo_state_service` named table and ignore this path. `{0}` is replaced with uppercase 8-digit network magic. Alias: `Path`. |
 

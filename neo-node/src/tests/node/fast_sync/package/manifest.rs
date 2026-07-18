@@ -106,8 +106,8 @@ fn rejects_manifest_package_with_invalid_sha256_digest() {
     )
     .expect("manifest");
 
-    let err = select_full_package(&manifest, MAINNET_MAGIC)
-        .expect_err("invalid sha256 must fail closed");
+    let err =
+        select_full_package(&manifest, MAINNET_MAGIC).expect_err("invalid sha256 must fail closed");
     assert!(
         err.to_string().contains("sha256"),
         "unexpected error: {err}"

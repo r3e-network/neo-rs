@@ -9,10 +9,11 @@ use std::sync::Arc;
 
 use neo_storage::persistence::providers::RuntimeStore;
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 
 use super::cli::{LedgerMode, NodeCli};
 use super::config::NodeConfig;
-use super::live_services::start_live_services;
+use super::live_services::{start_live_services, start_metrics_endpoint};
 use super::observability::ObservabilityRuntime;
 use super::services::NodeServiceHandles;
 use super::shutdown_flow::run_daemon_shutdown;
@@ -28,6 +29,7 @@ pub(in crate::node) struct RunningNode {
     shutdown: CancellationToken,
     services: Arc<NodeServiceHandles<RuntimeStore>>,
     durable_service_stores: Vec<Arc<RuntimeStore>>,
+    specialization_control: Option<neo_execution::specialization::SpecializationControl>,
 }
 
 impl RunningNode {
@@ -39,6 +41,7 @@ impl RunningNode {
         shutdown: CancellationToken,
         services: Arc<NodeServiceHandles<RuntimeStore>>,
         durable_service_stores: Vec<Arc<RuntimeStore>>,
+        specialization_control: Option<neo_execution::specialization::SpecializationControl>,
     ) -> Self {
         Self {
             node,
@@ -47,10 +50,11 @@ impl RunningNode {
             shutdown,
             services,
             durable_service_stores,
+            specialization_control,
         }
     }
 
-    /// Execute startup imports, start live services, and stop gracefully.
+    /// Start local metrics, execute startup imports, then start live services.
     pub(in crate::node) async fn run_requested_mode(
         mut self,
         cli: &NodeCli,
@@ -58,6 +62,25 @@ impl RunningNode {
         network_magic: u32,
         observability: Option<&ObservabilityRuntime>,
     ) -> anyhow::Result<()> {
+        if let Some(control) = self.specialization_control.as_ref() {
+            let snapshot = control.snapshot();
+            info!(
+                target: "neo::specialization",
+                strict_replay = snapshot.strict_replay,
+                candidates = snapshot.candidates.len(),
+                "ordinary-authoritative specialization shadow control active"
+            );
+        }
+        // Archive import is the dominant catch-up workload. Expose its live
+        // counters without starting RPC or P2P before local state is ready.
+        start_metrics_endpoint(
+            &self.node,
+            &self.services,
+            &mut self.handles,
+            &self.shutdown,
+            config,
+            observability,
+        )?;
         let startup_import = run_startup_imports(StartupImportContext {
             cli,
             node: &self.node,
@@ -112,6 +135,13 @@ impl RunningNode {
     #[cfg(test)]
     pub(in crate::node) fn services(&self) -> &Arc<NodeServiceHandles<RuntimeStore>> {
         &self.services
+    }
+
+    #[cfg(test)]
+    pub(in crate::node) fn specialization_control(
+        &self,
+    ) -> Option<&neo_execution::specialization::SpecializationControl> {
+        self.specialization_control.as_ref()
     }
 
     #[cfg(test)]

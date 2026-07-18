@@ -25,7 +25,14 @@ fn report_preserves_transaction_throughput_and_profile_window() {
     state_service_mpt.counts[0].samples = 1;
     state_service_mpt.counts[0].total = 101;
     state_service_mpt.counts[0].avg = 101;
+    let mut native_persist_tx = chain_acc::NativePersistTxWindowMetrics::default();
+    native_persist_tx.stages.push(Default::default());
+    native_persist_tx.stages[0].stage = "execute";
+    native_persist_tx.stages[0].calls = 4;
+    native_persist_tx.stages[0].total_us = 800;
+    native_persist_tx.stages[0].avg_us = 200;
     let mut import = import_report_with_composition(101, Some(import_tip), 0.25, 404.0, 81, 20, 45);
+    import.native_persist_tx = native_persist_tx.clone();
     import
         .profile_windows
         .push(chain_acc::ChainAccProfileWindow {
@@ -45,6 +52,7 @@ fn report_preserves_transaction_throughput_and_profile_window() {
             finalization_commit_handlers_seconds: 0.005,
             finalization_canonical_commit_seconds: 0.015,
             hot_metrics: chain_acc::ImportHotMetrics::default(),
+            native_persist_tx,
             state_service_mpt,
             mdbx_commit: Default::default(),
         });
@@ -74,6 +82,10 @@ fn report_preserves_transaction_throughput_and_profile_window() {
     assert_eq!(window.state_service_mpt.apply_attempts, 101);
     assert_eq!(window.state_service_mpt.stages[0].total_us, 30_300);
     assert_eq!(window.state_service_mpt.counts[0].avg, 101);
+    assert_eq!(window.native_persist_tx.stages[0].calls, 4);
+    assert_eq!(window.native_persist_tx.stages[0].total_us, 800);
+    assert_eq!(window.native_persist_tx.stages[0].avg_us, 200);
+    assert_eq!(report.import.native_persist_tx.stages[0].total_us, 800);
 
     let payload = serde_json::to_value(&report).expect("serialize profile report");
     assert_eq!(
@@ -83,5 +95,13 @@ fn report_preserves_transaction_throughput_and_profile_window() {
     assert_eq!(
         payload["import"]["profile_windows"][0]["state_service_mpt"]["counts"][0]["total"],
         101
+    );
+    assert_eq!(
+        payload["import"]["profile_windows"][0]["native_persist_tx"]["stages"][0]["total_us"],
+        800
+    );
+    assert_eq!(
+        payload["import"]["native_persist_tx"]["stages"][0]["calls"],
+        4
     );
 }

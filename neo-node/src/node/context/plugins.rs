@@ -12,6 +12,7 @@ use neo_storage::persistence::StoreCacheBacking;
 use neo_storage::persistence::{Store, TransactionalStore};
 use neo_storage::{CacheRead, DataCache, StorageError};
 use neo_system::{BlockCommitHooks, CanonicalCommit};
+use std::sync::Arc;
 use tracing::{debug, warn};
 
 use super::{CoordinatedNodeStoreWith, DaemonCommitHooks};
@@ -253,7 +254,10 @@ where
         // projected change set like the async worker work-cap so dense windows
         // do not build one nonlinear MDBX transaction for a full 10k-block batch.
         // Override with NEO_COORDINATED_IMPORT_CHANGE_BUDGET (0 disables).
-        const DEFAULT_COORDINATED_DEFERRED_IMPORT_CHANGE_BUDGET: usize = 8_192;
+        // High-height MainNet A/B (1,300,001..1,330,000) reduced durable
+        // finalization from 226.43 s to 210.64 s and MDBX commits from 11 to
+        // 6 at 16,384 projected changes, while preserving the exact root.
+        const DEFAULT_COORDINATED_DEFERRED_IMPORT_CHANGE_BUDGET: usize = 16_384;
         self.state_service.as_ref().and_then(|state_service| {
             if !state_service.is_coordinated() {
                 return None;
@@ -312,15 +316,44 @@ where
         if let Some(state_service) = &self.state_service
             && state_service.is_coordinated()
         {
+            let append_shadow = self.append_shadow.clone();
+            let authoritative_pack = self.authoritative_pack.clone();
             let coordinated =
                 state_service.commit_pending_coordinated(|state_backing, state_overlay| {
                     canonical_commit
                         .commit_durable_with(|canonical, canonical_overlay| {
-                            canonical.commit_node_overlays(
-                                canonical_overlay,
-                                state_backing,
-                                state_overlay,
-                            )
+                            if let Some(authority) = authoritative_pack.as_ref() {
+                                return authority.commit_prepared(
+                                    state_overlay,
+                                    |metadata, marker| {
+                                        canonical.commit_node_overlays_with_required_marker(
+                                            canonical_overlay,
+                                            state_backing,
+                                            metadata,
+                                            marker,
+                                        )
+                                    },
+                                );
+                            }
+                            let mut shadow_hook = append_shadow.as_ref().map(|shadow| {
+                                let shadow = Arc::clone(shadow);
+                                move |entries: neo_storage::persistence::ShadowOverlayEntries| {
+                                    shadow.mirror_window(entries)
+                                }
+                            });
+                            match shadow_hook.as_mut() {
+                                Some(hook) => canonical.commit_node_overlays_with_shadow(
+                                    canonical_overlay,
+                                    state_backing,
+                                    state_overlay,
+                                    Some(hook),
+                                ),
+                                None => canonical.commit_node_overlays(
+                                    canonical_overlay,
+                                    state_backing,
+                                    state_overlay,
+                                ),
+                            }
                         })
                         .map_err(|error| StorageError::CommitFailed(error.to_string()))
                 });
@@ -338,6 +371,9 @@ where
     }
 
     fn canonical_commit_succeeded(&self) {
+        if let Some(append_shadow) = &self.append_shadow {
+            append_shadow.canonical_commit_succeeded();
+        }
         self.replay_guard.canonical_commit_succeeded();
         let Some(archive) = &self.static_archive else {
             return;
@@ -389,6 +425,9 @@ where
     }
 
     fn canonical_commit_failed(&self, reason: &str) {
+        if let Some(append_shadow) = &self.append_shadow {
+            append_shadow.canonical_commit_failed();
+        }
         self.pending_static_records.lock().clear();
         if let Some(state_service) = &self.state_service {
             state_service.discard_pending_coordinated();

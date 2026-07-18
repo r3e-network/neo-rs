@@ -1,0 +1,121 @@
+//! Read-only memory map wrapper for immutable pack files.
+//!
+//! Why unsafe here: the workspace denies `unsafe_code`, so the parent module
+//! carries the only scoped exception in this crate. Raw positioned reads do
+//! not meet the measured lookup-latency target, while mappings let immutable
+//! pack generations share pages across bounded snapshots.
+//!
+//! Safety invariants:
+//! - Mapped files are immutable for the lifetime of the mapping. Index runs
+//!   are published with an atomic rename and never mutated in place; the
+//!   append pack is only extended, and the pack mapping is replaced after
+//!   every append and after open-time tail truncation, before any read.
+//! - Nothing ever writes through a mapping; all access is via shared
+//!   slices. `Send`/`Sync` are therefore sound: concurrent readers only
+//!   read stable bytes.
+//! - External truncation or mutation of a live mapped file is outside the
+//!   process fault model and can cause SIGBUS, like any mmap-backed engine.
+//!   The pack writer never mutates mapped prefixes or immutable run files;
+//!   startup validates committed bytes before publishing a view.
+//! - A zero-length map stores a dangling-but-never-dereferenced pointer
+//!   and yields an empty slice.
+
+use anyhow::{Context, Result};
+use std::fs::File;
+use std::os::unix::io::AsRawFd;
+use std::path::Path;
+
+/// Read-only mapping of one immutable file (or file prefix).
+#[derive(Debug)]
+pub(crate) struct Mmap {
+    ptr: *mut libc::c_void,
+    len: usize,
+}
+
+#[allow(unsafe_code)]
+impl Mmap {
+    /// Maps the first `len` bytes of `file`; `len == 0` yields an empty map.
+    pub(crate) fn map(file: &File, len: u64, what: &Path) -> Result<Self> {
+        let len = usize::try_from(len).context("mmap length does not fit usize")?;
+        if len == 0 {
+            return Ok(Self {
+                ptr: std::ptr::null_mut(),
+                len: 0,
+            });
+        }
+        // SAFETY: read-only mapping of a valid file descriptor; the kernel
+        // keeps the mapping alive independently of the descriptor. Invariants
+        // above guarantee the file is not mutated while mapped.
+        let ptr = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                len,
+                libc::PROT_READ,
+                libc::MAP_PRIVATE,
+                file.as_raw_fd(),
+                0,
+            )
+        };
+        if ptr == libc::MAP_FAILED {
+            anyhow::bail!(
+                "mmap {} bytes of {} failed: {}",
+                len,
+                what.display(),
+                std::io::Error::last_os_error()
+            );
+        }
+        Ok(Self { ptr, len })
+    }
+
+    /// Maps the first `len` bytes and requires random-access readahead advice.
+    ///
+    /// Callers use a separate mapping for sparse lookups so this hint cannot
+    /// degrade sequential scrubs, validation, or compaction.
+    pub(crate) fn map_random(file: &File, len: u64, what: &Path) -> Result<Self> {
+        let mapping = Self::map(file, len, what)?;
+        if mapping.len == 0 {
+            return Ok(mapping);
+        }
+        // SAFETY: `ptr`/`len` describe the live mapping created above.
+        // MADV_RANDOM changes only the kernel's readahead policy; it does not
+        // mutate mapped bytes or relax any lifetime invariant.
+        let result = unsafe { libc::madvise(mapping.ptr, mapping.len, libc::MADV_RANDOM) };
+        if result != 0 {
+            anyhow::bail!(
+                "madvise(MADV_RANDOM) for {} bytes of {} failed: {}",
+                mapping.len,
+                what.display(),
+                std::io::Error::last_os_error()
+            );
+        }
+        Ok(mapping)
+    }
+
+    /// The mapped bytes as a shared slice.
+    pub(crate) fn as_slice(&self) -> &[u8] {
+        if self.ptr.is_null() {
+            return &[];
+        }
+        // SAFETY: `ptr` is a live read-only mapping of `len` bytes for the
+        // lifetime of `self`; bytes are immutable per the module invariants.
+        unsafe { std::slice::from_raw_parts(self.ptr.cast::<u8>(), self.len) }
+    }
+}
+
+#[allow(unsafe_code)]
+impl Drop for Mmap {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            // SAFETY: `ptr`/`len` came from a successful `mmap` and are
+            // unmapped exactly once here.
+            let _ = unsafe { libc::munmap(self.ptr, self.len) };
+        }
+    }
+}
+
+// SAFETY: mappings are read-only and the underlying files are immutable
+// while mapped, so shared references across threads cannot race.
+#[allow(unsafe_code)]
+unsafe impl Send for Mmap {}
+#[allow(unsafe_code)]
+unsafe impl Sync for Mmap {}

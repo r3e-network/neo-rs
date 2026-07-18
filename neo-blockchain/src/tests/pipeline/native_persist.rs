@@ -1,6 +1,7 @@
 use super::trace::{
-    SlowTxFilter, TraceTxFilter, VmProfileFilter, format_vm_hottest_opcodes,
-    format_vm_opcode_classes, trace_tx_artifact,
+    SlowTxFilter, TraceTxFilter, VmProfileFilter, format_vm_hardfork_context,
+    format_vm_hottest_opcodes, format_vm_hottest_scripts, format_vm_opcode_classes,
+    trace_tx_artifact,
 };
 use super::*;
 use neo_manifest::{ContractManifest, ContractMethodDescriptor, NefFile};
@@ -12,6 +13,14 @@ use neo_vm::ExecutionEngineLimits;
 use neo_vm::script_builder::ScriptBuilder;
 use num_bigint::BigInt;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+use neo_execution::ExecutionArtifactLimits;
+use neo_execution::specialization::{
+    CandidateRouteConfig, FLAMINGO_FACTORY_PAIR_KEY_CANDIDATE_ID,
+    FLAMINGO_FACTORY_PAIR_KEY_CANDIDATE_VERSION, SpecializationControl,
+    SpecializationControlConfig, SpecializationControlLimits,
+};
+use neo_vm::SpecializationMode;
 
 #[path = "native_persist/dynamic_hooks.rs"]
 mod dynamic_hooks;
@@ -40,6 +49,23 @@ fn standard_resources() -> StandardNativePersistResources {
     NativePersistResources::from_provider(Arc::new(
         neo_native_contracts::StandardNativeProvider::new(),
     ))
+}
+
+fn shadow_resources(
+    strict_replay: bool,
+    limits: ExecutionArtifactLimits,
+) -> StandardNativePersistResources {
+    let config = SpecializationControlConfig::try_enabled(
+        strict_replay,
+        SpecializationControlLimits::DEFAULT,
+        [CandidateRouteConfig::new(
+            FLAMINGO_FACTORY_PAIR_KEY_CANDIDATE_ID,
+            FLAMINGO_FACTORY_PAIR_KEY_CANDIDATE_VERSION,
+            SpecializationMode::Shadow,
+        )],
+    )
+    .expect("valid test shadow configuration");
+    standard_resources().with_specialization_shadow(SpecializationControl::new(config), limits)
 }
 
 fn persist_with_resources(
@@ -566,6 +592,46 @@ fn chain_state_initialized_flips_after_genesis_persist() {
     assert!(chain_state_initialized(&ledger_only));
 }
 
+#[test]
+fn chain_state_initialized_uses_the_constant_time_committee_probe_first() {
+    #[derive(Clone)]
+    struct CommitteeBacking {
+        prefix_scans: Arc<AtomicUsize>,
+    }
+
+    impl neo_storage::CacheRead for CommitteeBacking {
+        fn get(&self, key: &StorageKey) -> Option<neo_storage::StorageItem> {
+            (key == &StorageKey::new(NEO_TOKEN_ID, vec![NEO_PREFIX_COMMITTEE_KEY]))
+                .then(|| neo_storage::StorageItem::from_bytes(vec![1]))
+        }
+
+        fn find(
+            &self,
+            _prefix: Option<&StorageKey>,
+            _direction: neo_storage::persistence::SeekDirection,
+        ) -> Option<Vec<(StorageKey, neo_storage::StorageItem)>> {
+            self.prefix_scans.fetch_add(1, Ordering::Relaxed);
+            Some(Vec::new())
+        }
+    }
+
+    let prefix_scans = Arc::new(AtomicUsize::new(0));
+    let snapshot = DataCache::with_backing(
+        false,
+        CommitteeBacking {
+            prefix_scans: Arc::clone(&prefix_scans),
+        },
+        neo_storage::persistence::data_cache::DataCacheConfig::default(),
+    );
+
+    assert!(chain_state_initialized(&snapshot));
+    assert_eq!(
+        prefix_scans.load(Ordering::Relaxed),
+        0,
+        "an initialized chain must not materialize the Ledger block prefix"
+    );
+}
+
 /// Mainnet genesis-hash pin. Oracle:
 /// `neo_csharp/tests/Neo.UnitTests/SmartContract/UT_InteropService.cs:872`
 /// (`TestGetBlockHash`) asserts block 0's hash under
@@ -905,6 +971,109 @@ fn reusable_native_persist_resources_keep_provider_consistent_across_blocks() {
         tx_exec.stack,
         vec![StackItem::from_i64(30)],
         "Policy.getExecFeeFactor should resolve through the batch resource provider"
+    );
+}
+
+#[test]
+fn specialization_shadow_pipeline_preserves_ordinary_transaction_and_ledger_result() {
+    let settings = ProtocolSettings::default();
+    let normal_snapshot = Arc::new(DataCache::new(false));
+    let shadow_snapshot = Arc::new(DataCache::new(false));
+    let normal_resources = standard_resources();
+    let shadow_resources = shadow_resources(false, ExecutionArtifactLimits::DEFAULT);
+
+    for (snapshot, resources) in [
+        (&normal_snapshot, &normal_resources),
+        (&shadow_snapshot, &shadow_resources),
+    ] {
+        let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+        persist_with_resources(Arc::clone(snapshot), genesis, &settings, resources)
+            .expect("genesis persist");
+    }
+
+    let signer = UInt160::from_bytes(&[0x55; 20]).expect("test signer");
+    fund_gas(&normal_snapshot, &signer, 10_0000_0000);
+    fund_gas(&shadow_snapshot, &signer, 10_0000_0000);
+    let tx = signed_test_tx(signer, 77, policy_get_exec_fee_factor_script());
+    let tx_hash = tx.try_hash().expect("transaction hash");
+    let mut header = Header::new();
+    header.set_index(1);
+    let block = Block::from_parts(header, vec![tx]);
+
+    let normal = persist_with_resources(
+        Arc::clone(&normal_snapshot),
+        Arc::new(block.clone()),
+        &settings,
+        &normal_resources,
+    )
+    .expect("ordinary transaction persist");
+    let shadow = persist_with_resources(
+        Arc::clone(&shadow_snapshot),
+        Arc::new(block),
+        &settings,
+        &shadow_resources,
+    )
+    .expect("shadow transaction persist");
+
+    let normal_tx = &normal.application_executed[1];
+    let shadow_tx = &shadow.application_executed[1];
+    assert_eq!(shadow_tx.vm_state, normal_tx.vm_state);
+    assert_eq!(shadow_tx.exception, normal_tx.exception);
+    assert_eq!(shadow_tx.gas_consumed, normal_tx.gas_consumed);
+    assert_eq!(shadow_tx.stack, normal_tx.stack);
+    assert_eq!(shadow_tx.notifications.len(), normal_tx.notifications.len());
+    assert_eq!(shadow_tx.logs.len(), normal_tx.logs.len());
+
+    let ledger = neo_native_contracts::LedgerContract::new();
+    let normal_state = ledger
+        .get_transaction_state(&normal_snapshot, &tx_hash)
+        .expect("normal ledger read")
+        .expect("normal transaction record");
+    let shadow_state = ledger
+        .get_transaction_state(&shadow_snapshot, &tx_hash)
+        .expect("shadow ledger read")
+        .expect("shadow transaction record");
+    assert_eq!(shadow_state.state, normal_state.state);
+    assert_eq!(shadow_state.block_index, normal_state.block_index);
+}
+
+#[test]
+fn strict_specialization_shadow_artifact_failure_aborts_block_publication() {
+    let settings = ProtocolSettings::default();
+    let snapshot = Arc::new(DataCache::new(false));
+    let normal_resources = standard_resources();
+    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &normal_resources)
+        .expect("genesis persist");
+
+    let signer = UInt160::from_bytes(&[0x66; 20]).expect("test signer");
+    fund_gas(&snapshot, &signer, 10_0000_0000);
+    let tx = signed_test_tx(signer, 78, policy_get_exec_fee_factor_script());
+    let tx_hash = tx.try_hash().expect("transaction hash");
+    let mut header = Header::new();
+    header.set_index(1);
+    let block = Arc::new(Block::from_parts(header, vec![tx]));
+    let resources = shadow_resources(
+        true,
+        ExecutionArtifactLimits {
+            max_invocation_frames: 0,
+            ..ExecutionArtifactLimits::DEFAULT
+        },
+    );
+
+    let error = persist_with_resources(Arc::clone(&snapshot), block, &settings, &resources)
+        .expect_err("strict incomplete artifact must fail replay");
+    assert!(
+        error
+            .to_string()
+            .contains("strict specialization shadow failed")
+    );
+    assert!(
+        neo_native_contracts::LedgerContract::new()
+            .get_transaction_state(&snapshot, &tx_hash)
+            .expect("ledger read after aborted block")
+            .is_none(),
+        "failed shadow replay must not publish the transaction record"
     );
 }
 

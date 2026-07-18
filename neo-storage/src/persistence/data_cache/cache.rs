@@ -1,3 +1,4 @@
+use super::observer::{DataCacheReadObservation, DataCacheReadOrigin};
 use super::storage_watch::log_watched_storage_event;
 use super::trackable::{DataCacheConfig, DataCacheError, DataCacheResult, InnerState, Trackable};
 use crate::persistence::read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
@@ -9,6 +10,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use tracing::warn;
+
+#[path = "observed_reads.rs"]
+mod observed_reads;
 
 /// Statically dispatched read source used for cache misses and prefix scans.
 ///
@@ -52,13 +56,32 @@ impl CacheRead for EmptyCacheBacking {
 enum CacheBacking<B> {
     Source(B),
     Parent(Arc<DataCache<B>>),
+    DetachedParent(Arc<DataCache<B>>),
 }
 
 impl<B: CacheRead> CacheBacking<B> {
     fn get(&self, key: &StorageKey) -> Option<StorageItem> {
         match self {
             Self::Source(source) => source.get(key),
-            Self::Parent(parent) => parent.get(key),
+            Self::Parent(parent) | Self::DetachedParent(parent) => parent.get_unobserved(key),
+        }
+    }
+
+    fn get_with_origin(&self, key: &StorageKey) -> (Option<StorageItem>, DataCacheReadOrigin) {
+        match self {
+            Self::Source(source) => (source.get(key), DataCacheReadOrigin::PinnedPrefix),
+            Self::Parent(parent) => parent.get_unobserved_with_origin(key),
+            Self::DetachedParent(parent) => (
+                parent.get_unobserved(key),
+                DataCacheReadOrigin::PinnedPrefix,
+            ),
+        }
+    }
+
+    fn cached_read_origin(&self, key: &StorageKey) -> DataCacheReadOrigin {
+        match self {
+            Self::Source(_) | Self::DetachedParent(_) => DataCacheReadOrigin::PinnedPrefix,
+            Self::Parent(parent) => parent.cached_read_origin(key),
         }
     }
 
@@ -69,15 +92,21 @@ impl<B: CacheRead> CacheBacking<B> {
     ) -> Option<Vec<(StorageKey, StorageItem)>> {
         match self {
             Self::Source(source) => source.find(prefix, direction),
-            Self::Parent(parent) => Some(parent.find(prefix, direction).collect()),
+            Self::Parent(parent) | Self::DetachedParent(parent) => {
+                Some(parent.find_unobserved(prefix, direction).collect())
+            }
         }
     }
 
     fn parent(&self) -> Option<&DataCache<B>> {
         match self {
             Self::Parent(parent) => Some(parent.as_ref()),
-            Self::Source(_) => None,
+            Self::Source(_) | Self::DetachedParent(_) => None,
         }
+    }
+
+    fn is_detached(&self) -> bool {
+        matches!(self, Self::DetachedParent(_))
     }
 }
 
@@ -93,6 +122,10 @@ pub struct DataCache<B = EmptyCacheBacking> {
     ref_count: Arc<AtomicUsize>,
     /// Configuration
     config: DataCacheConfig,
+    /// Optional observation shared by this cache and descendant overlays.
+    read_observation: Option<Arc<DataCacheReadObservation>>,
+    /// Whether local writes belong to a detached transaction overlay.
+    inside_detached_overlay: bool,
     /// Counts parent write passes used by cloned-cache merges in tests.
     #[cfg(test)]
     merge_write_passes: Arc<AtomicUsize>,
@@ -174,6 +207,8 @@ impl<B: CacheRead> Clone for DataCache<B> {
             backing: self.backing.clone(),
             ref_count: Arc::clone(&self.ref_count),
             config: self.config,
+            read_observation: self.read_observation.as_ref().map(Arc::clone),
+            inside_detached_overlay: self.inside_detached_overlay,
             #[cfg(test)]
             merge_write_passes: Arc::clone(&self.merge_write_passes),
             #[cfg(test)]
@@ -205,6 +240,8 @@ impl<B: CacheRead> DataCache<B> {
             backing: CacheBacking::Source(backing),
             ref_count: Arc::new(AtomicUsize::new(1)),
             config,
+            read_observation: None,
+            inside_detached_overlay: false,
             #[cfg(test)]
             merge_write_passes: Arc::new(AtomicUsize::new(0)),
             #[cfg(test)]
@@ -237,6 +274,9 @@ impl<B: CacheRead> DataCache<B> {
     /// Attempts to commit, returning an error when read-only.
     pub fn try_commit(&self) -> DataCacheResult {
         self.ensure_writable()?;
+        if self.backing.is_detached() {
+            return Err(DataCacheError::DetachedCommit);
+        }
         self.commit_writable();
         Ok(())
     }
@@ -267,13 +307,38 @@ impl<B: CacheRead> DataCache<B> {
     /// the change set. That matches committed value semantics and is faster on
     /// read-heavy contract paths where most keys are touched once.
     pub fn clone_cache_with_config(&self, config: DataCacheConfig) -> Self {
+        self.clone_overlay_with_config(config, false)
+    }
+
+    /// Creates a writable transaction overlay that can never publish into this cache.
+    ///
+    /// Reads resolve through this cache and nested ordinary child caches may
+    /// commit into the detached overlay. Committing the detached root itself is
+    /// rejected, so speculative effects remain invisible until a validator
+    /// applies them through a separate canonical path.
+    pub fn clone_detached_cache(&self) -> Self {
+        self.clone_detached_cache_with_config(self.config)
+    }
+
+    /// Creates a detached transaction overlay with an explicit configuration.
+    pub fn clone_detached_cache_with_config(&self, config: DataCacheConfig) -> Self {
+        self.clone_overlay_with_config(config, true)
+    }
+
+    fn clone_overlay_with_config(&self, config: DataCacheConfig, detached: bool) -> Self {
         let parent = Arc::new(self.clone());
         Self {
             state: Arc::new(RwLock::new(InnerState::new())),
             read_only: false,
-            backing: CacheBacking::Parent(parent),
+            backing: if detached {
+                CacheBacking::DetachedParent(parent)
+            } else {
+                CacheBacking::Parent(parent)
+            },
             ref_count: Arc::new(AtomicUsize::new(1)),
             config,
+            read_observation: self.read_observation.as_ref().map(Arc::clone),
+            inside_detached_overlay: detached || self.inside_detached_overlay,
             #[cfg(test)]
             merge_write_passes: Arc::new(AtomicUsize::new(0)),
             #[cfg(test)]
@@ -284,7 +349,14 @@ impl<B: CacheRead> DataCache<B> {
     }
 
     fn merge_tracked_items_from(&self, source: &DataCache<B>) {
-        self.merge_tracked_items_without_update_callbacks(source);
+        if let Some(observation) = source
+            .active_read_observation()
+            .or_else(|| self.active_read_observation())
+        {
+            self.merge_tracked_items_observed(source, &observation);
+        } else {
+            self.merge_tracked_items_without_update_callbacks(source);
+        }
     }
 
     fn merge_tracked_items_without_update_callbacks(&self, source: &DataCache<B>) {
@@ -373,7 +445,8 @@ impl<B: CacheRead> DataCache<B> {
                         // from injecting a spurious `Deleted` into the change set (which
                         // would perturb the MPT state-root diff) — the same store check
                         // the per-item slow path (`apply_delete`) already performs.
-                        let exists_in_store = self.backing.get(key).is_some();
+                        let store_item = self.backing.get(key);
+                        let exists_in_store = store_item.is_some();
                         if exists_in_store {
                             state.dictionary.insert(
                                 key.clone(),
@@ -397,6 +470,15 @@ impl<B: CacheRead> DataCache<B> {
     }
 
     fn merge_tracked_item(&self, key: &StorageKey, trackable: &Trackable) {
+        self.merge_tracked_item_with_observation(key, trackable, self.read_observation.as_deref());
+    }
+
+    fn merge_tracked_item_with_observation(
+        &self,
+        key: &StorageKey,
+        trackable: &Trackable,
+        observation: Option<&DataCacheReadObservation>,
+    ) {
         log_watched_storage_event(
             "merge",
             "merge_tracked_items",
@@ -408,7 +490,7 @@ impl<B: CacheRead> DataCache<B> {
         match trackable.state {
             TrackState::Added => self.add(key.clone(), trackable.item.clone()),
             TrackState::Changed => self.update(key.clone(), trackable.item.clone()),
-            TrackState::Deleted => self.delete(key),
+            TrackState::Deleted => self.apply_delete_with_observation(key, observation),
             TrackState::None | TrackState::NotFound => {}
         }
     }
@@ -428,6 +510,8 @@ impl<B: CacheRead> DataCache<B> {
             backing: self.backing.clone(),
             ref_count: Arc::new(AtomicUsize::new(1)),
             config: self.config,
+            read_observation: self.read_observation.as_ref().map(Arc::clone),
+            inside_detached_overlay: self.inside_detached_overlay,
             #[cfg(test)]
             merge_write_passes: Arc::new(AtomicUsize::new(0)),
             #[cfg(test)]
@@ -435,49 +519,6 @@ impl<B: CacheRead> DataCache<B> {
             #[cfg(test)]
             tracked_item_visit_calls: Arc::new(AtomicUsize::new(0)),
         }
-    }
-
-    /// Gets an item from the cache.
-    #[inline]
-    pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
-        // First check write cache
-        {
-            let state = self.state.read();
-            if let Some(trackable) = state.dictionary.get(key) {
-                if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound
-                {
-                    log_watched_storage_event(
-                        "get",
-                        "dictionary_hit",
-                        key,
-                        Some(trackable.state),
-                        Some(trackable.state),
-                        Some(&trackable.item),
-                    );
-                    return Some(trackable.item.clone());
-                }
-                log_watched_storage_event(
-                    "get",
-                    "dictionary_deleted",
-                    key,
-                    Some(trackable.state),
-                    Some(trackable.state),
-                    None,
-                );
-                return None;
-            }
-        }
-
-        // Fall back to store getter
-        if let Some(item) = self.backing.get(key) {
-            self.track_in_write_cache(key, &item);
-
-            log_watched_storage_event("get", "store_get_hit", key, None, None, Some(&item));
-            return Some(item);
-        }
-
-        log_watched_storage_event("get", "miss", key, None, None, None);
-        None
     }
 
     fn track_in_write_cache(&self, key: &StorageKey, item: &StorageItem) {
@@ -491,21 +532,6 @@ impl<B: CacheRead> DataCache<B> {
                 .entry(key.clone())
                 .or_insert_with(|| Trackable::new(item.clone(), TrackState::None));
         }
-    }
-
-    /// Gets an item from the cache as a reference.
-    #[inline]
-    pub fn get_ref(&self, key: &StorageKey) -> Option<StorageItem> {
-        {
-            let state = self.state.read();
-            if let Some(trackable) = state.dictionary.get(key) {
-                if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound
-                {
-                    return Some(trackable.item.clone());
-                }
-            }
-        }
-        None
     }
 
     /// Adds an item to the cache.
@@ -613,6 +639,14 @@ impl<B: CacheRead> DataCache<B> {
     }
 
     fn apply_delete(&self, key: &StorageKey) {
+        self.apply_delete_with_observation(key, self.read_observation.as_deref());
+    }
+
+    fn apply_delete_with_observation(
+        &self,
+        key: &StorageKey,
+        observation: Option<&DataCacheReadObservation>,
+    ) {
         let (prev_state, previous_item) = {
             let state = self.state.read();
             let previous = state.dictionary.get(key);
@@ -663,7 +697,13 @@ impl<B: CacheRead> DataCache<B> {
                 );
             }
             TrackState::NotFound => {
-                let store_item = self.backing.get(key);
+                let (store_item, origin) = observation.map_or_else(
+                    || (self.backing.get(key), DataCacheReadOrigin::PinnedPrefix),
+                    |_| self.backing.get_with_origin(key),
+                );
+                if let Some(observation) = observation {
+                    observation.observe_point(key, store_item.as_ref(), origin);
+                }
                 if store_item.is_none() {
                     log_watched_storage_event(
                         "delete",
@@ -728,6 +768,10 @@ impl<B: CacheRead> DataCache<B> {
     /// Commits changes to the underlying store.
     pub fn commit(&self) {
         if self.read_only {
+            return;
+        }
+        if self.backing.is_detached() {
+            warn!("attempted to commit a detached DataCache root");
             return;
         }
         self.commit_writable();
@@ -849,70 +893,6 @@ impl<B: CacheRead> DataCache<B> {
         &self.config
     }
 
-    /// Finds items by key prefix.
-    pub fn find(
-        &self,
-        key_prefix: Option<&StorageKey>,
-        direction: SeekDirection,
-    ) -> std::vec::IntoIter<(StorageKey, StorageItem)> {
-        let prefix_bytes = key_prefix.map(|k| k.as_bytes().into_owned());
-
-        if let Some(backing_entries) = self.backing.find(key_prefix, direction) {
-            let state = self.state.read();
-            let overlays = collect_change_overlays(&state, key_prefix, prefix_bytes.as_deref());
-            drop(state);
-
-            if overlays.is_empty() {
-                let prefix_bytes = prefix_bytes.clone();
-                return backing_entries
-                    .into_iter()
-                    .filter(move |(key, _)| key_matches_prefix(key, prefix_bytes.as_deref()))
-                    .collect::<Vec<_>>()
-                    .into_iter();
-            }
-
-            let mut merged = BTreeMap::new();
-            for (key, item) in backing_entries {
-                if key_matches_prefix(&key, prefix_bytes.as_deref()) {
-                    merged.insert(key, item);
-                }
-            }
-
-            for (key, item) in overlays {
-                match item {
-                    Some(item) => {
-                        merged.insert(key, item);
-                    }
-                    None => {
-                        merged.remove(&key);
-                    }
-                }
-            }
-
-            let mut entries = merged.into_iter().collect::<Vec<_>>();
-            if direction == SeekDirection::Backward {
-                entries.reverse();
-            }
-            return entries.into_iter();
-        }
-
-        let state = self.state.read();
-        let base_items: BTreeMap<StorageKey, StorageItem> = state
-            .dictionary
-            .iter()
-            .filter(|(key, _)| key_matches_prefix(key, prefix_bytes.as_deref()))
-            .filter_map(|(key, trackable)| {
-                visible_trackable_item(trackable).map(|item| (key.clone(), item))
-            })
-            .collect();
-
-        let mut entries = base_items.into_iter().collect::<Vec<_>>();
-        if direction == SeekDirection::Backward {
-            entries.reverse();
-        }
-        entries.into_iter()
-    }
-
     /// Returns the number of pending changes.
     pub fn pending_change_count(&self) -> usize {
         self.state.read().change_set.len()
@@ -972,3 +952,7 @@ impl<B: CacheRead> ReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache<B
 #[cfg(test)]
 #[path = "../../tests/persistence/data_cache/cache.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/persistence/data_cache/observer.rs"]
+mod observer_tests;

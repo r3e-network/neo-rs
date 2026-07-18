@@ -208,6 +208,10 @@ mod tests {
             "native transaction-stage labels should stay stable"
         );
         assert!(
+            output.contains("neo_sync_native_persist_tx_stage_total_us{stage=\"execute\"} "),
+            "native transaction-stage cumulative timing should stay labelled"
+        );
+        assert!(
             output.contains(
                 "neo_sync_neotoken_onpersist_stage_calls_total{stage=\"refresh_total\"} "
             ),

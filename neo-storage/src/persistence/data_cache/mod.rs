@@ -16,9 +16,11 @@
 
 /// Cache implementation and read-through helpers.
 pub mod cache;
+mod observer;
 mod storage_watch;
 /// Trackable storage entry state and cache configuration.
 pub mod trackable;
 
 pub use cache::{CacheRead, DataCache, EmptyCacheBacking};
+pub use observer::{DataCacheReadObservationPause, DataCacheReadObserver, DataCacheReadOrigin};
 pub use trackable::{DataCacheConfig, DataCacheError, DataCacheResult, Trackable, TrackableEntry};

@@ -122,6 +122,25 @@ pub(in crate::node) struct MdbxCommitCountWindowMetrics {
     pub(in crate::node) avg: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct NativePersistTxCumulativeMetrics {
+    stages: Vec<neo_runtime::sync_metrics::NativePersistTxStageStats>,
+}
+
+/// Exact native transaction-stage work observed during one import window.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(in crate::node) struct NativePersistTxWindowMetrics {
+    pub(in crate::node) stages: Vec<NativePersistTxStageWindowMetrics>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(in crate::node) struct NativePersistTxStageWindowMetrics {
+    pub(in crate::node) stage: &'static str,
+    pub(in crate::node) calls: u64,
+    pub(in crate::node) total_us: u64,
+    pub(in crate::node) avg_us: u64,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct NativePersistTxStageImportMetrics {
     pub(super) hash_avg_us: u64,
@@ -137,11 +156,6 @@ pub(super) struct NativePersistTxStageImportMetrics {
 }
 
 impl NativePersistTxStageImportMetrics {
-    pub(super) fn current() -> Self {
-        let stages = neo_runtime::sync_metrics::native_persist_tx_stage_stats();
-        Self::from_stats(&stages)
-    }
-
     pub(super) fn from_stats(
         stages: &[neo_runtime::sync_metrics::NativePersistTxStageStats],
     ) -> Self {
@@ -162,6 +176,49 @@ impl NativePersistTxStageImportMetrics {
             application_executed_avg_us: avg("application_executed"),
             tx_cache_commit_avg_us: avg("tx_cache_commit"),
             ledger_vm_state_avg_us: avg("ledger_vm_state"),
+        }
+    }
+}
+
+impl NativePersistTxCumulativeMetrics {
+    pub(super) fn current() -> Self {
+        Self::from_stats(neo_runtime::sync_metrics::native_persist_tx_stage_stats())
+    }
+
+    pub(super) fn from_stats(
+        stages: Vec<neo_runtime::sync_metrics::NativePersistTxStageStats>,
+    ) -> Self {
+        Self { stages }
+    }
+
+    pub(super) fn stages(&self) -> &[neo_runtime::sync_metrics::NativePersistTxStageStats] {
+        &self.stages
+    }
+
+    pub(super) fn window_since(&self, previous: &Self) -> NativePersistTxWindowMetrics {
+        NativePersistTxWindowMetrics {
+            stages: self
+                .stages
+                .iter()
+                .map(|current| {
+                    let previous = previous
+                        .stages
+                        .iter()
+                        .find(|candidate| candidate.stage == current.stage);
+                    let calls = current
+                        .calls
+                        .saturating_sub(previous.map_or(0, |stat| stat.calls));
+                    let total_us = current
+                        .total_us
+                        .saturating_sub(previous.map_or(0, |stat| stat.total_us));
+                    NativePersistTxStageWindowMetrics {
+                        stage: current.stage,
+                        calls,
+                        total_us,
+                        avg_us: exact_average(total_us, calls),
+                    }
+                })
+                .collect(),
         }
     }
 }
@@ -387,6 +444,22 @@ impl MdbxCommitWindowMetrics {
             .iter()
             .find(|metric| metric.kind == kind)
             .map_or(0, |metric| metric.total)
+    }
+}
+
+impl NativePersistTxWindowMetrics {
+    pub(super) fn stage_calls(&self, stage: &str) -> u64 {
+        self.stages
+            .iter()
+            .find(|metric| metric.stage == stage)
+            .map_or(0, |metric| metric.calls)
+    }
+
+    pub(super) fn stage_total_us(&self, stage: &str) -> u64 {
+        self.stages
+            .iter()
+            .find(|metric| metric.stage == stage)
+            .map_or(0, |metric| metric.total_us)
     }
 }
 

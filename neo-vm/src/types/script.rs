@@ -34,28 +34,127 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
+use crate::execution_plan::ExecutionPlan;
 use crate::{Instruction, parse_script_instructions};
 use crate::{instruction_jump_target, instruction_try_targets};
 use neo_crypto::Crypto;
-use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::ptr;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::{Arc, OnceLock};
+
+const INSTRUCTION_CACHE_SEGMENT_SHIFT: usize = 6;
+const INSTRUCTION_CACHE_SEGMENT_SIZE: usize = 1 << INSTRUCTION_CACHE_SEGMENT_SHIFT;
+const INSTRUCTION_CACHE_SEGMENT_MASK: usize = INSTRUCTION_CACHE_SEGMENT_SIZE - 1;
 
 /// Instruction storage strategy.
 ///
 /// - **Eager**: All instructions are pre-parsed at construction time and stored
 ///   in an immutable `HashMap`. Lookups require no locking.
-/// - **Lazy**: Instructions are parsed on first access and cached behind a
-///   `RwLock` (only used for relaxed-mode scripts that skip up-front parsing).
+/// - **Lazy**: Instructions are parsed on first access and cached in segmented
+///   atomic slots (used for relaxed-mode scripts that skip up-front parsing).
 #[derive(Debug, Clone)]
 enum InstructionCache {
     /// Pre-populated, immutable cache — no lock on the read path.
     Eager(Arc<HashMap<usize, Arc<Instruction>>>),
-    /// Lazily populated cache — `RwLock` for concurrent reads, rare writes.
-    Lazy(Arc<RwLock<HashMap<usize, Arc<Instruction>>>>),
+    /// Lazily populated cache — lock-free pointer slots for concurrent reads.
+    Lazy(Arc<LazyInstructionCache>),
+}
+
+/// Segmented, lock-free instruction cache used by relaxed scripts.
+///
+/// Segments are allocated only when an instruction in that byte range is first
+/// reached. A slot owns one strong `Arc<Instruction>` reference once populated.
+/// Readers acquire a second strong reference from the stable raw pointer; misses
+/// race with compare-and-swap and discard the losing parse. The cache itself
+/// keeps every successful instruction alive until the last cloned `Script` drops.
+#[derive(Debug)]
+struct LazyInstructionCache {
+    script_len: usize,
+    segments: Box<[OnceLock<Box<[AtomicPtr<Instruction>]>>]>,
+}
+
+impl LazyInstructionCache {
+    fn new(script_len: usize) -> Self {
+        let segment_count = script_len.div_ceil(INSTRUCTION_CACHE_SEGMENT_SIZE);
+        let segments = std::iter::repeat_with(OnceLock::new)
+            .take(segment_count)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        Self {
+            script_len,
+            segments,
+        }
+    }
+
+    fn segment(&self, segment_index: usize) -> &[AtomicPtr<Instruction>] {
+        self.segments[segment_index].get_or_init(|| {
+            let segment_start = segment_index * INSTRUCTION_CACHE_SEGMENT_SIZE;
+            let segment_len = (self.script_len - segment_start).min(INSTRUCTION_CACHE_SEGMENT_SIZE);
+            std::iter::repeat_with(|| AtomicPtr::new(ptr::null_mut()))
+                .take(segment_len)
+                .collect::<Vec<_>>()
+                .into_boxed_slice()
+        })
+    }
+
+    #[cfg(test)]
+    fn initialized_segment_count(&self) -> usize {
+        self.segments
+            .iter()
+            .filter(|segment| segment.get().is_some())
+            .count()
+    }
+
+    #[allow(unsafe_code)]
+    fn get(&self, script: &[u8], position: usize) -> VmResult<Arc<Instruction>> {
+        let segment = self.segment(position >> INSTRUCTION_CACHE_SEGMENT_SHIFT);
+        let slot = &segment[position & INSTRUCTION_CACHE_SEGMENT_MASK];
+        let cached = slot.load(Ordering::Acquire);
+        if !cached.is_null() {
+            // SAFETY: a populated slot owns one strong Arc reference and the
+            // cache remains alive for the duration of this method call.
+            unsafe { Arc::increment_strong_count(cached) };
+            // SAFETY: the increment above creates the returned Arc ownership.
+            return Ok(unsafe { Arc::from_raw(cached) });
+        }
+
+        let instruction = Arc::new(Instruction::parse(script, position)?);
+        // SAFETY: converting a cloned Arc to a raw pointer transfers exactly
+        // one strong reference to the cache slot on a successful CAS.
+        let owned = Arc::into_raw(Arc::clone(&instruction)).cast_mut();
+        match slot.compare_exchange(ptr::null_mut(), owned, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => Ok(instruction),
+            Err(existing) => {
+                // SAFETY: the CAS failed, so the cache did not take ownership
+                // of `owned`; reclaim the extra strong reference here.
+                unsafe { drop(Arc::from_raw(owned)) };
+                // SAFETY: the winning cache pointer owns a strong Arc ref.
+                unsafe { Arc::increment_strong_count(existing) };
+                // SAFETY: the increment above creates the returned Arc.
+                Ok(unsafe { Arc::from_raw(existing) })
+            }
+        }
+    }
+}
+
+impl Drop for LazyInstructionCache {
+    #[allow(unsafe_code)]
+    fn drop(&mut self) {
+        for segment in &mut self.segments {
+            if let Some(slots) = segment.get_mut() {
+                for slot in slots.iter_mut() {
+                    let pointer = slot.swap(ptr::null_mut(), Ordering::AcqRel);
+                    if !pointer.is_null() {
+                        // SAFETY: each non-null slot owns exactly one strong Arc ref.
+                        unsafe { drop(Arc::from_raw(pointer)) };
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Represents a script in the Neo VM.
@@ -67,8 +166,8 @@ enum InstructionCache {
 /// plain `HashMap`. The hot `get_instruction()` path then performs a single
 /// `HashMap::get` with **no locking**.
 ///
-/// Scripts created with relaxed / no-validation constructors use a
-/// `RwLock<HashMap>` that lazily caches instructions on first access.
+/// Scripts created with relaxed / no-validation constructors use a segmented
+/// atomic cache that allocates each 64-byte range only when reached.
 ///
 /// The hash code and protocol Hash160 are computed eagerly at construction
 /// time to avoid hashing immutable script bytes on hot access paths.
@@ -77,8 +176,8 @@ pub struct Script {
     /// The script data
     script: Arc<[u8]>,
 
-    /// Cached instructions — either eagerly populated (lock-free) or lazily
-    /// populated behind a `RwLock`.
+    /// Cached instructions — either eagerly populated or lazily populated in
+    /// lock-free segmented slots.
     instructions: InstructionCache,
 
     /// Whether strict mode is enabled
@@ -89,6 +188,9 @@ pub struct Script {
 
     /// Eagerly computed protocol script hash (RIPEMD-160 of SHA-256).
     script_hash: [u8; 20],
+
+    /// Optional immutable plan selected before this script becomes visible.
+    execution_plan: Option<Arc<ExecutionPlan>>,
 }
 
 impl PartialEq for Script {
@@ -142,13 +244,15 @@ impl Script {
     pub fn new(script: Vec<u8>, strict_mode: bool) -> VmResult<Self> {
         let hash_code = Self::compute_hash(&script);
         let script_hash = Crypto::hash160(&script);
+        let script_len = script.len();
         let script = Arc::<[u8]>::from(script);
         let mut s = Self {
             script,
-            instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
+            instructions: InstructionCache::Lazy(Arc::new(LazyInstructionCache::new(script_len))),
             strict_mode: false, // Start with false to allow parsing
             hash_code,
             script_hash,
+            execution_plan: None,
         };
 
         if strict_mode {
@@ -189,12 +293,14 @@ impl Script {
     pub fn new_relaxed_from_arc(script: Arc<[u8]>) -> Self {
         let hash_code = Self::compute_hash(script.as_ref());
         let script_hash = Crypto::hash160(script.as_ref());
+        let script_len = script.len();
         Self {
             script,
-            instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
+            instructions: InstructionCache::Lazy(Arc::new(LazyInstructionCache::new(script_len))),
             strict_mode: false,
             hash_code,
             script_hash,
+            execution_plan: None,
         }
     }
 
@@ -246,9 +352,9 @@ impl Script {
     /// # Performance
     ///
     /// For strict-mode scripts the instruction cache is an immutable `HashMap`,
-    /// so this is a plain hash-lookup with **no locking**. For relaxed-mode
-    /// scripts a `RwLock`-guarded cache is used (read lock on hit, write lock
-    /// on miss).
+    /// so this is a plain hash-lookup with **no locking**. Relaxed-mode hits
+    /// use an atomic slot; only the first access to a 64-byte range initializes
+    /// that range and only the first access to an offset races to publish it.
     pub fn get_instruction(&self, position: usize) -> VmResult<Arc<Instruction>> {
         if position >= self.script.len() {
             return Err(VmError::invalid_operation_msg(format!(
@@ -266,26 +372,9 @@ impl Script {
                 ))),
             },
 
-            // Relaxed-mode path: read lock for cache hit, write lock for miss.
-            InstructionCache::Lazy(cache) => {
-                // Try read lock first (common case after first access).
-                {
-                    let instructions = cache.read();
-                    if let Some(instruction) = instructions.get(&position) {
-                        return Ok(Arc::clone(instruction));
-                    }
-                }
-
-                // Cache miss - parse, wrap in Arc, and insert under write lock.
-                let instruction = Arc::new(Instruction::parse(self.script.as_ref(), position)?);
-
-                {
-                    let mut instructions = cache.write();
-                    instructions.insert(position, Arc::clone(&instruction));
-                }
-
-                Ok(instruction)
-            }
+            // Relaxed-mode path: lock-free atomic slot lookup after the first
+            // reached instruction, with a CAS only when decoding a new offset.
+            InstructionCache::Lazy(cache) => cache.get(self.script.as_ref(), position),
         }
     }
 
@@ -322,6 +411,16 @@ impl Script {
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         self.script.as_ref()
+    }
+
+    /// Returns the immutable script allocation shared by this value.
+    ///
+    /// Versioned execution-plan keys retain exact bytes for collision-proof
+    /// identity. Sharing this existing allocation avoids copying a deployed
+    /// script on every enabled cache lookup.
+    #[must_use]
+    pub fn shared_bytes(&self) -> Arc<[u8]> {
+        Arc::clone(&self.script)
     }
 
     /// Returns the length of the script.
@@ -397,6 +496,26 @@ impl Script {
     #[must_use]
     pub const fn script_hash(&self) -> [u8; 20] {
         self.script_hash
+    }
+
+    /// Attaches an immutable plan after exact-byte verification.
+    ///
+    /// The script value is consumed so routing cannot change after it is shared
+    /// through an execution context.
+    pub fn with_execution_plan(mut self, plan: Arc<ExecutionPlan>) -> VmResult<Self> {
+        if !plan.matches_script(&self.script_hash, self.script.as_ref()) {
+            return Err(VmError::invalid_operation_msg(
+                "Execution plan does not match exact script bytes",
+            ));
+        }
+        self.execution_plan = Some(plan);
+        Ok(self)
+    }
+
+    /// Returns the immutable plan selected for this script, when enabled.
+    #[must_use]
+    pub fn execution_plan(&self) -> Option<&Arc<ExecutionPlan>> {
+        self.execution_plan.as_ref()
     }
 
     /// Calculates the jump target for a jump instruction.

@@ -309,9 +309,16 @@ impl PrefixOccupancyIndex {
             .map(|bytes| AtomicU64::new(u64::from_le_bytes(bytes.try_into().unwrap())))
             .collect::<Vec<_>>()
             .into_boxed_slice();
+        let trust_startup = std::env::var("NEO_MDBX_PREFIX_INDEX_TRUST_STARTUP")
+            .ok()
+            .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
         Ok(Some(Self {
             baseline_transaction_id: header.snapshot_transaction_id,
-            covered_transaction_id: AtomicU64::new(header.snapshot_transaction_id),
+            covered_transaction_id: AtomicU64::new(if trust_startup {
+                u64::MAX
+            } else {
+                header.snapshot_transaction_id
+            }),
             spec: header.spec,
             words,
         }))
@@ -327,6 +334,17 @@ impl PrefixOccupancyIndex {
         let bucket = self.spec.bucket(key)?;
         let word = self.words.get(bucket / u64::BITS as usize)?;
         Some(word.load(Ordering::Relaxed) & (1u64 << (bucket % u64::BITS as usize)) != 0)
+    }
+
+    pub(super) fn coverage(&self) -> (u64, u64) {
+        (
+            self.baseline_transaction_id,
+            self.covered_transaction_id.load(Ordering::Acquire),
+        )
+    }
+
+    pub(super) fn table_name(&self) -> Option<&str> {
+        self.spec.table_name.as_deref()
     }
 
     pub(super) fn observe_put(&self, key: &[u8]) {

@@ -303,3 +303,71 @@ fn deserialize_rejects_nesting_deeper_than_max_key_length_like_csharp_v3101() {
         "C# Neo.Cryptography.MPT v3.10.1 rejects MPT node nesting deeper than MaxKeyLength"
     );
 }
+
+#[test]
+fn split_serialized_reference_round_trips_borrowed_and_owned_payloads() {
+    let mut leaf = Node::new_leaf(vec![0x12, 0x34]);
+    leaf.reference = 7;
+    let extension = Node::new_extension(vec![0x01, 0x02], leaf.clone()).unwrap();
+    let nodes = [
+        Node::new(),
+        Node::new_hash(UInt256::zero()),
+        leaf,
+        extension,
+        prepare_mpt_node3(),
+    ];
+
+    for node in nodes {
+        let serialized = node.to_array().unwrap();
+        let (node_type, reference, payload) =
+            Node::split_serialized_reference(&serialized).unwrap();
+        let rebuilt = Node::array_from_payload_parts(node_type, reference, &payload).unwrap();
+        assert_eq!(
+            rebuilt, serialized,
+            "borrowed split changed {:?}",
+            node_type
+        );
+
+        let (owned_type, owned_reference, owned_payload) =
+            Node::split_serialized_reference_owned(serialized.clone()).unwrap();
+        assert_eq!(
+            (owned_type, owned_reference),
+            (node_type, reference),
+            "owned and borrowed split metadata disagree for {:?}",
+            node_type
+        );
+        assert_eq!(
+            owned_payload, payload,
+            "owned and borrowed split payloads disagree for {:?}",
+            node_type
+        );
+        let rebuilt_owned =
+            Node::array_from_payload_parts_owned(owned_type, owned_reference, owned_payload)
+                .unwrap();
+        assert_eq!(
+            rebuilt_owned, serialized,
+            "owned split changed {:?}",
+            node_type
+        );
+    }
+}
+
+#[test]
+fn split_serialized_reference_rejects_trailing_bytes_and_excessive_depth() {
+    let mut malformed = Node::new_leaf(vec![0xAA]).to_array().unwrap();
+    malformed.push(0xFF);
+    assert!(
+        Node::split_serialized_reference(&malformed)
+            .expect_err("trailing bytes must be rejected")
+            .to_string()
+            .contains("trailing bytes")
+    );
+
+    let nested = malicious_nested_extension_entry(MAX_KEY_LENGTH + 1);
+    assert!(
+        Node::split_serialized_reference(&nested)
+            .expect_err("excessive nesting must be rejected")
+            .to_string()
+            .contains("nesting depth")
+    );
+}

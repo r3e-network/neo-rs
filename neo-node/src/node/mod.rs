@@ -10,6 +10,8 @@
 //!
 //! ## Contents
 //!
+//! - `append_shadow`: phase 1 append-frame shadow dual-write wiring for the
+//!   coordinated StateService commit (MDBX remains authoritative).
 //! - `chain_acc`: chain.acc import, reporting, and throughput accounting
 //!   helpers.
 //! - `cli`: Command-line arguments, ledger mode selection, and startup
@@ -52,6 +54,7 @@ use std::path::Path;
 #[cfg(test)]
 use std::sync::Arc;
 
+mod append_shadow;
 mod application;
 mod chain_acc;
 mod cli;
@@ -70,6 +73,7 @@ mod rpc_payload;
 mod rpc_runtime;
 mod seeds;
 mod services;
+mod state_packs;
 mod static_files;
 mod sync_downloader;
 mod sync_metrics;

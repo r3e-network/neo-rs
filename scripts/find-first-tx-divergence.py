@@ -101,7 +101,51 @@ def parse_rust_log(log_path: str, blocks: set[int] | None = None):
     with open(log_path, "r", errors="replace") as f:
         for raw_line in f:
             line = strip_ansi(raw_line)
-            if "TRACE: tx execution result" in line:
+            # Newer node builds emit a complete RPC-shaped artifact. Keep the
+            # legacy summary parser below, but retain this artifact verbatim
+            # so comparisons cover stack and full notification state.
+            if "NEO_TX_ARTIFACT" in line:
+                payload = line.split("NEO_TX_ARTIFACT", 1)[1].strip()
+                try:
+                    artifact = json.loads(payload)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("malformed NEO_TX_ARTIFACT") from exc
+                if not isinstance(artifact, dict):
+                    raise ValueError("malformed NEO_TX_ARTIFACT")
+                try:
+                    block_idx = int(artifact.get("block_index"))
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("malformed NEO_TX_ARTIFACT") from exc
+                if blocks is not None and block_idx not in blocks:
+                    continue
+                tx_hash = str(artifact.get("txid") or artifact.get("tx_hash") or "")
+                if not tx_hash:
+                    raise ValueError("malformed NEO_TX_ARTIFACT")
+                executions = artifact.get("executions") or []
+                execution = (
+                    executions[0]
+                    if executions and isinstance(executions[0], dict)
+                    else {}
+                )
+                notifications = execution.get("notifications") or []
+                results.setdefault(block_idx, {})[tx_hash] = {
+                    "artifact": artifact,
+                    "vm_state": execution.get("vmstate", ""),
+                    "gas_consumed": execution.get("gasconsumed", ""),
+                    "notif_count": len(notifications),
+                    "exception": execution.get("exception"),
+                    "notifications": [
+                        {
+                            "notif_idx": index,
+                            "contract": notification.get("contract", ""),
+                            "event": notification.get("eventname", ""),
+                            "state_raw": json.dumps(notification.get("state", {})),
+                        }
+                        for index, notification in enumerate(notifications)
+                        if isinstance(notification, dict)
+                    ],
+                }
+            elif "TRACE: tx execution result" in line:
                 kv = parse_kv_pairs(line)
                 block_idx = int(kv.get("block_index", -1))
                 if blocks is not None and block_idx not in blocks:
@@ -132,6 +176,51 @@ def parse_rust_log(log_path: str, blocks: set[int] | None = None):
                 }
                 results[block_idx][tx_hash]["notifications"].append(notif)
     return results
+
+
+def compare_rpc_artifact(observed: dict, expected: dict) -> list[str]:
+    """Compare complete RPC-shaped artifacts and report JSON paths."""
+
+    def without_envelope(value):
+        if isinstance(value, dict):
+            return {
+                key: without_envelope(item)
+                for key, item in value.items()
+                if key != "block_index"
+            }
+        if isinstance(value, list):
+            return [without_envelope(item) for item in value]
+        return value
+
+    differences: list[str] = []
+
+    def visit(actual, reference, path: str) -> None:
+        if type(actual) is not type(reference):
+            differences.append(f"{path}: Rust={actual!r} C#={reference!r}")
+            return
+        if isinstance(actual, dict):
+            for key in sorted(set(actual) | set(reference)):
+                child = f"{path}.{key}" if path else str(key)
+                if key not in actual:
+                    differences.append(f"{child}: missing in Rust")
+                elif key not in reference:
+                    differences.append(f"{child}: unexpected in Rust")
+                else:
+                    visit(actual[key], reference[key], child)
+            return
+        if isinstance(actual, list):
+            if len(actual) != len(reference):
+                differences.append(
+                    f"{path}: Rust length={len(actual)} C# length={len(reference)}"
+                )
+            for index, (left, right) in enumerate(zip(actual, reference)):
+                visit(left, right, f"{path}[{index}]")
+            return
+        if actual != reference:
+            differences.append(f"{path}: Rust={actual!r} C#={reference!r}")
+
+    visit(without_envelope(observed), without_envelope(expected), "artifact")
+    return differences
 
 
 # ── C# RPC helpers ────────────────────────────────────────────────────────────

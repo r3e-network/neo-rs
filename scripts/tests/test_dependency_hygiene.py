@@ -4,9 +4,6 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-VM_REVISION = "3081e83db3716fd51dc58c0afc039290d2d07253"
-VM_REPOSITORY = "https://github.com/r3e-network/neo-vm-rs.git"
-VM_LOCK_SOURCE = f"git+{VM_REPOSITORY}?rev={VM_REVISION}#{VM_REVISION}"
 DEPENDENCY_TABLE_NAMES = ("dependencies", "dev-dependencies", "build-dependencies")
 
 
@@ -42,26 +39,22 @@ def dependency_package_names(table: dict, workspace_packages: dict[str, str]):
 
 
 class DependencyHygieneTests(unittest.TestCase):
-    def test_root_and_fuzz_use_the_same_immutable_vm_dependency(self):
+    def test_root_and_fuzz_use_only_the_workspace_vm(self):
         root = load_toml(REPO_ROOT / "Cargo.toml")
         fuzz = load_toml(REPO_ROOT / "fuzz" / "Cargo.toml")
 
-        expected = {
-            "git": VM_REPOSITORY,
-            "rev": VM_REVISION,
-            "version": "0.2.0",
-            "default-features": False,
-            "features": ["std", "interpreter"],
-        }
-        self.assertEqual(root["workspace"]["dependencies"]["neo-vm-rs"], expected)
-        self.assertEqual(fuzz["dependencies"]["neo-vm-rs"], expected)
+        self.assertIn("neo-vm", root["workspace"]["dependencies"])
+        self.assertEqual(fuzz["dependencies"]["neo-vm"]["path"], "../neo-vm")
+        self.assertNotIn("neo-vm-rs", root["workspace"]["dependencies"])
+        self.assertNotIn("neo-vm-rs", fuzz["dependencies"])
 
-    def test_root_and_fuzz_locks_resolve_the_exact_vm_revision(self):
+    def test_root_and_fuzz_locks_contain_only_the_workspace_vm(self):
         for relative_path in [Path("Cargo.lock"), Path("fuzz/Cargo.lock")]:
             with self.subTest(lock=relative_path):
-                package = lock_package(load_toml(REPO_ROOT / relative_path), "neo-vm-rs")
-                self.assertEqual(package["version"], "0.2.0")
-                self.assertEqual(package["source"], VM_LOCK_SOURCE)
+                packages = load_toml(REPO_ROOT / relative_path)["package"]
+                names = {package["name"] for package in packages}
+                self.assertIn("neo-vm", names)
+                self.assertNotIn("neo-vm-rs", names)
 
     def test_root_and_fuzz_declare_the_phase_rust_version(self):
         root = load_toml(REPO_ROOT / "Cargo.toml")
@@ -125,7 +118,7 @@ class DependencyHygieneTests(unittest.TestCase):
         self.assertEqual(policy["advisories"]["ignore"], ["RUSTSEC-2025-0141"])
         self.assertEqual(policy["sources"]["unknown-registry"], "deny")
         self.assertEqual(policy["sources"]["unknown-git"], "deny")
-        self.assertEqual(policy["sources"]["allow-git"], [VM_REPOSITORY])
+        self.assertEqual(policy["sources"]["allow-git"], [])
         self.assertIn("BSL-1.0", policy["licenses"]["allow"])
         self.assertIn("NCSA", policy["licenses"]["allow"])
 

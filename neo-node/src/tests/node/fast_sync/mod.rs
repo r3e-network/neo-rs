@@ -24,7 +24,8 @@ use super::marker::{
 use super::package::FastSyncPackage;
 use super::reference;
 use super::report::{
-    FastSyncReferenceReport, FastSyncReport, FastSyncThroughputStatus, fast_sync_throughput_status,
+    FastSyncReferenceReport, FastSyncReport, FastSyncStageMetricReport, FastSyncThroughputStatus,
+    fast_sync_throughput_status,
 };
 use super::write_fast_sync_report_sidecar;
 use crate::node::chain_acc;
@@ -150,6 +151,7 @@ fn import_report(
         finalization_commit_handlers_seconds: 0.0,
         finalization_store_commit_seconds: 0.0,
         unclassified_import_seconds: 0.0,
+        native_persist_tx: Default::default(),
         hot_metrics: chain_acc::ImportHotMetrics::default(),
         profile_windows: Vec::new(),
     }
@@ -215,9 +217,27 @@ fn import_report_with_composition(
         finalization_commit_handlers_seconds: 0.0,
         finalization_store_commit_seconds: 0.0,
         unclassified_import_seconds: 0.0,
+        native_persist_tx: Default::default(),
         hot_metrics: chain_acc::ImportHotMetrics::default(),
         profile_windows: Vec::new(),
     }
+}
+
+#[test]
+fn fast_sync_stage_metric_preserves_cumulative_duration() {
+    let report = FastSyncStageMetricReport::from_native_tx_stage(
+        neo_runtime::sync_metrics::NativePersistTxStageStats {
+            stage: "execute",
+            calls: 4,
+            total_us: 800,
+            avg_us: 123,
+        },
+    );
+
+    assert_eq!(report.stage, "execute");
+    assert_eq!(report.calls, 4);
+    assert_eq!(report.total_us, 800);
+    assert_eq!(report.avg_us, 123);
 }
 
 fn serve_rpc_once(expected_method: &'static str, result: Value) -> String {
@@ -637,6 +657,13 @@ fn write_fast_sync_report_sidecar_serializes_machine_readable_proof() {
             .expect("native tx stage metrics")
             .iter()
             .any(|stage| stage["stage"] == "load_execute")
+    );
+    assert!(
+        payload["hot_metrics"]["native_persist_tx_stages"]
+            .as_array()
+            .expect("native tx stage metrics")
+            .iter()
+            .all(|stage| stage.get("total_us").is_some())
     );
     assert_eq!(
         payload["hot_metrics"]["state_service_mpt_apply_attempts"],

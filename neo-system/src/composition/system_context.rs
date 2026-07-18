@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use neo_blockchain::{
     BlockPersistContext, ChainTipProvider, FinalizedBlock, HotColdLedgerProviderFactory,
-    LedgerProvider, LedgerProviderFactory, OptionalStaticLedgerProvider, SyncBatchCommitPolicy,
-    SystemContext,
+    LedgerProvider, LedgerProviderFactory, NativePersistResources, OptionalStaticLedgerProvider,
+    SyncBatchCommitPolicy, SystemContext,
 };
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
@@ -231,6 +231,7 @@ where
     snapshot: Arc<StoreDataCache<S>>,
     store_cache: Mutex<StoreCache<S>>,
     native_contract_provider: Arc<P>,
+    native_persist_resources: Option<NativePersistResources<P>>,
     ledger_provider_factory: HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>,
     hooks: Arc<H>,
     fatal_persistence_error: AtomicBool,
@@ -270,11 +271,36 @@ where
         cold_ledger_provider: OptionalStaticLedgerProvider,
         hooks: Arc<H>,
     ) -> Self {
+        Self::new_with_ledger_provider_and_optional_native_persist_resources(
+            settings,
+            snapshot,
+            store_cache,
+            native_contract_provider,
+            None,
+            cold_ledger_provider,
+            hooks,
+        )
+    }
+
+    /// Compose a blockchain context with optional application-selected persistence resources.
+    pub(crate) fn new_with_ledger_provider_and_optional_native_persist_resources(
+        settings: Arc<ProtocolSettings>,
+        snapshot: Arc<StoreDataCache<S>>,
+        store_cache: StoreCache<S>,
+        native_contract_provider: Arc<P>,
+        native_persist_resources: Option<NativePersistResources<P>>,
+        cold_ledger_provider: OptionalStaticLedgerProvider,
+        hooks: Arc<H>,
+    ) -> Self {
+        debug_assert!(native_persist_resources.as_ref().is_none_or(|resources| {
+            Arc::ptr_eq(&native_contract_provider, &resources.provider())
+        }));
         Self {
             settings,
             snapshot,
             store_cache: Mutex::new(store_cache),
             native_contract_provider,
+            native_persist_resources,
             ledger_provider_factory: HotColdLedgerProviderFactory::new(cold_ledger_provider),
             hooks,
             fatal_persistence_error: AtomicBool::new(false),
@@ -340,6 +366,12 @@ where
 
     fn native_contract_provider(&self) -> Option<Arc<Self::NativeProvider>> {
         Some(Arc::clone(&self.native_contract_provider))
+    }
+
+    fn native_persist_resources(&self) -> Option<NativePersistResources<Self::NativeProvider>> {
+        Some(self.native_persist_resources.clone().unwrap_or_else(|| {
+            NativePersistResources::from_provider(Arc::clone(&self.native_contract_provider))
+        }))
     }
 
     fn requires_replay_artifacts(&self, block: &Block, context: BlockPersistContext) -> bool {

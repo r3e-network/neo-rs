@@ -15,7 +15,7 @@ fn engine() -> ExecutionEngine {
 #[test]
 fn pusha_address_overflow_faults_cleanly() {
     let mut engine = engine();
-    engine
+    let _ = engine
         .current_context_mut()
         .expect("current context")
         .set_instruction_pointer(1);

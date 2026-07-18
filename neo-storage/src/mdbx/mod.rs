@@ -19,6 +19,7 @@
 mod metrics;
 mod prefix_occupancy;
 mod provider;
+mod rebase;
 mod snapshot;
 mod store;
 
@@ -28,6 +29,10 @@ pub use metrics::{
 };
 pub use prefix_occupancy::{PrefixOccupancyBuildReport, PrefixOccupancySpec};
 pub use provider::{MdbxStoreProvider, MdbxTuning};
+pub use rebase::{
+    MDBX_REBASE_INCOMPLETE_FILE, MdbxExactKeyExclusion, MdbxRebaseOptions, MdbxRebaseReport,
+    MdbxRebaseTableReport, finalize_mdbx_rebase, rebase_mdbx_environment,
+};
 pub use snapshot::MdbxSnapshot;
 pub use store::MdbxStore;
 

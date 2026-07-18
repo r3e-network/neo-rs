@@ -189,6 +189,10 @@ pub(in crate::node) async fn build_node(
     // composed Node should expose the same provider object. Build it once here
     // and hand the same Arc to every provider-aware subsystem.
     let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
+    let specialization_shadow = config
+        .execution
+        .specialization_shadow
+        .build_runtime(ledger_mode.uses_local_replay_services())?;
 
     let OperationalServices {
         state_store,
@@ -198,6 +202,7 @@ pub(in crate::node) async fn build_node(
         tokens_tracker_service,
         tokens_tracker_runtime,
         durable_stores,
+        authoritative_pack,
     } = services::build_operational_services(
         config,
         settings.network,
@@ -216,6 +221,8 @@ pub(in crate::node) async fn build_node(
     });
 
     let replay_guard = Arc::new(LocalReplayGuard::new(replay_marker_path, shutdown.clone()));
+    let append_shadow =
+        crate::node::append_shadow::open_append_shadow(config, settings.network, store.as_ref());
     let (daemon_hooks, finalized_block_stream) =
         DaemonCommitHooks::<_, _, _, _, RuntimeStore>::compose(
             settings.network,
@@ -226,12 +233,14 @@ pub(in crate::node) async fn build_node(
             tokens_tracker,
             static_archive.clone(),
             Arc::clone(&replay_guard),
+            append_shadow,
+            authoritative_pack,
         );
     if static_archive_enabled {
         daemon_hooks
             .configure_hot_ledger_pruning(Arc::clone(&store), settings.max_traceable_blocks);
     }
-    let core_launch = neo_system::NodeCoreBuilder::new(
+    let mut core_builder = neo_system::NodeCoreBuilder::new(
         Arc::clone(&settings),
         Arc::clone(&store),
         Arc::clone(&native_contract_provider),
@@ -239,8 +248,12 @@ pub(in crate::node) async fn build_node(
         durable_tip_height,
     )
     .with_cold_ledger_provider(cold_ledger_provider.clone())
-    .with_stop_at_height(stop_at_height)
-    .build();
+    .with_stop_at_height(stop_at_height);
+    if let Some(runtime) = specialization_shadow.as_ref() {
+        core_builder = core_builder
+            .with_specialization_shadow(runtime.control.clone(), runtime.artifact_limits);
+    }
+    let core_launch = core_builder.build();
     let (core, blockchain_task) = core_launch.into_parts();
     let durable_tip = core.persisted_height();
     let snapshot = core.snapshot();
@@ -656,5 +669,6 @@ pub(in crate::node) async fn build_node(
         shutdown,
         service_handles,
         durable_stores,
+        specialization_shadow.map(|runtime| runtime.control),
     ))
 }

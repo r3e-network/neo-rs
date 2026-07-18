@@ -65,6 +65,33 @@ fn validate_config_for_ledger_mode_rejects_truly_in_memory_static_files_in_local
 }
 
 #[test]
+fn validate_config_rejects_specialization_shadow_without_local_execution() {
+    let config: NodeConfig = toml::from_str(
+        r#"
+[execution.specialization_shadow]
+enabled = true
+candidates = ["flamingo_factory_pair_key_v1"]
+"#,
+    )
+    .expect("parse shadow config");
+
+    let error = validate_config_for_ledger_mode(
+        &config,
+        0x334F_454E,
+        LedgerMode::RemoteRpc {
+            endpoint: "https://rpc.example.invalid",
+        },
+        None,
+    )
+    .expect_err("remote-ledger mode does not execute a local persistence pipeline");
+    assert!(
+        error
+            .to_string()
+            .contains("requires local ledger execution")
+    );
+}
+
+#[test]
 fn validate_config_rejects_zero_static_file_resource_limits() {
     let mut config = NodeConfig::default();
     config.storage.backend = Some("mdbx".to_string());
@@ -583,6 +610,20 @@ fn validate_config_rejects_empty_state_service_path() {
         err.to_string()
             .contains("[state_service].path must not be empty"),
         "{err}"
+    );
+}
+
+#[test]
+fn validate_config_rejects_deferred_full_state_without_full_state() {
+    let mut config = NodeConfig::default();
+    config.state_service.enabled = true;
+    config.state_service.defer_full_state_finalization = true;
+
+    let err = validate_config(&config, 0x004F_454E)
+        .expect_err("deferred full-state finalization requires full-state retention");
+    assert!(
+        err.to_string()
+            .contains("defer_full_state_finalization requires")
     );
 }
 

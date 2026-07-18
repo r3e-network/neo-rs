@@ -26,7 +26,7 @@ use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::{DataCache, StorageResult};
 use std::io;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -54,6 +54,7 @@ pub struct StateServiceCommitHandlers<S: Store = MemoryStore> {
     state_store: Arc<StateStore<S>>,
     worker: Option<AsyncStateRootWorker>,
     coordinated_requests: Option<parking_lot::Mutex<Vec<AsyncApplyRequest>>>,
+    coordinated_projected_changes: Option<Arc<AtomicUsize>>,
 }
 
 impl<S> StateServiceCommitHandlers<S>
@@ -66,6 +67,7 @@ where
             state_store,
             worker: None,
             coordinated_requests: None,
+            coordinated_projected_changes: None,
         }
     }
 
@@ -87,6 +89,7 @@ where
             state_store,
             worker: None,
             coordinated_requests: Some(parking_lot::Mutex::new(Vec::new())),
+            coordinated_projected_changes: Some(Arc::new(AtomicUsize::new(0))),
         })
     }
 
@@ -182,6 +185,7 @@ where
             state_store,
             worker: Some(worker),
             coordinated_requests: None,
+            coordinated_projected_changes: None,
         })
     }
 
@@ -203,16 +207,9 @@ where
 
     /// Total projected storage changes queued for the next coordinated commit.
     pub fn pending_coordinated_projected_changes(&self) -> usize {
-        self.coordinated_requests
+        self.coordinated_projected_changes
             .as_ref()
-            .map(|requests| {
-                requests
-                    .lock()
-                    .iter()
-                    .map(|request| request.changes.len())
-                    .sum()
-            })
-            .unwrap_or(0)
+            .map_or(0, |changes| changes.load(Ordering::Acquire))
     }
 
     /// Returns the async MPT worker queue capacity when async mode is enabled.
@@ -364,13 +361,18 @@ where
         let project_start = std::time::Instant::now();
         let mut changes = Vec::with_capacity(snapshot.pending_change_count());
         StateStore::<MemoryStore>::project_mpt_changes_into(snapshot, &mut changes);
-        requests.lock().push(AsyncApplyRequest {
+        let projected_change_count = changes.len();
+        let mut requests = requests.lock();
+        requests.push(AsyncApplyRequest {
             block_index,
             changes,
             project_us: elapsed_us(project_start),
             queued_at: std::time::Instant::now(),
             total_start,
         });
+        if let Some(total) = &self.coordinated_projected_changes {
+            total.fetch_add(projected_change_count, Ordering::Release);
+        }
         true
     }
 
@@ -395,7 +397,14 @@ where
         let Some(requests) = &self.coordinated_requests else {
             return Err("StateService handler is not in coordinated commit mode".to_string());
         };
-        let batch = std::mem::take(&mut *requests.lock());
+        let batch = {
+            let mut requests = requests.lock();
+            let batch = std::mem::take(&mut *requests);
+            if let Some(total) = &self.coordinated_projected_changes {
+                total.store(0, Ordering::Release);
+            }
+            batch
+        };
         if batch.is_empty() {
             return Ok(None);
         }
@@ -443,12 +452,24 @@ where
         if let Some(requests) = &self.coordinated_requests {
             requests.lock().clear();
         }
+        if let Some(total) = &self.coordinated_projected_changes {
+            total.store(0, Ordering::Release);
+        }
     }
 
     /// Discards any state-root candidate whose block index falls in
     /// the supplied range (inclusive).
-    pub fn on_reverting(&self, from_index: u32, to_index: u32) {
+    pub fn on_reverting(&self, from_index: u32, to_index: u32) -> bool {
         self.discard_pending_coordinated();
+        if self.is_coordinated() {
+            warn!(
+                target: "neo.state_service",
+                from_index,
+                to_index,
+                "coordinated StateService revert requires on_reverting_coordinated"
+            );
+            return false;
+        }
         if let Some(worker) = &self.worker {
             if let Err(err) = worker.enqueue_command(AsyncCommand::Revert {
                 from_index,
@@ -461,13 +482,37 @@ where
                     error = err,
                     "failed to enqueue local state-root revert"
                 );
+                return false;
             }
-            return;
+            return true;
         }
-        self.apply_reverting(from_index, to_index);
+        self.apply_reverting(from_index, to_index)
     }
 
-    fn apply_reverting(&self, from_index: u32, to_index: u32) {
+    /// Applies a revert through the same external coordinator used by forward
+    /// split-store publication.
+    pub fn on_reverting_coordinated<F>(
+        &self,
+        from_index: u32,
+        to_index: u32,
+        commit: F,
+    ) -> Result<(), String>
+    where
+        F: FnOnce(&S, &mut PreparedMptCommit) -> StorageResult<()>,
+    {
+        if !self.is_coordinated() {
+            return Err("StateService handler is not in coordinated commit mode".to_string());
+        }
+        self.discard_pending_coordinated();
+        discard_state_roots(&self.state_store, from_index, to_index);
+        let Some(mpt) = self.state_store.mpt() else {
+            return Err("coordinated StateService handler has no MPT store".to_string());
+        };
+        mpt.revert_local_roots_coordinated(from_index, to_index, commit)
+            .map_err(|error| error.to_string())
+    }
+
+    fn apply_reverting(&self, from_index: u32, to_index: u32) -> bool {
         if let Err(err) = apply_reverting(&self.state_store, from_index, to_index) {
             warn!(
                 target: "neo.state_service",
@@ -476,11 +521,13 @@ where
                 %err,
                 "local state-root revert failed"
             );
+            return false;
         }
+        true
     }
 }
 
-fn apply_reverting<S>(state_store: &StateStore<S>, from_index: u32, to_index: u32) -> MptResult<()>
+fn discard_state_roots<S>(state_store: &StateStore<S>, from_index: u32, to_index: u32)
 where
     S: Store,
 {
@@ -491,6 +538,13 @@ where
             state_store.discard(root.root_hash());
         }
     }
+}
+
+fn apply_reverting<S>(state_store: &StateStore<S>, from_index: u32, to_index: u32) -> MptResult<()>
+where
+    S: Store,
+{
+    discard_state_roots(state_store, from_index, to_index);
     if let Some(mpt) = state_store.mpt() {
         mpt.revert_local_roots(from_index, to_index)?;
     }

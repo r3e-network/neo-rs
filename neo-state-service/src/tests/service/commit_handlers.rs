@@ -84,6 +84,7 @@ fn coordinated_handlers_queue_blocks_until_external_commit() {
         .expect("queued roots");
 
     assert_eq!(roots.len(), 2);
+    assert_eq!(handlers.pending_coordinated_projected_changes(), 0);
     assert_eq!(
         store.mpt().expect("MPT").current_local_root(),
         Some((1, roots[1]))
@@ -192,6 +193,12 @@ fn async_committing_flush_applies_queued_mpt_roots_in_order() {
         "StateService MPT apply should sample repeated ancestor finalization"
     );
     for kind in [
+        "trie_resolve_cache_hits",
+        "trie_resolve_store_hits",
+        "trie_resolve_store_misses",
+        "deferred_finalization_read_bytes",
+        "deferred_finalization_minor_faults",
+        "deferred_finalization_major_faults",
         "finalization_cache_hits",
         "finalization_memory_hits",
         "finalization_memory_misses",

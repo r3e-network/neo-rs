@@ -103,6 +103,8 @@ where
             None,
             shutdown.clone(),
         )),
+        None,
+        None,
     );
     let core = NodeSystemContext::new(
         settings,
@@ -810,6 +812,8 @@ track_during_catchup = true
             Some(marker.clone()),
             shutdown,
         )),
+        None,
+        None,
     );
     let context = NodeSystemContext::new(
         settings,
@@ -1405,6 +1409,63 @@ backend = "mdbx"
         err.to_string().contains("no current local root"),
         "startup error should name StateRoot parity failure: {err:#}"
     );
+}
+
+#[tokio::test]
+async fn build_node_retains_only_explicit_specialization_shadow_control() {
+    let settings = Arc::new(ProtocolSettings::default());
+    let ordinary = build_node(
+        Arc::clone(&settings),
+        &NodeConfig::default(),
+        None,
+        None,
+        LedgerMode::Local,
+        false,
+        None,
+    )
+    .await
+    .expect("build ordinary node");
+    assert!(
+        ordinary.specialization_control().is_none(),
+        "default composition must not retain or allocate a specialization control"
+    );
+    ordinary.abort_for_test().await;
+
+    let config: NodeConfig = toml::from_str(
+        r#"
+[execution.specialization_shadow]
+enabled = true
+strict_replay = true
+candidates = ["flamingo_factory_pair_key_v1"]
+max_reproducers = 2
+max_reproducer_bytes = 4096
+max_artifact_bytes = 1048576
+"#,
+    )
+    .expect("parse shadow node config");
+    let shadow = build_node(
+        settings,
+        &config,
+        None,
+        None,
+        LedgerMode::Local,
+        false,
+        None,
+    )
+    .await
+    .expect("build shadow node");
+    let control = shadow
+        .specialization_control()
+        .expect("explicit shadow composition retains the process control");
+    assert_eq!(
+        control.route(
+            neo_execution::specialization::FLAMINGO_FACTORY_PAIR_KEY_CANDIDATE_ID,
+            neo_execution::specialization::FLAMINGO_FACTORY_PAIR_KEY_CANDIDATE_VERSION,
+        ),
+        neo_execution::specialization::SpecializationRouteDecision::Shadow
+    );
+    assert!(control.snapshot().strict_replay);
+    shadow.abort_for_test().await;
 }
 
 #[tokio::test]

@@ -6,6 +6,8 @@
 //! profiler is enabled. Targeted opcode/stack profiling is selected with
 //! `NEO_PROFILE_VM_TX` or `NEO_PROFILE_VM_BLOCK`.
 
+use neo_config::ProtocolSettings;
+use neo_config::hardfork::Hardfork;
 use neo_execution::ApplicationEngine;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::ApplicationExecuted;
@@ -183,6 +185,49 @@ pub(crate) fn format_vm_hottest_opcodes(profile: &VmExecutionProfile, limit: usi
         .hottest_opcodes(limit)
         .into_iter()
         .map(|(opcode, count)| format!("{}={count}", opcode.name()))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+pub(crate) fn format_vm_hottest_scripts(profile: &VmExecutionProfile, limit: usize) -> String {
+    profile
+        .scripts()
+        .iter()
+        .take(limit)
+        .map(|script| {
+            let entries = script
+                .entry_points()
+                .iter()
+                .map(|entry| format!("{}x{}", entry.entry_offset(), entry.context_loads()))
+                .collect::<Vec<_>>()
+                .join("+");
+            format!(
+                "{}:bytes={}:instructions={}:contexts={}:entries={}:other_entries={}",
+                UInt160::from(*script.script_hash()),
+                script.script_len(),
+                script.instructions(),
+                script.context_loads(),
+                entries,
+                script.other_entry_context_loads(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+pub(crate) fn format_vm_hardfork_context(settings: &ProtocolSettings, block_height: u32) -> String {
+    Hardfork::ALL
+        .iter()
+        .filter_map(|hardfork| {
+            settings.hardforks.get(hardfork).map(|activation_height| {
+                let state = if block_height >= *activation_height {
+                    "active"
+                } else {
+                    "pending"
+                };
+                format!("{}@{}:{state}", hardfork.name(), activation_height)
+            })
+        })
         .collect::<Vec<_>>()
         .join(",")
 }

@@ -8,9 +8,18 @@ use neo_payloads::block::Block;
 const MAX_CHAIN_ACC_BLOCK_SIZE: i32 = 0x0200_0000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub(super) enum ChainAccFormat {
+    CountOnly = 1,
+    HeightPrefixed = 2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ChainAccHeader {
     pub(super) count: usize,
     pub(super) start_height: Option<u32>,
+    pub(super) data_offset: u64,
+    pub(super) format: ChainAccFormat,
 }
 
 pub(super) fn read_chain_acc_header<R>(reader: &mut R) -> anyhow::Result<ChainAccHeader>
@@ -38,6 +47,8 @@ where
         return Ok(ChainAccHeader {
             count: second_u32 as usize,
             start_height: Some(first_u32),
+            data_offset: prefixed_data_start,
+            format: ChainAccFormat::HeightPrefixed,
         });
     }
 
@@ -46,6 +57,8 @@ where
         return Ok(ChainAccHeader {
             count: first_u32 as usize,
             start_height: None,
+            data_offset: count_only_data_start,
+            format: ChainAccFormat::CountOnly,
         });
     }
 
@@ -95,7 +108,26 @@ pub(super) fn skip_chain_acc_records<R>(
 where
     R: BufRead + Seek,
 {
-    for record in 0..records_to_skip {
+    let start_offset = reader.stream_position()?;
+    skip_chain_acc_records_observed(reader, 0, records_to_skip, start_offset, |_, _| Ok(()))?;
+    Ok(())
+}
+
+pub(super) fn skip_chain_acc_records_observed<R, F>(
+    reader: &mut R,
+    first_record: usize,
+    records_to_skip: usize,
+    mut offset: u64,
+    mut observe: F,
+) -> anyhow::Result<u64>
+where
+    R: BufRead + Seek,
+    F: FnMut(u64, u64) -> anyhow::Result<()>,
+{
+    for relative_record in 0..records_to_skip {
+        let record = first_record
+            .checked_add(relative_record)
+            .ok_or_else(|| anyhow::anyhow!("chain.acc record number overflow"))?;
         let size = read_i32_le(reader)?;
         if size <= 0 || size > MAX_CHAIN_ACC_BLOCK_SIZE {
             return Err(anyhow::anyhow!(
@@ -104,8 +136,17 @@ where
         }
         consume_exact(reader, size as usize)
             .map_err(|err| anyhow::anyhow!("skipping chain.acc record {record}: {err}"))?;
+        offset = offset
+            .checked_add(4)
+            .and_then(|offset| offset.checked_add(size as u64))
+            .ok_or_else(|| anyhow::anyhow!("chain.acc offset overflow at record {record}"))?;
+        let next_record = u64::try_from(record)
+            .ok()
+            .and_then(|record| record.checked_add(1))
+            .ok_or_else(|| anyhow::anyhow!("chain.acc next record overflow"))?;
+        observe(next_record, offset)?;
     }
-    Ok(())
+    Ok(offset)
 }
 
 fn consume_exact<R>(reader: &mut R, mut remaining: usize) -> std::io::Result<()>

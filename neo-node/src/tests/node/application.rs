@@ -111,3 +111,37 @@ fn opened_runtime_delegates_to_the_running_node_workflow() {
         );
     }
 }
+
+#[test]
+fn startup_metrics_precede_bulk_import_without_starting_live_network_services() {
+    let workflow = include_str!("../../node/lifecycle/workflow.rs");
+    let metrics = workflow
+        .find("start_metrics_endpoint(")
+        .expect("running-node workflow starts local metrics");
+    let imports = workflow
+        .find("run_startup_imports(")
+        .expect("running-node workflow runs startup imports");
+    let live_services = workflow
+        .find("start_live_services(")
+        .expect("running-node workflow starts post-import live services");
+
+    assert!(metrics < imports, "metrics must observe startup imports");
+    assert!(
+        imports < live_services,
+        "P2P and RPC services must remain post-import"
+    );
+
+    let live_services_source = include_str!("../../node/lifecycle/live_services.rs");
+    let live_services_body = live_services_source
+        .split("pub(in crate::node) async fn start_live_services")
+        .nth(1)
+        .expect("live-service function body");
+    let live_services_body = live_services_body
+        .split("pub(in crate::node) fn start_metrics_endpoint")
+        .next()
+        .expect("metrics helper follows live-service function");
+    assert!(
+        !live_services_body.contains("start_metrics_endpoint("),
+        "post-import live services must not bind the metrics endpoint twice"
+    );
+}

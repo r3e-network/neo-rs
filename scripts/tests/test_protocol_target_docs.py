@@ -10,6 +10,7 @@ COMPATIBILITY_TRIGGER_PATHS = [
     "Cargo.lock",
     "Cargo.toml",
     "neo-blockchain/**",
+    "neo-checkpoint/**",
     "neo-config/**",
     "neo-consensus/**",
     "neo-crypto/**",

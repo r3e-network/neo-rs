@@ -7,10 +7,12 @@ use neo_config::ProtocolSettings;
 use serde::Deserialize;
 use tracing::{info, warn};
 
+mod execution;
 mod observability;
 mod services;
 mod validation;
 
+pub(in crate::node) use execution::ExecutionSection;
 pub(in crate::node) use observability::{
     ObservabilityErrorEndpoint, ObservabilityHeartbeatEndpoint, ObservabilitySection,
 };
@@ -43,6 +45,8 @@ pub(super) struct NodeConfig {
     pub(super) blockchain: BlockchainSection,
     #[serde(default)]
     pub(super) mempool: MempoolSection,
+    #[serde(default)]
+    pub(super) execution: ExecutionSection,
     #[serde(default)]
     pub(super) state_service: StateServiceSection,
     #[serde(default)]
@@ -109,6 +113,76 @@ pub(super) struct StorageSection {
     /// Number of durable hot blocks replayed per archive recovery sync.
     #[serde(default)]
     pub(super) static_files_recovery_batch_blocks: Option<usize>,
+    /// Append-frame shadow dual-write (phase 1 verification mode).
+    #[serde(default)]
+    pub(super) append_shadow: AppendShadowSection,
+    /// Opt-in authoritative append-frame store for exact StateService nodes.
+    #[serde(default)]
+    pub(super) state_packs: StatePacksSection,
+}
+
+/// `[storage.state_packs]`: authoritative physical store for exact
+/// `0xf0 || node_hash` StateService rows.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct StatePacksSection {
+    /// Enable fail-closed authoritative pack mode.
+    #[serde(default, alias = "Enabled")]
+    pub(super) enabled: bool,
+    /// Directory of a complete, authoritative-ready checkpoint.
+    #[serde(default, alias = "Path")]
+    pub(super) path: Option<PathBuf>,
+    /// Decoded index-memory bound in MiB.
+    #[serde(default, alias = "MaxIndexMemoryMb")]
+    pub(super) max_index_memory_mb: Option<u32>,
+    /// Use separate `MADV_RANDOM` mappings for immutable sparse lookups.
+    #[serde(default, alias = "RandomPointMmap")]
+    pub(super) random_point_mmap: bool,
+}
+
+impl StatePacksSection {
+    pub(super) const DEFAULT_MAX_INDEX_MEMORY_BYTES: u64 = 512 * 1024 * 1024;
+
+    pub(super) fn max_index_memory_bytes(&self) -> u64 {
+        self.max_index_memory_mb
+            .map_or(Self::DEFAULT_MAX_INDEX_MEMORY_BYTES, |mb| {
+                u64::from(mb) * 1024 * 1024
+            })
+    }
+}
+
+/// `[storage.append_shadow]`: opt-in append-frame shadow dual-write for the
+/// coordinated StateService commit.
+///
+/// MDBX remains authoritative for every StateService row. When enabled, each
+/// coordinated commit also mirrors the MPT node entries (`0xf0 || node_hash`)
+/// into a `neo-state-packs` store at `path` and persists a pack high-water
+/// record into the MDBX maintenance table inside the same transaction.
+/// Shadow failures are logged and counted but never fail canonical commits.
+#[derive(Debug, Default, Deserialize)]
+pub(super) struct AppendShadowSection {
+    /// Enable the shadow dual-write.
+    #[serde(default, alias = "Enabled")]
+    pub(super) enabled: bool,
+    /// Data directory for the shadow pack store (created when missing).
+    #[serde(default, alias = "Path")]
+    pub(super) path: Option<PathBuf>,
+    /// Decoded index-memory bound in MiB for the shadow store.
+    #[serde(default, alias = "MaxIndexMemoryMb")]
+    pub(super) max_index_memory_mb: Option<u32>,
+}
+
+impl AppendShadowSection {
+    /// Default decoded index-memory bound (bytes) when not configured.
+    pub(super) const DEFAULT_MAX_INDEX_MEMORY_BYTES: u64 = 256 * 1024 * 1024;
+
+    /// Resolved decoded index-memory bound in bytes.
+    pub(super) fn max_index_memory_bytes(&self) -> u64 {
+        self.max_index_memory_mb
+            .map_or(Self::DEFAULT_MAX_INDEX_MEMORY_BYTES, |mb| {
+                u64::from(mb) * 1024 * 1024
+            })
+    }
 }
 
 impl StorageSection {

@@ -197,6 +197,8 @@ pub(super) fn append_native_persist_tx_stages(output: &mut String) {
     output.push_str(
         "# HELP neo_sync_native_persist_tx_stage_calls_total Total native persistence transaction-stage observations\n\
          # TYPE neo_sync_native_persist_tx_stage_calls_total counter\n\
+         # HELP neo_sync_native_persist_tx_stage_total_us Cumulative native persistence transaction-stage time (microseconds)\n\
+         # TYPE neo_sync_native_persist_tx_stage_total_us counter\n\
          # HELP neo_sync_native_persist_tx_stage_avg_us EWMA native persistence transaction-stage time (microseconds)\n\
          # TYPE neo_sync_native_persist_tx_stage_avg_us gauge\n",
     );
@@ -207,6 +209,13 @@ pub(super) fn append_native_persist_tx_stages(output: &mut String) {
             "stage",
             stat.stage,
             stat.calls,
+        );
+        push_single_label_metric(
+            output,
+            "neo_sync_native_persist_tx_stage_total_us",
+            "stage",
+            stat.stage,
+            stat.total_us,
         );
         push_single_label_metric(
             output,

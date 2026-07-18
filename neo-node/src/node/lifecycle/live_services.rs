@@ -2,8 +2,8 @@
 //!
 //! This module owns the operator-facing startup of services that should only
 //! begin after storage preflight, node composition, and optional startup imports:
-//! telemetry metrics, the P2P listener, seed dialing, RPC, and observability
-//! heartbeats.
+//! the P2P listener, seed dialing, RPC, and observability heartbeats. The local
+//! metrics endpoint starts before imports so catch-up work remains observable.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -43,7 +43,6 @@ pub(in crate::node) async fn start_live_services(
     ledger_mode: LedgerMode<'_>,
     observability: Option<&ObservabilityRuntime>,
 ) -> anyhow::Result<LiveServiceGuards> {
-    start_metrics_endpoint(node, services, handles, shutdown, config, observability)?;
     start_p2p_listener(network, config, network_magic, observability).await;
     start_seed_dialing(
         network,
@@ -71,7 +70,7 @@ pub(in crate::node) async fn start_live_services(
     })
 }
 
-fn start_metrics_endpoint<P, S>(
+pub(in crate::node) fn start_metrics_endpoint<P, S>(
     node: &Arc<neo_system::Node<P, S>>,
     services: &Arc<NodeServiceHandles<S>>,
     handles: &mut Vec<tokio::task::JoinHandle<()>>,

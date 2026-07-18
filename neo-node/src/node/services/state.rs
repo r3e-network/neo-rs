@@ -3,6 +3,8 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use neo_state_packs::authority::AUTHORITATIVE_HIGH_WATER_KEY;
+use neo_storage::persistence::TransactionalStore;
 use neo_storage::persistence::providers::{MemoryStore, RuntimeStore};
 use tracing::info;
 
@@ -22,6 +24,7 @@ pub(super) struct StateServiceRuntime {
     pub(super) state_service:
         Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers<RuntimeStore>>>,
     pub(super) durable_store: Option<ServiceStore>,
+    pub(super) authoritative_pack: Option<Arc<crate::node::state_packs::AuthoritativeNodePack>>,
 }
 
 pub(super) fn build_state_service_runtime(
@@ -33,7 +36,7 @@ pub(super) fn build_state_service_runtime(
 ) -> anyhow::Result<StateServiceRuntime> {
     let use_async_state_pipeline =
         use_bulk_state_pipeline && config.state_service.track_during_catchup;
-    let (state_store, durable_store, coordinated) =
+    let (state_store, durable_store, coordinated, authoritative_pack) =
         build_state_store(config, network, storage_provider, canonical_store)?;
     let state_service = match (state_store.as_ref(), coordinated) {
         (Some(state_store), true) => Some(Arc::new(
@@ -65,6 +68,7 @@ pub(super) fn build_state_service_runtime(
         state_store,
         state_service,
         durable_store,
+        authoritative_pack,
     })
 }
 
@@ -77,12 +81,14 @@ fn build_state_store(
     Option<Arc<neo_state_service::StateStore<RuntimeStore>>>,
     Option<ServiceStore>,
     bool,
+    Option<Arc<crate::node::state_packs::AuthoritativeNodePack>>,
 )> {
     if !config.state_service.enabled {
-        return Ok((None, None, false));
+        return Ok((None, None, false, None));
     }
 
     let mut durable_store = None;
+    let mut authoritative_pack = None;
     let coordinated = config.state_service.coordinated
         && storage_provider.eq_ignore_ascii_case("mdbx")
         && canonical_store.as_mdbx().is_some();
@@ -93,10 +99,67 @@ fn build_state_store(
                 .context("opening StateService MDBX namespace")?,
         );
         durable_store = Some(Arc::clone(&backing));
-        Arc::new(
-            neo_state_service::StateStore::with_mpt_store(config.state_service.full_state, backing)
+        if config.storage.state_packs.enabled {
+            let path = network_scoped_path(
+                config
+                    .storage
+                    .state_packs
+                    .path
+                    .as_deref()
+                    .context("validated state-pack path is absent")?,
+                network,
+            );
+            info!(
+                target: "neo::state_packs",
+                random_point_mmap = config.storage.state_packs.random_point_mmap,
+                "opening authoritative node-pack read path"
+            );
+            let authority = if config.storage.state_packs.random_point_mmap {
+                crate::node::state_packs::AuthoritativeNodePack::open_with_random_point_mmap(
+                    &path,
+                    config.storage.state_packs.max_index_memory_bytes(),
+                    network,
+                    backing.as_ref(),
+                )
+            } else {
+                crate::node::state_packs::AuthoritativeNodePack::open(
+                    &path,
+                    config.storage.state_packs.max_index_memory_bytes(),
+                    network,
+                    backing.as_ref(),
+                )
+            }
+            .with_context(|| format!("opening authoritative node packs at {}", path.display()))?;
+            let factory: Arc<dyn neo_state_service::MptNodeSnapshotFactory> = authority.clone();
+            let state_store =
+                neo_state_service::StateStore::with_mpt_store_and_node_snapshot_options(
+                    config.state_service.full_state,
+                    config.state_service.defer_full_state_finalization,
+                    backing,
+                    factory,
+                )
+                .context("opening coordinated split-store StateService MPT")?;
+            authoritative_pack = Some(authority);
+            Arc::new(state_store)
+        } else {
+            if backing
+                .maintenance_metadata(AUTHORITATIVE_HIGH_WATER_KEY)
+                .context("checking authoritative state-pack marker")?
+                .is_some()
+            {
+                return Err(anyhow::anyhow!(
+                    "authoritative state-pack marker exists; refusing to fall back to the stale MDBX MPT node namespace"
+                ));
+            }
+            Arc::new(
+                neo_state_service::StateStore::with_mpt_store_options(
+                    config.state_service.full_state,
+                    config.state_service.defer_full_state_finalization,
+                    backing,
+                )
                 .context("opening coordinated StateService MPT store")?,
-        )
+            )
+        }
     } else if let Some(path) = &config.state_service.path {
         let backing = open_service_store_with_storage_config(
             "StateService",
@@ -107,13 +170,17 @@ fn build_state_store(
         )?;
         durable_store = Some(Arc::clone(&backing));
         Arc::new(
-            neo_state_service::StateStore::with_mpt_store(config.state_service.full_state, backing)
-                .with_context(|| {
-                    format!(
-                        "opening StateService MPT store at {}",
-                        network_scoped_path(path, network).display()
-                    )
-                })?,
+            neo_state_service::StateStore::with_mpt_store_options(
+                config.state_service.full_state,
+                config.state_service.defer_full_state_finalization,
+                backing,
+            )
+            .with_context(|| {
+                format!(
+                    "opening StateService MPT store at {}",
+                    network_scoped_path(path, network).display()
+                )
+            })?,
         )
     } else if !config.state_service.coordinated && storage_provider.eq_ignore_ascii_case("mdbx") {
         return Err(anyhow::anyhow!(
@@ -122,15 +189,25 @@ fn build_state_store(
     } else {
         let backing: ServiceStore = Arc::new(RuntimeStore::Memory(MemoryStore::new()));
         Arc::new(
-            neo_state_service::StateStore::with_mpt_store(config.state_service.full_state, backing)
-                .context("opening in-memory StateService MPT store")?,
+            neo_state_service::StateStore::with_mpt_store_options(
+                config.state_service.full_state,
+                config.state_service.defer_full_state_finalization,
+                backing,
+            )
+            .context("opening in-memory StateService MPT store")?,
         )
     };
     info!(
         target: "neo",
         full_state = config.state_service.full_state,
+        defer_full_state_finalization = config.state_service.defer_full_state_finalization,
         coordinated,
         "state service MPT store enabled"
     );
-    Ok((Some(state_store), durable_store, coordinated))
+    Ok((
+        Some(state_store),
+        durable_store,
+        coordinated,
+        authoritative_pack,
+    ))
 }

@@ -10,6 +10,7 @@ use crate::Instruction;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
+use crate::execution_plan::ExecutionPlan;
 use crate::execution_profile::StackProfileHandle;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
@@ -115,6 +116,12 @@ impl<S> ExecutionContext<S> {
     #[must_use]
     pub fn script_arc(&self) -> Arc<Script> {
         self.shared_states.script_arc()
+    }
+
+    /// Returns the optional immutable plan selected before context loading.
+    #[must_use]
+    pub fn execution_plan(&self) -> Option<&Arc<ExecutionPlan>> {
+        self.script().execution_plan()
     }
 
     /// Returns the reference counter associated with this context.

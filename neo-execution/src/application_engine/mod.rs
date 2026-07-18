@@ -10,6 +10,7 @@
 //!
 //! ## Contents
 //!
+//! - `acceleration`: immutable plans, guarded short paths, and shadow parity.
 //! - `contracts`: Contract metadata, manifests, deployed-state records, and
 //!   contract parameter types.
 //! - `drop`: VM drop-stack opcode handlers.
@@ -37,6 +38,7 @@ use neo_vm::script::Script;
 // Verifiable script containers are passed via the interop host registry, not inline in the VM stack
 use crate::contract_state::ContractState;
 use crate::diagnostic::{Diagnostic, NoDiagnostic};
+use crate::execution_artifact::ExecutionObservationState;
 use crate::execution_context_state::ExecutionContextState;
 use crate::helper::Helper;
 use crate::iterators::StorageIterator;
@@ -145,16 +147,31 @@ where
     fault_exception: Option<String>,
     native_arg_null_mask: u32,
     native_return_null: bool,
+    /// Logical contract/method metadata collected only for targeted VM profiles.
+    vm_context_profile: Option<crate::execution_profile::ApplicationContextProfileCollector>,
+    /// Bounded rebuildable plan cache, present only after explicit enablement.
+    execution_plan_cache: Option<ApplicationExecutionPlanCache>,
+    /// Runner-owned live observation state, absent on every ordinary engine.
+    execution_observations: Option<Arc<Mutex<ExecutionObservationState>>>,
 }
 
+mod acceleration;
 mod contracts;
 mod drop;
 mod fees_events_native;
 mod host_state;
 mod interop_host;
+mod observations;
 mod state;
 mod storage_ops;
 mod witness_and_misc;
+
+pub use acceleration::{
+    ApplicationExecutionPlanCache, ApplicationExecutionPlanConfig, FlamingoShadowOutcome,
+    FlamingoShadowRunError, PreparedShadowEngine, ShadowInfrastructureStage,
+    ShadowObservationBinding, ShadowReplayStatus, ShadowStrictReplayFailure,
+    ShadowStrictReplayFailureKind, ShadowTwinBranch, ShadowTwinResources, run_flamingo_shadow_pair,
+};
 
 use host_state::{
     HostInteropHandler, PendingNativeCall, StdResult, VmEngineHost, map_core_error_to_vm_error,

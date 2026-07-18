@@ -89,6 +89,9 @@ pub struct ExecutionEngine<S = ()> {
     /// Opt-in diagnostic counters; absent on the normal consensus hot path.
     pub(crate) execution_profile: Option<Box<ExecutionProfileCollector>>,
 
+    /// Set only after an opt-in planned context is loaded in this session.
+    pub(crate) planned_execution_enabled: bool,
+
     /// Total gas consumed during execution (in fractional GAS units, 1 GAS = 10^8)
     pub(crate) gas_consumed: u64,
 

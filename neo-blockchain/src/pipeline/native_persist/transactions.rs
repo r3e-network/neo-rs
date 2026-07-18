@@ -3,7 +3,14 @@ use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
+use neo_execution::application_engine::{
+    FlamingoShadowRunError, PreparedShadowEngine, run_flamingo_shadow_pair,
+};
 use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_execution::specialization::{
+    FLAMINGO_FACTORY_PAIR_KEY_CANDIDATE_ID, FLAMINGO_FACTORY_PAIR_KEY_CANDIDATE_VERSION,
+    SpecializationRouteDecision,
+};
 use neo_execution::{ApplicationEngine, NativeContractsCache, NoDiagnostic};
 use neo_manifest::CallFlags;
 use neo_payloads::{Block, VerifiableContainer};
@@ -15,8 +22,9 @@ use parking_lot::Mutex;
 use super::artifacts::application_executed;
 use super::metrics::{record_tx_stage, record_tx_stage_elapsed};
 use super::trace::{
-    SlowTxFilter, TraceTxFilter, VmProfileFilter, format_vm_hottest_opcodes,
-    format_vm_opcode_classes, trace_tx_artifact, trace_tx_frames, trace_tx_notifications,
+    SlowTxFilter, TraceTxFilter, VmProfileFilter, format_vm_hardfork_context,
+    format_vm_hottest_opcodes, format_vm_hottest_scripts, format_vm_opcode_classes,
+    trace_tx_artifact, trace_tx_frames, trace_tx_notifications,
 };
 use super::{NativePersistOptions, NativePersistOutcome, NativePersistResources};
 
@@ -46,9 +54,7 @@ where
     let vm_profile_filter = VmProfileFilter::from_env();
     let native_contract_provider = resources.provider();
     let mut reusable_tx_cache: Option<Arc<DataCache<B>>> = None;
-    let mut reusable_tx_engine: Option<
-        ApplicationEngine<P, NoDiagnostic, B>,
-    > = None;
+    let mut reusable_tx_engine: Option<ApplicationEngine<P, NoDiagnostic, B>> = None;
 
     for (transaction_index, tx) in block.transactions.iter().enumerate() {
         let stage_start = std::time::Instant::now();
@@ -95,7 +101,7 @@ where
         // registration are paid once; per-tx prepare resets session state only.
         let mut tx_engine = if let Some(mut engine) = reusable_tx_engine.take() {
             engine.prepare_next_transaction(
-                Some(container),
+                Some(Arc::clone(&container)),
                 Arc::clone(tx_cache),
                 tx.system_fee(),
             );
@@ -103,7 +109,7 @@ where
         } else {
             ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
                 TriggerType::Application,
-                Some(container),
+                Some(Arc::clone(&container)),
                 Arc::clone(tx_cache),
                 Some(Arc::clone(block)),
                 Arc::clone(settings),
@@ -133,7 +139,101 @@ where
             neo_runtime::sync_metrics::NativePersistTxStage::LoadScript,
             stage_start,
         );
+        let specialization_control = resources.specialization_control();
+        let shadow_requested = specialization_control.is_some_and(|control| {
+            matches!(
+                control.route(
+                    FLAMINGO_FACTORY_PAIR_KEY_CANDIDATE_ID,
+                    FLAMINGO_FACTORY_PAIR_KEY_CANDIDATE_VERSION,
+                ),
+                SpecializationRouteDecision::Shadow
+            )
+        });
+        let mut authoritative_tx_cache = Arc::clone(tx_cache);
         let (vm_state, load_error, execute_us) = match load_result {
+            Ok(()) if shadow_requested => {
+                let mut replay_writer = neo_io::BinaryWriter::new();
+                neo_io::Serializable::serialize(tx, &mut replay_writer).map_err(|error| {
+                    CoreError::invalid_operation(format!(
+                        "persist: serialize specialization replay transaction: {error}"
+                    ))
+                })?;
+                let replay_payload = replay_writer.into_bytes();
+                let stage_start = std::time::Instant::now();
+                let shadow = run_flamingo_shadow_pair(
+                    block_cache.as_ref(),
+                    specialization_control.expect("shadow request requires its control"),
+                    resources.specialization_artifact_limits(),
+                    &replay_payload,
+                    |_, shadow_resources| {
+                        let (shadow_cache, shadow_native_cache, observation_binding) =
+                            shadow_resources.into_parts();
+                        let mut engine = ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
+                            TriggerType::Application,
+                            Some(Arc::clone(&container)),
+                            shadow_cache,
+                            Some(Arc::clone(block)),
+                            Arc::clone(settings),
+                            tx.system_fee(),
+                            HashMap::new(),
+                            shadow_native_cache,
+                            NoDiagnostic,
+                            Arc::clone(&native_contract_provider),
+                        )?;
+                        observation_binding.bind(&mut engine);
+                        if should_profile_vm {
+                            engine.enable_vm_execution_profiling();
+                        }
+                        engine.load_script_bytes(tx.script(), CallFlags::ALL, None)?;
+                        PreparedShadowEngine::new(engine)
+                    },
+                );
+                match shadow {
+                    Ok(shadow) => {
+                        tracing::debug!(
+                            target: "neo::specialization",
+                            block_index,
+                            transaction_index,
+                            tx_hash = %tx_hash,
+                            status = ?shadow.status(),
+                            "ordinary-authoritative specialization shadow completed"
+                        );
+                        authoritative_tx_cache = shadow.ordinary_snapshot_cache();
+                        tx_engine = shadow.into_ordinary_engine();
+                        let execute_us = record_tx_stage_elapsed(
+                            neo_runtime::sync_metrics::NativePersistTxStage::Execute,
+                            stage_start.elapsed(),
+                        );
+                        (tx_engine.state(), None, execute_us)
+                    }
+                    Err(FlamingoShadowRunError::OrdinaryPreparation(error)) => {
+                        tracing::warn!(
+                            target: "neo::specialization",
+                            block_index,
+                            transaction_index,
+                            tx_hash = %tx_hash,
+                            error = %error,
+                            "specialization shadow preparation failed; executing ordinary engine"
+                        );
+                        let vm_state = tx_engine.execute_allow_fault();
+                        let execute_us = record_tx_stage_elapsed(
+                            neo_runtime::sync_metrics::NativePersistTxStage::Execute,
+                            stage_start.elapsed(),
+                        );
+                        (vm_state, None, execute_us)
+                    }
+                    Err(FlamingoShadowRunError::StrictReplay(failure)) => {
+                        let infrastructure_error = failure
+                            .infrastructure_error()
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| "none".to_owned());
+                        return Err(CoreError::invalid_operation(format!(
+                            "persist: strict specialization shadow failed at block {block_index} transaction {transaction_index}: {:?}; infrastructure_error={infrastructure_error}",
+                            failure.kind(),
+                        )));
+                    }
+                }
+            }
             Ok(()) => {
                 let stage_start = std::time::Instant::now();
                 let vm_state = tx_engine.execute_allow_fault();
@@ -173,6 +273,12 @@ where
         }
         if should_profile_vm && let Some(profile) = tx_engine.vm_execution_profile() {
             let stack = profile.stack_operations();
+            let application_contexts = tx_engine
+                .vm_application_context_profile()
+                .and_then(|profile| serde_json::to_string(&profile).ok())
+                .unwrap_or_else(|| {
+                    "{\"context_capacity\":0,\"contexts\":[],\"other_context_loads\":0}".to_string()
+                });
             tracing::info!(
                 target: "neo::profile",
                 block_index,
@@ -181,8 +287,20 @@ where
                 execute_us,
                 instructions = tx_engine.instructions_executed(),
                 profiled_instructions = profile.total_instructions(),
+                trigger = "Application",
+                protocol = "neo-n3-v3.10.1",
+                network_magic = settings.network,
+                hardfork_context = %format_vm_hardfork_context(settings, block_index),
+                fee_consumed = tx_engine.fee_consumed(),
+                fault_exception = tx_engine.fault_exception_string().unwrap_or(""),
+                notification_count = tx_engine.notifications().len(),
+                log_count = tx_engine.logs().len(),
                 opcode_classes = %format_vm_opcode_classes(&profile),
                 hottest_opcodes = %format_vm_hottest_opcodes(&profile, 16),
+                hottest_scripts = %format_vm_hottest_scripts(&profile, 16),
+                application_contexts = %application_contexts,
+                other_script_instructions = profile.other_script_instructions(),
+                other_script_context_loads = profile.other_script_context_loads(),
                 stack_pushes = stack.pushes,
                 stack_pops = stack.pops,
                 stack_peeks = stack.peeks,
@@ -198,6 +316,7 @@ where
                 stack_moves = stack.moves,
                 stack_moved_items = stack.moved_items,
                 stack_max_depth = stack.max_depth,
+                max_reference_count = profile.max_reference_count(),
                 vm_state = ?vm_state,
                 "targeted VM execution profile"
             );
@@ -268,7 +387,7 @@ where
 
         if vm_state == VMState::HALT {
             let stage_start = std::time::Instant::now();
-            tx_cache.commit();
+            authoritative_tx_cache.commit();
             record_tx_stage(
                 neo_runtime::sync_metrics::NativePersistTxStage::TxCacheCommit,
                 stage_start,

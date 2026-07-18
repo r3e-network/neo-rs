@@ -24,26 +24,27 @@ pub(crate) const NEO_PREFIX_COMMITTEE_KEY: u8 = 14;
 
 /// C# `NativeContract.Ledger.Initialized(snapshot)` (LedgerContract.cs:91):
 /// whether the chain state has been bootstrapped, i.e. the genesis block
-/// has been persisted. The first probe is the literal C# check (any
-/// `LedgerContract` `Prefix_Block` record, written by the persist
-/// pipeline via `crate::ledger_records`); the second probes the
-/// `NeoToken` committee cache -- a key genesis initialization always
-/// seeds and that can never be deleted afterwards -- which keeps stores
-/// persisted before the ledger records landed reporting initialized.
+/// has been persisted. The point probe checks the `NeoToken` committee
+/// cache -- a key genesis initialization always seeds and that can never be
+/// deleted afterwards. This is the normal constant-time startup path. The
+/// prefix probe retains the literal C# check (any `LedgerContract`
+/// `Prefix_Block` record, written by the persist pipeline via
+/// `crate::ledger_records`) for partially initialized legacy stores whose
+/// ledger records landed without the native state.
 pub fn chain_state_initialized<B: neo_storage::CacheRead>(snapshot: &DataCache<B>) -> bool {
-    let block_prefix = StorageKey::new(LEDGER_CONTRACT_ID, vec![LEDGER_PREFIX_BLOCK]);
     if snapshot
-        .find(Some(&block_prefix), SeekDirection::Forward)
-        .next()
-        .is_some()
-    {
-        return true;
-    }
-    snapshot
         .get(&StorageKey::new(
             NEO_TOKEN_ID,
             vec![NEO_PREFIX_COMMITTEE_KEY],
         ))
+        .is_some()
+    {
+        return true;
+    }
+    let block_prefix = StorageKey::new(LEDGER_CONTRACT_ID, vec![LEDGER_PREFIX_BLOCK]);
+    snapshot
+        .find(Some(&block_prefix), SeekDirection::Forward)
+        .next()
         .is_some()
 }
 

@@ -9,9 +9,14 @@ where
     /// Reads a raw storage item from the snapshot using a storage context and key.
     pub fn get_storage_item(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
-        self.snapshot_cache
+        let value = self
+            .snapshot_cache
             .get(&storage_key)
-            .map(|item| item.value_bytes().into_owned())
+            .map(|item| item.value_bytes().into_owned());
+        if self.execution_observations_enabled() {
+            self.observe_storage_read(storage_key, value.clone());
+        }
+        value
     }
 
     pub(super) fn validate_find_options(&self, options: FindOptions) -> CoreResult<()> {
@@ -63,6 +68,14 @@ where
     ) -> CoreResult<()> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
         let existing = self.snapshot_cache.get(&storage_key);
+        if self.execution_observations_enabled() {
+            self.observe_storage_read(
+                storage_key.clone(),
+                existing
+                    .as_ref()
+                    .map(|item| item.value_bytes().into_owned()),
+            );
+        }
         let value_len = value.len();
         let new_data_size = if let Some(existing_item) = &existing {
             // Use raw value byte length to match C# item.Value.Length.
@@ -201,6 +214,7 @@ where
     where
         F: FnOnce(&mut ExecutionContextState<B>),
     {
+        let script = self.prepare_script_with_execution_plan(script, initial_position, None);
         self.load_script_arc_with_state(Arc::new(script), rvcount, initial_position, configure)
     }
 
@@ -264,6 +278,10 @@ where
             .current_context()
             .cloned()
             .ok_or_else(|| CoreError::invalid_operation("Failed to load execution context"))?;
+
+        if let Some(profile) = &mut self.vm_context_profile {
+            profile.record(&new_context);
+        }
 
         self.refresh_context_tracking()?;
 

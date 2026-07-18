@@ -2,7 +2,33 @@ use super::*;
 use crate::neo_token::storage::candidate_signature_account;
 use crate::test_support::{sample_committee, seed_committee};
 use neo_execution::Contract;
+use neo_storage::{DataCacheReadObserver, SeekDirection, StorageKey};
 use neo_vm::Interoperable;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[derive(Default)]
+struct PointReadCounter(AtomicUsize);
+
+impl PointReadCounter {
+    fn take(&self) -> usize {
+        self.0.swap(0, Ordering::SeqCst)
+    }
+}
+
+impl DataCacheReadObserver for PointReadCounter {
+    fn observe_point_read(&self, _key: &StorageKey, _value: Option<&StorageItem>) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn observe_range_read(
+        &self,
+        _prefix: Option<&StorageKey>,
+        _direction: SeekDirection,
+        _rows: &[(StorageKey, StorageItem)],
+    ) {
+    }
+}
 
 fn seed_register_price(cache: &DataCache, price: i64) {
     cache.add(
@@ -600,6 +626,52 @@ fn committee_address_cache_tracks_changed_committee_bytes() {
 
     assert_ne!(first, second, "changed committee bytes must miss the cache");
     assert_eq!(second, UInt160::from_script(&replacement_script));
+}
+
+#[test]
+fn committee_memoization_never_changes_the_storage_read_sequence() {
+    let base = DataCache::new(false);
+    let points = sample_committee();
+    seed_committee(&base, &points);
+    let reads = Arc::new(PointReadCounter::default());
+    let cache = base.with_read_observer(reads.clone());
+    let neo = NeoToken::new();
+
+    for _ in 0..2 {
+        neo.compute_committee_address(&cache)
+            .expect("compute committee address");
+        assert_eq!(reads.take(), 1, "cold and warm address paths read once");
+
+        neo.next_block_validator_account(&cache, 2, 1)
+            .expect("compute next validator account");
+        assert_eq!(reads.take(), 1, "cold and warm validator paths read once");
+
+        neo.read_committee_member_at(&cache, 1)
+            .expect("read committee member");
+        assert_eq!(reads.take(), 1, "member fallback reads once");
+    }
+
+    let replacement = &points[..2];
+    let replacement_bytes = NeoToken::encode_committee(
+        &replacement
+            .iter()
+            .cloned()
+            .map(|point| (point, BigInt::from(0)))
+            .collect::<Vec<_>>(),
+    )
+    .expect("encode replacement committee");
+    cache.update(
+        NeoToken::committee_key(),
+        StorageItem::from_bytes(replacement_bytes),
+    );
+    assert_eq!(reads.take(), 0, "updating a cached row is not a read");
+
+    neo.compute_committee_address(&cache)
+        .expect("compute changed committee address");
+    assert_eq!(reads.take(), 1, "changed address path still reads once");
+    neo.next_block_validator_account(&cache, 2, 0)
+        .expect("compute changed validator account");
+    assert_eq!(reads.take(), 1, "changed validator path still reads once");
 }
 
 #[test]

@@ -65,7 +65,96 @@ pub trait RawOverlaySource {
     fn visit_raw_overlay<S>(&mut self, sink: &mut S)
     where
         S: RawOverlaySink + ?Sized;
+
+    /// Writes entries whose final bytes depend on the value currently stored
+    /// under the same key (for example reference-counted state-service MPT
+    /// nodes) by reading and replacing them at the write cursor.
+    ///
+    /// Backends that support cursor-fused commits call this once per commit,
+    /// after [`RawOverlaySource::visit_raw_overlay`] has been fully consumed
+    /// and before the transaction commits. Entries must be processed in raw
+    /// byte-key order. Any error aborts the commit before publish. The
+    /// default source has no cursor-resolved entries.
+    fn commit_raw_overlay_at_cursor(
+        &mut self,
+        cursor: &mut dyn RawOverlayCursor,
+    ) -> StorageResult<()> {
+        let _ = cursor;
+        Ok(())
+    }
 }
+
+/// Cursor facade handed to [`RawOverlaySource::commit_raw_overlay_at_cursor`]
+/// so an overlay source can resolve entries against the rows already stored
+/// in the table being written.
+///
+/// Implementations drive a write cursor in raw byte-key order. Sources whose
+/// absent value is known up front should use [`Self::insert_stored_if_absent`]
+/// so a backend can combine the absence probe and insert. When that method
+/// returns an existing value, the immediately following `write_stored` for the
+/// same key may replace the positioned row in place.
+pub trait RawOverlayCursor {
+    /// Returns the value currently stored for `key`, or `None` when absent.
+    fn read_stored(&mut self, key: &[u8]) -> StorageResult<Option<Vec<u8>>>;
+
+    /// Writes the final `value` for `key`, replacing any probed row.
+    fn write_stored(&mut self, key: &[u8], value: &[u8]) -> StorageResult<()>;
+
+    /// Inserts `absent_value` when `key` is absent, otherwise returns the
+    /// existing value with the cursor positioned for a following
+    /// [`Self::write_stored`].
+    ///
+    /// `Ok(None)` means the supplied value was inserted. `Ok(Some(_))` means
+    /// no write occurred. The default preserves compatibility by composing
+    /// the ordinary read and write operations; persistent backends can
+    /// override it with a single insert-if-absent search.
+    fn insert_stored_if_absent(
+        &mut self,
+        key: &[u8],
+        absent_value: &[u8],
+    ) -> StorageResult<Option<Vec<u8>>> {
+        match self.read_stored(key)? {
+            Some(stored) => Ok(Some(stored)),
+            None => {
+                self.write_stored(key, absent_value)?;
+                Ok(None)
+            }
+        }
+    }
+}
+
+/// Secondary-overlay entries captured during a coordinated commit, in the
+/// order the backend wrote them (visited entries first, cursor-resolved
+/// entries second), handed to a shadow dual-writer.
+pub type ShadowOverlayEntries = Vec<(Vec<u8>, Option<Vec<u8>>)>;
+
+/// Maintenance-table row a shadow dual-writer asks the canonical transaction
+/// to persist atomically with the overlays it mirrors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShadowCommitMarker {
+    /// Maintenance-table key.
+    pub key: Vec<u8>,
+    /// Maintenance-table value.
+    pub value: Vec<u8>,
+}
+
+/// Mandatory maintenance marker committed with coordinated overlays.
+///
+/// This uses the same key/value carrier as shadow publication, but callers of
+/// the required-marker API receive strict all-or-nothing semantics instead of
+/// shadow mode's best-effort failure policy.
+pub type CoordinatedCommitMarker = ShadowCommitMarker;
+
+/// Shadow dual-write hook invoked inside a coordinated commit after both
+/// overlays are applied and before the transaction commits.
+///
+/// The hook receives the captured secondary-overlay entries and returns the
+/// high-water marker the canonical transaction must persist, or `None` when
+/// the window carried nothing the shadow tracks. Backends log and count hook
+/// errors and continue the canonical commit without the marker: a shadow
+/// failure must never fail the authoritative commit.
+pub type ShadowCommitHook<'a> =
+    dyn FnMut(ShadowOverlayEntries) -> Result<Option<ShadowCommitMarker>, String> + Send + 'a;
 
 /// This interface provides methods for reading, writing from/to database.
 /// Developers should implement this interface to provide new storage engines for NEO.
@@ -146,5 +235,13 @@ pub trait Store:
     {
         let _ = overlay;
         Ok(false)
+    }
+
+    /// Returns whether this backend's raw-overlay commit paths invoke
+    /// [`RawOverlaySource::commit_raw_overlay_at_cursor`], letting overlay
+    /// sources resolve values already stored in the table at the write cursor
+    /// instead of pre-resolving them through a separate read sweep.
+    fn supports_raw_overlay_cursor(&self) -> bool {
+        false
     }
 }

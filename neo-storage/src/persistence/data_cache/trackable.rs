@@ -132,6 +132,9 @@ pub enum DataCacheError {
     /// Persisting the tracked change set into the backing store failed.
     #[error("unable to commit changes: {0}")]
     CommitFailed(String),
+    /// A detached speculative root cannot publish into its pinned backing cache.
+    #[error("detached cache roots cannot commit into their backing cache")]
+    DetachedCommit,
 }
 
 /// Result type for [`DataCache`](super::cache::DataCache) mutation operations.

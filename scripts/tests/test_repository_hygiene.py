@@ -11,6 +11,12 @@ ALLOWED_CRATE_ROOT_FILES = {
     "README.md",
     "build.rs",
 }
+ALLOWED_CRATE_ROOT_FILES_BY_CRATE = {
+    "neo-vm": {"THIRD_PARTY_NOTICES.md"},
+}
+ALLOWED_CRATE_SRC_ROOT_FILES_BY_CRATE = {
+    "neo-vm": {"execution_profile.rs"},
+}
 MAX_DIRECT_RUST_FILES_PER_SOURCE_DIR = 10
 MAX_ENTRY_PATH_SHIMS = 4
 ALLOWED_TEST_ROOT_FILES = {"mod.rs"}
@@ -171,8 +177,11 @@ class RepositoryHygieneTests(unittest.TestCase):
                 continue
 
             root_rust_files = sorted(path.name for path in src_dir.glob("*.rs"))
+            allowed_root_files = {"lib.rs", "main.rs"} | ALLOWED_CRATE_SRC_ROOT_FILES_BY_CRATE.get(
+                crate_dir.name, set()
+            )
             implementation_files = [
-                name for name in root_rust_files if name not in {"lib.rs", "main.rs"}
+                name for name in root_rust_files if name not in allowed_root_files
             ]
 
             with self.subTest(crate=crate_dir.relative_to(REPO_ROOT)):
@@ -246,9 +255,10 @@ class RepositoryHygieneTests(unittest.TestCase):
         for manifest in cargo_manifests:
             crate_dir = manifest.parent
             direct_files = sorted(path.name for path in crate_dir.iterdir() if path.is_file())
-            unexpected_files = [
-                name for name in direct_files if name not in ALLOWED_CRATE_ROOT_FILES
-            ]
+            allowed_files = ALLOWED_CRATE_ROOT_FILES | ALLOWED_CRATE_ROOT_FILES_BY_CRATE.get(
+                crate_dir.name, set()
+            )
+            unexpected_files = [name for name in direct_files if name not in allowed_files]
 
             with self.subTest(crate=crate_dir.relative_to(REPO_ROOT)):
                 self.assertEqual(

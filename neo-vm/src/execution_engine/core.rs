@@ -40,6 +40,7 @@ impl<S: Default> ExecutionEngine<S> {
             uncaught_exception: None,
             instructions_executed: 0,
             execution_profile: None,
+            planned_execution_enabled: false,
             gas_consumed: 0,
             gas_limit: DEFAULT_GAS_LIMIT,
         }
@@ -53,16 +54,27 @@ impl<S> ExecutionEngine<S> {
     /// Used by ApplicationEngine transaction reuse so multi-tx blocks do not
     /// rebuild opcode dispatch or syscall tables for every transaction.
     pub fn reset_execution_session(&mut self) {
-        // Drop contexts first so stack items release reference-counter entries
-        // through their normal Drop paths before the result stack is cleared.
-        self.invocation_stack.clear();
+        // Unload contexts in the same LIFO order as RET. A context's
+        // evaluation stack releases itself on drop, but local/argument/static
+        // slots are reference-counted explicitly and do not have a Drop hook.
+        // Dropping the vector directly therefore leaks compound references
+        // across transactions when an engine is reused.
+        while let Some(mut context) = self.invocation_stack.pop() {
+            // The normal host callback is detached between transactions. If a
+            // caller resets while a host is still attached, cleanup must still
+            // release VM-owned references; callback errors cannot leave the
+            // reusable engine in a partially reset state.
+            let _ = self.unload_context(&mut context);
+        }
         self.result_stack.clear();
         self.uncaught_exception = None;
         self.is_jumping = false;
         self.instructions_executed = 0;
         self.gas_consumed = 0;
         self.call_flags = CallFlags::ALL;
+        self.result_stack.clear_profile();
         self.execution_profile = None;
+        self.planned_execution_enabled = false;
         self.state = VMState::BREAK;
     }
 
@@ -112,6 +124,16 @@ impl<S> ExecutionEngine<S> {
         self.set_state(VMState::FAULT);
     }
 
+    /// Applies the VM's canonical uncaught-fault handling to an execution error.
+    ///
+    /// Hosts that interleave ordinary VM instructions with guarded operations
+    /// must use this entry point so fault text, instruction context, the
+    /// uncaught exception, and the final VM state remain identical to
+    /// [`Self::execute`].
+    pub fn handle_fault(&mut self, error: VmError) {
+        self.on_fault(error);
+    }
+
     /// Returns the reference counter.
     #[inline]
     #[must_use]
@@ -124,10 +146,15 @@ impl<S> ExecutionEngine<S> {
     /// Existing contexts are attached as well, so callers may enable profiling
     /// either immediately before loading a script or before resuming one.
     pub fn enable_execution_profiling(&mut self) {
-        let profile = Box::new(crate::execution_profile::ExecutionProfileCollector::new());
+        let mut profile = Box::new(crate::execution_profile::ExecutionProfileCollector::new());
         let stack_profile = profile.stack_handle();
         self.result_stack.set_profile(stack_profile.clone());
         for context in &self.invocation_stack {
+            profile.record_context_load(
+                context.script_hash(),
+                context.script().len(),
+                context.instruction_pointer(),
+            );
             context.set_stack_profile(stack_profile.clone());
         }
         self.execution_profile = Some(profile);

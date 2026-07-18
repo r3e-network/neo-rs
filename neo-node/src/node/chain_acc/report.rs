@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde::Serialize;
 
 use super::metrics::StateServiceMptImportMetrics;
-use super::{MdbxCommitWindowMetrics, StateServiceMptWindowMetrics};
+use super::{MdbxCommitWindowMetrics, NativePersistTxWindowMetrics, StateServiceMptWindowMetrics};
 
 use crate::node::ledger_source::LocalLedgerTip;
 
@@ -37,6 +37,7 @@ pub(in crate::node) struct ChainAccImportReport {
     pub(in crate::node) finalization_commit_handlers_seconds: f64,
     pub(in crate::node) finalization_store_commit_seconds: f64,
     pub(in crate::node) unclassified_import_seconds: f64,
+    pub(in crate::node) native_persist_tx: NativePersistTxWindowMetrics,
     pub(in crate::node) hot_metrics: ImportHotMetrics,
     pub(in crate::node) profile_windows: Vec<ChainAccProfileWindow>,
 }
@@ -60,6 +61,7 @@ pub(in crate::node) struct ChainAccProfileWindow {
     pub(in crate::node) finalization_commit_handlers_seconds: f64,
     pub(in crate::node) finalization_canonical_commit_seconds: f64,
     pub(in crate::node) hot_metrics: ImportHotMetrics,
+    pub(in crate::node) native_persist_tx: NativePersistTxWindowMetrics,
     pub(in crate::node) state_service_mpt: StateServiceMptWindowMetrics,
     pub(in crate::node) mdbx_commit: MdbxCommitWindowMetrics,
 }
@@ -72,6 +74,7 @@ impl ChainAccProfileWindow {
         elapsed: Duration,
         stats: neo_blockchain::ImportBlocksStats,
         hot_metrics: ImportHotMetrics,
+        native_persist_tx: NativePersistTxWindowMetrics,
         state_service_mpt: StateServiceMptWindowMetrics,
         mdbx_commit: MdbxCommitWindowMetrics,
     ) -> Self {
@@ -106,6 +109,7 @@ impl ChainAccProfileWindow {
                 .finalization_store_commit_elapsed
                 .as_secs_f64(),
             hot_metrics,
+            native_persist_tx,
             state_service_mpt,
             mdbx_commit,
         }

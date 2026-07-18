@@ -84,8 +84,8 @@ fn test_jump_table_default() {
 }
 
 /// The pre-543 table overrides HASKEY/PICKITEM/SETITEM/REMOVE with the pre-fork
-/// handlers, and leaves every other opcode as the default. SHL/SHR are NOT
-/// overridden: the C# VM has a single SHL/SHR behavior (no `HF_Gorgon` split).
+/// handlers and the pre-`neo-vm#567` SHL/SHR implementations, leaving every
+/// other opcode as the default.
 #[test]
 fn not_gorgon_table_overrides_pre_fork_opcodes() {
     let default = JumpTable::<()>::default();
@@ -95,6 +95,8 @@ fn not_gorgon_table_overrides_pre_fork_opcodes() {
         OpCode::PICKITEM,
         OpCode::SETITEM,
         OpCode::REMOVE,
+        OpCode::SHL,
+        OpCode::SHR,
     ];
     for opcode in OpCode::ALL {
         assert!(
@@ -109,16 +111,20 @@ fn not_gorgon_table_overrides_pre_fork_opcodes() {
             assert!(same, "{opcode:?} should match the default table");
         }
     }
-    // C# v3.10.1 `ComposeNotEchidnaJumpTable` only changes SUBSTR. Rust does
-    // not reproduce the memory-unsafe SUBSTR distinction, so NotEchidna must
-    // not inherit the unrelated pre-Gorgon overrides.
+    // C# v3.10.1 `ComposeNotEchidnaJumpTable` composes NotGorgon and changes
+    // SUBSTR. Compare every other opcode with the composed NotGorgon table.
     let not_echidna = JumpTable::<()>::not_echidna();
     for opcode in OpCode::ALL {
-        assert_eq!(
-            not_echidna.get(opcode).map(|h| h as usize),
-            default.get(opcode).map(|h| h as usize),
-            "not_echidna must equal the default table for {opcode:?}"
-        );
+        let same_as_not_gorgon = not_echidna.get(opcode).map(|h| h as usize)
+            == not_gorgon.get(opcode).map(|h| h as usize);
+        if opcode == OpCode::SUBSTR {
+            assert!(
+                !same_as_not_gorgon,
+                "SUBSTR should be overridden in not_echidna"
+            );
+        } else {
+            assert!(same_as_not_gorgon, "{opcode:?} should inherit not_gorgon");
+        }
     }
 }
 

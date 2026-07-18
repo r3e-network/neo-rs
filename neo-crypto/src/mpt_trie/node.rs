@@ -2,6 +2,7 @@ use super::error::{MptError, MptResult};
 use super::node_type::NodeType;
 use crate::Crypto;
 use neo_io::serializable::helper::SerializeHelper;
+use neo_io::var_int::VarInt;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UINT256_SIZE;
 use neo_primitives::UInt256;
@@ -345,6 +346,116 @@ impl Node {
             NodeType::HashNode | NodeType::Empty => {}
         }
         Ok(writer.into_bytes())
+    }
+
+    pub(crate) fn array_from_payload_parts_owned(
+        node_type: NodeType,
+        reference: i32,
+        mut payload_without_reference: Vec<u8>,
+    ) -> MptResult<Vec<u8>> {
+        if matches!(
+            node_type,
+            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode
+        ) {
+            let reference = u64::try_from(reference)
+                .map_err(|_| MptError::invalid("MPT node reference count cannot be negative"))?;
+            payload_without_reference.reserve(VarInt::encoded_len(reference));
+            VarInt::write_var_int(reference, &mut payload_without_reference);
+        }
+        Ok(payload_without_reference)
+    }
+
+    /// Splits a serialized node into its type, reference count, and raw hash
+    /// payload without materializing its child graph.
+    ///
+    /// Full-state deferred finalization already has the serialized backing
+    /// bytes. This parser validates the same structural bounds as
+    /// [`Node::deserialize`] while retaining the payload bytes verbatim, so a
+    /// reference update does not need to allocate and reserialize every child.
+    pub fn split_serialized_reference(bytes: &[u8]) -> MptResult<(NodeType, i32, Vec<u8>)> {
+        let (node_type, reference, payload_len) = Self::serialized_reference_parts(bytes)?;
+        Ok((node_type, reference, bytes[..payload_len].to_vec()))
+    }
+
+    /// Splits a serialized node while reusing the owned input allocation for
+    /// its no-reference payload.
+    pub fn split_serialized_reference_owned(
+        mut bytes: Vec<u8>,
+    ) -> MptResult<(NodeType, i32, Vec<u8>)> {
+        let (node_type, reference, payload_len) = Self::serialized_reference_parts(&bytes)?;
+        bytes.truncate(payload_len);
+        Ok((node_type, reference, bytes))
+    }
+
+    fn serialized_reference_parts(bytes: &[u8]) -> MptResult<(NodeType, i32, usize)> {
+        let mut reader = MemoryReader::new(bytes);
+        let node_type = Self::read_node_type(&mut reader)?;
+        Self::skip_node_payload(&mut reader, node_type, 0)?;
+        let reference_start = reader.position();
+        let reference = match node_type {
+            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
+                reader.read_var_uint().map_err(MptError::from)? as i32
+            }
+            NodeType::HashNode | NodeType::Empty => 0,
+        };
+        if reader.remaining() != 0 {
+            return Err(MptError::invalid(
+                "MPT serialized node contains trailing bytes",
+            ));
+        }
+        Ok((node_type, reference, reference_start))
+    }
+
+    fn read_node_type(reader: &mut MemoryReader<'_>) -> MptResult<NodeType> {
+        NodeType::from_byte(reader.read_byte().map_err(MptError::from)?)
+            .map_err(|error| MptError::invalid(error.to_string()))
+    }
+
+    fn skip_serialized_node(reader: &mut MemoryReader<'_>, depth: usize) -> MptResult<()> {
+        if depth > MAX_KEY_LENGTH {
+            return Err(MptError::invalid(
+                "MPT node nesting depth exceeds the maximum allowed limit",
+            ));
+        }
+        let node_type = Self::read_node_type(reader)?;
+        Self::skip_node_payload(reader, node_type, depth)?;
+        if matches!(
+            node_type,
+            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode
+        ) {
+            reader.read_var_uint().map_err(MptError::from)?;
+        }
+        Ok(())
+    }
+
+    fn skip_node_payload(
+        reader: &mut MemoryReader<'_>,
+        node_type: NodeType,
+        depth: usize,
+    ) -> MptResult<()> {
+        match node_type {
+            NodeType::BranchNode => {
+                for _ in 0..BRANCH_CHILD_COUNT {
+                    Self::skip_serialized_node(reader, depth + 1)?;
+                }
+            }
+            NodeType::ExtensionNode => {
+                reader
+                    .read_var_memory(MAX_KEY_LENGTH)
+                    .map_err(MptError::from)?;
+                Self::skip_serialized_node(reader, depth + 1)?;
+            }
+            NodeType::LeafNode => {
+                reader
+                    .read_var_memory(MAX_VALUE_LENGTH)
+                    .map_err(MptError::from)?;
+            }
+            NodeType::HashNode => {
+                reader.read_memory(UINT256_SIZE).map_err(MptError::from)?;
+            }
+            NodeType::Empty => {}
+        }
+        Ok(())
     }
 
     fn reference_var_size(reference: i32) -> usize {

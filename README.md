@@ -24,7 +24,7 @@ runs the NeoVM and dBFT 2.0 consensus, and serves the standard JSON-RPC API.
 neo-rs is a production node implementation that speaks Neo N3's wire protocol,
 executes its virtual machine, and maintains its ledger and state exactly as the
 canonical C# node does — so the two are interchangeable on the same network. It
-is organized as an 8-layer Rust workspace of 28 focused crates, built on mature
+is organized as an 8-layer, multi-crate Rust workspace built on mature
 libraries (MDBX, jsonrpsee, the RustCrypto suite) with the protocol-defining
 parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification.
 
@@ -47,7 +47,7 @@ See [docs/protocol-compatibility.md](./docs/protocol-compatibility.md) for the p
 
 ## Architecture at a glance
 
-The workspace is organized into **8 ordered layers, 26 production workspace members**
+The workspace is organized into **8 ordered layers, 28 production workspace members**
 (plus 3 development-only members). Dependencies flow downward or through
 an explicitly audited, one-way same-layer edge, so foundation crates know
 nothing of the services above them.
@@ -60,7 +60,7 @@ flowchart TD
     NODE["<b>Node Services</b><br/>neo-blockchain · neo-network · neo-wallets<br/>neo-indexer · neo-oracle-service"]
     DOM["<b>Domain Services</b><br/>neo-runtime · neo-execution · neo-native-contracts<br/>neo-state-service · neo-mempool"]
     PROTO["<b>Protocol</b><br/>neo-payloads · neo-consensus · neo-hsm"]
-    INF["<b>Infrastructure</b><br/>neo-io · neo-error · neo-crypto · neo-storage · neo-static-files<br/>neo-config · neo-vm · neo-serialization · neo-manifest"]
+    INF["<b>Infrastructure</b><br/>neo-io · neo-error · neo-crypto · neo-storage · neo-static-files<br/>neo-state-packs · neo-checkpoint · neo-config · neo-vm · neo-serialization · neo-manifest"]
     FND["<b>Foundation</b><br/>neo-primitives"]
     APP --> PLUG --> COMP --> NODE --> DOM --> PROTO --> INF --> FND
 ```
@@ -153,6 +153,30 @@ you can understand the whole node without reading source.
 **Learning paths:** operators → *getting-started → configuration → operations*;
 developers → *architecture → dataflow → protocol-compatibility → rpc-api*.
 
+## Future work
+
+### Verifiable NeoFS checkpoints (deferred)
+
+The current engineering priority is exact Neo N3 v3.10.1 correctness, sustained
+MainNet continuation, and measured persistence and execution optimization.
+NeoFS checkpoint distribution is therefore not wired into node startup,
+storage, networking, or RPC.
+
+The proposed mandatory V1 is intentionally small: deterministic commitments to
+current non-Ledger state, Ledger state, and the canonical block archive; the
+existing validator-signed StateRoot plus a supplementary StateValidator
+certificate for the Ledger/block binding; untrusted NeoFS object transport;
+atomic full-node import; and locally verified point proofs for light clients.
+It excludes zero-knowledge proofs, historical or compact MPT transport, erasure
+coding, lazy activation, checkpoint deltas, range proofs, logs, and notification
+archives.
+
+The dependency-light `neo-checkpoint` crate currently provides only isolated
+canonical format and commitment scaffolding. It is not a supported exporter,
+importer, trust path, or fast-sync mode. The complete deferred design and
+promotion gates are tracked in
+[`neofs-verifiable-checkpoint-v1`](./openspec/changes/neofs-verifiable-checkpoint-v1/).
+
 ## Project layout
 
 ```
@@ -160,7 +184,8 @@ neo-rs/
 ├── neo-primitives                          # L0 Foundation — primitive types
 ├── neo-io, neo-error, neo-crypto,          # L1 Infrastructure
 │   neo-storage, neo-static-files, neo-config,
-│   neo-vm, neo-serialization, neo-manifest
+│   neo-state-packs, neo-checkpoint, neo-vm,
+│   neo-serialization, neo-manifest
 ├── neo-payloads, neo-consensus, neo-hsm    # L2 Protocol
 ├── neo-runtime, neo-execution,             # L3 Domain Services
 │   neo-native-contracts, neo-state-service,

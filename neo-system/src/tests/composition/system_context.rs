@@ -3,6 +3,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use neo_blockchain::SystemContext;
 use neo_config::ProtocolSettings;
+use neo_execution::ExecutionArtifactLimits;
+use neo_execution::specialization::SpecializationControl;
 use neo_native_contracts::StandardNativeProvider;
 use neo_storage::persistence::providers::MemoryStore;
 use neo_storage::persistence::{StoreCache, TransactionalStore};
@@ -94,6 +96,56 @@ fn context_exposes_the_composed_native_provider() {
         .native_contract_provider()
         .expect("composed context always exposes its native provider");
     assert!(Arc::ptr_eq(&provider, &exposed));
+}
+
+#[test]
+fn context_reuses_composed_specialization_control_across_resource_requests() {
+    let store = Arc::new(MemoryStore::new());
+    let store_cache = StoreCache::new_from_store(store, false);
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+    let control = SpecializationControl::disabled();
+    let artifact_limits = ExecutionArtifactLimits {
+        max_retained_bytes: 4096,
+        ..ExecutionArtifactLimits::DEFAULT
+    };
+    let resources = neo_blockchain::NativePersistResources::from_provider(Arc::new(
+        StandardNativeProvider::new(),
+    ))
+    .with_specialization_shadow(control.clone(), artifact_limits);
+    let provider = resources.provider();
+    let context = NodeSystemContext::new_with_ledger_provider_and_optional_native_persist_resources(
+        Arc::new(ProtocolSettings::default()),
+        snapshot,
+        store_cache,
+        provider,
+        Some(resources),
+        neo_blockchain::OptionalStaticLedgerProvider::default(),
+        Arc::new(NoopBlockCommitHooks),
+    );
+
+    let first = context
+        .native_persist_resources()
+        .expect("composed native persistence resources");
+    assert_eq!(first.specialization_artifact_limits(), artifact_limits);
+    assert!(
+        !first
+            .specialization_control()
+            .expect("composed control")
+            .snapshot()
+            .global_killed
+    );
+
+    control.kill_global();
+    let second = context
+        .native_persist_resources()
+        .expect("subsequent native persistence resources");
+    assert!(
+        second
+            .specialization_control()
+            .expect("same process control")
+            .snapshot()
+            .global_killed
+    );
 }
 
 #[test]

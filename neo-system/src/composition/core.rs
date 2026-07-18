@@ -10,7 +10,8 @@
 use std::sync::Arc;
 
 use neo_blockchain::{
-    BlockchainHandle, BlockchainService, HeaderCache, LedgerContext, OptionalStaticLedgerProvider,
+    BlockchainHandle, BlockchainService, HeaderCache, LedgerContext, NativePersistResources,
+    OptionalStaticLedgerProvider,
 };
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
@@ -36,6 +37,7 @@ where
     settings: Arc<ProtocolSettings>,
     storage: Arc<S>,
     native_contract_provider: Arc<P>,
+    native_persist_resources: Option<NativePersistResources<P>>,
     cold_ledger_provider: OptionalStaticLedgerProvider,
     hooks: Arc<H>,
     persisted_height: u32,
@@ -60,6 +62,7 @@ where
             settings,
             storage,
             native_contract_provider,
+            native_persist_resources: None,
             cold_ledger_provider: OptionalStaticLedgerProvider::default(),
             hooks,
             persisted_height,
@@ -82,6 +85,19 @@ where
         self
     }
 
+    /// Enable ordinary-authoritative specialization shadowing for persistence.
+    pub fn with_specialization_shadow(
+        mut self,
+        control: neo_execution::specialization::SpecializationControl,
+        artifact_limits: neo_execution::ExecutionArtifactLimits,
+    ) -> Self {
+        self.native_persist_resources = Some(
+            NativePersistResources::from_provider(Arc::clone(&self.native_contract_provider))
+                .with_specialization_shadow(control, artifact_limits),
+        );
+        self
+    }
+
     /// Compose the core service and the handles needed by outer workflows.
     pub fn build(self) -> NodeCoreLaunch<P, S, H> {
         let store_cache = StoreCache::new_from_store(Arc::clone(&self.storage), false);
@@ -96,14 +112,17 @@ where
             ledger_context.record_tip(self.persisted_height);
         }
 
-        let system_context = Arc::new(NodeSystemContext::new_with_ledger_provider(
-            Arc::clone(&self.settings),
-            Arc::clone(&snapshot),
-            store_cache,
-            Arc::clone(&self.native_contract_provider),
-            self.cold_ledger_provider.clone(),
-            self.hooks,
-        ));
+        let system_context = Arc::new(
+            NodeSystemContext::new_with_ledger_provider_and_optional_native_persist_resources(
+                Arc::clone(&self.settings),
+                Arc::clone(&snapshot),
+                store_cache,
+                Arc::clone(&self.native_contract_provider),
+                self.native_persist_resources,
+                self.cold_ledger_provider.clone(),
+                self.hooks,
+            ),
+        );
         let (mut service, blockchain) = BlockchainService::with_defaults(
             system_context,
             Arc::clone(&ledger_context),

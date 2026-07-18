@@ -1,0 +1,23 @@
+	Command being timed: "target/release/neo-node --config data/neo-v3101-staged-replay/neo_mainnet_validate_authoritative_packs.toml --storage-path data/neo-v3101-staged-replay/runs/authority-ab-h3287022-rebased-20260719 --import-chain data/neo-v3101-staged-replay/fast-sync-cache/chain.0.acc/chain.0.acc --stop-at-height 3377022"
+	User time (seconds): 4.42
+	System time (seconds): 3.02
+	Percent of CPU this job got: 76%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:09.72
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 3937272
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 14254
+	Minor (reclaiming a frame) page faults: 72696
+	Voluntary context switches: 16991
+	Involuntary context switches: 221
+	Swaps: 0
+	File system inputs: 7855968
+	File system outputs: 485744
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

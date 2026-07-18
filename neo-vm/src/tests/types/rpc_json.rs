@@ -1,8 +1,8 @@
 use super::StackItemRpcJson;
 use crate::StackItem;
+use crate::VmOrderedDictionary;
 use crate::script::Script;
 use crate::stack_item::InteropInterface;
-use neo_vm_rs::VmOrderedDictionary;
 use serde_json::json;
 use std::sync::Arc;
 

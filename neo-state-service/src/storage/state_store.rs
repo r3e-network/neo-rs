@@ -17,7 +17,9 @@
 //! Mirrors the C# `StateService.Storage.StateStore` shape.
 
 use crate::StateRootApplyMetrics;
-use crate::mpt_store::{MptBlockChanges, MptChange, MptStore, PreparedMptCommit};
+use crate::mpt_store::{
+    MptBlockChanges, MptChange, MptNodeSnapshotFactory, MptStore, PreparedMptCommit,
+};
 use crate::providers::MptStateProviderFactory;
 use crate::state_root::StateRoot;
 use neo_crypto::mpt_trie::{MptError, MptResult};
@@ -130,9 +132,17 @@ impl StateStore<MemoryStore> {
     /// `false` prunes superseded nodes on each applied block, leaving
     /// only the current root resolvable.
     pub fn with_mpt(full_state: bool) -> Self {
+        Self::with_mpt_options(full_state, false)
+    }
+
+    /// Constructs a state store with an explicit full-state finalization policy.
+    pub fn with_mpt_options(full_state: bool, defer_full_state_finalization: bool) -> Self {
         Self {
             inner: Arc::new(RwLock::default()),
-            mpt: Some(Arc::new(MptStore::new(full_state))),
+            mpt: Some(Arc::new(MptStore::new_with_options(
+                full_state,
+                defer_full_state_finalization,
+            ))),
         }
     }
 }
@@ -150,9 +160,62 @@ where
     /// enum, so the state service stays provider-neutral through the generic
     /// `S` parameter rather than depending on MDBX or memory directly.
     pub fn with_mpt_store(full_state: bool, backing: Arc<S>) -> MptResult<Self> {
+        Self::with_mpt_store_options(full_state, false, backing)
+    }
+
+    /// Constructs a state store over a backing store with an explicit
+    /// full-state finalization policy.
+    pub fn with_mpt_store_options(
+        full_state: bool,
+        defer_full_state_finalization: bool,
+        backing: Arc<S>,
+    ) -> MptResult<Self> {
         Ok(Self {
             inner: Arc::new(RwLock::default()),
-            mpt: Some(Arc::new(MptStore::from_store(backing, full_state)?)),
+            mpt: Some(Arc::new(MptStore::from_store_with_options(
+                backing,
+                full_state,
+                defer_full_state_finalization,
+            )?)),
+        })
+    }
+
+    /// Constructs a state store whose StateService metadata remains in
+    /// `backing` while all exact MPT node reads use a separately pinned,
+    /// authoritative generation.
+    ///
+    /// This compatibility wrapper retains eager full-state finalization.
+    pub fn with_mpt_store_and_node_snapshots(
+        full_state: bool,
+        backing: Arc<S>,
+        node_snapshots: Arc<dyn MptNodeSnapshotFactory>,
+    ) -> MptResult<Self> {
+        Ok(Self {
+            inner: Arc::new(RwLock::default()),
+            mpt: Some(Arc::new(MptStore::from_store_with_node_snapshots(
+                backing,
+                full_state,
+                node_snapshots,
+            )?)),
+        })
+    }
+
+    /// Constructs split StateService storage with an explicit full-state
+    /// finalization policy.
+    pub fn with_mpt_store_and_node_snapshot_options(
+        full_state: bool,
+        defer_full_state_finalization: bool,
+        backing: Arc<S>,
+        node_snapshots: Arc<dyn MptNodeSnapshotFactory>,
+    ) -> MptResult<Self> {
+        Ok(Self {
+            inner: Arc::new(RwLock::default()),
+            mpt: Some(Arc::new(MptStore::from_store_with_node_snapshot_options(
+                backing,
+                full_state,
+                defer_full_state_finalization,
+                node_snapshots,
+            )?)),
         })
     }
 

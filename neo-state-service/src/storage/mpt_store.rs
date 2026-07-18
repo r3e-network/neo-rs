@@ -55,21 +55,27 @@
 use crate::Keys;
 use crate::metrics::{StateRootApplyCountKind, StateRootApplyMetrics, StateRootApplyStage};
 use crate::state_root::{CURRENT_VERSION, StateRoot};
-use neo_crypto::mpt_trie::{MptError, MptMutationStats, MptResult, MptStoreSnapshot, Node, Trie};
+use neo_crypto::mpt_trie::{
+    MptError, MptMutationStats, MptResult, MptStoreSnapshot, Node, Trie, UnresolvedDeferredNode,
+};
 use neo_io::SerializableExtensions;
 use neo_primitives::{UINT256_SIZE, UInt256};
-use neo_storage::StorageResult;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::{
-    RawOverlaySink, RawOverlaySource, RawReadOnlyStore, Store, StoreSnapshot, WriteStore,
+    RawOverlayCursor, RawOverlaySink, RawOverlaySource, RawReadOnlyStore, Store, StoreSnapshot,
+    WriteStore,
 };
+use neo_storage::{StorageError, StorageResult};
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
+use std::fs;
 use std::sync::Arc;
 use std::time::Instant;
 
+mod node_source;
 mod write_batch;
+pub use node_source::{MptNodeReadGeneration, MptNodeReadSnapshot, MptNodeSnapshotFactory};
 use write_batch::MptWriteBatch;
 
 /// Transient MPT publications are keyed by prefixed SHA-256 node hashes plus a
@@ -80,7 +86,13 @@ type MptOverlay = FxHashMap<Vec<u8>, Option<Vec<u8>>>;
 /// Size of the serialized unsigned `StateRoot` prefix:
 /// `version (1) + index (4, LE) + root_hash (32)`.
 const STATE_ROOT_UNSIGNED_LEN: usize = 1 + 4 + UINT256_SIZE;
-const MPT_NODE_PREFIX: u8 = 0xf0;
+/// Prefix of exact serialized MPT node rows in the StateService namespace.
+pub const MPT_NODE_PREFIX: u8 = 0xf0;
+/// Complete key length of a prefix plus UInt256 node hash row.
+pub const MPT_NODE_KEY_BYTES: usize = 1 + UINT256_SIZE;
+const DEFERRED_NODE_LOOKUP_MAX_KEYS: usize = 1024 * 1024;
+const DEFERRED_NODE_LOOKUP_MAX_ESTIMATED_BYTES: usize = 256 * 1024 * 1024;
+const SERIALIZED_NODE_FIXED_BYTES: usize = 1 + std::mem::size_of::<i32>();
 
 /// MDBX named table used when StateService shares the canonical environment.
 pub const MDBX_STATE_SERVICE_NAMESPACE: &str = "neo_state_service";
@@ -140,6 +152,10 @@ pub struct MptStore<S: Store = MemoryStore> {
     /// `false`, applying a block prunes the nodes the change set made
     /// unreachable, so only the *current* root stays resolvable.
     full_state: bool,
+    /// Whether ordered full-state batches defer lookup work while retaining
+    /// every serialized mutation. The default remains the C#-compatible eager
+    /// storage policy.
+    defer_full_state_finalization: bool,
     /// Cached current local root `(index, hash)` for hot contiguity checks.
     ///
     /// Durable state-root records remain the source of truth for historical
@@ -149,6 +165,9 @@ pub struct MptStore<S: Store = MemoryStore> {
     latest_local_root: RwLock<Option<(u32, UInt256)>>,
     /// Optional durable backend for the same flat C# byte namespace.
     backing: Option<Arc<S>>,
+    /// Optional authoritative source for the physically separated MPT node
+    /// namespace. When present, node misses never fall back to `backing`.
+    node_snapshots: Option<Arc<dyn MptNodeSnapshotFactory>>,
 }
 
 /// Immutable, point-in-time view of an [`MptStore`] — the analogue of
@@ -167,6 +186,8 @@ pub struct MptReadSnapshot<S: Store = MemoryStore> {
     map: Arc<HashMap<Vec<u8>, Option<Vec<u8>>>>,
     /// Frozen durable snapshot used for entries not present in `map`.
     backing_snapshot: Option<Arc<S::Snapshot>>,
+    /// Pinned authoritative node generation paired with this read view.
+    node_snapshot: Option<Arc<dyn MptNodeReadSnapshot>>,
     /// Copied [`MptStore::full_state`] flag.
     full_state: bool,
 }
@@ -175,14 +196,22 @@ pub struct MptReadSnapshot<S: Store = MemoryStore> {
 struct OverlayCounts {
     puts: u64,
     deletes: u64,
+    node_puts: u64,
+    node_deletes: u64,
+    node_value_sizes: [u64; 8],
+    node_value_bytes: [u64; 8],
 }
 
 impl OverlayCounts {
-    fn record(&mut self, value: Option<&Vec<u8>>) {
-        if value.is_some() {
-            self.record_put();
-        } else {
-            self.record_delete();
+    fn record(&mut self, key: &[u8], value: Option<&[u8]>) {
+        match (is_mpt_node_key(key), value) {
+            (true, Some(value)) => self.record_node_put(value.len()),
+            (true, None) => {
+                self.record_delete();
+                self.node_deletes += 1;
+            }
+            (false, Some(_)) => self.record_put(),
+            (false, None) => self.record_delete(),
         }
     }
 
@@ -194,8 +223,123 @@ impl OverlayCounts {
         self.deletes += 1;
     }
 
+    fn record_node_put(&mut self, value_len: usize) {
+        self.record_put();
+        self.node_puts += 1;
+        let bucket = node_value_size_bucket(value_len);
+        self.node_value_sizes[bucket] += 1;
+        self.node_value_bytes[bucket] += value_len as u64;
+    }
+
     fn entries(self) -> u64 {
         self.puts + self.deletes
+    }
+}
+
+#[inline]
+/// Returns whether a raw StateService key is exactly prefix plus node hash.
+pub fn is_mpt_node_key(key: &[u8]) -> bool {
+    key.len() == MPT_NODE_KEY_BYTES && key.first() == Some(&MPT_NODE_PREFIX)
+}
+
+const fn node_value_size_bucket(value_len: usize) -> usize {
+    match value_len {
+        0..=64 => 0,
+        65..=128 => 1,
+        129..=256 => 2,
+        257..=512 => 3,
+        513..=1_024 => 4,
+        1_025..=4_096 => 5,
+        4_097..=16_384 => 6,
+        _ => 7,
+    }
+}
+
+#[cfg(test)]
+mod overlay_count_tests {
+    use super::{MPT_NODE_PREFIX, OverlayCounts};
+    use neo_primitives::UINT256_SIZE;
+
+    #[test]
+    fn node_counts_exclude_metadata_and_cover_value_boundaries() {
+        let mut counts = OverlayCounts::default();
+        let mut node_key = [0u8; 1 + UINT256_SIZE];
+        node_key[0] = MPT_NODE_PREFIX;
+
+        for value_len in [64, 65, 129, 257, 513, 1_025, 4_097, 16_385] {
+            let value = vec![0u8; value_len];
+            counts.record(&node_key, Some(&value));
+        }
+        counts.record(&node_key, None);
+        counts.record(&[MPT_NODE_PREFIX, 0x01], Some(&[0u8; 4]));
+        counts.record(&[0x01], None);
+
+        assert_eq!(counts.puts, 9);
+        assert_eq!(counts.deletes, 2);
+        assert_eq!(counts.node_puts, 8);
+        assert_eq!(counts.node_deletes, 1);
+        assert_eq!(counts.node_value_sizes, [1; 8]);
+        assert_eq!(
+            counts.node_value_bytes,
+            [64, 65, 129, 257, 513, 1_025, 4_097, 16_385]
+        );
+    }
+}
+
+#[cfg(test)]
+mod prepared_overlay_partition_tests {
+    use super::*;
+
+    fn node_key(tag: u8) -> Vec<u8> {
+        let mut key = vec![tag; 1 + UINT256_SIZE];
+        key[0] = MPT_NODE_PREFIX;
+        key
+    }
+
+    #[test]
+    fn prepared_overlay_exposes_exact_sorted_node_and_metadata_partitions() {
+        let first_node = node_key(1);
+        let second_node = node_key(2);
+        let root_record = vec![0x01, 0, 0, 0, 7];
+        let short_f0_metadata = vec![MPT_NODE_PREFIX, 0x01];
+        let mut overlay = MptOverlay::default();
+        overlay.insert(second_node.clone(), Some(b"second".to_vec()));
+        overlay.insert(root_record.clone(), Some(b"root".to_vec()));
+        overlay.insert(first_node.clone(), None);
+        overlay.insert(short_f0_metadata.clone(), Some(b"metadata".to_vec()));
+
+        let mut prepared = PreparedMptCommit::new(7, UInt256::default(), overlay, 1);
+        let mut nodes = Vec::new();
+        prepared.visit_materialized_node_overlay(&mut |key: &[u8], value: Option<&[u8]>| {
+            nodes.push((key.to_vec(), value.map(<[u8]>::to_vec)));
+        });
+        assert_eq!(
+            nodes,
+            vec![
+                (first_node.clone(), None),
+                (second_node.clone(), Some(b"second".to_vec())),
+            ]
+        );
+
+        let mut metadata = Vec::new();
+        prepared.visit_metadata_overlay(&mut |key: &[u8], value: Option<&[u8]>| {
+            metadata.push((key.to_vec(), value.map(<[u8]>::to_vec)));
+        });
+        assert_eq!(
+            metadata,
+            vec![
+                (root_record.clone(), Some(b"root".to_vec())),
+                (short_f0_metadata.clone(), Some(b"metadata".to_vec())),
+            ]
+        );
+        assert!(prepared.unresolved_node_journal().is_empty());
+
+        let mut combined = Vec::new();
+        prepared.visit_raw_overlay(&mut |key: &[u8], value: Option<&[u8]>| {
+            combined.push((key.to_vec(), value.map(<[u8]>::to_vec)));
+        });
+        assert!(combined.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        assert_eq!(combined.len(), nodes.len() + metadata.len());
     }
 }
 
@@ -244,7 +388,7 @@ impl RawOverlaySource for EmptyRootBatchOverlaySource<'_> {
             Some(self.current_index_value.as_slice()),
         );
         if let Some((key, value)) = self.empty_root_record {
-            self.counts.record_put();
+            self.counts.record_node_put(value.len());
             sink.visit(key.as_slice(), Some(value.as_slice()));
         }
     }
@@ -267,22 +411,75 @@ struct SortedOverlaySource<'a> {
 pub struct PreparedMptCommit {
     block_index: u32,
     root_hash: UInt256,
-    overlay: MptOverlay,
+    /// Exact materialized `0xf0 || node_hash` puts and tombstones.
+    node_overlay: MptOverlay,
+    /// State-root records, the current-root pointer, and future non-node rows.
+    metadata_overlay: MptOverlay,
+    /// Unresolved deferred full-state journal, ordered by raw key. Non-empty
+    /// only when the batch ran in deferred full-state mode and either its
+    /// backing store can resolve entries at a write cursor or it pinned a
+    /// physically separate authoritative node generation.
+    deferred_journal: Vec<UnresolvedDeferredNode>,
+    /// Exact authoritative node generation used to prepare the deferred
+    /// journal. Retaining it closes the prepare/commit generation race without
+    /// holding the authority publication lock during trie mutation.
+    deferred_node_snapshot: Option<Arc<dyn MptNodeReadSnapshot>>,
+    /// Set once the journal has been resolved and written at the commit
+    /// cursor. Verified fail-closed before publishing the local root.
+    journal_committed_at_cursor: bool,
+    /// Set once split authority has materialized the journal into exact node
+    /// bytes. Resolution is deliberately one-shot because reference counts are
+    /// additive.
+    journal_materialized_from_snapshot: bool,
     samples: usize,
     counts: OverlayCounts,
-    visited: bool,
+    nodes_visited: bool,
+    metadata_visited: bool,
+}
+
+/// Borrowed StateService metadata view used by split-store coordinators.
+///
+/// Visiting this source consumes only the metadata half of the prepared
+/// publication. The node half must be consumed separately through
+/// [`PreparedMptCommit::visit_materialized_node_overlay`].
+pub struct PreparedMptMetadataOverlay<'a> {
+    prepared: &'a mut PreparedMptCommit,
 }
 
 impl PreparedMptCommit {
     fn new(block_index: u32, root_hash: UInt256, overlay: MptOverlay, samples: usize) -> Self {
+        let mut counts = OverlayCounts::default();
+        for (key, value) in &overlay {
+            counts.record(key, value.as_deref());
+        }
+        let (node_overlay, metadata_overlay) = partition_mpt_overlay(overlay);
         Self {
             block_index,
             root_hash,
-            overlay,
+            node_overlay,
+            metadata_overlay,
+            deferred_journal: Vec::new(),
+            deferred_node_snapshot: None,
+            journal_committed_at_cursor: false,
+            journal_materialized_from_snapshot: false,
             samples: samples.max(1),
-            counts: OverlayCounts::default(),
-            visited: false,
+            counts,
+            nodes_visited: false,
+            metadata_visited: false,
         }
+    }
+
+    /// Attaches an unresolved deferred full-state journal for the commit
+    /// cursor to resolve. The journal must be ordered by raw key and its keys
+    /// must be disjoint from every key already present in `node_overlay`.
+    fn with_deferred_journal(
+        mut self,
+        journal: Vec<UnresolvedDeferredNode>,
+        node_snapshot: Option<Arc<dyn MptNodeReadSnapshot>>,
+    ) -> Self {
+        self.deferred_journal = journal;
+        self.deferred_node_snapshot = node_snapshot;
+        self
     }
 
     /// Returns the final block index represented by this overlay.
@@ -294,6 +491,296 @@ impl PreparedMptCommit {
     pub fn root_hash(&self) -> UInt256 {
         self.root_hash
     }
+
+    /// Visits sorted, already-materialized MPT node operations only.
+    ///
+    /// Deferred full-state journal entries are deliberately excluded because
+    /// their exact reference-count bytes require a read from the authoritative
+    /// prefix. Visiting this view consumes the node half of a split
+    /// publication, even when the overlay is empty.
+    pub fn visit_materialized_node_overlay<S>(&mut self, sink: &mut S)
+    where
+        S: RawOverlaySink + ?Sized,
+    {
+        visit_sorted_overlay(&self.node_overlay, sink);
+        self.nodes_visited = true;
+    }
+
+    /// Borrows sorted non-node StateService metadata as a raw overlay source
+    /// suitable for the canonical database transaction.
+    ///
+    /// Dropping the returned source without a visit leaves publication
+    /// fail-closed.
+    pub fn metadata_overlay_source(&mut self) -> PreparedMptMetadataOverlay<'_> {
+        PreparedMptMetadataOverlay { prepared: self }
+    }
+
+    /// Visits sorted non-node StateService metadata operations only.
+    pub fn visit_metadata_overlay<S>(&mut self, sink: &mut S)
+    where
+        S: RawOverlaySink + ?Sized,
+    {
+        visit_sorted_overlay(&self.metadata_overlay, sink);
+        self.metadata_visited = true;
+    }
+
+    /// Number of exact node puts and tombstones in this commit.
+    #[must_use]
+    pub fn materialized_node_operation_count(&self) -> usize {
+        self.node_overlay.len()
+    }
+
+    /// Unresolved full-state node journal in raw-key order.
+    ///
+    /// Each entry becomes one exact node put only after
+    /// [`UnresolvedDeferredNode::resolve_bytes`] validates and combines it
+    /// with the authoritative prefix value.
+    #[must_use]
+    pub fn unresolved_node_journal(&self) -> &[UnresolvedDeferredNode] {
+        &self.deferred_journal
+    }
+
+    /// Resolves an exported deferred journal against the exact authoritative
+    /// node generation used during preparation and moves the resulting bytes
+    /// into the ordinary node overlay.
+    ///
+    /// Reads are issued in bounded sorted batches. All values are validated and
+    /// resolved before this commit is mutated, so a backend error, malformed
+    /// node, duplicate key, or result-count mismatch leaves the prepared commit
+    /// unchanged and safe to discard.
+    pub fn materialize_deferred_node_overlay(&mut self) -> StorageResult<()> {
+        if self.journal_materialized_from_snapshot {
+            return Err(StorageError::invalid_operation(
+                "deferred journal already materialized from its node snapshot",
+            ));
+        }
+        if self.journal_committed_at_cursor {
+            return Err(StorageError::invalid_operation(
+                "deferred journal already resolved at a commit cursor",
+            ));
+        }
+        MptStore::<MemoryStore>::record_count_samples(
+            StateRootApplyCountKind::DeferredJournalEntries,
+            self.deferred_journal.len() as u64,
+            self.samples as u64,
+        );
+        if self.deferred_journal.is_empty() {
+            return Ok(());
+        }
+        if self.nodes_visited {
+            return Err(StorageError::invalid_operation(
+                "cannot materialize a deferred journal after visiting the node overlay",
+            ));
+        }
+        if self
+            .deferred_journal
+            .windows(2)
+            .any(|entries| entries[0].key >= entries[1].key)
+        {
+            return Err(StorageError::invalid_operation(
+                "deferred journal keys must be strictly ordered and unique",
+            ));
+        }
+        if self
+            .deferred_journal
+            .iter()
+            .any(|entry| !is_mpt_node_key(&entry.key) || self.node_overlay.contains_key(&entry.key))
+        {
+            return Err(StorageError::invalid_operation(
+                "deferred journal keys must be exact MPT node keys disjoint from the materialized overlay",
+            ));
+        }
+
+        let snapshot = self.deferred_node_snapshot.as_ref().ok_or_else(|| {
+            StorageError::invalid_operation(
+                "deferred journal has no pinned authoritative node snapshot",
+            )
+        })?;
+        let mut resolved_values = Vec::with_capacity(self.deferred_journal.len());
+        let mut keys = Vec::new();
+        let mut lookup_us = 0u64;
+        let mut resolve_us = 0u64;
+        let mut backing_hits = 0u64;
+        let mut backing_misses = 0u64;
+        let mut chunk_start = 0usize;
+        while chunk_start < self.deferred_journal.len() {
+            let mut chunk_end = chunk_start;
+            let mut estimated_bytes = 0usize;
+            while chunk_end < self.deferred_journal.len()
+                && chunk_end - chunk_start < DEFERRED_NODE_LOOKUP_MAX_KEYS
+            {
+                let entry_bytes = self.deferred_journal[chunk_end]
+                    .payload_without_reference
+                    .len()
+                    .saturating_add(SERIALIZED_NODE_FIXED_BYTES);
+                if chunk_end > chunk_start
+                    && estimated_bytes.saturating_add(entry_bytes)
+                        > DEFERRED_NODE_LOOKUP_MAX_ESTIMATED_BYTES
+                {
+                    break;
+                }
+                estimated_bytes = estimated_bytes.saturating_add(entry_bytes);
+                chunk_end += 1;
+            }
+            let journal_chunk = &self.deferred_journal[chunk_start..chunk_end];
+            keys.clear();
+            keys.reserve(journal_chunk.len());
+            keys.extend(journal_chunk.iter().map(|entry| entry.key.as_slice()));
+            let lookup_start = Instant::now();
+            // Deferred full-state finalization performs only a few sorted
+            // batches. Probe process resource counters immediately around the
+            // provider call; ordinary point reads never pay this cost.
+            let resources_before = process_resource_snapshot();
+            let lookup_result = snapshot.try_get_node_bytes_sorted(&keys);
+            let resources_after = process_resource_snapshot();
+            record_deferred_resource_delta(resources_before, resources_after);
+            let stored = match lookup_result {
+                Ok(stored) => stored,
+                Err(error) => {
+                    let failed_lookup_us = lookup_us.saturating_add(elapsed_us(lookup_start));
+                    MptStore::<MemoryStore>::record_stage_samples(
+                        StateRootApplyStage::DeferredFinalizationLookup,
+                        failed_lookup_us,
+                        self.samples as u64,
+                    );
+                    MptStore::<MemoryStore>::record_count_samples(
+                        StateRootApplyCountKind::FinalizationLookupErrors,
+                        journal_chunk.len() as u64,
+                        self.samples as u64,
+                    );
+                    return Err(StorageError::backend(format!(
+                        "authoritative deferred-journal batch read failed: {error}"
+                    )));
+                }
+            };
+            lookup_us = lookup_us.saturating_add(elapsed_us(lookup_start));
+            if stored.len() != journal_chunk.len() {
+                MptStore::<MemoryStore>::record_stage_samples(
+                    StateRootApplyStage::DeferredFinalizationLookup,
+                    lookup_us,
+                    self.samples as u64,
+                );
+                MptStore::<MemoryStore>::record_count_samples(
+                    StateRootApplyCountKind::FinalizationLookupErrors,
+                    journal_chunk.len() as u64,
+                    self.samples as u64,
+                );
+                return Err(StorageError::backend(format!(
+                    "authoritative deferred-journal batch returned {} results for {} keys",
+                    stored.len(),
+                    journal_chunk.len()
+                )));
+            }
+
+            let resolve_start = Instant::now();
+            for (entry, stored) in journal_chunk.iter().zip(stored) {
+                if stored.is_some() {
+                    backing_hits = backing_hits.saturating_add(1);
+                } else {
+                    backing_misses = backing_misses.saturating_add(1);
+                }
+                let value = match entry.resolve_bytes(stored) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        resolve_us = resolve_us.saturating_add(elapsed_us(resolve_start));
+                        MptStore::<MemoryStore>::record_stage_samples(
+                            StateRootApplyStage::DeferredFinalizationResolve,
+                            resolve_us,
+                            self.samples as u64,
+                        );
+                        MptStore::<MemoryStore>::record_count_samples(
+                            StateRootApplyCountKind::FinalizationBackingHits,
+                            backing_hits,
+                            self.samples as u64,
+                        );
+                        MptStore::<MemoryStore>::record_count_samples(
+                            StateRootApplyCountKind::FinalizationBackingMisses,
+                            backing_misses,
+                            self.samples as u64,
+                        );
+                        return Err(StorageError::backend(format!(
+                            "authoritative deferred-journal resolution failed: {error}"
+                        )));
+                    }
+                };
+                resolved_values.push(value);
+            }
+            resolve_us = resolve_us.saturating_add(elapsed_us(resolve_start));
+            chunk_start = chunk_end;
+        }
+
+        MptStore::<MemoryStore>::record_stage_samples(
+            StateRootApplyStage::DeferredFinalizationLookup,
+            lookup_us,
+            self.samples as u64,
+        );
+        MptStore::<MemoryStore>::record_stage_samples(
+            StateRootApplyStage::DeferredFinalizationResolve,
+            resolve_us,
+            self.samples as u64,
+        );
+        MptStore::<MemoryStore>::record_count_samples(
+            StateRootApplyCountKind::FinalizationBackingHits,
+            backing_hits,
+            self.samples as u64,
+        );
+        MptStore::<MemoryStore>::record_count_samples(
+            StateRootApplyCountKind::FinalizationBackingMisses,
+            backing_misses,
+            self.samples as u64,
+        );
+        let journal = std::mem::take(&mut self.deferred_journal);
+        debug_assert_eq!(journal.len(), resolved_values.len());
+        for (entry, value) in journal.into_iter().zip(resolved_values) {
+            let key = entry.key;
+            self.counts.record(&key, Some(&value));
+            let previous = self.node_overlay.insert(key, Some(value));
+            debug_assert!(
+                previous.is_none(),
+                "deferred node key was prevalidated disjoint"
+            );
+        }
+        self.deferred_node_snapshot = None;
+        self.journal_materialized_from_snapshot = true;
+        Ok(())
+    }
+}
+
+impl RawOverlaySource for PreparedMptMetadataOverlay<'_> {
+    fn visit_raw_overlay<S>(&mut self, sink: &mut S)
+    where
+        S: RawOverlaySink + ?Sized,
+    {
+        visit_sorted_overlay(&self.prepared.metadata_overlay, sink);
+        self.prepared.metadata_visited = true;
+    }
+}
+
+fn partition_mpt_overlay(overlay: MptOverlay) -> (MptOverlay, MptOverlay) {
+    // Node rows dominate high-height windows. Retain their existing table and
+    // capacity, extracting only the small metadata subset so partitioning does
+    // not rehash hundreds of thousands of content-addressed node keys.
+    let mut node_overlay = overlay;
+    let metadata_overlay = node_overlay
+        .extract_if(|key, _| !is_mpt_node_key(key))
+        .collect();
+    (node_overlay, metadata_overlay)
+}
+
+fn visit_sorted_overlay<S>(overlay: &MptOverlay, sink: &mut S)
+where
+    S: RawOverlaySink + ?Sized,
+{
+    let mut entries = overlay.iter().collect::<Vec<_>>();
+    entries.sort_unstable_by(|left, right| left.0.cmp(right.0));
+    for (key, value) in entries {
+        sink.visit(key, value.as_deref());
+    }
+}
+
+fn join_mpt_overlay(mut node: MptOverlay, metadata: MptOverlay) -> MptOverlay {
+    node.extend(metadata);
+    node
 }
 
 impl std::fmt::Debug for PreparedMptCommit {
@@ -302,7 +789,9 @@ impl std::fmt::Debug for PreparedMptCommit {
             .debug_struct("PreparedMptCommit")
             .field("block_index", &self.block_index)
             .field("root_hash", &self.root_hash)
-            .field("entries", &self.overlay.len())
+            .field("node_entries", &self.node_overlay.len())
+            .field("metadata_entries", &self.metadata_overlay.len())
+            .field("deferred_journal", &self.deferred_journal.len())
             .field("samples", &self.samples)
             .finish()
     }
@@ -314,19 +803,98 @@ impl RawOverlaySource for PreparedMptCommit {
         S: RawOverlaySink + ?Sized,
     {
         let sort_start = Instant::now();
-        let mut entries = self.overlay.iter().collect::<Vec<_>>();
+        let mut entries = self
+            .metadata_overlay
+            .iter()
+            .chain(self.node_overlay.iter())
+            .collect::<Vec<_>>();
         entries.sort_unstable_by(|left, right| left.0.cmp(right.0));
         MptStore::<MemoryStore>::record_stage_samples(
             StateRootApplyStage::BackingSort,
             elapsed_us(sort_start),
             self.samples as u64,
         );
-        self.counts = OverlayCounts::default();
-        self.visited = true;
+        self.nodes_visited = true;
+        self.metadata_visited = true;
         for (key, value) in entries {
-            self.counts.record(value.as_ref());
             sink.visit(key, value.as_deref());
         }
+    }
+
+    /// Resolves the deferred full-state journal at the commit's write cursor,
+    /// replacing the classic resolve-then-encode sweep against a frozen
+    /// backing snapshot.
+    ///
+    /// Correctness invariants:
+    /// - The StateService write gate serializes every writer of this table,
+    ///   and the coordinated commit runs inside it, so the RW transaction
+    ///   observes exactly the base the frozen snapshot would have seen when
+    ///   the batch was prepared. The primary overlay of the coordinated
+    ///   commit targets a different table (validated by the coordinator), and
+    ///   the materialized overlay keys are disjoint from the journaled node
+    ///   hashes (a hash is tracked either in the cache entries or in the
+    ///   deferred journal, never both), so every probe reads the same bytes
+    ///   the classic two-sweep path would have resolved.
+    /// - `reference = (persisted reference if the key exists else 0) +
+    ///   journaled put count`; the stored payload and node type win when the
+    ///   key exists, exactly like the journal replay in `MptCache`.
+    /// - Full-state journals never delete (`Trie::previous_hash` yields
+    ///   `None` in full-state mode), so every journal entry is a put.
+    /// - Fail-closed: any cursor or resolution error aborts the commit before
+    ///   the transaction publishes.
+    fn commit_raw_overlay_at_cursor(
+        &mut self,
+        cursor: &mut dyn RawOverlayCursor,
+    ) -> StorageResult<()> {
+        if !self.deferred_journal.is_empty() && self.deferred_node_snapshot.is_some() {
+            return Err(StorageError::invalid_operation(
+                "split-authority deferred journals must be materialized from their pinned node snapshot",
+            ));
+        }
+        // Resolution is read-modify-write, not idempotent: a second pass would
+        // read the first pass's rows and double-accumulate reference counts.
+        if self.journal_committed_at_cursor {
+            return Err(StorageError::invalid_operation(
+                "deferred journal already resolved at a commit cursor".to_string(),
+            ));
+        }
+        if self.journal_materialized_from_snapshot {
+            return Err(StorageError::invalid_operation(
+                "deferred journal already materialized from its node snapshot".to_string(),
+            ));
+        }
+        MptStore::<MemoryStore>::record_count_samples(
+            StateRootApplyCountKind::DeferredJournalEntries,
+            self.deferred_journal.len() as u64,
+            self.samples as u64,
+        );
+        for entry in &self.deferred_journal {
+            let absent_value =
+                entry
+                    .resolve_bytes(None)
+                    .map_err(|error| StorageError::Backend {
+                        message: format!(
+                            "state-service deferred journal resolution failed: {error}"
+                        ),
+                    })?;
+            let value = match cursor.insert_stored_if_absent(&entry.key, &absent_value)? {
+                None => absent_value,
+                Some(stored) => {
+                    let value = entry.resolve_bytes(Some(stored)).map_err(|error| {
+                        StorageError::Backend {
+                            message: format!(
+                                "state-service deferred journal resolution failed: {error}"
+                            ),
+                        }
+                    })?;
+                    cursor.write_stored(&entry.key, &value)?;
+                    value
+                }
+            };
+            self.counts.record(&entry.key, Some(&value));
+        }
+        self.journal_committed_at_cursor = true;
+        Ok(())
     }
 }
 
@@ -336,7 +904,7 @@ impl RawOverlaySource for SortedOverlaySource<'_> {
         S: RawOverlaySink + ?Sized,
     {
         for (key, value) in self.entries {
-            self.counts.record(value.as_ref());
+            self.counts.record(key, value.as_deref());
             sink.visit(key, value.as_deref());
         }
     }
@@ -434,14 +1002,18 @@ where
     S: Store,
 {
     fn try_get(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
+        if is_mpt_node_key(key)
+            && let Some(snapshot) = self.node_snapshot.as_ref()
+        {
+            return snapshot.try_get_node_bytes(key).map_err(|error| {
+                MptError::storage(format!(
+                    "MPT authoritative node snapshot get failed: {error}"
+                ))
+            });
+        }
         match self.map.get(key) {
             Some(value) => Ok(value.clone()),
-            None => match self.backing_snapshot.as_ref() {
-                None => Ok(None),
-                Some(snapshot) => snapshot.try_get_bytes_result(key).map_err(|error| {
-                    MptError::storage(format!("MPT read-snapshot backing get failed: {error}"))
-                }),
-            },
+            None => self.read_ordinary_backing(key),
         }
     }
 
@@ -455,6 +1027,20 @@ where
         Err(MptError::invalid(
             "cannot write through a read-only MPT store snapshot",
         ))
+    }
+}
+
+impl<S> MptReadSnapshot<S>
+where
+    S: Store,
+{
+    fn read_ordinary_backing(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
+        match self.backing_snapshot.as_ref() {
+            None => Ok(None),
+            Some(snapshot) => snapshot.try_get_bytes_result(key).map_err(|error| {
+                MptError::storage(format!("MPT read-snapshot backing get failed: {error}"))
+            }),
+        }
     }
 }
 
@@ -487,6 +1073,7 @@ where
             let batch = Arc::new(MptWriteBatch::<S>::new(
                 Arc::clone(&self.store.kv.read()),
                 self.store.backing_snapshot(),
+                self.store.node_snapshot(),
                 self.overlay_capacity,
             ));
             self.trie = Some(Trie::new(
@@ -548,6 +1135,30 @@ where
             stats.repeated_ancestor_finalizations,
         );
         StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::TrieResolveCacheHits,
+            stats.trie_resolve_cache_hits,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::TrieResolveStoreHits,
+            stats.trie_resolve_store_hits,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::TrieResolveStoreMisses,
+            stats.trie_resolve_store_misses,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::DeferredFinalizationReadBytes,
+            stats.deferred_finalization_read_bytes,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::DeferredFinalizationMinorFaults,
+            stats.deferred_finalization_minor_faults,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::DeferredFinalizationMajorFaults,
+            stats.deferred_finalization_major_faults,
+        );
+        StateRootApplyMetrics::record_count(
             StateRootApplyCountKind::OverlayWorkingSetEntries,
             overlay_working_set_entries as u64,
         );
@@ -575,6 +1186,36 @@ where
             StateRootApplyCountKind::FinalizationLookupErrors,
             stats.finalization_lookup_errors,
         );
+        for (stage, elapsed_us) in [
+            (
+                StateRootApplyStage::TrieResolveStore,
+                stats.trie_resolve_store_ns / 1_000,
+            ),
+            (
+                StateRootApplyStage::DeferredFinalizationPrepare,
+                stats.deferred_finalization_prepare_us,
+            ),
+            (
+                StateRootApplyStage::DeferredFinalizationLookup,
+                stats.deferred_finalization_lookup_us,
+            ),
+            (
+                StateRootApplyStage::DeferredFinalizationParse,
+                stats.deferred_finalization_parse_us,
+            ),
+            (
+                StateRootApplyStage::DeferredFinalizationReplay,
+                stats.deferred_finalization_replay_us,
+            ),
+            (
+                StateRootApplyStage::DeferredFinalizationEncode,
+                stats.deferred_finalization_encode_us,
+            ),
+        ] {
+            if elapsed_us > 0 {
+                StateRootApplyMetrics::record_stage(stage, elapsed_us);
+            }
+        }
     }
 
     fn record_empty_mutation_samples(samples: u64) {
@@ -584,6 +1225,12 @@ where
             StateRootApplyCountKind::HashComputations,
             StateRootApplyCountKind::MaxRecursionDepth,
             StateRootApplyCountKind::RepeatedAncestorFinalizations,
+            StateRootApplyCountKind::TrieResolveCacheHits,
+            StateRootApplyCountKind::TrieResolveStoreHits,
+            StateRootApplyCountKind::TrieResolveStoreMisses,
+            StateRootApplyCountKind::DeferredFinalizationReadBytes,
+            StateRootApplyCountKind::DeferredFinalizationMinorFaults,
+            StateRootApplyCountKind::DeferredFinalizationMajorFaults,
             StateRootApplyCountKind::OverlayWorkingSetEntries,
             StateRootApplyCountKind::FinalizationCacheHits,
             StateRootApplyCountKind::FinalizationMemoryHits,
@@ -609,13 +1256,63 @@ where
 
     /// Opens a store over an existing durable byte namespace.
     pub fn from_store(backing: Arc<S>, full_state: bool) -> MptResult<Self> {
+        Self::from_store_with_options(backing, full_state, false)
+    }
+
+    /// Opens a store with an explicit full-state finalization policy.
+    pub fn from_store_with_options(
+        backing: Arc<S>,
+        full_state: bool,
+        defer_full_state_finalization: bool,
+    ) -> MptResult<Self> {
+        Self::from_store_parts(backing, full_state, defer_full_state_finalization, None)
+    }
+
+    /// Opens StateService metadata over `backing` while routing every MPT node
+    /// read through an independently pinned authoritative generation.
+    ///
+    /// This compatibility wrapper retains eager finalization. Call
+    /// [`Self::from_store_with_node_snapshot_options`] to enable deferred
+    /// finalization against the pinned authoritative node generation.
+    pub fn from_store_with_node_snapshots(
+        backing: Arc<S>,
+        full_state: bool,
+        node_snapshots: Arc<dyn MptNodeSnapshotFactory>,
+    ) -> MptResult<Self> {
+        Self::from_store_with_node_snapshot_options(backing, full_state, false, node_snapshots)
+    }
+
+    /// Opens split StateService storage with an explicit full-state
+    /// finalization policy.
+    pub fn from_store_with_node_snapshot_options(
+        backing: Arc<S>,
+        full_state: bool,
+        defer_full_state_finalization: bool,
+        node_snapshots: Arc<dyn MptNodeSnapshotFactory>,
+    ) -> MptResult<Self> {
+        Self::from_store_parts(
+            backing,
+            full_state,
+            defer_full_state_finalization,
+            Some(node_snapshots),
+        )
+    }
+
+    fn from_store_parts(
+        backing: Arc<S>,
+        full_state: bool,
+        defer_full_state_finalization: bool,
+        node_snapshots: Option<Arc<dyn MptNodeSnapshotFactory>>,
+    ) -> MptResult<Self> {
         let latest_local_root = Self::load_latest_local_root_from_backing(backing.as_ref());
         Ok(Self {
             kv: RwLock::new(Arc::new(HashMap::new())),
             write_gate: Mutex::new(()),
             full_state,
+            defer_full_state_finalization: full_state && defer_full_state_finalization,
             latest_local_root: RwLock::new(latest_local_root),
             backing: Some(backing),
+            node_snapshots,
         })
     }
 
@@ -629,6 +1326,11 @@ where
         self.full_state
     }
 
+    /// Returns whether full-state batch finalization lookups are deferred.
+    pub fn defers_full_state_finalization(&self) -> bool {
+        self.defer_full_state_finalization
+    }
+
     /// Returns whether this MPT can participate in an external durable commit.
     pub fn has_backing_store(&self) -> bool {
         self.backing.is_some()
@@ -638,22 +1340,45 @@ where
         self.backing.as_ref().map(|backing| backing.snapshot())
     }
 
+    fn node_snapshot(&self) -> Option<Arc<dyn MptNodeReadSnapshot>> {
+        self.node_snapshots
+            .as_ref()
+            .map(|factory| factory.snapshot())
+    }
+
+    fn paired_read_snapshots(
+        &self,
+    ) -> (
+        Option<Arc<S::Snapshot>>,
+        Option<Arc<dyn MptNodeReadSnapshot>>,
+    ) {
+        let Some(factory) = self.node_snapshots.as_ref() else {
+            return (self.backing_snapshot(), None);
+        };
+        loop {
+            let generation = factory.pinned_generation();
+            let backing = self.backing_snapshot();
+            if factory.is_generation_current(generation.sequence()) {
+                return (backing, Some(generation.snapshot()));
+            }
+            std::thread::yield_now();
+        }
+    }
+
     fn load_latest_local_root_from_backing(backing: &S) -> Option<(u32, UInt256)> {
         let snapshot = backing.snapshot();
-        let index = match Self::read_current_local_root_index(
-            &HashMap::new(),
-            Some(snapshot.as_ref()),
-        ) {
-            Ok(index) => index?,
-            Err(error) => {
-                tracing::error!(
-                    target: "neo.state_service",
-                    error = %error,
-                    "failed to load current local root index from durable backing"
-                );
-                return None;
-            }
-        };
+        let index =
+            match Self::read_current_local_root_index(&HashMap::new(), Some(snapshot.as_ref())) {
+                Ok(index) => index?,
+                Err(error) => {
+                    tracing::error!(
+                        target: "neo.state_service",
+                        error = %error,
+                        "failed to load current local root index from durable backing"
+                    );
+                    return None;
+                }
+            };
         match Self::read_state_root(&HashMap::new(), Some(snapshot.as_ref()), index) {
             Ok(Some(root)) => Some((index, *root.root_hash())),
             Ok(None) => None,
@@ -676,9 +1401,11 @@ where
     /// nodes without `full_state`) cannot delete nodes out from under
     /// the walk.
     pub fn snapshot(&self) -> Arc<MptReadSnapshot<S>> {
+        let (backing_snapshot, node_snapshot) = self.paired_read_snapshots();
         Arc::new(MptReadSnapshot {
             map: Arc::clone(&self.kv.read()),
-            backing_snapshot: self.backing_snapshot(),
+            backing_snapshot,
+            node_snapshot,
             full_state: self.full_state,
         })
     }
@@ -847,6 +1574,7 @@ where
         let batch = Arc::new(MptWriteBatch::<S>::new(
             Arc::clone(&self.kv.read()),
             self.backing_snapshot(),
+            self.node_snapshot(),
             change_count.saturating_mul(2) + 2,
         ));
 
@@ -1022,7 +1750,7 @@ where
             return Ok(vec![root_before; blocks.len()]);
         }
 
-        let (roots, prepared) = self.prepare_block_changes_batch(root_before, blocks)?;
+        let (roots, prepared) = self.prepare_block_changes_batch(root_before, blocks, false)?;
         self.publish_prepared(prepared)?;
         Ok(roots)
     }
@@ -1042,7 +1770,21 @@ where
 
         let _writer = self.write_gate.lock();
         self.validate_ordered_batch(root_before, blocks)?;
-        let (roots, prepared) = self.prepare_block_changes_batch(root_before, blocks)?;
+        // Fused cursor resolution is correct only inside this write gate: the
+        // gate serializes every StateService writer, and the coordinated
+        // commit runs inside it, so the RW transaction used by the commit
+        // observes exactly the base the frozen snapshot would have seen while
+        // the batch was prepared. Export stays off unless the backing store
+        // can resolve overlay entries at its write cursor; every other path
+        // keeps the classic resolve-then-write flow.
+        let export_deferred_journal = self.defer_full_state_finalization
+            && (self.node_snapshots.is_some()
+                || self
+                    .backing
+                    .as_ref()
+                    .is_some_and(|backing| backing.supports_raw_overlay_cursor()));
+        let (roots, prepared) =
+            self.prepare_block_changes_batch(root_before, blocks, export_deferred_journal)?;
         self.publish_prepared_coordinated(prepared, commit)?;
         Ok(roots)
     }
@@ -1051,17 +1793,30 @@ where
         &self,
         root_before: Option<UInt256>,
         blocks: &[MptBlockChanges<'_>],
+        export_deferred_journal: bool,
     ) -> MptResult<(Vec<UInt256>, PreparedMptCommit)> {
         let overlay_capacity = blocks
             .iter()
             .map(|block| block.changes.len().saturating_mul(2).saturating_add(2))
             .sum();
+        let (backing_snapshot, node_snapshot) = self.paired_read_snapshots();
         let batch = Arc::new(MptWriteBatch::<S>::new(
             Arc::clone(&self.kv.read()),
-            self.backing_snapshot(),
+            backing_snapshot,
+            node_snapshot,
             overlay_capacity,
         ));
-        let mut trie = Trie::new_batch(Arc::clone(&batch), root_before, self.full_state);
+        let mut trie = if self.defer_full_state_finalization {
+            let mut trie = Trie::new_batch_deferred_full_state(
+                Arc::clone(&batch),
+                root_before,
+                self.full_state,
+            );
+            trie.set_deferred_journal_export(export_deferred_journal);
+            trie
+        } else {
+            Trie::new_batch(Arc::clone(&batch), root_before, self.full_state)
+        };
         let mut roots = Vec::with_capacity(blocks.len());
         let mut current_root = root_before;
         let mut path_scratch = Vec::new();
@@ -1134,6 +1889,13 @@ where
             let mut overlay = batch.overlay.lock();
             std::mem::take(&mut *overlay)
         };
+        // Drain the unresolved deferred journal exported at the final
+        // checkpoint commit; empty unless this batch ran with deferred
+        // full-state journal export against a cursor-resolving backing store.
+        let deferred_journal = std::mem::take(&mut *batch.deferred_journal.lock());
+        let deferred_node_snapshot = (!deferred_journal.is_empty())
+            .then(|| batch.pinned_node_snapshot())
+            .flatten();
         drop(trie);
         drop(batch);
 
@@ -1143,7 +1905,8 @@ where
                 "state-service MPT batch produced no roots for a non-empty block batch",
             ));
         };
-        let prepared = PreparedMptCommit::new(last_block_index, last_root, overlay, blocks.len());
+        let prepared = PreparedMptCommit::new(last_block_index, last_root, overlay, blocks.len())
+            .with_deferred_journal(deferred_journal, deferred_node_snapshot);
         Ok((roots, prepared))
     }
 
@@ -1219,10 +1982,18 @@ where
         let PreparedMptCommit {
             block_index,
             root_hash,
-            overlay,
+            node_overlay,
+            metadata_overlay,
             samples,
+            deferred_journal,
             ..
         } = prepared;
+        if !deferred_journal.is_empty() {
+            return Err(MptError::storage(
+                "non-coordinated StateService publish cannot resolve an unresolved deferred journal",
+            ));
+        }
+        let overlay = join_mpt_overlay(node_overlay, metadata_overlay);
         self.publish_overlay_with_samples(block_index, root_hash, overlay, samples)
     }
 
@@ -1244,9 +2015,14 @@ where
         commit(backing, &mut prepared).map_err(|error| {
             MptError::storage(format!("coordinated StateService commit failed: {error}"))
         })?;
-        if !prepared.visited {
+        if !prepared.nodes_visited || !prepared.metadata_visited {
             return Err(MptError::storage(
-                "coordinated StateService commit did not consume the prepared overlay",
+                "coordinated StateService commit did not consume both prepared node and metadata overlays",
+            ));
+        }
+        if !prepared.deferred_journal.is_empty() && !prepared.journal_committed_at_cursor {
+            return Err(MptError::storage(
+                "coordinated StateService commit did not resolve the deferred journal at its write cursor",
             ));
         }
         Self::record_stage_samples(
@@ -1258,11 +2034,13 @@ where
         let PreparedMptCommit {
             block_index,
             root_hash,
-            overlay,
+            node_overlay,
+            metadata_overlay,
             samples,
             counts,
             ..
         } = prepared;
+        let overlay = join_mpt_overlay(node_overlay, metadata_overlay);
         self.publish_committed_overlay(block_index, root_hash, overlay, counts, samples)
     }
 
@@ -1302,7 +2080,7 @@ where
             let mut kv = self.kv.write();
             let map = Arc::make_mut(&mut *kv);
             for (key, value) in overlay {
-                overlay_counts.record(value.as_ref());
+                overlay_counts.record(&key, value.as_deref());
                 map.insert(key, value);
             }
         } else {
@@ -1370,8 +2148,8 @@ where
             );
             counts.record_put();
             if let Some((key, value)) = empty_root_record {
+                counts.record_node_put(value.len());
                 map.insert(key.to_vec(), Some(value));
-                counts.record_put();
             }
             counts
         } else {
@@ -1449,7 +2227,7 @@ where
                         ))
                     })?;
                 if let Some((key, value)) = empty_root_record {
-                    counts.record_put();
+                    counts.record_node_put(value.len());
                     writer.put(key.to_vec(), value.clone()).map_err(|err| {
                         MptError::storage(format!(
                             "state-service empty-batch backing write failed: {err}"
@@ -1555,6 +2333,84 @@ where
             counts.deletes,
             samples,
         );
+        Self::record_count_samples(StateRootApplyCountKind::NodePuts, counts.node_puts, samples);
+        Self::record_count_samples(
+            StateRootApplyCountKind::NodeDeletes,
+            counts.node_deletes,
+            samples,
+        );
+        for (kind, count) in [
+            (
+                StateRootApplyCountKind::NodeValueSize0To64,
+                counts.node_value_sizes[0],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueSize65To128,
+                counts.node_value_sizes[1],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueSize129To256,
+                counts.node_value_sizes[2],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueSize257To512,
+                counts.node_value_sizes[3],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueSize513To1024,
+                counts.node_value_sizes[4],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueSize1025To4096,
+                counts.node_value_sizes[5],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueSize4097To16384,
+                counts.node_value_sizes[6],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueSizeOver16384,
+                counts.node_value_sizes[7],
+            ),
+        ] {
+            Self::record_count_samples(kind, count, samples);
+        }
+        for (kind, bytes) in [
+            (
+                StateRootApplyCountKind::NodeValueBytes0To64,
+                counts.node_value_bytes[0],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueBytes65To128,
+                counts.node_value_bytes[1],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueBytes129To256,
+                counts.node_value_bytes[2],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueBytes257To512,
+                counts.node_value_bytes[3],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueBytes513To1024,
+                counts.node_value_bytes[4],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueBytes1025To4096,
+                counts.node_value_bytes[5],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueBytes4097To16384,
+                counts.node_value_bytes[6],
+            ),
+            (
+                StateRootApplyCountKind::NodeValueBytesOver16384,
+                counts.node_value_bytes[7],
+            ),
+        ] {
+            Self::record_count_samples(kind, bytes, samples);
+        }
     }
 
     fn record_stage_samples(stage: StateRootApplyStage, elapsed_us: u64, samples: u64) {
@@ -1588,8 +2444,62 @@ where
         if from_index > to_index {
             return Ok(());
         }
+        if self.node_snapshots.is_some() {
+            return Err(MptError::invalid(
+                "split-authority StateService reverts require the coordinated marker path",
+            ));
+        }
 
         let _writer = self.write_gate.lock();
+        let (overlay, rewound_latest_root) =
+            self.prepare_local_root_revert(from_index, to_index)?;
+        self.commit_overlay_to_backing(&overlay)?;
+
+        if self.should_publish_live_overlay() {
+            let mut kv = self.kv.write();
+            let map = Arc::make_mut(&mut *kv);
+            map.extend(overlay);
+        } else {
+            self.clear_live_overlay_if_needed();
+        }
+        *self.latest_local_root.write() = rewound_latest_root;
+        Ok(())
+    }
+
+    /// Rewinds local-root metadata through an externally coordinated commit.
+    /// Split node authority uses this path so the unchanged pack horizon and
+    /// rewound StateService tip cross the mandatory MDBX marker transaction
+    /// together.
+    pub fn revert_local_roots_coordinated<F>(
+        &self,
+        from_index: u32,
+        to_index: u32,
+        commit: F,
+    ) -> MptResult<()>
+    where
+        F: FnOnce(&S, &mut PreparedMptCommit) -> StorageResult<()>,
+    {
+        if from_index > to_index {
+            return Ok(());
+        }
+        let _writer = self.write_gate.lock();
+        let (overlay, rewound_latest_root) =
+            self.prepare_local_root_revert(from_index, to_index)?;
+        let (block_index, root_hash) = rewound_latest_root.ok_or_else(|| {
+            MptError::invalid("coordinated StateService authority cannot rewind before genesis")
+        })?;
+        self.publish_prepared_coordinated(
+            PreparedMptCommit::new(block_index, root_hash, overlay, 1),
+            commit,
+        )?;
+        Ok(())
+    }
+
+    fn prepare_local_root_revert(
+        &self,
+        from_index: u32,
+        to_index: u32,
+    ) -> MptResult<(MptOverlay, Option<(u32, UInt256)>)> {
         let current_index = self.current_local_root_index();
         let rewinds_current = current_index.is_some_and(|index| index >= from_index);
         if rewinds_current && !self.full_state {
@@ -1635,17 +2545,7 @@ where
             }
         }
 
-        self.commit_overlay_to_backing(&overlay)?;
-
-        if self.should_publish_live_overlay() {
-            let mut kv = self.kv.write();
-            let map = Arc::make_mut(&mut *kv);
-            map.extend(overlay);
-        } else {
-            self.clear_live_overlay_if_needed();
-        }
-        *self.latest_local_root.write() = rewound_latest_root;
-        Ok(())
+        Ok((overlay, rewound_latest_root))
     }
 
     fn commit_overlay_to_backing(&self, overlay: &MptOverlay) -> MptResult<OverlayCounts> {
@@ -1675,7 +2575,7 @@ where
                     )
                 })?;
                 for (key, value) in entries {
-                    counts.record(value.as_ref());
+                    counts.record(key, value.as_deref());
                     match value {
                         Some(value) => writer.put(key.clone(), value.clone()),
                         None => writer.delete(key.clone()),
@@ -1811,9 +2711,10 @@ where
                 }
             }
         };
-        let arr: [u8; 4] = bytes.as_slice().try_into().map_err(|_| {
-            MptError::invalid("current local root index record has invalid length")
-        })?;
+        let arr: [u8; 4] = bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| MptError::invalid("current local root index record has invalid length"))?;
         Ok(Some(u32::from_le_bytes(arr)))
     }
 
@@ -1835,6 +2736,73 @@ where
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ProcessResourceSnapshot {
+    read_bytes: u64,
+    minor_faults: u64,
+    major_faults: u64,
+}
+
+impl ProcessResourceSnapshot {
+    fn delta_since(self, before: Self) -> Self {
+        Self {
+            read_bytes: self.read_bytes.saturating_sub(before.read_bytes),
+            minor_faults: self.minor_faults.saturating_sub(before.minor_faults),
+            major_faults: self.major_faults.saturating_sub(before.major_faults),
+        }
+    }
+}
+
+fn record_deferred_resource_delta(
+    before: Option<ProcessResourceSnapshot>,
+    after: Option<ProcessResourceSnapshot>,
+) {
+    let (Some(before), Some(after)) = (before, after) else {
+        return;
+    };
+    let delta = after.delta_since(before);
+    StateRootApplyMetrics::record_count(
+        StateRootApplyCountKind::DeferredFinalizationReadBytes,
+        delta.read_bytes,
+    );
+    StateRootApplyMetrics::record_count(
+        StateRootApplyCountKind::DeferredFinalizationMinorFaults,
+        delta.minor_faults,
+    );
+    StateRootApplyMetrics::record_count(
+        StateRootApplyCountKind::DeferredFinalizationMajorFaults,
+        delta.major_faults,
+    );
+}
+
+/// Best-effort Linux process resource counters. Restricted containers and
+/// non-Linux platforms simply omit the evidence without affecting correctness.
+fn process_resource_snapshot() -> Option<ProcessResourceSnapshot> {
+    let io = fs::read_to_string("/proc/self/io").ok()?;
+    let stat = fs::read_to_string("/proc/self/stat").ok()?;
+    let (minor_faults, major_faults) = proc_stat_faults(&stat)?;
+    Some(ProcessResourceSnapshot {
+        read_bytes: proc_io_counter(&io, "read_bytes")?,
+        minor_faults,
+        major_faults,
+    })
+}
+
+fn proc_io_counter(input: &str, name: &str) -> Option<u64> {
+    input.lines().find_map(|line| {
+        let (field, value) = line.split_once(':')?;
+        (field == name).then(|| value.trim().parse().ok()).flatten()
+    })
+}
+
+fn proc_stat_faults(input: &str) -> Option<(u64, u64)> {
+    let mut fields = input.get(input.rfind(')')? + 1..)?.split_whitespace();
+    // After the parenthesized process name, state is field 3 (index 0).
+    let minor_faults = fields.nth(7)?.parse().ok()?;
+    let major_faults = fields.nth(1)?.parse().ok()?;
+    Some((minor_faults, major_faults))
+}
+
 fn elapsed_us(start: Instant) -> u64 {
     start.elapsed().as_micros().min(u64::MAX as u128) as u64
 }
@@ -1846,12 +2814,19 @@ impl MptStore<MemoryStore> {
     /// historical trie version resolvable, `false` prunes superseded nodes on
     /// each block.
     pub fn new(full_state: bool) -> Self {
+        Self::new_with_options(full_state, false)
+    }
+
+    /// Constructs an empty store with an explicit full-state finalization policy.
+    pub fn new_with_options(full_state: bool, defer_full_state_finalization: bool) -> Self {
         Self {
             kv: RwLock::new(Arc::new(HashMap::new())),
             write_gate: Mutex::new(()),
             full_state,
+            defer_full_state_finalization: full_state && defer_full_state_finalization,
             latest_local_root: RwLock::new(None),
             backing: None,
+            node_snapshots: None,
         }
     }
 
@@ -1861,6 +2836,15 @@ impl MptStore<MemoryStore> {
     /// across `MptStore` instances without erasing the backend.
     pub fn from_memory_store(backing: Arc<MemoryStore>, full_state: bool) -> MptResult<Self> {
         Self::from_store(backing, full_state)
+    }
+
+    /// Opens an in-memory backend with an explicit full-state finalization policy.
+    pub fn from_memory_store_with_options(
+        backing: Arc<MemoryStore>,
+        full_state: bool,
+        defer_full_state_finalization: bool,
+    ) -> MptResult<Self> {
+        Self::from_store_with_options(backing, full_state, defer_full_state_finalization)
     }
 }
 
@@ -1876,6 +2860,10 @@ where
         f.debug_struct("MptStore")
             .field("entries", &map.len())
             .field("full_state", &self.full_state)
+            .field(
+                "defer_full_state_finalization",
+                &self.defer_full_state_finalization,
+            )
             .field("local_root_index", &self.current_local_root_index())
             .finish()
     }

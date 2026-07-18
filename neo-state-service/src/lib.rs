@@ -39,11 +39,13 @@ pub use providers::{
 };
 
 pub use service::commit_handlers;
+pub use storage::mpt_store::{MPT_NODE_KEY_BYTES, MPT_NODE_PREFIX, is_mpt_node_key};
 pub use storage::{
     DEFAULT_ROOT_CACHE_CAPACITY, StateRootCache, StateRootCacheEntry, StateRootCacheStats,
     StateRootCacheStatsSnapshot,
 };
 pub use storage::{
-    MDBX_STATE_SERVICE_NAMESPACE, MptChange, MptReadSnapshot, MptStore, StateStore,
-    StateStoreLookup, StateStoreTransaction, mpt_store, root_cache, state_store,
+    MDBX_STATE_SERVICE_NAMESPACE, MptChange, MptNodeReadGeneration, MptNodeReadSnapshot,
+    MptNodeSnapshotFactory, MptReadSnapshot, MptStore, StateStore, StateStoreLookup,
+    StateStoreTransaction, mpt_store, root_cache, state_store,
 };

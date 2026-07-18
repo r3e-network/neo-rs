@@ -13,6 +13,7 @@
 //! - `batch`: batch accounting and dispatch helpers.
 //! - `driver`: Stream import orchestration and report assembly.
 //! - `format`: chain.acc file format readers and validation helpers.
+//! - `index`: Validated persistent archive positioning and resume cursors.
 //! - `metrics`: Metrics collection and progress-reporting helpers.
 //! - `range`: Expected-range, resume, and continuity validation helpers.
 //! - `report`: Import report DTOs and hot-metric projection.
@@ -23,6 +24,10 @@ mod format;
 #[cfg(test)]
 #[path = "../../tests/node/chain_acc/format_tests.rs"]
 mod format_tests;
+mod index;
+#[cfg(test)]
+#[path = "../../tests/node/chain_acc/index_tests.rs"]
+mod index_tests;
 mod metrics;
 #[cfg(test)]
 #[path = "../../tests/node/chain_acc/metrics_tests.rs"]
@@ -33,7 +38,9 @@ mod report;
 pub(super) use crate::node::ledger_source::{LocalLedgerTip, local_ledger_tip};
 pub(super) use driver::import_chain_acc_report_with_expected_range;
 pub use driver::import_chain_acc_until_height;
-pub(in crate::node) use metrics::{MdbxCommitWindowMetrics, StateServiceMptWindowMetrics};
+pub(in crate::node) use metrics::{
+    MdbxCommitWindowMetrics, NativePersistTxWindowMetrics, StateServiceMptWindowMetrics,
+};
 pub(super) use report::{ChainAccImportReport, ChainAccProfileWindow, ImportHotMetrics};
 
 /// The mixed-block batch size for trusted `chain.acc` Import commands.

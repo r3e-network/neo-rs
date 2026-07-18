@@ -14,9 +14,13 @@ members = [
     "neo-storage",
     # Append-only compressed static files for immutable ledger records.
     "neo-static-files",
+    # Append-only checksummed node packs with immutable sorted index runs.
+    "neo-state-packs",
+    # Canonical verifiable checkpoint formats and dependency-light proof types.
+    "neo-checkpoint",
     # Binary IO helpers (matches C# Neo.IO).
     "neo-io",
-    # Stateful NeoVM host over the pinned `neo-vm-rs` semantics crate.
+    # Stateful NeoVM interpreter and host runtime.
     "neo-vm",
     # Authoritative `CoreError` / `CoreResult` vocabulary.
     "neo-error",
@@ -163,6 +167,8 @@ infrastructure = [
     "neo-crypto",
     "neo-storage",
     "neo-static-files",
+    "neo-state-packs",
+    "neo-checkpoint",
     "neo-config",
     "neo-vm",
     "neo-serialization",
@@ -232,9 +238,10 @@ neo-config = { path = "neo-config", version = "0.10.0" }
 neo-crypto = { path = "neo-crypto", version = "0.10.0" }
 neo-storage = { path = "neo-storage", version = "0.10.0" }
 neo-static-files = { path = "neo-static-files", version = "0.10.0" }
+neo-state-packs = { path = "neo-state-packs", version = "0.10.0" }
+neo-checkpoint = { path = "neo-checkpoint", version = "0.10.0" }
 neo-io = { path = "neo-io", version = "0.10.0" }
 neo-vm = { path = "neo-vm", version = "0.10.0" }
-neo-vm-rs = { git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "3081e83db3716fd51dc58c0afc039290d2d07253", version = "0.2.0", default-features = false, features = ["std", "interpreter"] }
 neo-error = { path = "neo-error", version = "0.10.0" }
 neo-serialization = { path = "neo-serialization", version = "0.10.0" }
 neo-manifest = { path = "neo-manifest", version = "0.10.0" }
@@ -340,6 +347,7 @@ memchr = "2.8"
 
 # === Storage ===
 libmdbx = { version = "0.5.3", default-features = false }
+mdbx-sys = "=12.13.2"
 
 # === Network ===
 # HTTP server (hyper) and HTTP client (reqwest)

@@ -1,4 +1,5 @@
 use super::*;
+use crate::ExecutionEngineLimits;
 
 #[test]
 fn test_error_creation() {
@@ -46,7 +47,7 @@ fn test_stack_errors() {
 
 #[test]
 fn test_resource_limit_errors() {
-    let limit = neo_vm_rs::ExecutionEngineLimits::DEFAULT.max_item_size as usize;
+    let limit = ExecutionEngineLimits::DEFAULT.max_item_size as usize;
     let error = VmError::memory_limit_exceeded(2048, limit);
     // C#: ushort.MaxValue = 65535
     assert_eq!(

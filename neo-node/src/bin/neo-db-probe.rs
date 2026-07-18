@@ -16,6 +16,7 @@ use neo_blockchain::{
     StorageLedgerProvider, TransactionStateProvider,
 };
 use neo_config::ProtocolSettings;
+use neo_crypto::Crypto;
 use neo_execution::native::native_contract_provider::NativeContractProvider;
 use neo_execution::{ApplicationEngine, ContractState, Diagnostic};
 use neo_io::Serializable;
@@ -79,6 +80,10 @@ struct Cli {
 
     #[arg(long, value_name = "HASH")]
     contract_state: Option<String>,
+
+    /// Find deployed contracts whose exact NEF bytecode has this Hash160.
+    #[arg(long, value_name = "HASH", action = clap::ArgAction::Append)]
+    find_contract_script_hash: Vec<String>,
 
     #[arg(long, value_name = "HASH")]
     replay_tx: Option<String>,
@@ -290,6 +295,35 @@ fn main() -> Result<()> {
         cli.static_files_dir.is_none() || cli.write_value_base64.is_none(),
         "--static-files-dir cannot be combined with --write-value-base64"
     );
+    if !cli.find_contract_script_hash.is_empty() {
+        ensure!(
+            cli.state_service_db.is_none()
+                && cli.static_files_dir.is_none()
+                && !cli.scrub_static_files
+                && cli.gas_address.is_none()
+                && cli.ledger_tx.is_none()
+                && cli.contract_state.is_none()
+                && cli.replay_tx.is_none()
+                && cli.replay_raw_tx_base64.is_none()
+                && cli.replay_block_base64.is_none()
+                && !cli.dump_contract_storage
+                && !cli.mpt_state_height
+                && cli.mpt_state_root.is_none()
+                && cli.mpt_key_root.is_none()
+                && cli.mpt_dump_contract_root.is_none()
+                && cli.mpt_dump_root.is_none()
+                && cli.build_mpt_prefix_index.is_none()
+                && cli.contract_id.is_none()
+                && cli.key_base64.is_none()
+                && cli.key_hex.is_none()
+                && cli.write_value_base64.is_none(),
+            "--find-contract-script-hash cannot be combined with another probe mode"
+        );
+        let output = find_contracts_by_script_hash(db, &cli.find_contract_script_hash)
+            .with_context(|| format!("scan deployed contracts from {}", db.display()))?;
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
     if let Some(output) = cli.build_mpt_prefix_index.as_deref() {
         ensure_mpt_prefix_index_args(&cli)?;
         let result = build_mpt_prefix_index(
@@ -659,9 +693,9 @@ fn build_mpt_prefix_index(
     prefix_bits: u8,
 ) -> Result<Value> {
     let (store, namespace) = if let Some(state_service_db_path) = state_service_db_path {
-        (open_store(state_service_db_path, false)?, None)
+        (open_store(state_service_db_path, true)?, None)
     } else {
-        let canonical_store = open_store(db_path, false)?;
+        let canonical_store = open_store(db_path, true)?;
         (
             Arc::new(
                 canonical_store
@@ -916,6 +950,95 @@ fn dump_contract_storage(db_path: &Path, contract_id: i32, limit: usize) -> Resu
         "entry_count": entries.len(),
         "truncated": truncated,
         "entries": entries,
+    }))
+}
+
+fn find_contracts_by_script_hash(db_path: &Path, requested: &[String]) -> Result<Value> {
+    ensure!(
+        !requested.is_empty() && requested.len() <= 256,
+        "provide between 1 and 256 --find-contract-script-hash values"
+    );
+    let mut targets = Vec::with_capacity(requested.len());
+    for raw in requested {
+        let hash = UInt160::from_str(raw)
+            .map_err(|error| anyhow!("invalid contract script hash {raw}: {error}"))?;
+        if !targets.contains(&hash) {
+            targets.push(hash);
+        }
+    }
+
+    let store = open_store(db_path, true)?;
+    let prefix = StorageKey::new(-1, vec![0x08]);
+    let mut scanned_contracts = 0u64;
+    let mut matches = Vec::new();
+    let mut matched_hashes = Vec::new();
+    for (key, item) in store.find(Some(&prefix), SeekDirection::Forward) {
+        let state =
+            ContractState::deserialize_contract_record(&item.to_value()).with_context(|| {
+                format!(
+                    "decode ContractManagement record at storage key {}",
+                    hex::encode(key.to_array())
+                )
+            })?;
+        scanned_contracts = scanned_contracts.saturating_add(1);
+        let raw_script_hash = UInt160::from(Crypto::hash160(&state.nef.script));
+        if !targets.contains(&raw_script_hash) {
+            continue;
+        }
+        if !matched_hashes.contains(&raw_script_hash) {
+            matched_hashes.push(raw_script_hash);
+        }
+        matches.push(json!({
+            "raw_script_hash": raw_script_hash.to_string(),
+            "raw_script_bytes": state.nef.script.len(),
+            "contract_hash": state.hash.to_string(),
+            "contract_id": state.id,
+            "contract_update_counter": state.update_counter,
+            "nef_checksum": state.nef.checksum,
+            "compiler": state.nef.compiler,
+            "manifest_name": state.manifest.name,
+            "supported_standards": state.manifest.supported_standards,
+            "script_base64": base64_encode(&state.nef.script),
+            "methods": state.manifest.abi.methods.iter().map(|method| {
+                json!({
+                    "name": method.name,
+                    "parameters": method.parameters.iter().map(|parameter| {
+                        json!({
+                            "name": parameter.name,
+                            "type": format!("{:?}", parameter.param_type),
+                        })
+                    }).collect::<Vec<_>>(),
+                    "return_type": format!("{:?}", method.return_type),
+                    "offset": method.offset,
+                    "safe": method.safe,
+                })
+            }).collect::<Vec<_>>(),
+        }));
+    }
+    matches.sort_by(|left, right| {
+        left["raw_script_hash"]
+            .as_str()
+            .cmp(&right["raw_script_hash"].as_str())
+            .then_with(|| {
+                left["contract_hash"]
+                    .as_str()
+                    .cmp(&right["contract_hash"].as_str())
+            })
+    });
+    let missing = targets
+        .iter()
+        .filter(|target| !matched_hashes.contains(target))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+
+    Ok(json!({
+        "db": db_path,
+        "storage_provider": "mdbx-read-only",
+        "requested_script_hashes": targets.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        "scanned_contracts": scanned_contracts,
+        "matched_contracts": matches.len(),
+        "missing_script_hashes": missing,
+        "matches": matches,
     }))
 }
 

@@ -1,8 +1,9 @@
 use super::*;
-use neo_crypto::mpt_trie::MptStoreLookup;
+use neo_crypto::mpt_trie::{MptStoreLookup, NodeType};
+use neo_io::Serializable;
 use neo_storage::persistence::{
-    RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store, StoreSnapshot,
-    WriteStore,
+    RawOverlayCursor, RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store,
+    StoreSnapshot, WriteStore,
 };
 use neo_storage::types::{StorageItem, StorageKey};
 use parking_lot::Mutex as ParkingMutex;
@@ -171,8 +172,7 @@ impl RawReadOnlyStore for CountingMissSnapshot {
         K: AsRef<[u8]>,
     {
         self.batch_reads.fetch_add(1, Ordering::Relaxed);
-        self.batch_keys
-            .fetch_add(keys.len(), Ordering::Relaxed);
+        self.batch_keys.fetch_add(keys.len(), Ordering::Relaxed);
         Ok(keys.iter().map(|_| None).collect())
     }
 }
@@ -265,6 +265,58 @@ fn mpt_node_key(tag: u8) -> Vec<u8> {
     let mut key = vec![0xF0; 33];
     key[1] = tag;
     key
+}
+
+#[derive(Debug, Default)]
+struct FixedNodeSnapshot {
+    values: HashMap<Vec<u8>, Vec<u8>>,
+    fail_reads: bool,
+    omit_last_sorted_result: bool,
+    point_reads: AtomicUsize,
+    sorted_reads: AtomicUsize,
+}
+
+impl MptNodeReadSnapshot for FixedNodeSnapshot {
+    fn try_get_node_bytes(&self, key: &[u8]) -> neo_storage::StorageResult<Option<Vec<u8>>> {
+        self.point_reads.fetch_add(1, Ordering::Relaxed);
+        if self.fail_reads {
+            return Err(neo_storage::StorageError::backend(
+                "injected authoritative node read failure",
+            ));
+        }
+        Ok(self.values.get(key).cloned())
+    }
+
+    fn try_get_node_bytes_sorted(
+        &self,
+        keys: &[&[u8]],
+    ) -> neo_storage::StorageResult<Vec<Option<Vec<u8>>>> {
+        self.sorted_reads.fetch_add(1, Ordering::Relaxed);
+        if self.fail_reads {
+            return Err(neo_storage::StorageError::backend(
+                "injected authoritative node batch failure",
+            ));
+        }
+        let mut values = keys
+            .iter()
+            .map(|key| self.values.get(*key).cloned())
+            .collect::<Vec<_>>();
+        if self.omit_last_sorted_result {
+            values.pop();
+        }
+        Ok(values)
+    }
+}
+
+#[derive(Debug)]
+struct FixedNodeSnapshotFactory {
+    snapshot: Arc<FixedNodeSnapshot>,
+}
+
+impl MptNodeSnapshotFactory for FixedNodeSnapshotFactory {
+    fn snapshot(&self) -> Arc<dyn MptNodeReadSnapshot> {
+        self.snapshot.clone()
+    }
 }
 
 /// Backing snapshot whose fallible raw reads always fail.
@@ -400,13 +452,15 @@ fn mpt_read_snapshot_and_state_root_reads_fail_closed_on_backing_io_errors() {
     let snapshot = MptReadSnapshot::<FailingReadStore> {
         map: Arc::new(HashMap::new()),
         backing_snapshot: Some(Arc::clone(&failing) as Arc<_>),
+        node_snapshot: None,
         full_state: true,
     };
 
     let err = MptStoreSnapshot::try_get(&snapshot, b"missing-key")
         .expect_err("backing I/O failure must not look like a missing key");
     assert!(
-        err.to_string().contains("injected MPT backing read failure"),
+        err.to_string()
+            .contains("injected MPT backing read failure"),
         "unexpected error: {err}"
     );
     assert_eq!(failing.point_reads.load(Ordering::Relaxed), 1);
@@ -415,7 +469,9 @@ fn mpt_read_snapshot_and_state_root_reads_fail_closed_on_backing_io_errors() {
         .try_get_state_root(7)
         .expect_err("state-root lookup must surface backing I/O failures");
     assert!(
-        root_err.to_string().contains("injected MPT backing read failure"),
+        root_err
+            .to_string()
+            .contains("injected MPT backing read failure"),
         "unexpected error: {root_err}"
     );
 
@@ -436,6 +492,7 @@ fn write_batch_negative_cache_skips_repeated_durable_misses() {
     let batch = MptWriteBatch::<CountingMissStore>::new(
         Arc::new(HashMap::new()),
         Some(Arc::clone(&backing) as Arc<_>),
+        None,
         4,
     );
     let missing = mpt_node_key(0x11);
@@ -691,7 +748,7 @@ fn mpt_store_durable_constructor_surface_is_provider_neutral() {
 fn write_batch_overlay_is_hash_backed_for_exact_key_staging() {
     let mut base = std::collections::HashMap::new();
     base.insert(vec![0xAA], Some(vec![0x01]));
-    let batch = MptWriteBatch::<MemoryStore>::new(Arc::new(base), None, 0);
+    let batch = MptWriteBatch::<MemoryStore>::new(Arc::new(base), None, None, 0);
 
     assert!(
         !batch.overlay_contains_entries(),
@@ -728,6 +785,7 @@ fn read_snapshot_generation_is_hash_backed_for_exact_key_reads() {
     let snapshot = MptReadSnapshot::<MemoryStore> {
         map: Arc::new(map),
         backing_snapshot: None,
+        node_snapshot: None,
         full_state: true,
     };
 
@@ -750,6 +808,7 @@ fn backing_snapshot_mpt_reads_use_borrowed_key_lookup() {
     let snapshot = MptReadSnapshot::<BorrowOnlyStore> {
         map: Arc::new(std::collections::HashMap::new()),
         backing_snapshot: Some(backing.clone()),
+        node_snapshot: None,
         full_state: true,
     };
     assert_eq!(
@@ -760,12 +819,348 @@ fn backing_snapshot_mpt_reads_use_borrowed_key_lookup() {
     let batch = MptWriteBatch::<BorrowOnlyStore>::new(
         Arc::new(std::collections::HashMap::new()),
         Some(backing),
+        None,
         0,
     );
     assert_eq!(
         MptStoreSnapshot::try_get(&batch, &[0xCC]).expect("read from batch backing"),
         Some(vec![0xDD])
     );
+}
+
+#[test]
+fn authoritative_node_snapshot_wins_over_stale_backing_and_keeps_metadata_separate() {
+    use neo_crypto::mpt_trie::MptStoreSnapshot;
+
+    let present_key = mpt_node_key(0x31);
+    let absent_key = mpt_node_key(0x32);
+    let metadata_key = vec![0x7E, 0x01];
+    let mut backing = MemoryStore::new();
+    WriteStore::put(&mut backing, present_key.clone(), b"stale-node".to_vec())
+        .expect("seed stale node");
+    WriteStore::put(
+        &mut backing,
+        absent_key.clone(),
+        b"stale-absent-node".to_vec(),
+    )
+    .expect("seed stale absent node");
+    WriteStore::put(&mut backing, metadata_key.clone(), b"metadata".to_vec())
+        .expect("seed metadata");
+    let backing = Arc::new(backing);
+
+    let node_snapshot = Arc::new(FixedNodeSnapshot {
+        values: HashMap::from([(present_key.clone(), b"authoritative-node".to_vec())]),
+        ..Default::default()
+    });
+    let factory = Arc::new(FixedNodeSnapshotFactory {
+        snapshot: Arc::clone(&node_snapshot),
+    });
+    let store = MptStore::from_store_with_node_snapshots(backing, true, factory)
+        .expect("open split-authority store");
+    assert!(
+        !store.defers_full_state_finalization(),
+        "split authority must not use the MDBX-cursor deferred journal"
+    );
+
+    let snapshot = store.snapshot();
+    assert_eq!(
+        MptStoreSnapshot::try_get(snapshot.as_ref(), &present_key)
+            .expect("read authoritative node"),
+        Some(b"authoritative-node".to_vec())
+    );
+    assert_eq!(
+        MptStoreSnapshot::try_get(snapshot.as_ref(), &absent_key)
+            .expect("read authoritative absence"),
+        None,
+        "an authoritative miss must not fall back to a stale MDBX node"
+    );
+    assert_eq!(
+        MptStoreSnapshot::try_get(snapshot.as_ref(), &metadata_key).expect("read metadata"),
+        Some(b"metadata".to_vec()),
+        "non-node StateService rows must remain in the ordinary backing"
+    );
+    assert_eq!(node_snapshot.point_reads.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn authoritative_node_snapshot_errors_and_batch_misses_never_fall_back() {
+    use neo_crypto::mpt_trie::MptStoreSnapshot;
+
+    let first = mpt_node_key(0x41);
+    let second = mpt_node_key(0x42);
+    let mut backing = MemoryStore::new();
+    WriteStore::put(&mut backing, first.clone(), b"stale-first".to_vec())
+        .expect("seed first stale node");
+    WriteStore::put(&mut backing, second.clone(), b"stale-second".to_vec())
+        .expect("seed second stale node");
+    let backing = Arc::new(backing);
+
+    let failing = Arc::new(FixedNodeSnapshot {
+        fail_reads: true,
+        ..Default::default()
+    });
+    let store = MptStore::from_store_with_node_snapshots(
+        Arc::clone(&backing),
+        true,
+        Arc::new(FixedNodeSnapshotFactory {
+            snapshot: Arc::clone(&failing),
+        }),
+    )
+    .expect("open failing split-authority store");
+    let error = MptStoreSnapshot::try_get(store.snapshot().as_ref(), &first)
+        .expect_err("authoritative backend errors must fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("injected authoritative node read failure"),
+        "unexpected error: {error}"
+    );
+
+    let node_snapshot = Arc::new(FixedNodeSnapshot {
+        values: HashMap::from([(first.clone(), b"authoritative-first".to_vec())]),
+        ..Default::default()
+    });
+    let batch = MptWriteBatch::<MemoryStore>::new(
+        Arc::new(HashMap::new()),
+        Some(backing.snapshot()),
+        Some(node_snapshot.clone()),
+        2,
+    );
+    let keys = [first, second];
+    let lookups = batch
+        .try_get_nodes_with_source_raw_borrowed(&keys)
+        .expect("read authoritative sorted batch");
+    assert_eq!(
+        lookups,
+        vec![
+            MptStoreLookup::Backing(Some(b"authoritative-first".to_vec())),
+            MptStoreLookup::Backing(None),
+        ],
+        "batch misses must not consult stale backing nodes"
+    );
+    assert_eq!(node_snapshot.sorted_reads.load(Ordering::Relaxed), 1);
+    assert_eq!(node_snapshot.point_reads.load(Ordering::Relaxed), 0);
+}
+
+fn deferred_test_entry(key: Vec<u8>, value: &[u8], puts: u32) -> UnresolvedDeferredNode {
+    let node = Node::new_leaf(value.to_vec());
+    UnresolvedDeferredNode {
+        key,
+        node_type: NodeType::LeafNode,
+        payload_without_reference: node
+            .to_array_without_reference()
+            .expect("serialize journal payload"),
+        puts,
+    }
+}
+
+fn prepared_deferred_test_commit(
+    journal: Vec<UnresolvedDeferredNode>,
+    snapshot: Arc<dyn MptNodeReadSnapshot>,
+) -> PreparedMptCommit {
+    PreparedMptCommit::new(1, UInt256::default(), MptOverlay::default(), 1)
+        .with_deferred_journal(journal, Some(snapshot))
+}
+
+#[test]
+fn deferred_materialization_resource_probe_parses_linux_proc_counters() {
+    let io = "rchar: 10\nread_bytes: 4096\nwrite_bytes: 8192\n";
+    assert_eq!(proc_io_counter(io, "read_bytes"), Some(4096));
+    assert_eq!(proc_io_counter(io, "missing"), None);
+    assert_eq!(
+        proc_stat_faults("123 (neo node (worker)) R 1 2 3 4 5 6 7 8 9 10"),
+        Some((7, 9))
+    );
+
+    let before = ProcessResourceSnapshot {
+        read_bytes: 100,
+        minor_faults: 8,
+        major_faults: 4,
+    };
+    let after = ProcessResourceSnapshot {
+        read_bytes: 250,
+        minor_faults: 11,
+        major_faults: 5,
+    };
+    assert_eq!(
+        after.delta_since(before),
+        ProcessResourceSnapshot {
+            read_bytes: 150,
+            minor_faults: 3,
+            major_faults: 1,
+        }
+    );
+}
+
+#[test]
+fn deferred_node_materialization_resolves_present_and_absent_nodes() {
+    let present_key = mpt_node_key(0x51);
+    let absent_key = mpt_node_key(0x52);
+    let mut stored_node = Node::new_leaf(b"persisted-payload".to_vec());
+    stored_node.reference = 7;
+    let stored = stored_node.to_array().expect("serialize stored node");
+    let present = deferred_test_entry(present_key.clone(), b"ignored-new-payload", 3);
+    let absent = deferred_test_entry(absent_key.clone(), b"new-payload", 2);
+    let expected_present = present
+        .resolve_bytes(Some(stored.clone()))
+        .expect("resolve expected present value");
+    let expected_absent = absent
+        .resolve_bytes(None)
+        .expect("resolve expected absent value");
+    let snapshot = Arc::new(FixedNodeSnapshot {
+        values: HashMap::from([(present_key.clone(), stored)]),
+        ..Default::default()
+    });
+    let pinned: Arc<dyn MptNodeReadSnapshot> = snapshot.clone();
+    let mut prepared = prepared_deferred_test_commit(vec![present, absent], pinned);
+
+    prepared
+        .materialize_deferred_node_overlay()
+        .expect("materialize deferred nodes");
+    assert!(prepared.unresolved_node_journal().is_empty());
+    assert_eq!(prepared.materialized_node_operation_count(), 2);
+    assert_eq!(snapshot.sorted_reads.load(Ordering::Relaxed), 1);
+    assert_eq!(snapshot.point_reads.load(Ordering::Relaxed), 0);
+    let error = prepared
+        .materialize_deferred_node_overlay()
+        .expect_err("reference resolution must be one-shot");
+    assert!(
+        error.to_string().contains("already materialized"),
+        "{error}"
+    );
+    assert_eq!(snapshot.sorted_reads.load(Ordering::Relaxed), 1);
+
+    let mut operations = Vec::new();
+    prepared.visit_materialized_node_overlay(&mut |key: &[u8], value: Option<&[u8]>| {
+        operations.push((key.to_vec(), value.map(<[u8]>::to_vec)));
+    });
+    assert_eq!(
+        operations,
+        vec![
+            (present_key, Some(expected_present)),
+            (absent_key, Some(expected_absent)),
+        ]
+    );
+}
+
+#[test]
+fn deferred_node_materialization_failures_leave_overlay_unchanged() {
+    let first_key = mpt_node_key(0x61);
+    let second_key = mpt_node_key(0x62);
+    let journal = vec![
+        deferred_test_entry(first_key.clone(), b"first", 1),
+        deferred_test_entry(second_key.clone(), b"second", 1),
+    ];
+
+    for (name, snapshot) in [
+        (
+            "backend failure",
+            Arc::new(FixedNodeSnapshot {
+                fail_reads: true,
+                ..Default::default()
+            }),
+        ),
+        (
+            "result count mismatch",
+            Arc::new(FixedNodeSnapshot {
+                omit_last_sorted_result: true,
+                ..Default::default()
+            }),
+        ),
+        (
+            "malformed second value",
+            Arc::new(FixedNodeSnapshot {
+                values: HashMap::from([
+                    (
+                        first_key.clone(),
+                        Node::new_leaf(b"valid".to_vec())
+                            .to_array()
+                            .expect("serialize valid node"),
+                    ),
+                    (second_key.clone(), vec![0xFF]),
+                ]),
+                ..Default::default()
+            }),
+        ),
+    ] {
+        let pinned: Arc<dyn MptNodeReadSnapshot> = snapshot;
+        let mut prepared = prepared_deferred_test_commit(journal.clone(), pinned);
+        let error = prepared
+            .materialize_deferred_node_overlay()
+            .expect_err(name);
+        assert!(!error.to_string().is_empty());
+        assert_eq!(
+            prepared.unresolved_node_journal(),
+            journal.as_slice(),
+            "{name}"
+        );
+        assert_eq!(prepared.materialized_node_operation_count(), 0, "{name}");
+    }
+}
+
+#[test]
+fn deferred_node_materialization_rejects_invalid_key_sets_before_reading() {
+    let first_key = mpt_node_key(0x69);
+    let second_key = mpt_node_key(0x6A);
+    let snapshot = Arc::new(FixedNodeSnapshot::default());
+
+    let pinned: Arc<dyn MptNodeReadSnapshot> = snapshot.clone();
+    let mut out_of_order = prepared_deferred_test_commit(
+        vec![
+            deferred_test_entry(second_key.clone(), b"second", 1),
+            deferred_test_entry(first_key.clone(), b"first", 1),
+        ],
+        pinned,
+    );
+    let error = out_of_order
+        .materialize_deferred_node_overlay()
+        .expect_err("out-of-order journal must fail");
+    assert!(error.to_string().contains("strictly ordered"), "{error}");
+
+    let mut overlay = MptOverlay::default();
+    overlay.insert(first_key.clone(), Some(vec![0x01]));
+    let pinned: Arc<dyn MptNodeReadSnapshot> = snapshot.clone();
+    let mut overlapping = PreparedMptCommit::new(1, UInt256::default(), overlay, 1)
+        .with_deferred_journal(
+            vec![deferred_test_entry(first_key, b"first", 1)],
+            Some(pinned),
+        );
+    let error = overlapping
+        .materialize_deferred_node_overlay()
+        .expect_err("overlapping journal must fail");
+    assert!(error.to_string().contains("disjoint"), "{error}");
+    assert_eq!(overlapping.materialized_node_operation_count(), 1);
+    assert_eq!(overlapping.unresolved_node_journal().len(), 1);
+    assert_eq!(snapshot.sorted_reads.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn split_deferred_journal_cannot_resolve_against_backing_cursor() {
+    struct UnusedCursor;
+
+    impl RawOverlayCursor for UnusedCursor {
+        fn read_stored(&mut self, _key: &[u8]) -> neo_storage::StorageResult<Option<Vec<u8>>> {
+            panic!("split journal must be rejected before a backing read")
+        }
+
+        fn write_stored(&mut self, _key: &[u8], _value: &[u8]) -> neo_storage::StorageResult<()> {
+            panic!("split journal must be rejected before a backing write")
+        }
+    }
+
+    let key = mpt_node_key(0x71);
+    let snapshot = Arc::new(FixedNodeSnapshot::default());
+    let pinned: Arc<dyn MptNodeReadSnapshot> = snapshot;
+    let mut prepared =
+        prepared_deferred_test_commit(vec![deferred_test_entry(key, b"node", 1)], pinned);
+    let error = RawOverlaySource::commit_raw_overlay_at_cursor(&mut prepared, &mut UnusedCursor)
+        .expect_err("split journal must not use the backing cursor");
+    assert!(
+        error.to_string().contains("pinned node snapshot"),
+        "{error}"
+    );
+    assert_eq!(prepared.unresolved_node_journal().len(), 1);
+    assert_eq!(prepared.materialized_node_operation_count(), 0);
 }
 
 #[test]
@@ -795,6 +1190,7 @@ fn write_batch_node_lookup_preserves_memory_and_backing_provenance() {
             Some(encode(&base_node)),
         )])),
         Some(backing),
+        None,
         2,
     );
 
@@ -850,6 +1246,26 @@ fn write_batch_node_lookup_preserves_memory_and_backing_provenance() {
         MptStoreLookup::Backing(Some(node)) if node.value == b"backing"
     ));
     assert!(matches!(&batch_lookups[3], MptStoreLookup::Backing(None)));
+
+    let borrowed_lookups = batch
+        .try_get_nodes_with_source_borrowed(&batch_keys)
+        .expect("borrowed mixed batch lookup");
+    assert!(matches!(
+        &borrowed_lookups[0],
+        MptStoreLookup::InMemory(Some(node)) if node.value == b"base"
+    ));
+    assert!(matches!(
+        &borrowed_lookups[1],
+        MptStoreLookup::InMemory(Some(node)) if node.value == b"overlay"
+    ));
+    assert!(matches!(
+        &borrowed_lookups[2],
+        MptStoreLookup::Backing(Some(node)) if node.value == b"backing"
+    ));
+    assert!(matches!(
+        &borrowed_lookups[3],
+        MptStoreLookup::Backing(None)
+    ));
 
     MptStoreSnapshot::delete(&batch, backing_key.clone()).expect("stage backing tombstone");
     assert!(matches!(
@@ -1427,6 +1843,128 @@ fn batch_apply_matches_sequential_roots_and_reads() {
         trie.get(&storage_key(7, &[0xB0]))
             .expect("read updated other"),
         Some(b"other-updated".to_vec())
+    );
+}
+
+#[test]
+fn full_state_batch_namespace_matches_eager_bytes() {
+    let eager_backing = Arc::new(RecordingRawOverlayStore::new());
+    let batch_backing = Arc::new(RecordingRawOverlayStore::new());
+    let eager = MptStore::from_store(Arc::clone(&eager_backing), true).expect("eager store");
+    let batch = MptStore::from_store_with_options(Arc::clone(&batch_backing), true, true)
+        .expect("deferred batch store");
+    let changes0 = vec![
+        put(5, &[0xA0], b"shared"),
+        put(5, &[0xA1], b"shared"),
+        put(7, &[0xB0], b"other"),
+    ];
+    let changes1 = vec![
+        put(5, &[0xA0], b"shared-updated"),
+        put(5, &[0xA2], b"shared"),
+    ];
+    let changes2 = vec![delete(5, &[0xA1]), put(7, &[0xB0], b"other-updated")];
+    let blocks = [
+        MptBlockChanges {
+            block_index: 0,
+            changes: &changes0,
+        },
+        MptBlockChanges {
+            block_index: 1,
+            changes: &changes1,
+        },
+        MptBlockChanges {
+            block_index: 2,
+            changes: &changes2,
+        },
+    ];
+
+    let mut eager_root = None;
+    let mut eager_roots = Vec::with_capacity(blocks.len());
+    for block in &blocks {
+        eager_root = Some(
+            eager
+                .apply_block_changes(block.block_index, eager_root, block.changes)
+                .expect("eager block applies"),
+        );
+        eager_roots.push(eager_root.expect("eager root"));
+    }
+    let batch_roots = batch
+        .apply_block_changes_batch(None, &blocks)
+        .expect("full-state batch applies");
+    assert_eq!(batch_roots.last().copied(), eager_root);
+
+    fn reachable_nodes(
+        backing: &RecordingRawOverlayStore,
+        roots: &[UInt256],
+    ) -> std::collections::BTreeMap<Vec<u8>, Vec<u8>> {
+        fn visit(
+            backing: &RecordingRawOverlayStore,
+            hash: UInt256,
+            nodes: &mut std::collections::BTreeMap<Vec<u8>, Vec<u8>>,
+        ) {
+            let mut key = Vec::with_capacity(1 + UINT256_SIZE);
+            key.push(NODE_PREFIX);
+            key.extend_from_slice(&hash.to_array());
+            if nodes.contains_key(&key) {
+                return;
+            }
+            let bytes = backing
+                .try_get_bytes(&key)
+                .unwrap_or_else(|| panic!("missing reachable MPT node {hash}"));
+            let mut reader = neo_io::MemoryReader::new(&bytes);
+            let node = Node::deserialize(&mut reader).expect("decode reachable MPT node");
+            nodes.insert(key, bytes);
+            match node.node_type {
+                NodeType::BranchNode => {
+                    for child in node.children {
+                        if child.node_type == NodeType::HashNode {
+                            visit(backing, child.hash(), nodes);
+                        }
+                    }
+                }
+                NodeType::ExtensionNode => {
+                    if let Some(child) = node.next
+                        && child.node_type == NodeType::HashNode
+                    {
+                        visit(backing, child.hash(), nodes);
+                    }
+                }
+                NodeType::LeafNode | NodeType::HashNode | NodeType::Empty => {}
+            }
+        }
+
+        let mut nodes = std::collections::BTreeMap::new();
+        for root in roots {
+            visit(backing, *root, &mut nodes);
+        }
+        nodes
+    }
+
+    let eager_nodes = reachable_nodes(&eager_backing, &eager_roots);
+    let batch_nodes = reachable_nodes(&batch_backing, &batch_roots);
+    assert_eq!(
+        eager_nodes, batch_nodes,
+        "full-state deferred finalization must preserve every reachable node byte and reference"
+    );
+
+    fn collapse(
+        entries: Vec<(Vec<u8>, Option<Vec<u8>>)>,
+    ) -> std::collections::BTreeMap<Vec<u8>, Option<Vec<u8>>> {
+        let mut collapsed = std::collections::BTreeMap::new();
+        for (key, value) in entries {
+            if value.is_some() {
+                collapsed.insert(key, value);
+            } else {
+                collapsed.remove(&key);
+            }
+        }
+        collapsed
+    }
+
+    assert_eq!(
+        collapse(eager_backing.entries()),
+        collapse(batch_backing.entries()),
+        "full-state deferred finalization must preserve the complete raw namespace"
     );
 }
 
@@ -2329,6 +2867,255 @@ fn coordinated_commit_rejects_success_without_overlay_consumption() {
     assert!(error.to_string().contains("did not consume"));
     assert_eq!(store.current_local_root(), None);
     assert_eq!(backing.try_get_bytes(Keys::CURRENT_LOCAL_ROOT_INDEX), None);
+}
+
+#[test]
+fn fused_cursor_resolution_matches_classic_deferred_finalization_bytes() {
+    use neo_storage::mdbx::MdbxStoreProvider;
+    use neo_storage::persistence::storage::StorageConfig;
+
+    // Classic: memory-backed deferred full-state store. MemoryStore does not
+    // resolve overlay entries at its write cursor, so the journal export
+    // stays off and reference resolution runs the classic read sweep.
+    let classic_backing = Arc::new(MemoryStore::new());
+    let classic =
+        MptStore::from_memory_store_with_options(Arc::clone(&classic_backing), true, true)
+            .expect("open classic deferred store");
+
+    // Fused: MDBX-backed deferred full-state store. MDBX resolves overlay
+    // entries at its write cursor, so the deferred journal is exported
+    // unresolved and reference counts are resolved during the commit.
+    let path = std::env::temp_dir().join(format!(
+        "neo-state-service-fused-cursor-test-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&path);
+    let fused_backing = Arc::new(
+        MdbxStoreProvider::new(StorageConfig {
+            path: path.clone(),
+            ..Default::default()
+        })
+        .get_mdbx_store("")
+        .expect("open MDBX"),
+    );
+    let fused = MptStore::from_store_with_options(Arc::clone(&fused_backing), true, true)
+        .expect("open fused deferred store");
+
+    // Batch 0 seeds nodes; batch 1 re-puts one identical key/value (an
+    // already-persisted leaf hash must accumulate a reference) and adds a
+    // fresh key. Running the batches separately forces the second batch to
+    // resolve against durable state, exactly like the co-commit windows.
+    let changes0 = vec![
+        put(5, &[0xA0], b"v0"),
+        put(5, &[0xA1], b"v1"),
+        put(7, &[0x10], b"x"),
+    ];
+    let changes1 = vec![put(5, &[0xA0], b"v0"), put(6, &[0x20], b"y")];
+    let blocks0 = [MptBlockChanges {
+        block_index: 0,
+        changes: &changes0,
+    }];
+    let blocks1 = [MptBlockChanges {
+        block_index: 1,
+        changes: &changes1,
+    }];
+
+    let classic_roots0 = classic
+        .apply_block_changes_batch(None, &blocks0)
+        .expect("classic batch 0 applies");
+    let fused_roots0 = fused
+        .apply_block_changes_batch_coordinated(None, &blocks0, |backing, prepared| {
+            assert!(backing.try_commit_borrowed_raw_overlay(prepared)?);
+            Ok(())
+        })
+        .expect("fused batch 0 applies");
+    assert_eq!(classic_roots0, fused_roots0);
+
+    let classic_roots1 = classic
+        .apply_block_changes_batch(Some(classic_roots0[0]), &blocks1)
+        .expect("classic batch 1 applies");
+    let fused_roots1 = fused
+        .apply_block_changes_batch_coordinated(
+            Some(fused_roots0[0]),
+            &blocks1,
+            |backing, prepared| {
+                assert!(backing.try_commit_borrowed_raw_overlay(prepared)?);
+                Ok(())
+            },
+        )
+        .expect("fused batch 1 applies");
+    assert_eq!(classic_roots1, fused_roots1);
+
+    // Every persisted key/value — node reference counts included — must be
+    // byte-identical between the fused cursor path and the classic sweep.
+    let classic_entries = <MemoryStore as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::find(
+        classic_backing.as_ref(),
+        None,
+        SeekDirection::Forward,
+    )
+    .collect::<Vec<_>>();
+    let fused_entries = <_ as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::find(
+        fused_backing.as_ref(),
+        None,
+        SeekDirection::Forward,
+    )
+    // MDBX keeps a backend metadata row the memory store does not have.
+    .filter(|(key, _)| key != b"neo_node_metadata")
+    .collect::<Vec<_>>();
+    assert_eq!(fused_entries, classic_entries);
+
+    // The repeated put of an already-persisted leaf must have accumulated a
+    // reference above 1 somewhere in the persisted node set, proving the
+    // cursor-resolution path (not just fresh inserts) was exercised.
+    let saw_accumulated_reference = classic_entries.iter().any(|(key, value)| {
+        key.len() == 1 + 32
+            && key[0] == 0xF0
+            && neo_crypto::mpt_trie::Node::split_serialized_reference(value)
+                .map(|(_, reference, _)| reference > 1)
+                .unwrap_or(false)
+    });
+    assert!(
+        saw_accumulated_reference,
+        "test must exercise reference accumulation on persisted nodes"
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
+fn fused_cursor_resolution_matches_classic_across_multi_block_checkpoints() {
+    use neo_storage::mdbx::MdbxStoreProvider;
+    use neo_storage::persistence::storage::StorageConfig;
+
+    let classic_backing = Arc::new(MemoryStore::new());
+    let classic =
+        MptStore::from_memory_store_with_options(Arc::clone(&classic_backing), true, true)
+            .expect("open classic deferred store");
+
+    let path = std::env::temp_dir().join(format!(
+        "neo-state-service-fused-multiblock-test-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&path);
+    let fused_backing = Arc::new(
+        MdbxStoreProvider::new(StorageConfig {
+            path: path.clone(),
+            ..Default::default()
+        })
+        .get_mdbx_store("")
+        .expect("open MDBX"),
+    );
+    let fused = MptStore::from_store_with_options(Arc::clone(&fused_backing), true, true)
+        .expect("open fused deferred store");
+
+    // One batch spanning three blocks: only the final non-empty block calls
+    // `trie.commit()`, so the exported journal covers per-block checkpoints,
+    // an update, a storage delete, and an empty block.
+    let changes0 = vec![put(5, &[0xA0], b"v0"), put(5, &[0xA1], b"v1")];
+    let changes1 = vec![
+        put(5, &[0xA0], b"v0-updated"),
+        MptChange::Delete {
+            key: storage_key(5, &[0xA1]),
+        },
+        put(6, &[0x20], b"y"),
+    ];
+    let changes2 = Vec::new();
+    let blocks = [
+        MptBlockChanges {
+            block_index: 0,
+            changes: &changes0,
+        },
+        MptBlockChanges {
+            block_index: 1,
+            changes: &changes1,
+        },
+        MptBlockChanges {
+            block_index: 2,
+            changes: &changes2,
+        },
+    ];
+
+    let classic_roots = classic
+        .apply_block_changes_batch(None, &blocks)
+        .expect("classic batch applies");
+    let fused_roots = fused
+        .apply_block_changes_batch_coordinated(None, &blocks, |backing, prepared| {
+            assert!(backing.try_commit_borrowed_raw_overlay(prepared)?);
+            Ok(())
+        })
+        .expect("fused batch applies");
+    assert_eq!(classic_roots, fused_roots);
+    assert_eq!(classic_roots.len(), 3);
+
+    let classic_entries = <MemoryStore as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::find(
+        classic_backing.as_ref(),
+        None,
+        SeekDirection::Forward,
+    )
+    .collect::<Vec<_>>();
+    let fused_entries = <_ as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::find(
+        fused_backing.as_ref(),
+        None,
+        SeekDirection::Forward,
+    )
+    .filter(|(key, _)| key != b"neo_node_metadata")
+    .collect::<Vec<_>>();
+    assert_eq!(fused_entries, classic_entries);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
+fn coordinated_commit_rejects_unresolved_deferred_journal() {
+    use neo_storage::mdbx::MdbxStoreProvider;
+    use neo_storage::persistence::storage::StorageConfig;
+
+    let path = std::env::temp_dir().join(format!(
+        "neo-state-service-unresolved-journal-test-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&path);
+    let backing = Arc::new(
+        MdbxStoreProvider::new(StorageConfig {
+            path: path.clone(),
+            ..Default::default()
+        })
+        .get_mdbx_store("")
+        .expect("open MDBX"),
+    );
+    // MDBX resolves overlay entries at its write cursor, so the deferred
+    // journal is exported unresolved for this store.
+    let store = MptStore::from_store_with_options(Arc::clone(&backing), true, true)
+        .expect("open deferred store");
+    let changes = vec![put(5, &[0xA0], b"v0"), put(5, &[0xA1], b"v1")];
+    let blocks = [MptBlockChanges {
+        block_index: 0,
+        changes: &changes,
+    }];
+
+    // A committer that visits the materialized overlay but never resolves
+    // the exported journal at the cursor must fail the publish closed.
+    let error = store
+        .apply_block_changes_batch_coordinated(None, &blocks, |backing, prepared| {
+            let mut sink_overlay = Vec::new();
+            prepared.visit_raw_overlay(&mut |key: &[u8], value: Option<&[u8]>| {
+                sink_overlay.push((key.to_vec(), value.map(<[u8]>::to_vec)));
+            });
+            assert!(!sink_overlay.is_empty());
+            let _ = backing;
+            Ok(())
+        })
+        .expect_err("unresolved deferred journal must reject publication");
+
+    assert!(
+        error
+            .to_string()
+            .contains("did not resolve the deferred journal"),
+        "{error}"
+    );
+    assert_eq!(store.current_local_root(), None);
+
+    let _ = std::fs::remove_dir_all(path);
 }
 
 #[test]

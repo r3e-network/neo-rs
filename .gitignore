@@ -12,6 +12,8 @@ target/
 # Local .NET helper build output
 tools/gen_dotnet_graphemes/bin/
 tools/gen_dotnet_graphemes/obj/
+scripts/oracles/**/bin/
+scripts/oracles/**/obj/
 
 # Python test caches
 __pycache__/

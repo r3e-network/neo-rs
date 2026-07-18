@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use tracing::debug;
 
+use neo_execution::ExecutionArtifactLimits;
 use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_execution::specialization::SpecializationControl;
 use neo_payloads::ApplicationExecuted;
 use neo_storage::{CacheRead, DataCache};
 
@@ -50,13 +52,28 @@ impl Default for NativePersistOptions {
 
 /// Reusable native-persistence resources for a sequence of blocks that share
 /// the same explicit native-contract provider and protocol settings.
-#[derive(Clone)]
 pub struct NativePersistResources<P>
 where
     P: NativeContractProvider + 'static,
 {
     pub(super) provider: Arc<P>,
     pub(super) contracts: Arc<[P::Contract]>,
+    pub(super) specialization_control: Option<SpecializationControl>,
+    pub(super) specialization_artifact_limits: ExecutionArtifactLimits,
+}
+
+impl<P> Clone for NativePersistResources<P>
+where
+    P: NativeContractProvider + 'static,
+{
+    fn clone(&self) -> Self {
+        Self {
+            provider: Arc::clone(&self.provider),
+            contracts: Arc::clone(&self.contracts),
+            specialization_control: self.specialization_control.clone(),
+            specialization_artifact_limits: self.specialization_artifact_limits,
+        }
+    }
 }
 
 impl<P> NativePersistResources<P>
@@ -71,7 +88,25 @@ where
         Self {
             provider,
             contracts,
+            specialization_control: None,
+            specialization_artifact_limits: ExecutionArtifactLimits::DEFAULT,
         }
+    }
+
+    /// Enables explicitly configured, ordinary-authoritative specialization shadowing.
+    ///
+    /// The default resource remains disabled. Supplying an authoritative route
+    /// declaration does not grant authority here: the transaction pipeline only
+    /// invokes the isolated shadow runner and commits its ordinary NeoVM branch.
+    #[must_use]
+    pub fn with_specialization_shadow(
+        mut self,
+        control: SpecializationControl,
+        artifact_limits: ExecutionArtifactLimits,
+    ) -> Self {
+        self.specialization_control = Some(control);
+        self.specialization_artifact_limits = artifact_limits;
+        self
     }
 
     /// Returns the canonical native contracts captured for this persistence
@@ -83,6 +118,16 @@ where
     /// Returns the native-contract provider captured for this persistence batch.
     pub fn provider(&self) -> Arc<P> {
         Arc::clone(&self.provider)
+    }
+
+    /// Returns the shared process control when shadowing was explicitly composed.
+    pub fn specialization_control(&self) -> Option<&SpecializationControl> {
+        self.specialization_control.as_ref()
+    }
+
+    /// Returns the hard comparison-artifact limits selected by composition.
+    pub const fn specialization_artifact_limits(&self) -> ExecutionArtifactLimits {
+        self.specialization_artifact_limits
     }
 }
 

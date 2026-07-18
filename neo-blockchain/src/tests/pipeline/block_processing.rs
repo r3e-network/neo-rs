@@ -9,7 +9,7 @@ fn constants_have_expected_values() {
 }
 
 #[test]
-fn batch_persist_resources_use_system_native_provider() {
+fn batch_persist_resources_use_system_native_resources() {
     let source = include_str!("../../pipeline/block_processing/persist.rs");
     let start = source
         .find("pub(crate) fn batch_persist_resources")
@@ -21,11 +21,7 @@ fn batch_persist_resources_use_system_native_provider() {
     let builder = &source[start..end];
 
     assert!(
-        builder.contains("self.system.native_contract_provider()"),
-        "batch native-persistence resources must use the provider exposed by SystemContext"
-    );
-    assert!(
-        builder.contains("NativePersistResources::from_provider"),
-        "batch native-persistence resources must be created from the explicit provider"
+        builder.contains("self.system.native_persist_resources()"),
+        "batch persistence must preserve process controls composed by SystemContext"
     );
 }

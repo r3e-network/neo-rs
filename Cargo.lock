@@ -26,6 +26,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
 dependencies = [
  "cfg-if",
+ "getrandom 0.3.4",
  "once_cell",
  "version_check",
  "zerocopy",
@@ -1065,6 +1066,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1943,6 +1954,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "lz4"
+version = "1.28.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a20b523e860d03443e98350ceaac5e71c6ba89aea7d960769ec3ce37f4de5af4"
+dependencies = [
+ "lz4-sys",
+]
+
+[[package]]
+name = "lz4-sys"
+version = "1.11.1+lz4-1.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bd8c0d6c6ed0cd30b3652886bb8711dc4bb01d637a68105a3d5158039b418e6"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
 name = "lz4_flex"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1982,6 +2012,15 @@ name = "memchr"
 version = "2.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
+
+[[package]]
+name = "memmap2"
+version = "0.9.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "mimalloc"
@@ -2083,22 +2122,32 @@ dependencies = [
 name = "neo-benches"
 version = "0.10.0"
 dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "clap",
  "criterion",
  "hex",
+ "libc",
  "neo-blockchain",
  "neo-config",
  "neo-crypto",
+ "neo-execution",
  "neo-io",
  "neo-manifest",
  "neo-native-contracts",
  "neo-payloads",
  "neo-primitives",
  "neo-runtime",
+ "neo-state-packs",
  "neo-state-service",
  "neo-storage",
  "neo-system",
  "neo-vm",
  "num-bigint",
+ "parity-db",
+ "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -2131,6 +2180,14 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "neo-checkpoint"
+version = "0.10.0"
+dependencies = [
+ "sha2",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2423,6 +2480,7 @@ dependencies = [
  "neo-rpc",
  "neo-runtime",
  "neo-serialization",
+ "neo-state-packs",
  "neo-state-service",
  "neo-static-files",
  "neo-storage",
@@ -2627,6 +2685,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-state-packs"
+version = "0.10.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "neo-state-service"
 version = "0.10.0"
 dependencies = [
@@ -2665,6 +2734,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "libmdbx",
  "lru",
+ "mdbx-sys",
  "neo-error",
  "neo-io",
  "neo-primitives",
@@ -2954,6 +3024,28 @@ dependencies = [
  "elliptic-curve",
  "primeorder",
  "sha2",
+]
+
+[[package]]
+name = "parity-db"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b63063d738c6e39a9e29e0821fc7293f1d862e75bac6e39bcea131b44c03ade"
+dependencies = [
+ "ahash",
+ "blake2",
+ "crc32fast",
+ "fs2",
+ "hex",
+ "libc",
+ "log",
+ "lz4",
+ "memmap2",
+ "parking_lot",
+ "rand 0.9.4",
+ "siphasher",
+ "snap",
+ "winapi",
 ]
 
 [[package]]
@@ -3983,6 +4075,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
+name = "siphasher"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3993,6 +4091,12 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "snap"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "199905e6153d6405f9728fe44daace35f8f837bbf830bb6e85fbd5828709a886"
 
 [[package]]
 name = "socket2"

@@ -1,5 +1,5 @@
 use super::*;
-use neo_vm_rs::OpCode;
+use crate::OpCode;
 
 #[test]
 fn test_script_creation_and_validation() {
@@ -67,6 +67,33 @@ fn test_script_instruction_caching() {
 
     assert_eq!(instr1.pointer(), instr2.pointer());
     assert_eq!(instr1.opcode(), instr2.opcode());
+}
+
+#[test]
+fn shared_bytes_reuses_the_script_allocation() {
+    let script = Script::new_relaxed(vec![OpCode::PUSH1.byte(), OpCode::RET.byte()]);
+    let first = script.shared_bytes();
+    let second = script.shared_bytes();
+
+    assert!(Arc::ptr_eq(&first, &second));
+    assert_eq!(first.as_ref(), script.as_bytes());
+}
+
+#[test]
+fn relaxed_script_cache_allocates_segments_on_demand() {
+    let script = Script::new_relaxed(vec![OpCode::NOP.byte(); INSTRUCTION_CACHE_SEGMENT_SIZE * 3]);
+    let InstructionCache::Lazy(cache) = &script.instructions else {
+        panic!("relaxed scripts must use the lazy instruction cache");
+    };
+    assert_eq!(cache.initialized_segment_count(), 0);
+
+    script.get_instruction(0).expect("first instruction");
+    assert_eq!(cache.initialized_segment_count(), 1);
+
+    script
+        .get_instruction(INSTRUCTION_CACHE_SEGMENT_SIZE * 2)
+        .expect("third segment instruction");
+    assert_eq!(cache.initialized_segment_count(), 2);
 }
 
 #[test]

@@ -11,13 +11,16 @@
 //!
 //! - Test modules and fixtures: grouped coverage for the surrounding domain.
 
+mod rebase;
+
 use super::store::estimate_cursor_write_us;
 use super::*;
 use crate::persistence::providers::RuntimeStore;
 use crate::persistence::{
-    CoordinatedTransactionalStore, RawOverlaySink, RawOverlaySource, RawReadOnlyStore,
-    ReadOnlyStoreGeneric, SeekDirection, Store, StoreCache, StoreMaintenanceBatch, StoreSnapshot,
-    TransactionalStore, WriteStore, storage::StorageConfig,
+    CoordinatedCommitMarker, CoordinatedTransactionalStore, RawOverlayCursor, RawOverlaySink,
+    RawOverlaySource, RawReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, ShadowCommitMarker,
+    Store, StoreCache, StoreMaintenanceBatch, StoreSnapshot, TransactionalStore, WriteStore,
+    storage::StorageConfig,
 };
 use crate::{StorageError, StorageItem, StorageKey};
 use std::fs;
@@ -183,6 +186,272 @@ fn coordinated_overlays_publish_both_tables_in_one_transaction() {
 }
 
 #[test]
+fn required_marker_commits_with_both_overlays_or_rolls_everything_back() {
+    let tmp = TempDir::new().expect("tempdir");
+    let canonical = open_store(&tmp, "required-marker");
+    let state_service = canonical
+        .open_named_table("neo_state_service")
+        .expect("open StateService table");
+    let marker_key = b"authoritative-pack-high-water".to_vec();
+    let marker_value = b"epoch-7-root-42".to_vec();
+    let marker = CoordinatedCommitMarker {
+        key: marker_key.clone(),
+        value: marker_value.clone(),
+    };
+    let mut canonical_overlay = TestOverlay(vec![(b"canonical-tip".to_vec(), Some(vec![42]))]);
+    let mut metadata_overlay =
+        TestOverlay(vec![(b"\x02".to_vec(), Some(42u32.to_le_bytes().to_vec()))]);
+
+    canonical
+        .commit_coordinated_overlays_with_required_marker(
+            &mut canonical_overlay,
+            &state_service,
+            &mut metadata_overlay,
+            &marker,
+        )
+        .expect("required-marker commit");
+    assert_eq!(canonical.try_get_bytes(b"canonical-tip"), Some(vec![42]));
+    assert_eq!(
+        state_service.try_get_bytes(b"\x02"),
+        Some(42u32.to_le_bytes().to_vec())
+    );
+    assert_eq!(
+        canonical
+            .maintenance_metadata(&marker_key)
+            .expect("read mandatory marker"),
+        Some(marker_value)
+    );
+
+    let constrained = MdbxStoreProvider::new(StorageConfig {
+        path: tmp.path().join("required-marker-rollback"),
+        ..Default::default()
+    })
+    .with_map_size(4 * 1024 * 1024)
+    .with_growth_step(1024 * 1024)
+    .get_mdbx_store(std::path::Path::new(""))
+    .expect("open constrained canonical store");
+    let constrained_state = constrained
+        .open_named_table("neo_state_service")
+        .expect("open constrained StateService table");
+    let mut rejected_canonical = TestOverlay(vec![(b"rejected-tip".to_vec(), Some(vec![43]))]);
+    let mut rejected_metadata = TestOverlay(vec![(b"\x7f".to_vec(), Some(b"rejected".to_vec()))]);
+    let oversized_marker = CoordinatedCommitMarker {
+        key: b"oversized-authoritative-marker".to_vec(),
+        value: vec![0xA5; 16 * 1024 * 1024],
+    };
+    constrained
+        .commit_coordinated_overlays_with_required_marker(
+            &mut rejected_canonical,
+            &constrained_state,
+            &mut rejected_metadata,
+            &oversized_marker,
+        )
+        .expect_err("mandatory marker write failure must abort the transaction");
+    assert_eq!(constrained.try_get_bytes(b"rejected-tip"), None);
+    assert_eq!(constrained_state.try_get_bytes(b"\x7f"), None);
+}
+
+/// Overlay source that resolves one entry at the write cursor, mirroring the
+/// StateService deferred full-state journal.
+struct CursorResolvingOverlay {
+    visited: Vec<(Vec<u8>, Option<Vec<u8>>)>,
+    cursor_keys: Vec<Vec<u8>>,
+}
+
+impl RawOverlaySource for CursorResolvingOverlay {
+    fn visit_raw_overlay<S>(&mut self, sink: &mut S)
+    where
+        S: RawOverlaySink + ?Sized,
+    {
+        self.visited
+            .sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        for (key, value) in &self.visited {
+            sink.visit(key, value.as_deref());
+        }
+    }
+
+    fn commit_raw_overlay_at_cursor(
+        &mut self,
+        cursor: &mut dyn RawOverlayCursor,
+    ) -> Result<(), StorageError> {
+        for key in &self.cursor_keys {
+            let absent_value = b"-resolved";
+            if let Some(mut value) = cursor.insert_stored_if_absent(key, absent_value)? {
+                value.extend_from_slice(b"-resolved");
+                cursor.write_stored(key, &value)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn shadow_hook_captures_both_channels_and_commits_marker_atomically() {
+    let tmp = TempDir::new().expect("tempdir");
+    let canonical = open_store(&tmp, "shadow-coordinated");
+    let mut state_service = canonical
+        .open_named_table("neo_state_service")
+        .expect("open StateService table");
+    state_service
+        .put(b"\xf0node-existing".to_vec(), b"existing".to_vec())
+        .expect("seed cursor-resolved existing row");
+    let transaction_before = canonical.info().expect("MDBX info before").last_txnid();
+    let markers_before = MdbxCommitMetrics::shadow_markers_committed();
+
+    let mut canonical_overlay = TestOverlay(vec![(b"canonical-tip".to_vec(), Some(vec![1u8]))]);
+    let mut state_overlay = CursorResolvingOverlay {
+        visited: vec![
+            (b"\x02".to_vec(), Some(41u32.to_le_bytes().to_vec())),
+            (b"\xf0node-a".to_vec(), Some(b"value-a".to_vec())),
+        ],
+        cursor_keys: vec![b"\xf0node-b".to_vec(), b"\xf0node-existing".to_vec()],
+    };
+
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured_sink = Arc::clone(&captured);
+    let marker_key = b"shadow-high-water".to_vec();
+    let marker_value = b"epoch-0".to_vec();
+    let marker_key_hook = marker_key.clone();
+    let marker_value_hook = marker_value.clone();
+    let mut hook = move |entries: Vec<(Vec<u8>, Option<Vec<u8>>)>| {
+        captured_sink.lock().expect("captured lock").push(entries);
+        Ok(Some(ShadowCommitMarker {
+            key: marker_key_hook.clone(),
+            value: marker_value_hook.clone(),
+        }))
+    };
+
+    canonical
+        .commit_coordinated_overlays_with_shadow(
+            &mut canonical_overlay,
+            &state_service,
+            &mut state_overlay,
+            Some(&mut hook),
+        )
+        .expect("shadowed coordinated commit");
+
+    let captured = captured.lock().expect("captured lock");
+    assert_eq!(captured.len(), 1, "hook invoked exactly once");
+    let entries = &captured[0];
+    assert_eq!(
+        entries,
+        &vec![
+            (b"\x02".to_vec(), Some(41u32.to_le_bytes().to_vec())),
+            (b"\xf0node-a".to_vec(), Some(b"value-a".to_vec())),
+            (b"\xf0node-b".to_vec(), Some(b"-resolved".to_vec())),
+            (
+                b"\xf0node-existing".to_vec(),
+                Some(b"existing-resolved".to_vec()),
+            ),
+        ],
+        "hook must capture visited entries then cursor-resolved entries, in order"
+    );
+    drop(captured);
+
+    assert_eq!(
+        state_service.try_get_bytes(b"\xf0node-b".as_ref()),
+        Some(b"-resolved".to_vec()),
+        "cursor-resolved row is written to the secondary table"
+    );
+    assert_eq!(
+        state_service.try_get_bytes(b"\xf0node-existing".as_ref()),
+        Some(b"existing-resolved".to_vec()),
+        "cursor-resolved existing row is replaced in place"
+    );
+    assert_eq!(
+        canonical
+            .maintenance_metadata(&marker_key)
+            .expect("read maintenance marker"),
+        Some(b"epoch-0".to_vec()),
+        "marker persists in the maintenance table"
+    );
+    assert_eq!(
+        canonical.info().expect("MDBX info after").last_txnid(),
+        transaction_before + 1,
+        "marker and both overlays must cross one MDBX transaction boundary"
+    );
+    assert_eq!(
+        MdbxCommitMetrics::shadow_markers_committed(),
+        markers_before + 1
+    );
+}
+
+#[test]
+fn shadow_hook_failure_never_fails_the_canonical_commit() {
+    let tmp = TempDir::new().expect("tempdir");
+    let canonical = open_store(&tmp, "shadow-failure");
+    let state_service = canonical
+        .open_named_table("neo_state_service")
+        .expect("open StateService table");
+    let failures_before = MdbxCommitMetrics::shadow_commit_failures();
+
+    let mut canonical_overlay = TestOverlay(vec![(b"canonical-tip".to_vec(), Some(vec![7u8]))]);
+    let mut state_overlay = TestOverlay(vec![(b"\xf0node-a".to_vec(), Some(b"value-a".to_vec()))]);
+    let mut hook =
+        |_entries: Vec<(Vec<u8>, Option<Vec<u8>>)>| -> Result<Option<ShadowCommitMarker>, String> {
+            Err("simulated shadow disk failure".to_owned())
+        };
+
+    canonical
+        .commit_coordinated_overlays_with_shadow(
+            &mut canonical_overlay,
+            &state_service,
+            &mut state_overlay,
+            Some(&mut hook),
+        )
+        .expect("shadow failure must not fail the canonical commit");
+
+    assert_eq!(
+        canonical.try_get_bytes(b"canonical-tip".as_ref()),
+        Some(vec![7u8])
+    );
+    assert_eq!(
+        state_service.try_get_bytes(b"\xf0node-a".as_ref()),
+        Some(b"value-a".to_vec())
+    );
+    assert_eq!(
+        MdbxCommitMetrics::shadow_commit_failures(),
+        failures_before + 1
+    );
+}
+
+#[test]
+fn shadow_hook_without_marker_commits_normally() {
+    let tmp = TempDir::new().expect("tempdir");
+    let canonical = open_store(&tmp, "shadow-no-marker");
+    let state_service = canonical
+        .open_named_table("neo_state_service")
+        .expect("open StateService table");
+
+    let mut canonical_overlay = TestOverlay(vec![(b"canonical-tip".to_vec(), Some(vec![3u8]))]);
+    let mut state_overlay = TestOverlay(vec![(b"\xf0node-a".to_vec(), Some(b"value-a".to_vec()))]);
+    let mut hook =
+        |_entries: Vec<(Vec<u8>, Option<Vec<u8>>)>| -> Result<Option<ShadowCommitMarker>, String> {
+            Ok(None)
+        };
+
+    canonical
+        .commit_coordinated_overlays_with_shadow(
+            &mut canonical_overlay,
+            &state_service,
+            &mut state_overlay,
+            Some(&mut hook),
+        )
+        .expect("marker-less shadow commit");
+    assert_eq!(
+        canonical.try_get_bytes(b"canonical-tip".as_ref()),
+        Some(vec![3u8])
+    );
+    assert_eq!(
+        canonical
+            .maintenance_metadata(b"shadow-high-water")
+            .expect("read maintenance marker"),
+        None,
+        "no marker row may appear without a hook marker"
+    );
+}
+
+#[test]
 fn cursor_backed_raw_overlay_preserves_put_update_and_delete_semantics() {
     let tmp = TempDir::new().expect("tempdir");
     let mut store = open_store(&tmp, "cursor-overlay");
@@ -209,6 +478,61 @@ fn cursor_backed_raw_overlay_preserves_put_update_and_delete_semantics() {
     assert_eq!(store.try_get_bytes(b"update"), Some(b"new".to_vec()));
     assert_eq!(store.try_get_bytes(b"delete"), None);
     assert_eq!(store.try_get_bytes(b"missing"), None);
+}
+
+#[test]
+fn merge_cursor_overlay_preserves_put_update_delete_and_missing_key_semantics() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut store = open_store(&tmp, "merge-cursor-overlay");
+    for (key, value) in [
+        (b"a".as_slice(), b"old-a".as_slice()),
+        (b"delete".as_slice(), b"old-delete".as_slice()),
+        (b"z".as_slice(), b"old-z".as_slice()),
+    ] {
+        store
+            .put(key.to_vec(), value.to_vec())
+            .expect("seed merge-cursor row");
+    }
+
+    store
+        .commit_raw_overlay_merge_for_test([
+            (b"a".as_slice(), Some(b"new-a".as_slice())),
+            (b"delete".as_slice(), None),
+            (b"missing".as_slice(), None),
+            (b"new".as_slice(), Some(b"new-value".as_slice())),
+            (b"z".as_slice(), Some(b"new-z".as_slice())),
+        ])
+        .expect("commit merge cursor overlay");
+
+    assert_eq!(store.try_get_bytes(b"a"), Some(b"new-a".to_vec()));
+    assert_eq!(store.try_get_bytes(b"delete"), None);
+    assert_eq!(store.try_get_bytes(b"missing"), None);
+    assert_eq!(store.try_get_bytes(b"new"), Some(b"new-value".to_vec()));
+    assert_eq!(store.try_get_bytes(b"z"), Some(b"new-z".to_vec()));
+}
+
+#[test]
+fn merge_cursor_overlay_handles_empty_and_end_of_table_inserts() {
+    let tmp = TempDir::new().expect("tempdir");
+    let empty = open_store(&tmp, "merge-cursor-empty");
+    empty
+        .commit_raw_overlay_merge_for_test([
+            (b"missing".as_slice(), None),
+            (b"inserted".as_slice(), Some(b"value".as_slice())),
+        ])
+        .expect("commit into empty merge-cursor table");
+    assert_eq!(empty.try_get_bytes(b"inserted"), Some(b"value".to_vec()));
+
+    let mut tail = open_store(&tmp, "merge-cursor-tail");
+    tail.put(b"last".to_vec(), b"old".to_vec())
+        .expect("seed merge-cursor tail row");
+    tail.commit_raw_overlay_merge_for_test([
+        (b"last".as_slice(), None),
+        (b"tail".as_slice(), Some(b"new".as_slice())),
+    ])
+    .expect("commit after deleting merge-cursor tail row");
+    assert_eq!(tail.try_get_bytes(b"last"), None);
+    assert_eq!(tail.try_get_bytes(b"tail"), Some(b"new".to_vec()));
 }
 
 #[test]
@@ -270,6 +594,7 @@ fn raw_overlay_commit_metrics_cover_phases_entries_and_bytes() {
     assert!(count_delta("puts") >= 2);
     assert!(count_delta("key_bytes") >= 9);
     assert!(count_delta("value_bytes") >= 6);
+    assert!(count_delta("value_size_0_64") >= 2);
 }
 
 #[test]
@@ -437,6 +762,102 @@ fn raw_prefix_find_returns_only_matching_rows_in_both_directions() {
 }
 
 #[test]
+fn raw_prefix_key_visitor_streams_and_enforces_the_bound_before_next_row() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut store = open_store(&tmp, "prefix-visitor");
+    for key in [b"a\x00".as_slice(), b"a\x01", b"a\x02", b"b\x00"] {
+        store
+            .put(key.to_vec(), vec![key[1]])
+            .expect("put visitor row");
+    }
+
+    let mut bounded = Vec::new();
+    let visited = store
+        .visit_raw_keys_with_prefix(b"a", Some(2), |key| bounded.push(key.to_vec()))
+        .expect("visit bounded prefix");
+    assert_eq!(visited, 2);
+    assert_eq!(bounded, [b"a\x00".to_vec(), b"a\x01".to_vec()]);
+
+    let mut zero_callbacks = 0;
+    assert_eq!(
+        store
+            .visit_raw_keys_with_prefix(b"a", Some(0), |_| zero_callbacks += 1)
+            .expect("visit zero rows"),
+        0
+    );
+    assert_eq!(zero_callbacks, 0);
+
+    let runtime = RuntimeStore::Mdbx(store);
+    let mut complete = Vec::new();
+    let visited = runtime
+        .visit_raw_keys_with_prefix(b"a", None, |key| complete.push(key.to_vec()))
+        .expect("visit complete runtime prefix");
+    assert_eq!(visited, 3);
+    assert_eq!(
+        complete,
+        [b"a\x00".to_vec(), b"a\x01".to_vec(), b"a\x02".to_vec()]
+    );
+}
+
+#[test]
+fn raw_prefix_entry_visitor_streams_values_bounds_and_callback_failure() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut store = open_store(&tmp, "prefix-entry-visitor");
+    for (key, value) in [
+        (b"a\x00".as_slice(), b"zero".as_slice()),
+        (b"a\x01", b"one"),
+        (b"a\x02", b"two"),
+        (b"b\x00", b"outside"),
+    ] {
+        store
+            .put(key.to_vec(), value.to_vec())
+            .expect("put visitor row");
+    }
+
+    let mut bounded = Vec::new();
+    let visited = store
+        .visit_raw_entries_with_prefix(b"a", Some(2), |key, value| {
+            bounded.push((key.to_vec(), value.to_vec()));
+            Ok(())
+        })
+        .expect("visit bounded entries");
+    assert_eq!(visited, 2);
+    assert_eq!(
+        bounded,
+        [
+            (b"a\x00".to_vec(), b"zero".to_vec()),
+            (b"a\x01".to_vec(), b"one".to_vec()),
+        ]
+    );
+
+    let mut callbacks = Vec::new();
+    let error = store
+        .visit_raw_entries_with_prefix(b"a", None, |key, _| {
+            callbacks.push(key.to_vec());
+            if key == b"a\x01" {
+                return Err(StorageError::invalid_operation("injected visitor stop"));
+            }
+            Ok(())
+        })
+        .expect_err("visitor failure must abort the cursor walk");
+    assert!(error.to_string().contains("injected visitor stop"));
+    assert_eq!(callbacks, [b"a\x00".to_vec(), b"a\x01".to_vec()]);
+
+    let runtime = RuntimeStore::Mdbx(store);
+    let mut complete = Vec::new();
+    assert_eq!(
+        runtime
+            .visit_raw_entries_with_prefix(b"a", None, |key, value| {
+                complete.push((key.to_vec(), value.to_vec()));
+                Ok(())
+            })
+            .expect("visit runtime entries"),
+        3
+    );
+    assert_eq!(complete[2], (b"a\x02".to_vec(), b"two".to_vec()));
+}
+
+#[test]
 fn snapshot_reads_ignore_pending_writes_until_reopened_after_commit() {
     let tmp = TempDir::new().expect("tempdir");
     let mut store = open_store(&tmp, "snapshot");
@@ -567,6 +988,50 @@ fn raw_batch_reads_preserve_input_order_duplicates_and_snapshot_isolation() {
 }
 
 #[test]
+fn sorted_raw_batch_reads_preserve_missing_keys_and_unsorted_fallback() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = open_store(&tmp, "sorted-raw-batch-read");
+    let mut store = root
+        .open_named_table("sorted-raw-batch-read-table")
+        .expect("open named sorted batch-read table");
+    store
+        .put(b"a".to_vec(), b"value-a".to_vec())
+        .expect("seed a");
+    store
+        .put(b"c".to_vec(), b"value-c".to_vec())
+        .expect("seed c");
+    let snapshot = store.snapshot();
+
+    let sorted = [
+        b"a".as_slice(),
+        b"b".as_slice(),
+        b"c".as_slice(),
+        b"c".as_slice(),
+        b"d".as_slice(),
+    ];
+    assert_eq!(
+        snapshot
+            .try_get_many_bytes_sorted(&sorted)
+            .expect("sorted batch read"),
+        vec![
+            Some(b"value-a".to_vec()),
+            None,
+            Some(b"value-c".to_vec()),
+            Some(b"value-c".to_vec()),
+            None,
+        ]
+    );
+
+    let unsorted = [b"c".as_slice(), b"a".as_slice()];
+    assert_eq!(
+        snapshot
+            .try_get_many_bytes_sorted(&unsorted)
+            .expect("unsorted fallback batch read"),
+        vec![Some(b"value-c".to_vec()), Some(b"value-a".to_vec())]
+    );
+}
+
+#[test]
 fn parallel_raw_batch_reads_preserve_order_and_frozen_snapshot() {
     let tmp = TempDir::new().expect("tempdir");
     let root = open_store(&tmp, "parallel-raw-batch-read");
@@ -631,6 +1096,43 @@ fn occupancy_test_key(bucket: u32, fill: u8) -> Vec<u8> {
 }
 
 #[test]
+fn read_only_store_builds_prefix_occupancy_without_resizing_mdbx() {
+    let tmp = TempDir::new().expect("tempdir");
+    let db_path = tmp.path().join("prefix-read-only");
+    let key = occupancy_test_key(0x1200_0000, 1);
+    {
+        let root = open_store(&tmp, "prefix-read-only");
+        let mut store = root
+            .open_named_table("neo_state_service")
+            .expect("open StateService table");
+        store.put(key, b"value".to_vec()).expect("seed node row");
+    }
+    let data_path = db_path.join("mdbx.dat");
+    let size_before = fs::metadata(&data_path).expect("MDBX metadata").len();
+
+    let root = MdbxStoreProvider::new(StorageConfig {
+        path: db_path,
+        read_only: true,
+        ..Default::default()
+    })
+    .get_mdbx_store(std::path::Path::new(""))
+    .expect("open read-only MDBX");
+    let store = root
+        .open_named_table("neo_state_service")
+        .expect("open read-only StateService table");
+    let output = tmp.path().join("prefix-index.bin");
+    let report = store
+        .build_prefix_occupancy_index(&output, &[0xf0], 33, 8)
+        .expect("build read-only prefix index");
+
+    assert_eq!(report.indexed_keys, 1);
+    assert_eq!(
+        fs::metadata(data_path).expect("MDBX metadata").len(),
+        size_before
+    );
+}
+
+#[test]
 fn prefix_occupancy_preserves_hits_collisions_order_and_runtime_updates() {
     let tmp = TempDir::new().expect("tempdir");
     let root = open_store(&tmp, "prefix-occupancy");
@@ -691,6 +1193,50 @@ fn prefix_occupancy_preserves_hits_collisions_order_and_runtime_updates() {
     assert_eq!(
         snapshot.try_get_many_bytes(&[present.as_slice()]).unwrap(),
         vec![None]
+    );
+}
+
+#[test]
+fn sorted_batch_reads_use_prefix_occupancy_for_definite_misses() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = open_store(&tmp, "sorted-prefix-occupancy");
+    let mut store = root
+        .open_named_table("sorted-prefix-occupancy-table")
+        .expect("open indexed table");
+    let present = occupancy_test_key(0x1200_0000, 1);
+    let colliding_absent = occupancy_test_key(0x12ff_ffff, 2);
+    let definite_absent = occupancy_test_key(0x3400_0000, 3);
+    store
+        .put(present.clone(), b"present".to_vec())
+        .expect("seed indexed key");
+    let spec = PrefixOccupancySpec::new(
+        Some("sorted-prefix-occupancy-table".to_string()),
+        vec![0xf0],
+        33,
+        8,
+    )
+    .unwrap();
+    store
+        .install_prefix_occupancy_for_test(spec, std::slice::from_ref(&present))
+        .unwrap();
+
+    let snapshot = store.snapshot();
+    let sorted = [
+        present.as_slice(),
+        colliding_absent.as_slice(),
+        definite_absent.as_slice(),
+    ];
+    assert_eq!(
+        snapshot
+            .try_get_many_bytes_sorted(&sorted)
+            .expect("sorted prefix-filtered read"),
+        vec![Some(b"present".to_vec()), None, None]
+    );
+    assert_eq!(
+        snapshot
+            .try_get_many_bytes_sorted_for_write(&sorted)
+            .expect("authoritative sorted write-intent read"),
+        vec![Some(b"present".to_vec()), None, None]
     );
 }
 

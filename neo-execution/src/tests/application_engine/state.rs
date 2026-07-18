@@ -2,6 +2,7 @@ use super::*;
 use crate::native_contract_provider::{
     NativeContractProvider, NoNativeContract, NoNativeContractProvider,
 };
+use neo_storage::{StorageItem, StorageKey};
 use neo_vm::OpCode;
 use std::sync::Arc;
 
@@ -16,6 +17,54 @@ impl NativeContractProvider for CurrentIndexProvider {
     ) -> CoreResult<u32> {
         Ok(self.0)
     }
+}
+
+struct SnapshotPolicyProvider;
+
+impl SnapshotPolicyProvider {
+    const EXEC_FEE_FACTOR_KEY: &'static [u8] = b"exec-fee-factor";
+    const STORAGE_PRICE_KEY: &'static [u8] = b"storage-price";
+    const STORAGE_ID: i32 = 91;
+
+    fn key(suffix: &[u8]) -> StorageKey {
+        StorageKey::new(Self::STORAGE_ID, suffix.to_vec())
+    }
+
+    fn read_u32<B: neo_storage::CacheRead>(
+        snapshot: &DataCache<B>,
+        suffix: &[u8],
+    ) -> CoreResult<u32> {
+        let value = snapshot
+            .get(&Self::key(suffix))
+            .ok_or_else(|| CoreError::invalid_operation("missing test Policy value"))?
+            .to_value();
+        let bytes: [u8; 4] = value
+            .try_into()
+            .map_err(|_| CoreError::invalid_operation("malformed test Policy value"))?;
+        Ok(u32::from_le_bytes(bytes))
+    }
+}
+
+impl NativeContractProvider for SnapshotPolicyProvider {
+    type Contract = NoNativeContract;
+
+    fn exec_fee_factor_raw<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<u32> {
+        Self::read_u32(snapshot, Self::EXEC_FEE_FACTOR_KEY)
+    }
+
+    fn storage_price<B: neo_storage::CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32> {
+        Self::read_u32(snapshot, Self::STORAGE_PRICE_KEY)
+    }
+}
+
+fn put_u32(cache: &DataCache, suffix: &[u8], value: u32) {
+    cache.update(
+        SnapshotPolicyProvider::key(suffix),
+        StorageItem::from_bytes(value.to_le_bytes().to_vec()),
+    );
 }
 
 #[derive(Debug, Default)]
@@ -322,6 +371,87 @@ fn engine_native_provider_is_fixed_at_construction() {
     assert_eq!(engine.current_block_index(), 7);
 }
 
+#[test]
+fn prepare_next_transaction_refreshes_policy_values_without_resetting_snapshot_changes() {
+    // Neo v3.10.1 Blockchain.Persist creates each transaction engine from the
+    // latest cloned snapshot; ApplicationEngine then reads both Policy prices.
+    const OLD_EXEC_FEE_FACTOR: u32 = 30_0000;
+    const OLD_STORAGE_PRICE: u32 = 100_000;
+    const NEW_EXEC_FEE_FACTOR: u32 = 42_0000;
+    const NEW_STORAGE_PRICE: u32 = 123_456;
+
+    let base = DataCache::new(false);
+    put_u32(
+        &base,
+        SnapshotPolicyProvider::EXEC_FEE_FACTOR_KEY,
+        OLD_EXEC_FEE_FACTOR,
+    );
+    put_u32(
+        &base,
+        SnapshotPolicyProvider::STORAGE_PRICE_KEY,
+        OLD_STORAGE_PRICE,
+    );
+    base.commit();
+
+    let first_transaction_snapshot = Arc::new(base.clone_cache());
+    let next_transaction_snapshot = Arc::new(base.clone_cache());
+    put_u32(
+        next_transaction_snapshot.as_ref(),
+        SnapshotPolicyProvider::EXEC_FEE_FACTOR_KEY,
+        NEW_EXEC_FEE_FACTOR,
+    );
+    put_u32(
+        next_transaction_snapshot.as_ref(),
+        SnapshotPolicyProvider::STORAGE_PRICE_KEY,
+        NEW_STORAGE_PRICE,
+    );
+    let pending_key = StorageKey::new(92, b"pending-transaction-write".to_vec());
+    next_transaction_snapshot.add(
+        pending_key.clone(),
+        StorageItem::from_bytes(vec![0xAA, 0x55]),
+    );
+    let pending_changes = next_transaction_snapshot.pending_change_count();
+    assert_eq!(pending_changes, 3);
+
+    let mut block = Block::new();
+    block.header.set_index(8_800_000);
+    let mut engine = ApplicationEngine::<SnapshotPolicyProvider>::new_with_shared_block_and_native_contract_provider(
+        TriggerType::Application,
+        None,
+        first_transaction_snapshot,
+        Some(Arc::new(block)),
+        ProtocolSettings::mainnet(),
+        TEST_MODE_GAS,
+        NoDiagnostic,
+        Arc::new(SnapshotPolicyProvider),
+    )
+    .expect("engine with snapshot-backed Policy provider");
+
+    assert_eq!(engine.exec_fee_factor_raw(), OLD_EXEC_FEE_FACTOR);
+    assert_eq!(engine.storage_price(), OLD_STORAGE_PRICE);
+
+    engine.prepare_next_transaction(None, Arc::clone(&next_transaction_snapshot), TEST_MODE_GAS);
+
+    assert_eq!(engine.exec_fee_factor_raw(), NEW_EXEC_FEE_FACTOR);
+    assert_eq!(engine.storage_price(), NEW_STORAGE_PRICE);
+    assert_eq!(
+        next_transaction_snapshot.pending_change_count(),
+        pending_changes,
+        "refreshing cached Policy values must not reset transaction writes"
+    );
+    assert_eq!(
+        next_transaction_snapshot
+            .get(&pending_key)
+            .expect("pending transaction write")
+            .to_value(),
+        vec![0xAA, 0x55]
+    );
+
+    engine.prepare_next_transaction(None, Arc::new(DataCache::new(false)), TEST_MODE_GAS);
+    assert_eq!(engine.exec_fee_factor_raw(), 30 * FEE_FACTOR as u32);
+    assert_eq!(engine.storage_price(), 100_000);
+}
+
 fn expected_base_services() -> Vec<(String, i64, u8)> {
     let mut services = vec![
         (
@@ -573,6 +703,13 @@ fn engine_with_settings_at_block(
         Arc::new(NoNativeContractProvider),
     )
     .expect("application engine")
+}
+
+#[test]
+fn ordinary_engine_has_no_live_observation_allocation() {
+    let engine = engine_with_settings(ProtocolSettings::default());
+    assert!(!engine.execution_observations_enabled());
+    assert!(engine.execution_observation_handle().is_none());
 }
 
 #[test]

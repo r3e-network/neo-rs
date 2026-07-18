@@ -5,8 +5,7 @@
 #
 # This gate guards supply-chain hygiene the workspace previously lacked:
 #   - security advisories (RUSTSEC)
-#   - duplicate crate versions (e.g. the dual `sha2` 0.10/0.11 pulled in via the
-#     pinned out-of-workspace neo-vm-rs Git dependency)
+#   - duplicate crate versions
 #   - license compliance
 
 [advisories]
@@ -52,4 +51,4 @@ confidence-threshold = 0.8
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = ["https://github.com/r3e-network/neo-vm-rs.git"]
+allow-git = []

@@ -21,8 +21,10 @@ fn integer_size(value: &BigInt) -> usize {
 
     let mut bytes = bits.div_ceil(8);
     match value.sign() {
-        Sign::Plus if bits % 8 == 0 => bytes += 1,
-        Sign::Minus if bits % 8 == 0 && value.magnitude().trailing_zeros() != Some(bits - 1) => {
+        Sign::Plus if bits.is_multiple_of(8) => bytes += 1,
+        Sign::Minus
+            if bits.is_multiple_of(8) && value.magnitude().trailing_zeros() != Some(bits - 1) =>
+        {
             bytes += 1;
         }
         Sign::NoSign | Sign::Plus | Sign::Minus => {}

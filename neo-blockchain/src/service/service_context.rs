@@ -97,6 +97,19 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
         None
     }
 
+    /// Returns the native-persistence resource bundle selected by composition.
+    ///
+    /// The default preserves existing contexts by constructing ordinary-only
+    /// resources from their provider. Production composition overrides this to
+    /// reuse one process control, so mismatch latches and kill switches survive
+    /// across block batches.
+    fn native_persist_resources(
+        &self,
+    ) -> Option<crate::native_persist::NativePersistResources<Self::NativeProvider>> {
+        self.native_contract_provider()
+            .map(crate::native_persist::NativePersistResources::from_provider)
+    }
+
     /// Returns whether application observers require copied execution artifacts
     /// for this block.
     ///

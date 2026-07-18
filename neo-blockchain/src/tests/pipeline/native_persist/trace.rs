@@ -86,6 +86,28 @@ fn vm_profile_formatters_emit_stable_class_and_hot_opcode_summaries() {
         format_vm_hottest_opcodes(&profile, 4),
         "PUSH1=1,PUSH2=1,RET=1,ADD=1"
     );
+    let script_hash = UInt160::from(*profile.scripts()[0].script_hash());
+    assert_eq!(
+        format_vm_hottest_scripts(&profile, 4),
+        format!("{script_hash}:bytes=4:instructions=4:contexts=1:entries=0x1:other_entries=0")
+    );
+}
+
+#[test]
+fn vm_hardfork_context_records_activation_schedule_and_state() {
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.hardforks.clear();
+    settings
+        .hardforks
+        .insert(neo_config::hardfork::Hardfork::HfBasilisk, 10);
+    settings
+        .hardforks
+        .insert(neo_config::hardfork::Hardfork::HfGorgon, 20);
+
+    assert_eq!(
+        format_vm_hardfork_context(&settings, 15),
+        "HF_Basilisk@10:active,HF_Gorgon@20:pending"
+    );
 }
 
 #[test]

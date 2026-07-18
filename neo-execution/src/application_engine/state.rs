@@ -155,6 +155,9 @@ where
             fault_exception: None,
             native_arg_null_mask: 0,
             native_return_null: false,
+            vm_context_profile: None,
+            execution_plan_cache: None,
+            execution_observations: None,
         };
 
         app.register_native_contracts();
@@ -262,6 +265,9 @@ where
             fault_exception: None,
             native_arg_null_mask: 0,
             native_return_null: false,
+            vm_context_profile: None,
+            execution_plan_cache: None,
+            execution_observations: None,
         };
 
         app.refresh_policy_settings();
@@ -311,10 +317,20 @@ where
         self.random_times = 0;
         self.native_arg_null_mask = 0;
         self.native_return_null = false;
-        self.nonce_data =
-            Self::initialize_nonce_data(self.script_container.as_ref(), self.persisting_block.as_deref());
-        // Policy fees are height/protocol-stable within a block; skip the
-        // Policy-contract re-read that new engine construction performs.
+        self.vm_context_profile = None;
+        self.execution_observations = None;
+        self.nonce_data = Self::initialize_nonce_data(
+            self.script_container.as_ref(),
+            self.persisting_block.as_deref(),
+        );
+        // C# creates a fresh ApplicationEngine for every persisted transaction,
+        // so same-block Policy writes are visible to the next transaction.
+        // Engine reuse must therefore refresh these snapshot-derived fields
+        // after rebinding the transaction cache. Restore constructor defaults
+        // first so a failed Policy read cannot retain the preceding tx's fees.
+        self.exec_fee_factor = 30u32 * (FEE_FACTOR as u32);
+        self.storage_price = 100_000u32;
+        self.refresh_policy_settings();
         self.vm_engine.engine_mut().reset_execution_session();
     }
 
@@ -411,13 +427,69 @@ where
     /// Profiling is observational and remains disabled unless a diagnostic
     /// caller explicitly opts in before execution.
     pub fn enable_vm_execution_profiling(&mut self) {
+        let existing_contexts = self.vm_engine.engine().invocation_stack().to_vec();
+        let mut context_profile =
+            crate::execution_profile::ApplicationContextProfileCollector::default();
+        for context in &existing_contexts {
+            context_profile.record(context);
+        }
+        self.vm_context_profile = Some(context_profile);
         self.vm_engine.engine_mut().enable_execution_profiling();
+    }
+
+    pub(crate) fn bind_execution_observations(
+        &mut self,
+        observations: Arc<Mutex<ExecutionObservationState>>,
+    ) {
+        self.execution_observations = Some(observations);
+    }
+
+    pub(crate) fn execution_observation_handle(
+        &self,
+    ) -> Option<Arc<Mutex<ExecutionObservationState>>> {
+        self.execution_observations.as_ref().map(Arc::clone)
+    }
+
+    #[inline]
+    pub(crate) const fn execution_observations_enabled(&self) -> bool {
+        self.execution_observations.is_some()
+    }
+
+    pub(crate) fn observe_execution(
+        &self,
+        observation: impl FnOnce(
+            &mut crate::execution_artifact::ExecutionObservationJournal,
+        )
+            -> Result<(), crate::execution_artifact::ExecutionArtifactError>,
+    ) {
+        let Some(observations) = &self.execution_observations else {
+            return;
+        };
+        observations.lock().record(observation);
+    }
+
+    pub(crate) fn fail_execution_observation(
+        &self,
+        error: crate::execution_artifact::ExecutionArtifactError,
+    ) {
+        let Some(observations) = &self.execution_observations else {
+            return;
+        };
+        observations.lock().fail(error);
     }
 
     /// Returns the current targeted VM profile, when enabled.
     #[must_use]
     pub fn vm_execution_profile(&self) -> Option<neo_vm::VmExecutionProfile> {
         self.vm_engine.engine().execution_profile()
+    }
+
+    /// Returns logical contract/method identities for profiled VM contexts.
+    #[must_use]
+    pub fn vm_application_context_profile(&self) -> Option<crate::ApplicationContextProfile> {
+        self.vm_context_profile
+            .as_ref()
+            .map(|profile| profile.snapshot())
     }
 
     /// Returns the fault exception message as a string slice, if any.
@@ -619,6 +691,12 @@ where
         self.fee_consumed
     }
 
+    /// Returns the raw picoGAS gas counter retained by the application host.
+    #[must_use]
+    pub const fn gas_consumed_pico(&self) -> i64 {
+        self.gas_consumed
+    }
+
     /// Returns the raw picoGAS execution fee limit.
     pub const fn fee_amount_pico(&self) -> i64 {
         self.fee_amount
@@ -643,6 +721,71 @@ where
     /// Returns the VM result stack.
     pub fn result_stack(&self) -> &EvaluationStack {
         self.vm_engine.engine().result_stack()
+    }
+
+    /// Returns the VM's exact uncaught exception stack item, when present.
+    #[must_use]
+    pub fn uncaught_exception_item(&self) -> Option<&StackItem> {
+        self.vm_engine.engine().uncaught_exception()
+    }
+
+    /// Returns the VM reference-counter total after execution.
+    #[must_use]
+    pub fn reference_count(&self) -> usize {
+        self.vm_engine.engine().reference_counter().count()
+    }
+
+    /// Returns the engine-level effective call flags, including the halted case
+    /// where there is no current invocation context to query.
+    #[must_use]
+    pub const fn effective_call_flags(&self) -> CallFlags {
+        self.call_flags
+    }
+
+    /// Returns how many deterministic random values were requested.
+    #[must_use]
+    pub const fn random_times(&self) -> u32 {
+        self.random_times
+    }
+
+    pub(crate) const fn nonce_data(&self) -> [u8; 16] {
+        self.nonce_data
+    }
+
+    pub(crate) const fn native_calling_override(&self) -> Option<UInt160> {
+        self.native_calling_override
+    }
+
+    pub(crate) const fn native_argument_null_mask(&self) -> u32 {
+        self.native_arg_null_mask
+    }
+
+    pub(crate) const fn native_return_is_null(&self) -> bool {
+        self.native_return_null
+    }
+
+    pub(crate) const fn next_iterator_id(&self) -> u32 {
+        self.next_iterator_id
+    }
+
+    pub(crate) fn vm_gas_state(&self) -> (u64, u64) {
+        (
+            self.vm_engine.engine().gas_consumed(),
+            self.vm_engine.engine().gas_limit(),
+        )
+    }
+
+    pub(crate) fn vm_control_state(&self) -> (bool, u8) {
+        (
+            self.vm_engine.engine().is_jumping,
+            self.vm_engine.engine().call_flags().bits(),
+        )
+    }
+
+    pub(crate) fn is_native_call_boundary(&self, context: &ExecutionContext<B>) -> bool {
+        let state = context.state();
+        let identity = Arc::as_ptr(&state) as usize;
+        self.native_call_boundary_contexts.contains(&identity)
     }
 
     /// Returns the protocol settings used by this engine.
@@ -704,6 +847,70 @@ where
             .unwrap_or(0)
     }
 
+    /// Returns all invocation counters in deterministic script-hash order.
+    #[must_use]
+    pub fn invocation_counters_snapshot(&self) -> Vec<(UInt160, u32)> {
+        let mut counters = self
+            .invocation_counter
+            .iter()
+            .map(|(hash, count)| (*hash, *count))
+            .collect::<Vec<_>>();
+        counters.sort_unstable_by_key(|(hash, _)| hash.to_bytes());
+        counters
+    }
+
+    pub(crate) fn pending_native_call_count(&self) -> usize {
+        self.pending_native_calls.len()
+    }
+
+    pub(crate) fn pending_native_call_method_bytes(&self) -> usize {
+        self.pending_native_calls
+            .iter()
+            .fold(0usize, |bytes, call| {
+                bytes.saturating_add(call.method.len())
+            })
+    }
+
+    pub(crate) fn visit_pending_native_calls(
+        &self,
+        mut visitor: impl FnMut(UInt160, UInt160, &str, &[StackItem]),
+    ) {
+        for call in &self.pending_native_calls {
+            visitor(
+                call.calling_script_hash,
+                call.contract_hash,
+                &call.method,
+                &call.args,
+            );
+        }
+    }
+
+    pub(crate) fn storage_iterator_count(&self) -> usize {
+        self.storage_iterators.len()
+    }
+
+    pub(crate) fn storage_iterator_row_count(&self) -> usize {
+        self.storage_iterators
+            .values()
+            .fold(0usize, |count, iterator| {
+                count.saturating_add(iterator.artifact_row_count())
+            })
+    }
+
+    pub(crate) fn storage_iterator_retained_bytes(&self) -> usize {
+        self.storage_iterators
+            .values()
+            .fold(0usize, |bytes, iterator| {
+                bytes.saturating_add(iterator.artifact_retained_bytes())
+            })
+    }
+
+    pub(crate) fn storage_iterator_ids(&self) -> Vec<u32> {
+        let mut ids = self.storage_iterators.keys().copied().collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids
+    }
+
     pub(crate) fn get_or_init_invocation_counter(&mut self, script_hash: &UInt160) -> u32 {
         *self.invocation_counter.entry(*script_hash).or_insert(1)
     }
@@ -744,6 +951,15 @@ where
     /// Returns a clone of the current snapshot cache.
     pub fn snapshot_cache(&self) -> Arc<DataCache<B>> {
         Arc::clone(&self.snapshot_cache)
+    }
+
+    /// Returns the transaction-root snapshot supplied to the engine constructor.
+    ///
+    /// Active invocation contexts replace `snapshot_cache` with nested child
+    /// overlays, so shadow orchestration uses this handle to verify that a
+    /// prepared engine still descends from the runner-owned isolated root.
+    pub(crate) fn original_snapshot_cache_handle(&self) -> Arc<DataCache<B>> {
+        Arc::clone(&self.original_snapshot_cache)
     }
 
     pub(super) fn get_contract(&self, hash: &UInt160) -> Option<&ContractState> {

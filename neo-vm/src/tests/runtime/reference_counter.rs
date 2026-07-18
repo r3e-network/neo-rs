@@ -1,6 +1,6 @@
 use super::*;
+use crate::VmOrderedDictionary;
 use crate::stack_item::StackItem;
-use neo_vm_rs::VmOrderedDictionary;
 
 fn arr(items: Vec<StackItem>) -> StackItem {
     StackItem::from_array(items)

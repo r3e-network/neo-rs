@@ -101,6 +101,17 @@ where
             {
                 imported += fast_forwarded;
                 last_imported_height = Some(last_height);
+                // The fast-forward helper stages the state-equivalent writes
+                // directly into the shared snapshot. Retain the accepted
+                // block identities so the deferred finalization path still
+                // performs one durable commit and publishes the same ordered
+                // block boundary as normal persistence.
+                deferred_committed_blocks.extend(
+                    blocks[position..position + fast_forwarded]
+                        .iter()
+                        .cloned()
+                        .map(|block| (std::sync::Arc::new(block), false)),
+                );
                 position += fast_forwarded;
                 continue;
             }
@@ -130,7 +141,7 @@ where
                         stats.empty_elapsed += empty_start.elapsed();
                         imported += 1;
                         last_imported_height = Some(index);
-                        deferred_committed_blocks.push(std::sync::Arc::new(block.clone()));
+                        deferred_committed_blocks.push((std::sync::Arc::new(block.clone()), true));
                         position += 1;
                         continue;
                     }
@@ -173,7 +184,7 @@ where
             imported += 1;
             last_imported_height = Some(index);
             if defer_store_commit {
-                deferred_committed_blocks.push(committed_block);
+                deferred_committed_blocks.push((committed_block, true));
                 // Intermediate Ledger+StateService co-commit when the projected
                 // MPT change budget is reached (coordinated catch-up path).
                 if let Some(budget) = self.system.deferred_import_work_budget() {
@@ -192,32 +203,38 @@ where
                                 error,
                             );
                         }
-                        for block in deferred_committed_blocks.drain(..) {
-                            let finalized_delivery_start =
-                                (!block.transactions.is_empty()).then(std::time::Instant::now);
-                            let finalized = BlockCommitArtifacts::without_replay_artifacts(None)
-                                .into_finalized(std::sync::Arc::clone(&block), persist_context);
-                            if let Err(error) = self.system.block_finalized(finalized).await {
-                                import_error = Some(format!(
-                                    "block {} committed durably but finalized delivery failed: {error}",
-                                    block.index()
-                                ));
-                                break;
-                            }
-                            if plan.maintains_live_side_effects() {
-                                self.mempool.block_persisted(block.as_ref());
-                                if let Ok(hash) = Self::try_block_hash(block.as_ref()) {
-                                    self.event_tx
-                                        .send(crate::RuntimeEvent::Imported {
-                                            hash,
-                                            height: block.index(),
-                                            timestamp: block.timestamp(),
-                                        })
-                                        .ok();
+                        for (block, publish_finalized) in deferred_committed_blocks.drain(..) {
+                            if publish_finalized {
+                                let finalized_delivery_start =
+                                    (!block.transactions.is_empty()).then(std::time::Instant::now);
+                                let finalized =
+                                    BlockCommitArtifacts::without_replay_artifacts(None)
+                                        .into_finalized(
+                                            std::sync::Arc::clone(&block),
+                                            persist_context,
+                                        );
+                                if let Err(error) = self.system.block_finalized(finalized).await {
+                                    import_error = Some(format!(
+                                        "block {} committed durably but finalized delivery failed: {error}",
+                                        block.index()
+                                    ));
+                                    break;
                                 }
-                            }
-                            if let Some(start) = finalized_delivery_start {
-                                stats.transaction_finalized_delivery_elapsed += start.elapsed();
+                                if plan.maintains_live_side_effects() {
+                                    self.mempool.block_persisted(block.as_ref());
+                                    if let Ok(hash) = Self::try_block_hash(block.as_ref()) {
+                                        self.event_tx
+                                            .send(crate::RuntimeEvent::Imported {
+                                                hash,
+                                                height: block.index(),
+                                                timestamp: block.timestamp(),
+                                            })
+                                            .ok();
+                                    }
+                                }
+                                if let Some(start) = finalized_delivery_start {
+                                    stats.transaction_finalized_delivery_elapsed += start.elapsed();
+                                }
                             }
                             durable_checkpoint_height = block.index();
                         }
@@ -265,32 +282,34 @@ where
                     error,
                 );
             }
-            for block in deferred_committed_blocks {
-                let finalized_delivery_start =
-                    (!block.transactions.is_empty()).then(std::time::Instant::now);
-                let finalized = BlockCommitArtifacts::without_replay_artifacts(None)
-                    .into_finalized(std::sync::Arc::clone(&block), persist_context);
-                if let Err(error) = self.system.block_finalized(finalized).await {
-                    import_error = Some(format!(
-                        "block {} committed durably but finalized delivery failed: {error}",
-                        block.index()
-                    ));
-                    break;
-                }
-                if plan.maintains_live_side_effects() {
-                    self.mempool.block_persisted(block.as_ref());
-                    if let Ok(hash) = Self::try_block_hash(block.as_ref()) {
-                        self.event_tx
-                            .send(crate::RuntimeEvent::Imported {
-                                hash,
-                                height: block.index(),
-                                timestamp: block.timestamp(),
-                            })
-                            .ok();
+            for (block, publish_finalized) in deferred_committed_blocks {
+                if publish_finalized {
+                    let finalized_delivery_start =
+                        (!block.transactions.is_empty()).then(std::time::Instant::now);
+                    let finalized = BlockCommitArtifacts::without_replay_artifacts(None)
+                        .into_finalized(std::sync::Arc::clone(&block), persist_context);
+                    if let Err(error) = self.system.block_finalized(finalized).await {
+                        import_error = Some(format!(
+                            "block {} committed durably but finalized delivery failed: {error}",
+                            block.index()
+                        ));
+                        break;
                     }
-                }
-                if let Some(start) = finalized_delivery_start {
-                    stats.transaction_finalized_delivery_elapsed += start.elapsed();
+                    if plan.maintains_live_side_effects() {
+                        self.mempool.block_persisted(block.as_ref());
+                        if let Ok(hash) = Self::try_block_hash(block.as_ref()) {
+                            self.event_tx
+                                .send(crate::RuntimeEvent::Imported {
+                                    hash,
+                                    height: block.index(),
+                                    timestamp: block.timestamp(),
+                                })
+                                .ok();
+                        }
+                    }
+                    if let Some(start) = finalized_delivery_start {
+                        stats.transaction_finalized_delivery_elapsed += start.elapsed();
+                    }
                 }
             }
             self.finish_deferred_import_cache_maintenance(

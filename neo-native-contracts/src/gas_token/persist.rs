@@ -7,7 +7,7 @@ use super::GasToken;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
 use neo_payloads::TransactionAttribute;
-use neo_primitives::{TransactionAttributeType, UInt160};
+use neo_primitives::{TransactionAttributeType, UInt160, UInt256};
 use num_bigint::BigInt;
 
 impl GasToken {
@@ -39,24 +39,33 @@ impl GasToken {
         let (primary_index, tx_data) = {
             let block =
                 crate::support::engine::require_persisting_block(engine, "GasToken::on_persist")?;
-            let tx_data: Vec<(Option<UInt160>, i64, i64, Option<u8>)> = block
+            let tx_data: Vec<(usize, UInt256, Option<UInt160>, i64, i64, Option<u8>)> = block
                 .transactions
                 .iter()
-                .map(|tx| {
+                .enumerate()
+                .map(|(transaction_index, tx)| {
                     // C# `tx.GetAttribute<NotaryAssisted>()`: the first (and, by
                     // AllowMultiple=false, only) NotaryAssisted attribute.
                     let nkeys = tx.attributes().iter().find_map(|attr| match attr {
                         TransactionAttribute::NotaryAssisted(na) => Some(na.nkeys),
                         _ => None,
                     });
-                    (tx.sender(), tx.system_fee(), tx.network_fee(), nkeys)
+                    let tx_hash = tx.try_hash().unwrap_or_else(|_| UInt256::zero());
+                    (
+                        transaction_index,
+                        tx_hash,
+                        tx.sender(),
+                        tx.system_fee(),
+                        tx.network_fee(),
+                        nkeys,
+                    )
                 })
                 .collect();
             (usize::from(block.primary_index()), tx_data)
         };
 
         let mut total_network_fee: i64 = 0;
-        for (sender, system_fee, network_fee, notary_nkeys) in tx_data {
+        for (transaction_index, tx_hash, sender, system_fee, network_fee, notary_nkeys) in tx_data {
             // C# `tx.Sender` is `Signers[0].Account`; a signerless transaction
             // cannot appear in a valid block (C# would throw on the indexer).
             let sender = sender.ok_or_else(|| {
@@ -65,7 +74,11 @@ impl GasToken {
             let fee = system_fee.checked_add(network_fee).ok_or_else(|| {
                 CoreError::invalid_operation("GasToken::on_persist: fee overflow")
             })?;
-            self.gas_burn(engine, &sender, &BigInt::from(fee))?;
+            self.gas_burn(engine, &sender, &BigInt::from(fee)).map_err(|error| {
+                CoreError::invalid_operation(format!(
+                    "GasToken::on_persist transaction index={transaction_index} hash={tx_hash} sender={sender} system_fee={system_fee} network_fee={network_fee}: {error}"
+                ))
+            })?;
             total_network_fee = total_network_fee.checked_add(network_fee).ok_or_else(|| {
                 CoreError::invalid_operation("GasToken::on_persist: network fee overflow")
             })?;

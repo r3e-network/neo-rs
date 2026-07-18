@@ -174,6 +174,11 @@ where
         let script = self.contract_script(&contract);
         let rvcount = if has_return_value { 1 } else { 0 };
         let offset = method.offset as usize;
+        // The key records this resolved host-load entry. Intra-script frames
+        // such as `_initialize` and CALL clones share the same verified
+        // whole-script plan and Script identity, matching ordinary NeoVM.
+        let script =
+            self.prepare_script_with_execution_plan(script, offset, Some(contract.as_ref()));
         let method_name = method.name.clone();
         let return_type = method.return_type;
         let parameter_types = method
@@ -184,19 +189,20 @@ where
         let contract_hash = contract.hash;
         let context_contract = Arc::clone(&contract);
 
-        let context = self.load_script_with_state(script, rvcount, offset, move |state| {
-            state.call_flags = flags;
-            state.script_hash = Some(contract_hash);
-            state.contract = Some(context_contract);
-            state.method_name = Some(method_name);
-            state.argument_count = argument_count;
-            state.return_type = Some(return_type);
-            state.parameter_types = parameter_types;
-            state.native_calling_script_hash = None;
-            state.is_dynamic_call = false;
-            state.calling_context = previous_context;
-            state.calling_script_hash = previous_hash;
-        })?;
+        let context =
+            self.load_script_arc_with_state(Arc::new(script), rvcount, offset, move |state| {
+                state.call_flags = flags;
+                state.script_hash = Some(contract_hash);
+                state.contract = Some(context_contract);
+                state.method_name = Some(method_name);
+                state.argument_count = argument_count;
+                state.return_type = Some(return_type);
+                state.parameter_types = parameter_types;
+                state.native_calling_script_hash = None;
+                state.is_dynamic_call = false;
+                state.calling_context = previous_context;
+                state.calling_script_hash = previous_hash;
+            })?;
 
         if let Some(init) = contract.manifest.abi.get_method_ref(
             ContractBasicMethod::INITIALIZE,
@@ -313,7 +319,7 @@ where
         self.increment_invocation_counter(&contract.hash);
 
         let new_context = self.load_contract_context(
-            contract,
+            Arc::clone(&contract),
             method,
             flags,
             args.len(),
@@ -341,6 +347,8 @@ where
         }
 
         self.refresh_context_tracking()?;
+
+        self.begin_observed_contract_call(&new_context, contract.as_ref(), method, flags, args);
 
         Ok(new_context)
     }
@@ -453,6 +461,11 @@ where
 
         let state_arc = context.state();
         state_arc.lock().native_calling_script_hash = Some(*calling_script_hash);
+        self.retarget_observed_contract_call(
+            &context,
+            crate::host_access_audit::ContractCallKind::FromNativeVoid,
+            Some(*calling_script_hash),
+        );
         let boundary_id = Arc::as_ptr(&state_arc) as usize;
         self.native_call_boundary_contexts.push(boundary_id);
 
@@ -542,6 +555,11 @@ where
 
         let state_arc = context.state();
         state_arc.lock().native_calling_script_hash = Some(*calling_script_hash);
+        self.retarget_observed_contract_call(
+            &context,
+            crate::host_access_audit::ContractCallKind::FromNativeReturning,
+            Some(*calling_script_hash),
+        );
         // Refresh cached hashes so the callee observes the native caller.
         self.refresh_context_tracking()?;
 
@@ -631,6 +649,11 @@ where
 
         let state_arc = context.state();
         state_arc.lock().native_calling_script_hash = Some(*calling_script_hash);
+        self.retarget_observed_contract_call(
+            &context,
+            crate::host_access_audit::ContractCallKind::FromNativeVoid,
+            Some(*calling_script_hash),
+        );
         self.refresh_context_tracking()?;
 
         let boundary_id = Arc::as_ptr(&state_arc) as usize;

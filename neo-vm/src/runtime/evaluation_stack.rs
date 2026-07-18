@@ -39,6 +39,16 @@ impl EvaluationStack {
         self.profile = Some(profile);
     }
 
+    /// Detaches profiling when a reusable engine starts an unprofiled session.
+    pub(crate) fn clear_profile(&mut self) {
+        self.profile = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn has_profile(&self) -> bool {
+        self.profile.is_some()
+    }
+
     /// Returns the reference counter for this evaluation stack.
     #[inline]
     #[must_use]

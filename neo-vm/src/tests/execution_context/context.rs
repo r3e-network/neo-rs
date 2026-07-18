@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 use super::*;
+use crate::OpCode;
 use crate::stack_item::StackItem;
-use neo_vm_rs::OpCode;
 use num_bigint::BigInt;
 
 #[derive(Default)]
@@ -98,8 +98,8 @@ fn test_try_stack() {
     assert!(context.try_stack().is_none());
 
     // Create a try stack with one context
-    use neo_vm_rs::ExceptionHandlingContext;
-    use neo_vm_rs::ExceptionHandlingState;
+    use crate::ExceptionHandlingContext;
+    use crate::ExceptionHandlingState;
     let mut try_stack = Vec::new();
     let try_context = ExceptionHandlingContext::new(10, 20);
     try_stack.push(try_context);
@@ -250,7 +250,9 @@ fn test_clone() {
     assert_eq!(clone.rvcount(), 0);
 
     // Clone with a different position
-    let clone_with_position = context.clone_with_position(2);
+    let clone_with_position = context
+        .clone_with_position(2)
+        .expect("clone position is valid");
 
     // Check that the clone has a different instruction pointer
     assert_eq!(clone_with_position.instruction_pointer(), 2);

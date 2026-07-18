@@ -214,6 +214,7 @@ fn renders_node_metrics_payload() {
         "neo_sync_native_contract_hook_avg_us{trigger=\"onpersist\",contract=\"GasToken\",id=\"-6\"}"
     ));
     assert!(text.contains("neo_sync_native_persist_tx_stage_calls_total"));
+    assert!(text.contains("neo_sync_native_persist_tx_stage_total_us{stage=\"load_execute\"}"));
     assert!(text.contains("neo_sync_native_persist_tx_stage_avg_us{stage=\"load_execute\"}"));
     assert!(text.contains("neo_sync_neotoken_onpersist_stage_calls_total"));
     assert!(text.contains("neo_sync_neotoken_onpersist_stage_avg_us{stage=\"compute_committee\"}"));
@@ -243,11 +244,35 @@ fn renders_node_metrics_payload() {
     assert!(text.contains("neo_state_service_mpt_apply_avg_items{kind=\"overlay_entries\"}"));
     assert!(text.contains("neo_state_service_mpt_apply_avg_items{kind=\"batch_blocks\"}"));
     for kind in [
+        "node_puts",
+        "node_deletes",
+        "node_value_size_0_64",
+        "node_value_size_65_128",
+        "node_value_size_129_256",
+        "node_value_size_257_512",
+        "node_value_size_513_1024",
+        "node_value_size_1025_4096",
+        "node_value_size_4097_16384",
+        "node_value_size_over_16384",
+        "node_value_bytes_0_64",
+        "node_value_bytes_65_128",
+        "node_value_bytes_129_256",
+        "node_value_bytes_257_512",
+        "node_value_bytes_513_1024",
+        "node_value_bytes_1025_4096",
+        "node_value_bytes_4097_16384",
+        "node_value_bytes_over_16384",
         "put_node_cached_calls",
         "serialized_payload_bytes",
         "hash_computations",
         "max_recursion_depth",
         "repeated_ancestor_finalizations",
+        "trie_resolve_cache_hits",
+        "trie_resolve_store_hits",
+        "trie_resolve_store_misses",
+        "deferred_finalization_read_bytes",
+        "deferred_finalization_minor_faults",
+        "deferred_finalization_major_faults",
         "overlay_working_set_entries",
         "finalization_cache_hits",
         "finalization_memory_hits",
@@ -268,6 +293,7 @@ fn renders_node_metrics_payload() {
         text.contains("neo_storage_mdbx_commit_stage_duration_us_total{stage=\"cursor_write\"}")
     );
     assert!(text.contains("neo_storage_mdbx_commit_volume_total{kind=\"value_bytes\"}"));
+    assert!(text.contains("neo_storage_mdbx_commit_volume_total{kind=\"value_size_0_64\"}"));
 }
 
 #[test]

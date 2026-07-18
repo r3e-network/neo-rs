@@ -3,6 +3,7 @@
 //
 
 use super::{ExecutionContext, ExecutionEngine, Script, VMState, VmError, VmResult};
+use crate::execution_plan::{ExecutionPlan, ExecutionPlanCacheError, ExecutionPlanRoute};
 use std::sync::Arc;
 
 impl<S> ExecutionEngine<S> {
@@ -15,7 +16,16 @@ impl<S> ExecutionEngine<S> {
             )));
         }
 
-        if let Some(profile) = &self.execution_profile {
+        if context.execution_plan().is_some() {
+            self.planned_execution_enabled = true;
+        }
+
+        if let Some(profile) = &mut self.execution_profile {
+            profile.record_context_load(
+                context.script_hash(),
+                context.script().len(),
+                context.instruction_pointer(),
+            );
             context.set_stack_profile(profile.stack_handle());
         }
 
@@ -183,6 +193,31 @@ impl<S: Default> ExecutionEngine<S> {
         Ok(context)
     }
 
+    /// Creates an opt-in context backed by a strictly verified immutable plan.
+    ///
+    /// Exact script bytes and the selected entry are checked before the context
+    /// can be loaded. A mismatch therefore has no VM or host-visible effects.
+    pub fn create_context_from_plan(
+        &self,
+        script: Script,
+        plan: Arc<ExecutionPlan>,
+        rvcount: i32,
+        initial_position: usize,
+    ) -> VmResult<ExecutionContext<S>> {
+        let initial_position_u32 = u32::try_from(initial_position)
+            .map_err(|_| VmError::invalid_operation_msg("Planned context entry exceeds u32"))?;
+        if plan.key().entry_ip() != initial_position_u32 {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Execution plan entry mismatch: plan={}, context={initial_position}",
+                plan.key().entry_ip()
+            )));
+        }
+        let script = script.with_execution_plan(plan)?;
+        let mut context = ExecutionContext::new(script, rvcount, &self.reference_counter);
+        context.set_instruction_pointer(initial_position)?;
+        Ok(context)
+    }
+
     /// Loads a script and creates a new context.
     pub fn load_script(
         &mut self,
@@ -198,5 +233,51 @@ impl<S: Default> ExecutionEngine<S> {
                 operation: "load_script".into(),
                 reason: "No current execution context after loading".into(),
             })
+    }
+
+    /// Loads an opt-in planned script after exact identity verification.
+    pub fn load_script_with_plan(
+        &mut self,
+        script: Script,
+        plan: Arc<ExecutionPlan>,
+        rvcount: i32,
+        initial_position: usize,
+    ) -> VmResult<&ExecutionContext<S>> {
+        let context = self.create_context_from_plan(script, plan, rvcount, initial_position)?;
+        self.load_context(context)?;
+        self.current_context()
+            .ok_or_else(|| VmError::InvalidOperation {
+                operation: "load_script_with_plan".into(),
+                reason: "No current execution context after loading".into(),
+            })
+    }
+
+    /// Loads a planned context only when every exact guard matches, otherwise
+    /// loading the ordinary script before the context becomes visible.
+    pub fn load_script_with_plan_fallback(
+        &mut self,
+        script: Script,
+        plan: Result<Arc<ExecutionPlan>, ExecutionPlanCacheError>,
+        rvcount: i32,
+        initial_position: usize,
+    ) -> VmResult<ExecutionPlanRoute> {
+        let initial_position_u32 = u32::try_from(initial_position).ok();
+        let plan = plan.ok().filter(|plan| {
+            initial_position_u32 == Some(plan.key().entry_ip())
+                && plan.matches_script(&script.script_hash(), script.as_bytes())
+        });
+        let (context, route) = if let Some(plan) = plan {
+            (
+                self.create_context_from_plan(script, plan, rvcount, initial_position)?,
+                ExecutionPlanRoute::Planned,
+            )
+        } else {
+            (
+                self.create_context(script, rvcount, initial_position)?,
+                ExecutionPlanRoute::OrdinaryFallback,
+            )
+        };
+        self.load_context(context)?;
+        Ok(route)
     }
 }

@@ -12,23 +12,47 @@ description = "Criterion benchmarks for the neo-rs workspace"
 # Run with: cargo bench -p neo-benches
 
 [dependencies]
+anyhow = { workspace = true }
+base64 = { workspace = true }
+clap = { workspace = true }
 criterion = { workspace = true }
 neo-blockchain = { workspace = true }
 neo-config = { workspace = true }
 neo-crypto = { workspace = true }
+neo-execution = { workspace = true }
 neo-io = { workspace = true }
 neo-manifest = { workspace = true }
 neo-native-contracts = { workspace = true }
 neo-primitives = { workspace = true }
 neo-runtime = { workspace = true }
+neo-state-packs = { workspace = true }
 neo-state-service = { workspace = true }
 neo-storage = { workspace = true }
 neo-system = { workspace = true }
 neo-vm = { workspace = true }
 neo-payloads = { workspace = true }
+parity-db = "=0.5.5"
 hex = { workspace = true }
+libc = "0.2"
 num-bigint = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[[bin]]
+name = "mdbx-persistence-bench"
+path = "src/bin/mdbx_persistence_bench.rs"
+
+[[bin]]
+name = "append-persistence-bench"
+path = "src/bin/append_persistence_bench.rs"
+
+[[bin]]
+name = "paritydb-persistence-bench"
+path = "src/bin/paritydb_persistence_bench.rs"
 
 [[bench]]
 name = "block_import"

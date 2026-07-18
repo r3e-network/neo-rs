@@ -2,6 +2,8 @@
 
 use crate::ApplicationExecutionEngine as ExecutionEngine;
 use crate::application_engine::{ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE};
+use crate::execution_artifact::ContextObservationValue;
+use crate::host_access_audit::HostContextAccess;
 use crate::native_contract_provider::NativeContractProvider;
 use neo_config::hardfork::Hardfork;
 use neo_crypto::murmur;
@@ -32,28 +34,48 @@ where
 
     /// Gets the trigger type
     pub fn runtime_get_trigger(&mut self) -> CoreResult<()> {
-        self.push_integer(i64::from(self.trigger_type().bits()))
+        let trigger = self.trigger_type();
+        self.observe_context(
+            HostContextAccess::Trigger,
+            ContextObservationValue::Trigger(trigger),
+        );
+        self.push_integer(i64::from(trigger.bits()))
     }
 
     /// Gets the network magic number
     pub fn runtime_get_network(&mut self) -> CoreResult<()> {
-        self.push_integer(self.protocol_settings().network as i64)
+        let network = self.protocol_settings().network;
+        self.observe_context(
+            HostContextAccess::Network,
+            ContextObservationValue::U32(network),
+        );
+        self.push_integer(network as i64)
     }
 
     /// Gets the address version of the current network
     pub fn runtime_get_address_version(&mut self) -> CoreResult<()> {
-        self.push_integer(self.protocol_settings().address_version as i64)
+        let version = self.protocol_settings().address_version;
+        self.observe_context(
+            HostContextAccess::AddressVersion,
+            ContextObservationValue::U8(version),
+        );
+        self.push_integer(version as i64)
     }
 
     /// Gets the current block time
     pub fn runtime_get_time(&mut self) -> CoreResult<()> {
         let time = self.get_current_block_time()?;
+        self.observe_context(
+            HostContextAccess::BlockTimestamp,
+            ContextObservationValue::U64(time),
+        );
         let big = BigInt::from(time);
         self.push(StackItem::from_int(big))
     }
 
     /// Gets the script container
     pub fn runtime_get_script_container(&mut self) -> CoreResult<()> {
+        self.observe_script_container_context();
         let container = self
             .get_script_container()
             .cloned()
@@ -113,7 +135,12 @@ where
 
     /// Gets the executing script hash
     pub fn runtime_get_executing_script_hash(&mut self) -> CoreResult<()> {
-        if let Some(hash) = self.current_script_hash() {
+        let hash = self.current_script_hash();
+        self.observe_context(
+            HostContextAccess::ExecutingScriptHash,
+            ContextObservationValue::Hash160(hash),
+        );
+        if let Some(hash) = hash {
             self.push_bytes(hash.to_bytes())
         } else {
             self.push_null()
@@ -123,6 +150,10 @@ where
     /// Gets the calling script hash
     pub fn runtime_get_calling_script_hash(&mut self) -> CoreResult<()> {
         let hash = self.get_calling_script_hash();
+        self.observe_context(
+            HostContextAccess::CallingScriptHash,
+            ContextObservationValue::Hash160(hash),
+        );
         if let Some(hash) = hash {
             self.push_bytes(hash.to_bytes())
         } else {
@@ -132,7 +163,12 @@ where
 
     /// Gets the entry script hash
     pub fn runtime_get_entry_script_hash(&mut self) -> CoreResult<()> {
-        if let Some(hash) = self.entry_script_hash() {
+        let hash = self.entry_script_hash();
+        self.observe_context(
+            HostContextAccess::EntryScriptHash,
+            ContextObservationValue::Hash160(hash),
+        );
+        if let Some(hash) = hash {
             self.push_bytes(hash.to_bytes())
         } else {
             self.push_null()
@@ -170,6 +206,10 @@ where
             .ok_or_else(|| CoreError::other("No current script"))?;
 
         let counter = self.get_or_init_invocation_counter(&hash);
+        self.observe_context(
+            HostContextAccess::InvocationCounter(hash),
+            ContextObservationValue::U32(counter),
+        );
         self.push_integer(counter as i64)
     }
 
@@ -200,7 +240,12 @@ where
 
     /// Gets the remaining GAS available for execution (matches C# GasLeft).
     pub fn runtime_gas_left(&mut self) -> CoreResult<()> {
-        self.push_integer(self.gas_left())
+        let gas_left = self.gas_left();
+        self.observe_context(
+            HostContextAccess::GasLeft,
+            ContextObservationValue::I64(gas_left),
+        );
+        self.push_integer(gas_left)
     }
 
     /// Logs a message
@@ -332,6 +377,12 @@ where
 
         // Get notifications for the specified contract (or all if None)
         let notifications = self.get_notifications(hash)?;
+        if self.execution_observations_enabled() {
+            self.observe_context(
+                HostContextAccess::Notifications,
+                ContextObservationValue::StackItems(notifications.clone()),
+            );
+        }
 
         self.push_array(notifications)
     }
@@ -349,6 +400,7 @@ where
 
     /// Gets the signers of the current transaction (matches C# GetCurrentSigners).
     pub fn runtime_current_signers(&mut self) -> CoreResult<()> {
+        self.observe_script_container_context();
         let Some(container) = self.get_script_container() else {
             return self.push_null();
         };

@@ -1332,6 +1332,39 @@ async fn import_chain_acc_report_uses_zero_bps_for_noop_resume() {
 }
 
 #[tokio::test]
+async fn count_only_import_does_not_scan_when_local_tip_reached_stop_height() {
+    let (handle, mut commands, _events) = BlockchainHandle::channel(1, 1);
+    let blocks = linked_empty_blocks(0, 3);
+    let local_tip_hash = blocks[2].hash();
+    let store = memory_store_with_ledger_tip(2, local_tip_hash);
+    let bytes = encode_chain_acc(&blocks);
+    let mut cursor = std::io::Cursor::new(bytes);
+
+    let report = import_chain_acc_report_from_reader_until_height(
+        &handle,
+        &mut cursor,
+        None,
+        false,
+        None,
+        Some(2),
+        Some(store),
+    )
+    .await
+    .expect("count-only noop report");
+
+    assert!(
+        commands.try_recv().is_err(),
+        "count-only noop must not dispatch an import"
+    );
+    assert_eq!(report.imported, 0);
+    assert_eq!(report.average_blocks_per_second, 0.0);
+    assert!(
+        cursor.position() <= 8,
+        "count-only noop must stop after the header, not scan block records"
+    );
+}
+
+#[tokio::test]
 async fn import_chain_acc_rejects_partial_range_without_storage_before_import() {
     let (handle, mut commands, _events) = BlockchainHandle::channel(1, 1);
     let bytes = encode_chain_acc(&[empty_block(10)]);

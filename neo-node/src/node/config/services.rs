@@ -13,6 +13,11 @@ pub(in crate::node) struct StateServiceSection {
     /// Whether to retain historical trie nodes for old-root proofs/state reads.
     #[serde(default, alias = "FullState")]
     pub(in crate::node) full_state: bool,
+    /// Whether ordered full-state batches defer lookup work while retaining
+    /// every serialized mutation. Disabled by default because the eager policy
+    /// remains the reference path.
+    #[serde(default, alias = "DeferFullStateFinalization")]
+    pub(in crate::node) defer_full_state_finalization: bool,
     /// Whether StateService should keep computing local MPT roots while the
     /// node is still far behind the peer-reported live tip.
     #[serde(default, alias = "TrackDuringCatchup")]
@@ -42,6 +47,7 @@ impl Default for StateServiceSection {
         Self {
             enabled: false,
             full_state: false,
+            defer_full_state_finalization: false,
             track_during_catchup: false,
             coordinated: true,
             path: None,

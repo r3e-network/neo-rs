@@ -72,10 +72,17 @@ pub mod transactional_store;
 #[path = "traits/write_store.rs"]
 pub mod write_store;
 
-pub use data_cache::{CacheRead, DataCache, EmptyCacheBacking, Trackable};
+pub use data_cache::{
+    CacheRead, DataCache, DataCacheReadObservationPause, DataCacheReadObserver,
+    DataCacheReadOrigin, EmptyCacheBacking, Trackable,
+};
 pub use read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric};
 pub use seek_direction::SeekDirection;
-pub use store::{MdbxEnvironmentInfo, RawOverlaySink, RawOverlaySource, Store, StoreBackendKind};
+pub use store::{
+    CoordinatedCommitMarker, MdbxEnvironmentInfo, RawOverlayCursor, RawOverlaySink,
+    RawOverlaySource, ShadowCommitHook, ShadowCommitMarker, ShadowOverlayEntries, Store,
+    StoreBackendKind,
+};
 pub use store_cache::{StoreCache, StoreCacheBacking, StoreDataCache};
 pub use store_factory::StoreFactory;
 pub use store_maintenance::StoreMaintenanceBatch;

@@ -1,5 +1,5 @@
 use super::prefix_occupancy::PrefixOccupancyIndex;
-use super::store::{MdbxStore, collect_cursor_entries};
+use super::store::{MdbxDatabaseKind, MdbxStore, collect_cursor_entries};
 use crate::persistence::{
     read_only_store::RawReadOnlyStore,
     read_only_store::ReadOnlyStoreGeneric,
@@ -7,7 +7,7 @@ use crate::persistence::{
     store_snapshot::{SnapshotCommitResult, StoreSnapshot},
     write_store::WriteStore,
 };
-use libmdbx::{NoWriteMap, RO, Table, Transaction};
+use libmdbx::{RO, Table, Transaction};
 use parking_lot::RwLock;
 use std::{
     collections::BTreeMap,
@@ -30,7 +30,7 @@ pub struct MdbxSnapshot {
     data_table: Option<Table<'static>>,
     // Keep this field before `store` so the read transaction is dropped before
     // the database Arc that keeps its widened lifetime valid.
-    read_tx: Option<Transaction<'static, RO, NoWriteMap>>,
+    read_tx: Option<Transaction<'static, RO, MdbxDatabaseKind>>,
     initialization_error: Option<crate::StorageError>,
     store: Arc<MdbxStore>,
     prefix_occupancy: Option<Arc<PrefixOccupancyIndex>>,
@@ -100,7 +100,7 @@ impl MdbxSnapshot {
 
     fn read_handles(
         &self,
-    ) -> crate::StorageResult<(&Transaction<'static, RO, NoWriteMap>, &Table<'static>)> {
+    ) -> crate::StorageResult<(&Transaction<'static, RO, MdbxDatabaseKind>, &Table<'static>)> {
         if let Some(error) = self.initialization_error.as_ref() {
             return Err(error.clone());
         }
@@ -140,6 +140,7 @@ impl MdbxSnapshot {
 
         let (read_tx, data_table) = self.read_handles()?;
         if let Some(index) = self.prefix_occupancy.as_deref() {
+            let (baseline_transaction_id, covered_transaction_id) = index.coverage();
             let mut candidate_indices = Vec::new();
             let mut candidate_keys = Vec::new();
             for (position, key) in keys.iter().enumerate() {
@@ -176,6 +177,14 @@ impl MdbxSnapshot {
                 }
                 return Ok(results);
             }
+            info!(
+                target: "neo",
+                snapshot_transaction_id = read_tx.id(),
+                baseline_transaction_id,
+                covered_transaction_id,
+                queries = keys.len(),
+                "MDBX prefix occupancy did not filter this batch"
+            );
         }
 
         self.read_entries_authoritative(read_tx, data_table, keys, parallelism)
@@ -183,7 +192,7 @@ impl MdbxSnapshot {
 
     fn read_entries_authoritative<K>(
         &self,
-        read_tx: &Transaction<'static, RO, NoWriteMap>,
+        read_tx: &Transaction<'static, RO, MdbxDatabaseKind>,
         data_table: &Table<'static>,
         keys: &[K],
         parallelism: usize,
@@ -197,10 +206,41 @@ impl MdbxSnapshot {
         }
 
         let borrowed_keys = keys.iter().map(AsRef::as_ref).collect::<Vec<_>>();
-        self.read_entries_parallel(read_tx.id(), &borrowed_keys, parallelism)
+        self.read_entries_parallel(read_tx.id(), &borrowed_keys, parallelism, false)
             .or_else(|error| {
                 error!(target: "neo", error = %error, "parallel MDBX batch read failed; preserving correctness with the frozen serial snapshot");
                 MdbxStore::read_entries_with_cursor(read_tx, data_table, keys)
+            })
+    }
+
+    fn read_entries_sorted_authoritative<K>(
+        &self,
+        read_tx: &Transaction<'static, RO, MdbxDatabaseKind>,
+        data_table: &Table<'static>,
+        keys: &[K],
+        parallelism: usize,
+    ) -> crate::StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        if parallelism <= 1 || keys.len() < PARALLEL_BATCH_READ_MIN_KEYS {
+            return MdbxStore::read_entries_sorted_with_cursor(read_tx, data_table, keys);
+        }
+
+        // Sorted batches are still split into contiguous chunks, preserving
+        // the caller's result order while allowing independent read cursors to
+        // resolve sparse content-addressed misses concurrently. If the MDBX
+        // reader pool cannot reproduce the frozen transaction, fall back to
+        // the serial ordered cursor before returning an error.
+        let borrowed_keys = keys.iter().map(AsRef::as_ref).collect::<Vec<_>>();
+        self.read_entries_parallel(read_tx.id(), &borrowed_keys, parallelism, true)
+            .or_else(|error| {
+                error!(
+                    target: "neo",
+                    error = %error,
+                    "parallel sorted MDBX batch read failed; preserving correctness with the frozen ordered cursor"
+                );
+                MdbxStore::read_entries_sorted_with_cursor(read_tx, data_table, keys)
             })
     }
 
@@ -227,7 +267,7 @@ impl MdbxSnapshot {
     {
         let (read_tx, _) = self.read_handles()?;
         let borrowed_keys = keys.iter().map(AsRef::as_ref).collect::<Vec<_>>();
-        self.read_entries_parallel(read_tx.id(), &borrowed_keys, parallelism)
+        self.read_entries_parallel(read_tx.id(), &borrowed_keys, parallelism, false)
     }
 
     fn read_entries_parallel(
@@ -235,6 +275,7 @@ impl MdbxSnapshot {
         snapshot_id: u64,
         keys: &[&[u8]],
         parallelism: usize,
+        sorted: bool,
     ) -> crate::StorageResult<Vec<Option<Vec<u8>>>> {
         let worker_count = parallelism.clamp(1, keys.len());
         let mut transactions = Vec::with_capacity(worker_count);
@@ -257,7 +298,11 @@ impl MdbxSnapshot {
                     let table = transaction
                         .open_table(table_name)
                         .map_err(super::store::mdbx_error)?;
-                    MdbxStore::read_entries_with_cursor(&transaction, &table, chunk)
+                    if sorted {
+                        MdbxStore::read_entries_sorted_with_cursor(&transaction, &table, chunk)
+                    } else {
+                        MdbxStore::read_entries_with_cursor(&transaction, &table, chunk)
+                    }
                 }));
             }
 
@@ -294,6 +339,21 @@ fn batch_read_parallelism() -> usize {
         // stays opt-in for cold/high-height experiments.
         std::env::var("NEO_MDBX_BATCH_READ_THREADS")
             .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(1)
+            .clamp(1, MAX_PARALLEL_BATCH_READERS)
+    })
+}
+
+fn write_intent_batch_read_parallelism() -> usize {
+    static PARALLELISM: OnceLock<usize> = OnceLock::new();
+    *PARALLELISM.get_or_init(|| {
+        // Write-intent reads are the sparse, content-addressed lookup set used
+        // immediately before an MPT overlay commit. Keep this override
+        // separate from ordinary/pruning reads, whose parallel A/B regressed.
+        std::env::var("NEO_MDBX_WRITE_INTENT_READ_THREADS")
+            .ok()
+            .or_else(|| std::env::var("NEO_MDBX_BATCH_READ_THREADS").ok())
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(1)
             .clamp(1, MAX_PARALLEL_BATCH_READERS)
@@ -352,6 +412,70 @@ impl RawReadOnlyStore for MdbxSnapshot {
         K: AsRef<[u8]>,
     {
         self.read_entries(keys)
+    }
+
+    fn try_get_many_bytes_sorted<K>(&self, keys: &[K]) -> crate::StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (read_tx, data_table) = self.read_handles()?;
+        if let Some(index) = self.prefix_occupancy.as_deref() {
+            let mut candidate_indices = Vec::new();
+            let mut candidate_keys = Vec::new();
+            for (position, key) in keys.iter().enumerate() {
+                let key = key.as_ref();
+                if index.may_contain(read_tx.id(), key) != Some(false) {
+                    candidate_indices.push(position);
+                    candidate_keys.push(key);
+                }
+            }
+            if candidate_indices.len() < keys.len() {
+                let values = self.read_entries_sorted_authoritative(
+                    read_tx,
+                    data_table,
+                    &candidate_keys,
+                    batch_read_parallelism(),
+                )?;
+                if values.len() != candidate_indices.len() {
+                    return Err(crate::StorageError::backend(
+                        "MDBX prefix occupancy sorted candidate read omitted an input key",
+                    ));
+                }
+                let mut results = vec![None; keys.len()];
+                for (position, value) in candidate_indices.into_iter().zip(values) {
+                    results[position] = value;
+                }
+                return Ok(results);
+            }
+        }
+        self.read_entries_sorted_authoritative(read_tx, data_table, keys, batch_read_parallelism())
+    }
+
+    fn try_get_many_bytes_sorted_for_write<K>(
+        &self,
+        keys: &[K],
+    ) -> crate::StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (read_tx, data_table) = self.read_handles()?;
+        // The ordered MPT finalizer writes these keys in the next MDBX
+        // transaction. Keep the authoritative misses here so MDBX has
+        // traversed the same B-tree pages before the writer arrives. Using
+        // the occupancy bitmap would save reads but makes the subsequent
+        // cursor writes cold on large full-state batches.
+        self.read_entries_sorted_authoritative(
+            read_tx,
+            data_table,
+            keys,
+            write_intent_batch_read_parallelism(),
+        )
     }
 }
 

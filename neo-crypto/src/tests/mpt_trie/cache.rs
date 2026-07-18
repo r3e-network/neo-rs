@@ -1,4 +1,5 @@
 use super::*;
+use crate::mpt_trie::cache::{ProcessResourceSnapshot, proc_io_counter, proc_stat_faults};
 
 // ============================================================================
 // UT_Cache.cs Tests (12 tests)
@@ -216,6 +217,51 @@ fn finalization_stats_separate_cache_hits_from_backing_hits_and_misses() {
     assert_eq!(stats.finalization_backing_hits, 1);
     assert_eq!(stats.finalization_backing_misses, 1);
     assert_eq!(stats.finalization_lookup_errors, 0);
+}
+
+#[test]
+fn trie_resolution_stats_separate_cache_hits_from_store_hits_and_misses() {
+    let store = Arc::new(MockStore::new());
+    let persisted = Node::new_leaf(vec![1, 2, 3]);
+    let persisted_hash = seed_node(store.as_ref(), 0xf0, &persisted);
+    let missing_hash = Node::new_leaf(vec![4, 5, 6]).try_hash().unwrap();
+
+    let mut cache = MptCache::new(store, 0xf0);
+    assert!(cache.resolve(&persisted_hash).unwrap().is_some());
+    assert!(cache.resolve(&persisted_hash).unwrap().is_some());
+    assert!(cache.resolve(&missing_hash).unwrap().is_none());
+    assert!(cache.resolve(&missing_hash).unwrap().is_none());
+
+    let stats = cache.mutation_stats();
+    assert_eq!(stats.trie_resolve_cache_hits, 2);
+    assert_eq!(stats.trie_resolve_store_hits, 1);
+    assert_eq!(stats.trie_resolve_store_misses, 1);
+}
+
+#[test]
+fn single_deferred_node_matches_bulk_and_cache_hit_accounting() {
+    let direct_store = Arc::new(MockStore::new());
+    let bulk_store = Arc::new(MockStore::new());
+    let mut direct = MptCache::new_deferred(direct_store.clone(), 0xf0);
+    let mut bulk = MptCache::new_deferred(bulk_store.clone(), 0xf0);
+    let node = Node::new_leaf(vec![1, 2, 3]);
+
+    for _ in 0..2 {
+        let mut direct_node = node.clone();
+        direct.defer_intermediate_node(&mut direct_node).unwrap();
+
+        let mut bulk_node = node.clone();
+        let pending = bulk.prepare_node_finalization(&mut bulk_node).unwrap();
+        bulk.finalize_prepared_nodes(vec![pending]).unwrap();
+    }
+
+    assert_eq!(
+        direct.mutation_stats().finalization_cache_hits,
+        bulk.mutation_stats().finalization_cache_hits
+    );
+    direct.commit().unwrap();
+    bulk.commit().unwrap();
+    assert_eq!(direct_store.get_data(), bulk_store.get_data());
 }
 
 #[test]
@@ -684,6 +730,45 @@ fn cache_commit_reuses_cached_serialized_payloads_for_dirty_nodes() {
         !commit.contains("node.to_array()"),
         "dirty nodes are hashed before staging; commit should append references to cached payload bytes instead of reserializing whole nodes"
     );
+}
+
+#[test]
+fn deferred_resource_probe_parses_linux_proc_counters() {
+    let io = "rchar: 10\nread_bytes: 4096\nwrite_bytes: 8192\n";
+    assert_eq!(proc_io_counter(io, "read_bytes"), Some(4096));
+    assert_eq!(proc_io_counter(io, "missing"), None);
+
+    // The process name may contain spaces and closing parentheses; parsing
+    // starts after the final closing parenthesis as `/proc/[pid]/stat` does.
+    let stat = "123 (neo node (worker)) R 1 2 3 4 5 6 7 8 9 10";
+    assert_eq!(proc_stat_faults(stat), Some((7, 9)));
+}
+
+#[test]
+fn deferred_resource_delta_is_optional_and_saturating() {
+    let mut stats = MptMutationStats::default();
+    stats.record_deferred_resource_delta(
+        Some(ProcessResourceSnapshot {
+            read_bytes: 100,
+            minor_faults: 8,
+            major_faults: 4,
+        }),
+        Some(ProcessResourceSnapshot {
+            read_bytes: 250,
+            minor_faults: 11,
+            major_faults: 5,
+        }),
+    );
+    assert_eq!(stats.deferred_finalization_read_bytes, 150);
+    assert_eq!(stats.deferred_finalization_minor_faults, 3);
+    assert_eq!(stats.deferred_finalization_major_faults, 1);
+
+    // A restricted/non-Linux process has no resource evidence; this must not
+    // turn an otherwise valid MPT operation into an error or a false sample.
+    stats.record_deferred_resource_delta(None, None);
+    assert_eq!(stats.deferred_finalization_read_bytes, 150);
+    assert_eq!(stats.deferred_finalization_minor_faults, 3);
+    assert_eq!(stats.deferred_finalization_major_faults, 1);
 }
 
 fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {

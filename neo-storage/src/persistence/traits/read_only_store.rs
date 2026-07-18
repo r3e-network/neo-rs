@@ -87,4 +87,33 @@ pub trait RawReadOnlyStore {
             .map(|key| self.try_get_bytes_result(key.as_ref()))
             .collect()
     }
+
+    /// Reads sorted raw byte keys in caller-supplied order.
+    ///
+    /// The caller must provide keys in non-decreasing byte order. Backends
+    /// with ordered indexes may use one forward cursor instead of seeking for
+    /// every key; the default preserves the general batch-read semantics.
+    fn try_get_many_bytes_sorted<K>(&self, keys: &[K]) -> StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        self.try_get_many_bytes(keys)
+    }
+
+    /// Reads sorted raw byte keys before a caller writes the resulting
+    /// overlay to the same storage domain.
+    ///
+    /// This intent is distinct from a read-only batch: a durable backend may
+    /// deliberately perform authoritative misses so the lookup warms the
+    /// pages that the following writer will update. The default preserves the
+    /// ordered batch behavior for backends without a specialized path.
+    fn try_get_many_bytes_sorted_for_write<K>(
+        &self,
+        keys: &[K],
+    ) -> StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        self.try_get_many_bytes_sorted(keys)
+    }
 }

@@ -1,0 +1,65 @@
+{
+  "source": "data/neo-v3101-staged-replay/runs/authority-ab-h3287022",
+  "destination": "data/neo-v3101-staged-replay/runs/authority-ab-h3287022-rebased-20260719",
+  "source_transaction_id": 348474,
+  "source_environment_id": "f941205e76870b680e881da44cff332c",
+  "destination_environment_id": "91b6e6eee8b0b3906d1cdefd131bd3e1",
+  "named_tables": [
+    "neo_node_metadata",
+    "neo_state_service"
+  ],
+  "exclusion": {
+    "table": "neo_state_service",
+    "prefix": [
+      240
+    ],
+    "key_length": 33
+  },
+  "tables": [
+    {
+      "table": "main",
+      "source_rows": 9671975,
+      "destination_rows": 9671975,
+      "copied_rows": 9671973,
+      "excluded_rows": 0,
+      "descriptor_rows": 2,
+      "copied_key_bytes": 249150869,
+      "copied_value_bytes": 3309062964,
+      "excluded_key_bytes": 0,
+      "excluded_value_bytes": 0,
+      "table_flags": 0,
+      "ordered_sha256": "e6eebdbeb5285f1e87ecf65d4bc8dce2ca0b4c3ac3ee9ec3cf65b310ada5fc8f"
+    },
+    {
+      "table": "neo_node_metadata",
+      "source_rows": 10008,
+      "destination_rows": 10008,
+      "copied_rows": 10008,
+      "excluded_rows": 0,
+      "descriptor_rows": 0,
+      "copied_key_bytes": 390259,
+      "copied_value_bytes": 6960403,
+      "excluded_key_bytes": 0,
+      "excluded_value_bytes": 0,
+      "table_flags": 0,
+      "ordered_sha256": "7d8c0d956adfda9733ae5f42189385534047a602eb598a353c118d4736b0ab5b"
+    },
+    {
+      "table": "neo_state_service",
+      "source_rows": 222383857,
+      "destination_rows": 3372024,
+      "copied_rows": 3372024,
+      "excluded_rows": 219011833,
+      "descriptor_rows": 0,
+      "copied_key_bytes": 16860116,
+      "copied_value_bytes": 128136878,
+      "excluded_key_bytes": 7227390489,
+      "excluded_value_bytes": 45438335269,
+      "table_flags": 0,
+      "ordered_sha256": "49c66e1a012ebc26c2230eda04f606f9c4ef8c8549fbfa4edbb5c65ec429fa69"
+    }
+  ],
+  "source_file_bytes": 124554051584,
+  "destination_file_bytes": 4294967296,
+  "elapsed_ms": 4363523
+}

@@ -135,6 +135,71 @@ impl RuntimeStore {
         }
     }
 
+    /// Visits raw keys in prefix order without materializing a persistent
+    /// backend's complete prefix domain.
+    pub fn visit_raw_keys_with_prefix<F>(
+        &self,
+        key_prefix: &[u8],
+        maximum: Option<u64>,
+        mut visitor: F,
+    ) -> StorageResult<u64>
+    where
+        F: FnMut(&[u8]),
+    {
+        match self {
+            Self::Mdbx(store) => store.visit_raw_keys_with_prefix(key_prefix, maximum, visitor),
+            Self::Memory(store) => {
+                if maximum == Some(0) {
+                    return Ok(0);
+                }
+                let prefix = key_prefix.to_vec();
+                let mut visited = 0u64;
+                for (key, _) in store.find(Some(&prefix), SeekDirection::Forward) {
+                    visitor(&key);
+                    visited = visited.saturating_add(1);
+                    if maximum.is_some_and(|maximum| visited >= maximum) {
+                        break;
+                    }
+                }
+                Ok(visited)
+            }
+        }
+    }
+
+    /// Visits raw prefix rows through one backend-native frozen scan.
+    ///
+    /// The callback borrows each key/value pair and may fail, which lets
+    /// bounded migration tooling flush a durable output frame or abort without
+    /// materializing the remaining namespace.
+    pub fn visit_raw_entries_with_prefix<F>(
+        &self,
+        key_prefix: &[u8],
+        maximum: Option<u64>,
+        mut visitor: F,
+    ) -> StorageResult<u64>
+    where
+        F: FnMut(&[u8], &[u8]) -> StorageResult<()>,
+    {
+        match self {
+            Self::Mdbx(store) => store.visit_raw_entries_with_prefix(key_prefix, maximum, visitor),
+            Self::Memory(store) => {
+                if maximum == Some(0) {
+                    return Ok(0);
+                }
+                let prefix = key_prefix.to_vec();
+                let mut visited = 0u64;
+                for (key, value) in store.find(Some(&prefix), SeekDirection::Forward) {
+                    visitor(&key, &value)?;
+                    visited = visited.saturating_add(1);
+                    if maximum.is_some_and(|maximum| visited >= maximum) {
+                        break;
+                    }
+                }
+                Ok(visited)
+            }
+        }
+    }
+
     /// Creates an isolated store namespace when the selected runtime backend
     /// can keep it in the same atomic commit domain.
     pub fn open_coordinated_namespace(&self, name: &str) -> StorageResult<Self> {
@@ -162,6 +227,62 @@ impl RuntimeStore {
             (Self::Mdbx(primary_store), Self::Mdbx(secondary_store)) => {
                 primary_store.commit_coordinated_overlays(primary, secondary_store, secondary)
             }
+            _ => Err(StorageError::invalid_operation(
+                "coordinated runtime commit requires two MDBX views from one environment",
+            )),
+        }
+    }
+
+    /// Atomically publishes overlays from two runtime-selected store views,
+    /// feeding the secondary overlay's entries to an optional shadow
+    /// dual-writer. See [`MdbxStore::commit_coordinated_overlays_with_shadow`]
+    /// for the marker and failure discipline.
+    pub fn commit_coordinated_overlays_with_shadow<P, S>(
+        &self,
+        primary: &mut P,
+        secondary_store: &Self,
+        secondary: &mut S,
+        shadow: Option<&mut crate::persistence::ShadowCommitHook<'_>>,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        S: RawOverlaySource + ?Sized,
+    {
+        match (self, secondary_store) {
+            (Self::Mdbx(primary_store), Self::Mdbx(secondary_store)) => primary_store
+                .commit_coordinated_overlays_with_shadow(
+                    primary,
+                    secondary_store,
+                    secondary,
+                    shadow,
+                ),
+            _ => Err(StorageError::invalid_operation(
+                "coordinated runtime commit requires two MDBX views from one environment",
+            )),
+        }
+    }
+
+    /// Atomically publishes two MDBX overlays and a mandatory maintenance
+    /// marker. Marker failure aborts the complete transaction.
+    pub fn commit_coordinated_overlays_with_required_marker<P, S>(
+        &self,
+        primary: &mut P,
+        secondary_store: &Self,
+        secondary: &mut S,
+        marker: &crate::persistence::CoordinatedCommitMarker,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        S: RawOverlaySource + ?Sized,
+    {
+        match (self, secondary_store) {
+            (Self::Mdbx(primary_store), Self::Mdbx(secondary_store)) => primary_store
+                .commit_coordinated_overlays_with_required_marker(
+                    primary,
+                    secondary_store,
+                    secondary,
+                    marker,
+                ),
             _ => Err(StorageError::invalid_operation(
                 "coordinated runtime commit requires two MDBX views from one environment",
             )),
@@ -224,6 +345,33 @@ impl RawReadOnlyStore for RuntimeSnapshot {
         match &self.inner {
             RuntimeSnapshotInner::Memory(snapshot) => snapshot.try_get_many_bytes(keys),
             RuntimeSnapshotInner::Mdbx(snapshot) => snapshot.try_get_many_bytes(keys),
+        }
+    }
+
+    fn try_get_many_bytes_sorted<K>(&self, keys: &[K]) -> StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        match &self.inner {
+            RuntimeSnapshotInner::Memory(snapshot) => snapshot.try_get_many_bytes_sorted(keys),
+            RuntimeSnapshotInner::Mdbx(snapshot) => snapshot.try_get_many_bytes_sorted(keys),
+        }
+    }
+
+    fn try_get_many_bytes_sorted_for_write<K>(
+        &self,
+        keys: &[K],
+    ) -> StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        match &self.inner {
+            RuntimeSnapshotInner::Memory(snapshot) => {
+                snapshot.try_get_many_bytes_sorted_for_write(keys)
+            }
+            RuntimeSnapshotInner::Mdbx(snapshot) => {
+                snapshot.try_get_many_bytes_sorted_for_write(keys)
+            }
         }
     }
 }
@@ -452,6 +600,13 @@ impl Store for RuntimeStore {
         match self {
             Self::Memory(store) => store.try_commit_borrowed_raw_overlay(overlay),
             Self::Mdbx(store) => store.try_commit_borrowed_raw_overlay(overlay),
+        }
+    }
+
+    fn supports_raw_overlay_cursor(&self) -> bool {
+        match self {
+            Self::Memory(store) => store.supports_raw_overlay_cursor(),
+            Self::Mdbx(store) => store.supports_raw_overlay_cursor(),
         }
     }
 }

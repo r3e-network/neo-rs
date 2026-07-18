@@ -1474,6 +1474,54 @@ class RunBoundedReplayTests(unittest.TestCase):
             141,
         )
 
+    def test_attach_chain_acc_import_report_derives_final_height_from_imported(self):
+        module = load_module()
+        report = {
+            "status": "transaction-work-unproven",
+            "sync_source": "import-chain",
+            "target_height": 30000,
+            "last_height": 30000,
+            "elapsed_seconds": 3.0,
+            "blocks_per_second": 10000.0,
+            "height_samples": [
+                {"elapsed_seconds": 0.0, "height": 1000},
+                {"elapsed_seconds": 3.0, "height": 30000},
+            ],
+            "sync_speed_floor_blocks_per_second": 1500.0,
+            "sync_speed_ceiling_blocks_per_second": None,
+            "sync_speed_band_met": True,
+            "sync_speed_shortfall_blocks_per_second": 0.0,
+            "sync_speed_overage_blocks_per_second": 0.0,
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "neo-node.log"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "fields": {
+                            "message": "chain.acc import complete",
+                            "imported": 29000,
+                            "transaction_blocks": 160,
+                            "transactions": 166,
+                            "transaction_blocks_per_second": 6800.0,
+                        }
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            updated = module.attach_chain_acc_import_report(report, log_path)
+
+        self.assertEqual(updated["status"], "target-reached")
+        self.assertEqual(
+            updated["sync_speed_measurement_source"],
+            "import-chain-transaction-blocks",
+        )
+        self.assertEqual(updated["sync_speed_measured_blocks_per_second"], 6800.0)
+        self.assertTrue(updated["transaction_work_summary"]["observed_transaction_work"])
+
     def test_attach_fast_sync_report_fails_fast_sync_without_sidecar(self):
         module = load_module()
         report = {

@@ -16,6 +16,13 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
+# Reuse the structured chain.acc profile parser when this runner is imported
+# by tests as a standalone module rather than executed from ``scripts/``.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from mainnet_sync_profile import read_chain_acc_import_profile
+
 
 DEFAULT_REFERENCE_RPCS = [
     "http://seed1.neo.org:10332",
@@ -41,6 +48,7 @@ DEFAULT_METRIC_NAMES = [
     "neo_sync_native_contract_hook_calls_total",
     "neo_sync_native_contract_hook_avg_us",
     "neo_sync_native_persist_tx_stage_calls_total",
+    "neo_sync_native_persist_tx_stage_total_us",
     "neo_sync_native_persist_tx_stage_avg_us",
     "neo_sync_neotoken_onpersist_stage_calls_total",
     "neo_sync_neotoken_onpersist_stage_avg_us",
@@ -60,6 +68,12 @@ DEFAULT_METRIC_NAMES = [
     "neo_state_service_mpt_apply_count_samples_total",
     "neo_state_service_mpt_apply_items_total",
     "neo_state_service_mpt_apply_avg_items",
+    "neo_storage_mdbx_commit_stage_calls_total",
+    "neo_storage_mdbx_commit_stage_duration_us_total",
+    "neo_storage_mdbx_commit_stage_avg_us",
+    "neo_storage_mdbx_commit_volume_samples_total",
+    "neo_storage_mdbx_commit_volume_total",
+    "neo_storage_mdbx_commit_volume_avg",
 ]
 DEFAULT_POLL_INTERVAL_SECONDS = 30.0
 DEFAULT_IMPORT_POLL_INTERVAL_SECONDS = 1.0
@@ -664,11 +678,30 @@ def chain_acc_import_satisfies_speed_gate(report: dict) -> bool:
     try:
         transaction_blocks = int(import_report.get("transaction_blocks") or 0)
         transaction_bps = float(import_report.get("transaction_blocks_per_second") or 0.0)
-        final_height = int(import_report.get("final_height"))
         target_height = int(report.get("target_height"))
         floor = report.get("sync_speed_floor_blocks_per_second")
         floor_bps = float(floor) if floor is not None else None
     except (TypeError, ValueError):
+        return False
+
+    # Older node logs (and current chain.acc imports) report the number of
+    # blocks imported but do not include a redundant final_height field. The
+    # bounded runner already records the starting height, so derive the final
+    # height instead of rejecting an otherwise complete speed proof.
+    try:
+        final_height_value = import_report.get("final_height")
+        if final_height_value is not None:
+            final_height = int(final_height_value)
+        else:
+            imported = int(import_report.get("imported"))
+            samples = report.get("height_samples") or []
+            initial_height = next(
+                int(sample["height"])
+                for sample in samples
+                if isinstance(sample, dict) and "height" in sample
+            )
+            final_height = initial_height + imported
+    except (StopIteration, TypeError, ValueError):
         return False
 
     return (
@@ -729,23 +762,7 @@ def recover_fast_sync_status_from_import_proof(report: dict) -> None:
 
 
 def read_chain_acc_import_report(path: Path | None) -> dict[str, Any] | None:
-    if path is None or not path.is_file():
-        return None
-    latest: dict[str, Any] | None = None
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(payload, dict):
-            continue
-        fields = payload.get("fields")
-        if not isinstance(fields, dict):
-            continue
-        if fields.get("message") != "chain.acc import complete":
-            continue
-        latest = {key: value for key, value in fields.items() if key != "message"}
-    return latest
+    return read_chain_acc_import_profile(path).get("import_report")
 
 
 def transaction_work_summary_from_chain_acc_import(
@@ -785,7 +802,14 @@ def attach_chain_acc_import_report(report: dict, path: Path | None) -> dict:
     if report.get("sync_source") != "import-chain":
         report["sync_proof"] = build_sync_proof(report)
         return report
-    import_report = read_chain_acc_import_report(path)
+    profile = read_chain_acc_import_profile(path)
+    import_report = profile.get("import_report")
+    if profile.get("profile_windows"):
+        report["profile_windows"] = profile["profile_windows"]
+        report["profile_hotspots"] = profile["profile_hotspots"]
+    vm_script_profile = profile.get("vm_script_profile")
+    if vm_script_profile and vm_script_profile.get("transaction_count"):
+        report["vm_script_profile"] = vm_script_profile
     if import_report is None:
         report["sync_proof"] = build_sync_proof(report)
         return report
@@ -1494,6 +1518,12 @@ def parse_args() -> argparse.Namespace:
         help="Append neo-node stdout/stderr to this file while replaying.",
     )
     parser.add_argument(
+        "--report-output",
+        default=None,
+        type=Path,
+        help="Atomically write the final structured replay report to this path.",
+    )
+    parser.add_argument(
         "--metrics-url",
         default=None,
         help="Optional Prometheus /metrics URL to sample alongside height polls.",
@@ -1646,7 +1676,13 @@ def main() -> int:
         reference_urls=args.reference,
         require_reference_stateroot_match=args.require_reference_stateroot_match,
     )
-    print(json.dumps(report, indent=2, sort_keys=True))
+    rendered_report = json.dumps(report, indent=2, sort_keys=True)
+    if args.report_output is not None:
+        args.report_output.parent.mkdir(parents=True, exist_ok=True)
+        temporary = args.report_output.with_name(f".{args.report_output.name}.tmp")
+        temporary.write_text(f"{rendered_report}\n", encoding="utf-8")
+        temporary.replace(args.report_output)
+    print(rendered_report)
     if report["status"] == "target-reached":
         return 0
     if report["status"] == "timeout":

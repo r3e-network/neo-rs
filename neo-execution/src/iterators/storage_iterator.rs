@@ -43,6 +43,29 @@ impl StorageIterator {
     {
         Self::new(iter.collect(), prefix_length, options)
     }
+
+    pub(crate) const fn artifact_row_count(&self) -> usize {
+        self.items.len()
+    }
+
+    pub(crate) fn artifact_retained_bytes(&self) -> usize {
+        self.items.iter().fold(0usize, |bytes, (key, value)| {
+            bytes
+                .saturating_add(std::mem::size_of::<i32>())
+                .saturating_add(key.key().len())
+                .saturating_add(value.value_bytes().len())
+        })
+    }
+
+    pub(crate) fn visit_artifact_rows(&self, mut visitor: impl FnMut(&StorageKey, &StorageItem)) {
+        for (key, value) in &self.items {
+            visitor(key, value);
+        }
+    }
+
+    pub(crate) const fn artifact_metadata(&self) -> (Option<usize>, usize, u8) {
+        (self.current, self.prefix_length, self.options.bits())
+    }
 }
 
 impl Iter for StorageIterator {

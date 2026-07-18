@@ -1,0 +1,26 @@
+[package]
+name = "neo-state-packs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Append-only checksummed node-pack persistence with immutable sorted index runs for Neo StateService MPT rows"
+
+[dependencies]
+anyhow = { workspace = true }
+libc = "0.2"
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

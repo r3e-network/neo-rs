@@ -38,7 +38,30 @@ pub use types::error;
 mod vm_types;
 
 mod execution_profile;
-pub use execution_profile::{OpcodeClass, StackOperationProfile, VmExecutionProfile};
+pub use execution_profile::{
+    OpcodeClass, ScriptEntryProfile, ScriptExecutionProfile, StackOperationProfile,
+    VmExecutionProfile,
+};
+
+mod execution_plan;
+pub use execution_plan::{
+    ArgumentContract, BasicBlock, ByteExpression, ByteExpressionSegment, CallContract,
+    CandidateAuthority, CandidateContract, CandidateContractError, CandidateContractLimits,
+    CandidateContractParts, CandidateId, CandidateIdentity, CandidateVersion, ContextDependency,
+    ContextScriptHash, ContractResolutionIdentity, ContractTarget, EffectContract, ExecutionPlan,
+    ExecutionPlanBuildError, ExecutionPlanCache, ExecutionPlanCacheError, ExecutionPlanCacheLimits,
+    ExecutionPlanCacheSnapshot, ExecutionPlanKey, ExecutionPlanKeyVersion, ExecutionPlanLimits,
+    ExecutionPlanRoute, FaultClass, FaultContract, FaultEffectDisposition, GasAmount,
+    GasStepContract, HardforkPlanState, HardforkTableIdentity, HostEffectContract,
+    InstructionCount, InvocationEligibility, NativeCacheDependency, NativeCacheDomain,
+    NativeCacheScope, PlannedControlFlow, PlannedInstruction, PointStateDependency,
+    ProtocolIdentity, ProtocolVersion, RangeDirection, RangeDomain, RangeStateDependency,
+    ReadRequirement, RegistryBuildError, RegistrySnapshot, SlotContract, SlotSource,
+    SpecializationContractVersion, SpecializationMode, SpecializationRegistry,
+    SpecializationRegistryLimits, SpecializationSelection, StackEffectContract,
+    StackItemConstraint, StackItemEligibility, StackItemShape, StateDependencyContract,
+    StorageTarget, StorageWriteKind,
+};
 
 /// Script builder for programmatic VM script construction.
 pub mod script_builder;
@@ -134,7 +157,7 @@ pub use types::script::Script;
 pub use types::contract::Contract;
 
 #[cfg(test)]
-#[path = "tests/csharp_differential.rs"]
+#[path = "tests/differential/csharp.rs"]
 mod csharp_differential_tests;
 
 // ============================================================================

@@ -49,6 +49,16 @@ impl NeoToken {
         })?;
         let raw = item.value_bytes();
 
+        Self::decode_committee_with_votes(raw.as_ref())
+    }
+
+    /// Decodes committee members from bytes already read by the caller.
+    ///
+    /// Keeping the pure memoization behind this byte-oriented boundary makes
+    /// cache temperature observationally transparent: every public storage
+    /// path performs exactly one `Prefix_Committee` read before it consults
+    /// any process-global cache.
+    fn decode_committee_with_votes(raw: &[u8]) -> CoreResult<Vec<(ECPoint, BigInt)>> {
         // Memoize the deserialized committee keyed by the exact stored bytes.
         // `read_committee_with_votes` is on the per-block hot path (GasToken
         // OnPersist primary reward, extensible-witness whitelist), and each
@@ -63,20 +73,27 @@ impl NeoToken {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
             if let Some((cached_bytes, cached_members)) = cache.as_ref() {
-                if cached_bytes.as_slice() == raw.as_ref() {
+                if cached_bytes.as_slice() == raw {
                     return Ok(cached_members.clone());
                 }
             }
         }
 
-        let decoded = crate::support::codec::decode_stack_item(&raw, "committee cache")?;
+        let decoded = crate::support::codec::decode_stack_item(raw, "committee cache")?;
         let members = CachedCommittee::from_stack_item(&decoded)?.into_members();
 
         let mut cache = COMMITTEE_DESERIALIZE_CACHE
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        *cache = Some((raw.into_owned(), members.clone()));
+        *cache = Some((raw.to_vec(), members.clone()));
         Ok(members)
+    }
+
+    fn decode_committee_points(raw: &[u8]) -> CoreResult<Vec<ECPoint>> {
+        Ok(Self::decode_committee_with_votes(raw)?
+            .into_iter()
+            .map(|(point, _)| point)
+            .collect())
     }
 
     /// Reads only the cached committee public keys, in stored order.
@@ -118,7 +135,7 @@ impl NeoToken {
             }
         }
 
-        let mut points = self.read_committee_points(snapshot)?;
+        let mut points = Self::decode_committee_points(raw.as_ref())?;
         points.truncate(validators_count);
         points.sort();
         let accounts = points
@@ -157,7 +174,7 @@ impl NeoToken {
         if let Some(member) = Self::decode_canonical_committee_member_at(raw.as_ref(), index)? {
             return Ok(member);
         }
-        self.read_committee_with_votes(snapshot)?
+        Self::decode_committee_with_votes(raw.as_ref())?
             .into_iter()
             .nth(index)
             .ok_or_else(|| CoreError::invalid_operation("NeoToken committee cache too small"))
@@ -318,7 +335,7 @@ impl NeoToken {
             }
         }
 
-        let points = self.read_committee_points(snapshot)?;
+        let points = Self::decode_committee_points(raw.as_ref())?;
         if points.is_empty() {
             return Err(CoreError::invalid_operation("committee is empty"));
         }

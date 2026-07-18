@@ -217,6 +217,7 @@ impl NativeContractMetricLabel {
 #[derive(Debug)]
 struct NativeHookMetricSlot {
     calls: AtomicU64,
+    total_us: AtomicU64,
     avg_us: AtomicU64,
 }
 
@@ -224,6 +225,7 @@ impl NativeHookMetricSlot {
     const fn new() -> Self {
         Self {
             calls: AtomicU64::new(0),
+            total_us: AtomicU64::new(0),
             avg_us: AtomicU64::new(0),
         }
     }
@@ -366,6 +368,8 @@ pub struct NativePersistTxStageStats {
     pub stage: &'static str,
     /// Total stage observations recorded since process start.
     pub calls: u64,
+    /// Cumulative stage duration in microseconds since process start.
+    pub total_us: u64,
     /// EWMA stage duration in microseconds.
     pub avg_us: u64,
 }
@@ -601,6 +605,7 @@ pub fn record_native_contract_hook(hook: NativePersistHook, contract_id: i32, el
 pub fn record_native_persist_tx_stage(stage: NativePersistTxStage, elapsed_us: u64) {
     let slot = &NATIVE_PERSIST_TX_STAGES[stage.slot_index()];
     slot.calls.fetch_add(1, Ordering::Relaxed);
+    slot.total_us.fetch_add(elapsed_us, Ordering::Relaxed);
     ewma(&slot.avg_us, elapsed_us);
 }
 
@@ -727,6 +732,7 @@ pub fn native_persist_tx_stage_stats() -> Vec<NativePersistTxStageStats> {
             NativePersistTxStageStats {
                 stage: stage.label(),
                 calls: slot.calls.load(Ordering::Relaxed),
+                total_us: slot.total_us.load(Ordering::Relaxed),
                 avg_us: slot.avg_us.load(Ordering::Relaxed),
             }
         })
@@ -795,6 +801,9 @@ pub fn native_persist_tx_hot_stats() -> Option<NativePersistTxStageStats> {
         stage: stage.label(),
         calls: NATIVE_PERSIST_TX_STAGES[index]
             .calls
+            .load(Ordering::Relaxed),
+        total_us: NATIVE_PERSIST_TX_STAGES[index]
+            .total_us
             .load(Ordering::Relaxed),
         avg_us: NATIVE_PERSIST_TX_STAGES[index]
             .avg_us
@@ -937,3 +946,7 @@ fn ewma(slot: &AtomicU64, sample: u64) {
     };
     slot.store(updated, Ordering::Relaxed);
 }
+
+#[cfg(test)]
+#[path = "../tests/service/sync_metrics.rs"]
+mod tests;

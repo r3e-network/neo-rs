@@ -29,12 +29,36 @@ where
 {
     /// Creates a new trie instance using the supplied store snapshot and optional root hash.
     pub fn new(store: Arc<S>, root: Option<UInt256>, full_state: bool) -> Self {
-        Self::new_with_modes(store, root, full_state, !full_state, false)
+        Self::new_with_modes(store, root, full_state, !full_state, false, false)
     }
 
-    /// Creates a trie that defers new-node reference resolution across ordered checkpoints.
+    /// Creates a trie optimized for ordered block checkpoints.
+    ///
+    /// Pruning mode defers both node finalization and reference resolution
+    /// across checkpoints. Full-state mode keeps the C#-compatible eager
+    /// finalization path by default; callers that explicitly want batched
+    /// lookup work while preserving every serialized node can use
+    /// [`Trie::new_batch_deferred_full_state`].
     pub fn new_batch(store: Arc<S>, root: Option<UInt256>, full_state: bool) -> Self {
-        Self::new_with_modes(store, root, full_state, !full_state, !full_state)
+        Self::new_with_modes(store, root, full_state, !full_state, !full_state, false)
+    }
+
+    /// Creates an ordered batch trie that defers full-state node finalization.
+    ///
+    /// Every mutation is recorded as a deferred reference operation, so the
+    /// complete C#-compatible raw namespace and reference counts are preserved
+    /// while backing lookups are batched at the final commit.
+    pub fn new_batch_deferred_full_state(
+        store: Arc<S>,
+        root: Option<UInt256>,
+        full_state: bool,
+    ) -> Self {
+        if !full_state {
+            // The deferred intermediate-node journal is a full-state policy;
+            // keep a false flag on the existing pruning batch semantics.
+            return Self::new_batch(store, root, false);
+        }
+        Self::new_with_modes(store, root, full_state, true, true, true)
     }
 
     fn new_with_modes(
@@ -43,9 +67,14 @@ where
         full_state: bool,
         defer_node_finalization: bool,
         defer_reference_resolution: bool,
+        defer_intermediate_nodes: bool,
     ) -> Self {
         let cache = if defer_reference_resolution {
-            MptCache::new_deferred(store, CACHE_PREFIX)
+            if defer_intermediate_nodes {
+                MptCache::new_deferred_with_intermediate_nodes(store, CACHE_PREFIX)
+            } else {
+                MptCache::new_deferred(store, CACHE_PREFIX)
+            }
         } else {
             MptCache::new(store, CACHE_PREFIX)
         };
@@ -60,7 +89,7 @@ where
 
     #[cfg(test)]
     pub(crate) fn new_eager(store: Arc<S>, root: Option<UInt256>, full_state: bool) -> Self {
-        Self::new_with_modes(store, root, full_state, false, false)
+        Self::new_with_modes(store, root, full_state, false, false, false)
     }
 
     /// Returns a reference to the current root node.
@@ -102,6 +131,17 @@ where
         self.cache.commit()
     }
 
+    /// Enables or disables unresolved deferred-journal export for this trie's
+    /// cache commits.
+    ///
+    /// Only meaningful for deferred full-state batch tries
+    /// ([`Trie::new_batch_deferred_full_state`]) whose store carries the
+    /// journal to a cursor-resolving backing commit; every other
+    /// configuration keeps the classic resolve-then-write flow.
+    pub fn set_deferred_journal_export(&mut self, enabled: bool) {
+        self.cache.set_deferred_journal_export(enabled);
+    }
+
     /// Finalizes the current root without publishing the accumulated cache overlay.
     pub fn checkpoint(&mut self) -> MptResult<()> {
         self.finalize_dirty_nodes()?;
@@ -111,6 +151,10 @@ where
 
     fn finalize_dirty_nodes(&mut self) -> MptResult<()> {
         if self.defer_node_finalization {
+            if self.cache.defers_intermediate_nodes() {
+                Self::mark_dirty_subtree_finalized(&mut self.root);
+                return Ok(());
+            }
             let before = super::metrics::hash_computations();
             let mut pending = Vec::new();
             let result = Self::collect_dirty_subtree(&mut self.cache, &mut self.root, &mut pending)
@@ -385,6 +429,9 @@ where
     ) -> MptResult<()> {
         if defer_node_finalization {
             node.set_dirty();
+            if cache.defers_intermediate_nodes() {
+                cache.defer_intermediate_node(node)?;
+            }
             Ok(())
         } else {
             cache.put_node_cached(node)

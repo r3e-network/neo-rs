@@ -17,7 +17,10 @@ pub(in crate::node::chain_acc) fn encode_chain_acc(blocks: &[Block]) -> Vec<u8> 
     bytes
 }
 
-fn encode_prefixed_chain_acc(start_height: u32, blocks: &[Block]) -> Vec<u8> {
+pub(in crate::node::chain_acc) fn encode_prefixed_chain_acc(
+    start_height: u32,
+    blocks: &[Block],
+) -> Vec<u8> {
     encode_prefixed_chain_acc_with_count(start_height, blocks.len() as u32, blocks)
 }
 
