@@ -357,6 +357,16 @@ mod tests {
         let error = validate_index_entry_payload_range(&overflowing, u64::MAX)
             .expect_err("overflowing index range must fail scrub");
         assert!(error.to_string().contains("overflows"));
+
+        let tombstone_outside = IndexEntry {
+            value_offset: 102,
+            value_len: 0,
+            tombstone: true,
+            ..outside
+        };
+        let error = validate_index_entry_payload_range(&tombstone_outside, 101)
+            .expect_err("out-of-pack tombstone offset must fail scrub");
+        assert!(error.to_string().contains("beyond the committed pack"));
     }
 
     #[test]

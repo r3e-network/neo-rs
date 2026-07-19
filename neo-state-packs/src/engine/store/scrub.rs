@@ -90,7 +90,6 @@ pub(super) fn validate_index_entry_payload_range(
             entry.value_len == 0,
             "tombstone index entry carries a value"
         );
-        return Ok(());
     }
     let value_end = entry
         .value_offset
