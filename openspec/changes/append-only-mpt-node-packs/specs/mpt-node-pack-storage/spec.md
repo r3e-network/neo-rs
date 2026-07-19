@@ -131,6 +131,33 @@ durability mode, storage mode, and percentile.
 - **WHEN** automation evaluates the 1,500-2,000 blocks/s target
 - **THEN** it SHALL use transaction-bearing and adversarial declared corpora rather than infer success from empty-block or tmpfs rates
 
+### Requirement: Paired throughput evidence for applied optimizations
+Every change accepted and applied as a node-throughput optimization SHALL
+publish a paired baseline/candidate report. The pair SHALL use the same exact
+corpus and height range, immutable starting checkpoint, hardware, filesystem,
+cache condition, durability mode, storage mode, and configuration except for
+the declared optimization. The report SHALL identify both revisions and
+binaries and the corpus/checkpoint digest.
+
+The report SHALL include baseline and candidate overall blocks/s and
+transaction-bearing blocks/s, the block counts and elapsed-time denominators
+used for both rates, and the signed percent delta for each rate. Both sides
+SHALL use identical end-to-end timing boundaries covering execution, state
+finalization, and durable canonical publication and SHALL pass the applicable
+root, reopen, and durability checks.
+
+#### Scenario: An optimization is accepted on the node path
+- **WHEN** a candidate is retained and described as a node-throughput optimization
+- **THEN** its acceptance report SHALL show the paired baseline and candidate overall blocks/s, transaction-bearing blocks/s, both signed percent deltas, and all required reproducibility and correctness fields
+
+#### Scenario: A change has no paired end-to-end replay
+- **WHEN** a correctness, memory, recovery, format, or component-level change lacks the required paired replay
+- **THEN** its report SHALL label it `no throughput evidence`, SHALL state that no node blocks/s delta was established, and SHALL NOT describe it as a node speedup
+
+#### Scenario: Compared runs use non-identical workload evidence
+- **WHEN** results come from a microbenchmark, an empty-block-only or tmpfs run, or different or adjacent MainNet ranges
+- **THEN** those results MAY be reported as diagnostic or path-specific evidence but SHALL NOT establish a causal node-throughput improvement or satisfy the production throughput gate
+
 ### Requirement: Shadow parity before authority
 Node-pack authority SHALL remain disabled by default until shadow mode has
 compared exact state roots, node bytes, reference counts, proofs, scans, reopen,

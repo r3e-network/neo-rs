@@ -44,6 +44,159 @@ mod tests {
         drop(sealed.into_snapshot());
     }
 
+    fn assert_borrowed_frame_matches_owned_format_bytes(
+        operations: &[PackOperation],
+        with_prefix: bool,
+    ) {
+        let owned_root = tempdir().expect("temporary owned store");
+        let borrowed_root = tempdir().expect("temporary borrowed store");
+
+        let mut owned = PackStore::create(owned_root.path(), 1024 * 1024)
+            .expect("create owned-operation store");
+        let mut borrowed = PackStore::create(borrowed_root.path(), 1024 * 1024)
+            .expect("create borrowed-operation store");
+        if with_prefix {
+            let prefix = [put(key(1), b"prefix")];
+            append_without_maintenance(&mut owned, &prefix);
+            append_without_maintenance(&mut borrowed, &prefix);
+        }
+        let owned_prepared = owned
+            .prepare_append(operations)
+            .expect("prepare owned frame");
+
+        let mut builder = PackFrameBuilder::new(operations.len()).expect("create frame builder");
+        for operation in operations {
+            let value = match &operation.kind {
+                PackOpKind::Put(value) => Some(value.as_slice()),
+                PackOpKind::Tombstone => None,
+            };
+            builder
+                .push(&operation.key, value)
+                .expect("encode borrowed operation");
+        }
+        let borrowed_prepared = borrowed
+            .prepare_built_append(builder)
+            .expect("prepare borrowed frame");
+
+        assert_eq!(borrowed_prepared.receipt(), owned_prepared.receipt());
+        assert_eq!(
+            fs::read(owned_root.path().join("frames.pack")).expect("read owned frame"),
+            fs::read(borrowed_root.path().join("frames.pack")).expect("read borrowed frame")
+        );
+        let epoch = u64::from(with_prefix);
+        let run = run_file_name(0, epoch, epoch);
+        assert_eq!(
+            fs::read(owned_root.path().join("runs").join(&run)).expect("read owned run"),
+            fs::read(borrowed_root.path().join("runs").join(&run)).expect("read borrowed run")
+        );
+
+        let owned_snapshot = owned
+            .seal_prepared(owned_prepared)
+            .expect("seal owned frame")
+            .into_snapshot();
+        let borrowed_snapshot = borrowed
+            .seal_prepared(borrowed_prepared)
+            .expect("seal borrowed frame")
+            .into_snapshot();
+        for operation in operations {
+            let key = operation.key;
+            assert_eq!(
+                borrowed_snapshot.get(&key).expect("read borrowed value"),
+                owned_snapshot.get(&key).expect("read owned value")
+            );
+        }
+    }
+
+    #[test]
+    fn borrowed_frame_builder_matches_owned_format_bytes() {
+        let repeated = key(9);
+        let deleted = key(2);
+        let empty = key(7);
+        let unsorted = vec![
+            put(repeated, b"first"),
+            tombstone(deleted),
+            put(repeated, b"newest"),
+            put(empty, b""),
+        ];
+        let sorted = vec![
+            tombstone(deleted),
+            put(empty, b""),
+            put(repeated, b"first"),
+            put(repeated, b"newest"),
+        ];
+        assert_borrowed_frame_matches_owned_format_bytes(&unsorted, false);
+        assert_borrowed_frame_matches_owned_format_bytes(&sorted, true);
+    }
+
+    #[test]
+    fn borrowed_frame_builder_fails_before_writing_on_invalid_input() {
+        let root = tempdir().expect("temporary append store");
+        let mut store = PackStore::create(root.path(), 1024 * 1024).expect("create pack store");
+
+        let mut incomplete = PackFrameBuilder::new(2).expect("create incomplete builder");
+        incomplete
+            .push(&key(1), Some(b"one"))
+            .expect("encode first row");
+        let error = store
+            .prepare_built_append(incomplete)
+            .expect_err("incomplete builder must fail");
+        assert!(error.to_string().contains("encoded 1 rows, expected 2"));
+        assert_eq!(
+            fs::metadata(root.path().join("frames.pack"))
+                .expect("stat untouched frame file")
+                .len(),
+            0
+        );
+
+        let mut wrong_value_bytes =
+            PackFrameBuilder::with_value_bytes(1, 4).expect("create exact-size builder");
+        wrong_value_bytes
+            .push(&key(2), Some(b"one"))
+            .expect("encode undersized value");
+        let error = store
+            .prepare_built_append(wrong_value_bytes)
+            .expect_err("aggregate value-byte mismatch must fail");
+        assert!(error.to_string().contains("payload bytes"));
+        assert_eq!(
+            fs::metadata(root.path().join("frames.pack"))
+                .expect("stat untouched frame file")
+                .len(),
+            0
+        );
+
+        let mut invalid_key = PackFrameBuilder::new(1).expect("create invalid-key builder");
+        let error = invalid_key
+            .push(&[0u8; PACK_KEY_BYTES - 1], Some(b"value"))
+            .expect_err("short key must fail");
+        assert!(error.to_string().contains("expected 33"));
+        assert!(invalid_key.is_empty());
+
+        let mut excess_rows = PackFrameBuilder::new(1).expect("create bounded builder");
+        excess_rows
+            .push(&key(3), Some(b"one"))
+            .expect("encode declared row");
+        let error = excess_rows
+            .push(&key(4), Some(b"two"))
+            .expect_err("excess row must fail");
+        assert!(error.to_string().contains("more than its declared row count"));
+
+        let mut undersized =
+            PackFrameBuilder::with_value_bytes(1, 2).expect("create undersized builder");
+        let error = undersized
+            .push(&key(5), Some(b"three"))
+            .expect_err("value above declared aggregate must fail");
+        assert!(error.to_string().contains("declared aggregate byte count"));
+        assert!(undersized.is_empty());
+
+        let mut valid = PackFrameBuilder::new(1).expect("create replacement builder");
+        valid
+            .push(&key(3), Some(b"valid"))
+            .expect("encode replacement row");
+        store
+            .prepare_built_append(valid)
+            .expect("store remains usable after rejected builders");
+    }
+
     #[test]
     fn writer_lease_excludes_a_second_store_until_drop() {
         let root = tempdir().expect("temporary append store");

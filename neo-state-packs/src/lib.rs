@@ -70,9 +70,9 @@ pub use engine::{
     CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, CheckpointNamespaceEvidence, CompactionDebt,
     CompactionStats, GcStats, OpenValidation, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
     PACK_INDEX_RUN_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION, PackCommitHorizon,
-    PackCompactionPlan, PackFrameReceipt, PackIndexScrubStats, PackMaterializedViewEvidence,
-    PackScrubStats, PackStore, PackStoreError, PackStoreOptions, PreparedAppend,
-    PreparedPackCompaction, SealedAppend, Snapshot,
+    PackCompactionPlan, PackFrameBuilder, PackFrameReceipt, PackIndexScrubStats,
+    PackMaterializedViewEvidence, PackScrubStats, PackStore, PackStoreError, PackStoreOptions,
+    PreparedAppend, PreparedPackCompaction, SealedAppend, Snapshot,
 };
 
 /// Byte length of one pack key (the StateService `0xf0 || node_hash` node

@@ -11,6 +11,15 @@ impl PackStore {
         Ok(totals)
     }
 
+    /// One-copy compatibility append for a frame built from borrowed values.
+    pub fn append_built(&mut self, builder: PackFrameBuilder) -> Result<PackStageTotals> {
+        let prepared = self.prepare_built_append(builder)?;
+        let totals = prepared.stage_totals();
+        self.activate_prepared(prepared, prepared.commit_horizon())?;
+        self.maintain()?;
+        Ok(totals)
+    }
+
     /// Writes and durably syncs one frame and its immutable level-0 run
     /// without changing the manifest, live read view, epoch, or visible tail.
     ///
@@ -19,6 +28,23 @@ impl PackStore {
     /// activate it, or drop and reopen the store to discard the orphan suffix.
     pub fn prepare_append(&mut self, operations: &[PackOperation]) -> Result<PreparedAppend> {
         ensure!(!operations.is_empty(), "append frame must not be empty");
+        let frame_start = self.prepare_frame_start()?;
+        let (payload, entries) = encode_frame_payload(frame_start, operations)?;
+        self.prepare_encoded_append(frame_start, operations.len(), payload, entries, false)
+    }
+
+    /// Prepares a frame encoded directly from borrowed values.
+    ///
+    /// The builder must contain exactly the row count declared when it was
+    /// created. This retains the same frame and index formats as
+    /// [`Self::prepare_append`] while avoiding intermediate owned values.
+    pub fn prepare_built_append(&mut self, builder: PackFrameBuilder) -> Result<PreparedAppend> {
+        let frame_start = self.prepare_frame_start()?;
+        let (rows, payload, entries, keys_are_sorted) = builder.finish(frame_start)?;
+        self.prepare_encoded_append(frame_start, rows, payload, entries, keys_are_sorted)
+    }
+
+    fn prepare_frame_start(&self) -> Result<u64> {
         ensure!(
             self.pending_append.is_none(),
             "a prepared append is already awaiting activation"
@@ -30,18 +56,31 @@ impl PackStore {
             physical_len == visible_len,
             "append pack contains an unresolved orphan suffix; reopen before preparing another frame"
         );
+        Ok(physical_len)
+    }
+
+    fn prepare_encoded_append(
+        &mut self,
+        frame_start: u64,
+        rows: usize,
+        payload: Vec<u8>,
+        mut entries: Vec<IndexEntry>,
+        keys_are_sorted: bool,
+    ) -> Result<PreparedAppend> {
+        ensure!(rows > 0, "append frame must not be empty");
+        ensure!(entries.len() == rows, "frame index row count mismatch");
         let epoch = self.next_epoch;
         let next_prepare_serial = self
             .next_prepare_serial
             .checked_add(1)
             .context("prepared append serial overflows")?;
-        let frame_start = physical_len;
-        let (payload, mut entries) = encode_frame_payload(frame_start, operations)?;
-        entries.sort_unstable_by(|left, right| {
-            left.key
-                .cmp(&right.key)
-                .then_with(|| left.sequence.cmp(&right.sequence))
-        });
+        if !keys_are_sorted {
+            entries.sort_unstable_by(|left, right| {
+                left.key
+                    .cmp(&right.key)
+                    .then_with(|| left.sequence.cmp(&right.sequence))
+            });
+        }
         let keys = distinct_keys(&entries);
         let structured = run_structured_bytes(entries.len(), keys.len())?;
         let prospective = self
@@ -54,7 +93,7 @@ impl PackStore {
             self.max_index_memory_bytes
         );
         let payload_checksum = digest(&payload);
-        let header = encode_frame_header(epoch, operations.len(), payload.len(), payload_checksum)?;
+        let header = encode_frame_header(epoch, rows, payload.len(), payload_checksum)?;
 
         let write_started = Instant::now();
         self.pack.write_all(&header).context("write frame header")?;
@@ -73,7 +112,7 @@ impl PackStore {
             epoch,
             frame_start,
             frame_end: pack_len,
-            rows: u64::try_from(operations.len()).context("frame row count does not fit u64")?,
+            rows: u64::try_from(rows).context("frame row count does not fit u64")?,
             payload_bytes: u64::try_from(payload.len())
                 .context("frame payload length does not fit u64")?,
             payload_sha256: payload_checksum,
@@ -155,8 +194,7 @@ impl PackStore {
             index_sync_ns,
             directory_sync_ns,
             frames: 1,
-            index_entries: u64::try_from(operations.len())
-                .context("operation count does not fit u64")?,
+            index_entries: u64::try_from(rows).context("operation count does not fit u64")?,
         };
         let token = PreparedAppend {
             receipt,

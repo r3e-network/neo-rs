@@ -19,8 +19,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+mod frame_builder;
+pub use frame_builder::PackFrameBuilder;
 mod frame_codec;
-use frame_codec::*;
+use frame_codec::{
+    FrameScan, decode_frame_payload, encode_frame_header, encode_frame_payload, read_frame_receipt,
+    read_frame_receipt_at, reset_derived_state_to_frame_prefix, scan_frames, validate_frame_header,
+    validate_payload_rows_with_progress, verify_tail_frame,
+};
 mod compaction;
 use compaction::*;
 mod index_format;

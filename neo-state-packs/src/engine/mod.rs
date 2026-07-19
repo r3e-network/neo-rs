@@ -28,7 +28,8 @@ pub use manifest::PACK_MANIFEST_FORMAT_VERSION;
 pub use store::{
     CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, CheckpointNamespaceEvidence, CompactionDebt,
     CompactionStats, GcStats, OpenValidation, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
-    PACK_INDEX_RUN_FORMAT_VERSION, PackCommitHorizon, PackCompactionPlan, PackFrameReceipt,
-    PackIndexScrubStats, PackMaterializedViewEvidence, PackScrubStats, PackStore, PackStoreError,
-    PackStoreOptions, PreparedAppend, PreparedPackCompaction, SealedAppend, Snapshot,
+    PACK_INDEX_RUN_FORMAT_VERSION, PackCommitHorizon, PackCompactionPlan, PackFrameBuilder,
+    PackFrameReceipt, PackIndexScrubStats, PackMaterializedViewEvidence, PackScrubStats, PackStore,
+    PackStoreError, PackStoreOptions, PreparedAppend, PreparedPackCompaction, SealedAppend,
+    Snapshot,
 };

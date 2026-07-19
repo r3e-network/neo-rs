@@ -309,6 +309,8 @@ mod prepared_overlay_partition_tests {
         overlay.insert(short_f0_metadata.clone(), Some(b"metadata".to_vec()));
 
         let mut prepared = PreparedMptCommit::new(7, UInt256::default(), overlay, 1);
+        assert_eq!(prepared.materialized_node_operation_count(), 2);
+        assert_eq!(prepared.materialized_node_value_bytes(), 6);
         let mut nodes = Vec::new();
         prepared.visit_materialized_node_overlay(&mut |key: &[u8], value: Option<&[u8]>| {
             nodes.push((key.to_vec(), value.map(<[u8]>::to_vec)));
@@ -528,6 +530,15 @@ impl PreparedMptCommit {
     #[must_use]
     pub fn materialized_node_operation_count(&self) -> usize {
         self.node_overlay.len()
+    }
+
+    /// Aggregate value bytes in the exact materialized node overlay.
+    ///
+    /// Tombstones contribute zero. Split-store publishers use this to reserve
+    /// their final durable frame once without cloning or revisiting values.
+    #[must_use]
+    pub fn materialized_node_value_bytes(&self) -> u64 {
+        self.counts.node_value_bytes.iter().copied().sum()
     }
 
     /// Unresolved full-state node journal in raw-key order.

@@ -1019,6 +1019,11 @@ fn deferred_node_materialization_resolves_present_and_absent_nodes() {
         .expect("materialize deferred nodes");
     assert!(prepared.unresolved_node_journal().is_empty());
     assert_eq!(prepared.materialized_node_operation_count(), 2);
+    assert_eq!(
+        prepared.materialized_node_value_bytes(),
+        u64::try_from(expected_present.len() + expected_absent.len())
+            .expect("resolved values fit u64")
+    );
     assert_eq!(snapshot.sorted_reads.load(Ordering::Relaxed), 1);
     assert_eq!(snapshot.point_reads.load(Ordering::Relaxed), 0);
     let error = prepared
@@ -1095,6 +1100,7 @@ fn deferred_node_materialization_failures_leave_overlay_unchanged() {
             "{name}"
         );
         assert_eq!(prepared.materialized_node_operation_count(), 0, "{name}");
+        assert_eq!(prepared.materialized_node_value_bytes(), 0, "{name}");
     }
 }
 

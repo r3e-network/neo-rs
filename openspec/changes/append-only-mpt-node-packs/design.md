@@ -219,6 +219,34 @@ on the same named filesystem. Report logical and physical bytes, sync latency,
 CPU, RSS, lookup percentiles, rebuild cost, and compaction debt. Fresh-empty and
 tmpfs results are diagnostic only.
 
+### 9. Require paired end-to-end evidence for every throughput optimization
+
+Every change accepted and applied as a node-throughput optimization has one
+paired baseline/candidate report. Both sides replay the same immutable corpus,
+exact height range, and starting checkpoint on the same named hardware and
+filesystem, with the same cache condition, durability, storage mode, and
+configuration except for the declared optimization. The report identifies both
+revisions and binaries and records the corpus/checkpoint digest so that the
+comparison can be reproduced.
+
+The report includes the block counts and elapsed-time denominators used to
+calculate baseline and candidate overall blocks/s and transaction-bearing
+blocks/s. It reports the signed percent delta for both rates as
+`100 * (candidate - baseline) / baseline`, alongside exact root, reopen, and
+durability outcomes. The timing boundaries are identical on both sides and
+cover execution, state finalization, and durable canonical publication; any
+excluded setup or archive-read time is named explicitly.
+
+A correctness, memory, recovery, format, or component-level change without
+this paired replay is labeled `no throughput evidence`. It may be accepted for
+its independently proven property, but it is not described as a node speedup
+and does not receive an inferred blocks/s delta. Component microbenchmarks,
+empty-block-only runs, tmpfs runs, and different or adjacent MainNet ranges are
+useful diagnostics, but none establishes a causal end-to-end improvement or
+satisfies the production throughput gate. Empty-block blocks/s may be reported
+as an additional path-specific metric; it never substitutes for the required
+mixed-corpus overall and transaction-bearing rates.
+
 ## Risks / Trade-offs
 
 - **[Cross-store publication is implemented incorrectly]** -> Keep a single

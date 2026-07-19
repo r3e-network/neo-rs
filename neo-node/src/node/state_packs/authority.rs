@@ -10,8 +10,8 @@ use anyhow::{Context, ensure};
 use neo_state_packs::authority::{AUTHORITATIVE_HIGH_WATER_KEY, AuthoritativeHighWaterRecord};
 use neo_state_packs::{
     PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_KEY_BYTES,
-    PACK_MANIFEST_FORMAT_VERSION, PackOpKind, PackOperation, PackStore, PackStoreError,
-    PackStoreOptions, Snapshot as PackSnapshot,
+    PACK_MANIFEST_FORMAT_VERSION, PackFrameBuilder, PackStore, PackStoreError, PackStoreOptions,
+    Snapshot as PackSnapshot,
 };
 use neo_state_service::mpt_store::{PreparedMptCommit, PreparedMptMetadataOverlay};
 use neo_state_service::{MptNodeReadGeneration, MptNodeReadSnapshot, MptNodeSnapshotFactory};
@@ -491,26 +491,43 @@ impl AuthoritativeNodePack {
         validate_authoritative_transition(base_marker, block_index, state_root, None)?;
         prepared.materialize_deferred_node_overlay()?;
         let expected_operations = prepared.materialized_node_operation_count();
-        let mut operations = Vec::with_capacity(expected_operations);
+        let expected_value_bytes = prepared.materialized_node_value_bytes();
+        let mut frame_builder = (expected_operations > 0)
+            .then(|| PackFrameBuilder::with_value_bytes(expected_operations, expected_value_bytes))
+            .transpose()
+            .map_err(|error| {
+                StorageError::invalid_operation(format!(
+                    "authoritative pack frame initialization failed: {error:#}"
+                ))
+            })?;
         let mut conversion_error = None;
         prepared.visit_materialized_node_overlay(&mut |key: &[u8], value: Option<&[u8]>| {
             if conversion_error.is_some() {
                 return;
             }
             match exact_node_key(key) {
-                Ok(key) => operations.push(PackOperation {
-                    key,
-                    kind: value.map_or(PackOpKind::Tombstone, |value| {
-                        PackOpKind::Put(value.to_vec())
-                    }),
-                }),
+                Ok(key) => match frame_builder.as_mut() {
+                    Some(builder) => {
+                        if let Err(error) = builder.push_key(key, value) {
+                            conversion_error = Some(StorageError::invalid_operation(format!(
+                                "authoritative pack frame encoding failed: {error:#}"
+                            )));
+                        }
+                    }
+                    None => {
+                        conversion_error = Some(StorageError::invalid_operation(
+                            "authoritative node overlay exceeded its declared operation count",
+                        ));
+                    }
+                },
                 Err(error) => conversion_error = Some(error),
             }
         });
         if let Some(error) = conversion_error {
             return Err(error);
         }
-        if operations.len() != expected_operations {
+        let encoded_operations = frame_builder.as_ref().map_or(0, PackFrameBuilder::len);
+        if encoded_operations != expected_operations {
             return Err(StorageError::invalid_operation(
                 "authoritative node overlay conversion omitted an operation",
             ));
@@ -519,8 +536,9 @@ impl AuthoritativeNodePack {
             base_marker,
             block_index,
             state_root,
-            Some(operations.len()),
+            Some(encoded_operations),
         )?;
+        let has_operations = encoded_operations > 0;
 
         let mut writer = loop {
             self.maintenance.ensure_healthy()?;
@@ -531,7 +549,7 @@ impl AuthoritativeNodePack {
                     "authoritative pack writer is poisoned; restart for marker recovery",
                 )
             })?;
-            if operations.is_empty() || !store.compaction_debt().backpressure_required {
+            if !has_operations || !store.compaction_debt().backpressure_required {
                 break writer;
             }
             drop(writer);
@@ -543,10 +561,14 @@ impl AuthoritativeNodePack {
                 "authoritative pack writer is poisoned; restart for marker recovery",
             )
         })?;
-        let sealed = if operations.is_empty() {
+        let sealed = if !has_operations {
             None
         } else {
-            let pending = match store.prepare_append(&operations) {
+            let pending = match store.prepare_built_append(
+                frame_builder
+                    .take()
+                    .expect("non-empty frame has an initialized builder"),
+            ) {
                 Ok(pending) => pending,
                 Err(error) => {
                     *writer = None;
@@ -606,7 +628,7 @@ impl AuthoritativeNodePack {
             publication.snapshot = next_snapshot;
         }
         publication.marker = next_marker;
-        let maintenance_needed = !operations.is_empty() && store.compaction_debt().excess_runs > 0;
+        let maintenance_needed = has_operations && store.compaction_debt().excess_runs > 0;
         drop(publication);
         drop(writer);
 

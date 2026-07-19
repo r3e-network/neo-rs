@@ -8,9 +8,7 @@
 use super::AppendStageTotals;
 use crate::storage_workload::{MPT_NODE_KEY_BYTES, OperationKind, WorkloadOperation};
 use anyhow::Result;
-use neo_state_packs::{
-    CompactionStats, GcStats, OpenValidation, PackOpKind, PackOperation, PackStore,
-};
+use neo_state_packs::{CompactionStats, GcStats, OpenValidation, PackFrameBuilder, PackStore};
 use std::path::Path;
 
 pub(super) struct AppendStore {
@@ -31,17 +29,24 @@ impl AppendStore {
     }
 
     pub(super) fn append(&mut self, operations: &[WorkloadOperation]) -> Result<AppendStageTotals> {
-        let operations: Vec<PackOperation> = operations
-            .iter()
-            .map(|operation| PackOperation {
-                key: operation.key,
-                kind: match &operation.kind {
-                    OperationKind::Put(value) => PackOpKind::Put(value.clone()),
-                    OperationKind::Tombstone => PackOpKind::Tombstone,
-                },
-            })
-            .collect();
-        self.inner.append(&operations)
+        let value_bytes = operations.iter().try_fold(0u64, |total, operation| {
+            let value_bytes = match &operation.kind {
+                OperationKind::Put(value) => u64::try_from(value.len())?,
+                OperationKind::Tombstone => 0,
+            };
+            total
+                .checked_add(value_bytes)
+                .ok_or_else(|| anyhow::anyhow!("append workload value bytes overflow u64"))
+        })?;
+        let mut builder = PackFrameBuilder::with_value_bytes(operations.len(), value_bytes)?;
+        for operation in operations {
+            let value = match &operation.kind {
+                OperationKind::Put(value) => Some(value.as_slice()),
+                OperationKind::Tombstone => None,
+            };
+            builder.push_key(operation.key, value)?;
+        }
+        self.inner.append_built(builder)
     }
 
     pub(super) fn get(&self, key: &[u8; MPT_NODE_KEY_BYTES]) -> Result<Option<Vec<u8>>> {
