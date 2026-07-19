@@ -460,6 +460,14 @@ impl AuthoritativeNodePack {
             &CoordinatedCommitMarker,
         ) -> StorageResult<()>,
     {
+        let base_marker = self.publication.read().marker;
+        let block_index = prepared.block_index();
+        if block_index < base_marker.block_index {
+            return Err(StorageError::invalid_operation(format!(
+                "authoritative node packs cannot publish canonical rewind from block {} to block {} until a branch-isolated pack horizon is available",
+                base_marker.block_index, block_index
+            )));
+        }
         prepared.materialize_deferred_node_overlay()?;
         let expected_operations = prepared.materialized_node_operation_count();
         let mut operations = Vec::with_capacity(expected_operations);
@@ -508,8 +516,6 @@ impl AuthoritativeNodePack {
                 "authoritative pack writer is poisoned; restart for marker recovery",
             )
         })?;
-        let base_marker = self.publication.read().marker;
-        let block_index = prepared.block_index();
         let state_root = prepared.root_hash().to_array();
         let sealed = if operations.is_empty() {
             None
@@ -999,7 +1005,7 @@ mod tests {
     }
 
     #[test]
-    fn authoritative_commit_writes_nodes_only_to_pack_and_reopens_from_marker() {
+    fn authoritative_rewind_fails_closed_without_moving_marker_or_snapshot() {
         let fixture = fixture();
         let authority = AuthoritativeNodePack::open(
             &fixture.pack_path,
@@ -1072,53 +1078,53 @@ mod tests {
         let pack_bytes_before_revert = fs::metadata(fixture.pack_path.join("frames.pack"))
             .expect("stat pack before revert")
             .len();
-        let authority_for_revert = Arc::clone(&authority);
-        let canonical_for_revert = fixture.canonical.clone();
-        handlers
+        let error = handlers
             .on_reverting_coordinated(1, 1, |state_backing, prepared| {
-                authority_for_revert.commit_prepared(prepared, |metadata, marker| {
-                    let mut canonical_overlay =
-                        TestOverlay(vec![(b"canonical-tip".to_vec(), Some(vec![0]))]);
-                    canonical_for_revert.commit_coordinated_overlays_with_required_marker(
-                        &mut canonical_overlay,
-                        state_backing,
-                        metadata,
-                        marker,
-                    )
+                let _ = state_backing;
+                authority.commit_prepared(prepared, |_metadata, _marker| {
+                    panic!("canonical rewind must fail before the MDBX callback")
                 })
             })
-            .expect("coordinated metadata-only revert");
+            .expect_err("authoritative canonical rewind must fail closed");
+        assert!(
+            error.contains("cannot publish canonical rewind from block 1 to block 0"),
+            "{error}"
+        );
         assert_eq!(
             state_store
                 .mpt()
                 .expect("MPT")
                 .current_local_root()
                 .map(|(index, root)| (index, root.to_array())),
-            Some((0, fixture.root))
+            Some((1, next_root)),
+            "failed rewind must leave the visible StateService tip unchanged"
         );
         assert_eq!(
             fs::metadata(fixture.pack_path.join("frames.pack"))
                 .expect("stat pack after revert")
                 .len(),
             pack_bytes_before_revert,
-            "full-state revert must only rebind metadata and marker"
+            "rejected rewind must not append pack data"
         );
-        let reverted_marker = fixture
+        let retained_marker = fixture
             .canonical
             .maintenance_metadata(AUTHORITATIVE_HIGH_WATER_KEY)
-            .expect("read reverted marker")
-            .expect("reverted marker exists");
-        let reverted_marker =
-            AuthoritativeHighWaterRecord::decode(&reverted_marker).expect("decode reverted marker");
-        assert_eq!(reverted_marker.epoch, marker.epoch);
-        assert_eq!(
-            (reverted_marker.block_index, reverted_marker.state_root),
-            (0, fixture.root)
+            .expect("read retained marker")
+            .expect("retained marker exists");
+        let retained_marker =
+            AuthoritativeHighWaterRecord::decode(&retained_marker).expect("decode retained marker");
+        assert_eq!(retained_marker, marker);
+        assert!(
+            authority
+                .snapshot()
+                .try_get_node_bytes(&next_root_key)
+                .expect("read retained root")
+                .is_some(),
+            "failed rewind must leave the published node generation unchanged"
         );
 
         drop(handlers);
         drop(state_store);
-        drop(authority_for_revert);
         drop(authority_for_commit);
         drop(authority);
         let reopened = AuthoritativeNodePack::open(
@@ -1127,7 +1133,7 @@ mod tests {
             0x334F_454E,
             &fixture.state,
         )
-        .expect("reopen from mandatory marker");
+        .expect("reopen from retained mandatory marker");
         assert!(
             reopened
                 .snapshot()
