@@ -13,13 +13,22 @@
 //! single `mix64` per probe.
 
 use crate::PACK_KEY_BYTES;
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 
 /// Fingerprint width in bits for the run membership filter.
 pub(crate) const FILTER_FINGERPRINT_BITS: u32 = 16;
 /// Bound on deterministic reseeding attempts before a build is rejected.
 const MAX_BUILD_ATTEMPTS: u32 = 64;
 const MIX_CONSTANT: u64 = 0x9E37_79B9_7F4A_7C15;
+
+/// Cache-line-sized block used by physical index-run format v4.
+pub(crate) const BLOOM_BLOCK_BYTES: usize = 64;
+/// Bits provisioned per distinct key in a v4 blocked Bloom filter.
+pub(crate) const BLOOM_BITS_PER_KEY: u64 = 12;
+/// Hash probes performed inside one cache-line block.
+pub(crate) const BLOOM_HASH_PROBES: u32 = 8;
+const BLOOM_BLOCK_BITS: u64 = (BLOOM_BLOCK_BYTES * 8) as u64;
+const BLOOM_DELTA_CONSTANT: u64 = 0xD6E8_FEB8_6659_FD93;
 
 /// Fingerprint count for a filter over `distinct` unique keys.
 pub(crate) fn filter_capacity(distinct: usize) -> usize {
@@ -192,6 +201,106 @@ impl XorFilter {
     }
 }
 
+/// Exact persisted byte length for a blocked Bloom filter over `distinct`
+/// keys. The result is cache-line aligned and never zero.
+pub(crate) fn blocked_bloom_bytes(distinct: u64) -> Result<u64> {
+    ensure!(distinct > 0, "cannot size a Bloom filter for zero keys");
+    let target_bits = distinct
+        .checked_mul(BLOOM_BITS_PER_KEY)
+        .context("blocked Bloom bit count overflows")?;
+    let blocks = target_bits.div_ceil(BLOOM_BLOCK_BITS).max(1);
+    blocks
+        .checked_mul(BLOOM_BLOCK_BYTES as u64)
+        .context("blocked Bloom byte count overflows")
+}
+
+/// Incrementally built blocked Bloom filter for physical index-run format v4.
+///
+/// Every key touches one 64-byte block. The persisted bytes can therefore be
+/// probed directly through the run mmap after publication instead of keeping
+/// the complete filter in a second resident allocation.
+#[derive(Debug)]
+pub(crate) struct BlockedBloomFilter {
+    seed: u64,
+    bytes: Vec<u8>,
+}
+
+impl BlockedBloomFilter {
+    /// Allocates the exact bounded filter geometry for the known distinct-key
+    /// count produced by compaction pass one.
+    pub(crate) fn with_capacity(distinct: u64, seed: u64) -> Result<Self> {
+        let bytes = usize::try_from(blocked_bloom_bytes(distinct)?)
+            .context("blocked Bloom byte count does not fit usize")?;
+        Ok(Self {
+            seed,
+            bytes: vec![0u8; bytes],
+        })
+    }
+
+    /// Inserts one pre-hashed key without allocating.
+    pub(crate) fn insert_hash(&mut self, hash: u64) {
+        let (block_start, first, delta) = bloom_probe_geometry(hash, self.seed, self.block_count());
+        for probe in 0..BLOOM_HASH_PROBES {
+            let bit =
+                first.wrapping_add(u64::from(probe).wrapping_mul(delta)) & (BLOOM_BLOCK_BITS - 1);
+            let byte = block_start + (bit as usize >> 3);
+            self.bytes[byte] |= 1u8 << (bit & 7);
+        }
+    }
+
+    /// Returns the exact persisted filter section.
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Seed stored in the v4 run header.
+    pub(crate) const fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    fn block_count(&self) -> usize {
+        self.bytes.len() / BLOOM_BLOCK_BYTES
+    }
+}
+
+/// Validates the physical geometry before a mapped v4 filter can route reads.
+pub(crate) fn validate_blocked_bloom(section: &[u8], probes: u32) -> Result<()> {
+    ensure!(
+        !section.is_empty() && section.len().is_multiple_of(BLOOM_BLOCK_BYTES),
+        "blocked Bloom section is not a non-empty sequence of cache-line blocks"
+    );
+    ensure!(
+        probes == BLOOM_HASH_PROBES,
+        "unsupported blocked Bloom probe count {probes}"
+    );
+    Ok(())
+}
+
+/// Probes a validated mapped v4 filter section without decoding or copying it.
+pub(crate) fn blocked_bloom_maybe_contains_hash(
+    section: &[u8],
+    seed: u64,
+    probes: u32,
+    hash: u64,
+) -> bool {
+    debug_assert!(validate_blocked_bloom(section, probes).is_ok());
+    let blocks = section.len() / BLOOM_BLOCK_BYTES;
+    let (block_start, first, delta) = bloom_probe_geometry(hash, seed, blocks);
+    (0..probes).all(|probe| {
+        let bit = first.wrapping_add(u64::from(probe).wrapping_mul(delta)) & (BLOOM_BLOCK_BITS - 1);
+        section[block_start + (bit as usize >> 3)] & (1u8 << (bit & 7)) != 0
+    })
+}
+
+fn bloom_probe_geometry(hash: u64, seed: u64, blocks: usize) -> (usize, u64, u64) {
+    debug_assert!(blocks > 0);
+    let seeded = seeded_hash(hash, seed);
+    let block = reduce(seeded, blocks) * BLOOM_BLOCK_BYTES;
+    let first = mix64(seeded.rotate_left(17) ^ MIX_CONSTANT);
+    let delta = mix64(seeded ^ BLOOM_DELTA_CONSTANT) | 1;
+    (block, first, delta)
+}
+
 /// Three fingerprint positions for one hash (Graf & Lemire rotation scheme).
 ///
 /// Positions must be derived with the multiply-shift `reduce` on top bits,
@@ -300,5 +409,58 @@ mod tests {
         duplicated.push(test_key(0));
         duplicated.sort();
         assert!(XorFilter::build(&duplicated, 3).is_err());
+    }
+
+    #[test]
+    fn blocked_bloom_contains_every_inserted_key_with_bounded_false_positives() {
+        let keys: Vec<_> = (0..20_000u64).map(test_key).collect();
+        let mut filter = BlockedBloomFilter::with_capacity(keys.len() as u64, 17)
+            .expect("allocate blocked Bloom");
+        for key in &keys {
+            filter.insert_hash(key_hash(key));
+        }
+        validate_blocked_bloom(filter.as_bytes(), BLOOM_HASH_PROBES)
+            .expect("validate blocked Bloom");
+        for key in &keys {
+            assert!(
+                blocked_bloom_maybe_contains_hash(
+                    filter.as_bytes(),
+                    filter.seed(),
+                    BLOOM_HASH_PROBES,
+                    key_hash(key),
+                ),
+                "inserted key was rejected"
+            );
+        }
+
+        let probes = 200_000u64;
+        let false_positives = (1_000_000..1_000_000 + probes)
+            .filter(|ordinal| {
+                blocked_bloom_maybe_contains_hash(
+                    filter.as_bytes(),
+                    filter.seed(),
+                    BLOOM_HASH_PROBES,
+                    key_hash(&test_key(*ordinal)),
+                )
+            })
+            .count() as u64;
+        let rate = false_positives as f64 / probes as f64;
+        assert!(
+            rate < 0.01,
+            "blocked Bloom false-positive rate {rate} exceeds the 1% bound"
+        );
+    }
+
+    #[test]
+    fn blocked_bloom_geometry_is_checked_and_cache_line_aligned() {
+        assert!(blocked_bloom_bytes(0).is_err());
+        for distinct in [1, 42, 1_000, 1_000_000] {
+            let bytes = blocked_bloom_bytes(distinct).expect("size blocked Bloom");
+            assert!(bytes >= BLOOM_BLOCK_BYTES as u64);
+            assert_eq!(bytes % BLOOM_BLOCK_BYTES as u64, 0);
+        }
+        assert!(validate_blocked_bloom(&[], BLOOM_HASH_PROBES).is_err());
+        assert!(validate_blocked_bloom(&[0u8; 63], BLOOM_HASH_PROBES).is_err());
+        assert!(validate_blocked_bloom(&[0u8; 64], BLOOM_HASH_PROBES + 1).is_err());
     }
 }

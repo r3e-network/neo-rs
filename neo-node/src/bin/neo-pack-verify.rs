@@ -11,7 +11,8 @@
 //!     [--samples N] [--walk-cap N | --full-scan] [--maintain]
 //!   neo-pack-verify --mode authority --network-magic <u32-or-hex>
 //!     --mdbx <canonical-store-dir> --pack <authoritative-packs-dir>
-//!     [--samples N] [--walk-cap N | --full-scan] [--scrub] [--maintain]
+//!     [--samples N] [--walk-cap N | --full-scan]
+//!     [--scrub] [--scrub-indexes] [--maintain]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -125,6 +126,7 @@ fn main() -> Result<()> {
     let mut max_index_memory_mb = DEFAULT_MAX_INDEX_MEMORY_MB;
     let mut maintain = false;
     let mut scrub = false;
+    let mut scrub_indexes = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -170,6 +172,7 @@ fn main() -> Result<()> {
             }
             "--maintain" => maintain = true,
             "--scrub" => scrub = true,
+            "--scrub-indexes" => scrub_indexes = true,
             "--full-scan" => {
                 if walk_cap_set {
                     bail!("--full-scan conflicts with --walk-cap");
@@ -187,6 +190,10 @@ fn main() -> Result<()> {
             "--network-magic is only valid with --mode authority"
         );
         ensure!(!scrub, "--scrub is only valid with --mode authority");
+        ensure!(
+            !scrub_indexes,
+            "--scrub-indexes is only valid with --mode authority"
+        );
     }
 
     let canonical: Arc<RuntimeStore> = StoreFactory::get_store_with_config(
@@ -213,6 +220,7 @@ fn main() -> Result<()> {
             full_scan,
             maintain,
             scrub,
+            scrub_indexes,
         )
         .map(|_| ());
     }
@@ -349,6 +357,7 @@ fn verify_authority(
     full_scan: bool,
     maintain: bool,
     scrub: bool,
+    scrub_indexes: bool,
 ) -> Result<AuthorityState> {
     let checkpoint = read_checkpoint(pack_path)?;
     let binding = validate_checkpoint(&checkpoint, network_magic)?;
@@ -449,6 +458,25 @@ fn verify_authority(
         "opened: frames={} runs={} index_entries={} tip_epoch={} tip_frame_end={}",
         opened.frames, opened.runs, opened.index_entries, receipt.epoch, receipt.frame_end,
     );
+    let debt = pack.compaction_debt();
+    println!(
+        "compaction debt: live_runs={} excess_runs={} decoded_index_bytes={} max_index_memory_bytes={} backpressure={}",
+        debt.live_runs,
+        debt.excess_runs,
+        debt.decoded_index_bytes,
+        debt.max_index_memory_bytes,
+        debt.backpressure_required,
+    );
+    if let Some(plan) = pack
+        .plan_compaction()
+        .context("plan derived index maintenance")?
+    {
+        println!(
+            "compaction plan: estimated_peak_bytes={} max_workspace_bytes={}",
+            plan.estimated_workspace_bytes(),
+            plan.max_workspace_bytes(),
+        );
+    }
 
     if scrub {
         let stats = if authority_state == AuthorityState::Checkpoint {
@@ -501,6 +529,15 @@ fn verify_authority(
             stats.output_records,
             stats.bytes_written,
             stats.wall_ns,
+        );
+    }
+    if scrub_indexes {
+        let stats = pack
+            .scrub_index_runs()
+            .context("scrub every live authoritative index run")?;
+        println!(
+            "scrubbed indexes: runs={} v3_runs={} v4_runs={} records={} record_bytes={}",
+            stats.runs, stats.v3_runs, stats.v4_runs, stats.records, stats.record_bytes,
         );
     }
 
@@ -755,6 +792,8 @@ fn parse_u32(value: &str) -> Result<u32> {
     }
 }
 
+include!("../neo_pack_verify_tests.rs");
+
 fn parse_checkpoint_network_magic(value: &str) -> Result<u32> {
     let value = value
         .strip_prefix("0x")
@@ -772,182 +811,4 @@ fn decode_hash(value: &str, field: &'static str) -> Result<[u8; 32]> {
     bytes
         .try_into()
         .map_err(|bytes: Vec<u8>| anyhow::anyhow!("{field} has {} bytes, expected 32", bytes.len()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use neo_state_packs::{PackFrameReceipt, PackOpKind, PackOperation};
-    use neo_storage::persistence::providers::MemoryStore;
-    use neo_storage::persistence::{StoreMaintenanceBatch, WriteStore};
-    use serde_json::json;
-    use tempfile::tempdir;
-
-    struct Fixture {
-        _temporary: tempfile::TempDir,
-        pack_path: PathBuf,
-        state: RuntimeStore,
-        receipt: PackFrameReceipt,
-        identity: [u8; 32],
-        root: [u8; 32],
-    }
-
-    fn fixture() -> Fixture {
-        let temporary = tempdir().expect("temporary verifier fixture");
-        let pack_path = temporary.path().join("packs");
-        let root = [0x55; 32];
-        let mut root_key = [0u8; PACK_KEY_BYTES];
-        root_key[0] = STATE_NODE_PREFIX;
-        root_key[1..].copy_from_slice(&root);
-        let root_value = b"complete-root-node".to_vec();
-
-        let mut pack = PackStore::create(&pack_path, 1024 * 1024).expect("create pack");
-        pack.append(&[PackOperation {
-            key: root_key,
-            kind: PackOpKind::Put(root_value.clone()),
-        }])
-        .expect("append root node");
-        let receipt = pack.last_frame_receipt().expect("pack receipt");
-        let scrub = pack.scrub_committed_frames().expect("scrub fixture pack");
-        drop(pack);
-
-        let mut hasher = Sha256Hasher::new();
-        hasher.update(CHECKPOINT_NAMESPACE_DIGEST_DOMAIN);
-        hasher.update(&(root_key.len() as u32).to_le_bytes());
-        hasher.update(&root_key);
-        hasher.update(&(root_value.len() as u64).to_le_bytes());
-        hasher.update(&root_value);
-        let identity = hasher.finalize();
-        let checkpoint = json!({
-            "schema_version": CHECKPOINT_SCHEMA_VERSION,
-            "authoritative_ready": true,
-            "complete": true,
-            "source_backend": "mdbx",
-            "source_namespace": STATE_SERVICE_NAMESPACE,
-            "network_magic": "0x334F454E",
-            "source_height": 7,
-            "source_root_internal_bytes": format!("0x{}", hex::encode(root)),
-            "source_namespace_sha256": format!("0x{}", hex::encode(identity)),
-            "rows": 1,
-            "value_bytes": root_value.len(),
-            "frames": 1,
-            "pack_frame_format_version": PACK_FRAME_FORMAT_VERSION,
-            "pack_index_format_version": PACK_INDEX_FORMAT_VERSION,
-            "pack_manifest_format_version": PACK_MANIFEST_FORMAT_VERSION,
-            "tip_epoch": receipt.epoch,
-            "tip_frame_end": receipt.frame_end,
-            "tip_payload_sha256": format!("0x{}", hex::encode(receipt.payload_sha256)),
-            "scrubbed_frames": scrub.frames,
-            "scrubbed_rows": scrub.rows,
-            "scrubbed_puts": scrub.puts,
-            "scrubbed_tombstones": scrub.tombstones,
-            "scrubbed_value_bytes": scrub.value_bytes,
-        });
-        fs::write(
-            pack_path.join("checkpoint.json"),
-            serde_json::to_vec_pretty(&checkpoint).expect("encode checkpoint"),
-        )
-        .expect("write checkpoint");
-
-        let mut state = RuntimeStore::Memory(MemoryStore::new());
-        put_state_tip(&mut state, 7, root);
-        state
-            .put(root_key.to_vec(), root_value)
-            .expect("write source node");
-        Fixture {
-            _temporary: temporary,
-            pack_path,
-            state,
-            receipt,
-            identity,
-            root,
-        }
-    }
-
-    fn put_state_tip(store: &mut RuntimeStore, height: u32, root: [u8; 32]) {
-        store
-            .put(
-                CURRENT_LOCAL_ROOT_INDEX.to_vec(),
-                height.to_le_bytes().to_vec(),
-            )
-            .expect("write current StateService index");
-        let mut key = vec![STATE_ROOT_PREFIX];
-        key.extend_from_slice(&height.to_be_bytes());
-        let mut value = vec![0];
-        value.extend_from_slice(&height.to_le_bytes());
-        value.extend_from_slice(&root);
-        store.put(key, value).expect("write StateService root");
-    }
-
-    #[test]
-    fn authority_verifier_accepts_checkpoint_then_marker_and_rejects_tip_drift() {
-        let mut fixture = fixture();
-        assert_eq!(
-            verify_authority(
-                &fixture.state,
-                &fixture.pack_path,
-                0x334F_454E,
-                1,
-                16,
-                16,
-                true,
-                false,
-                true,
-            )
-            .expect("verify checkpoint base"),
-            AuthorityState::Checkpoint
-        );
-
-        put_state_tip(&mut fixture.state, 8, fixture.root);
-        let marker = AuthoritativeHighWaterRecord::new(
-            0x334F_454E,
-            fixture.identity,
-            fixture.receipt,
-            8,
-            fixture.root,
-        );
-        let mut maintenance = StoreMaintenanceBatch::new();
-        maintenance.put_metadata(
-            AUTHORITATIVE_HIGH_WATER_KEY.to_vec(),
-            marker.encode().to_vec(),
-        );
-        fixture
-            .state
-            .commit_maintenance(&maintenance)
-            .expect("publish authority marker");
-        assert_eq!(
-            verify_authority(
-                &fixture.state,
-                &fixture.pack_path,
-                0x334F_454E,
-                1,
-                16,
-                16,
-                false,
-                false,
-                false,
-            )
-            .expect("verify marker-bound authority"),
-            AuthorityState::Marker
-        );
-
-        put_state_tip(&mut fixture.state, 9, fixture.root);
-        let error = verify_authority(
-            &fixture.state,
-            &fixture.pack_path,
-            0x334F_454E,
-            1,
-            16,
-            16,
-            false,
-            false,
-            false,
-        )
-        .expect_err("marker and StateService tip drift must fail closed");
-        assert!(
-            error
-                .to_string()
-                .contains("differs from StateService metadata")
-        );
-    }
 }

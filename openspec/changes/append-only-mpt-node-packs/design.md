@@ -88,6 +88,25 @@ A snapshot pins one manifest generation and leases all referenced segments.
 Index files are derived and replaceable. Missing or corrupt derived files are
 rebuilt from committed frames before the store becomes ready.
 
+Large-run compaction emits physical index-run format v4 with an incremental
+blocked Bloom filter. Readers retain exact v3 xor16 compatibility. The
+canonical marker/checkpoint index compatibility family remains v3 because
+index runs are derived and rebuildable; a separate run-header constant records
+the actual v4 format. This migration therefore does not change frame bytes,
+payload offsets, manifests, roots, marker bytes, or checkpoint identity. An
+older v3-only binary rejects a v4 run and follows the existing canonical-frame
+index rebuild path, while unknown marker/checkpoint families still fail closed.
+
+Compaction performs a two-pass k-way merge over already-sorted immutable
+inputs. Both passes validate every input checksum and record-order invariant.
+The first pass determines the exact winner count, key range, and records
+checksum without creating output. The second pass writes fixed-size records
+sequentially while constructing sparse fences and the blocked Bloom filter,
+then rechecks the first-pass evidence before syncing and atomically publishing
+the run. Memory accounting includes the source generation that remains pinned,
+the output filter and fences, cursors, and I/O buffers. No per-record output,
+key, or peel-graph collection is permitted.
+
 Alternatives: an MDBX hash-to-offset row per node, which recreates random
 writes; a single in-memory hash map, which is unbounded and expensive to rebuild.
 
@@ -143,6 +162,14 @@ backpressure; it never drops versions needed by a pinned snapshot. Metrics
 expose logical/physical bytes, append and sync latency, lookups by level,
 filter effectiveness, rebuild time, debt, stalls, and shadow mismatches.
 
+Compaction builds outside the writer lock but never changes the live read view.
+Adoption first constructs a complete candidate generation and durably publishes
+its manifest; only then may it install the candidate runs and counters in
+memory. Runtime garbage collection does not delete in-progress temporary run
+files. Startup alone removes stale temporary outputs after acquiring the writer
+lease, while an output renamed before manifest publication remains an orphan
+that the previous manifest cannot expose.
+
 Only after authoritative sequential packs pass all gates may a bounded
 three-stage pipeline overlap execution/project epoch N+1, MPT finalization N,
 and append/publication N-1. Visible height still advances strictly in order and
@@ -190,8 +217,11 @@ tmpfs results are diagnostic only.
 4. Add opt-in authoritative packs for the node namespace and retain immediate
    rollback to the last shadow-verified MDBX checkpoint.
 5. Prove sustained replay, bounded compaction, and restart/unwind behavior.
-6. Consider a production default only after multiple independent hosts pass.
-7. Add bounded persistence pipelining as a separate measured promotion.
+6. Migrate derived indexes by reading v3 xor16 runs and emitting physical v4
+   blocked-Bloom compacted runs; prove mixed-generation reopen and v3-only
+   canonical-frame rebuild without changing marker or checkpoint identity.
+7. Consider a production default only after multiple independent hosts pass.
+8. Add bounded persistence pipelining as a separate measured promotion.
 
 Rollback before authoritative mode is deletion of unreferenced pack files and
 marker metadata. Rollback from authoritative mode requires a verified MDBX

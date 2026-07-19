@@ -24,6 +24,7 @@ use anyhow::{Context, Result};
 use std::fs::File;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
+use std::sync::OnceLock;
 
 /// Read-only mapping of one immutable file (or file prefix).
 #[derive(Debug)]
@@ -91,6 +92,61 @@ impl Mmap {
         Ok(mapping)
     }
 
+    /// Creates a dedicated sequential mapping for streaming validation or
+    /// compaction. It is separate from the lookup mapping so readahead advice
+    /// and page reclamation cannot perturb point readers.
+    pub(crate) fn map_sequential(file: &File, len: u64, what: &Path) -> Result<Self> {
+        let mapping = Self::map(file, len, what)?;
+        if mapping.len == 0 {
+            return Ok(mapping);
+        }
+        // SAFETY: `ptr`/`len` describe the live read-only mapping above.
+        let result = unsafe { libc::madvise(mapping.ptr, mapping.len, libc::MADV_SEQUENTIAL) };
+        if result != 0 {
+            anyhow::bail!(
+                "madvise(MADV_SEQUENTIAL) for {} bytes of {} failed: {}",
+                mapping.len,
+                what.display(),
+                std::io::Error::last_os_error()
+            );
+        }
+        Ok(mapping)
+    }
+
+    /// Releases complete pages in an already-consumed byte range of a
+    /// dedicated sequential mapping. The mapping and file bytes remain valid;
+    /// a later second pass faults them back in deterministically.
+    pub(crate) fn advise_dontneed(&self, start: usize, end: usize) -> Result<usize> {
+        if self.len == 0 || start >= end {
+            return Ok(start);
+        }
+        anyhow::ensure!(end <= self.len, "madvise range exceeds mapping");
+        let page = *PAGE_SIZE.get_or_init(|| {
+            // SAFETY: sysconf has no memory-safety preconditions.
+            let value = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+            usize::try_from(value)
+                .ok()
+                .filter(|value| *value > 0)
+                .unwrap_or(4096)
+        });
+        let aligned_start = start.div_ceil(page) * page;
+        let aligned_end = end / page * page;
+        if aligned_start >= aligned_end {
+            return Ok(start);
+        }
+        // SAFETY: the aligned subrange lies inside this live mapping.
+        let address = unsafe { self.ptr.cast::<u8>().add(aligned_start).cast() };
+        let result =
+            unsafe { libc::madvise(address, aligned_end - aligned_start, libc::MADV_DONTNEED) };
+        if result != 0 {
+            anyhow::bail!(
+                "madvise(MADV_DONTNEED) for mapped range {aligned_start}..{aligned_end} failed: {}",
+                std::io::Error::last_os_error()
+            );
+        }
+        Ok(aligned_end)
+    }
+
     /// The mapped bytes as a shared slice.
     pub(crate) fn as_slice(&self) -> &[u8] {
         if self.ptr.is_null() {
@@ -101,6 +157,8 @@ impl Mmap {
         unsafe { std::slice::from_raw_parts(self.ptr.cast::<u8>(), self.len) }
     }
 }
+
+static PAGE_SIZE: OnceLock<usize> = OnceLock::new();
 
 #[allow(unsafe_code)]
 impl Drop for Mmap {

@@ -13,10 +13,11 @@
 //!   visible only when a manifest generation referencing its index run is
 //!   published; anything past the committed prefix is torn/orphaned tail and
 //!   is truncated on open.
-//! - `runs/`: immutable sorted index runs (format v3, `N3IDXR01`): a 192-byte
-//!   tagged header with a domain-separated SHA-256 over the semantic header,
-//!   sparse 16-byte fence keys every 64 records, and the xor16 membership
-//!   filter, then fixed 50-byte records
+//! - `runs/`: immutable sorted index runs (`N3IDXR01`): v3 level-0 runs use an
+//!   xor16 filter, while streaming compaction emits physical v4 runs with a
+//!   mmap-backed blocked Bloom filter. Both use a 192-byte tagged header,
+//!   domain-separated structure SHA-256, sparse 16-byte fence keys every 64
+//!   records, and fixed 50-byte records
 //!   (`key(33) || sequence(4) || value_offset(8) || value_len(4) ||
 //!   tombstone(1)`). Records point into `frames.pack`; compaction merges
 //!   runs newest-epoch-wins without rewriting payloads.
@@ -68,9 +69,10 @@ pub mod shadow;
 pub use engine::{
     CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, CheckpointNamespaceEvidence, CompactionDebt,
     CompactionStats, GcStats, OpenValidation, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
-    PACK_MANIFEST_FORMAT_VERSION, PackCommitHorizon, PackCompactionPlan, PackFrameReceipt,
-    PackScrubStats, PackStore, PackStoreError, PackStoreOptions, PreparedAppend,
-    PreparedPackCompaction, SealedAppend, Snapshot,
+    PACK_INDEX_RUN_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION, PackCommitHorizon,
+    PackCompactionPlan, PackFrameReceipt, PackIndexScrubStats, PackScrubStats, PackStore,
+    PackStoreError, PackStoreOptions, PreparedAppend, PreparedPackCompaction, SealedAppend,
+    Snapshot,
 };
 
 /// Byte length of one pack key (the StateService `0xf0 || node_hash` node
