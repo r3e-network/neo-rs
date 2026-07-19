@@ -107,6 +107,23 @@ the run. Memory accounting includes the source generation that remains pinned,
 the output filter and fences, cursors, and I/O buffers. No per-record output,
 key, or peel-graph collection is permitted.
 
+Offline promotion verification pins one manifest and independently records
+two bounded evidence classes. First, it merge-walks every live run and hashes
+the complete canonical winner-record stream, including sequence, payload
+offset, length, and tombstone. Second, it retains at most 1,000,000 sampled
+winner entries, checks their direct payload offsets against sorted-batch and
+bounded point reads for at most 4,096 evenly spaced sampled winners, replays at
+most 100,000 keys through the complete committed frame sequence, and verifies
+deterministic never-present probes. Sorted lookups are additionally bounded to
+1,024 entries and 16 MiB of indexed value bytes per batch, and authority
+mutation requires at least 100,000 requested samples. Frame and index scans use
+dedicated sequential mappings and release consumed pages. Sparse verifier
+lookups may opt into separate random-advised mappings, including direct-offset
+evidence reads, without changing default store behavior. Authority maintenance
+is fail closed unless full index scrub and this evidence agree for the staged
+candidate before publication, after publication, and after reopening at the
+same external commit horizon.
+
 Alternatives: an MDBX hash-to-offset row per node, which recreates random
 writes; a single in-memory hash map, which is unbounded and expensive to rebuild.
 
@@ -148,6 +165,16 @@ An incomplete tail or complete suffix above the marker is truncated or ignored.
 A missing/corrupt committed frame is fatal. Missing derived indexes are rebuilt.
 Incomplete compaction outputs are discarded while source runs remain valid.
 
+Deterministic crash campaigns terminate without unwinding at run sync, run
+rename, run-directory sync, manifest sync, manifest rename, and the boundary
+between durable manifest publication and in-memory installation. The hooks
+exist only in tests or an explicit non-default fault-injection build. Recovery
+must expose the previous generation before manifest rename and the new
+generation after it, while exact materialized evidence remains unchanged. A
+complete deterministic output orphan is reusable on immediate retry only after
+its format, epoch, range, complete record checksum, and merge evidence match;
+otherwise retry fails closed and leaves the source generation authoritative.
+
 Canonical unwind first atomically moves Ledger/root metadata and the high-water
 mark to a prior committed epoch. Later runs become invisible immediately and
 are physically reclaimed only after pinned snapshots release them. Replacement
@@ -163,12 +190,20 @@ expose logical/physical bytes, append and sync latency, lookups by level,
 filter effectiveness, rebuild time, debt, stalls, and shadow mismatches.
 
 Compaction builds outside the writer lock but never changes the live read view.
-Adoption first constructs a complete candidate generation and durably publishes
-its manifest; only then may it install the candidate runs and counters in
+Adoption first constructs a complete candidate generation. Authority tooling
+merge-walks and lookup-checks that unpublished view and fully scrubs the staged
+output's records, fences, and filter before adoption. Only then may adoption
+durably publish its manifest and install the candidate runs and counters in
 memory. Runtime garbage collection does not delete in-progress temporary run
 files. Startup alone removes stale temporary outputs after acquiring the writer
 lease, while an output renamed before manifest publication remains an orphan
 that the previous manifest cannot expose.
+
+Reclamation is an explicit offline operation. Authority tooling forbids
+combining it with maintenance and requires complete index scrub plus bounded
+materialized evidence before deletion. It then releases the writer, reopens at
+the same canonical horizon, repeats evidence and index scrub, and fails if any
+winner, frame reference, lookup result, or canonical tip changes.
 
 Only after authoritative sequential packs pass all gates may a bounded
 three-stage pipeline overlap execution/project epoch N+1, MPT finalization N,

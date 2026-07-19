@@ -59,13 +59,6 @@ impl PackStore {
             pending,
             _source_snapshot,
         } = prepared;
-        ensure!(
-            pending.inputs.iter().all(|input| self
-                .runs
-                .iter()
-                .any(|current| same_live_run(current, input))),
-            "compaction inputs are no longer part of the live generation"
-        );
         let decoded_index_bytes = self
             .decoded_index_bytes
             .checked_sub(pending.input_memory_bytes)
@@ -76,20 +69,7 @@ impl PackStore {
             "compaction output exceeds configured index memory bound"
         );
         let file_bytes = pending.run.file_bytes;
-        let mut candidate_runs = self.runs.clone();
-        candidate_runs.retain(|current| {
-            !pending
-                .inputs
-                .iter()
-                .any(|input| same_live_run(current, input))
-        });
-        candidate_runs.push(LiveRun {
-            run: Arc::new(pending.run),
-            level: pending.level,
-            min_epoch: pending.min_epoch,
-            max_epoch: pending.max_epoch,
-        });
-        candidate_runs.sort_by_key(|live| live.min_epoch);
+        let candidate_runs = self.compaction_candidate_runs(&pending)?;
         let candidate_level_run_counts = count_run_levels(&candidate_runs);
         let candidate_ranges = run_ranges(&candidate_runs);
         let generation = self
@@ -101,6 +81,7 @@ impl PackStore {
             entries: candidate_runs.iter().map(manifest_entry_of).collect(),
         };
         manifest::publish_manifest(&self.root, &candidate_manifest)?;
+        crate::engine::failpoint::crash("compaction.before-install");
 
         // Everything after durable manifest publication is an infallible
         // in-process view installation.
@@ -153,6 +134,16 @@ impl PackStore {
         self.view().get(key)
     }
 
+    /// Newest-committed-version point read that rejects an oversized indexed
+    /// value before allocating its result buffer.
+    pub fn get_bounded(
+        &self,
+        key: &[u8; PACK_KEY_BYTES],
+        max_value_bytes: u64,
+    ) -> Result<Option<Vec<u8>>> {
+        self.view().get_bounded(key, max_value_bytes)
+    }
+
     /// Filter-assisted k-way merge: per-run cursors gallop forward over the
     /// sparse fences as the sorted query stream advances, so each run is
     /// visited once per batch instead of once per key binary search.
@@ -160,6 +151,25 @@ impl PackStore {
     /// results align one-to-one with the input order.
     pub fn get_many_sorted(&self, keys: &[[u8; PACK_KEY_BYTES]]) -> Result<Vec<Option<Vec<u8>>>> {
         self.view().get_many_sorted(keys)
+    }
+
+    /// Sorted batch read that validates every indexed value and the complete
+    /// returned-value budget before allocating any value buffer.
+    pub fn get_many_sorted_bounded(
+        &self,
+        keys: &[[u8; PACK_KEY_BYTES]],
+        max_value_bytes: u64,
+        max_total_value_bytes: u64,
+    ) -> Result<Vec<Option<Vec<u8>>>> {
+        self.view()
+            .get_many_sorted_bounded(keys, max_value_bytes, max_total_value_bytes)
+    }
+
+    /// Drops resident pages from explicit random-advised lookup mappings.
+    /// Offline bounded-memory tools call this between batches; stores using
+    /// default mappings perform no work.
+    pub fn reclaim_random_lookup_pages(&self) -> Result<()> {
+        read_view::reclaim_random_lookup_pages(&self.runs, self.lookup_pack_map.as_deref())
     }
 
     fn view(&self) -> ReadView<'_> {
@@ -239,7 +249,7 @@ impl PackStore {
     /// Merges the oldest runs of one level (up to the fanout) into one run
     /// at the next level: records are decoded, checksum-scrubbed, merged
     /// newest-epoch-wins, and re-encoded with rebuilt fences and filter.
-    /// The output is an ordinary v3 run file whose payload offsets keep
+    /// The output is a physical v4 run file whose payload offsets keep
     /// pointing at the original frames. Nothing in the live set changes and
     /// no manifest is published here, so calling this without adopting the
     /// result exactly simulates a crash after run-file publication.
@@ -262,6 +272,64 @@ impl PackStore {
             &self.pack_map,
             self.lookup_pack_map.as_ref(),
         )
+    }
+
+    pub(super) fn preview_compaction_snapshot(
+        &self,
+        prepared: &PreparedPackCompaction,
+    ) -> Result<Snapshot> {
+        let candidate_runs = self.compaction_candidate_runs(&prepared.pending)?;
+        let candidate_ranges = run_ranges(&candidate_runs);
+        let generation = self
+            .generation
+            .checked_add(1)
+            .context("compaction preview generation overflows")?;
+        self.pin_snapshot_parts(
+            generation,
+            &candidate_runs,
+            &candidate_ranges,
+            &self.pack_map,
+            self.lookup_pack_map.as_ref(),
+        )
+    }
+
+    fn compaction_candidate_runs(&self, pending: &PendingMerge) -> Result<Vec<LiveRun>> {
+        ensure!(
+            pending.inputs.iter().all(|input| self
+                .runs
+                .iter()
+                .any(|current| same_live_run(current, input))),
+            "compaction inputs are no longer part of the live generation"
+        );
+        let mut candidate_runs = self.runs.clone();
+        candidate_runs.retain(|current| {
+            !pending
+                .inputs
+                .iter()
+                .any(|input| same_live_run(current, input))
+        });
+        candidate_runs.push(LiveRun {
+            run: Arc::clone(&pending.run),
+            level: pending.level,
+            min_epoch: pending.min_epoch,
+            max_epoch: pending.max_epoch,
+        });
+        candidate_runs.sort_by_key(|live| live.min_epoch);
+        Ok(candidate_runs)
+    }
+
+    /// Fully validates the staged output's records, fences, and membership
+    /// filter before its manifest can become the newest readable generation.
+    pub fn scrub_prepared_compaction(&self, prepared: &PreparedPackCompaction) -> Result<()> {
+        let pending = &prepared.pending;
+        let live = LiveRun {
+            run: Arc::clone(&pending.run),
+            level: pending.level,
+            min_epoch: pending.min_epoch,
+            max_epoch: pending.max_epoch,
+        };
+        scrub_live_index_run(&live, &self.runs_dir, self.committed_pack_bytes())
+            .context("scrub prepared compaction output before manifest publication")
     }
 
     /// Pins an immutable generation assembled either from the current view or

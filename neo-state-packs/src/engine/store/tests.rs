@@ -309,6 +309,57 @@ mod tests {
     }
 
     #[test]
+    fn bounded_reads_reject_indexed_values_before_result_allocation() {
+        let root = tempdir().expect("temporary append store");
+        let mut store = PackStore::create(root.path(), 1024 * 1024).expect("create store");
+        let first = key(0x11);
+        let second = key(0x22);
+        store
+            .append(&[put(first, b"first"), put(second, b"second")])
+            .expect("append bounded-read values");
+
+        let point_error = store
+            .get_bounded(&first, 4)
+            .expect_err("oversized point result must fail before allocation");
+        assert!(point_error.to_string().contains("indexed value length 5"));
+
+        let batch_error = store
+            .get_many_sorted_bounded(&[first, second], 6, 10)
+            .expect_err("oversized aggregate result must fail before allocation");
+        assert!(batch_error.to_string().contains("require 11 bytes"));
+
+        assert_eq!(
+            store
+                .get_many_sorted_bounded(&[first, second], 6, 11)
+                .expect("bounded batch at its exact limit"),
+            vec![Some(b"first".to_vec()), Some(b"second".to_vec())]
+        );
+    }
+
+    #[test]
+    fn index_scrub_rejects_payload_ranges_beyond_the_committed_pack() {
+        let outside = IndexEntry {
+            key: key(0x33),
+            sequence: 0,
+            value_offset: 100,
+            value_len: 2,
+            tombstone: false,
+        };
+        let error = validate_index_entry_payload_range(&outside, 101)
+            .expect_err("out-of-pack index range must fail scrub");
+        assert!(error.to_string().contains("beyond the committed pack"));
+
+        let overflowing = IndexEntry {
+            value_offset: u64::MAX,
+            value_len: 1,
+            ..outside
+        };
+        let error = validate_index_entry_payload_range(&overflowing, u64::MAX)
+            .expect_err("overflowing index range must fail scrub");
+        assert!(error.to_string().contains("overflows"));
+    }
+
+    #[test]
     fn append_rejects_decoded_index_memory_overflow_before_writing() {
         let root = tempdir().expect("temporary append store");
         let bound = std::mem::size_of::<IndexEntry>() as u64 - 1;
@@ -838,4 +889,6 @@ mod tests {
     }
 
     include!("compaction_recovery_tests.rs");
+    include!("crash_failpoint_tests.rs");
+    include!("evidence_tests.rs");
 }

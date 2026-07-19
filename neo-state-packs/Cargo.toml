@@ -13,6 +13,9 @@ categories.workspace = true
 readme.workspace = true
 description = "Append-only checksummed node-pack persistence with immutable sorted index runs for Neo StateService MPT rows"
 
+[features]
+fault-injection = []
+
 [dependencies]
 anyhow = { workspace = true }
 libc = "0.2"

@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine::failpoint;
 
 /// Conservative peak decoded/transient index memory for the streaming build.
 /// The source generation remains pinned until adoption, so its resident
@@ -84,7 +85,7 @@ pub(super) fn build_compacted_run_from_inputs(
         level: level + 1,
         min_epoch,
         max_epoch,
-        run,
+        run: Arc::new(run),
         input_runs: u64::try_from(inputs.len()).context("merge input count overflows")?,
         input_records,
         output_records: first_pass.output_records,
@@ -188,11 +189,30 @@ fn publish_streaming_compacted_run(
 ) -> Result<IndexRun> {
     let final_path = runs_dir.join(file_name);
     let temp_path = runs_dir.join(format!("{file_name}.tmp"));
-    ensure!(
-        !final_path.exists(),
-        "compacted output {} already exists and must be reclaimed before retry",
-        final_path.display()
-    );
+    if final_path.exists() {
+        let file = File::open(&final_path)
+            .with_context(|| format!("open existing compacted output {}", final_path.display()))?;
+        let run = read_index_run_with_options(&final_path, options)
+            .context("validate existing compacted output before retry")?;
+        ensure!(
+            run.format_version == PACK_INDEX_RUN_FORMAT_VERSION
+                && run.epoch == epoch
+                && run.record_count == first_pass.output_records
+                && run.min_key == first_pass.min_key
+                && run.max_key == first_pass.max_key
+                && run.records_sha256 == first_pass.records_sha256,
+            "existing compacted output differs from the deterministic retry evidence"
+        );
+        verify_file_record_digest(
+            &file,
+            run.records_offset,
+            run.record_count,
+            first_pass.records_sha256,
+        )
+        .context("verify existing compacted output records before retry")?;
+        sync_directory(runs_dir)?;
+        return Ok(run);
+    }
     let fence_count = usize::try_from(first_pass.output_records.div_ceil(FENCE_INTERVAL as u64))
         .context("compacted fence count does not fit usize")?;
     let fence_capacity = fence_count
@@ -269,8 +289,10 @@ fn publish_streaming_compacted_run(
             .context("write compacted Bloom filter")?;
         writer.flush().context("flush compacted index structure")?;
     }
+    failpoint::crash("compaction.run.before-sync");
     file.sync_data()
         .with_context(|| format!("sync compacted run {}", temp_path.display()))?;
+    failpoint::crash("compaction.run.after-sync");
     drop(fences);
     drop(bloom);
     verify_file_record_digest(
@@ -287,8 +309,10 @@ fn publish_streaming_compacted_run(
             final_path.display()
         )
     })?;
+    failpoint::crash("compaction.run.after-rename");
     temp_guard.disarm();
     sync_directory(runs_dir)?;
+    failpoint::crash("compaction.run.after-directory-sync");
     match read_index_run_with_options(&final_path, options) {
         Ok(run) => {
             ensure!(

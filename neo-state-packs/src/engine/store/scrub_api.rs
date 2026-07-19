@@ -1,6 +1,11 @@
 use super::*;
 
 impl PackStore {
+    pub(super) fn committed_pack_bytes(&self) -> u64 {
+        self.last_frame_receipt
+            .map_or(0, |receipt| receipt.frame_end)
+    }
+
     /// Re-hashes and structurally decodes every committed frame.
     ///
     /// Normal open verifies frame headers, all derived-run checksums, and the
@@ -18,8 +23,9 @@ impl PackStore {
     /// set or perturb the point-read mappings.
     pub fn scrub_index_runs(&self) -> Result<PackIndexScrubStats> {
         let mut stats = PackIndexScrubStats::default();
+        let committed_pack_bytes = self.committed_pack_bytes();
         for live in &self.runs {
-            scrub_live_index_run(live, &self.runs_dir)?;
+            scrub_live_index_run(live, &self.runs_dir, committed_pack_bytes)?;
             stats.runs = stats.runs.saturating_add(1);
             match live.run.format_version {
                 XOR_INDEX_RUN_FORMAT_VERSION => {
@@ -70,13 +76,16 @@ impl PackStore {
         })
     }
 
-    fn scrub_committed_frames_with<F>(&self, mut visit: F) -> Result<PackScrubStats>
+    pub(super) fn scrub_committed_frames_with<F>(&self, mut visit: F) -> Result<PackScrubStats>
     where
         F: FnMut(&[u8; PACK_KEY_BYTES], u8, &[u8]) -> Result<()>,
     {
-        let bytes = self.pack_map.as_slice();
+        let committed_bytes = self.committed_pack_bytes();
+        let mapping = Mmap::map_sequential(&self.pack, committed_bytes, &self.pack_path)?;
+        let bytes = mapping.as_slice();
         let mut stats = PackScrubStats::default();
         let mut offset = 0usize;
+        let mut release_start = 0usize;
         let expected_frames = self
             .last_frame_receipt
             .map_or(0, |receipt| receipt.epoch.saturating_add(1));
@@ -99,14 +108,27 @@ impl PackStore {
             let payload = bytes.get(header_end..payload_end).with_context(|| {
                 format!("committed frame {} payload is truncated", stats.frames)
             })?;
+            let expected_rows = usize::try_from(u64_at(header, 24)?)
+                .context("scrub row count does not fit usize")?;
+            let mut payload_hasher = Sha256::new();
+            let payload_stats = validate_payload_rows_with_progress(
+                payload,
+                expected_rows,
+                &mut visit,
+                &mut |chunk, consumed| {
+                    payload_hasher.update(chunk);
+                    let absolute_end = header_end
+                        .checked_add(consumed)
+                        .context("scrub payload release offset overflows")?;
+                    release_start = mapping.advise_dontneed(release_start, absolute_end)?;
+                    Ok(())
+                },
+            )?;
             ensure!(
-                digest(payload).as_slice() == &header[40..72],
+                <[u8; 32]>::from(payload_hasher.finalize()).as_slice() == &header[40..72],
                 "committed frame {} payload checksum mismatch",
                 stats.frames
             );
-            let expected_rows = usize::try_from(u64_at(header, 24)?)
-                .context("scrub row count does not fit usize")?;
-            let payload_stats = validate_payload_rows_with(payload, expected_rows, &mut visit)?;
             stats.frames = stats.frames.saturating_add(1);
             stats.rows = stats.rows.saturating_add(payload_stats.rows);
             stats.puts = stats.puts.saturating_add(payload_stats.puts);
@@ -116,6 +138,7 @@ impl PackStore {
                 .saturating_add(u64::try_from(payload.len()).expect("payload length fits u64"));
             stats.value_bytes = stats.value_bytes.saturating_add(payload_stats.value_bytes);
             offset = payload_end;
+            release_start = mapping.advise_dontneed(release_start, offset)?;
         }
 
         ensure!(
@@ -123,6 +146,7 @@ impl PackStore {
             "committed frame prefix ends at {offset}, but mapped pack has {} bytes",
             bytes.len()
         );
+        let _ = mapping.advise_dontneed(release_start, bytes.len())?;
         Ok(stats)
     }
 }

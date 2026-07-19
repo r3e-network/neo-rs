@@ -14,7 +14,7 @@
 - [ ] 2.4 Implement high-water recovery, torn-tail truncation, orphan suffix handling, and fatal committed-frame corruption checks
 - [ ] 2.5 Implement rebuildable immutable sorted index runs, verified filters, newest-version point reads, and ordered batch reads
 - [ ] 2.6 Implement immutable manifest generations, snapshot segment leases, deferred reclaim, and bounded recent-run memory
-- [ ] 2.7 Implement leveled index compaction with newest-epoch/reference-count semantics and safe tombstone retention
+- [x] 2.7 Implement leveled index compaction with newest-epoch/reference-count semantics and safe tombstone retention
 - [ ] 2.8 Add scrub/probe APIs and bounded-label append, sync, lookup, rebuild, compaction, debt, stall, and amplification metrics
 
 ## 3. Shadow Publication And Recovery

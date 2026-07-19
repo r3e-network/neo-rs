@@ -16,6 +16,7 @@
 //! the embedded generation to the immutable manifest file name. The reader
 //! retains format-v1 compatibility for already-created shadow checkpoints.
 
+use crate::engine::failpoint;
 use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
@@ -275,8 +276,10 @@ pub(crate) fn publish_manifest(root: &Path, manifest: &Manifest) -> Result<PathB
         .with_context(|| format!("create manifest {}", temp_path.display()))?;
     file.write_all(&bytes)
         .with_context(|| format!("write manifest {}", temp_path.display()))?;
+    failpoint::crash("compaction.manifest.before-sync");
     file.sync_all()
         .with_context(|| format!("sync manifest {}", temp_path.display()))?;
+    failpoint::crash("compaction.manifest.after-sync");
     drop(file);
     fs::rename(&temp_path, &final_path).with_context(|| {
         format!(
@@ -285,6 +288,7 @@ pub(crate) fn publish_manifest(root: &Path, manifest: &Manifest) -> Result<PathB
             final_path.display()
         )
     })?;
+    failpoint::crash("compaction.manifest.after-rename");
     File::open(root)
         .with_context(|| format!("open directory {} for sync", root.display()))?
         .sync_all()

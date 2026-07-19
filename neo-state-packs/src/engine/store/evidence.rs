@@ -1,0 +1,785 @@
+use super::*;
+use std::collections::HashMap;
+
+const LOOKUP_EVIDENCE_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-lookup-evidence/v3\0";
+const SAMPLE_KEYSET_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-lookup-keyset/v1\0";
+const FRAME_REFERENCE_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-frame-reference/v1\0";
+const SYNTHETIC_MISS_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-synthetic-miss/v1\0";
+/// Maximum number of keys passed to one sorted lookup call.
+const LOOKUP_BATCH_MAX_ENTRIES: usize = 1_024;
+/// Maximum cumulative value bytes requested by one sorted lookup call.
+///
+/// Index entries carry a `u32` value length and the frame format permits much
+/// larger values. Batching by entries alone would therefore allow one
+/// malformed or unusually large sample to allocate an unbounded result.
+const LOOKUP_BATCH_MAX_VALUE_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_POINT_CROSS_CHECKS: usize = 4_096;
+const MAX_PUBLIC_LOOKUP_KEYS: usize = 4_096;
+const MAX_FRAME_REFERENCE_KEYS: usize = 100_000;
+const MAX_LOOKUP_EVIDENCE_SAMPLES: usize = 1_000_000;
+const SYNTHETIC_MISS_PROBES: usize = 256;
+const SAMPLE_SEED: u64 = 0xD6E8_FEB8_6659_FD93;
+
+/// Deterministic evidence for the materialized newest-version view of one
+/// pinned manifest generation.
+///
+/// The complete winner-record digest covers every key, sequence, payload
+/// location, value length, and tombstone without loading records into memory.
+/// The lookup digest covers a bounded deterministic key sample and compares
+/// the public lookup paths with both winner offsets and committed frame rows.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PackMaterializedViewEvidence {
+    /// Manifest generation pinned while producing this evidence.
+    pub generation: u64,
+    /// Immutable runs referenced by the pinned generation.
+    pub live_runs: u64,
+    /// Input records merge-walked across all live runs.
+    pub source_records: u64,
+    /// Canonical frame epoch bound to the evidence.
+    pub tip_epoch: u64,
+    /// Canonical committed frame end bound to the evidence.
+    pub tip_frame_end: u64,
+    /// Canonical tip payload checksum bound to the evidence.
+    pub tip_payload_sha256: [u8; 32],
+    /// Unique newest-version winner records in the materialized view.
+    pub winner_records: u64,
+    /// Put winners in the materialized view.
+    pub puts: u64,
+    /// Tombstone winners in the materialized view.
+    pub tombstones: u64,
+    /// Put-value bytes addressed by the winner records.
+    pub value_bytes: u64,
+    /// SHA-256 of every canonical fixed-size winner record in key order.
+    pub winner_records_sha256: [u8; 32],
+    /// Requested deterministic winner/frame-reference reservoir size.
+    pub lookup_sample_requested: u64,
+    /// Winner keys exercised through both sorted-batch and point lookup.
+    pub lookup_sampled_keys: u64,
+    /// Digest of the exact deterministic winner-key sample.
+    pub sample_keys_sha256: [u8; 32],
+    /// Sampled keys resolving to values.
+    pub lookup_present: u64,
+    /// Sampled keys resolving to tombstones/absence.
+    pub lookup_absent: u64,
+    /// Value bytes hashed through sampled lookups.
+    pub lookup_value_bytes: u64,
+    /// Sampled winner keys additionally cross-checked through point lookup.
+    pub point_checks: u64,
+    /// Deterministic never-present keys checked through point and batch lookup.
+    pub synthetic_miss_checks: u64,
+    /// Number of sorted lookup batches issued by this evidence pass.
+    ///
+    /// This is a physical measurement and is intentionally excluded from
+    /// [`Self::state_matches`].
+    pub lookup_batches: u64,
+    /// Sampled keys independently resolved from committed frame order.
+    pub frame_reference_keys: u64,
+    /// Full frame scrub performed while resolving independent references.
+    pub frame_scrub: PackScrubStats,
+    /// Digest of independently resolved frame-reference states.
+    pub frame_reference_sha256: [u8; 32],
+    /// Domain-separated digest of sampled keys and public lookup results.
+    pub lookup_sha256: [u8; 32],
+    /// Wall time spent opening and merge-walking every live winner record.
+    pub winner_merge_wall_ns: u64,
+    /// Wall time spent scrubbing frames and resolving independent references.
+    pub frame_reference_wall_ns: u64,
+    /// Wall time spent validating sampled point/batch/miss lookups.
+    pub lookup_wall_ns: u64,
+    /// End-to-end wall time for this complete evidence pass.
+    pub total_wall_ns: u64,
+}
+
+impl PackMaterializedViewEvidence {
+    /// Whether two generations expose exactly the same canonical horizon,
+    /// winner records, frame references, and deterministic lookup results.
+    /// Physical generation/run/source counts are intentionally excluded.
+    pub fn state_matches(&self, other: &Self) -> bool {
+        self.tip_epoch == other.tip_epoch
+            && self.tip_frame_end == other.tip_frame_end
+            && self.tip_payload_sha256 == other.tip_payload_sha256
+            && self.winner_records == other.winner_records
+            && self.puts == other.puts
+            && self.tombstones == other.tombstones
+            && self.value_bytes == other.value_bytes
+            && self.winner_records_sha256 == other.winner_records_sha256
+            && self.lookup_sample_requested == other.lookup_sample_requested
+            && self.lookup_sampled_keys == other.lookup_sampled_keys
+            && self.sample_keys_sha256 == other.sample_keys_sha256
+            && self.lookup_present == other.lookup_present
+            && self.lookup_absent == other.lookup_absent
+            && self.lookup_value_bytes == other.lookup_value_bytes
+            && self.point_checks == other.point_checks
+            && self.synthetic_miss_checks == other.synthetic_miss_checks
+            && self.frame_reference_keys == other.frame_reference_keys
+            && self.frame_scrub == other.frame_scrub
+            && self.frame_reference_sha256 == other.frame_reference_sha256
+            && self.lookup_sha256 == other.lookup_sha256
+    }
+}
+
+impl PackStore {
+    /// Validates and hashes the complete newest-version winner stream, then
+    /// exercises a deterministic bounded sample through independent expected,
+    /// point, and sorted-batch paths. Dedicated sequential mappings release
+    /// consumed index and frame pages without perturbing point-read mappings.
+    pub fn materialized_view_evidence(
+        &self,
+        lookup_samples: usize,
+    ) -> Result<PackMaterializedViewEvidence> {
+        let snapshot = self.snapshot()?;
+        self.materialized_view_evidence_for_snapshot(snapshot, lookup_samples)
+    }
+
+    /// Produces the same complete evidence against a staged compaction view
+    /// before its manifest is published. Callers can therefore fail closed
+    /// without making an unverified derived generation current.
+    pub fn prepared_compaction_evidence(
+        &self,
+        prepared: &PreparedPackCompaction,
+        lookup_samples: usize,
+    ) -> Result<PackMaterializedViewEvidence> {
+        let snapshot = self.preview_compaction_snapshot(prepared)?;
+        self.materialized_view_evidence_for_snapshot(snapshot, lookup_samples)
+    }
+
+    fn materialized_view_evidence_for_snapshot(
+        &self,
+        snapshot: Snapshot,
+        lookup_samples: usize,
+    ) -> Result<PackMaterializedViewEvidence> {
+        ensure!(
+            lookup_samples <= MAX_LOOKUP_EVIDENCE_SAMPLES,
+            "lookup evidence sample count exceeds the hard limit of {MAX_LOOKUP_EVIDENCE_SAMPLES}"
+        );
+        let receipt = self
+            .last_frame_receipt
+            .context("cannot produce materialized evidence for an empty pack")?;
+        let total_started = Instant::now();
+        let winner_started = Instant::now();
+        ensure!(
+            !snapshot.runs.is_empty(),
+            "cannot produce materialized evidence for an empty run set"
+        );
+        let mappings = open_evidence_input_maps(&snapshot.runs, &self.runs_dir)?;
+        let sources = evidence_sources(&mappings)?;
+        let source_records = sources.iter().try_fold(0u64, |total, source| {
+            total
+                .checked_add(source.record_count)
+                .context("evidence source record count overflows")
+        })?;
+        let mut sampler = EntryReservoir::new(lookup_samples);
+        let mut miss_probes = SyntheticMissProbes::new(receipt);
+        let mut puts = 0u64;
+        let mut tombstones = 0u64;
+        let mut value_bytes = 0u64;
+        let pack_bytes = snapshot.pack_map.as_slice().len();
+        let merged = merge_sorted_runs(&sources, |ordinal, entry, _| {
+            validate_entry_payload_range(entry, pack_bytes)?;
+            sampler.observe(ordinal, *entry);
+            miss_probes.observe(&entry.key);
+            if entry.tombstone {
+                tombstones = tombstones.saturating_add(1);
+            } else {
+                puts = puts.saturating_add(1);
+                value_bytes = value_bytes.saturating_add(u64::from(entry.value_len));
+            }
+            Ok(())
+        })?;
+        drop(sources);
+        drop(mappings);
+        let winner_merge_wall_ns = duration_ns(winner_started.elapsed());
+
+        let entries = sampler.finish();
+        let lookup_indices = evenly_spaced_indices(entries.len(), MAX_PUBLIC_LOOKUP_KEYS);
+        let lookup_entries: Vec<_> = lookup_indices.iter().map(|&index| entries[index]).collect();
+        let sample_keys_sha256 = digest_sample_keys(receipt, &lookup_entries);
+        let frame_reference_indices =
+            evenly_spaced_indices(entries.len(), MAX_FRAME_REFERENCE_KEYS);
+        let frame_reference_started = Instant::now();
+        let expected_pack_map = snapshot
+            .lookup_pack_map
+            .as_deref()
+            .unwrap_or(&snapshot.pack_map);
+        let frame_reference = self.resolve_frame_references(
+            receipt,
+            expected_pack_map,
+            &entries,
+            &frame_reference_indices,
+        )?;
+        snapshot.reclaim_random_lookup_pages()?;
+        let frame_reference_wall_ns = duration_ns(frame_reference_started.elapsed());
+        let synthetic_misses = miss_probes.finish();
+        let lookup_started = Instant::now();
+        let lookup = digest_lookup_sample(
+            &snapshot,
+            receipt,
+            &lookup_entries,
+            &synthetic_misses,
+            merged.output_records,
+            lookup_samples,
+        )?;
+        let lookup_wall_ns = duration_ns(lookup_started.elapsed());
+        Ok(PackMaterializedViewEvidence {
+            generation: snapshot.generation(),
+            live_runs: u64::try_from(snapshot.runs.len()).unwrap_or(u64::MAX),
+            source_records,
+            tip_epoch: receipt.epoch,
+            tip_frame_end: receipt.frame_end,
+            tip_payload_sha256: receipt.payload_sha256,
+            winner_records: merged.output_records,
+            puts,
+            tombstones,
+            value_bytes,
+            winner_records_sha256: merged.records_sha256,
+            lookup_sample_requested: u64::try_from(lookup_samples).unwrap_or(u64::MAX),
+            lookup_sampled_keys: u64::try_from(lookup_entries.len()).unwrap_or(u64::MAX),
+            sample_keys_sha256,
+            lookup_present: lookup.present,
+            lookup_absent: lookup.absent,
+            lookup_value_bytes: lookup.value_bytes,
+            point_checks: lookup.point_checks,
+            synthetic_miss_checks: lookup.synthetic_miss_checks,
+            lookup_batches: lookup.lookup_batches,
+            frame_reference_keys: u64::try_from(frame_reference_indices.len()).unwrap_or(u64::MAX),
+            frame_scrub: frame_reference.scrub,
+            frame_reference_sha256: frame_reference.sha256,
+            lookup_sha256: lookup.sha256,
+            winner_merge_wall_ns,
+            frame_reference_wall_ns,
+            lookup_wall_ns,
+            total_wall_ns: duration_ns(total_started.elapsed()),
+        })
+    }
+
+    fn resolve_frame_references(
+        &self,
+        receipt: PackFrameReceipt,
+        expected_pack_map: &Mmap,
+        entries: &[IndexEntry],
+        indices: &[usize],
+    ) -> Result<FrameReferenceEvidence> {
+        if indices.is_empty() {
+            return Ok(FrameReferenceEvidence::empty(receipt));
+        }
+        let mut positions = HashMap::with_capacity(indices.len());
+        let reference_keys: Vec<_> = indices.iter().map(|&index| entries[index].key).collect();
+        let reference_filter =
+            XorFilter::build(&reference_keys, receipt.epoch ^ 0xA076_1D64_78BD_642F)?;
+        for (position, &index) in indices.iter().enumerate() {
+            ensure!(
+                positions.insert(entries[index].key, position).is_none(),
+                "frame-reference sample contains a duplicate key"
+            );
+        }
+        let mut states = vec![None; indices.len()];
+        let scrub = self.scrub_committed_frames_with(|key, kind, value| {
+            if !reference_filter.maybe_contains_hash(key_hash(key)) {
+                return Ok(());
+            }
+            let Some(&position) = positions.get(key) else {
+                return Ok(());
+            };
+            states[position] = Some(if kind == 0 {
+                SampleValueState::Absent
+            } else {
+                SampleValueState::from_present(value)
+            });
+            Ok(())
+        })?;
+
+        let mut hasher = evidence_hasher(FRAME_REFERENCE_DIGEST_DOMAIN, receipt);
+        hasher.update(
+            u64::try_from(indices.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
+        for (position, &index) in indices.iter().enumerate() {
+            let entry = entries[index];
+            let state = states[position].with_context(|| {
+                format!("sampled winner is absent from frames at {:02x?}", entry.key)
+            })?;
+            let expected = sample_state_from_entry(expected_pack_map, &entry)?;
+            ensure!(
+                state == expected,
+                "committed-frame and winner-record state disagree at key {:02x?}",
+                entry.key
+            );
+            hash_sample_state(&mut hasher, &entry.key, state);
+        }
+        Ok(FrameReferenceEvidence {
+            scrub,
+            sha256: hasher.finalize().into(),
+        })
+    }
+}
+
+struct EvidenceInputMap {
+    map: Mmap,
+    max_epoch: u64,
+    record_count: u64,
+    records_offset: usize,
+    records_sha256: [u8; 32],
+}
+
+fn open_evidence_input_maps(runs: &[LiveRun], runs_dir: &Path) -> Result<Vec<EvidenceInputMap>> {
+    let mut mappings = Vec::with_capacity(runs.len());
+    for live in runs {
+        let path = runs_dir.join(run_file_name(live.level, live.min_epoch, live.max_epoch));
+        let file =
+            File::open(&path).with_context(|| format!("open evidence input {}", path.display()))?;
+        let file_bytes = file
+            .metadata()
+            .with_context(|| format!("stat evidence input {}", path.display()))?
+            .len();
+        ensure!(
+            file_bytes == live.run.file_bytes,
+            "evidence input file length changed"
+        );
+        mappings.push(EvidenceInputMap {
+            map: Mmap::map_sequential(&file, file_bytes, &path)?,
+            max_epoch: live.max_epoch,
+            record_count: live.run.record_count,
+            records_offset: usize::try_from(live.run.records_offset)
+                .context("evidence records offset does not fit usize")?,
+            records_sha256: live.run.records_sha256,
+        });
+    }
+    Ok(mappings)
+}
+
+fn evidence_sources(mappings: &[EvidenceInputMap]) -> Result<Vec<MergeSource<'_>>> {
+    mappings
+        .iter()
+        .map(|input| {
+            let record_bytes = usize::try_from(input.record_count)
+                .context("evidence record count does not fit usize")?
+                .checked_mul(INDEX_RECORD_LEN)
+                .context("evidence record byte length overflows")?;
+            let end = input
+                .records_offset
+                .checked_add(record_bytes)
+                .context("evidence record range overflows")?;
+            let records = input
+                .map
+                .as_slice()
+                .get(input.records_offset..end)
+                .context("evidence records lie outside the run")?;
+            Ok(MergeSource {
+                max_epoch: input.max_epoch,
+                record_count: input.record_count,
+                records,
+                records_sha256: input.records_sha256,
+                mapping: Some(&input.map),
+                records_offset: input.records_offset,
+            })
+        })
+        .collect()
+}
+
+struct EntryReservoir {
+    requested: usize,
+    rng: XorShift64,
+    entries: Vec<IndexEntry>,
+}
+
+impl EntryReservoir {
+    fn new(requested: usize) -> Self {
+        Self {
+            requested,
+            rng: XorShift64(SAMPLE_SEED),
+            entries: Vec::with_capacity(requested),
+        }
+    }
+
+    fn observe(&mut self, ordinal: u64, entry: IndexEntry) {
+        if self.entries.len() < self.requested {
+            self.entries.push(entry);
+        } else if self.requested != 0 {
+            let candidate = self.rng.next() % ordinal.saturating_add(1);
+            if candidate < self.requested as u64 {
+                self.entries[candidate as usize] = entry;
+            }
+        }
+    }
+
+    fn finish(mut self) -> Vec<IndexEntry> {
+        self.entries.sort_unstable_by_key(|entry| entry.key);
+        self.entries
+    }
+}
+
+struct XorShift64(u64);
+
+impl XorShift64 {
+    fn next(&mut self) -> u64 {
+        let mut value = self.0;
+        value ^= value << 13;
+        value ^= value >> 7;
+        value ^= value << 17;
+        self.0 = value;
+        value
+    }
+}
+
+struct SyntheticMissProbes {
+    probes: Vec<([u8; PACK_KEY_BYTES], bool)>,
+    cursor: usize,
+}
+
+impl SyntheticMissProbes {
+    fn new(receipt: PackFrameReceipt) -> Self {
+        let mut probes = Vec::with_capacity(SYNTHETIC_MISS_PROBES);
+        for counter in 0..SYNTHETIC_MISS_PROBES as u64 {
+            let mut hasher = evidence_hasher(SYNTHETIC_MISS_DIGEST_DOMAIN, receipt);
+            hasher.update(counter.to_le_bytes());
+            let digest: [u8; 32] = hasher.finalize().into();
+            let mut key = [0u8; PACK_KEY_BYTES];
+            key[0] = 0xf0;
+            key[1..].copy_from_slice(&digest);
+            probes.push((key, false));
+        }
+        probes.sort_unstable_by_key(|probe| probe.0);
+        probes.dedup_by_key(|probe| probe.0);
+        Self { probes, cursor: 0 }
+    }
+
+    fn observe(&mut self, key: &[u8; PACK_KEY_BYTES]) {
+        while self
+            .probes
+            .get(self.cursor)
+            .is_some_and(|probe| probe.0 < *key)
+        {
+            self.cursor += 1;
+        }
+        if self
+            .probes
+            .get(self.cursor)
+            .is_some_and(|probe| probe.0 == *key)
+        {
+            self.probes[self.cursor].1 = true;
+            self.cursor += 1;
+        }
+    }
+
+    fn finish(self) -> Vec<[u8; PACK_KEY_BYTES]> {
+        self.probes
+            .into_iter()
+            .filter_map(|(key, seen)| (!seen).then_some(key))
+            .collect()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SampleValueState {
+    Absent,
+    Present { length: u64, sha256: [u8; 32] },
+}
+
+impl SampleValueState {
+    fn from_present(value: &[u8]) -> Self {
+        Self::Present {
+            length: value.len() as u64,
+            sha256: Sha256::digest(value).into(),
+        }
+    }
+}
+
+struct FrameReferenceEvidence {
+    scrub: PackScrubStats,
+    sha256: [u8; 32],
+}
+
+impl FrameReferenceEvidence {
+    fn empty(receipt: PackFrameReceipt) -> Self {
+        Self {
+            scrub: PackScrubStats::default(),
+            sha256: evidence_hasher(FRAME_REFERENCE_DIGEST_DOMAIN, receipt)
+                .finalize()
+                .into(),
+        }
+    }
+}
+
+struct LookupEvidence {
+    present: u64,
+    absent: u64,
+    value_bytes: u64,
+    point_checks: u64,
+    synthetic_miss_checks: u64,
+    lookup_batches: u64,
+    sha256: [u8; 32],
+}
+
+fn digest_lookup_sample(
+    snapshot: &Snapshot,
+    receipt: PackFrameReceipt,
+    entries: &[IndexEntry],
+    synthetic_misses: &[[u8; PACK_KEY_BYTES]],
+    winner_records: u64,
+    requested: usize,
+) -> Result<LookupEvidence> {
+    let point_indices = evenly_spaced_indices(entries.len(), MAX_POINT_CROSS_CHECKS);
+    let mut next_point = 0usize;
+    let mut present = 0u64;
+    let mut absent = 0u64;
+    let mut value_bytes = 0u64;
+    let mut point_checks = 0u64;
+    let mut lookup_batches = 0u64;
+    let mut hasher = evidence_hasher(LOOKUP_EVIDENCE_DIGEST_DOMAIN, receipt);
+    hasher.update(winner_records.to_le_bytes());
+    hasher.update(u64::try_from(requested).unwrap_or(u64::MAX).to_le_bytes());
+    hasher.update(
+        u64::try_from(entries.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
+
+    let mut start = 0usize;
+    while start < entries.len() {
+        let (end, _) = next_lookup_batch(entries, start)?;
+        let chunk = &entries[start..end];
+        let keys: Vec<_> = chunk.iter().map(|entry| entry.key).collect();
+        let values = snapshot.get_many_sorted_bounded(
+            &keys,
+            LOOKUP_BATCH_MAX_VALUE_BYTES,
+            LOOKUP_BATCH_MAX_VALUE_BYTES,
+        )?;
+        ensure!(
+            values.len() == chunk.len(),
+            "sorted-batch lookup returned {} values for {} keys",
+            values.len(),
+            chunk.len()
+        );
+        lookup_batches = lookup_batches.saturating_add(1);
+        for (offset, (entry, value)) in chunk.iter().zip(values).enumerate() {
+            let global_index = start + offset;
+            let expected = expected_value(snapshot, entry)?;
+            ensure!(
+                value.as_deref() == expected,
+                "sorted-batch lookup differs from winner record at key {:02x?}",
+                entry.key
+            );
+            hash_lookup_result(&mut hasher, &entry.key, value.as_deref());
+            match value.as_deref() {
+                Some(value) => {
+                    present = present.saturating_add(1);
+                    value_bytes = value_bytes.saturating_add(value.len() as u64);
+                }
+                None => absent = absent.saturating_add(1),
+            }
+            if point_indices.get(next_point) == Some(&global_index) {
+                ensure!(
+                    snapshot
+                        .get_bounded(&entry.key, LOOKUP_BATCH_MAX_VALUE_BYTES)?
+                        .as_deref()
+                        == expected,
+                    "point lookup differs from winner record at key {:02x?}",
+                    entry.key
+                );
+                point_checks = point_checks.saturating_add(1);
+                next_point += 1;
+            }
+        }
+        snapshot.reclaim_random_lookup_pages()?;
+        start = end;
+    }
+    ensure!(
+        present
+            .checked_add(absent)
+            .context("lookup result count overflows")?
+            == u64::try_from(entries.len()).context("lookup sample count does not fit u64")?,
+        "sorted-batch lookup result counts do not cover the sample"
+    );
+    ensure!(
+        next_point == point_indices.len(),
+        "point cross-check schedule was not fully consumed"
+    );
+
+    let mut synthetic_miss_checks = 0u64;
+    for chunk in synthetic_misses.chunks(LOOKUP_BATCH_MAX_ENTRIES) {
+        let values = snapshot.get_many_sorted_bounded(
+            chunk,
+            LOOKUP_BATCH_MAX_VALUE_BYTES,
+            LOOKUP_BATCH_MAX_VALUE_BYTES,
+        )?;
+        ensure!(
+            values.len() == chunk.len(),
+            "synthetic sorted-batch lookup returned {} values for {} keys",
+            values.len(),
+            chunk.len()
+        );
+        lookup_batches = lookup_batches.saturating_add(1);
+        for (key, value) in chunk.iter().zip(values) {
+            ensure!(value.is_none(), "synthetic miss resolved at key {key:02x?}");
+            ensure!(
+                snapshot
+                    .get_bounded(key, LOOKUP_BATCH_MAX_VALUE_BYTES)?
+                    .is_none(),
+                "synthetic point miss resolved at key {key:02x?}"
+            );
+            hash_lookup_result(&mut hasher, key, None);
+            synthetic_miss_checks = synthetic_miss_checks.saturating_add(1);
+        }
+        snapshot.reclaim_random_lookup_pages()?;
+    }
+    ensure!(
+        synthetic_miss_checks
+            == u64::try_from(synthetic_misses.len())
+                .context("synthetic miss count does not fit u64")?,
+        "synthetic miss checks did not cover every requested miss"
+    );
+    Ok(LookupEvidence {
+        present,
+        absent,
+        value_bytes,
+        point_checks,
+        synthetic_miss_checks,
+        lookup_batches,
+        sha256: hasher.finalize().into(),
+    })
+}
+
+/// Selects one bounded sorted-lookup batch and validates every indexed value
+/// length before `Snapshot::get_many_sorted` can allocate result buffers.
+pub(super) fn next_lookup_batch(entries: &[IndexEntry], start: usize) -> Result<(usize, u64)> {
+    ensure!(
+        start < entries.len(),
+        "lookup batch start is outside the sample"
+    );
+    let mut end = start;
+    let mut value_bytes = 0u64;
+    while end < entries.len() && end - start < LOOKUP_BATCH_MAX_ENTRIES {
+        let entry = &entries[end];
+        let entry_bytes = if entry.tombstone {
+            0
+        } else {
+            u64::from(entry.value_len)
+        };
+        ensure!(
+            entry_bytes <= LOOKUP_BATCH_MAX_VALUE_BYTES,
+            "sampled value length {entry_bytes} exceeds the sorted lookup batch limit of {LOOKUP_BATCH_MAX_VALUE_BYTES} bytes"
+        );
+        let next_value_bytes = value_bytes
+            .checked_add(entry_bytes)
+            .context("sorted lookup batch value bytes overflow")?;
+        if end > start && next_value_bytes > LOOKUP_BATCH_MAX_VALUE_BYTES {
+            break;
+        }
+        value_bytes = next_value_bytes;
+        end += 1;
+    }
+    ensure!(end > start, "sorted lookup batch made no progress");
+    Ok((end, value_bytes))
+}
+
+fn expected_value<'a>(snapshot: &'a Snapshot, entry: &IndexEntry) -> Result<Option<&'a [u8]>> {
+    if entry.tombstone {
+        return Ok(None);
+    }
+    let start = usize::try_from(entry.value_offset).context("sample value offset overflows")?;
+    let length = usize::try_from(entry.value_len).context("sample value length overflows")?;
+    let end = start
+        .checked_add(length)
+        .context("sample value range overflows")?;
+    let pack_map = snapshot
+        .lookup_pack_map
+        .as_deref()
+        .unwrap_or(&snapshot.pack_map);
+    Ok(Some(pack_map.as_slice().get(start..end).context(
+        "sample winner value lies outside the committed pack",
+    )?))
+}
+
+fn validate_entry_payload_range(entry: &IndexEntry, pack_bytes: usize) -> Result<()> {
+    if entry.tombstone {
+        ensure!(entry.value_len == 0, "tombstone winner carries a value");
+        return Ok(());
+    }
+    let start = usize::try_from(entry.value_offset).context("winner value offset overflows")?;
+    let length = usize::try_from(entry.value_len).context("winner value length overflows")?;
+    let end = start
+        .checked_add(length)
+        .context("winner value range overflows")?;
+    ensure!(
+        end <= pack_bytes,
+        "winner value lies outside committed pack"
+    );
+    Ok(())
+}
+
+fn sample_state_from_entry(map: &Mmap, entry: &IndexEntry) -> Result<SampleValueState> {
+    if entry.tombstone {
+        return Ok(SampleValueState::Absent);
+    }
+    let start = usize::try_from(entry.value_offset).context("frame sample offset overflows")?;
+    let length = usize::try_from(entry.value_len).context("frame sample length overflows")?;
+    let end = start
+        .checked_add(length)
+        .context("frame sample range overflows")?;
+    let value = map
+        .as_slice()
+        .get(start..end)
+        .context("frame sample winner lies outside committed pack")?;
+    Ok(SampleValueState::from_present(value))
+}
+
+fn digest_sample_keys(receipt: PackFrameReceipt, entries: &[IndexEntry]) -> [u8; 32] {
+    let mut hasher = evidence_hasher(SAMPLE_KEYSET_DIGEST_DOMAIN, receipt);
+    hasher.update(
+        u64::try_from(entries.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
+    for entry in entries {
+        hasher.update(entry.key);
+    }
+    hasher.finalize().into()
+}
+
+fn evidence_hasher(domain: &[u8], receipt: PackFrameReceipt) -> Sha256 {
+    let mut hasher = Sha256::new();
+    hasher.update(domain);
+    hasher.update(receipt.epoch.to_le_bytes());
+    hasher.update(receipt.frame_end.to_le_bytes());
+    hasher.update(receipt.payload_sha256);
+    hasher
+}
+
+fn hash_sample_state(hasher: &mut Sha256, key: &[u8; PACK_KEY_BYTES], state: SampleValueState) {
+    hasher.update(key);
+    match state {
+        SampleValueState::Absent => hasher.update([0]),
+        SampleValueState::Present { length, sha256 } => {
+            hasher.update([1]);
+            hasher.update(length.to_le_bytes());
+            hasher.update(sha256);
+        }
+    }
+}
+
+fn hash_lookup_result(hasher: &mut Sha256, key: &[u8; PACK_KEY_BYTES], value: Option<&[u8]>) {
+    hasher.update(key);
+    match value {
+        Some(value) => {
+            hasher.update([1]);
+            hasher.update(u64::try_from(value.len()).unwrap_or(u64::MAX).to_le_bytes());
+            hasher.update(value);
+        }
+        None => hasher.update([0]),
+    }
+}
+
+fn evenly_spaced_indices(length: usize, maximum: usize) -> Vec<usize> {
+    let count = length.min(maximum);
+    match count {
+        0 => Vec::new(),
+        1 => vec![0],
+        _ => (0..count)
+            .map(|index| {
+                usize::try_from((index as u128) * ((length - 1) as u128) / ((count - 1) as u128))
+                    .expect("evenly spaced index fits usize")
+            })
+            .collect(),
+    }
+}

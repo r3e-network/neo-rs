@@ -9,27 +9,38 @@
 //! Usage:
 //!   neo-pack-verify --mdbx <canonical-store-dir> --pack <shadow-packs-dir>
 //!     [--samples N] [--walk-cap N | --full-scan] [--maintain]
+//!     [--random-point-mmap]
 //!   neo-pack-verify --mode authority --network-magic <u32-or-hex>
 //!     --mdbx <canonical-store-dir> --pack <authoritative-packs-dir>
 //!     [--samples N] [--walk-cap N | --full-scan]
-//!     [--scrub] [--scrub-indexes] [--maintain]
+//!     [--scrub] [--scrub-indexes] [--lookup-digest-samples N]
+//!     [--random-point-mmap] [--maintain | --gc]
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail, ensure};
-use neo_crypto::Sha256Hasher;
 use neo_state_packs::authority::{AUTHORITATIVE_HIGH_WATER_KEY, AuthoritativeHighWaterRecord};
 use neo_state_packs::shadow::{SHADOW_HIGH_WATER_KEY, ShadowHighWaterRecord};
 use neo_state_packs::{
-    CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
-    PACK_KEY_BYTES, PACK_MANIFEST_FORMAT_VERSION, PackCommitHorizon, PackStore,
+    PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_KEY_BYTES,
+    PACK_MANIFEST_FORMAT_VERSION, PackCommitHorizon, PackStore, PackStoreOptions,
 };
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::persistence::{RawReadOnlyStore, StoreFactory, TransactionalStore};
 use serde::Deserialize;
+
+#[path = "neo_pack_verify/evidence.rs"]
+mod evidence;
+use evidence::{
+    gc_and_reopen_with_evidence, print_materialized_evidence, scrub_indexes_with_label,
+    validate_authority_mutation_flags,
+};
+#[path = "neo_pack_verify/checkpoint_compare.rs"]
+mod checkpoint_compare;
+use checkpoint_compare::{compare_checkpoint_nodes, decode_hash, parse_checkpoint_network_magic};
 
 const STATE_NODE_PREFIX: u8 = 0xf0;
 const STATE_SERVICE_NAMESPACE: &str = "neo_state_service";
@@ -38,7 +49,12 @@ const STATE_ROOT_PREFIX: u8 = 0x01;
 const STATE_ROOT_VALUE_ROOT_OFFSET: usize = 5;
 const STATE_ROOT_VALUE_UNSIGNED_LEN: usize = 1 + 4 + 32;
 const CHECKPOINT_SCHEMA_VERSION: u32 = 2;
-const BATCH: usize = 8192;
+const BATCH: usize = 1_024;
+// Neo MPT nodes are well below this defensive verifier ceiling. Keep a wider
+// protocol-independent margin while rejecting corrupt multi-gigabyte index
+// lengths before allocation.
+const AUTHORITY_LOOKUP_MAX_VALUE_BYTES: usize = 1024 * 1024;
+const AUTHORITY_LOOKUP_BATCH_VALUE_BYTES: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_INDEX_MEMORY_MB: u64 = 256;
 const DEFAULT_WALK_CAP: u64 = 100_000;
 
@@ -127,6 +143,9 @@ fn main() -> Result<()> {
     let mut maintain = false;
     let mut scrub = false;
     let mut scrub_indexes = false;
+    let mut lookup_digest_samples = 0usize;
+    let mut random_point_mmap = false;
+    let mut gc = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -173,6 +192,17 @@ fn main() -> Result<()> {
             "--maintain" => maintain = true,
             "--scrub" => scrub = true,
             "--scrub-indexes" => scrub_indexes = true,
+            "--lookup-digest-samples" => {
+                lookup_digest_samples = args
+                    .next()
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .context("--lookup-digest-samples requires a number")?;
+                if lookup_digest_samples == 0 {
+                    bail!("--lookup-digest-samples must be greater than zero");
+                }
+            }
+            "--random-point-mmap" => random_point_mmap = true,
+            "--gc" => gc = true,
             "--full-scan" => {
                 if walk_cap_set {
                     bail!("--full-scan conflicts with --walk-cap");
@@ -194,6 +224,13 @@ fn main() -> Result<()> {
             !scrub_indexes,
             "--scrub-indexes is only valid with --mode authority"
         );
+        ensure!(
+            lookup_digest_samples == 0,
+            "--lookup-digest-samples is only valid with --mode authority"
+        );
+        ensure!(!gc, "--gc is only valid with --mode authority");
+    } else {
+        validate_authority_mutation_flags(maintain, gc, scrub_indexes, lookup_digest_samples)?;
     }
 
     let canonical: Arc<RuntimeStore> = StoreFactory::get_store_with_config(
@@ -215,12 +252,15 @@ fn main() -> Result<()> {
             &pack_path,
             network_magic.context("--network-magic is required with --mode authority")?,
             max_index_memory_mb,
+            PackStoreOptions { random_point_mmap },
             samples,
             walk_cap,
             full_scan,
             maintain,
             scrub,
             scrub_indexes,
+            lookup_digest_samples,
+            gc,
         )
         .map(|_| ());
     }
@@ -251,10 +291,11 @@ fn main() -> Result<()> {
     let max_index_memory_bytes = max_index_memory_mb
         .checked_mul(1024 * 1024)
         .context("--max-index-memory-mb overflows bytes")?;
-    let mut pack = PackStore::open_at_commit_horizon(
+    let mut pack = PackStore::open_at_commit_horizon_with_options(
         &pack_path,
         max_index_memory_bytes,
         Some(high_water.commit_horizon()),
+        PackStoreOptions { random_point_mmap },
     )
     .context("opening bounded shadow packs at the canonical high-water marker")?;
     let opened = pack.open_validation();
@@ -325,6 +366,7 @@ fn main() -> Result<()> {
                 (None, _) => absent += 1,
             }
         }
+        pack.reclaim_random_lookup_pages()?;
     }
 
     println!("matched: {matched}");
@@ -352,13 +394,20 @@ fn verify_authority(
     pack_path: &Path,
     network_magic: u32,
     max_index_memory_mb: u64,
+    pack_options: PackStoreOptions,
     samples: usize,
     walk_cap: u64,
     full_scan: bool,
     maintain: bool,
     scrub: bool,
     scrub_indexes: bool,
+    lookup_digest_samples: usize,
+    gc: bool,
 ) -> Result<AuthorityState> {
+    // Keep the mutation contract enforced here as well as in CLI parsing. The
+    // verifier is unit-tested through this function directly, and callers
+    // embedding the verifier must not be able to skip the evidence gate.
+    validate_authority_mutation_flags(maintain, gc, scrub_indexes, lookup_digest_samples)?;
     let checkpoint = read_checkpoint(pack_path)?;
     let binding = validate_checkpoint(&checkpoint, network_magic)?;
     let state_tip = read_state_tip(state_store)?;
@@ -426,18 +475,34 @@ fn verify_authority(
             )
         }
     };
+    ensure!(
+        authority_state != AuthorityState::Checkpoint || full_scan,
+        "unactivated checkpoint authority verification requires --full-scan of the independent MDBX namespace"
+    );
+    ensure!(
+        authority_state != AuthorityState::Checkpoint || scrub,
+        "unactivated checkpoint authority verification requires --scrub of the complete pack namespace"
+    );
+    ensure!(
+        authority_state != AuthorityState::Checkpoint || scrub_indexes,
+        "unactivated checkpoint authority verification requires --scrub-indexes of every derived run"
+    );
 
     let max_index_memory_bytes = max_index_memory_mb
         .checked_mul(1024 * 1024)
         .context("--max-index-memory-mb overflows bytes")?;
-    let mut pack =
-        PackStore::open_at_commit_horizon(pack_path, max_index_memory_bytes, Some(horizon))
-            .with_context(|| {
-                format!(
-                    "open authoritative packs at the canonical horizon {}",
-                    pack_path.display()
-                )
-            })?;
+    let mut pack = PackStore::open_at_commit_horizon_with_options(
+        pack_path,
+        max_index_memory_bytes,
+        Some(horizon),
+        pack_options,
+    )
+    .with_context(|| {
+        format!(
+            "open authoritative packs at the canonical horizon {}",
+            pack_path.display()
+        )
+    })?;
     let opened = pack.open_validation();
     let receipt = pack
         .last_frame_receipt()
@@ -477,6 +542,54 @@ fn verify_authority(
             plan.max_workspace_bytes(),
         );
     }
+    if scrub_indexes {
+        scrub_indexes_with_label(
+            if maintain {
+                "pre-maintenance"
+            } else if gc {
+                "pre-gc"
+            } else if authority_state == AuthorityState::Checkpoint {
+                "checkpoint"
+            } else {
+                "current"
+            },
+            &pack,
+        )?;
+    }
+    ensure_authoritative_root(&pack, state_tip.1)?;
+    if authority_state == AuthorityState::Checkpoint {
+        compare_checkpoint_nodes(
+            state_store,
+            &pack,
+            &checkpoint,
+            binding.store_identity,
+            samples,
+            walk_cap,
+            full_scan,
+        )?;
+    }
+    ensure!(
+        read_state_tip(state_store)? == state_tip,
+        "StateService tip changed during pre-mutation authority verification"
+    );
+    let pre_maintenance_evidence = if lookup_digest_samples == 0 {
+        None
+    } else {
+        let evidence = pack
+            .materialized_view_evidence(lookup_digest_samples)
+            .context("produce pre-maintenance materialized-view evidence")?;
+        print_materialized_evidence(
+            if maintain {
+                "pre-maintenance"
+            } else if gc {
+                "pre-gc"
+            } else {
+                "current"
+            },
+            &evidence,
+        );
+        Some(evidence)
+    };
 
     if scrub {
         let stats = if authority_state == AuthorityState::Checkpoint {
@@ -517,9 +630,40 @@ fn verify_authority(
         );
     }
     if maintain {
-        pack.maintain()
-            .context("maintaining derived authoritative pack indexes")?;
+        let before = pre_maintenance_evidence
+            .as_ref()
+            .context("authority maintenance requires pre-adoption evidence")?;
+        let mut candidate_cycles = 0u64;
+        while let Some(plan) = pack
+            .plan_compaction()
+            .context("plan authoritative pack compaction")?
+        {
+            let prepared = plan
+                .build()
+                .context("build staged authoritative pack compaction")?;
+            let candidate = pack
+                .prepared_compaction_evidence(&prepared, lookup_digest_samples)
+                .context("produce pre-adoption compaction evidence")?;
+            let label = format!("candidate-{}", candidate_cycles + 1);
+            print_materialized_evidence(&label, &candidate);
+            ensure!(
+                before.state_matches(&candidate),
+                "staged compaction changes materialized winner or lookup evidence"
+            );
+            pack.scrub_prepared_compaction(&prepared)?;
+            pack.adopt_compaction(prepared)
+                .context("publish validated authoritative pack compaction")?;
+            candidate_cycles = candidate_cycles.saturating_add(1);
+        }
+        ensure!(
+            candidate_cycles > 0,
+            "--maintain found no compaction plan; rerun verification without mutation"
+        );
         let stats = pack.compaction_stats();
+        ensure!(
+            stats.cycles == candidate_cycles,
+            "published compaction cycles differ from validated candidate cycles"
+        );
         println!(
             "maintained: cycles={} runs_merged={} runs_produced={} input_records={} output_records={} bytes_written={} wall_ns={}",
             stats.cycles,
@@ -530,43 +674,68 @@ fn verify_authority(
             stats.bytes_written,
             stats.wall_ns,
         );
+        if let Some(before) = pre_maintenance_evidence {
+            let after = pack
+                .materialized_view_evidence(lookup_digest_samples)
+                .context("produce post-maintenance materialized-view evidence")?;
+            print_materialized_evidence("post-maintenance", &after);
+            ensure!(
+                before.state_matches(&after),
+                "materialized winner or lookup evidence changed across maintenance"
+            );
+            scrub_indexes_with_label("post-maintenance", &pack)?;
+            drop(pack);
+            pack = PackStore::open_at_commit_horizon_with_options(
+                pack_path,
+                max_index_memory_bytes,
+                Some(horizon),
+                pack_options,
+            )
+            .context("reopen authoritative packs after maintenance")?;
+            let reopened = pack
+                .materialized_view_evidence(lookup_digest_samples)
+                .context("produce reopened materialized-view evidence")?;
+            print_materialized_evidence("reopened", &reopened);
+            ensure!(
+                after.state_matches(&reopened),
+                "materialized winner or lookup evidence changed after reopen"
+            );
+            let reopened_receipt = pack
+                .last_frame_receipt()
+                .context("reopened authoritative pack has no committed frame")?;
+            ensure!(
+                reopened_receipt.epoch == horizon.epoch
+                    && reopened_receipt.frame_end == expected_frame_end
+                    && reopened_receipt.payload_sha256 == expected_payload,
+                "reopened authoritative pack tip differs from its canonical checkpoint/marker"
+            );
+            println!("maintenance equivalence: pre/post/reopen evidence matches exactly");
+        }
     }
-    if scrub_indexes {
-        let stats = pack
-            .scrub_index_runs()
-            .context("scrub every live authoritative index run")?;
-        println!(
-            "scrubbed indexes: runs={} v3_runs={} v4_runs={} records={} record_bytes={}",
-            stats.runs, stats.v3_runs, stats.v4_runs, stats.records, stats.record_bytes,
-        );
+    if maintain {
+        scrub_indexes_with_label("reopened", &pack)?;
     }
-
-    let mut root_key = [0u8; PACK_KEY_BYTES];
-    root_key[0] = STATE_NODE_PREFIX;
-    root_key[1..].copy_from_slice(&state_tip.1);
-    ensure!(
-        pack.get(&root_key)
-            .context("resolve authoritative StateService root node")?
-            .is_some(),
-        "authoritative pack does not contain the StateService root node"
-    );
-    println!("root node: reachable at 0x{}", hex::encode(root_key));
-
-    if authority_state == AuthorityState::Checkpoint {
-        compare_checkpoint_nodes(
-            state_store,
-            &pack,
-            &checkpoint,
-            binding.store_identity,
-            samples,
-            walk_cap,
-            full_scan,
+    if gc {
+        let before = pre_maintenance_evidence.context("GC requires materialized evidence")?;
+        pack = gc_and_reopen_with_evidence(
+            pack,
+            pack_path,
+            max_index_memory_bytes,
+            horizon,
+            pack_options,
+            lookup_digest_samples,
+            &before,
         )?;
-        ensure!(
-            read_state_tip(state_store)? == state_tip,
-            "StateService tip changed during checkpoint verification"
-        );
-    } else {
+    }
+
+    if maintain || gc {
+        ensure_authoritative_root(&pack, state_tip.1)?;
+    }
+    ensure!(
+        read_state_tip(state_store)? == state_tip,
+        "StateService tip changed during authority verification"
+    );
+    if authority_state == AuthorityState::Marker {
         println!(
             "MDBX node comparison: skipped after activation; the marker-bound pack is authoritative"
         );
@@ -581,93 +750,17 @@ fn verify_authority(
     Ok(authority_state)
 }
 
-fn compare_checkpoint_nodes(
-    state_store: &RuntimeStore,
-    pack: &PackStore,
-    checkpoint: &CheckpointMarker,
-    expected_digest: [u8; 32],
-    samples: usize,
-    walk_cap: u64,
-    full_scan: bool,
-) -> Result<()> {
-    let mut hasher = Sha256Hasher::new();
-    hasher.update(CHECKPOINT_NAMESPACE_DIGEST_DOMAIN);
-    let mut rng = XorShift64(0x9E37_79B9_7F4A_7C15);
-    let mut reservoir: Vec<([u8; PACK_KEY_BYTES], Vec<u8>)> = Vec::with_capacity(samples);
-    let mut total_keys = 0u64;
-    let mut total_value_bytes = 0u64;
-    let maximum = (!full_scan).then_some(walk_cap);
-    state_store.visit_raw_entries_with_prefix(&[STATE_NODE_PREFIX], maximum, |key, value| {
-        if key.len() != PACK_KEY_BYTES || key.first() != Some(&STATE_NODE_PREFIX) {
-            return Err(neo_storage::StorageError::invalid_operation(
-                "StateService node scan returned a malformed key",
-            ));
-        }
-        let key: [u8; PACK_KEY_BYTES] = key.try_into().expect("validated pack key");
-        hasher.update(&(key.len() as u32).to_le_bytes());
-        hasher.update(&key);
-        hasher.update(&(value.len() as u64).to_le_bytes());
-        hasher.update(value);
-        total_value_bytes = total_value_bytes.saturating_add(value.len() as u64);
-        if (total_keys as usize) < samples {
-            reservoir.push((key, value.to_vec()));
-        } else if samples != 0 {
-            let index = rng.next() % (total_keys + 1);
-            if (index as usize) < samples {
-                reservoir[index as usize] = (key, value.to_vec());
-            }
-        }
-        total_keys = total_keys.saturating_add(1);
-        Ok(())
-    })?;
-    if full_scan {
-        ensure!(
-            total_keys == checkpoint.rows && total_value_bytes == checkpoint.value_bytes,
-            "full MDBX node geometry differs from checkpoint.json"
-        );
-        ensure!(
-            hasher.finalize() == expected_digest,
-            "full MDBX node namespace digest differs from checkpoint.json"
-        );
-        println!(
-            "full MDBX evidence: rows={} value_bytes={} digest=0x{}",
-            total_keys,
-            total_value_bytes,
-            hex::encode(expected_digest),
-        );
-    } else if total_keys >= walk_cap {
-        println!("walk capped at {walk_cap} keys (prefix-bounded sample)");
-    }
-    println!(
-        "mdbx checkpoint node keys: {total_keys}; sampled: {}",
-        reservoir.len()
+fn ensure_authoritative_root(pack: &PackStore, root: [u8; 32]) -> Result<()> {
+    let mut root_key = [0u8; PACK_KEY_BYTES];
+    root_key[0] = STATE_NODE_PREFIX;
+    root_key[1..].copy_from_slice(&root);
+    ensure!(
+        pack.get_bounded(&root_key, AUTHORITY_LOOKUP_MAX_VALUE_BYTES as u64)
+            .context("resolve authoritative StateService root node")?
+            .is_some(),
+        "authoritative pack does not contain the StateService root node"
     );
-
-    reservoir.sort_unstable_by_key(|entry| entry.0);
-    let mut matched = 0u64;
-    let mut first_mismatch = None;
-    for chunk in reservoir.chunks(BATCH) {
-        let keys = chunk.iter().map(|(key, _)| *key).collect::<Vec<_>>();
-        let values = pack.get_many_sorted(&keys)?;
-        for ((key, expected), actual) in chunk.iter().zip(values) {
-            if actual.as_deref() == Some(expected.as_slice()) {
-                matched = matched.saturating_add(1);
-            } else if first_mismatch.is_none() {
-                first_mismatch = Some((*key, expected.clone(), actual.unwrap_or_default()));
-            }
-        }
-    }
-    println!("checkpoint sample matched: {matched}");
-    if let Some((key, expected, actual)) = first_mismatch {
-        bail!(
-            "checkpoint differs from MDBX at 0x{}: mdbx {} bytes (0x{}...), pack {} bytes (0x{}...)",
-            hex::encode(key),
-            expected.len(),
-            hex::encode(&expected[..expected.len().min(16)]),
-            actual.len(),
-            hex::encode(&actual[..actual.len().min(16)]),
-        );
-    }
+    println!("root node: reachable at 0x{}", hex::encode(root_key));
     Ok(())
 }
 
@@ -793,22 +886,3 @@ fn parse_u32(value: &str) -> Result<u32> {
 }
 
 include!("../neo_pack_verify_tests.rs");
-
-fn parse_checkpoint_network_magic(value: &str) -> Result<u32> {
-    let value = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-        .context("checkpoint network magic lacks 0x prefix")?;
-    u32::from_str_radix(value, 16).context("decode checkpoint network magic")
-}
-
-fn decode_hash(value: &str, field: &'static str) -> Result<[u8; 32]> {
-    let value = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-        .with_context(|| format!("{field} lacks 0x prefix"))?;
-    let bytes = hex::decode(value).with_context(|| format!("decode {field}"))?;
-    bytes
-        .try_into()
-        .map_err(|bytes: Vec<u8>| anyhow::anyhow!("{field} has {} bytes, expected 32", bytes.len()))
-}

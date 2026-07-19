@@ -50,10 +50,7 @@ pub(super) fn merge_sorted_runs(
     sources: &[MergeSource<'_>],
     mut visit: impl FnMut(u64, &IndexEntry, &[u8; INDEX_RECORD_LEN]) -> Result<()>,
 ) -> Result<MergeEvidence> {
-    ensure!(
-        sources.len() >= 2,
-        "compaction requires at least two inputs"
-    );
+    ensure!(!sources.is_empty(), "merge requires at least one input");
     let mut cursors: Vec<_> = sources
         .iter()
         .enumerate()

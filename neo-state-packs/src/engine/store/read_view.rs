@@ -14,9 +14,38 @@ impl ReadView<'_> {
         self.lookup(key, None)
     }
 
+    pub(super) fn get_bounded(
+        &self,
+        key: &[u8; PACK_KEY_BYTES],
+        max_value_bytes: u64,
+    ) -> Result<Option<Vec<u8>>> {
+        let Some(entry) = self.lookup_entry(key, None)? else {
+            return Ok(None);
+        };
+        Self::ensure_value_bound(&entry, max_value_bytes)?;
+        self.entry_value(entry)
+    }
+
     pub(super) fn get_many_sorted(
         &self,
         keys: &[[u8; PACK_KEY_BYTES]],
+    ) -> Result<Vec<Option<Vec<u8>>>> {
+        self.get_many_sorted_with_limits(keys, None)
+    }
+
+    pub(super) fn get_many_sorted_bounded(
+        &self,
+        keys: &[[u8; PACK_KEY_BYTES]],
+        max_value_bytes: u64,
+        max_total_value_bytes: u64,
+    ) -> Result<Vec<Option<Vec<u8>>>> {
+        self.get_many_sorted_with_limits(keys, Some((max_value_bytes, max_total_value_bytes)))
+    }
+
+    fn get_many_sorted_with_limits(
+        &self,
+        keys: &[[u8; PACK_KEY_BYTES]],
+        limits: Option<(u64, u64)>,
     ) -> Result<Vec<Option<Vec<u8>>>> {
         ensure!(
             keys.windows(2).all(|pair| pair[0] <= pair[1]),
@@ -25,11 +54,22 @@ impl ReadView<'_> {
         let mut cursors = vec![0usize; self.runs.len()];
         let mut results = vec![None; keys.len()];
         let mut values = Vec::new();
+        let mut total_value_bytes = 0u64;
         for (output_index, key) in keys.iter().enumerate() {
             let Some(entry) = self.lookup_entry(key, Some(&mut cursors))? else {
                 continue;
             };
             if !entry.tombstone {
+                if let Some((max_value_bytes, max_total_value_bytes)) = limits {
+                    Self::ensure_value_bound(&entry, max_value_bytes)?;
+                    total_value_bytes = total_value_bytes
+                        .checked_add(u64::from(entry.value_len))
+                        .context("batch value byte count overflows")?;
+                    ensure!(
+                        total_value_bytes <= max_total_value_bytes,
+                        "batch values require {total_value_bytes} bytes, exceeding the configured limit of {max_total_value_bytes} bytes"
+                    );
+                }
                 values.push((output_index, entry));
             }
         }
@@ -58,6 +98,15 @@ impl ReadView<'_> {
             results[output_index] = Some(value);
         }
         Ok(results)
+    }
+
+    fn ensure_value_bound(entry: &IndexEntry, max_value_bytes: u64) -> Result<()> {
+        let value_bytes = u64::from(entry.value_len);
+        ensure!(
+            value_bytes <= max_value_bytes,
+            "indexed value length {value_bytes} exceeds the configured limit of {max_value_bytes} bytes"
+        );
+        Ok(())
     }
 
     /// Newest-first verified lookup: the compact range directory rejects
@@ -147,10 +196,32 @@ impl Snapshot {
         self.view().get(key)
     }
 
+    /// Newest-committed-version point read that rejects an oversized indexed
+    /// value before allocating its result buffer.
+    pub fn get_bounded(
+        &self,
+        key: &[u8; PACK_KEY_BYTES],
+        max_value_bytes: u64,
+    ) -> Result<Option<Vec<u8>>> {
+        self.view().get_bounded(key, max_value_bytes)
+    }
+
     /// Filter-assisted k-way batch read. Keys must be sorted ascending;
     /// results align one-to-one with the input order.
     pub fn get_many_sorted(&self, keys: &[[u8; PACK_KEY_BYTES]]) -> Result<Vec<Option<Vec<u8>>>> {
         self.view().get_many_sorted(keys)
+    }
+
+    /// Sorted batch read that validates every indexed value and the complete
+    /// returned-value budget before allocating any value buffer.
+    pub fn get_many_sorted_bounded(
+        &self,
+        keys: &[[u8; PACK_KEY_BYTES]],
+        max_value_bytes: u64,
+        max_total_value_bytes: u64,
+    ) -> Result<Vec<Option<Vec<u8>>>> {
+        self.view()
+            .get_many_sorted_bounded(keys, max_value_bytes, max_total_value_bytes)
     }
 
     fn view(&self) -> ReadView<'_> {
@@ -161,6 +232,25 @@ impl Snapshot {
             lookup_pack_map: self.lookup_pack_map.as_deref(),
         }
     }
+
+    pub(super) fn reclaim_random_lookup_pages(&self) -> Result<()> {
+        reclaim_random_lookup_pages(&self.runs, self.lookup_pack_map.as_deref())
+    }
+}
+
+pub(super) fn reclaim_random_lookup_pages(
+    runs: &[LiveRun],
+    lookup_pack_map: Option<&Mmap>,
+) -> Result<()> {
+    for live in runs {
+        if let Some(map) = live.run.lookup_map.as_ref() {
+            let _ = map.advise_dontneed(0, map.as_slice().len())?;
+        }
+    }
+    if let Some(map) = lookup_pack_map {
+        let _ = map.advise_dontneed(0, map.as_slice().len())?;
+    }
+    Ok(())
 }
 
 impl Drop for Snapshot {

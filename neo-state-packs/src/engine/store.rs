@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{BufWriter, Seek, SeekFrom, Write};
-use std::os::unix::fs::FileExt;
+use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -30,6 +30,8 @@ use read_view::ReadView;
 pub use read_view::Snapshot;
 mod scrub;
 use scrub::*;
+mod evidence;
+pub use evidence::PackMaterializedViewEvidence;
 mod maintenance;
 mod publication;
 mod recovery;
@@ -61,6 +63,8 @@ const FRAME_ROW_HEADER_BYTES: u64 = (PACK_KEY_BYTES + 1 + 4) as u64;
 const MAX_FRAME_ROWS: u64 = 4_000_000;
 const MAX_FRAME_PAYLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const WRITER_LEASE_FILE: &str = "writer.lock";
+const WRITER_LEASE_RETRY_ATTEMPTS: usize = 10;
+const WRITER_LEASE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(5);
 /// Sorted records covered by one sparse fence entry (~3.2 KiB of records).
 const FENCE_INTERVAL: usize = 64;
 /// Fence entries store the truncated first key of their record block.
@@ -422,7 +426,7 @@ struct PendingMerge {
     level: u32,
     min_epoch: u64,
     max_epoch: u64,
-    run: IndexRun,
+    run: Arc<IndexRun>,
     input_runs: u64,
     input_records: u64,
     output_records: u64,
@@ -694,6 +698,7 @@ fn acquire_writer_lease(root: &Path) -> Result<File> {
         .create_new(true)
         .read(true)
         .write(true)
+        .custom_flags(libc::O_CLOEXEC)
         .open(&lease_path)
     {
         Ok(file) => (file, true),
@@ -701,6 +706,7 @@ fn acquire_writer_lease(root: &Path) -> Result<File> {
             OpenOptions::new()
                 .read(true)
                 .write(true)
+                .custom_flags(libc::O_CLOEXEC)
                 .open(&lease_path)
                 .with_context(|| format!("open writer lease {}", lease_path.display()))?,
             false,
@@ -710,20 +716,28 @@ fn acquire_writer_lease(root: &Path) -> Result<File> {
                 .with_context(|| format!("create writer lease {}", lease_path.display()));
         }
     };
-    match lease.try_lock() {
-        Ok(()) => {}
-        Err(TryLockError::WouldBlock) => {
-            return Err(PackStoreError::WriterOwned {
-                path: fs::canonicalize(&lease_path).unwrap_or(lease_path),
+    for attempt in 0..=WRITER_LEASE_RETRY_ATTEMPTS {
+        match lease.try_lock() {
+            Ok(()) => break,
+            Err(TryLockError::WouldBlock) if attempt < WRITER_LEASE_RETRY_ATTEMPTS => {
+                // `flock` is inherited between fork and exec. A concurrent
+                // subprocess can therefore retain another test/thread's
+                // CLOEXEC lease for a few milliseconds after its owner drops.
+                std::thread::sleep(WRITER_LEASE_RETRY_DELAY);
             }
-            .into());
-        }
-        Err(TryLockError::Error(source)) => {
-            return Err(PackStoreError::WriterLease {
-                path: fs::canonicalize(&lease_path).unwrap_or(lease_path),
-                source,
+            Err(TryLockError::WouldBlock) => {
+                return Err(PackStoreError::WriterOwned {
+                    path: fs::canonicalize(&lease_path).unwrap_or(lease_path),
+                }
+                .into());
             }
-            .into());
+            Err(TryLockError::Error(source)) => {
+                return Err(PackStoreError::WriterLease {
+                    path: fs::canonicalize(&lease_path).unwrap_or(lease_path),
+                    source,
+                }
+                .into());
+            }
         }
     }
     if created {

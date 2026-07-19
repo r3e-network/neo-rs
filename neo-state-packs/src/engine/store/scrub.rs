@@ -1,6 +1,10 @@
 use super::*;
 
-pub(super) fn scrub_live_index_run(live: &LiveRun, runs_dir: &Path) -> Result<()> {
+pub(super) fn scrub_live_index_run(
+    live: &LiveRun,
+    runs_dir: &Path,
+    committed_pack_bytes: u64,
+) -> Result<()> {
     let path = runs_dir.join(run_file_name(live.level, live.min_epoch, live.max_epoch));
     let file = File::open(&path)
         .with_context(|| format!("open index run {} for scrub", path.display()))?;
@@ -36,6 +40,7 @@ pub(super) fn scrub_live_index_run(live: &LiveRun, runs_dir: &Path) -> Result<()
         hasher.update(chunk);
         for record in chunk.chunks_exact(INDEX_RECORD_LEN) {
             let entry = decode_record(record)?;
+            validate_index_entry_payload_range(&entry, committed_pack_bytes)?;
             if let Some(previous) = previous {
                 ensure!(
                     previous.key < entry.key
@@ -73,5 +78,27 @@ pub(super) fn scrub_live_index_run(live: &LiveRun, runs_dir: &Path) -> Result<()
         "index records checksum mismatch during scrub"
     );
     let _ = map.advise_dontneed(release_start, map.as_slice().len())?;
+    Ok(())
+}
+
+pub(super) fn validate_index_entry_payload_range(
+    entry: &IndexEntry,
+    committed_pack_bytes: u64,
+) -> Result<()> {
+    if entry.tombstone {
+        ensure!(
+            entry.value_len == 0,
+            "tombstone index entry carries a value"
+        );
+        return Ok(());
+    }
+    let value_end = entry
+        .value_offset
+        .checked_add(u64::from(entry.value_len))
+        .context("indexed value range overflows")?;
+    ensure!(
+        value_end <= committed_pack_bytes,
+        "indexed value range ends at {value_end}, beyond the committed pack length of {committed_pack_bytes} bytes"
+    );
     Ok(())
 }

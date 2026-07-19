@@ -16,6 +16,7 @@
 //! - `mmap`: the scoped read-only mapping implementation.
 //! - `store`: append, recovery, lookup, compaction, leases, and GC.
 
+mod failpoint;
 mod filter;
 mod manifest;
 mod merge;
@@ -28,6 +29,6 @@ pub use store::{
     CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, CheckpointNamespaceEvidence, CompactionDebt,
     CompactionStats, GcStats, OpenValidation, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
     PACK_INDEX_RUN_FORMAT_VERSION, PackCommitHorizon, PackCompactionPlan, PackFrameReceipt,
-    PackIndexScrubStats, PackScrubStats, PackStore, PackStoreError, PackStoreOptions,
-    PreparedAppend, PreparedPackCompaction, SealedAppend, Snapshot,
+    PackIndexScrubStats, PackMaterializedViewEvidence, PackScrubStats, PackStore, PackStoreError,
+    PackStoreOptions, PreparedAppend, PreparedPackCompaction, SealedAppend, Snapshot,
 };

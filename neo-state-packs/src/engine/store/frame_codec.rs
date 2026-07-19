@@ -401,7 +401,22 @@ pub(super) fn validate_payload_rows_with<F>(
 where
     F: FnMut(&[u8; PACK_KEY_BYTES], u8, &[u8]) -> Result<()>,
 {
+    validate_payload_rows_with_progress(payload, expected_rows, visit, &mut |_, _| Ok(()))
+}
+
+pub(super) fn validate_payload_rows_with_progress<F, P>(
+    payload: &[u8],
+    expected_rows: usize,
+    visit: &mut F,
+    progress: &mut P,
+) -> Result<PayloadRowStats>
+where
+    F: FnMut(&[u8; PACK_KEY_BYTES], u8, &[u8]) -> Result<()>,
+    P: FnMut(&[u8], usize) -> Result<()>,
+{
+    const PROGRESS_BYTES: usize = 1024 * 1024;
     let mut offset = 0usize;
+    let mut progress_start = 0usize;
     let mut rows = 0usize;
     let mut stats = PayloadRowStats::default();
     while offset < payload.len() {
@@ -432,7 +447,14 @@ where
             );
         }
         offset = value_end;
+        if offset - progress_start >= PROGRESS_BYTES {
+            progress(&payload[progress_start..offset], offset)?;
+            progress_start = offset;
+        }
         rows = rows.checked_add(1).context("frame row count overflows")?;
+    }
+    if progress_start < offset {
+        progress(&payload[progress_start..offset], offset)?;
     }
     ensure!(rows == expected_rows, "frame row count mismatch");
     stats.rows = u64::try_from(rows).context("frame row count does not fit u64")?;
