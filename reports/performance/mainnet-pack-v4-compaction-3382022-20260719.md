@@ -18,8 +18,9 @@ A separate evidence-gated GC invocation then deleted 272 obsolete run files and
 the pack, and reproduced the same evidence exactly.
 
 This is a successful compaction and GC correctness result. It is not a node
-blocks-per-second result, and its roughly 6 GiB peak RSS remains a resource
-optimization target.
+blocks-per-second result. The compaction/GC processes still peak near 6 GiB,
+while the separately measured read-only frame-reference verifier now has a
+bounded 1.55 GiB RSS path.
 
 ## Reproducibility
 
@@ -169,6 +170,7 @@ traffic.
 | Maintain + all gates | 488.54 s | 6,412,972 KiB | 151,264 | 387,253,920 | 22,640,384 |
 | Verified GC + all gates | 194.06 s | 5,592,588 KiB | 77,571 | 171,266,864 | 72 |
 | Final binary, read-only source pack | 83.26 s | 36,480,316 KiB | 40,106 | 131,684,320 | 24 |
+| Bounded frame-reference revalidation | 100.92 s | 1,624,984 KiB | 61,817 | 64,905,592 | 32 |
 
 The maintain invocation's filesystem output is 11,591,876,608 bytes after the
 512-byte conversion, closely tracking the reported 11,591,808,326-byte v4 run.
@@ -196,6 +198,28 @@ time. This confirms that verifier mmap residency still varies materially with
 cache state and host memory pressure. The low-memory gate remains failed; no
 bounded-RSS claim is made from the lower earlier samples.
 
+## Bounded frame-reference revalidation
+
+Commit `31230cf34b8c32a99cf18da3ee902d7c35b11e6d` changes only the independent
+winner-offset reference path: it uses a dedicated `MADV_RANDOM` mapping, reads
+sampled values in physical offset order, hashes values in 4 MiB chunks, and
+periodically drops that mapping's resident pages. The canonical snapshot and
+live point-reader mappings are not used for this sparse pass.
+
+The same release verifier reopened the unmodified generation-19 MainNet source
+pack at height 3,382,022 and passed the mandatory authority gate. It scrubbed
+all 264 frames and 225,073,562 rows, merge-walked 225,048,697 source index
+records, resolved 225,009,452 winners, replayed 100,000 frame references, and
+returned the exact prior winner, frame-reference, lookup, root, and marker
+digests. The frame-reference and complete evidence phases took 53.615 and
+79.920 seconds respectively; no pack or index was mutated.
+
+Peak RSS was 1,624,984 KiB (1.549706 GiB), 95.55% below the earlier 34.790 GiB
+outlier and 72.56% below the 5.648 GiB split-evidence run. These are separate
+process runs on a cache-sensitive host, so this is a memory-bound correctness
+result, not a controlled wall-time speedup claim. The compaction and GC RSS
+gates remain unchanged.
+
 ## Limitations
 
 - This campaign did not import blocks or execute transactions. It proves the
@@ -203,8 +227,8 @@ bounded-RSS claim is made from the lower earlier samples.
   any other node throughput target.
 - Maintenance peaked at 6,412,972 KiB (6.116 GiB) RSS and GC at 5,592,588 KiB
   (5.334 GiB). The 1 GiB limit bounds compaction workspace, not every resident
-  mmap page and verifier structure. Final-binary read-only revalidation peaked
-  at 36,480,316 KiB (34.790 GiB), so further RSS work is required.
+  mmap page and verifier structure. The bounded frame-reference path peaked at
+  1,624,984 KiB, but compaction/GC still require a separate memory budget.
 - After activation the mandatory marker makes the pack authoritative, so MDBX
   `0xf0` node comparison is intentionally skipped. This gate combines marker
   identity, root reachability, complete winner/frame evidence, bounded lookup
@@ -232,3 +256,5 @@ bounded-RSS claim is made from the lower earlier samples.
 - `mainnet-pack-v4-gc-3382022-20260719.log`
 - `mainnet-pack-v4-gc-3382022-20260719-time.txt`
 - `pack-compaction-workspace-guard-20260719.md`
+- `mainnet-pack-v4-frame-reference-bounded-3382022-20260719.log`
+- `mainnet-pack-v4-frame-reference-bounded-3382022-20260719-time.txt`

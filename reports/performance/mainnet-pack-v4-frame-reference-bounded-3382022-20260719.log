@@ -1,0 +1,12 @@
+authority marker: epoch=263 frame_end=55392359055 block=3382022 root=0xd5f0b14d87ceaed5a4219d783f4ed592101438488dea6178684ac08a5d4ef939 payload_sha256=0xf499135f867280b9e49278b0ba3a077520fd10040747734d1d21650776ea896d
+opened: frames=264 runs=24 index_entries=225048697 tip_epoch=263 tip_frame_end=55392359055
+compaction debt: live_runs=24 excess_runs=8 decoded_index_bytes=609889650 max_index_memory_bytes=1073741824 backpressure=false
+compaction plan: estimated_peak_bytes=1002588690 max_workspace_bytes=1073741824
+scrubbed indexes (current): runs=24 v3_runs=24 v4_runs=0 records=225048697 record_bytes=11252434850
+root node: reachable at 0xf0d5f0b14d87ceaed5a4219d783f4ed592101438488dea6178684ac08a5d4ef939
+materialized evidence (current): generation=19 live_runs=24 source_records=225048697 tip_epoch=263 tip_frame_end=55392359055 winners=225009452 puts=225009452 tombstones=0 value_bytes=46831056072 winner_records_sha256=0x11f8de24ef72e495fd7c3c30e976c3bc6792e2243fb00a817176297141fba87e
+lookup evidence (current): requested=100000 sampled=4096 sample_keys_sha256=0x243e083c0f08070b589680392125a3d2fff5832aca62a6e252263b7eb31317a2 present=4096 absent=0 value_bytes=864246 batches=5 point_checks=4096 synthetic_misses=256 sha256=0x351b31be8b9a6240fb87b5ec9c0c2262151fca76acd6fc7243f323f3ff4663f3
+frame reference (current): sampled=100000 scrub_frames=264 scrub_rows=225073562 scrub_payload_bytes=55392340047 sha256=0xda867229e5aaa982da926baf14af495fbe12b1c1005f568872146d652f7ddf36
+evidence timing (current): winner_merge_ns=26224773268 frame_reference_ns=53614726344 lookup_ns=73551668 total_ns=79919533631
+MDBX node comparison: skipped after activation; the marker-bound pack is authoritative
+authority verification: ok (mandatory marker)

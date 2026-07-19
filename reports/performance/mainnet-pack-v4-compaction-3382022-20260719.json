@@ -8,7 +8,7 @@
     "verified_gc_gate_passed": true,
     "node_throughput_gate_passed": null,
     "low_memory_gate_passed": false,
-    "summary": "A 225M-record MainNet authoritative pack compacted from generation 19 with 24 v3 runs to generation 20 with eight v3 L0 runs and one v4 L2 run. The full winner digest, complete frame scrub, sampled frame-reference and lookup evidence, index scrubs, root reachability, reopen, and post-GC evidence remained identical. Verified GC then reclaimed 23,618,405,564 bytes."
+    "summary": "A 225M-record MainNet authoritative pack compacted from generation 19 with 24 v3 runs to generation 20 with eight v3 L0 runs and one v4 L2 run. The full winner digest, complete frame scrub, sampled frame-reference and lookup evidence, index scrubs, root reachability, reopen, and post-GC evidence remained identical. Verified GC then reclaimed 23,618,405,564 bytes. A later read-only verifier pass reproduced all canonical evidence with 1,624,984 KiB peak RSS; compaction and GC retain their separate 5-6 GiB process measurements."
   },
   "software": {
     "binary": "target/release/neo-pack-verify",
@@ -61,6 +61,50 @@
       "filesystem_unit_bytes": 512,
       "filesystem_input_bytes_approx": 67422371840,
       "filesystem_output_bytes_approx": 12288,
+      "exit_status": 0
+    }
+  },
+  "bounded_frame_reference_revalidation": {
+    "repository_commit": "31230cf34b8c32a99cf18da3ee902d7c35b11e6d",
+    "binary": "target/release/neo-pack-verify",
+    "binary_sha256": "6991d424a9888ea282392e5b3c9b370764b080f975099eef52b5323728e30ce5",
+    "command": "target/release/neo-pack-verify --mode authority --network-magic 0x334F454E --mdbx data/neo-v3101-staged-replay/runs/ab-search-h3377022 --pack data/neo-v3101-staged-replay/authoritative-packs-3287022 --max-index-memory-mb 1024 --samples 0 --walk-cap 1 --lookup-digest-samples 100000 --scrub-indexes --random-point-mmap",
+    "source_pack_generation": 19,
+    "source_pack_live_runs": 24,
+    "source_pack_v3_runs": 24,
+    "source_pack_v4_runs": 0,
+    "source_records": 225048697,
+    "semantic_evidence_matches_campaign": true,
+    "root_node_reachable": true,
+    "authority_verification_passed": true,
+    "index_scrub": {
+      "runs": 24,
+      "records": 225048697,
+      "record_bytes": 11252434850
+    },
+    "evidence_timing_ns": {
+      "winner_merge": 26224773268,
+      "frame_reference": 53614726344,
+      "lookup": 73551668,
+      "total": 79919533631
+    },
+    "process": {
+      "elapsed_seconds": 100.92,
+      "user_seconds": 72.96,
+      "system_seconds": 18.14,
+      "cpu_percent": 90,
+      "maximum_rss_kib": 1624984,
+      "maximum_rss_gib": 1.549706,
+      "major_faults": 61817,
+      "minor_faults": 1310319,
+      "voluntary_context_switches": 61267,
+      "involuntary_context_switches": 3348,
+      "swaps": 0,
+      "filesystem_input_units": 64905592,
+      "filesystem_output_units": 32,
+      "filesystem_unit_bytes": 512,
+      "filesystem_input_bytes_approx": 33231663104,
+      "filesystem_output_bytes_approx": 16384,
       "exit_status": 0
     }
   },
@@ -125,7 +169,8 @@
       "maintenance-reopen",
       "gc-pre",
       "gc-post-reopen",
-      "final-binary-read-only-source-pack"
+      "final-binary-read-only-source-pack",
+      "bounded-frame-reference-read-only-source-pack"
     ]
   },
   "baselines": {
@@ -356,15 +401,14 @@
   },
   "limitations": [
     "This was an offline verifier, compaction, reopen, and GC campaign. It did not import or execute blocks, so it is not evidence for any blocks-per-second target.",
-    "Maintenance peaked at 6,412,972 KiB (6.116 GiB) RSS and GC at 5,592,588 KiB (5.334 GiB). The 1 GiB workspace bound covers compaction workspace, not all mmap residency and verification state; this is not a low-memory promotion result.",
+    "Maintenance peaked at 6,412,972 KiB (6.116 GiB) RSS and GC at 5,592,588 KiB (5.334 GiB). The 1 GiB workspace bound covers compaction workspace, not all mmap residency and verification state. The later read-only frame-reference verifier peaked at 1,624,984 KiB, but that does not lower the separately measured compaction or GC process peaks.",
     "The mandatory post-activation authority marker makes the pack authoritative. MDBX 0xf0 node comparison is intentionally skipped after activation; these commands prove marker/root reachability and pack-internal full/sampled equivalence rather than rerunning an independent full MDBX namespace digest.",
     "The winner digest covers every materialized winner and the frame-reference scrub covers all 225,073,562 committed frame rows. Lookup evidence is bounded to 4,096 present keys plus 256 deterministic misses in the promotion run.",
     "GNU time filesystem input/output counts are reported as Linux 512-byte block units and are process-attributed observations, not complete filesystem-journal or physical-device traffic.",
     "Timings and page faults depend on cache state and this single host/filesystem. They are not hardware-independent performance guarantees.",
     "The post-compaction manifest deliberately contains one v4 L2 run and eight retained v3 L0 runs; this campaign proves mixed-format correctness, not a complete rewrite of every live run.",
-    "No production power-loss was induced during this MainNet campaign; deterministic crash-boundary recovery is covered separately by the fault-injection test matrix."
-    ,
-    "The final-binary read-only revalidation reached 36,480,316 KiB ru_maxrss despite identical evidence and a faster wall time. Verifier mmap residency is cache- and pressure-sensitive and is not yet a stable low-memory property."
+    "No production power-loss was induced during this MainNet campaign; deterministic crash-boundary recovery is covered separately by the fault-injection test matrix.",
+    "The pre-fix final-binary read-only revalidation reached 36,480,316 KiB ru_maxrss. The dedicated random-advised, offset-ordered, incrementally reclaimed frame-reference mapping reduced the later process peak to 1,624,984 KiB while preserving every canonical digest. Cache-sensitive wall time is not treated as a controlled speedup result."
   ],
   "evidence_files": [
     "reports/performance/mainnet-pack-v4-pre-3382022-20260719.log",
@@ -376,6 +420,8 @@
     "reports/performance/mainnet-pack-v4-maintain-3382022-20260719-pidstat.txt",
     "reports/performance/mainnet-pack-v4-gc-3382022-20260719.log",
     "reports/performance/mainnet-pack-v4-gc-3382022-20260719-time.txt",
-    "reports/performance/pack-compaction-workspace-guard-20260719.md"
+    "reports/performance/pack-compaction-workspace-guard-20260719.md",
+    "reports/performance/mainnet-pack-v4-frame-reference-bounded-3382022-20260719.log",
+    "reports/performance/mainnet-pack-v4-frame-reference-bounded-3382022-20260719-time.txt"
   ]
 }
