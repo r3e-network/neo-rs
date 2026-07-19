@@ -118,9 +118,9 @@ pub use optimistic_execution::{
     OptimisticContextDependency, OptimisticContextValue, OptimisticHostDependencies,
     OptimisticObservationBinding, OptimisticOverlayError, PinnedBlockPrefix, PointReadConflict,
     PointReadConflictKind, PointReadDependency, PointReadValidation,
-    SpeculativeArtifactCaptureError, SpeculativeExecutionArtifact, SpeculativeExecutionIdentity,
-    SpeculativeIdentityComponent, SpeculativeStorageEffect, TransactionDependencies,
-    TransactionDependencyCapture,
+    SpeculativeArtifactCaptureError, SpeculativeEntryScriptIdentity, SpeculativeExecutionArtifact,
+    SpeculativeExecutionIdentity, SpeculativeIdentityComponent, SpeculativeStorageEffect,
+    TransactionDependencies, TransactionDependencyCapture,
 };
 pub use storage_context::StorageContext;
 pub use storage_item_ext::StorageItemExt;

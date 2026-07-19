@@ -21,6 +21,9 @@ mod storage_watch;
 /// Trackable storage entry state and cache configuration.
 pub mod trackable;
 
-pub use cache::{CacheRead, DataCache, EmptyCacheBacking};
+pub use cache::{
+    CacheRead, DataCache, DataCacheAtomicMergeError, DataCacheVersion, EmptyCacheBacking,
+    LockedDataCacheView,
+};
 pub use observer::{DataCacheReadObservationPause, DataCacheReadObserver, DataCacheReadOrigin};
 pub use trackable::{DataCacheConfig, DataCacheError, DataCacheResult, Trackable, TrackableEntry};

@@ -91,6 +91,7 @@ pub(crate) struct InnerState {
     /// keys on the import path (every `System.Storage.Get`/`Put` hits this map).
     pub(crate) dictionary: FxHashMap<StorageKey, Trackable>,
     pub(crate) change_set: BTreeSet<StorageKey>,
+    pub(crate) revision: u64,
 }
 
 impl InnerState {
@@ -98,7 +99,12 @@ impl InnerState {
         Self {
             dictionary: FxHashMap::default(),
             change_set: BTreeSet::new(),
+            revision: 0,
         }
+    }
+
+    pub(crate) fn bump_revision(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
     }
 }
 
@@ -121,7 +127,7 @@ impl Default for DataCacheConfig {
 }
 
 /// Errors returned by DataCache operations.
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum DataCacheError {
     /// The cache is read-only and cannot accept mutations.
     #[error("cache is read-only")]
@@ -129,6 +135,21 @@ pub enum DataCacheError {
     /// The requested mutation is not valid for the entry's current tracked state.
     #[error("element currently has state {0:?}")]
     InvalidState(TrackState),
+    /// An incoming tracked effect cannot be merged into the destination state.
+    #[error(
+        "cannot merge incoming state {incoming:?} for key {key:?} into destination state {current:?}"
+    )]
+    InvalidMergeState {
+        /// Storage key whose effect was rejected.
+        key: StorageKey,
+        /// State carried by the incoming effect.
+        incoming: TrackState,
+        /// Destination state observed during atomic preflight.
+        current: TrackState,
+    },
+    /// An atomic merge batch contains the same storage key more than once.
+    #[error("atomic merge contains duplicate storage key {0:?}")]
+    DuplicateMergeKey(StorageKey),
     /// Persisting the tracked change set into the backing store failed.
     #[error("unable to commit changes: {0}")]
     CommitFailed(String),

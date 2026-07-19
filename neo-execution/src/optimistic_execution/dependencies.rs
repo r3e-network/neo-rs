@@ -126,6 +126,7 @@ struct DependencyCaptureState {
     point_reads: BTreeMap<StorageKey, Option<StorageItem>>,
     captured_bytes: usize,
     failure: Option<DependencyCaptureError>,
+    sealed: bool,
 }
 
 struct DependencyRecorder {
@@ -145,7 +146,7 @@ impl DependencyRecorder {
         }
 
         let mut state = self.state.lock();
-        if state.failure.is_some() || state.point_reads.contains_key(key) {
+        if state.sealed || state.failure.is_some() || state.point_reads.contains_key(key) {
             return;
         }
         if state.point_reads.len() >= self.limits.max_point_reads {
@@ -174,7 +175,7 @@ impl DependencyRecorder {
 
     fn mark_range_unsupported(&self, prefix: Option<&StorageKey>, direction: SeekDirection) {
         let mut state = self.state.lock();
-        if state.failure.is_none() {
+        if !state.sealed && state.failure.is_none() {
             state.failure = Some(DependencyCaptureError::UnsupportedRangeRead {
                 prefix: prefix.cloned(),
                 direction,
@@ -229,6 +230,11 @@ impl TransactionDependencyCapture {
 
     pub(super) fn same_capture(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.recorder, &other.recorder)
+    }
+
+    /// Permanently closes the recorder and waits for an in-flight observation.
+    pub(super) fn seal(&self) {
+        self.recorder.state.lock().sealed = true;
     }
 
     /// Copies the current deterministic dependency set or its first fail-closed reason.

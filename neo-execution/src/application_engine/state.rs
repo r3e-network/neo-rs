@@ -444,6 +444,20 @@ where
         self.execution_observations = Some(observations);
     }
 
+    pub(crate) fn unbind_execution_observations(
+        &mut self,
+        expected: &Arc<Mutex<ExecutionObservationState>>,
+    ) -> bool {
+        let Some(bound) = self.execution_observations.as_ref() else {
+            return false;
+        };
+        if !Arc::ptr_eq(bound, expected) {
+            return false;
+        }
+        self.execution_observations = None;
+        true
+    }
+
     pub(crate) fn execution_observation_handle(
         &self,
     ) -> Option<Arc<Mutex<ExecutionObservationState>>> {

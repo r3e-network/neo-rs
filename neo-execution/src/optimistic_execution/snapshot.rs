@@ -68,7 +68,7 @@ impl<B: CacheRead> PinnedBlockPrefix<B> {
     /// The cache backing supplied by the caller must itself be a point-in-time
     /// store snapshot, as it is in the block-persistence pipeline.
     #[must_use]
-    pub fn capture(identity: BlockPrefixIdentity, prefix: &DataCache<B>) -> Self {
+    pub(crate) fn capture(identity: BlockPrefixIdentity, prefix: &DataCache<B>) -> Self {
         Self {
             identity,
             snapshot: Arc::new(prefix.fork_isolated()),
@@ -82,7 +82,7 @@ impl<B: CacheRead> PinnedBlockPrefix<B> {
     }
 
     /// Creates a writable, non-publishing overlay for one transaction position.
-    pub fn transaction_overlay(
+    pub(crate) fn transaction_overlay(
         &self,
         transaction_index: usize,
     ) -> Result<IsolatedTransactionOverlay<B>, OptimisticOverlayError> {
@@ -107,7 +107,7 @@ impl<B: CacheRead> PinnedBlockPrefix<B> {
     /// included. Range reads mark the capture unsupported until range
     /// generation validation is implemented. Ordinary [`Self::transaction_overlay`]
     /// does not install a dependency observer.
-    pub fn transaction_overlay_with_dependency_capture(
+    pub(crate) fn transaction_overlay_with_dependency_capture(
         &self,
         transaction_index: usize,
         limits: DependencyCaptureLimits,
@@ -159,7 +159,7 @@ impl<B: CacheRead> IsolatedTransactionOverlay<B> {
 
     /// Returns the exact existing `DataCache` handle used by `ApplicationEngine`.
     #[must_use]
-    pub fn snapshot_cache(&self) -> Arc<DataCache<B>> {
+    pub(crate) fn snapshot_cache(&self) -> Arc<DataCache<B>> {
         Arc::clone(&self.snapshot)
     }
 

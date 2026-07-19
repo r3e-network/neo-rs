@@ -26,8 +26,8 @@
 ## 4. Optimistic Execution Foundations
 
 - [x] 4.1 Add pinned block-prefix snapshots and isolated per-transaction overlays using the existing execution value and effect representation
-- [ ] 4.2 Capture exact present and absent point reads, writes, context dependencies, and native-cache dependencies for each speculative artifact
-- [ ] 4.3 Add exact range and prefix generation validation or conservatively mark unsupported iterators for sequential execution
+- [x] 4.2 Capture exact present and absent point reads, writes, context dependencies, and native-cache dependencies for each speculative artifact
+- [x] 4.3 Add exact range and prefix generation validation or conservatively mark unsupported iterators for sequential execution
 - [ ] 4.4 Apply a validated artifact exactly once with sequentially equivalent gas, faults, stacks, cache effects, notifications, logs, calls, invocations, and witness behavior
 - [ ] 4.5 Add property tests for missing reads, read-write and write-write conflicts, phantoms, faults, native state, dynamic calls, and unsupported-host fallback
 

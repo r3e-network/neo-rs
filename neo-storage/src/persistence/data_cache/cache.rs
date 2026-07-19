@@ -6,9 +6,10 @@ use crate::persistence::seek_direction::SeekDirection;
 use crate::persistence::store::{RawOverlaySink, RawOverlaySource};
 use crate::types::{StorageItem, StorageKey, TrackState};
 use parking_lot::RwLock;
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Weak};
 use tracing::warn;
 
 #[path = "observed_reads.rs"]
@@ -135,6 +136,95 @@ pub struct DataCache<B = EmptyCacheBacking> {
     /// Counts zero-copy tracked-item visits in tests.
     #[cfg(test)]
     tracked_item_visit_calls: Arc<AtomicUsize>,
+}
+
+/// Opaque identity and revision of one [`DataCache`] state.
+///
+/// Tokens are process-local and bound to the exact shared cache state that
+/// produced them. A token from a child overlay, isolated fork, or unrelated
+/// cache is rejected even when its numeric revision happens to match.
+#[derive(Clone)]
+pub struct DataCacheVersion {
+    state: Weak<RwLock<InnerState>>,
+    revision: u64,
+}
+
+impl DataCacheVersion {
+    /// Monotonic revision within this cache state.
+    #[must_use]
+    pub const fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn belongs_to(&self, state: &Arc<RwLock<InnerState>>) -> bool {
+        Weak::ptr_eq(&self.state, &Arc::downgrade(state))
+    }
+}
+
+impl fmt::Debug for DataCacheVersion {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DataCacheVersion")
+            .field("revision", &self.revision)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for DataCacheVersion {
+    fn eq(&self, other: &Self) -> bool {
+        self.revision == other.revision && Weak::ptr_eq(&self.state, &other.state)
+    }
+}
+
+impl Eq for DataCacheVersion {}
+
+/// Read-only point lookup over a cache while its state is exclusively locked.
+///
+/// The view never tracks reads or invokes observers. It exists only for the
+/// validation callback passed to
+/// [`DataCache::try_validate_and_merge_tracked_items`].
+pub struct LockedDataCacheView<'a, B = EmptyCacheBacking> {
+    state: &'a InnerState,
+    backing: &'a CacheBacking<B>,
+}
+
+impl<B: CacheRead> LockedDataCacheView<'_, B> {
+    /// Returns the value visible in the exclusively locked cache state.
+    #[must_use]
+    pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
+        match self.state.dictionary.get(key) {
+            Some(trackable) => visible_trackable_item(trackable),
+            None => self.backing.get(key),
+        }
+    }
+}
+
+/// Failure from an atomic cache validation and effect publication attempt.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum DataCacheAtomicMergeError<E> {
+    /// The admission token belongs to another cache state.
+    #[error("cache version token belongs to another cache state")]
+    ForeignVersion,
+    /// This cache changed after the caller captured its admission token.
+    #[error("cache revision changed from {expected} to {actual}")]
+    StaleVersion {
+        /// Revision carried by the admission token.
+        expected: u64,
+        /// Revision held under the exclusive publication lock.
+        actual: u64,
+    },
+    /// The caller's dependency validator rejected the current locked state.
+    #[error("atomic cache validation rejected publication")]
+    Validation(E),
+    /// The effect batch could not be merged into the current cache state.
+    #[error(transparent)]
+    Merge(#[from] DataCacheError),
+}
+
+enum PreparedMerge {
+    Upsert(StorageKey, Trackable),
+    Remove(StorageKey),
+    Noop,
 }
 
 impl<B: CacheRead> RawOverlaySource for &DataCache<B> {
@@ -294,6 +384,179 @@ impl<B: CacheRead> DataCache<B> {
         self.read_only
     }
 
+    /// Captures an admission token for a later atomic validation and merge.
+    ///
+    /// Any cache-state mutation, including read-cache population, invalidates
+    /// the token. The token is also bound to this exact shared cache state.
+    #[must_use]
+    pub fn version(&self) -> DataCacheVersion {
+        let state = self.state.read();
+        DataCacheVersion {
+            state: Arc::downgrade(&self.state),
+            revision: state.revision,
+        }
+    }
+
+    /// Validates dependencies and publishes a tracked-effect batch atomically.
+    ///
+    /// The method acquires one exclusive cache-state lock, verifies
+    /// `expected_version`, preflights every effect, invokes `validate` through
+    /// an unobserved locked view, and only then publishes all effects. A stale
+    /// token, validation rejection, or invalid effect leaves the destination
+    /// unchanged. Duplicate effect keys are rejected to keep preflight and
+    /// publication semantics unambiguous.
+    ///
+    /// The backing [`CacheRead`] must provide the same point-in-time semantics
+    /// it provides to ordinary `DataCache` reads. Canonical block execution
+    /// satisfies this by keeping durable-store publication outside the cache
+    /// application lane.
+    ///
+    /// `validate` must use the supplied [`LockedDataCacheView`] for cache
+    /// lookups. Re-entering this `DataCache` from the callback would attempt to
+    /// acquire its already-held write lock.
+    pub fn try_validate_and_merge_tracked_items<T, E>(
+        &self,
+        expected_version: &DataCacheVersion,
+        items: &[(StorageKey, Trackable)],
+        validate: impl FnOnce(&LockedDataCacheView<'_, B>) -> Result<T, E>,
+    ) -> Result<T, DataCacheAtomicMergeError<E>> {
+        if !expected_version.belongs_to(&self.state) {
+            return Err(DataCacheAtomicMergeError::ForeignVersion);
+        }
+
+        let mut state = self.state.write();
+        if expected_version.revision != state.revision {
+            return Err(DataCacheAtomicMergeError::StaleVersion {
+                expected: expected_version.revision,
+                actual: state.revision,
+            });
+        }
+        if !items.is_empty() {
+            self.ensure_writable()
+                .map_err(DataCacheAtomicMergeError::Merge)?;
+        }
+
+        let prepared = self
+            .prepare_merge_locked(&state, items)
+            .map_err(DataCacheAtomicMergeError::Merge)?;
+        let validation = validate(&LockedDataCacheView {
+            state: &state,
+            backing: &self.backing,
+        })
+        .map_err(DataCacheAtomicMergeError::Validation)?;
+
+        let mut modified = false;
+        for effect in prepared {
+            match effect {
+                PreparedMerge::Upsert(key, trackable) => {
+                    log_watched_storage_event(
+                        "merge",
+                        "atomic_merge_upsert",
+                        &key,
+                        state.dictionary.get(&key).map(|entry| entry.state),
+                        Some(trackable.state),
+                        Some(&trackable.item),
+                    );
+                    state.change_set.insert(key.clone());
+                    state.dictionary.insert(key, trackable);
+                    modified = true;
+                }
+                PreparedMerge::Remove(key) => {
+                    log_watched_storage_event(
+                        "merge",
+                        "atomic_merge_remove",
+                        &key,
+                        state.dictionary.get(&key).map(|entry| entry.state),
+                        Some(TrackState::NotFound),
+                        None,
+                    );
+                    state.dictionary.remove(&key);
+                    state.change_set.remove(&key);
+                    modified = true;
+                }
+                PreparedMerge::Noop => {}
+            }
+        }
+        if modified {
+            state.bump_revision();
+        }
+
+        Ok(validation)
+    }
+
+    fn prepare_merge_locked(
+        &self,
+        state: &InnerState,
+        items: &[(StorageKey, Trackable)],
+    ) -> DataCacheResult<Vec<PreparedMerge>> {
+        let mut seen = BTreeSet::new();
+        let mut prepared = Vec::with_capacity(items.len());
+        for (key, incoming) in items {
+            if !seen.insert(key.clone()) {
+                return Err(DataCacheError::DuplicateMergeKey(key.clone()));
+            }
+
+            let current = state
+                .dictionary
+                .get(key)
+                .map(|entry| entry.state)
+                .unwrap_or(TrackState::NotFound);
+            let effect = match incoming.state {
+                TrackState::Added => match current {
+                    TrackState::Deleted => PreparedMerge::Upsert(
+                        key.clone(),
+                        Trackable::new(incoming.item.clone(), TrackState::Changed),
+                    ),
+                    TrackState::NotFound => PreparedMerge::Upsert(
+                        key.clone(),
+                        Trackable::new(incoming.item.clone(), TrackState::Added),
+                    ),
+                    TrackState::Added | TrackState::Changed | TrackState::None => {
+                        return Err(DataCacheError::InvalidMergeState {
+                            key: key.clone(),
+                            incoming: incoming.state,
+                            current,
+                        });
+                    }
+                },
+                TrackState::Changed => {
+                    let merged = if current == TrackState::Added {
+                        TrackState::Added
+                    } else {
+                        TrackState::Changed
+                    };
+                    PreparedMerge::Upsert(
+                        key.clone(),
+                        Trackable::new(incoming.item.clone(), merged),
+                    )
+                }
+                TrackState::Deleted => match current {
+                    TrackState::Added => PreparedMerge::Remove(key.clone()),
+                    TrackState::Changed | TrackState::None => PreparedMerge::Upsert(
+                        key.clone(),
+                        Trackable::new(StorageItem::default(), TrackState::Deleted),
+                    ),
+                    TrackState::NotFound if self.backing.get(key).is_some() => {
+                        PreparedMerge::Upsert(
+                            key.clone(),
+                            Trackable::new(StorageItem::default(), TrackState::Deleted),
+                        )
+                    }
+                    TrackState::NotFound | TrackState::Deleted => PreparedMerge::Noop,
+                },
+                TrackState::None | TrackState::NotFound => {
+                    return Err(DataCacheError::InvalidMergeState {
+                        key: key.clone(),
+                        incoming: incoming.state,
+                        current,
+                    });
+                }
+            };
+            prepared.push(effect);
+        }
+        Ok(prepared)
+    }
+
     /// Creates a cloned overlay cache that uses this cache as the backing store.
     pub fn clone_cache(&self) -> Self {
         self.clone_cache_with_config(self.config)
@@ -366,6 +629,7 @@ impl<B: CacheRead> DataCache<B> {
         }
 
         let mut state = self.state.write();
+        let mut modified = false;
         #[cfg(test)]
         self.merge_write_passes
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -400,6 +664,7 @@ impl<B: CacheRead> DataCache<B> {
                         Trackable::new(trackable.item.clone(), new_state),
                     );
                     state.change_set.insert(key.clone());
+                    modified = true;
                 }
                 TrackState::Changed => {
                     let prev_state = state
@@ -418,6 +683,7 @@ impl<B: CacheRead> DataCache<B> {
                         Trackable::new(trackable.item.clone(), new_state),
                     );
                     state.change_set.insert(key.clone());
+                    modified = true;
                 }
                 TrackState::Deleted => match state
                     .dictionary
@@ -428,6 +694,7 @@ impl<B: CacheRead> DataCache<B> {
                     TrackState::Added => {
                         state.dictionary.remove(key);
                         state.change_set.remove(key);
+                        modified = true;
                     }
                     TrackState::Changed | TrackState::None => {
                         state.dictionary.insert(
@@ -435,6 +702,7 @@ impl<B: CacheRead> DataCache<B> {
                             Trackable::new(StorageItem::default(), TrackState::Deleted),
                         );
                         state.change_set.insert(key.clone());
+                        modified = true;
                     }
                     TrackState::NotFound => {
                         // C# `parent.Delete(key)` (invoked by `ClonedCache.Commit`
@@ -453,12 +721,16 @@ impl<B: CacheRead> DataCache<B> {
                                 Trackable::new(StorageItem::default(), TrackState::Deleted),
                             );
                             state.change_set.insert(key.clone());
+                            modified = true;
                         }
                     }
                     TrackState::Deleted => {}
                 },
                 TrackState::None | TrackState::NotFound => {}
             }
+        }
+        if modified {
+            state.bump_revision();
         }
     }
 
@@ -501,6 +773,7 @@ impl<B: CacheRead> DataCache<B> {
         let cloned_state = InnerState {
             dictionary: state.dictionary.clone(),
             change_set: state.change_set.clone(),
+            revision: state.revision,
         };
         drop(state);
 
@@ -527,10 +800,12 @@ impl<B: CacheRead> DataCache<B> {
         }
         let mut state = self.state.write();
         if state.dictionary.len() < self.config.max_entries {
-            state
-                .dictionary
-                .entry(key.clone())
-                .or_insert_with(|| Trackable::new(item.clone(), TrackState::None));
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                state.dictionary.entry(key.clone())
+            {
+                entry.insert(Trackable::new(item.clone(), TrackState::None));
+                state.bump_revision();
+            }
         }
     }
 
@@ -571,6 +846,7 @@ impl<B: CacheRead> DataCache<B> {
             .dictionary
             .insert(key.clone(), Trackable::new(value, new_state));
         state.change_set.insert(key.clone());
+        state.bump_revision();
         Ok(())
     }
 
@@ -625,6 +901,7 @@ impl<B: CacheRead> DataCache<B> {
             .dictionary
             .insert(key.clone(), Trackable::new(value, new_state));
         state.change_set.insert(key.clone());
+        state.bump_revision();
     }
 
     /// Deletes an item from the cache.
@@ -661,6 +938,7 @@ impl<B: CacheRead> DataCache<B> {
                 let mut state = self.state.write();
                 state.dictionary.remove(key);
                 state.change_set.remove(key);
+                state.bump_revision();
                 log_watched_storage_event(
                     "delete",
                     "apply_delete_added",
@@ -677,6 +955,7 @@ impl<B: CacheRead> DataCache<B> {
                     Trackable::new(StorageItem::default(), TrackState::Deleted),
                 );
                 state.change_set.insert(key.clone());
+                state.bump_revision();
                 log_watched_storage_event(
                     "delete",
                     "apply_delete_tracked",
@@ -726,6 +1005,7 @@ impl<B: CacheRead> DataCache<B> {
                     TrackState::Added => {
                         state.dictionary.remove(key);
                         state.change_set.remove(key);
+                        state.bump_revision();
                         log_watched_storage_event(
                             "delete",
                             "apply_delete_not_found_added",
@@ -741,6 +1021,7 @@ impl<B: CacheRead> DataCache<B> {
                             Trackable::new(StorageItem::default(), TrackState::Deleted),
                         );
                         state.change_set.insert(key.clone());
+                        state.bump_revision();
                         log_watched_storage_event(
                             "delete",
                             "apply_delete_not_found_emit",
@@ -786,6 +1067,7 @@ impl<B: CacheRead> DataCache<B> {
 
         let mut state = self.state.write();
         let keys = std::mem::take(&mut state.change_set);
+        let modified = !keys.is_empty();
         for key in keys {
             if let Some(trackable) = state.dictionary.get_mut(&key) {
                 match trackable.state {
@@ -799,13 +1081,20 @@ impl<B: CacheRead> DataCache<B> {
                 }
             }
         }
+        if modified {
+            state.bump_revision();
+        }
     }
 
     /// Resets the cache for reuse.
     pub fn reset(&self) {
         let mut state = self.state.write();
+        let modified = !state.dictionary.is_empty() || !state.change_set.is_empty();
         state.dictionary.clear();
         state.change_set.clear();
+        if modified {
+            state.bump_revision();
+        }
         drop(state);
     }
 

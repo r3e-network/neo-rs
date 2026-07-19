@@ -477,3 +477,189 @@ fn delete_then_recreate_persists_through_layered_commit() {
         "delete-then-recreate must persist the new value, not the stale original"
     );
 }
+
+#[test]
+fn atomic_merge_holds_exclusive_lock_across_validation_and_publication() {
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+
+    let cache = Arc::new(DataCache::new(false));
+    let effect_key = StorageKey::new(7, vec![0x30]);
+    let writer_key = StorageKey::new(7, vec![0x31]);
+    let version = cache.version();
+    let effects = vec![(
+        effect_key.clone(),
+        Trackable::added(StorageItem::from_bytes(vec![0xAA])),
+    )];
+    let (entered_sender, entered_receiver) = mpsc::channel();
+    let (release_sender, release_receiver) = mpsc::channel();
+    let merge_cache = Arc::clone(&cache);
+    let validation_key = effect_key.clone();
+    let merge_thread = thread::spawn(move || {
+        merge_cache.try_validate_and_merge_tracked_items(&version, &effects, |view| {
+            assert_eq!(view.get(&validation_key), None);
+            entered_sender.send(()).expect("validation entered");
+            release_receiver.recv().expect("release validation");
+            Ok::<_, ()>(())
+        })
+    });
+
+    entered_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("validation entered");
+    let (writer_started_sender, writer_started_receiver) = mpsc::channel();
+    let (writer_done_sender, writer_done_receiver) = mpsc::channel();
+    let writer_cache = Arc::clone(&cache);
+    let writer_update_key = writer_key.clone();
+    let writer_thread = thread::spawn(move || {
+        writer_started_sender.send(()).expect("writer started");
+        writer_cache
+            .try_update(writer_update_key, StorageItem::from_bytes(vec![0xBB]))
+            .expect("writer update");
+        writer_done_sender.send(()).expect("writer completed");
+    });
+
+    writer_started_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("writer started");
+    assert!(
+        writer_done_receiver
+            .recv_timeout(Duration::from_millis(50))
+            .is_err(),
+        "a competing writer must remain blocked until atomic validation publishes"
+    );
+
+    release_sender.send(()).expect("release validation");
+    assert_eq!(merge_thread.join().expect("merge thread").unwrap(), ());
+    writer_done_receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("writer completed after publication");
+    writer_thread.join().expect("writer thread");
+
+    assert_eq!(
+        cache
+            .get(&effect_key)
+            .map(|item| item.value_bytes().into_owned()),
+        Some(vec![0xAA])
+    );
+    assert_eq!(
+        cache
+            .get(&writer_key)
+            .map(|item| item.value_bytes().into_owned()),
+        Some(vec![0xBB])
+    );
+}
+
+#[test]
+fn atomic_merge_rejects_stale_version_without_invoking_validator() {
+    let cache = DataCache::new(false);
+    let version = cache.version();
+    let key = StorageKey::new(7, vec![0x32]);
+    cache
+        .try_add(key.clone(), StorageItem::from_bytes(vec![0x01]))
+        .expect("mutation advances revision");
+
+    let validator_called = std::cell::Cell::new(false);
+    let result = cache.try_validate_and_merge_tracked_items(
+        &version,
+        &[(
+            StorageKey::new(7, vec![0x33]),
+            Trackable::added(StorageItem::from_bytes(vec![0x02])),
+        )],
+        |_| {
+            validator_called.set(true);
+            Ok::<_, ()>(())
+        },
+    );
+
+    assert_eq!(
+        result,
+        Err(DataCacheAtomicMergeError::StaleVersion {
+            expected: version.revision(),
+            actual: version.revision() + 1,
+        })
+    );
+    assert!(!validator_called.get());
+    assert_eq!(cache.pending_change_count(), 1);
+    assert_eq!(cache.get(&StorageKey::new(7, vec![0x33])), None);
+}
+
+#[test]
+fn atomic_merge_validation_rejection_publishes_nothing() {
+    let cache = DataCache::new(false);
+    let key = StorageKey::new(7, vec![0x34]);
+    let version = cache.version();
+    let result = cache.try_validate_and_merge_tracked_items(
+        &version,
+        &[(
+            key.clone(),
+            Trackable::added(StorageItem::from_bytes(vec![0x03])),
+        )],
+        |_| Err::<(), _>("dependency conflict"),
+    );
+
+    assert_eq!(
+        result,
+        Err(DataCacheAtomicMergeError::Validation("dependency conflict"))
+    );
+    assert_eq!(cache.pending_change_count(), 0);
+    assert_eq!(cache.get(&key), None);
+    assert_eq!(cache.version(), version);
+}
+
+#[test]
+fn atomic_merge_preflights_all_effects_before_any_publication() {
+    let first_key = StorageKey::new(7, vec![0x35]);
+    let conflicting_key = StorageKey::new(7, vec![0x36]);
+    let backing = TestBacking {
+        entries: Arc::new(BTreeMap::from([(
+            conflicting_key.clone(),
+            StorageItem::from_bytes(vec![0x10]),
+        )])),
+    };
+    let cache = DataCache::with_backing(false, backing, DataCacheConfig::default());
+    // Make the second destination state explicit: an `Added` effect cannot
+    // overwrite a cached live entry, and the first effect must not leak when
+    // this later conflict is discovered.
+    assert_eq!(
+        cache
+            .get(&conflicting_key)
+            .map(|item| item.value_bytes().into_owned()),
+        Some(vec![0x10])
+    );
+    let version = cache.version();
+    let result = cache.try_validate_and_merge_tracked_items(
+        &version,
+        &[
+            (
+                first_key.clone(),
+                Trackable::added(StorageItem::from_bytes(vec![0x11])),
+            ),
+            (
+                conflicting_key.clone(),
+                Trackable::added(StorageItem::from_bytes(vec![0x12])),
+            ),
+        ],
+        |_| Ok::<_, ()>(()),
+    );
+
+    assert_eq!(
+        result,
+        Err(DataCacheAtomicMergeError::Merge(
+            DataCacheError::InvalidMergeState {
+                key: conflicting_key.clone(),
+                incoming: TrackState::Added,
+                current: TrackState::None,
+            }
+        ))
+    );
+    assert_eq!(cache.get(&first_key), None);
+    assert_eq!(
+        cache
+            .get(&conflicting_key)
+            .map(|item| item.value_bytes().into_owned()),
+        Some(vec![0x10])
+    );
+    assert_eq!(cache.version(), version);
+}
