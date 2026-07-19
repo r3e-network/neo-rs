@@ -144,6 +144,23 @@ fn materialized_evidence_bounds_large_value_lookup_batches() {
 }
 
 #[test]
+fn materialized_evidence_hashes_a_multichunk_frame_reference_value() {
+    let root = tempdir().expect("temporary append store");
+    let mut store = PackStore::create(root.path(), 8 * 1024 * 1024).expect("create store");
+    let value = vec![0x5A; evidence::FRAME_REFERENCE_VALUE_HASH_CHUNK_BYTES + 17];
+    store
+        .append(&[put(key(97), &value)])
+        .expect("append multi-chunk value");
+
+    let evidence = store
+        .materialized_view_evidence(1)
+        .expect("multi-chunk evidence");
+    assert_eq!(evidence.frame_reference_keys, 1);
+    assert_eq!(evidence.lookup_present, 1);
+    assert_eq!(evidence.lookup_value_bytes, value.len() as u64);
+}
+
+#[test]
 fn lookup_batch_rejects_one_value_above_the_byte_limit() {
     let entries = [IndexEntry {
         key: key(96),

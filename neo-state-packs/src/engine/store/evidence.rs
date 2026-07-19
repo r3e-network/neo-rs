@@ -19,6 +19,7 @@ const MAX_FRAME_REFERENCE_KEYS: usize = 100_000;
 const MAX_LOOKUP_EVIDENCE_SAMPLES: usize = 1_000_000;
 const SYNTHETIC_MISS_PROBES: usize = 256;
 const SAMPLE_SEED: u64 = 0xD6E8_FEB8_6659_FD93;
+pub(super) const FRAME_REFERENCE_VALUE_HASH_CHUNK_BYTES: usize = 4 * 1024 * 1024;
 
 /// Deterministic evidence for the materialized newest-version view of one
 /// pinned manifest generation.
@@ -197,17 +198,8 @@ impl PackStore {
         let frame_reference_indices =
             evenly_spaced_indices(entries.len(), MAX_FRAME_REFERENCE_KEYS);
         let frame_reference_started = Instant::now();
-        let expected_pack_map = snapshot
-            .lookup_pack_map
-            .as_deref()
-            .unwrap_or(&snapshot.pack_map);
-        let frame_reference = self.resolve_frame_references(
-            receipt,
-            expected_pack_map,
-            &entries,
-            &frame_reference_indices,
-        )?;
-        snapshot.reclaim_random_lookup_pages()?;
+        let frame_reference =
+            self.resolve_frame_references(receipt, &entries, &frame_reference_indices)?;
         let frame_reference_wall_ns = duration_ns(frame_reference_started.elapsed());
         let synthetic_misses = miss_probes.finish();
         let lookup_started = Instant::now();
@@ -255,7 +247,6 @@ impl PackStore {
     fn resolve_frame_references(
         &self,
         receipt: PackFrameReceipt,
-        expected_pack_map: &Mmap,
         entries: &[IndexEntry],
         indices: &[usize],
     ) -> Result<FrameReferenceEvidence> {
@@ -287,6 +278,13 @@ impl PackStore {
             });
             Ok(())
         })?;
+        let expected_states = resolve_expected_sample_states(
+            &self.pack,
+            &self.pack_path,
+            receipt.frame_end,
+            entries,
+            indices,
+        )?;
 
         let mut hasher = evidence_hasher(FRAME_REFERENCE_DIGEST_DOMAIN, receipt);
         hasher.update(
@@ -299,7 +297,7 @@ impl PackStore {
             let state = states[position].with_context(|| {
                 format!("sampled winner is absent from frames at {:02x?}", entry.key)
             })?;
-            let expected = sample_state_from_entry(expected_pack_map, &entry)?;
+            let expected = expected_states[position];
             ensure!(
                 state == expected,
                 "committed-frame and winner-record state disagree at key {:02x?}",
@@ -708,7 +706,58 @@ fn validate_entry_payload_range(entry: &IndexEntry, pack_bytes: usize) -> Result
     Ok(())
 }
 
-fn sample_state_from_entry(map: &Mmap, entry: &IndexEntry) -> Result<SampleValueState> {
+fn resolve_expected_sample_states(
+    pack: &File,
+    pack_path: &Path,
+    committed_bytes: u64,
+    entries: &[IndexEntry],
+    indices: &[usize],
+) -> Result<Vec<SampleValueState>> {
+    let mut states = vec![None; indices.len()];
+    let mut scheduled = Vec::with_capacity(indices.len());
+    for (position, &index) in indices.iter().enumerate() {
+        let entry = entries[index];
+        if entry.tombstone {
+            states[position] = Some(SampleValueState::Absent);
+        } else {
+            scheduled.push((entry.value_offset, position, entry));
+        }
+    }
+    scheduled.sort_unstable_by_key(|&(offset, position, _)| (offset, position));
+
+    if !scheduled.is_empty() {
+        // The canonical snapshot mmap may also serve live point readers. Use a
+        // dedicated random-advised mapping so sparse verification neither
+        // triggers whole-pack readahead nor evicts pages from that shared view.
+        let map = Mmap::map_random(pack, committed_bytes, pack_path)?;
+        let map_bytes = map.as_slice().len();
+        let mut batch_entries = 0usize;
+        let mut batch_value_bytes = 0u64;
+        for (_, position, entry) in scheduled {
+            states[position] = Some(sample_state_from_entry_bounded(&map, &entry)?);
+            batch_entries += 1;
+            batch_value_bytes = batch_value_bytes.saturating_add(u64::from(entry.value_len));
+            if batch_entries >= LOOKUP_BATCH_MAX_ENTRIES
+                || batch_value_bytes >= LOOKUP_BATCH_MAX_VALUE_BYTES
+            {
+                let _ = map.advise_dontneed(0, map_bytes)?;
+                batch_entries = 0;
+                batch_value_bytes = 0;
+            }
+        }
+        let _ = map.advise_dontneed(0, map_bytes)?;
+    }
+
+    states
+        .into_iter()
+        .enumerate()
+        .map(|(position, state)| {
+            state.with_context(|| format!("missing expected state for sample {position}"))
+        })
+        .collect()
+}
+
+fn sample_state_from_entry_bounded(map: &Mmap, entry: &IndexEntry) -> Result<SampleValueState> {
     if entry.tombstone {
         return Ok(SampleValueState::Absent);
     }
@@ -721,7 +770,25 @@ fn sample_state_from_entry(map: &Mmap, entry: &IndexEntry) -> Result<SampleValue
         .as_slice()
         .get(start..end)
         .context("frame sample winner lies outside committed pack")?;
-    Ok(SampleValueState::from_present(value))
+    let mut hasher = Sha256::new();
+    let mut release_start = start;
+    for (chunk_index, chunk) in value
+        .chunks(FRAME_REFERENCE_VALUE_HASH_CHUNK_BYTES)
+        .enumerate()
+    {
+        hasher.update(chunk);
+        let consumed = (chunk_index + 1)
+            .checked_mul(FRAME_REFERENCE_VALUE_HASH_CHUNK_BYTES)
+            .map_or(length, |bytes| bytes.min(length));
+        let consumed_end = start
+            .checked_add(consumed)
+            .context("frame sample release range overflows")?;
+        release_start = map.advise_dontneed(release_start, consumed_end)?;
+    }
+    Ok(SampleValueState::Present {
+        length: u64::from(entry.value_len),
+        sha256: hasher.finalize().into(),
+    })
 }
 
 fn digest_sample_keys(receipt: PackFrameReceipt, entries: &[IndexEntry]) -> [u8; 32] {
