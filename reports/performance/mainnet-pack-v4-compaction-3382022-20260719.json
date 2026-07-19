@@ -21,6 +21,49 @@
     "manifest_generation_before": 19,
     "manifest_generation_after": 20
   },
+  "final_binary_read_only_revalidation": {
+    "repository_commit": "a24f4314414b0048bbce9844bcd5bcec2096f088",
+    "binary": "target/release/neo-pack-verify",
+    "binary_sha256": "7c825a14d34d9fc044c5e56e6fef8294f33accdc4b7bfeefdb1d2440e9143259",
+    "source_pack_generation": 19,
+    "source_pack_live_runs": 24,
+    "source_pack_v3_runs": 24,
+    "source_pack_v4_runs": 0,
+    "source_records": 225048697,
+    "semantic_evidence_matches_campaign": true,
+    "root_node_reachable": true,
+    "authority_verification_passed": true,
+    "index_scrub": {
+      "runs": 24,
+      "records": 225048697,
+      "record_bytes": 11252434850
+    },
+    "evidence_timing_ns": {
+      "winner_merge": 25423508514,
+      "frame_reference": 36548734573,
+      "lookup": 936949575,
+      "total": 62914691149
+    },
+    "process": {
+      "elapsed_seconds": 83.26,
+      "user_seconds": 63.16,
+      "system_seconds": 13.66,
+      "cpu_percent": 92,
+      "maximum_rss_kib": 36480316,
+      "maximum_rss_gib": 34.790340,
+      "major_faults": 40106,
+      "minor_faults": 312764,
+      "voluntary_context_switches": 40543,
+      "involuntary_context_switches": 2066,
+      "swaps": 0,
+      "filesystem_input_units": 131684320,
+      "filesystem_output_units": 24,
+      "filesystem_unit_bytes": 512,
+      "filesystem_input_bytes_approx": 67422371840,
+      "filesystem_output_bytes_approx": 12288,
+      "exit_status": 0
+    }
+  },
   "environment": {
     "hardware": "Intel Core Ultra 9 285K VMware guest",
     "virtual_cpus": 8,
@@ -81,7 +124,8 @@
       "maintenance-post",
       "maintenance-reopen",
       "gc-pre",
-      "gc-post-reopen"
+      "gc-post-reopen",
+      "final-binary-read-only-source-pack"
     ]
   },
   "baselines": {
@@ -319,6 +363,8 @@
     "Timings and page faults depend on cache state and this single host/filesystem. They are not hardware-independent performance guarantees.",
     "The post-compaction manifest deliberately contains one v4 L2 run and eight retained v3 L0 runs; this campaign proves mixed-format correctness, not a complete rewrite of every live run.",
     "No production power-loss was induced during this MainNet campaign; deterministic crash-boundary recovery is covered separately by the fault-injection test matrix."
+    ,
+    "The final-binary read-only revalidation reached 36,480,316 KiB ru_maxrss despite identical evidence and a faster wall time. Verifier mmap residency is cache- and pressure-sensitive and is not yet a stable low-memory property."
   ],
   "evidence_files": [
     "reports/performance/mainnet-pack-v4-pre-3382022-20260719.log",

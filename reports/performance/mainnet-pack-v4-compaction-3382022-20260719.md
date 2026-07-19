@@ -34,6 +34,9 @@ optimization target.
 - Base checkpoint height: `3,287,022`.
 - Release verifier SHA-256:
   `eca5f636a4f771f0f8ac7f00763d9b611820f613bf77b50f19b87279f45bcc6c`.
+- Final read-only revalidation commit and verifier SHA-256:
+  `a24f4314414b0048bbce9844bcd5bcec2096f088` and
+  `7c825a14d34d9fc044c5e56e6fef8294f33accdc4b7bfeefdb1d2440e9143259`.
 - Host: VMware guest, 8 vCPUs reported as Intel Core Ultra 9 285K,
   67,379,171,328 bytes RAM, Linux 6.17.0-35-generic.
 - Storage: 2,147,483,648,000-byte VMware virtual rotational disk, ext4 on
@@ -165,11 +168,33 @@ traffic.
 | Split-evidence baseline | 91.78 s | 5,922,464 KiB | 37,964 | 68,784,840 | 40 |
 | Maintain + all gates | 488.54 s | 6,412,972 KiB | 151,264 | 387,253,920 | 22,640,384 |
 | Verified GC + all gates | 194.06 s | 5,592,588 KiB | 77,571 | 171,266,864 | 72 |
+| Final binary, read-only source pack | 83.26 s | 36,480,316 KiB | 40,106 | 131,684,320 | 24 |
 
 The maintain invocation's filesystem output is 11,591,876,608 bytes after the
 512-byte conversion, closely tracking the reported 11,591,808,326-byte v4 run.
 Most of the 488.54-second process wall is the repeated pre/candidate/post/reopen
 evidence and three index scrubs; the streaming merge itself took 98.66 seconds.
+
+## Final binary read-only revalidation
+
+After the promotion changes and final tombstone-offset scrub fix were committed,
+the release verifier at commit
+`a24f4314414b0048bbce9844bcd5bcec2096f088` reopened the retained generation-19
+MainNet source pack in read-only verification mode. It scrubbed all 24 v3 runs
+and 225,048,697 records, resolved the canonical root, merge-walked every winner,
+scrubbed all 264 frames and 225,073,562 frame rows, replayed 100,000 frame
+references, and exercised 4,096 bounded lookup winners plus 256 misses.
+
+All canonical hashes and counts exactly matched the campaign evidence. The run
+finished with `authority verification: ok (mandatory marker)` in 83.26 seconds;
+winner merge, frame-reference, and lookup phases took 25.424, 36.549, and 0.937
+seconds respectively. It performed no maintenance, GC, or pack mutation.
+
+The run's `ru_maxrss` was 36,480,316 KiB (34.790 GiB), substantially above the
+5.648 GiB split-evidence baseline despite identical semantics and lower wall
+time. This confirms that verifier mmap residency still varies materially with
+cache state and host memory pressure. The low-memory gate remains failed; no
+bounded-RSS claim is made from the lower earlier samples.
 
 ## Limitations
 
@@ -178,7 +203,8 @@ evidence and three index scrubs; the streaming merge itself took 98.66 seconds.
   any other node throughput target.
 - Maintenance peaked at 6,412,972 KiB (6.116 GiB) RSS and GC at 5,592,588 KiB
   (5.334 GiB). The 1 GiB limit bounds compaction workspace, not every resident
-  mmap page and verifier structure. Further RSS work is required.
+  mmap page and verifier structure. Final-binary read-only revalidation peaked
+  at 36,480,316 KiB (34.790 GiB), so further RSS work is required.
 - After activation the mandatory marker makes the pack authoritative, so MDBX
   `0xf0` node comparison is intentionally skipped. This gate combines marker
   identity, root reachability, complete winner/frame evidence, bounded lookup
