@@ -10,8 +10,8 @@ use anyhow::{Context, ensure};
 use neo_state_packs::authority::{AUTHORITATIVE_HIGH_WATER_KEY, AuthoritativeHighWaterRecord};
 use neo_state_packs::{
     PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_KEY_BYTES,
-    PACK_MANIFEST_FORMAT_VERSION, PackOpKind, PackOperation, PackStore, PackStoreOptions,
-    Snapshot as PackSnapshot,
+    PACK_MANIFEST_FORMAT_VERSION, PackOpKind, PackOperation, PackStore, PackStoreError,
+    PackStoreOptions, Snapshot as PackSnapshot,
 };
 use neo_state_service::mpt_store::{PreparedMptCommit, PreparedMptMetadataOverlay};
 use neo_state_service::{MptNodeReadGeneration, MptNodeReadSnapshot, MptNodeSnapshotFactory};
@@ -59,6 +59,7 @@ struct PackNodeSnapshot {
 struct MaintenanceState {
     progress: u64,
     failure: Option<String>,
+    deferred: Option<String>,
 }
 
 /// Coalescing single-worker scheduler for derived index maintenance.
@@ -116,6 +117,9 @@ impl PackMaintenance {
     }
 
     fn request(&self) -> StorageResult<()> {
+        if self.state.0.lock().deferred.is_some() {
+            return Ok(());
+        }
         let sender = self.request.as_ref().ok_or_else(|| {
             StorageError::backend("authoritative pack maintenance is shutting down")
         })?;
@@ -144,12 +148,17 @@ impl PackMaintenance {
     fn wait_for_progress(&self, observed: u64) -> StorageResult<()> {
         let (state, wake) = &*self.state;
         let mut state = state.lock();
-        while state.progress == observed && state.failure.is_none() {
+        while state.progress == observed && state.failure.is_none() && state.deferred.is_none() {
             wake.wait(&mut state);
         }
         if let Some(error) = &state.failure {
             return Err(StorageError::backend(format!(
                 "authoritative pack maintenance failed: {error}"
+            )));
+        }
+        if let Some(reason) = &state.deferred {
+            return Err(StorageError::backend(format!(
+                "authoritative pack maintenance is deferred: {reason}"
             )));
         }
         Ok(())
@@ -171,7 +180,10 @@ fn run_pack_maintenance(
     publication: &RwLock<PublishedGeneration>,
     state: &(Mutex<MaintenanceState>, Condvar),
 ) -> anyhow::Result<()> {
-    while receiver.recv().is_ok() {
+    'requests: while receiver.recv().is_ok() {
+        if state.0.lock().deferred.is_some() {
+            continue;
+        }
         loop {
             let plan = {
                 let writer = writer.lock();
@@ -183,7 +195,29 @@ fn run_pack_maintenance(
             let Some(plan) = plan else {
                 break;
             };
-            let prepared = plan.build()?;
+            let prepared = match plan.build() {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    let Some(PackStoreError::CompactionWorkspaceExceeded {
+                        estimated_bytes,
+                        max_bytes,
+                    }) = error.downcast_ref::<PackStoreError>()
+                    else {
+                        return Err(error);
+                    };
+                    let reason = format!(
+                        "estimated workspace {estimated_bytes} bytes exceeds configured bound {max_bytes} bytes"
+                    );
+                    warn!(
+                        target: "neo::state_packs",
+                        estimated_bytes,
+                        max_bytes,
+                        "authoritative derived-index compaction deferred before allocation"
+                    );
+                    defer_maintenance(state, reason);
+                    continue 'requests;
+                }
+            };
             {
                 let mut writer = writer.lock();
                 let store = writer
@@ -207,6 +241,14 @@ fn run_pack_maintenance(
 fn note_maintenance_progress(state: &(Mutex<MaintenanceState>, Condvar)) {
     let (state, wake) = state;
     let mut state = state.lock();
+    state.progress = state.progress.wrapping_add(1);
+    wake.notify_all();
+}
+
+fn defer_maintenance(state: &(Mutex<MaintenanceState>, Condvar), reason: String) {
+    let (state, wake) = state;
+    let mut state = state.lock();
+    state.deferred = Some(reason);
     state.progress = state.progress.wrapping_add(1);
     wake.notify_all();
 }
@@ -1565,6 +1607,75 @@ mod tests {
         assert_eq!(
             reopened.get(&key).expect("read reopened pack"),
             Some(vec![8])
+        );
+    }
+
+    #[test]
+    fn over_budget_maintenance_defers_without_poisoning_or_rescheduling() {
+        let temporary = tempdir().expect("temporary maintenance fixture");
+        let pack_path = temporary.path().join("packs");
+        let mut store = PackStore::create(&pack_path, 64 * 1024).expect("create bounded pack");
+        for epoch in 0..9u64 {
+            let operations: Vec<_> = (0..512u64)
+                .map(|ordinal| {
+                    let mut key = [0u8; PACK_KEY_BYTES];
+                    key[0] = 0xF0;
+                    key[1..9].copy_from_slice(&epoch.to_be_bytes());
+                    key[9..17].copy_from_slice(&ordinal.to_be_bytes());
+                    PackOperation {
+                        key,
+                        kind: PackOpKind::Put(vec![epoch as u8]),
+                    }
+                })
+                .collect();
+            let prepared = store
+                .prepare_append(&operations)
+                .expect("prepare unmaintained frame");
+            drop(
+                store
+                    .seal_prepared(prepared)
+                    .expect("seal unmaintained frame")
+                    .into_snapshot(),
+            );
+        }
+        assert!(store.compaction_debt().excess_runs > 0);
+        let receipt = store.last_frame_receipt().expect("pack receipt");
+        let snapshot = Arc::new(PackNodeSnapshot {
+            inner: Arc::new(store.snapshot().expect("pin source generation")),
+        });
+        let writer = Arc::new(Mutex::new(Some(store)));
+        let publication = Arc::new(RwLock::new(PublishedGeneration {
+            sequence: 0,
+            snapshot,
+            marker: AuthoritativeHighWaterRecord::new(
+                0x334F_454E,
+                [0x11; 32],
+                receipt,
+                9,
+                [0x22; 32],
+            ),
+        }));
+        let maintenance =
+            PackMaintenance::spawn(Arc::clone(&writer), Arc::clone(&publication), pack_path)
+                .expect("spawn maintenance");
+
+        let observed = maintenance.progress();
+        let error = maintenance
+            .wait_for_progress(observed)
+            .expect_err("over-budget maintenance must be reported as deferred");
+        assert!(error.to_string().contains("deferred"));
+        assert!(
+            writer.lock().is_some(),
+            "deferral must not poison the writer"
+        );
+        let deferred_progress = maintenance.progress();
+        maintenance
+            .request()
+            .expect("a deferred request is coalesced without rescheduling");
+        assert_eq!(
+            maintenance.progress(),
+            deferred_progress,
+            "the same over-budget plan must not enter a retry loop"
         );
     }
 }

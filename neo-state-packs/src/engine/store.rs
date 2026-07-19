@@ -44,11 +44,11 @@ const MAX_COMPACTION_LEVEL: u32 = 99_999;
 
 static NEXT_STORE_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Typed failures specific to pack-store ownership.
+/// Typed operational failures specific to the pack store.
 ///
 /// Other format and I/O failures retain their detailed `anyhow` context.
-/// Callers can downcast an open error to this type to distinguish an active
-/// writer from corruption or ordinary I/O failure.
+/// Callers can downcast errors to distinguish active-writer ownership and
+/// resource deferral from corruption or ordinary I/O failure.
 #[derive(Debug, thiserror::Error)]
 pub enum PackStoreError {
     /// Another process or handle owns the recovery and writer lease.
@@ -65,6 +65,18 @@ pub enum PackStoreError {
         /// Underlying operating-system error.
         #[source]
         source: std::io::Error,
+    },
+    /// The current in-memory compaction implementation cannot build this
+    /// output without exceeding the configured transient workspace bound.
+    /// Source runs remain live and no output file has been created.
+    #[error(
+        "compaction workspace estimate {estimated_bytes} bytes exceeds configured bound {max_bytes} bytes"
+    )]
+    CompactionWorkspaceExceeded {
+        /// Conservative peak allocation estimate for the selected inputs.
+        estimated_bytes: u64,
+        /// Maximum transient workspace allowed for one compaction build.
+        max_bytes: u64,
     },
 }
 
@@ -380,6 +392,8 @@ pub struct PackCompactionPlan {
     inputs: Vec<LiveRun>,
     runs_dir: PathBuf,
     random_point_mmap: bool,
+    estimated_workspace_bytes: u64,
+    max_index_memory_bytes: u64,
     _source_snapshot: Snapshot,
 }
 
@@ -392,15 +406,28 @@ pub struct PreparedPackCompaction {
 }
 
 impl PackCompactionPlan {
+    /// Conservative transient allocation estimate for the current merge
+    /// implementation. This is computed only from immutable run metadata.
+    pub const fn estimated_workspace_bytes(&self) -> u64 {
+        self.estimated_workspace_bytes
+    }
+
+    /// Hard workspace bound applied before any input record is read.
+    pub const fn max_workspace_bytes(&self) -> u64 {
+        self.max_index_memory_bytes
+    }
+
     /// Merges, writes, syncs, and validates the output run. This is the
     /// expensive phase and does not borrow or mutate [`PackStore`].
     pub fn build(self) -> Result<PreparedPackCompaction> {
+        ensure_compaction_workspace(self.estimated_workspace_bytes, self.max_index_memory_bytes)?;
         let started = Instant::now();
         let mut pending = build_compacted_run_from_inputs(
             self.level,
             &self.inputs,
             &self.runs_dir,
             self.random_point_mmap,
+            self.max_index_memory_bytes,
         )?;
         pending.inputs = self.inputs;
         pending.wall_ns = duration_ns(started.elapsed());
@@ -1621,11 +1648,14 @@ impl PackStore {
         if inputs.len() < 2 {
             return Ok(None);
         }
+        let estimated_workspace_bytes = estimate_compaction_workspace_for_inputs(&inputs);
         Ok(Some(PackCompactionPlan {
             level,
             inputs,
             runs_dir: self.runs_dir.clone(),
             random_point_mmap: self.options.random_point_mmap,
+            estimated_workspace_bytes,
+            max_index_memory_bytes: self.max_index_memory_bytes,
             _source_snapshot: source_snapshot,
         }))
     }
@@ -3000,16 +3030,85 @@ fn publish_fresh_run(
     read_index_run_with_options(&final_path, options)
 }
 
+/// Conservative peak heap allocation for the current materializing
+/// compaction implementation. Output cardinality is bounded by the sum of
+/// input records, so this estimate is safe even when no keys deduplicate.
+/// Saturation deliberately turns arithmetic overflow into a deferred build.
+fn estimate_compaction_workspace_for_inputs(inputs: &[LiveRun]) -> u64 {
+    let input_records = inputs.iter().fold(0u64, |total, live| {
+        total.saturating_add(live.run.record_count)
+    });
+    estimate_compaction_workspace(input_records)
+}
+
+fn estimate_compaction_workspace(input_records: u64) -> u64 {
+    let records = u128::from(input_records);
+    let filter_capacity = (32u128 + records.saturating_mul(123).div_ceil(100)) / 3 * 3;
+    let fence_bytes = records.div_ceil(FENCE_INTERVAL as u128) * FENCE_KEY_BYTES as u128;
+    let entries_bytes = records * std::mem::size_of::<IndexEntry>() as u128;
+    let merged_bytes = records * std::mem::size_of::<(u64, IndexEntry)>() as u128;
+    let key_bytes = records * PACK_KEY_BYTES as u128;
+    let key_hash_bytes = records * std::mem::size_of::<u64>() as u128;
+    let filter_bytes = filter_capacity * std::mem::size_of::<u16>() as u128;
+
+    // `XorFilter::try_build` owns counts, xors, a geometrically grown queue,
+    // the peeled stack, and (on success) fingerprints at the same time.
+    let filter_build_bytes = filter_capacity
+        * (std::mem::size_of::<u8>()
+            + std::mem::size_of::<u64>()
+            + 2 * std::mem::size_of::<usize>()) as u128
+        + records * std::mem::size_of::<(usize, u64)>() as u128
+        + filter_bytes;
+    let merge_peak = merged_bytes + entries_bytes;
+    let filter_peak = entries_bytes + fence_bytes + key_bytes + key_hash_bytes + filter_build_bytes;
+
+    // `encode_index_run` retains the decoded entries, distinct keys, fences,
+    // and filter while materializing both the record section and complete
+    // output byte vector. `XorFilter::encode` is an additional copy.
+    let record_bytes = records * INDEX_RECORD_LEN as u128;
+    let index_bytes = INDEX_HEADER_LEN as u128 + fence_bytes + filter_bytes + record_bytes;
+    let encode_peak = entries_bytes
+        + key_bytes
+        + fence_bytes
+        + filter_bytes
+        + record_bytes
+        + filter_bytes
+        + index_bytes;
+
+    u64::try_from(merge_peak.max(filter_peak).max(encode_peak)).unwrap_or(u64::MAX)
+}
+
+fn ensure_compaction_workspace(estimated_bytes: u64, max_bytes: u64) -> Result<()> {
+    if estimated_bytes > max_bytes {
+        return Err(PackStoreError::CompactionWorkspaceExceeded {
+            estimated_bytes,
+            max_bytes,
+        }
+        .into());
+    }
+    Ok(())
+}
+
 fn build_compacted_run_from_inputs(
     level: u32,
     inputs: &[LiveRun],
     runs_dir: &Path,
     random_point_mmap: bool,
+    max_index_memory_bytes: u64,
 ) -> Result<PendingMerge> {
     ensure!(inputs.len() >= 2, "compaction requires at least two inputs");
+    let estimated_workspace_bytes = estimate_compaction_workspace_for_inputs(inputs);
+    ensure_compaction_workspace(estimated_workspace_bytes, max_index_memory_bytes)?;
     let min_epoch = inputs.first().expect("merge inputs").min_epoch;
     let max_epoch = inputs.last().expect("merge inputs").max_epoch;
-    let mut merged = Vec::new();
+    let input_record_capacity = inputs.iter().try_fold(0usize, |total, live| {
+        let records = usize::try_from(live.run.record_count)
+            .context("compaction input record count does not fit usize")?;
+        total
+            .checked_add(records)
+            .context("compaction input record count overflows usize")
+    })?;
+    let mut merged = Vec::with_capacity(input_record_capacity);
     let mut input_records = 0u64;
     let mut input_memory_bytes = 0u64;
     for live in inputs {
@@ -3984,6 +4083,66 @@ mod tests {
         assert_eq!(
             reopened.layout().expect("truncated layout").0,
             committed_len
+        );
+    }
+
+    #[test]
+    fn compaction_workspace_preflight_rejects_mainnet_scale_without_allocating() {
+        let estimated = estimate_compaction_workspace(224_000_000);
+        assert!(
+            estimated > 30 * 1024 * 1024 * 1024,
+            "the materializing implementation must account for its full peak: {estimated}"
+        );
+        let error = ensure_compaction_workspace(estimated, 768 * 1024 * 1024)
+            .expect_err("MainNet-scale materialization must exceed the bounded workspace");
+        assert!(matches!(
+            error.downcast_ref::<PackStoreError>(),
+            Some(PackStoreError::CompactionWorkspaceExceeded {
+                estimated_bytes,
+                max_bytes,
+            }) if *estimated_bytes == estimated && *max_bytes == 768 * 1024 * 1024
+        ));
+    }
+
+    #[test]
+    fn compaction_workspace_preflight_fails_before_creating_output() {
+        let root = tempdir().expect("temporary append store");
+        let runs_dir = root.path().join("runs");
+        let mut store =
+            PackStore::create_with_compaction(root.path(), 1024 * 1024, small_compaction())
+                .expect("create store");
+        append_without_maintenance(&mut store, &[put(key(1), b"v1")]);
+        append_without_maintenance(&mut store, &[put(key(2), b"v2")]);
+        append_without_maintenance(&mut store, &[put(key(3), b"v3")]);
+        let mut plan = store
+            .plan_compaction()
+            .expect("plan compaction")
+            .expect("overfull L0 has a plan");
+        let estimated = plan.estimated_workspace_bytes();
+        plan.max_index_memory_bytes = estimated - 1;
+        let output_name = run_file_name(1, 0, 2);
+        let output = runs_dir.join(&output_name);
+        let temporary = runs_dir.join(format!("{output_name}.tmp"));
+
+        let error = plan
+            .build()
+            .err()
+            .expect("over-budget compaction must be deferred");
+        assert!(matches!(
+            error.downcast_ref::<PackStoreError>(),
+            Some(PackStoreError::CompactionWorkspaceExceeded { .. })
+        ));
+        assert!(
+            !output.exists(),
+            "preflight must precede output publication"
+        );
+        assert!(
+            !temporary.exists(),
+            "preflight must precede temporary-file creation"
+        );
+        assert_eq!(
+            store.get(&key(2)).expect("read source generation"),
+            Some(b"v2".to_vec())
         );
     }
 
