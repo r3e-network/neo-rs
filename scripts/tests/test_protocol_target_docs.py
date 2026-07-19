@@ -189,8 +189,21 @@ class ProtocolTargetDocsTests(unittest.TestCase):
             text,
             re.compile(r'neogo_rpc="\$\(select_rpc .*?\)" \|\| neogo_rpc=""'),
         )
-        self.assertIn("REFERENCE-UNREACHABLE", text)
-        self.assertIn("NOT a parity failure", text)
+        self.assertIn(
+            'source "$ROOT_DIR/scripts/lib/validate-v310-references.sh"', text
+        )
+        self.assertIn(
+            'require_v310_reference_pair "$network" "$csharp_rpc" "$neogo_rpc"',
+            text,
+        )
+        self.assertNotIn("Consistency could not be evaluated; exiting neutral", text)
+        self.assertIn(
+            'ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH="${ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH:-false}"',
+            text,
+        )
+        self.assertIn("vector report contains unevaluated results", text)
+        self.assertNotIn('local_val != live_val and local_val != "0"', text)
+        self.assertIn("this is not parity proof", text)
 
     def test_fuzz_workflow_pins_tools_and_protects_the_standalone_lock(self):
         text = (REPO_ROOT / ".github" / "workflows" / "fuzz.yml").read_text(
@@ -386,7 +399,7 @@ class ProtocolTargetDocsTests(unittest.TestCase):
         self.assertNotIn("not scheduled by preset", text)
         self.assertNotIn("## Neo N3 v3.10.1 Parity", text)
 
-    def test_active_architecture_docs_record_the_immutable_canonical_vm_boundary(self):
+    def test_active_architecture_docs_record_the_workspace_canonical_vm_boundary(self):
         architecture = (REPO_ROOT / "docs" / "architecture.md").read_text(
             encoding="utf-8"
         )
@@ -395,12 +408,13 @@ class ProtocolTargetDocsTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        revision = "3081e83db3716fd51dc58c0afc039290d2d07253"
         for document, text in (("architecture", architecture), ("design", design)):
             with self.subTest(document=document):
-                self.assertIn(revision, text)
-                self.assertIn("sole canonical", text)
-                self.assertIn("non-canonical", text)
+                prose = normalized(text)
+                self.assertIn("workspace `neo-vm`", prose)
+                self.assertIn("sole canonical", prose)
+                self.assertNotIn("neo-vm-rs", prose)
+                self.assertIn("does not convert", prose)
 
         self.assertNotIn("external sibling crate", architecture)
         self.assertNotIn("referenced by path", architecture)
@@ -418,11 +432,11 @@ class ProtocolTargetDocsTests(unittest.TestCase):
             sorted(headings),
             [f"{number:03d}" for number in range(1, 45)],
         )
-        self.assertIn("### ADR-044: Immutable VM boundary and canonical local execution", text)
+        self.assertIn("### ADR-044: Workspace NeoVM authority and canonical local execution", text)
         for marker in (
             "Reth and Polkadot/Substrate are architecture references only",
-            "repeated compound IDs",
-            "conflicting kind, shape, or content fails closed",
+            "does not convert through `StackValue`",
+            "complete artifacts, reads/writes, and resulting roots",
             "Before `HF_Domovoi`",
             "fresh immutable deep copy",
             "`RUSTSEC-2025-0141`",

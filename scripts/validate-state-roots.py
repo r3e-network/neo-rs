@@ -14,6 +14,7 @@ state roots in batches against the reference node.
 
 import argparse
 import json
+import re
 import sys
 import time
 import urllib.request
@@ -50,8 +51,11 @@ def get_state_root(url, index, timeout=30):
     result, err = rpc_call(url, "getstateroot", [index], timeout)
     if err:
         return None, err
-    if result and "roothash" in result:
-        return result["roothash"], None
+    if isinstance(result, dict) and "roothash" in result:
+        root = result["roothash"]
+        if isinstance(root, str) and re.fullmatch(r"0x[0-9a-fA-F]{64}", root):
+            return root.lower(), None
+        return None, f"malformed state root: {root!r}"
     return None, f"unexpected response: {result}"
 
 def get_state_height(url, timeout=10):
@@ -86,19 +90,67 @@ def fetch_reference_roots_batch(ref_url, start, end, workers=8):
                 roots[idx] = None
     return roots
 
+
+def validation_result(
+    start: int,
+    end: int,
+    last_compared: int,
+    total_compared: int,
+    total_mismatched: int,
+    errors: list[dict],
+    allow_incomplete: bool = False,
+) -> tuple[str, list[str]]:
+    """Return PASS only when the requested interval was completely checked."""
+    expected = max(0, end - start + 1)
+    incomplete_reasons: list[str] = []
+    hard_failure_reasons: list[str] = []
+    if expected == 0:
+        hard_failure_reasons.append("requested validation interval is empty")
+    if last_compared < end:
+        incomplete_reasons.append(
+            f"validation stopped at {last_compared}, before requested end {end}"
+        )
+    if total_compared != expected:
+        incomplete_reasons.append(
+            f"compared {total_compared} roots, expected {expected}"
+        )
+    if errors:
+        hard_failure_reasons.append(f"{len(errors)} root query failures")
+    if total_mismatched:
+        hard_failure_reasons.append(
+            f"{total_mismatched} state-root mismatches found"
+        )
+
+    reasons = hard_failure_reasons + incomplete_reasons
+    if hard_failure_reasons:
+        return "FAIL", reasons
+    if incomplete_reasons:
+        return ("INCOMPLETE" if allow_incomplete else "FAIL"), reasons
+    return "PASS", []
+
 def main():
     parser = argparse.ArgumentParser(description="Validate neo-rs state roots against reference node")
     parser.add_argument("--local", default="http://127.0.0.1:10332", help="Local neo-rs RPC URL")
     parser.add_argument("--reference", default="http://seed1.neo.org:10332", help="Reference node RPC URL")
     parser.add_argument("--start", type=int, default=0, help="Start block index")
-    parser.add_argument("--end", type=int, default=50000, help="End block index (0 = follow sync)")
+    parser.add_argument("--end", type=int, default=50000, help="Inclusive end block index")
     parser.add_argument("--batch", type=int, default=500, help="Batch size for comparison")
     parser.add_argument("--poll-interval", type=int, default=5, help="Seconds between sync polls")
     parser.add_argument("--workers", type=int, default=8, help="Parallel workers for reference fetches")
+    parser.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help="diagnostic mode: allow an incomplete interval (never a proof)",
+    )
     parser.add_argument("--output", default=None, help="Output file for results (JSON)")
     args = parser.parse_args()
 
-    print(f"=== Neo-RS State Root Validator ===")
+    if args.start < 0 or args.end < args.start:
+        parser.error("--start must be non-negative and --end must be >= --start")
+    if args.batch <= 0 or args.workers <= 0 or args.poll_interval <= 0:
+        parser.error("--batch, --workers, and --poll-interval must be positive")
+
+    print("=== Neo-RS State Root Validator ===")
     print(f"Local:     {args.local}")
     print(f"Reference: {args.reference}")
     print(f"Range:     {args.start} - {args.end}")
@@ -110,7 +162,23 @@ def main():
     if err:
         print(f"ERROR: Cannot reach reference node: {err}")
         sys.exit(1)
-    print(f"Reference node at block {ref_count}")
+    if not isinstance(ref_count, int) or ref_count <= 0:
+        print(f"ERROR: Reference returned invalid getblockcount result: {ref_count}")
+        sys.exit(1)
+    reference_tip = ref_count - 1
+    if reference_tip < args.start:
+        print(
+            f"ERROR: Reference tip {reference_tip} is below requested start "
+            f"{args.start}"
+        )
+        sys.exit(1)
+    if reference_tip < args.end and not args.allow_incomplete:
+        print(
+            f"ERROR: Reference tip {reference_tip} is below requested end "
+            f"{args.end}; the interval cannot be completely verified"
+        )
+        sys.exit(1)
+    print(f"Reference node tip at block {reference_tip}")
 
     # Track results
     total_compared = 0
@@ -126,6 +194,9 @@ def main():
         # Check local node sync progress
         local_height, validated_height, err = get_state_height(args.local)
         if err:
+            if args.allow_incomplete:
+                errors.append({"index": None, "error": f"local height: {err}"})
+                break
             # Node might not be up yet, wait
             print(f"\r[{datetime.now().strftime('%H:%M:%S')}] Waiting for local node... ({err})", end="", flush=True)
             time.sleep(args.poll_interval)
@@ -136,9 +207,16 @@ def main():
 
         # Determine comparison range
         compare_start = last_compared + 1
-        compare_end = min(local_height, args.end, compare_start + args.batch - 1)
+        compare_end = min(
+            local_height,
+            reference_tip,
+            args.end,
+            compare_start + args.batch - 1,
+        )
 
         if compare_start > compare_end:
+            if args.allow_incomplete:
+                break
             # Need to wait for more blocks
             elapsed = time.time() - start_time
             rate = total_compared / elapsed if elapsed > 0 else 0
@@ -198,27 +276,44 @@ def main():
     # Final summary
     elapsed = time.time() - start_time
     print(f"\n{'='*60}")
-    print(f"VALIDATION COMPLETE")
+    print("VALIDATION COMPLETE")
     print(f"{'='*60}")
     print(f"Blocks compared:  {total_compared}")
     print(f"Matched:          {total_matched}")
     print(f"Mismatched:       {total_mismatched}")
     print(f"Errors:           {len(errors)}")
     print(f"Time:             {elapsed:.1f}s ({total_compared/elapsed:.0f} blocks/s)" if elapsed > 0 else "")
-    print(f"Result:           {'PASS - 100% compatible' if total_mismatched == 0 else 'FAIL - divergences found'}")
-
     if mismatches:
-        print(f"\nFirst 10 mismatches:")
+        print("\nFirst 10 mismatches:")
         for m in mismatches[:10]:
             print(f"  Block {m['index']}: local={m['local']} ref={m['reference']}")
 
-    # Write output file
+    result, reasons = validation_result(
+        args.start,
+        args.end,
+        last_compared,
+        total_compared,
+        total_mismatched,
+        errors,
+        allow_incomplete=args.allow_incomplete,
+    )
+    exit_code = 0 if result in {"PASS", "INCOMPLETE"} else 1
+    if result == "INCOMPLETE":
+        print(
+            "Result: INCOMPLETE (diagnostic override; not compatibility proof): "
+            + "; ".join(reasons)
+        )
+    elif result == "PASS":
+        print("Result: PASS - complete state-root interval matched")
+    else:
+        print("Result: FAIL - " + "; ".join(reasons))
+
     if args.output:
         report = {
             "timestamp": datetime.now().isoformat(),
             "local_url": args.local,
             "reference_url": args.reference,
-            "range": {"start": args.start, "end": last_compared},
+            "range": {"start": args.start, "requested_end": args.end, "last_compared": last_compared},
             "total_compared": total_compared,
             "total_matched": total_matched,
             "total_mismatched": total_mismatched,
@@ -226,13 +321,13 @@ def main():
             "elapsed_seconds": elapsed,
             "mismatches": mismatches,
             "error_details": errors[:100],
-            "result": "PASS" if total_mismatched == 0 else "FAIL"
+            "result": result,
+            "failure_reasons": reasons,
         }
         with open(args.output, "w") as f:
             json.dump(report, f, indent=2)
         print(f"\nReport written to {args.output}")
-
-    sys.exit(0 if total_mismatched == 0 else 1)
+    sys.exit(exit_code)
 
 if __name__ == "__main__":
     main()

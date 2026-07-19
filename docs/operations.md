@@ -294,9 +294,9 @@ journalctl -u neo-node -f
 
 A multi-stage `Dockerfile` builds the daemon (`cargo build --release -p neo-node`) onto a slim Debian runtime as a non-root `neo` user, and a `docker-compose.yml` is provided. The container exposes MainNet (`10332`/`10333`), TestNet (`20332`/`20333`), and private-net (`30332`/`30333`) ports and persists state under the `/data` volume.
 
-The shared `neo-vm-rs` dependency is pinned to an exact Git revision in
-`Cargo.toml` and `Cargo.lock`, so Docker and CI builds use the same VM semantics
-without a sibling checkout or extra build context.
+The canonical `neo-vm` implementation is a workspace crate, so Docker, CI, and
+local builds compile the same source and lockfile without a sibling VM checkout
+or graph-conversion boundary.
 
 ```bash
 docker build -t neo-rs:latest .

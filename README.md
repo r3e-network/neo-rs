@@ -4,10 +4,12 @@
 
 # neo-rs
 
-A complete **Neo N3 blockchain node in Rust** — a from-scratch reimplementation of
-the C# reference node with byte-for-byte protocol parity (Neo N3 **v3.10.1**). It
-joins the real MainNet/TestNet, produces the same block hashes and state roots,
-runs the NeoVM and dBFT 2.0 consensus, and serves the standard JSON-RPC API.
+An in-progress **Neo N3 blockchain node in Rust** targeting byte-for-byte
+compatibility with the C# reference node through Neo N3 **v3.10.1**. The node
+can join Neo networks, replay verified MainNet ranges, execute NeoVM and native
+contracts, maintain MPT state, and serve the standard JSON-RPC API. Complete
+MainNet replay, every hardfork boundary, and production interchangeability are
+still release gates, not current claims.
 
 [![Build Status](https://github.com/r3e-network/neo-rs/workflows/CI/badge.svg)](https://github.com/r3e-network/neo-rs/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -21,14 +23,21 @@ runs the NeoVM and dBFT 2.0 consensus, and serves the standard JSON-RPC API.
 
 ## What it is
 
-neo-rs is a production node implementation that speaks Neo N3's wire protocol,
-executes its virtual machine, and maintains its ledger and state exactly as the
-canonical C# node does — so the two are interchangeable on the same network. It
-is organized as an 8-layer, multi-crate Rust workspace built on mature
+neo-rs is a from-scratch node implementation intended to speak Neo N3's wire
+protocol, execute its virtual machine, and maintain the same ledger and state
+as the canonical C# node. It is not yet promoted as a production replacement:
+the retained MainNet replay currently reaches height **3,377,022** with a root
+matching two public references, while full-history and later-hardfork evidence
+remain incomplete. It is organized as an 8-layer, multi-crate Rust workspace built on mature
 libraries (MDBX, jsonrpsee, the RustCrypto suite) with the protocol-defining
 parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification.
 
-## What it supports
+## Implemented surface
+
+The table describes implemented code paths, not blanket production-parity
+evidence. See [docs/protocol-compatibility.md](./docs/protocol-compatibility.md)
+for the distinction between component tests, bounded replay evidence, and
+remaining release gates.
 
 | Area | Support |
 |------|---------|
@@ -38,12 +47,10 @@ parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification
 | **State** | Merkle-Patricia Trie state root, proofs (`getproof`/`getstate`) |
 | **Native contracts** | NEO, GAS, Policy, Oracle, Notary, StdLib, CryptoLib, RoleManagement, ContractManagement, Ledger, Treasury |
 | **Standards** | NEP-17 (tokens), NEP-11 (NFTs), NEP-6 (wallets), NEP-2 keys |
-| **Hardforks** | Full Neo N3 hardfork enum through v3.10.1, with MainNet/TestNet activation schedules |
+| **Hardforks** | Neo N3 hardfork enum through v3.10.1 with MainNet/TestNet activation schedules; replay evidence across all activation boundaries remains pending |
 | **JSON-RPC** | ~55 methods (blockchain, state, invocation, governance, wallet, oracle) |
 | **Storage** | MDBX, append-only static Ledger archives, hot/cold provider factories, or ephemeral in-memory storage |
 | **Oracle** | HTTPS + NeoFS request fulfilment |
-
-See [docs/protocol-compatibility.md](./docs/protocol-compatibility.md) for the parity details.
 
 ## Architecture at a glance
 

@@ -16,7 +16,7 @@ remote-ledger mode.
 
 ## Layered architecture
 
-The workspace is organized into **8 ordered layers, 26 production workspace members plus 3 development-only members**.
+The workspace is organized into **8 ordered layers, 28 production workspace members plus 3 development-only members**.
 Dependencies point downward, except for an explicit audited allow-list of
 one-way dependencies inside a layer. The canonical layer membership and
 same-layer edges live in `[workspace.metadata.architecture]` and are enforced
@@ -66,6 +66,8 @@ flowchart TD
         crypto[neo-crypto]
         storage[neo-storage]
         static[neo-static-files]
+        packs[neo-state-packs]
+        checkpoint[neo-checkpoint]
         config[neo-config]
         vm[neo-vm]
         serialization[neo-serialization]
@@ -76,8 +78,6 @@ flowchart TD
         primitives[neo-primitives]
     end
 
-    extvm[neo-vm-rs v0.2.0<br/>immutable Git dependency<br/>rev 3081e83d]
-
     APP --> PLUG
     APP --> COMP
     PLUG --> COMP
@@ -86,7 +86,6 @@ flowchart TD
     DOM --> PROTO
     PROTO --> INF
     INF --> FND
-    vm --> extvm
 ```
 
 The boundaries are conceptual groupings; the binding rule is the dependency
@@ -106,8 +105,10 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
 | neo-storage | Infrastructure | General `Store`, canonical `TransactionalStore`, and cross-namespace `CoordinatedTransactionalStore` capabilities; child/parent `DataCache` overlays; C#-compatible raw key/value codecs; isolated node-maintenance metadata; the MDBX persistent provider; and the in-memory provider. |
 | neo-static-files | Infrastructure | Versioned genesis-first static records in bounded height-addressed segments with zstd compression, checksums, one derived MDBX versioned-offset index, payload-free frame-key lookup, final-segment suffix recovery, strict scrubbing, kernel writer ownership, and LRU frame caching. |
+| neo-state-packs | Infrastructure | Opt-in append-only, checksummed MPT node frames with immutable sorted indexes, marker-bound recovery, snapshot leases, and bounded maintenance. |
+| neo-checkpoint | Infrastructure | Canonical checkpoint manifests, hashes, signatures, and dependency-light verification types. |
 | neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
-| neo-vm | Infrastructure | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
+| neo-vm | Infrastructure | Sole canonical NeoVM implementation: execution engine, contexts, opcodes, reference-counted stack items, faults, and script validation. |
 | neo-serialization | Infrastructure | Compression, binary and JSON stack-item codecs, JSONPath, in-memory storage providers. |
 | neo-manifest | Infrastructure | Contract ABI, NEF, `CallFlags`, `MethodToken`, validator attributes. |
 | neo-payloads | Protocol | `Block`, `Header`, `Transaction`, `Signer`, `WitnessRule`, attributes, and verification logic. |
@@ -128,14 +129,15 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-node | Application | The node daemon binary (TOML config, storage, P2P, RPC, consensus wiring). |
 | neo-gui | Application | Native desktop manager that talks to a running node over JSON-RPC. |
 
-The current workspace has 26 production workspace members plus 3 development-only members.
+The current workspace has 28 production workspace members plus 3 development-only members.
 The development-only members are not part of the running node:
 `neo-test-fixtures` (shared test builders), `tests` (cross-crate integration
 tests), and `benches-package` (Criterion benchmarks).
-The pure VM semantics live in `neo-vm-rs` v0.2.0, an immutable Git dependency
-at revision `3081e83db3716fd51dc58c0afc039290d2d07253`; it is neither a
-filesystem nor a runtime-loaded input. For the full ADR log and evolution
-roadmap, see [`design.md`](../design.md) (44 ADRs covering RPC decoupling,
+NeoVM semantics and the stateful execution engine both live in the workspace
+`neo-vm` crate, which is the sole canonical VM implementation. Consensus
+execution does not convert an object graph through a second VM representation.
+For the full ADR log and evolution roadmap, see
+[`design.md`](../design.md) (44 ADRs covering RPC decoupling,
 engine integration,
 error unification, oracle decoupling, dead dependency cleanup, pipeline strategy,
 error type policy, MPT layering, and more).
@@ -205,14 +207,13 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
 > doc management, runtime versioning, and native contract registry. The
 > reth/polkadot pattern comparison is also there.
 
-- **Two-tier VM.** `neo-vm` owns the local reference-counted object graph,
-  mutability, execution contexts, and hardfork-aware instruction behavior over
-  the immutable `neo-vm-rs` dependency. The local engine selected by
-  `neo-execution::ApplicationEngine::execute_allow_fault` is the sole canonical
-  route. The lean external interpreter remains non-canonical until Phase 3
-  differential evidence proves it equivalent. Separating the stateless
-  instruction semantics from the stateful host keeps opcode logic independently
-  testable. (ADR-012
+- **Canonical NeoVM.** `neo-vm` owns the reference-counted object graph,
+  mutability, execution contexts, opcodes, faults, and hardfork-aware behavior.
+  The engine selected by `neo-execution::ApplicationEngine::execute_allow_fault`
+  is the sole consensus route. Optimized script paths must remain inside that
+  semantic authority or pass complete shadow artifact and state parity before
+  promotion; consensus execution never converts through a second stack-value
+  graph. (ADR-012
   documents the analogous MPT layering: `neo-crypto::mpt_trie` owns the data
   structure, `neo-state-service` owns the durable store.)
 

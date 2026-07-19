@@ -345,6 +345,15 @@ def count_rust_state_items(state_raw: str) -> int:
 
 def compare_tx(tx_hash: str, rust_data: dict, csharp_applog: dict) -> list[str]:
     """Compare a single transaction. Returns list of difference descriptions."""
+    if "artifact" in rust_data:
+        artifact = rust_data["artifact"]
+        if not isinstance(artifact, dict):
+            return [f"  artifact: malformed Rust artifact {artifact!r}"]
+        return [
+            f"  {difference}"
+            for difference in compare_rpc_artifact(artifact, csharp_applog)
+        ]
+
     diffs = []
 
     # Compare VM state
@@ -417,11 +426,16 @@ def compare_tx(tx_hash: str, rust_data: dict, csharp_applog: dict) -> list[str]:
     return diffs
 
 
-def process_block(block_height: int, rust_block_data: dict, csharp_url: str) -> tuple[int, int, list[str]]:
+def process_block(
+    block_height: int,
+    rust_block_data: dict,
+    csharp_url: str,
+    require_artifact: bool = False,
+) -> tuple[int, int, list[str]]:
     """Process a single block. Returns (total_txs, divergent_txs, report_lines)."""
     tx_hashes, err = get_block_tx_hashes(csharp_url, block_height)
     if err:
-        return 0, 0, [f"  ERROR: could not fetch block {block_height} from C# RPC: {err}"]
+        return 0, 1, [f"  ERROR: could not fetch block {block_height} from C# RPC: {err}"]
 
     if not tx_hashes:
         # No transactions in block
@@ -450,6 +464,13 @@ def process_block(block_height: int, rust_block_data: dict, csharp_url: str) -> 
             divergent_txs += 1
             continue
 
+        if require_artifact and "artifact" not in rust_tx:
+            lines.append(
+                f"  TX {tx_hash}: INCOMPLETE Rust evidence; full NEO_TX_ARTIFACT missing"
+            )
+            divergent_txs += 1
+            continue
+
         # Fetch C# application log
         applog, err = get_csharp_applog(csharp_url, tx_hash)
         if err:
@@ -474,6 +495,21 @@ def process_block(block_height: int, rust_block_data: dict, csharp_url: str) -> 
             divergent_txs += 1
 
     return total_txs, divergent_txs, lines
+
+
+def parse_block_range(value: str) -> tuple[int, int]:
+    text = value.strip()
+    try:
+        if "-" in text:
+            start_text, end_text = text.split("-", 1)
+            start, end = int(start_text), int(end_text)
+        else:
+            start = end = int(text)
+    except ValueError as error:
+        raise ValueError("block range must contain decimal heights") from error
+    if start < 0 or end < start:
+        raise ValueError("block range must satisfy 0 <= start <= end")
+    return start, end
 
 
 def main():
@@ -506,17 +542,18 @@ def main():
         dest="json_output",
         help="Output results as JSON",
     )
+    parser.add_argument(
+        "--allow-legacy-summary",
+        action="store_true",
+        help="diagnostic mode: compare legacy TRACE summaries without a full RPC artifact",
+    )
     args = parser.parse_args()
 
     # Parse block range
-    block_str = args.block.strip()
-    if "-" in block_str:
-        parts = block_str.split("-", 1)
-        block_start = int(parts[0])
-        block_end = int(parts[1])
-    else:
-        block_start = int(block_str)
-        block_end = block_start
+    try:
+        block_start, block_end = parse_block_range(args.block)
+    except ValueError as error:
+        parser.error(str(error))
 
     blocks = set(range(block_start, block_end + 1))
 
@@ -534,7 +571,12 @@ def main():
         total_blocks += 1
         rust_block = rust_data.get(height, {})
 
-        txs, divs, lines = process_block(height, rust_block, args.csharp_rpc)
+        txs, divs, lines = process_block(
+            height,
+            rust_block,
+            args.csharp_rpc,
+            require_artifact=not args.allow_legacy_summary,
+        )
         total_txs += txs
         total_divergent += divs
 
@@ -580,7 +622,7 @@ def main():
         if first_divergent_block is not None:
             print(f"  First divergence at:  block {first_divergent_block}")
         else:
-            print(f"  First divergence at:  (none found)")
+            print("  First divergence at:  (none found)")
         print(f"{'='*60}")
 
     if total_divergent > 0:

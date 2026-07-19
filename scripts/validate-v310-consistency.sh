@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/validate-v310-consistency.sh [--network <all|mainnet|testnet>] [--skip-baseline] [--profile <dev|release>]
+Usage: scripts/validate-v310-consistency.sh [--network <all|mainnet|testnet>] [--skip-baseline] [--allow-incomplete] [--profile <dev|release>]
 
 Runs Neo v3.10.1 consistency checks for neo-rs by:
 1) building neo-node,
@@ -17,7 +17,8 @@ Environment overrides:
   NEO_EXECUTION_SPECS_REPO  Git URL used when clone/update is needed
   REPORT_ROOT               Output directory for reports (default: <repo>/reports/compat-v310)
   VECTOR_GAS_TOLERANCE      Optional gas delta tolerance passed to neo.tools.diff.cli
-  ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH  Reconcile policy vectors using live C# policy state when local node is unsynced (default: true)
+  ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH  Enable the legacy Policy diagnostic reconciler (default: false)
+  ALLOW_INCOMPLETE          Allow explicitly diagnostic, incomplete checks to return zero (default: false)
   MAINNET_CSHARP_CANDIDATES / MAINNET_NEOGO_CANDIDATES (space-separated RPC candidate URLs)
   TESTNET_CSHARP_CANDIDATES / TESTNET_NEOGO_CANDIDATES (space-separated RPC candidate URLs)
 USAGE
@@ -26,6 +27,8 @@ USAGE
 NETWORK="all"
 SKIP_BASELINE="false"
 PROFILE="dev"
+ALLOW_INCOMPLETE="${ALLOW_INCOMPLETE:-false}"
+ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH="${ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH:-false}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,6 +38,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-baseline)
       SKIP_BASELINE="true"
+      shift
+      ;;
+    --allow-incomplete)
+      ALLOW_INCOMPLETE="true"
       shift
       ;;
     --profile)
@@ -63,7 +70,17 @@ if [[ "$PROFILE" != "dev" && "$PROFILE" != "release" ]]; then
   exit 1
 fi
 
+if [[ "$ALLOW_INCOMPLETE" != "true" && "$ALLOW_INCOMPLETE" != "false" ]]; then
+  echo "Invalid ALLOW_INCOMPLETE value: $ALLOW_INCOMPLETE" >&2
+  exit 1
+fi
+if [[ "$ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH" != "true" && "$ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH" != "false" ]]; then
+  echo "Invalid ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH value: $ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH" >&2
+  exit 1
+fi
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/lib/validate-v310-references.sh"
 SPEC_DIR="${NEO_EXECUTION_SPECS_DIR:-/tmp/neo-execution-specs}"
 SPEC_REPO="${NEO_EXECUTION_SPECS_REPO:-https://github.com/r3e-network/neo-execution-specs.git}"
 REPORT_ROOT="${REPORT_ROOT:-$ROOT_DIR/reports/compat-v310}"
@@ -123,7 +140,7 @@ prepare_specs_repo() {
   fi
 
   "$SPEC_DIR/.venv/bin/pip" install --upgrade pip
-  "$SPEC_DIR/.venv/bin/pip" install -e "$SPEC_DIR[all]"
+  "$SPEC_DIR/.venv/bin/pip" install -e "${SPEC_DIR}[all]"
 }
 
 json_payload='{"jsonrpc":"2.0","id":1,"method":"getversion","params":[]}'
@@ -147,7 +164,7 @@ select_rpc() {
     # a flaky-seed red into a healthy-seed green without weakening the
     # protocol check below (each attempt still validates the full useragent/
     # network/msperblock contract).
-    for attempt in 1 2 3; do
+    for _ in 1 2 3; do
       response="$(curl --compressed -sS --max-time 15 -H 'Content-Type: application/json' -d "$json_payload" "$rpc" 2>/dev/null || true)"
       if [[ -n "$response" ]]; then
         break
@@ -401,7 +418,7 @@ stop_last_node() {
 check_protocol_parity() {
   local network="$1"
   local network_dir="$2"
-  local local_rpc="$3"
+  local _local_rpc="$3"
   local csharp_rpc="$4"
   local neogo_rpc="$5"
   local expected_network="$6"
@@ -505,9 +522,11 @@ run_vector_diff() {
     PYTHONPATH=src .venv/bin/python -m neo.tools.diff.cli "${args[@]}"
   ) || rc=$?
 
-  if [[ "$rc" -ne 0 && "${ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH:-true}" == "true" ]]; then
-    if python3 - "$report" "$local_rpc" "$csharp_rpc" "$network_dir" "$neogo_rpc" <<'PY'
+  if [[ "$rc" -ne 0 && "$ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH" == "true" ]]; then
+    local reconcile_rc=0
+    if ALLOW_INCOMPLETE="$ALLOW_INCOMPLETE" python3 - "$report" "$local_rpc" "$csharp_rpc" "$network_dir" "$neogo_rpc" <<'PY'
 import json
+import os
 import sys
 import gzip
 import time
@@ -598,7 +617,22 @@ def policy_values(rpc: str):
 raw_text = report_path.read_text(encoding="utf-8")
 report = json.loads(raw_text)
 results = report.get("results") or []
+if not results:
+    print("reconciler: vector report has no results", file=sys.stderr)
+    sys.exit(1)
+if any(entry.get("match") is None for entry in results):
+    print("reconciler: vector report contains unevaluated results", file=sys.stderr)
+    sys.exit(1)
 failures = [entry for entry in results if entry.get("match") is False]
+if not failures:
+    print("reconciler: tool failed without a reconcilable Policy mismatch", file=sys.stderr)
+    sys.exit(1)
+non_policy_failures = [
+    entry for entry in failures if entry.get("vector") not in vectors
+]
+if non_policy_failures:
+    print("reconciler: non-Policy vector failures cannot be reconciled", file=sys.stderr)
+    sys.exit(1)
 
 # The original reconciler only fired when ALL three Policy vectors failed
 # (the all-unsynced case). In practice the live testnet node reaches genesis
@@ -652,24 +686,28 @@ for failure in failures:
     # not the 1000/30/100000 the Python spec hardcodes). So the Python spec
     # expectation is NOT the parity oracle; the live C# chain is.
     #
-    # Real parity = the local node, once synced, returns the SAME value the live
-    # C# chain does. When the local node is unsynced (height << live tip) its
-    # Policy storage is empty/uninitialized and it returns 0 — a documented
-    # harness artifact, not a consensus divergence. Accept BOTH:
-    #   (a) local == live C#  (synced: true live-chain parity), OR
-    #   (b) local == 0        (unsynced: the documented artifact).
+    # Real parity requires the local node to return the same value as the live
+    # reference. An unsynced local value of zero is not evidence of parity.
     local_val = local["values"][vector]
     live_val = live["values"][vector]
-    if local_val != live_val and local_val != "0":
-        print(f"reconciler: {vector} local {local_val} != live {live_val} and not the unsynced-0 artifact", file=sys.stderr)
+    if local_val != live_val:
+        if local_val == "0" and os.environ.get("ALLOW_INCOMPLETE") == "true":
+            print(
+                f"INCOMPLETE: {vector} local value is the unsynced zero artifact; "
+                "full state parity was not evaluated",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        print(f"reconciler: {vector} local {local_val} != live {live_val}", file=sys.stderr)
         sys.exit(1)
 
 raw_report_path = report_path.with_name(report_path.stem + ".raw.json")
 if not raw_report_path.exists():
     raw_report_path.write_text(raw_text, encoding="utf-8")
 
+failure_vectors = {entry["vector"] for entry in failures}
 for entry in results:
-    if entry.get("vector") in vectors:
+    if entry.get("vector") in failure_vectors:
         entry["match"] = True
         entry["differences"] = []
 
@@ -711,6 +749,12 @@ PY
     then
       echo "[$network] reconciled policy vectors using live C# policy state"
       rc=0
+    else
+      reconcile_rc=$?
+      if [[ "$reconcile_rc" -eq 2 && "$ALLOW_INCOMPLETE" == "true" ]]; then
+        echo "[$network] INCOMPLETE: Policy vector reconciliation requires a synced local state" >&2
+        rc=0
+      fi
     fi
   fi
 
@@ -728,39 +772,6 @@ run_baseline_compat() {
   local expected_msperblock="$8"
 
   echo "[$network] running baseline C# vs NeoGo compatibility"
-
-  # --- Sync-aware skip ---
-  # The baseline (full 405-vector C#-vs-NeoGo diff) requires the local node
-  # to be at the live chain tip, because most vectors read synced chain state
-  # (balances, contract storage, committee, …). In the CI window the node
-  # only reaches height ~10-20 against a live tip of millions of blocks, so a
-  # synced-required baseline would always fail (~242/405) regardless of
-  # correctness. That is a test-harness constraint, NOT a parity defect.
-  #
-  # Probe the local and live-C# heights via getblockcount; if the local node
-  # is more than a small lag behind the live tip, emit 'node-not-synced' and
-  # exit NEUTRAL (0) so the lane is not red. The vector-diff stage above
-  # (which is genesis/protocol-level, not state-level) still runs and is the
-  # real parity gate; this baseline is a stronger, sync-required cross-check.
-  local count_payload='{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}'
-  local local_height live_height
-  local_height="$(curl --compressed -sS --max-time 8 -H 'Content-Type: application/json' \
-    -d "$count_payload" "$local_rpc" 2>/dev/null \
-    | sed -n 's/.*"result"[[:space:]]*:[[:space:]]*\([0-9]\+\).*/\1/p' || true)"
-  live_height="$(curl --compressed -sS --max-time 8 -H 'Content-Type: application/json' \
-    -d "$count_payload" "$csharp_rpc" 2>/dev/null \
-    | sed -n 's/.*"result"[[:space:]]*:[[:space:]]*\([0-9]\+\).*/\1/p' || true)"
-  if [[ "$local_height" =~ ^[0-9]+$ ]] && [[ "$live_height" =~ ^[0-9]+$ ]]; then
-    # Allow up to 100 blocks of lag (a syncing-but-near-tip node is fine).
-    local lag=$(( live_height > local_height ? live_height - local_height : 0 ))
-    if [[ "$lag" -gt 100 ]]; then
-      echo "[$network] baseline SKIPPED: local node at height $local_height, live tip $live_height (lag $lag > 100). Baseline requires a synced node; exiting neutral. This is a CI-window sync constraint, not a parity defect — the vector-diff stage above is the real parity gate." >&2
-      return 0
-    fi
-    echo "[$network] baseline: local height $local_height, live tip $live_height (lag $lag) — within tolerance, proceeding"
-  else
-    echo "[$network] baseline: could not determine heights (local=$local_height live=$live_height); proceeding best-effort" >&2
-  fi
 
   local candidates="$neogo_rpc"
   for candidate in $neogo_candidates; do
@@ -850,17 +861,7 @@ run_network_validation() {
   echo "[$network] selected C#:   $csharp_rpc"
   echo "[$network] selected NeoGo: $neogo_rpc"
 
-  # If NEITHER reference implementation was reachable from this runner, the
-  # consistency check cannot run — there is nothing to compare the local node
-  # against. This is a runner↔seed network condition (observed flaky on the
-  # Cloudflare-fronted neo.org seeds + mirrors), not a parity defect: the
-  # same seeds succeed on other runs. Exit NEUTRAL (0) with a clear
-  # reference-unreachable marker so the lane is not red on infra outages.
-  # A partial selection (one of C#/NeoGo reachable) still runs the full check.
-  if [[ -z "$csharp_rpc" && -z "$neogo_rpc" ]]; then
-    echo "[$network] REFERENCE-UNREACHABLE: no live C# or NeoGo v3.10.1 endpoint was reachable from this runner (transient seed-network outage). Consistency could not be evaluated; exiting neutral. This is an infrastructure condition, NOT a parity failure — re-run when seeds are reachable." >&2
-    return 0
-  fi
+  require_v310_reference_pair "$network" "$csharp_rpc" "$neogo_rpc"
 
   {
     echo "csharp_rpc=$csharp_rpc"
@@ -910,5 +911,9 @@ if [[ "$NETWORK" == "all" || "$NETWORK" == "testnet" ]]; then
 fi
 
 echo ""
-echo "Validation completed successfully."
+if [[ "$ALLOW_INCOMPLETE" == "true" || "$SKIP_BASELINE" == "true" ]]; then
+  echo "Validation command completed with an explicitly incomplete scope; this is not parity proof."
+else
+  echo "Validation completed successfully."
+fi
 echo "Report directory: $RUN_DIR"

@@ -64,9 +64,9 @@ def rpc_call(url: str, method: str, params: list):
 
 def try_rpc_call(url: str, method: str, params: list):
     try:
-        return rpc_call(url, method, params)
-    except Exception:
-        return None
+        return rpc_call(url, method, params), None
+    except Exception as error:
+        return None, str(error)
 
 
 def get_vmstate(applog: dict) -> str | None:
@@ -101,6 +101,80 @@ def has_matching_transfer(applog: dict, spec: dict) -> bool:
     return False
 
 
+def normalize_application_log(value):
+    """Remove only transport envelopes before strict recursive comparison."""
+    if isinstance(value, dict):
+        return {
+            key: normalize_application_log(item)
+            for key, item in value.items()
+            if key not in {"txid", "block_index"}
+        }
+    if isinstance(value, list):
+        return [normalize_application_log(item) for item in value]
+    return value
+
+
+def application_log_differences(local_log: dict, public_log: dict) -> list[str]:
+    """Return JSON paths whose normalized application artifacts differ."""
+    differences = []
+
+    def visit(local, public, path: str):
+        if type(local) is not type(public):
+            differences.append(f"{path}: local={local!r} public={public!r}")
+            return
+        if isinstance(local, dict):
+            for key in sorted(set(local) | set(public)):
+                child = f"{path}.{key}" if path else key
+                if key not in local:
+                    differences.append(f"{child}: missing locally")
+                elif key not in public:
+                    differences.append(f"{child}: unexpected locally")
+                else:
+                    visit(local[key], public[key], child)
+            return
+        if isinstance(local, list):
+            if len(local) != len(public):
+                differences.append(
+                    f"{path}: local length={len(local)} public length={len(public)}"
+                )
+            for index, (left, right) in enumerate(zip(local, public)):
+                visit(left, right, f"{path}[{index}]")
+            return
+        if local != public:
+            differences.append(f"{path}: local={local!r} public={public!r}")
+
+    visit(
+        normalize_application_log(local_log),
+        normalize_application_log(public_log),
+        "application",
+    )
+    return differences
+
+
+def checkpoint_validation_result(
+    verified: int,
+    pending: int,
+    failures: list[str],
+    allow_incomplete: bool = False,
+) -> tuple[str, list[str]]:
+    """Classify a checkpoint run without treating missing evidence as parity."""
+    expected = len(CHECKPOINTS)
+    reasons = list(failures)
+    if verified + pending + len(failures) < expected:
+        reasons.append(
+            f"only {verified + pending} of {expected} checkpoints were accounted for"
+        )
+    if failures:
+        return "FAIL", reasons
+    if pending:
+        reasons.append(f"{pending} of {expected} checkpoints are pending")
+        return ("INCOMPLETE" if allow_incomplete else "FAIL"), reasons
+    if verified != expected:
+        reasons.append(f"verified {verified} of {expected} checkpoints")
+        return "FAIL", reasons
+    return "PASS", []
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Check local Neo v3.10.1 replay against mainnet compatibility checkpoints."
@@ -111,31 +185,70 @@ def main():
         default="https://mainnet1.neo.coz.io:443",
         help="Public C#-compatible RPC endpoint",
     )
+    parser.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help="diagnostic mode: allow checkpoints above the local tip (never a proof)",
+    )
     args = parser.parse_args()
 
     local_height = rpc_call(args.local_rpc, "getblockcount", []) - 1
     print(f"local height: {local_height}")
 
     failures = []
+    pending = []
+    verified = 0
     for item in CHECKPOINTS:
         txid = item["txid"]
         height = item["height"]
         if local_height < height:
             print(f"PENDING {height} {txid} local height below checkpoint")
+            pending.append(f"{height} {txid}")
             continue
 
-        public_log = rpc_call(args.public_rpc, "getapplicationlog", [txid])
-        local_log = try_rpc_call(args.local_rpc, "getapplicationlog", [txid])
-        local_blockhash = rpc_call(args.local_rpc, "getblockhash", [height])
-        public_blockhash = rpc_call(args.public_rpc, "getblockhash", [height])
+        public_log, public_log_error = try_rpc_call(
+            args.public_rpc, "getapplicationlog", [txid]
+        )
+        local_log, local_log_error = try_rpc_call(
+            args.local_rpc, "getapplicationlog", [txid]
+        )
+        if public_log_error:
+            failures.append(
+                f"{height} {txid} public application log unavailable: {public_log_error}"
+            )
+            continue
+        if local_log_error:
+            failures.append(
+                f"{height} {txid} local application log unavailable: {local_log_error}"
+            )
+            continue
+
+        try:
+            local_blockhash = rpc_call(args.local_rpc, "getblockhash", [height])
+            public_blockhash = rpc_call(args.public_rpc, "getblockhash", [height])
+        except Exception as error:
+            failures.append(f"{height} {txid} blockhash query failed: {error}")
+            continue
         if local_blockhash != public_blockhash:
             failures.append(
                 f"{height} {txid} blockhash local={local_blockhash} public={public_blockhash}"
             )
             continue
 
-        local_tx = rpc_call(args.local_rpc, "getrawtransaction", [txid, True])
-        public_tx = rpc_call(args.public_rpc, "getrawtransaction", [txid, True])
+        try:
+            local_tx = rpc_call(args.local_rpc, "getrawtransaction", [txid, True])
+            public_tx = rpc_call(args.public_rpc, "getrawtransaction", [txid, True])
+            local_raw = rpc_call(args.local_rpc, "getrawtransaction", [txid, False])
+            public_raw = rpc_call(args.public_rpc, "getrawtransaction", [txid, False])
+        except Exception as error:
+            failures.append(f"{height} {txid} raw transaction query failed: {error}")
+            continue
+        if not isinstance(local_raw, str) or not isinstance(public_raw, str):
+            failures.append(f"{height} {txid} raw transaction hex response malformed")
+            continue
+        if local_raw.lower() != public_raw.lower():
+            failures.append(f"{height} {txid} raw transaction bytes differ")
+            continue
         if local_tx.get("blockhash") != local_blockhash:
             failures.append(
                 f"{height} {txid} local raw transaction blockhash={local_tx.get('blockhash')} expected={local_blockhash}"
@@ -150,9 +263,17 @@ def main():
             failures.append(f"{height} {txid} raw transaction mismatch " + "; ".join(tx_field_mismatches))
             continue
 
+        artifact_differences = application_log_differences(local_log, public_log)
+        if artifact_differences:
+            failures.append(
+                f"{height} {txid} application artifact mismatch: "
+                + "; ".join(artifact_differences[:10])
+            )
+            continue
+
         expected_vmstate = item["expect_vmstate"]
         public_vmstate = get_vmstate(public_log)
-        local_vmstate = get_vmstate(local_log) if local_log is not None else expected_vmstate
+        local_vmstate = get_vmstate(local_log)
 
         if local_vmstate != expected_vmstate or public_vmstate != expected_vmstate:
             failures.append(
@@ -161,21 +282,30 @@ def main():
             continue
 
         transfer_spec = item.get("must_contain_transfer")
-        if transfer_spec and local_log is not None and not has_matching_transfer(local_log, transfer_spec):
+        if transfer_spec and not has_matching_transfer(local_log, transfer_spec):
             failures.append(f"{height} {txid} missing expected local transfer {transfer_spec}")
             continue
         if transfer_spec and not has_matching_transfer(public_log, transfer_spec):
             failures.append(f"{height} {txid} missing expected public transfer {transfer_spec}")
             continue
 
-        suffix = " (local applog unavailable; verified by block/tx presence only)" if local_log is None else ""
-        print(f"OK {height} {txid}{suffix}")
+        verified += 1
+        print(f"OK {height} {txid}")
 
-    if failures:
-        print("FAIL")
-        for failure in failures:
-            print(failure)
-        sys.exit(1)
+    result, reasons = checkpoint_validation_result(
+        verified,
+        len(pending),
+        failures,
+        allow_incomplete=args.allow_incomplete,
+    )
+    if result == "PASS":
+        print(f"PASS: all {verified} checkpoints verified")
+        return
+
+    print(result)
+    for reason in reasons:
+        print(reason)
+    sys.exit(0 if result == "INCOMPLETE" else 1)
 
 
 if __name__ == "__main__":

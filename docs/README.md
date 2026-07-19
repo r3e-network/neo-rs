@@ -1,10 +1,12 @@
 # neo-rs Documentation
 
-`neo-rs` is a full Neo N3 blockchain node implemented from scratch in Rust, with
-byte-for-byte protocol parity to the official C# reference node (tracked through
-Neo v3.10.1). The runnable program is a single daemon, `neo-node`: it syncs the
-chain over a custom TCP P2P protocol, executes NeoVM bytecode and native
-contracts, maintains the MPT state root, and optionally serves a JSON-RPC API.
+`neo-rs` is a Neo N3 blockchain node implemented from scratch in Rust, targeting
+byte-for-byte compatibility with the official C# reference node through Neo
+v3.10.1. The runnable program is a single daemon, `neo-node`: it syncs the chain
+over a custom TCP P2P protocol, executes NeoVM bytecode and native contracts,
+maintains the MPT state root, and optionally serves a JSON-RPC API. Complete
+MainNet replay, all hardfork-boundary comparisons, and production
+interchangeability remain release gates.
 
 ## Start here
 
@@ -23,7 +25,7 @@ every page to what you will learn from it.
 | [operations.md](./operations.md) | Running in production: systemd and Docker deployment, storage sizing, health checks via RPC, observability, security hardening, backups, upgrades, and incident response. |
 | [metrics-conventions.md](./metrics-conventions.md) | Metric naming conventions: the prefix-to-owning-crate table (`neo_node_`, `neo_sync_`, `neo_state_service_`, `neo_storage_mdbx_`, `neo_rpc_`), the `_total` counter rule, the `_us` duration suffix, and the two deliberately frozen names that keep `run-bounded-mainnet-replay.py` scraping. |
 | [rpc-api.md](./rpc-api.md) | The JSON-RPC 2.0 surface (~55 methods) grouped by domain — blockchain, smart-contract invocation, state and MPT proofs, node/network, wallet, plugins — with parameters, request/response shape, and curl examples. |
-| [architecture.md](./architecture.md) | The 8-layer workspace design (Foundation → Infrastructure → Protocol → Domain service → Node service → Composition → Plugin/RPC boundary → Application), a crate reference table for all 26 production workspace members plus 3 development-only members, and the key design decisions (two-tier VM, supervised async services, block-import queue, provider factories, static archives, pipeline abstraction, MPT layering, C# parity). |
+| [architecture.md](./architecture.md) | The 8-layer workspace design (Foundation → Infrastructure → Protocol → Domain service → Node service → Composition → Plugin/RPC boundary → Application), a crate reference table for all 28 production workspace members plus 3 development-only members, and the key design decisions (canonical NeoVM, supervised async services, block-import queue, provider factories, static archives, pipeline abstraction, MPT layering, C# parity). |
 | [dataflow.md](./dataflow.md) | How data and control move at runtime: startup/composition, block ingestion, transaction lifecycle, a dBFT consensus round, RPC request handling, state/storage overlays, raw C#-compatible storage reads, and hot/cold provider routing — each with a diagram. |
 | [protocol-compatibility.md](./protocol-compatibility.md) | What "byte-for-byte C# parity" means, the 11 native contracts, the 8 hardforks with MainNet/TestNet activation heights, supported subsystems (consensus, VM, NEP standards, P2P), and the cryptography stack. |
 | [coding-design-architecture-guidance.md](./coding-design-architecture-guidance.md) | Coding/design rules for high-level domain flows, fluent workflow APIs, layer-by-layer abstraction, module organization, and when to use generics versus `dyn Trait`. |
@@ -44,7 +46,7 @@ live in [operations.md](./operations.md).
 
 ### New developer (understand the system)
 
-1. [architecture.md](./architecture.md) — the 8 layers, 26 production workspace members plus 3 development-only members, and design decisions.
+1. [architecture.md](./architecture.md) — the 8 layers, 28 production workspace members plus 3 development-only members, and design decisions.
 2. [dataflow.md](./dataflow.md) — how blocks, transactions, and queries flow through the services.
 3. [protocol-compatibility.md](./protocol-compatibility.md) — the protocol surface, native contracts, and hardforks the node must match.
 4. [rpc-api.md](./rpc-api.md) — the external interface clients use to drive the node.

@@ -207,8 +207,9 @@ Compose). Useful targets:
 A multi-stage Docker build and a Compose file are provided. The container
 selects a bundled config from `NEO_NETWORK`; set `NEO_PROFILE=service` to use
 `config/testnet-service.toml` or `config/mainnet-service.toml` inside the image.
-Direct Docker and Compose builds resolve the same immutable `neo-vm-rs` source
-without a sibling checkout or additional build context.
+Direct Docker and Compose builds compile the workspace `neo-vm` crate, the same
+sole VM implementation used by native and MainNet replay builds; no sibling VM
+checkout or additional build context is required.
 
 ```bash
 docker build -t neo-rs .
