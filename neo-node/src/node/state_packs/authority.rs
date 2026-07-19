@@ -28,6 +28,31 @@ const STATE_ROOT_PREFIX: u8 = 0x01;
 const STATE_ROOT_VALUE_ROOT_OFFSET: usize = 5;
 const STATE_ROOT_VALUE_UNSIGNED_LEN: usize = 1 + 4 + 32;
 
+fn validate_authoritative_transition(
+    base_marker: AuthoritativeHighWaterRecord,
+    block_index: u32,
+    state_root: [u8; 32],
+    materialized_node_operations: Option<usize>,
+) -> StorageResult<()> {
+    if block_index < base_marker.block_index {
+        return Err(StorageError::invalid_operation(format!(
+            "authoritative node packs cannot publish canonical rewind from block {} to block {} until a branch-isolated pack horizon is available",
+            base_marker.block_index, block_index
+        )));
+    }
+    if block_index == base_marker.block_index && state_root != base_marker.state_root {
+        return Err(StorageError::invalid_operation(format!(
+            "authoritative node packs cannot replace the state root at canonical block {block_index}"
+        )));
+    }
+    if materialized_node_operations == Some(0) && state_root != base_marker.state_root {
+        return Err(StorageError::invalid_operation(format!(
+            "authoritative node packs cannot advance to block {block_index} with a changed state root and an empty node overlay"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 struct CheckpointMarker {
     schema_version: u32,
@@ -462,12 +487,8 @@ impl AuthoritativeNodePack {
     {
         let base_marker = self.publication.read().marker;
         let block_index = prepared.block_index();
-        if block_index < base_marker.block_index {
-            return Err(StorageError::invalid_operation(format!(
-                "authoritative node packs cannot publish canonical rewind from block {} to block {} until a branch-isolated pack horizon is available",
-                base_marker.block_index, block_index
-            )));
-        }
+        let state_root = prepared.root_hash().to_array();
+        validate_authoritative_transition(base_marker, block_index, state_root, None)?;
         prepared.materialize_deferred_node_overlay()?;
         let expected_operations = prepared.materialized_node_operation_count();
         let mut operations = Vec::with_capacity(expected_operations);
@@ -494,6 +515,12 @@ impl AuthoritativeNodePack {
                 "authoritative node overlay conversion omitted an operation",
             ));
         }
+        validate_authoritative_transition(
+            base_marker,
+            block_index,
+            state_root,
+            Some(operations.len()),
+        )?;
 
         let mut writer = loop {
             self.maintenance.ensure_healthy()?;
@@ -516,7 +543,6 @@ impl AuthoritativeNodePack {
                 "authoritative pack writer is poisoned; restart for marker recovery",
             )
         })?;
-        let state_root = prepared.root_hash().to_array();
         let sealed = if operations.is_empty() {
             None
         } else {
@@ -823,6 +849,34 @@ mod tests {
             oracle: source_backing,
             root,
         }
+    }
+
+    #[test]
+    fn authoritative_transition_rejects_unbound_root_changes() {
+        let base = AuthoritativeHighWaterRecord {
+            network_magic: 0x334F_454E,
+            store_identity: [0x11; 32],
+            epoch: 7,
+            frame_end: 4_096,
+            frame_payload_sha256: [0x22; 32],
+            block_index: 42,
+            state_root: [0x33; 32],
+        };
+
+        let rewind = validate_authoritative_transition(base, 41, base.state_root, None)
+            .expect_err("backward height must fail closed");
+        assert!(rewind.to_string().contains("canonical rewind"));
+        let replacement = validate_authoritative_transition(base, 42, [0x44; 32], None)
+            .expect_err("same-height root replacement must fail closed");
+        assert!(replacement.to_string().contains("replace the state root"));
+        let empty_changed = validate_authoritative_transition(base, 43, [0x44; 32], Some(0))
+            .expect_err("changed root without node mutations must fail closed");
+        assert!(empty_changed.to_string().contains("empty node overlay"));
+
+        validate_authoritative_transition(base, 43, base.state_root, Some(0))
+            .expect("metadata-only forward block keeps the root");
+        validate_authoritative_transition(base, 43, [0x44; 32], Some(1))
+            .expect("a changed root may be bound to materialized node mutations");
     }
 
     fn exact_oracle_node_entries(oracle: &MemoryStore) -> Vec<(Vec<u8>, Vec<u8>)> {

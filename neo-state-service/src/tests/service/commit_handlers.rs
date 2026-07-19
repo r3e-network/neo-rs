@@ -130,6 +130,59 @@ fn coordinated_handler_failure_keeps_previous_visible_root() {
 }
 
 #[test]
+fn coordinated_revert_failure_keeps_state_root_indexes_and_mpt_tip() {
+    let backing = Arc::new(MemoryStore::new());
+    let store = Arc::new(
+        StateStore::with_mpt_store(true, Arc::clone(&backing)).expect("state store with backing"),
+    );
+    let handlers =
+        StateServiceCommitHandlers::try_new_coordinated(Arc::clone(&store)).expect("handlers");
+    let snapshot0 = DataCache::new(false);
+    snapshot0.add(
+        StorageKey::new(5, vec![0xA0]),
+        StorageItem::from_bytes(vec![0x01]),
+    );
+    let snapshot1 = DataCache::new(false);
+    snapshot1.update(
+        StorageKey::new(5, vec![0xA0]),
+        StorageItem::from_bytes(vec![0x02]),
+    );
+    assert!(handlers.on_committing_deferred(0, &snapshot0));
+    assert!(handlers.on_committing_deferred(1, &snapshot1));
+    let roots = handlers
+        .commit_pending_coordinated(|backing, prepared| {
+            assert!(backing.try_commit_borrowed_raw_overlay(prepared)?);
+            Ok(())
+        })
+        .expect("coordinated commit")
+        .expect("committed roots");
+
+    let signed_root = StateRoot::new_current(1, roots[1]);
+    assert!(store.try_add_state_root(signed_root));
+    let error = handlers
+        .on_reverting_coordinated(1, 1, |_backing, _prepared| {
+            Err(neo_storage::StorageError::CommitFailed(
+                "injected canonical revert failure".to_string(),
+            ))
+        })
+        .expect_err("external revert failure must propagate");
+
+    assert!(error.contains("injected canonical revert failure"));
+    assert_eq!(store.candidate_count(), 1);
+    assert!(
+        store
+            .get_state_root(crate::state_store::StateStoreLookup::ByBlockIndex(1))
+            .is_some(),
+        "failed coordinated revert must preserve StateRoot indexes"
+    );
+    assert_eq!(
+        store.mpt().expect("MPT").current_local_root(),
+        Some((1, roots[1])),
+        "failed coordinated revert must preserve the visible MPT tip"
+    );
+}
+
+#[test]
 fn async_committing_flush_applies_queued_mpt_roots_in_order() {
     let store = Arc::new(StateStore::with_mpt(false));
     let handlers = StateServiceCommitHandlers::new_async(Arc::clone(&store));
@@ -537,6 +590,49 @@ fn async_reverting_discards_candidate_state_roots() {
             .get_state_root(crate::state_store::StateStoreLookup::ByBlockIndex(7))
             .is_none(),
         "reverted candidate state root must be removed from all lookup indexes"
+    );
+}
+
+#[test]
+fn failed_pruning_revert_keeps_state_root_indexes_and_mpt_tip() {
+    let store = Arc::new(StateStore::with_mpt(false));
+    let handlers = StateServiceCommitHandlers::new(Arc::clone(&store));
+    let snapshot0 = DataCache::new(false);
+    snapshot0.add(
+        StorageKey::new(5, vec![0xB0]),
+        StorageItem::from_bytes(vec![0x01]),
+    );
+    let snapshot1 = DataCache::new(false);
+    snapshot1.update(
+        StorageKey::new(5, vec![0xB0]),
+        StorageItem::from_bytes(vec![0x02]),
+    );
+    assert!(handlers.on_committing(0, &snapshot0));
+    assert!(handlers.on_committing(1, &snapshot1));
+    let current_root = store
+        .mpt()
+        .expect("MPT")
+        .current_local_root()
+        .expect("current root");
+
+    let signed_root = StateRoot::new_current(1, current_root.1);
+    assert!(store.try_add_state_root(signed_root));
+    assert!(
+        !handlers.on_reverting(1, 1),
+        "pruning-mode backward revert must fail"
+    );
+
+    assert_eq!(store.candidate_count(), 1);
+    assert!(
+        store
+            .get_state_root(crate::state_store::StateStoreLookup::ByBlockIndex(1))
+            .is_some(),
+        "failed pruning revert must preserve StateRoot indexes"
+    );
+    assert_eq!(
+        store.mpt().expect("MPT").current_local_root(),
+        Some(current_root),
+        "failed pruning revert must preserve the visible MPT tip"
     );
 }
 

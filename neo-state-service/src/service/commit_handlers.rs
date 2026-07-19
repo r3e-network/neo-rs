@@ -504,12 +504,13 @@ where
             return Err("StateService handler is not in coordinated commit mode".to_string());
         }
         self.discard_pending_coordinated();
-        discard_state_roots(&self.state_store, from_index, to_index);
         let Some(mpt) = self.state_store.mpt() else {
             return Err("coordinated StateService handler has no MPT store".to_string());
         };
         mpt.revert_local_roots_coordinated(from_index, to_index, commit)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        discard_state_roots(&self.state_store, from_index, to_index);
+        Ok(())
     }
 
     fn apply_reverting(&self, from_index: u32, to_index: u32) -> bool {
@@ -544,10 +545,10 @@ fn apply_reverting<S>(state_store: &StateStore<S>, from_index: u32, to_index: u3
 where
     S: Store,
 {
-    discard_state_roots(state_store, from_index, to_index);
     if let Some(mpt) = state_store.mpt() {
         mpt.revert_local_roots(from_index, to_index)?;
     }
+    discard_state_roots(state_store, from_index, to_index);
     Ok(())
 }
 
