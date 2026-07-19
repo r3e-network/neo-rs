@@ -138,6 +138,10 @@ pub(super) struct StatePacksSection {
     /// Use separate `MADV_RANDOM` mappings for immutable sparse lookups.
     #[serde(default, alias = "RandomPointMmap")]
     pub(super) random_point_mmap: bool,
+    /// Workers used for immutable value copies in large sorted pack reads.
+    /// One keeps the sequential compatibility path.
+    #[serde(default, alias = "BatchValueWorkers")]
+    pub(super) batch_value_workers: Option<usize>,
 }
 
 impl StatePacksSection {
@@ -148,6 +152,10 @@ impl StatePacksSection {
             .map_or(Self::DEFAULT_MAX_INDEX_MEMORY_BYTES, |mb| {
                 u64::from(mb) * 1024 * 1024
             })
+    }
+
+    pub(super) fn batch_value_workers(&self) -> usize {
+        self.batch_value_workers.unwrap_or(1)
     }
 }
 

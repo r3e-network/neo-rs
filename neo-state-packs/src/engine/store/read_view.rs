@@ -1,4 +1,37 @@
 use super::*;
+use rayon::prelude::*;
+use rayon::{ThreadPool, ThreadPoolBuilder};
+use std::ops::Range;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::OnceLock;
+
+pub(super) const PACK_BATCH_VALUES_PER_WORKER: usize = 256;
+const MAX_PACK_VALUE_POOL_WORKERS: usize = 8;
+
+static PACK_VALUE_POOL: OnceLock<std::result::Result<ThreadPool, String>> = OnceLock::new();
+
+fn pack_value_pool() -> Result<&'static ThreadPool> {
+    match PACK_VALUE_POOL.get_or_init(|| {
+        let workers = std::thread::available_parallelism()
+            .map_or(1, usize::from)
+            .min(MAX_PACK_VALUE_POOL_WORKERS);
+        ThreadPoolBuilder::new()
+            .num_threads(workers)
+            .thread_name(|index| format!("neo-pack-read-{index}"))
+            .build()
+            .map_err(|error| error.to_string())
+    }) {
+        Ok(pool) => Ok(pool),
+        Err(error) => Err(anyhow::anyhow!("create shared pack value pool: {error}")),
+    }
+}
+
+pub(super) fn preflight_pack_value_pool(workers: usize) -> Result<()> {
+    if workers > 1 {
+        pack_value_pool()?;
+    }
+    Ok(())
+}
 
 /// Shared newest-first read path over one pinned run set; used by the live
 /// store and by snapshot generations alike.
@@ -7,6 +40,7 @@ pub(super) struct ReadView<'a> {
     pub(super) ranges: &'a [RunRange],
     pub(super) pack_map: &'a Mmap,
     pub(super) lookup_pack_map: Option<&'a Mmap>,
+    pub(super) batch_value_workers: usize,
 }
 
 impl ReadView<'_> {
@@ -78,8 +112,57 @@ impl ReadView<'_> {
         // offsets. Reordering derived locations still reduces seeks and makes
         // duplicate locations adjacent, but hits remain sparse across the
         // complete pack and use the random-advised payload mapping.
-        values.sort_unstable_by_key(|(_, entry)| entry.value_offset);
+        values.sort_unstable_by_key(|(_, entry)| (entry.value_offset, entry.value_len));
+        let workers = self.batch_value_workers;
+        if workers > 1 && values.len() >= parallel_threshold(workers) {
+            // The index lookup above is deliberately single-threaded so each
+            // run cursor advances in key order. Value reads are independent
+            // after the global offset sort, however, and can be split across
+            // a bounded number of workers without changing result order.
+            // This path is opt-in because concurrent page faults can regress
+            // on slower disks; the default remains sequential.
+            let ranges = duplicate_safe_ranges(&values, workers);
+            let pool = pack_value_pool()?;
+            let chunks = catch_unwind(AssertUnwindSafe(|| {
+                pool.install(|| {
+                    ranges
+                        .into_par_iter()
+                        .map(|range| self.read_value_chunk(&values[range]))
+                        .collect::<Result<Vec<_>>>()
+                })
+            }))
+            .map_err(|_| anyhow::anyhow!("parallel pack value worker panicked"))??;
+            for chunk in chunks {
+                for (output_index, value) in chunk {
+                    results[output_index] = Some(value);
+                }
+            }
+        } else {
+            let mut previous: Option<(u64, u32, Vec<u8>)> = None;
+            for (output_index, entry) in values {
+                let value = match previous.as_ref() {
+                    Some((offset, length, value))
+                        if *offset == entry.value_offset && *length == entry.value_len =>
+                    {
+                        value.clone()
+                    }
+                    _ => {
+                        let value = self
+                            .entry_value(entry)?
+                            .expect("non-tombstone index entry has a value");
+                        previous = Some((entry.value_offset, entry.value_len, value.clone()));
+                        value
+                    }
+                };
+                results[output_index] = Some(value);
+            }
+        }
+        Ok(results)
+    }
+
+    fn read_value_chunk(&self, values: &[(usize, IndexEntry)]) -> Result<Vec<(usize, Vec<u8>)>> {
         let mut previous: Option<(u64, u32, Vec<u8>)> = None;
+        let mut output = Vec::with_capacity(values.len());
         for (output_index, entry) in values {
             let value = match previous.as_ref() {
                 Some((offset, length, value))
@@ -89,15 +172,15 @@ impl ReadView<'_> {
                 }
                 _ => {
                     let value = self
-                        .entry_value(entry)?
-                        .expect("non-tombstone index entry has a value");
+                        .entry_value(*entry)?
+                        .context("non-tombstone index entry has no value")?;
                     previous = Some((entry.value_offset, entry.value_len, value.clone()));
                     value
                 }
             };
-            results[output_index] = Some(value);
+            output.push((*output_index, value));
         }
-        Ok(results)
+        Ok(output)
     }
 
     fn ensure_value_bound(entry: &IndexEntry, max_value_bytes: u64) -> Result<()> {
@@ -172,6 +255,28 @@ impl ReadView<'_> {
     }
 }
 
+const fn parallel_threshold(workers: usize) -> usize {
+    workers.saturating_mul(PACK_BATCH_VALUES_PER_WORKER)
+}
+
+fn duplicate_safe_ranges(values: &[(usize, IndexEntry)], workers: usize) -> Vec<Range<usize>> {
+    let chunk_size = values.len().div_ceil(workers);
+    let mut ranges = Vec::with_capacity(workers);
+    let mut start = 0;
+    while start < values.len() {
+        let mut end = start.saturating_add(chunk_size).min(values.len());
+        while end < values.len()
+            && values[end - 1].1.value_offset == values[end].1.value_offset
+            && values[end - 1].1.value_len == values[end].1.value_len
+        {
+            end += 1;
+        }
+        ranges.push(start..end);
+        start = end;
+    }
+    ranges
+}
+
 /// A read snapshot pinning one manifest generation. Run references and the
 /// pack mapping are held directly, so reads stay valid even if compaction
 /// replaces the live set; the lease additionally keeps the generation's run
@@ -182,6 +287,7 @@ pub struct Snapshot {
     pub(super) ranges: Vec<RunRange>,
     pub(super) pack_map: Arc<Mmap>,
     pub(super) lookup_pack_map: Option<Arc<Mmap>>,
+    pub(super) batch_value_workers: usize,
     pub(super) leases: Arc<Mutex<BTreeMap<u64, usize>>>,
 }
 
@@ -230,6 +336,7 @@ impl Snapshot {
             ranges: &self.ranges,
             pack_map: &self.pack_map,
             lookup_pack_map: self.lookup_pack_map.as_deref(),
+            batch_value_workers: self.batch_value_workers,
         }
     }
 

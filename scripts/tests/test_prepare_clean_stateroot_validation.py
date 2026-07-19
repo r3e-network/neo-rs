@@ -107,6 +107,7 @@ class PrepareCleanStateRootValidationTests(unittest.TestCase):
             self.assertIn("track_during_catchup = true", config)
             self.assertEqual(plan["commands"]["preflight"][0], "target/debug/neo-node")
             self.assertIn(str(work_root / "neo_mainnet_validate.toml"), plan["commands"]["preflight"])
+            self.assertIn("--enable-stateroot", plan["commands"]["preflight"])
             smoke_command = plan["commands"]["bounded-smoke"]
             self.assertIn("scripts/run-bounded-mainnet-replay.py", smoke_command)
             self.assertIn("--target-height", smoke_command)

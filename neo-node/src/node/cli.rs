@@ -81,10 +81,68 @@ pub struct NodeCli {
     #[arg(long, value_name = "HEIGHT")]
     pub stop_at_height: Option<u32>,
 
+    /// Enable StateService state-root/MPT computation for this run.
+    /// StateRoot is disabled by the built-in and sample configuration.
+    #[arg(long, conflicts_with = "stateroot")]
+    pub enable_stateroot: bool,
+
+    /// Explicitly enable or disable StateService state-root/MPT computation.
+    #[arg(long, value_name = "BOOL", action = clap::ArgAction::Set)]
+    pub stateroot: Option<bool>,
+
     /// Run without a local canonical ledger and delegate ledger/state/indexer
     /// reads plus relay-style RPC calls to an upstream JSON-RPC endpoint.
     #[arg(long, value_name = "URL")]
     pub remote_ledger_rpc: Option<String>,
+}
+
+impl NodeCli {
+    /// Explicit StateRoot override requested by the operator.
+    pub(super) const fn stateroot_override(&self) -> Option<bool> {
+        if self.enable_stateroot {
+            Some(true)
+        } else {
+            self.stateroot
+        }
+    }
+
+    /// Whether the operator explicitly requested StateRoot for this run.
+    pub(super) const fn stateroot_enabled(&self) -> bool {
+        matches!(self.stateroot_override(), Some(true))
+    }
+
+    /// Resolve the CLI safety gate against the loaded legacy TOML intent.
+    pub(super) fn resolve_stateroot_mode(
+        &self,
+        configured_enabled: bool,
+        configured_track_during_catchup: bool,
+    ) -> anyhow::Result<StateRootStartupMode> {
+        match self.stateroot_override() {
+            Some(true) => Ok(StateRootStartupMode {
+                enabled: true,
+                // Enabling StateRoot while skipping cold catch-up would let the
+                // ledger advance without a contiguous local root history.
+                track_during_catchup: true,
+            }),
+            Some(false) => Ok(StateRootStartupMode {
+                enabled: false,
+                track_during_catchup: configured_track_during_catchup,
+            }),
+            None if configured_enabled => anyhow::bail!(
+                "[state_service].enabled = true requires an explicit runtime choice: pass --enable-stateroot or --stateroot true to compute contiguous roots, or pass --stateroot false to run without StateRoot"
+            ),
+            None => Ok(StateRootStartupMode {
+                enabled: false,
+                track_during_catchup: configured_track_during_catchup,
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct StateRootStartupMode {
+    pub(super) enabled: bool,
+    pub(super) track_during_catchup: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,6 +196,11 @@ pub(super) fn validate_cli_mode(cli: &NodeCli) -> anyhow::Result<()> {
     if cli.remote_ledger_rpc.is_some() && (cli.import_chain.is_some() || cli.fast_sync) {
         anyhow::bail!(
             "--remote-ledger-rpc runs without a local canonical ledger; do not combine it with --import-chain or --fast-sync"
+        );
+    }
+    if cli.remote_ledger_rpc.is_some() && cli.stateroot_enabled() {
+        anyhow::bail!(
+            "--enable-stateroot/--stateroot true requires a local ledger; remote-ledger mode cannot run local StateService"
         );
     }
     Ok(())

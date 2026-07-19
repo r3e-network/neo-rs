@@ -314,11 +314,22 @@ def build_replay_plan(
         },
         {
             "name": "node-preflight",
-            "command": [str(node_bin), "--config", str(config_path), "--check-all"],
+            "command": [
+                str(node_bin),
+                "--config",
+                str(config_path),
+                "--enable-stateroot",
+                "--check-all",
+            ],
         },
         {
             "name": "run-node",
-            "command": [str(node_bin), "--config", str(config_path)],
+            "command": [
+                str(node_bin),
+                "--config",
+                str(config_path),
+                "--enable-stateroot",
+            ],
             "log": str(log_file),
         },
         {

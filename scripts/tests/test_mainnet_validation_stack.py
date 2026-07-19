@@ -38,13 +38,19 @@ class MainnetValidationStackPlanTests(unittest.TestCase):
                 "target/release/neo-node",
                 "--config",
                 "neo_mainnet_validate.toml",
+                "--enable-stateroot",
                 "--check-all",
             ],
         )
         self.assertIn("StateService MPT height", plan["steps"][0]["failure_hint"])
         self.assertEqual(
             plan["steps"][1]["command"],
-            ["target/release/neo-node", "--config", "neo_mainnet_validate.toml"],
+            [
+                "target/release/neo-node",
+                "--config",
+                "neo_mainnet_validate.toml",
+                "--enable-stateroot",
+            ],
         )
 
         validator_command = plan["steps"][2]["command"]

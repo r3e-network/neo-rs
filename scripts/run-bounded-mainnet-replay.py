@@ -223,6 +223,7 @@ def node_command(
         str(node_bin),
         "--config",
         str(config),
+        "--enable-stateroot",
         "--stop-at-height",
         str(target_height),
     ]

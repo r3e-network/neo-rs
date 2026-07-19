@@ -133,9 +133,9 @@ def start_local_node(repo_dir: str) -> subprocess.Popen | None:
     env = os.environ.copy()
     env["NEO_LOG_LEVEL"] = "warn"
 
-    print(f"Starting neo-node: {binary} --config {config}")
+    print(f"Starting neo-node: {binary} --config {config} --enable-stateroot")
     proc = subprocess.Popen(
-        [binary, "--config", config],
+        [binary, "--config", config, "--enable-stateroot"],
         cwd=repo_dir,
         env=env,
         stdout=subprocess.DEVNULL,

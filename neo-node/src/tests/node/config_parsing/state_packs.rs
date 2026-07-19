@@ -6,11 +6,12 @@ fn state_packs_are_disabled_by_default() {
     assert!(!config.storage.state_packs.enabled);
     assert!(config.storage.state_packs.path.is_none());
     assert!(!config.storage.state_packs.random_point_mmap);
+    assert_eq!(config.storage.state_packs.batch_value_workers(), 1);
 }
 
 #[test]
 fn state_packs_parse_and_validate_only_the_safe_authoritative_profile() {
-    let config: NodeConfig = toml::from_str(
+    let mut config: NodeConfig = toml::from_str(
         r#"
 [storage]
 backend = "mdbx"
@@ -21,6 +22,7 @@ enabled = true
 path = "StatePacks_{0}"
 max_index_memory_mb = 768
 random_point_mmap = true
+batch_value_workers = 4
 
 [state_service]
 enabled = true
@@ -33,12 +35,20 @@ track_during_catchup = true
     .expect("parse authoritative state packs");
     assert!(config.storage.state_packs.enabled);
     assert!(config.storage.state_packs.random_point_mmap);
+    assert_eq!(config.storage.state_packs.batch_value_workers(), 4);
     assert_eq!(
         config.storage.state_packs.max_index_memory_bytes(),
         768 * 1024 * 1024
     );
     assert!(config.state_service.defer_full_state_finalization);
     validate_config(&config, 0x334F_454E).expect("validate authoritative profile");
+
+    for invalid in [0, 9] {
+        config.storage.state_packs.batch_value_workers = Some(invalid);
+        let error =
+            validate_config(&config, 0x334F_454E).expect_err("invalid pack worker count must fail");
+        assert!(error.to_string().contains("batch_value_workers"), "{error}");
+    }
 }
 
 #[test]

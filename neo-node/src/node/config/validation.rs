@@ -169,6 +169,9 @@ fn validate_state_packs_config(
     if packs.max_index_memory_mb == Some(0) {
         anyhow::bail!("[storage.state_packs].max_index_memory_mb must be greater than zero");
     }
+    if !(1..=8).contains(&packs.batch_value_workers()) {
+        anyhow::bail!("[storage.state_packs].batch_value_workers must be in 1..=8");
+    }
     Ok(())
 }
 

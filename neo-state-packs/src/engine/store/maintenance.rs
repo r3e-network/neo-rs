@@ -178,6 +178,7 @@ impl PackStore {
             ranges: &self.ranges,
             pack_map: &self.pack_map,
             lookup_pack_map: self.lookup_pack_map.as_deref(),
+            batch_value_workers: self.options.batch_value_workers,
         }
     }
 
@@ -355,6 +356,7 @@ impl PackStore {
             ranges: ranges.to_vec(),
             pack_map: Arc::clone(pack_map),
             lookup_pack_map: lookup_pack_map.map(Arc::clone),
+            batch_value_workers: self.options.batch_value_workers,
             leases: Arc::clone(&self.leases),
         })
     }

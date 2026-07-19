@@ -50,7 +50,7 @@ request_headers_timeout = 10
 disabled_methods = ["openwallet"]
 
 [state_service]
-enabled = true
+enabled = false # opt in with --enable-stateroot or --stateroot true
 full_state = true
 track_during_catchup = true
 

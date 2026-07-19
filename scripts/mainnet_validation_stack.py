@@ -82,6 +82,7 @@ def build_plan(
                     node_bin_arg,
                     "--config",
                     node_config_arg,
+                    "--enable-stateroot",
                     "--check-all",
                 ],
                 "failure_hint": (
@@ -96,6 +97,7 @@ def build_plan(
                     node_bin_arg,
                     "--config",
                     node_config_arg,
+                    "--enable-stateroot",
                 ],
                 "stdout_log": f"{log_dir_arg}/neo-node.log",
             },

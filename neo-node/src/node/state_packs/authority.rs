@@ -291,9 +291,13 @@ impl MptNodeReadSnapshot for PackNodeSnapshot {
             .iter()
             .map(|key| exact_node_key(key))
             .collect::<StorageResult<Vec<_>>>()?;
-        self.inner.get_many_sorted(&keys).map_err(|error| {
-            StorageError::backend(format!("authoritative pack sorted read: {error:#}"))
-        })
+        const MAX_NODE_VALUE_BYTES: u64 = 1024 * 1024;
+        const MAX_BATCH_VALUE_BYTES: u64 = 256 * 1024 * 1024;
+        self.inner
+            .get_many_sorted_bounded(&keys, MAX_NODE_VALUE_BYTES, MAX_BATCH_VALUE_BYTES)
+            .map_err(|error| {
+                StorageError::backend(format!("authoritative pack sorted read: {error:#}"))
+            })
     }
 }
 
@@ -311,6 +315,7 @@ pub(in crate::node) struct AuthoritativeNodePack {
 impl AuthoritativeNodePack {
     /// Opens a complete checkpoint and binds it to the canonical MDBX marker
     /// and StateService metadata. Every mismatch fails startup.
+    #[cfg(test)]
     pub(in crate::node) fn open(
         path: &Path,
         max_index_memory_bytes: u64,
@@ -328,6 +333,7 @@ impl AuthoritativeNodePack {
 
     /// Opens authoritative packs with a physically separate random-advised
     /// mmap for exact point reads.
+    #[cfg(test)]
     pub(in crate::node) fn open_with_random_point_mmap(
         path: &Path,
         max_index_memory_bytes: u64,
@@ -341,11 +347,12 @@ impl AuthoritativeNodePack {
             state_backing,
             PackStoreOptions {
                 random_point_mmap: true,
+                ..PackStoreOptions::default()
             },
         )
     }
 
-    fn open_with_options(
+    pub(in crate::node) fn open_with_options(
         path: &Path,
         max_index_memory_bytes: u64,
         network_magic: u32,

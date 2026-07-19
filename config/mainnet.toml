@@ -101,9 +101,8 @@ max_transactions_per_block = 200
 [mempool]
 max_transactions = 50000
 
-# Enable StateService so fresh sync populates the state-root MPT trie in the
-# canonical MDBX environment's `neo_state_service` table.
+# StateRoot is opt-in at runtime with --enable-stateroot or --stateroot true.
 [state_service]
-enabled = true
+enabled = false
 full_state = true
 track_during_catchup = true

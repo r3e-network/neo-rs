@@ -252,6 +252,7 @@ mod tests {
                 1,
                 PackStoreOptions {
                     random_point_mmap: true,
+                    ..PackStoreOptions::default()
                 },
                 16,
                 16,
@@ -300,6 +301,7 @@ mod tests {
                 1,
                 PackStoreOptions {
                     random_point_mmap: true,
+                    ..PackStoreOptions::default()
                 },
                 16,
                 16,
@@ -325,6 +327,7 @@ mod tests {
                 1,
                 PackStoreOptions {
                     random_point_mmap: true,
+                    ..PackStoreOptions::default()
                 },
                 16,
                 16,

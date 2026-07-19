@@ -130,11 +130,10 @@ fn shipped_node_configs_enable_durable_rpc_service_stack() {
     }
 }
 
-/// Service-provider presets should run the full public query stack a
-/// NeoFura-style operator needs: hardened RPC, durable index services,
-/// state proofs, and local health/metrics endpoints.
+/// Service-provider presets prepare the full public query stack a NeoFura-style
+/// operator needs while retaining the explicit runtime gate for state proofs.
 #[test]
-fn shipped_service_provider_configs_enable_neofura_surface() {
+fn shipped_service_provider_configs_prepare_neofura_surface_with_explicit_stateroot_gate() {
     let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("neo-node has a workspace parent");
@@ -173,7 +172,10 @@ fn shipped_service_provider_configs_enable_neofura_surface() {
             "{relative} RPC batch limit should be explicit"
         );
 
-        assert!(config.state_service.enabled, "{relative} state service");
+        assert!(
+            !config.state_service.enabled,
+            "{relative} StateRoot must require --enable-stateroot"
+        );
         assert!(config.state_service.full_state, "{relative} full state");
         assert!(
             !config.state_service.defer_full_state_finalization,

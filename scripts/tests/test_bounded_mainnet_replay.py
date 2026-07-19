@@ -273,6 +273,15 @@ class BoundedMainnetReplayTests(unittest.TestCase):
         self.assertIn(str(Path(plan["work"]["chain_db"])), command)
         self.assertIn("--log", command)
         self.assertIn(str(Path(plan["work"]["log_file"])), command)
+
+        self.assertIn(
+            "--enable-stateroot",
+            module.step_by_name(plan, "node-preflight")["command"],
+        )
+        self.assertIn(
+            "--enable-stateroot",
+            module.step_by_name(plan, "run-node")["command"],
+        )
         self.assertIn("--target-height", command)
         self.assertIn("663386", command)
         self.assertIn("--probe-bin", command)

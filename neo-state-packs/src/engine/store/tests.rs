@@ -10,6 +10,13 @@ mod tests {
         key
     }
 
+    fn numbered_key(number: u32) -> [u8; PACK_KEY_BYTES] {
+        let mut key = [0; PACK_KEY_BYTES];
+        key[0] = TEST_NODE_PREFIX;
+        key[1..5].copy_from_slice(&number.to_be_bytes());
+        key
+    }
+
     const TEST_NODE_PREFIX: u8 = 0xf0;
 
     fn put(key: [u8; PACK_KEY_BYTES], value: &[u8]) -> PackOperation {
@@ -297,6 +304,7 @@ mod tests {
         let root = tempdir().expect("temporary random-mmap store");
         let options = PackStoreOptions {
             random_point_mmap: true,
+            ..PackStoreOptions::default()
         };
         let mut store = PackStore::create_with_compaction_and_options(
             root.path(),
@@ -370,6 +378,86 @@ mod tests {
             .expect("scrub normal mapping");
         assert_eq!(scrub.frames, 3);
         assert_eq!(scrub.tombstones, 1);
+    }
+
+    #[test]
+    fn pack_read_workers_are_bounded_and_parallel_batches_preserve_order() {
+        for invalid in [0, 9] {
+            let root = tempdir().expect("temporary invalid-option store");
+            let error = match PackStore::create_with_options(
+                root.path(),
+                1024 * 1024,
+                PackStoreOptions {
+                    batch_value_workers: invalid,
+                    ..PackStoreOptions::default()
+                },
+            ) {
+                Ok(_) => panic!("invalid worker count must fail before store creation"),
+                Err(error) => error,
+            };
+            assert!(error.to_string().contains("workers must be in 1..=8"));
+        }
+
+        let root = tempdir().expect("temporary parallel-read store");
+        let options = PackStoreOptions {
+            random_point_mmap: true,
+            batch_value_workers: 4,
+        };
+        let mut store = PackStore::create_with_options(root.path(), 8 * 1024 * 1024, options)
+            .expect("create parallel-read store");
+        let stored_keys = (0..1_028).map(numbered_key).collect::<Vec<_>>();
+        let mut operations = stored_keys
+            .iter()
+            .enumerate()
+            .rev()
+            .map(|(index, key)| put(*key, &(index as u32).to_le_bytes()))
+            .collect::<Vec<_>>();
+        let deleted = numbered_key(1_028);
+        let missing = numbered_key(1_029);
+        operations.push(tombstone(deleted));
+        store.append(&operations).expect("append shuffled values");
+
+        let duplicate = numbered_key(512);
+        let mut keys = stored_keys.clone();
+        keys.push(duplicate);
+        keys.push(deleted);
+        keys.push(missing);
+        keys.sort_unstable();
+        let expected = keys
+            .iter()
+            .map(|key| {
+                let number = u32::from_be_bytes(key[1..5].try_into().expect("numbered key"));
+                (number < 1_028).then(|| number.to_le_bytes().to_vec())
+            })
+            .collect::<Vec<_>>();
+        let returned_bytes = 1_029 * 4;
+
+        assert_eq!(
+            store
+                .get_many_sorted_bounded(&keys, 4, returned_bytes)
+                .expect("parallel bounded batch"),
+            expected
+        );
+        let error = store
+            .get_many_sorted_bounded(&keys, 4, returned_bytes - 1)
+            .expect_err("parallel batch must enforce its aggregate byte bound");
+        assert!(error.to_string().contains("exceeding the configured limit"));
+        let pinned = store.snapshot().expect("pin parallel read generation");
+        assert_eq!(
+            pinned.get_many_sorted(&keys).expect("parallel snapshot batch"),
+            expected
+        );
+        drop(pinned);
+        drop(store);
+
+        let reopened = PackStore::open_with_options(root.path(), 8 * 1024 * 1024, options)
+            .expect("reopen parallel-read store");
+        assert_eq!(
+            reopened
+                .get_many_sorted(&keys)
+                .expect("parallel reopened batch"),
+            expected
+        );
     }
 
     #[test]

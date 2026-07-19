@@ -109,26 +109,25 @@ fn build_state_store(
                     .context("validated state-pack path is absent")?,
                 network,
             );
+            let pack_options = neo_state_packs::PackStoreOptions {
+                random_point_mmap: config.storage.state_packs.random_point_mmap,
+                batch_value_workers: config.storage.state_packs.batch_value_workers(),
+            };
             info!(
                 target: "neo::state_packs",
-                random_point_mmap = config.storage.state_packs.random_point_mmap,
+                random_point_mmap = pack_options.random_point_mmap,
+                batch_value_workers_configured = pack_options.batch_value_workers,
+                batch_value_workers_effective = pack_options.effective_batch_value_workers(),
+                batch_value_parallel_threshold = pack_options.batch_value_parallel_threshold(),
                 "opening authoritative node-pack read path"
             );
-            let authority = if config.storage.state_packs.random_point_mmap {
-                crate::node::state_packs::AuthoritativeNodePack::open_with_random_point_mmap(
-                    &path,
-                    config.storage.state_packs.max_index_memory_bytes(),
-                    network,
-                    backing.as_ref(),
-                )
-            } else {
-                crate::node::state_packs::AuthoritativeNodePack::open(
-                    &path,
-                    config.storage.state_packs.max_index_memory_bytes(),
-                    network,
-                    backing.as_ref(),
-                )
-            }
+            let authority = crate::node::state_packs::AuthoritativeNodePack::open_with_options(
+                &path,
+                config.storage.state_packs.max_index_memory_bytes(),
+                network,
+                backing.as_ref(),
+                pack_options,
+            )
             .with_context(|| format!("opening authoritative node packs at {}", path.display()))?;
             let factory: Arc<dyn neo_state_service::MptNodeSnapshotFactory> = authority.clone();
             let state_store =

@@ -45,6 +45,9 @@ impl PackStore {
             "index memory bound must be non-zero"
         );
         validate_compaction_config(compaction)?;
+        validate_store_options(options)?;
+        let options = options.normalized_for_host();
+        read_view::preflight_pack_value_pool(options.batch_value_workers)?;
         if root.exists() {
             ensure!(
                 fs::read_dir(root)
@@ -162,6 +165,9 @@ impl PackStore {
             max_index_memory_bytes > 0,
             "index memory bound must be non-zero"
         );
+        validate_store_options(options)?;
+        let options = options.normalized_for_host();
+        read_view::preflight_pack_value_pool(options.batch_value_workers)?;
         let writer_lease = acquire_writer_lease(root)?;
         let pack_path = root.join("frames.pack");
         let pack = OpenOptions::new()
@@ -286,6 +292,9 @@ impl PackStore {
         compaction: CompactionConfig,
         options: PackStoreOptions,
     ) -> Result<Self> {
+        validate_store_options(options)?;
+        let options = options.normalized_for_host();
+        read_view::preflight_pack_value_pool(options.batch_value_workers)?;
         let writer_lease = acquire_writer_lease(root)?;
         Self::open_with_compaction_and_lease(
             root,

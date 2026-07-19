@@ -79,7 +79,10 @@ pub(super) fn build_compacted_run_from_inputs(
         max_epoch,
         runs_dir,
         &file_name,
-        PackStoreOptions { random_point_mmap },
+        PackStoreOptions {
+            random_point_mmap,
+            ..PackStoreOptions::default()
+        },
     )?;
     Ok(PendingMerge {
         level: level + 1,

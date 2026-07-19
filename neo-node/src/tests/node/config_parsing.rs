@@ -624,6 +624,66 @@ fn node_cli_accepts_preflight_flags() {
 }
 
 #[test]
+fn node_cli_state_root_is_default_off_and_has_explicit_overrides() {
+    let default = NodeCli::try_parse_from(["neo-node"]).expect("parse defaults");
+    assert_eq!(default.stateroot_override(), None);
+    assert!(!default.stateroot_enabled());
+
+    let enabled = NodeCli::try_parse_from(["neo-node", "--enable-stateroot"])
+        .expect("parse StateRoot enable flag");
+    assert_eq!(enabled.stateroot_override(), Some(true));
+    assert!(enabled.stateroot_enabled());
+
+    let explicit_true = NodeCli::try_parse_from(["neo-node", "--stateroot", "true"])
+        .expect("parse explicit StateRoot true");
+    assert_eq!(explicit_true.stateroot_override(), Some(true));
+
+    let explicit_false = NodeCli::try_parse_from(["neo-node", "--stateroot", "false"])
+        .expect("parse explicit StateRoot false");
+    assert_eq!(explicit_false.stateroot_override(), Some(false));
+    assert!(!explicit_false.stateroot_enabled());
+
+    NodeCli::try_parse_from(["neo-node", "--stateroot", "maybe"])
+        .expect_err("malformed StateRoot boolean must fail");
+}
+
+#[test]
+fn node_cli_rejects_conflicting_state_root_overrides() {
+    NodeCli::try_parse_from(["neo-node", "--enable-stateroot", "--stateroot", "false"])
+        .expect_err("conflicting StateRoot flags must fail");
+}
+
+#[test]
+fn node_cli_resolves_state_root_startup_mode_fail_closed() {
+    let default = NodeCli::try_parse_from(["neo-node"]).expect("parse defaults");
+    let disabled = default
+        .resolve_stateroot_mode(false, false)
+        .expect("default-off config remains disabled");
+    assert!(!disabled.enabled);
+    assert!(!disabled.track_during_catchup);
+
+    let error = default
+        .resolve_stateroot_mode(true, true)
+        .expect_err("legacy TOML enablement requires an explicit runtime choice");
+    assert!(error.to_string().contains("--enable-stateroot"), "{error}");
+    assert!(error.to_string().contains("--stateroot false"), "{error}");
+
+    let enabled = NodeCli::try_parse_from(["neo-node", "--enable-stateroot"])
+        .expect("parse StateRoot enable flag")
+        .resolve_stateroot_mode(false, false)
+        .expect("explicit StateRoot enablement");
+    assert!(enabled.enabled);
+    assert!(enabled.track_during_catchup);
+
+    let disabled = NodeCli::try_parse_from(["neo-node", "--stateroot", "false"])
+        .expect("parse StateRoot disable flag")
+        .resolve_stateroot_mode(true, true)
+        .expect("explicit disable acknowledges legacy TOML intent");
+    assert!(!disabled.enabled);
+    assert!(disabled.track_during_catchup);
+}
+
+#[test]
 fn validate_config_rejects_unknown_storage_backend() {
     let config: NodeConfig = toml::from_str(
         r#"

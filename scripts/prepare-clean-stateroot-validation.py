@@ -160,6 +160,7 @@ def build_plan(
                 str(node_bin),
                 "--config",
                 str(config_path),
+                "--enable-stateroot",
                 "--check-all",
             ],
             "recovery-plan": [

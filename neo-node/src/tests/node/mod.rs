@@ -260,6 +260,8 @@ fn remote_ledger_mode_rejects_local_import_sources() {
         fast_sync_report: None,
         fast_sync_expected_sha256: None,
         stop_at_height: None,
+        enable_stateroot: false,
+        stateroot: None,
         remote_ledger_rpc: Some("https://rpc.example.invalid".to_string()),
     };
 
@@ -279,6 +281,22 @@ fn remote_ledger_mode_rejects_local_import_sources() {
 }
 
 #[test]
+fn remote_ledger_mode_rejects_local_state_root_service() {
+    let cli = NodeCli::try_parse_from([
+        "neo-node",
+        "--remote-ledger-rpc",
+        "https://rpc.example.invalid",
+        "--enable-stateroot",
+    ])
+    .expect("parse remote StateRoot request");
+    let error = validate_cli_mode(&cli).expect_err("remote mode cannot run local StateRoot");
+    assert!(
+        error.to_string().contains("requires a local ledger"),
+        "{error}"
+    );
+}
+
+#[test]
 fn fast_sync_reference_rpc_is_allowed_without_remote_ledger_mode() {
     let cli = NodeCli {
         config: PathBuf::from("neo_testnet_node.toml"),
@@ -294,6 +312,8 @@ fn fast_sync_reference_rpc_is_allowed_without_remote_ledger_mode() {
         fast_sync_report: Some(PathBuf::from("fast-sync-report.json")),
         fast_sync_expected_sha256: None,
         stop_at_height: None,
+        enable_stateroot: false,
+        stateroot: None,
         remote_ledger_rpc: None,
     };
 
@@ -317,6 +337,8 @@ fn remote_ledger_preflight_skips_local_storage_validation() {
         fast_sync_report: None,
         fast_sync_expected_sha256: None,
         stop_at_height: None,
+        enable_stateroot: false,
+        stateroot: None,
         remote_ledger_rpc: Some("https://rpc.example.invalid".to_string()),
     };
 
@@ -343,6 +365,8 @@ fn local_preflight_still_validates_local_storage() {
         fast_sync_report: None,
         fast_sync_expected_sha256: None,
         stop_at_height: None,
+        enable_stateroot: false,
+        stateroot: None,
         remote_ledger_rpc: None,
     };
 

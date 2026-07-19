@@ -28,13 +28,24 @@ impl NodeCommand {
     /// Load configuration, run preflight, and compose the node runtime.
     pub(in crate::node) async fn open_runtime(self) -> anyhow::Result<OpenNodeRuntime> {
         let ledger_mode = LedgerMode::from_cli(&self.cli);
-        let (settings, config) = load_config(&self.cli.config, self.cli.network_magic)?;
+        let (settings, mut config) = load_config(&self.cli.config, self.cli.network_magic)?;
+        let configured_stateroot = config.state_service.enabled;
+        let configured_track_during_catchup = config.state_service.track_during_catchup;
+        let stateroot_mode = self
+            .cli
+            .resolve_stateroot_mode(configured_stateroot, configured_track_during_catchup)?;
+        config.state_service.enabled = stateroot_mode.enabled;
+        config.state_service.track_during_catchup = stateroot_mode.track_during_catchup;
         let logging_guards = logging::init_tracing(&config.logging)?;
         let settings = Arc::new(settings);
         info!(
             target: "neo",
             network = format_args!("0x{:08X}", settings.network),
             config = %self.cli.config.display(),
+            stateroot_enabled = config.state_service.enabled,
+            stateroot_configured = configured_stateroot,
+            stateroot_track_during_catchup = config.state_service.track_during_catchup,
+            stateroot_track_during_catchup_configured = configured_track_during_catchup,
             "loaded protocol settings"
         );
         validate_config_for_ledger_mode(

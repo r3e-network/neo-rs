@@ -7,7 +7,8 @@ use serde::Deserialize;
 /// `[state_service]`: state-root/MPT support used by Neo's StateService plugin.
 #[derive(Debug, Deserialize)]
 pub(in crate::node) struct StateServiceSection {
-    /// Whether to start the state-service store and expose state RPC methods.
+    /// Legacy configuration intent for the state-service store. The daemon's
+    /// explicit `--enable-stateroot`/`--stateroot true` gate is authoritative.
     #[serde(default, alias = "Enabled")]
     pub(in crate::node) enabled: bool,
     /// Whether to retain historical trie nodes for old-root proofs/state reads.

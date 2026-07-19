@@ -58,6 +58,8 @@ The daemon accepts a small, fixed set of flags; everything else lives in TOML.
 | `--fast-sync` | Download, MD5-check, cache, and import the built-in official fast-sync package before live P2P sync. |
 | `--fast-sync-cache <PATH>` | Override the fast-sync package cache directory. Requires `--fast-sync`. |
 | `--stop-at-height <HEIGHT>` | Stop gracefully after the persisted local ledger reaches the target height. |
+| `--enable-stateroot` | Explicitly enable StateService MPT/root computation and contiguous catch-up tracking for this run. |
+| `--stateroot <BOOL>` | Explicitly enable or disable StateRoot (`true`/`false`). Conflicts with `--enable-stateroot`. |
 | `--remote-ledger-rpc <URL>` | Run without a local canonical ledger and delegate ledger/state/indexer RPC reads plus relay, wallet transaction, and oracle submission RPC calls to the upstream JSON-RPC endpoint. Cannot be combined with `--import-chain` or `--fast-sync`. |
 
 Run preflight checks before any deploy or restart:
@@ -65,6 +67,12 @@ Run preflight checks before any deploy or restart:
 ```bash
 ./target/release/neo-node --config /opt/neo/config.toml --check-all
 ```
+
+StateRoot is disabled by default. A TOML file with `[state_service].enabled =
+true` does not silently enable it: startup requires `--enable-stateroot` or
+`--stateroot true`, while `--stateroot false` explicitly selects the default-off
+mode for a legacy config. Explicit enablement also forces catch-up tracking so
+the ledger cannot advance past the local root history.
 
 ### Fast sync
 

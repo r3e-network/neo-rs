@@ -252,7 +252,10 @@ fn main() -> Result<()> {
             &pack_path,
             network_magic.context("--network-magic is required with --mode authority")?,
             max_index_memory_mb,
-            PackStoreOptions { random_point_mmap },
+            PackStoreOptions {
+                random_point_mmap,
+                ..PackStoreOptions::default()
+            },
             samples,
             walk_cap,
             full_scan,
@@ -295,7 +298,10 @@ fn main() -> Result<()> {
         &pack_path,
         max_index_memory_bytes,
         Some(high_water.commit_horizon()),
-        PackStoreOptions { random_point_mmap },
+        PackStoreOptions {
+            random_point_mmap,
+            ..PackStoreOptions::default()
+        },
     )
     .context("opening bounded shadow packs at the canonical high-water marker")?;
     let opened = pack.open_validation();

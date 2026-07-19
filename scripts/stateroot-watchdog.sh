@@ -48,7 +48,7 @@ restart_node() {
     sleep 2
     mkdir -p "$(dirname "$NODE_LOG")"
     # shellcheck disable=SC2086
-    $NODE_BIN --config "$NODE_CONFIG" --state-root $NODE_EXTRA_ARGS >> "$NODE_LOG" 2>&1 &
+    $NODE_BIN --config "$NODE_CONFIG" --enable-stateroot $NODE_EXTRA_ARGS >> "$NODE_LOG" 2>&1 &
     echo "$(date '+%H:%M:%S') Restarted neo-node PID=$!"
     sleep 8  # wait for startup
 }

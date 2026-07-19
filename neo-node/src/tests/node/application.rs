@@ -21,6 +21,8 @@ fn node_command_rejects_conflicting_modes_before_runtime_open() {
         fast_sync_report: None,
         fast_sync_expected_sha256: None,
         stop_at_height: None,
+        enable_stateroot: false,
+        stateroot: None,
         remote_ledger_rpc: Some("http://127.0.0.1:10332".to_string()),
     });
 

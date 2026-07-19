@@ -123,6 +123,7 @@ through or allowed to fall back to stale MDBX node rows.
 | `path` | path | none (required when enabled) | Complete checkpoint directory. `{0}` is replaced with uppercase 8-digit network magic. Alias: `Path`. |
 | `max_index_memory_mb` | integer | `512` | Decoded immutable-index memory bound in MiB; must be greater than zero. Alias: `MaxIndexMemoryMb`. |
 | `random_point_mmap` | bool | `false` | Experimental host-specific optimization: index-located payload reads and sparse index-window probes use separate mappings with `MADV_RANDOM`; compaction, validation, and scrub retain ordinary mappings. Explicit enablement fails startup if the OS rejects the advice. Alias: `RandomPointMmap`. |
+| `batch_value_workers` | integer | `1` | Workers for large sorted immutable payload reads; accepted range `1..=8`, with the effective count capped by visible logical CPUs. Parallel copying starts at `effective_workers * 256` located values, uses a process-wide pool capped at eight threads, preserves duplicate/result order, and remains opt-in because storage devices differ. Alias: `BatchValueWorkers`. |
 
 `neo-pack-build --network-magic <u32-or-hex> --mdbx <store> --pack <new-dir>`
 is offline migration tooling, not a node mode. It streams a frozen StateService
@@ -442,17 +443,19 @@ State-root/MPT support used by Neo's StateService RPC methods.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `enabled` | bool | `false` | Start the state-root service and register its state store. Alias: `Enabled`. |
+| `enabled` | bool | `false` | Legacy StateRoot intent. StateRoot still requires `--enable-stateroot` or `--stateroot true`; `enabled = true` without an explicit CLI choice fails startup. Alias: `Enabled`. |
 | `full_state` | bool | `false` | Retain historical trie nodes for old-root proofs/state reads. Alias: `FullState`. |
 | `defer_full_state_finalization` | bool | `false` | Opt-in performance mode that batches full-state finalization lookups while preserving every serialized mutation and reference count. The eager path remains the default. Alias: `DeferFullStateFinalization`. |
-| `track_during_catchup` | bool | `false` | Keep computing local MPT state roots even while the node is far behind the peer tip. Enable this for full MainNet state-root validation or bootstrap jobs that must produce every historical root. Alias: `TrackDuringCatchup`. |
+| `track_during_catchup` | bool | `false` | Keep computing local MPT state roots even while the node is far behind the peer tip. Explicit CLI enablement forces this to `true` so the local root history stays contiguous. Alias: `TrackDuringCatchup`. |
 | `path` | path | none | Optional auxiliary MDBX directory when the canonical node itself is using the in-memory provider. Persistent MDBX nodes use the canonical environment's `neo_state_service` named table and ignore this path. `{0}` is replaced with uppercase 8-digit network magic. Alias: `Path`. |
 
+StateRoot is disabled by default. Enable it for a run with
+`--enable-stateroot` (or `--stateroot true`); use `--stateroot false` to
+explicitly disable a legacy config that still declares `enabled = true`.
 The service is updated during block persistence through the daemon's commit
-handlers, so it follows the same canonical-chain lifecycle as the ledger. By
-default, cold catch-up defers per-block MPT work for sync throughput; validation
-configs set `track_during_catchup = true` so `getstateheight` and
-`getstateroot` advance from genesis instead of only near the live tip. A
+handlers, so it follows the same canonical-chain lifecycle as the ledger. When
+enabled, cold catch-up always tracks per-block MPT work so `getstateheight` and
+`getstateroot` advance from genesis instead of only near the live tip.
 StateService data must be contiguous with the chain store: if the chain has
 already advanced without matching MPT roots, restore a checkpoint that includes
 the matching coordinated MPT namespace or replay from genesis with
