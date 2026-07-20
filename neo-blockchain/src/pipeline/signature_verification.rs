@@ -576,27 +576,50 @@ pub(crate) fn drain_signature_ticket(
         Ok(receipt) if receipt.matches(&header, &parent, chain_spec, &snapshot.version()) => {
             Some((header, receipt))
         }
-        Ok(_) => None,
+        // A successful worker result can still be stale when a non-standard
+        // witness observed a different cache revision, or when the ordered
+        // parent context advanced before the receipt fence. Re-run the
+        // canonical verifier before treating the header as invalid; only a
+        // failed synchronous verification truncates the accepted prefix.
+        Ok(_) => verify_signature_synchronously(
+            header,
+            parent,
+            chain_spec,
+            snapshot,
+            native_contract_provider,
+        ),
         Err(
             SignatureVerificationError::WorkerPanicked
             | SignatureVerificationError::WorkerUnavailable,
-        ) => {
-            let receipt = verify_header_witness_with_native_provider(
-                &header,
-                &parent,
-                chain_spec,
-                snapshot,
-                native_contract_provider,
-            )
-            .ok()?;
-            if receipt.matches(&header, &parent, chain_spec, &snapshot.version()) {
-                Some((header, receipt))
-            } else {
-                None
-            }
-        }
+        ) => verify_signature_synchronously(
+            header,
+            parent,
+            chain_spec,
+            snapshot,
+            native_contract_provider,
+        ),
         Err(SignatureVerificationError::InvalidWitness(_)) => None,
     }
+}
+
+fn verify_signature_synchronously(
+    header: Header,
+    parent: ParentHeaderContext,
+    chain_spec: &NeoChainSpec,
+    snapshot: &DataCache<impl CacheRead>,
+    native_contract_provider: Arc<impl NativeContractProvider>,
+) -> Option<(Header, SignatureVerificationReceipt)> {
+    let receipt = verify_header_witness_with_native_provider(
+        &header,
+        &parent,
+        chain_spec,
+        snapshot,
+        native_contract_provider,
+    )
+    .ok()?;
+    receipt
+        .matches(&header, &parent, chain_spec, &snapshot.version())
+        .then_some((header, receipt))
 }
 
 #[cfg(test)]
