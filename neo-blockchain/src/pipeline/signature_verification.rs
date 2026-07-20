@@ -12,7 +12,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
-use neo_config::NeoChainSpec;
+use neo_config::{Hardfork, ProtocolSettings};
 use neo_crypto::Crypto;
 use neo_execution::Helper;
 use neo_execution::native_contract_provider::NativeContractProvider;
@@ -296,7 +296,7 @@ impl SignatureVerificationReceipt {
         &self,
         header: &Header,
         parent: &ParentHeaderContext,
-        chain_spec: &NeoChainSpec,
+        settings: &ProtocolSettings,
         snapshot_version: &DataCacheVersion,
     ) -> bool {
         let Some(header_hash) = header.try_hash().ok() else {
@@ -311,8 +311,8 @@ impl SignatureVerificationReceipt {
             && self.previous_hash == parent.hash
             && header.prev_hash() == &parent.hash
             && self.expected_next_consensus == parent.next_consensus
-            && self.network_magic == chain_spec.network_magic()
-            && self.chain_spec_id == chain_spec_identity_digest(chain_spec)
+            && self.network_magic == settings.network
+            && self.chain_spec_id == protocol_settings_identity_digest(settings)
             && self.state_independent == state_independent
             && (self.state_independent || &self.snapshot_version == snapshot_version)
             && self.witness_digest == header_witness_digest
@@ -441,7 +441,7 @@ impl SignatureVerificationPool {
         &self,
         header: Header,
         parent: ParentHeaderContext,
-        chain_spec: Arc<NeoChainSpec>,
+        settings: Arc<ProtocolSettings>,
         snapshot: Arc<DataCache<B>>,
         native_contract_provider: Arc<P>,
     ) -> Result<SignatureVerificationTicket, SignatureVerificationSubmitError>
@@ -459,7 +459,7 @@ impl SignatureVerificationPool {
             verify_header_witness_with_native_provider(
                 &header,
                 &parent,
-                &chain_spec,
+                &settings,
                 snapshot.as_ref(),
                 native_contract_provider,
             )
@@ -484,7 +484,7 @@ impl Drop for SignatureVerificationPool {
 pub fn verify_header_witness_with_native_provider<P, B>(
     header: &Header,
     parent: &ParentHeaderContext,
-    chain_spec: &NeoChainSpec,
+    settings: &ProtocolSettings,
     snapshot: &DataCache<B>,
     native_contract_provider: Arc<P>,
 ) -> Result<SignatureVerificationReceipt, SignatureVerificationError>
@@ -499,7 +499,7 @@ where
     if expected_index != header.index() {
         return Err(invalid("previous block index mismatch"));
     }
-    if i32::from(header.primary_index()) >= chain_spec.protocol_settings().validators_count {
+    if i32::from(header.primary_index()) >= settings.validators_count {
         return Err(invalid("primary index outside the active validator set"));
     }
     if parent.hash != *header.prev_hash() {
@@ -511,7 +511,7 @@ where
 
     Helper::verify_witness_with_native_provider(
         header,
-        chain_spec.protocol_settings(),
+        settings,
         snapshot,
         &parent.next_consensus,
         &header.witness,
@@ -530,8 +530,8 @@ where
         block_index: header.index(),
         previous_hash: parent.hash,
         expected_next_consensus: parent.next_consensus,
-        network_magic: chain_spec.network_magic(),
-        chain_spec_id: chain_spec_identity_digest(chain_spec),
+        network_magic: settings.network,
+        chain_spec_id: protocol_settings_identity_digest(settings),
         state_independent: witness_is_state_independent(&header.witness),
         snapshot_version: snapshot.version(),
         witness_digest,
@@ -553,27 +553,45 @@ fn witness_is_state_independent(witness: &Witness) -> bool {
         && Helper::is_standard_contract(&witness.verification_script)
 }
 
-fn chain_spec_identity_digest(chain_spec: &NeoChainSpec) -> UInt256 {
-    let name = chain_spec.identity().name().as_bytes();
-    let expected_genesis = chain_spec.identity().expected_genesis_hash();
-    let mut bytes = Vec::with_capacity(4 + name.len() + 4 + 32);
-    bytes.extend_from_slice(&(name.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(name);
-    bytes.extend_from_slice(&chain_spec.network_magic().to_le_bytes());
-    bytes.extend_from_slice(&expected_genesis.unwrap_or_default().to_bytes());
+fn protocol_settings_identity_digest(settings: &ProtocolSettings) -> UInt256 {
+    let mut bytes = Vec::with_capacity(256);
+    bytes.extend_from_slice(&settings.network.to_le_bytes());
+    bytes.push(settings.address_version);
+    bytes.extend_from_slice(&settings.validators_count.to_le_bytes());
+    bytes.extend_from_slice(&settings.milliseconds_per_block.to_le_bytes());
+    bytes.extend_from_slice(&settings.max_valid_until_block_increment.to_le_bytes());
+    bytes.extend_from_slice(&settings.max_transactions_per_block.to_le_bytes());
+    bytes.extend_from_slice(&settings.max_block_size.to_le_bytes());
+    bytes.extend_from_slice(&settings.max_traceable_blocks.to_le_bytes());
+    bytes.extend_from_slice(&settings.initial_gas_distribution.to_le_bytes());
+    bytes.extend_from_slice(&(settings.standby_committee.len() as u32).to_le_bytes());
+    for key in &settings.standby_committee {
+        let key_bytes = key.as_bytes();
+        bytes.extend_from_slice(&(key_bytes.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(key_bytes);
+    }
+    for hardfork in Hardfork::ALL {
+        bytes.extend_from_slice(
+            &settings
+                .hardforks
+                .activation_height(hardfork)
+                .unwrap_or(u32::MAX)
+                .to_le_bytes(),
+        );
+    }
     UInt256::from(Crypto::sha256(&bytes))
 }
 
 /// Small ordered queue helper used by header import callers.
 pub(crate) fn drain_signature_ticket(
     pending: &mut VecDeque<(Header, ParentHeaderContext, SignatureVerificationTicket)>,
-    chain_spec: &NeoChainSpec,
+    settings: &ProtocolSettings,
     snapshot: &DataCache<impl CacheRead>,
     native_contract_provider: Arc<impl NativeContractProvider>,
 ) -> Option<(Header, SignatureVerificationReceipt)> {
     let (header, parent, ticket) = pending.pop_front()?;
     match ticket.wait() {
-        Ok(receipt) if receipt.matches(&header, &parent, chain_spec, &snapshot.version()) => {
+        Ok(receipt) if receipt.matches(&header, &parent, settings, &snapshot.version()) => {
             Some((header, receipt))
         }
         // A successful worker result can still be stale when a non-standard
@@ -584,7 +602,7 @@ pub(crate) fn drain_signature_ticket(
         Ok(_) => verify_signature_synchronously(
             header,
             parent,
-            chain_spec,
+            settings,
             snapshot,
             native_contract_provider,
         ),
@@ -594,7 +612,7 @@ pub(crate) fn drain_signature_ticket(
         ) => verify_signature_synchronously(
             header,
             parent,
-            chain_spec,
+            settings,
             snapshot,
             native_contract_provider,
         ),
@@ -605,20 +623,20 @@ pub(crate) fn drain_signature_ticket(
 fn verify_signature_synchronously(
     header: Header,
     parent: ParentHeaderContext,
-    chain_spec: &NeoChainSpec,
+    settings: &ProtocolSettings,
     snapshot: &DataCache<impl CacheRead>,
     native_contract_provider: Arc<impl NativeContractProvider>,
 ) -> Option<(Header, SignatureVerificationReceipt)> {
     let receipt = verify_header_witness_with_native_provider(
         &header,
         &parent,
-        chain_spec,
+        settings,
         snapshot,
         native_contract_provider,
     )
     .ok()?;
     receipt
-        .matches(&header, &parent, chain_spec, &snapshot.version())
+        .matches(&header, &parent, settings, &snapshot.version())
         .then_some((header, receipt))
 }
 
@@ -808,28 +826,28 @@ mod tests {
         let witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()]);
         let header = test_header(witness.clone());
         let parent = test_parent(&witness);
-        let chain_spec = neo_test_fixtures::test_chain_spec(ProtocolSettings::default());
+        let settings = ProtocolSettings::default();
         let snapshot = DataCache::new(false);
         let receipt = verify_header_witness_with_native_provider(
             &header,
             &parent,
-            chain_spec.as_ref(),
+            &settings,
             &snapshot,
             Arc::new(neo_native_contracts::StandardNativeProvider::new()),
         )
         .expect("valid witness");
-        assert!(receipt.matches(&header, &parent, chain_spec.as_ref(), &snapshot.version(),));
+        assert!(receipt.matches(&header, &parent, &settings, &snapshot.version(),));
 
         let mut changed = header.clone();
         changed.set_nonce(1);
-        assert!(!receipt.matches(&changed, &parent, chain_spec.as_ref(), &snapshot.version(),));
+        assert!(!receipt.matches(&changed, &parent, &settings, &snapshot.version(),));
         assert!(!receipt.matches(
             &header,
             &ParentHeaderContext {
                 next_consensus: UInt160::zero(),
                 ..parent
             },
-            chain_spec.as_ref(),
+            &settings,
             &snapshot.version(),
         ));
     }
@@ -839,7 +857,7 @@ mod tests {
         let witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()]);
         let header = test_header(witness.clone());
         let parent = test_parent(&witness);
-        let chain_spec = neo_test_fixtures::test_chain_spec(ProtocolSettings::default());
+        let settings = Arc::new(ProtocolSettings::default());
         let snapshot = Arc::new(DataCache::new(false));
         let pool = SignatureVerificationPool::new(SignatureVerificationPoolConfig {
             workers: 1,
@@ -850,13 +868,13 @@ mod tests {
             .try_submit_header_witness(
                 header.clone(),
                 parent,
-                Arc::clone(&chain_spec),
+                Arc::clone(&settings),
                 Arc::clone(&snapshot),
                 Arc::new(neo_native_contracts::StandardNativeProvider::new()),
             )
             .expect("ticket");
         let receipt = ticket.wait().expect("valid witness");
-        assert!(receipt.matches(&header, &parent, chain_spec.as_ref(), &snapshot.version(),));
+        assert!(receipt.matches(&header, &parent, settings.as_ref(), &snapshot.version(),));
     }
 
     #[test]
@@ -864,7 +882,7 @@ mod tests {
         let witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()]);
         let header = test_header(witness.clone());
         let parent = test_parent(&witness);
-        let chain_spec = neo_test_fixtures::test_chain_spec(ProtocolSettings::default());
+        let settings = ProtocolSettings::default();
         let snapshot = DataCache::new(false);
         let (result_tx, result_rx) = mpsc::sync_channel(1);
         result_tx.send(Ok(test_receipt())).expect("stale receipt");
@@ -877,7 +895,7 @@ mod tests {
 
         let drained = drain_signature_ticket(
             &mut pending,
-            chain_spec.as_ref(),
+            &settings,
             &snapshot,
             Arc::new(neo_native_contracts::StandardNativeProvider::new()),
         );
@@ -896,7 +914,7 @@ mod tests {
         let witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH0.byte()]);
         let header = test_header(witness.clone());
         let parent = test_parent(&witness);
-        let chain_spec = neo_test_fixtures::test_chain_spec(ProtocolSettings::default());
+        let settings = ProtocolSettings::default();
         let snapshot = DataCache::new(false);
         let (result_tx, result_rx) = mpsc::sync_channel(1);
         result_tx.send(Ok(test_receipt())).expect("stale receipt");
@@ -910,7 +928,7 @@ mod tests {
         assert!(
             drain_signature_ticket(
                 &mut pending,
-                chain_spec.as_ref(),
+                &settings,
                 &snapshot,
                 Arc::new(neo_native_contracts::StandardNativeProvider::new()),
             )
@@ -924,14 +942,14 @@ mod tests {
         let witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()]);
         let header = test_header_with_primary(witness.clone(), u8::MAX);
         let parent = test_parent(&witness);
-        let chain_spec = neo_test_fixtures::test_chain_spec(ProtocolSettings::default());
+        let settings = ProtocolSettings::default();
         let snapshot = DataCache::new(false);
 
         assert!(matches!(
             verify_header_witness_with_native_provider(
                 &header,
                 &parent,
-                chain_spec.as_ref(),
+                &settings,
                 &snapshot,
                 Arc::new(neo_native_contracts::StandardNativeProvider::new()),
             ),
