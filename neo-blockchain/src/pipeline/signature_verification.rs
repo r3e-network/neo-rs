@@ -644,9 +644,25 @@ fn protocol_settings_identity_digest(settings: &ProtocolSettings) -> UInt256 {
         bytes.extend_from_slice(key_bytes);
     }
     for hardfork in Hardfork::ALL {
-        bytes.push(settings.is_hardfork_defined(hardfork) as u8);
-        bytes.push(settings.is_hardfork_enabled(hardfork, 0) as u8);
-        bytes.push(settings.is_hardfork_enabled(hardfork, u32::MAX) as u8);
+        let defined = settings.is_hardfork_defined(hardfork);
+        bytes.push(defined as u8);
+        if defined {
+            // Both the legacy map-backed settings and the fixed schedule
+            // expose the same monotone activation predicate. Recovering the
+            // threshold keeps receipt identity exact without coupling this
+            // crate to either storage representation.
+            let mut low = 0u32;
+            let mut high = u32::MAX;
+            while low < high {
+                let midpoint = low + (high - low) / 2;
+                if settings.is_hardfork_enabled(hardfork, midpoint) {
+                    high = midpoint;
+                } else {
+                    low = midpoint.saturating_add(1);
+                }
+            }
+            bytes.extend_from_slice(&low.to_le_bytes());
+        }
     }
     UInt256::from(Crypto::sha256(&bytes))
 }
@@ -1036,6 +1052,19 @@ mod tests {
             changed.try_hash().expect("unsigned hash is unchanged")
         );
         assert!(!receipt.matches(&changed, &settings));
+    }
+
+    #[test]
+    fn protocol_identity_binds_exact_hardfork_activation_heights() {
+        let mut first = ProtocolSettings::default();
+        let mut second = first.clone();
+        let hardfork = Hardfork::HfAspidochelone;
+        first.hardforks.insert(hardfork, 10);
+        second.hardforks.insert(hardfork, 11);
+        assert_ne!(
+            protocol_settings_identity_digest(&first),
+            protocol_settings_identity_digest(&second)
+        );
     }
 
     #[test]
