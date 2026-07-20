@@ -122,6 +122,20 @@ fn state_independent_witness_shape_is_limited_to_standard_scripts() {
 }
 
 #[test]
+fn state_independent_witness_shape_requires_exact_nonempty_cardinality() {
+    let empty = Transaction::new();
+    assert!(!super::transaction_witnesses_are_state_independent(&empty));
+
+    let account = UInt160::from_script(
+        &neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&[2u8; 33]),
+    );
+    let mut extra = standard_shape_transaction(account);
+    let witness = extra.witnesses()[0].clone();
+    extra.set_witnesses(vec![witness.clone(), witness]);
+    assert!(!super::transaction_witnesses_are_state_independent(&extra));
+}
+
+#[test]
 fn oracle_response_fee_sum_uses_csharp_unchecked_long_arithmetic() {
     let mut tx = Transaction::new();
     tx.set_system_fee(i64::MAX);

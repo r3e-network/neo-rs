@@ -229,7 +229,7 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
 pub fn transaction_witnesses_are_state_independent(tx: &Transaction) -> bool {
     let signers = tx.signers();
     let witnesses = tx.witnesses();
-    if witnesses.len() < signers.len() {
+    if signers.is_empty() || witnesses.len() != signers.len() {
         return false;
     }
 
