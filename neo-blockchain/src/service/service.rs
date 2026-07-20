@@ -27,6 +27,7 @@ use crate::handle::BlockchainHandle;
 use crate::header_cache::HeaderCache;
 use crate::internal::UnverifiedBlockCache;
 use crate::ledger_context::LedgerContext;
+use crate::pipeline::signature_verification::SignatureVerificationPool;
 use crate::service::MempoolLike;
 use crate::service_context::SystemContext;
 
@@ -63,6 +64,8 @@ pub struct BlockchainService<S, M> {
     pub(crate) unverified_blocks: Mutex<UnverifiedBlockCache>,
     /// Optional validation-mode upper bound for persisted blocks.
     pub(crate) stop_at_height: Option<u32>,
+    /// Optional bounded pool for header witness preverification.
+    pub(crate) optimistic_signature_verification: Option<Arc<SignatureVerificationPool>>,
 }
 
 impl<S, M> fmt::Debug for BlockchainService<S, M>
@@ -116,6 +119,7 @@ where
             mempool,
             unverified_blocks: Mutex::new(UnverifiedBlockCache::default()),
             stop_at_height: None,
+            optimistic_signature_verification: None,
         };
         (service, handle)
     }
@@ -123,6 +127,17 @@ where
     /// Configure an optional validation stop height.
     pub fn set_stop_at_height(&mut self, stop_at_height: Option<u32>) {
         self.stop_at_height = stop_at_height;
+    }
+
+    /// Enables the explicitly configured bounded header-witness verifier.
+    ///
+    /// The pool only produces typed verification receipts. Canonical header
+    /// caching and block persistence remain on this service's ordered lane.
+    pub fn set_optimistic_signature_verification(
+        &mut self,
+        pool: Option<Arc<SignatureVerificationPool>>,
+    ) {
+        self.optimistic_signature_verification = pool;
     }
 
     pub(crate) fn unverified_block_count(&self) -> usize {

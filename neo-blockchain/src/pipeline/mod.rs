@@ -27,6 +27,7 @@ pub mod consensus_witness_stage;
 pub mod empty_block_fast_forward;
 pub mod handlers;
 pub mod native_persist;
+pub mod signature_verification;
 pub mod stage_traits;
 pub mod validate_stage;
 pub mod verified_import_pipeline;

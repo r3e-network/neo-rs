@@ -83,10 +83,7 @@ where
             // a failed ticket aborts the staged store and rewinds the in-memory
             // ledger to the last durable checkpoint.
             let pending_transaction_signatures = if verify && defer_store_commit {
-                match self.submit_optimistic_transaction_signatures(
-                    block,
-                    self.system.chain_spec().protocol_settings_arc(),
-                ) {
+                match self.submit_optimistic_transaction_signatures(block, self.system.settings()) {
                     Ok((tickets, submitted)) => {
                         optimistic_signature_jobs += submitted;
                         tickets
@@ -222,7 +219,7 @@ where
             if let Err(error) = self.wait_optimistic_transaction_signatures(
                 block,
                 pending_transaction_signatures,
-                self.system.chain_spec().protocol_settings(),
+                self.system.settings().as_ref(),
             ) {
                 let error = format!(
                     "import aborted at height {index}: optimistic transaction signature verification failed: {error}"
