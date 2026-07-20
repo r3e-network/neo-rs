@@ -21,6 +21,53 @@ fn specialization_shadow_is_absent_by_default() {
 }
 
 #[test]
+fn optimistic_signature_verification_is_absent_by_default() {
+    let config = NodeConfig::default();
+    assert!(
+        config
+            .execution
+            .optimistic_signature_verification
+            .build_runtime(true)
+            .expect("default optimistic signature config")
+            .is_none(),
+        "the ordinary path must not allocate verification workers"
+    );
+}
+
+#[test]
+fn optimistic_signature_verification_builds_a_bounded_pool_only_when_enabled() {
+    let config: NodeConfig = toml::from_str(
+        r#"
+[execution.optimistic_signature_verification]
+enabled = true
+workers = 2
+queue_capacity = 8
+"#,
+    )
+    .expect("parse optimistic signature config");
+    let runtime = config
+        .execution
+        .optimistic_signature_verification
+        .build_runtime(true)
+        .expect("validate optimistic signature config")
+        .expect("enabled optimistic signature runtime");
+    assert_eq!(runtime.pool.window(), 10);
+}
+
+#[test]
+fn optimistic_signature_verification_rejects_zero_limits() {
+    let config: NodeConfig = toml::from_str(
+        r#"
+[execution.optimistic_signature_verification]
+workers = 0
+"#,
+    )
+    .expect("parse zero worker config");
+    let error = validate_config(&config, 0x334F_454E).expect_err("zero workers must fail");
+    assert!(error.to_string().contains("at least one worker"));
+}
+
+#[test]
 fn specialization_shadow_builds_only_the_exact_flamingo_v1_shadow_route() {
     let config: NodeConfig = toml::from_str(
         r#"

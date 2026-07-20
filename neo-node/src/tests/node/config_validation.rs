@@ -92,6 +92,34 @@ candidates = ["flamingo_factory_pair_key_v1"]
 }
 
 #[test]
+fn validate_config_rejects_optimistic_signature_verification_without_local_execution() {
+    let config: NodeConfig = toml::from_str(
+        r#"
+[execution.optimistic_signature_verification]
+enabled = true
+workers = 2
+queue_capacity = 8
+"#,
+    )
+    .expect("parse optimistic signature config");
+
+    let error = validate_config_for_ledger_mode(
+        &config,
+        0x334F_454E,
+        LedgerMode::RemoteRpc {
+            endpoint: "https://rpc.example.invalid",
+        },
+        None,
+    )
+    .expect_err("remote-ledger mode has no local header verification snapshot");
+    assert!(
+        error
+            .to_string()
+            .contains("optimistic_signature_verification")
+    );
+}
+
+#[test]
 fn validate_config_rejects_zero_static_file_resource_limits() {
     let mut config = NodeConfig::default();
     config.storage.backend = Some("mdbx".to_string());
