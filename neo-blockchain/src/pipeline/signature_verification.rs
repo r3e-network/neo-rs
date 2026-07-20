@@ -860,6 +860,66 @@ mod tests {
     }
 
     #[test]
+    fn stale_success_receipt_is_reverified_before_publication() {
+        let witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()]);
+        let header = test_header(witness.clone());
+        let parent = test_parent(&witness);
+        let chain_spec = neo_test_fixtures::test_chain_spec(ProtocolSettings::default());
+        let snapshot = DataCache::new(false);
+        let (result_tx, result_rx) = mpsc::sync_channel(1);
+        result_tx.send(Ok(test_receipt())).expect("stale receipt");
+        drop(result_tx);
+        let ticket = SignatureVerificationTicket {
+            receiver: result_rx,
+            metrics: Arc::new(SignatureVerificationPoolMetrics::default()),
+        };
+        let mut pending = VecDeque::from([(header.clone(), parent, ticket)]);
+
+        let drained = drain_signature_ticket(
+            &mut pending,
+            chain_spec.as_ref(),
+            &snapshot,
+            Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+        );
+
+        assert!(drained.is_some());
+        assert!(pending.is_empty());
+        let reverified = drained.expect("reverified header").0;
+        assert_eq!(reverified.index(), header.index());
+        assert_eq!(reverified.hash(), header.hash());
+        assert_eq!(reverified.prev_hash(), header.prev_hash());
+        assert_eq!(reverified.witness, header.witness);
+    }
+
+    #[test]
+    fn stale_success_receipt_cannot_publish_invalid_witness() {
+        let witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH0.byte()]);
+        let header = test_header(witness.clone());
+        let parent = test_parent(&witness);
+        let chain_spec = neo_test_fixtures::test_chain_spec(ProtocolSettings::default());
+        let snapshot = DataCache::new(false);
+        let (result_tx, result_rx) = mpsc::sync_channel(1);
+        result_tx.send(Ok(test_receipt())).expect("stale receipt");
+        drop(result_tx);
+        let ticket = SignatureVerificationTicket {
+            receiver: result_rx,
+            metrics: Arc::new(SignatureVerificationPoolMetrics::default()),
+        };
+        let mut pending = VecDeque::from([(header, parent, ticket)]);
+
+        assert!(
+            drain_signature_ticket(
+                &mut pending,
+                chain_spec.as_ref(),
+                &snapshot,
+                Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+            )
+            .is_none()
+        );
+        assert!(pending.is_empty());
+    }
+
+    #[test]
     fn receipt_verification_rejects_primary_index_outside_validator_set() {
         let witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()]);
         let header = test_header_with_primary(witness.clone(), u8::MAX);
