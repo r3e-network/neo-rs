@@ -4,6 +4,9 @@ use crate::fill_memory_pool::FillMemoryPool;
 use crate::handle::BlockchainHandle;
 use crate::header_cache::HeaderCache;
 use crate::ledger_context::LedgerContext;
+use crate::pipeline::signature_verification::{
+    SignatureVerificationPool, SignatureVerificationPoolConfig,
+};
 use crate::relay_result::RelayResult;
 use crate::service::MempoolLike;
 use crate::service_context::SystemContext;
@@ -424,6 +427,45 @@ fn header_inventory_verification_uses_system_native_provider() {
         !handler.contains("LedgerContract::new()"),
         "header inventory handling must not construct native LedgerContract directly"
     );
+}
+
+#[test]
+fn optimistic_header_verification_publishes_only_the_verified_prefix() {
+    let (mut service, _handle, _snapshot) =
+        store_fixture_with(neo_config::ProtocolSettings::default());
+    let valid_witness =
+        neo_payloads::Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()]);
+    let mut anchor = Header::new();
+    anchor.set_index(0);
+    anchor.set_timestamp(10);
+    anchor.set_next_consensus(valid_witness.script_hash());
+    assert!(service.header_cache.add(anchor.clone()));
+
+    let mut valid = Header::new();
+    valid.set_index(1);
+    valid.set_prev_hash(anchor.hash());
+    valid.set_timestamp(20);
+    valid.witness = valid_witness.clone();
+
+    let mut invalid = Header::new();
+    invalid.set_index(2);
+    invalid.set_prev_hash(valid.hash());
+    invalid.set_timestamp(30);
+    invalid.witness =
+        neo_payloads::Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH0.byte()]);
+
+    service.set_optimistic_signature_verification(Some(Arc::new(
+        SignatureVerificationPool::new(SignatureVerificationPoolConfig {
+            workers: 2,
+            queue_capacity: 2,
+        })
+        .expect("pool"),
+    )));
+
+    let outcome = service.handle_headers(vec![valid.clone(), invalid]);
+    assert_eq!(outcome.accepted, 1);
+    assert_eq!(service.header_cache.hash_at(1), Some(valid.hash()));
+    assert_eq!(service.header_cache.hash_at(2), None);
 }
 
 #[test]

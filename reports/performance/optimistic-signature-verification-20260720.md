@@ -5,16 +5,13 @@ Date: 2026-07-20
 ## Scope
 
 The bounded `SignatureVerificationPool` overlaps NeoVM verification of header
-consensus witnesses with header intake and state-independent standard
-transaction signature checks with deferred verified-sync block execution. A
-receipt is bound to the exact header/transaction bytes, parent context where
-applicable, chain identity, witness digest, and the applicable cache revision.
-The ordered import path rechecks that receipt before `HeaderCache`, Ledger, MPT,
-StateService, events, relay, or durable publication can advance. Invalid
-transaction receipts abort the staged batch and rewind to the last durable
-checkpoint; worker failures and stale receipts use the canonical synchronous
-verifier. Contract-account and witness-rule transactions remain on the
-state-dependent path.
+consensus witnesses with header intake. A header receipt is bound to the exact
+header bytes, parent context, chain identity, witness digest, and applicable
+cache revision. The ordered header path rechecks that receipt before
+`HeaderCache` publication can advance; worker failures and stale receipts use
+the canonical synchronous verifier. The transaction verifier remains an
+independent admission/audit API; canonical block import does not add a new
+transaction-signature acceptance rule beyond Neo N3 v3.10.1.
 
 The pool is disabled by default. It overlaps work but never publishes
 unverified block state.
@@ -32,8 +29,7 @@ The authoritative high-height StateRoot-enabled reference remains the existing
 campaign; it must not be attributed to this signature pool. The fixed counters
 (`submitted`, `valid`, `invalid`, worker failures, and queue rejections) are
 available through `SignatureVerificationPool::metrics_snapshot()` and are
-emitted with the opt-in performance log records once the pending ChainSpec
-composition migration wires the pool into the node.
+emitted with the opt-in `neo::performance` header batch record.
 
 ## Acceptance status
 
