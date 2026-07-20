@@ -644,13 +644,9 @@ fn protocol_settings_identity_digest(settings: &ProtocolSettings) -> UInt256 {
         bytes.extend_from_slice(key_bytes);
     }
     for hardfork in Hardfork::ALL {
-        bytes.extend_from_slice(
-            &settings
-                .hardforks
-                .activation_height(hardfork)
-                .unwrap_or(u32::MAX)
-                .to_le_bytes(),
-        );
+        bytes.push(settings.is_hardfork_defined(hardfork) as u8);
+        bytes.push(settings.is_hardfork_enabled(hardfork, 0) as u8);
+        bytes.push(settings.is_hardfork_enabled(hardfork, u32::MAX) as u8);
     }
     UInt256::from(Crypto::sha256(&bytes))
 }
