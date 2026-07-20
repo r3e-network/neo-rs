@@ -218,6 +218,38 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
     VerifyResult::Succeed
 }
 
+/// Returns whether every signer witness can be verified without ledger state.
+///
+/// Standard single-signature and multisignature witnesses only need the
+/// transaction sign-data and the embedded public keys. Contract-account and
+/// witness-rule scripts intentionally return `false`; those witnesses require
+/// the canonical state-dependent ApplicationEngine path and must not be
+/// admitted to the optimistic signature lane.
+#[must_use]
+pub fn transaction_witnesses_are_state_independent(tx: &Transaction) -> bool {
+    let signers = tx.signers();
+    let witnesses = tx.witnesses();
+    if witnesses.len() < signers.len() {
+        return false;
+    }
+
+    signers.iter().zip(witnesses.iter()).all(|(_, witness)| {
+        let verification = witness.verification_script();
+        let invocation = witness.invocation_script();
+        (neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(verification)
+            && single_signature_invocation(invocation).is_some())
+            || (neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_contract(
+                verification,
+            )
+            .and_then(|(m, _)| {
+                neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_invocation(
+                    invocation, m,
+                )
+            })
+            .is_some())
+    })
+}
+
 /// C# `Transaction.VerifyStateDependent` (Transaction.cs:323) using an explicit
 /// native-contract provider for engine-based witness verification.
 pub fn verify_state_dependent_with_native_provider<B, P>(

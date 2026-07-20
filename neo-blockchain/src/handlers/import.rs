@@ -1,11 +1,17 @@
+use std::sync::Arc;
 use std::time::Instant;
 
+use neo_config::ProtocolSettings;
+use neo_payloads::Block;
 use tracing::warn;
 
 use crate::block_processing::BlockCommitArtifacts;
 use crate::command::{ImportBlocksReply, ImportBlocksStats};
 use crate::import::Import;
 use crate::internal::ImportDisposition;
+use crate::pipeline::signature_verification::{
+    SignatureVerificationError, TransactionSignatureVerificationTicket,
+};
 use crate::service::{BlockchainService, MempoolLike};
 
 mod empty_fast_forward;
@@ -23,6 +29,7 @@ where
 {
     /// Handle a [`BlockchainCommand::Import`] request.
     pub(crate) async fn handle_import(&self, import: Import) -> ImportBlocksReply {
+        let import_start = Instant::now();
         let mut imported = 0usize;
         let mut already_durable = 0usize;
         let mut stats = ImportBlocksStats::default();
@@ -38,6 +45,7 @@ where
         let mut batch_persist_resources = None;
         let mut batch_persist_resources_loaded = false;
         let mut last_imported_height = None;
+        let mut optimistic_signature_jobs = 0usize;
         // Last height that was already intermediate-committed durably.
         let mut durable_checkpoint_height = durable_height;
         let mut position = 0usize;
@@ -68,6 +76,35 @@ where
                     .system
                     .requires_replay_artifacts(block, persist_context);
             let persist_options = plan.persist_options(observer_requires_artifacts);
+
+            // In a deferred sync batch, standard transaction signatures can be
+            // checked on dedicated workers while this block executes against
+            // the staged cache. The commit fence below waits for every ticket;
+            // a failed ticket aborts the staged store and rewinds the in-memory
+            // ledger to the last durable checkpoint.
+            let pending_transaction_signatures = if verify && defer_store_commit {
+                match self.submit_optimistic_transaction_signatures(
+                    block,
+                    self.system.chain_spec().protocol_settings_arc(),
+                ) {
+                    Ok((tickets, submitted)) => {
+                        optimistic_signature_jobs += submitted;
+                        tickets
+                    }
+                    Err(error) => {
+                        warn!(
+                            target: "neo",
+                            height = index,
+                            %error,
+                            "optimistic transaction signature preflight failed"
+                        );
+                        import_error = Some(error);
+                        break;
+                    }
+                }
+            } else {
+                Vec::new()
+            };
 
             if defer_store_commit && !batch_persist_resources_loaded {
                 match self.batch_persist_resources(index) {
@@ -181,6 +218,24 @@ where
                     break;
                 }
             };
+
+            if let Err(error) = self.wait_optimistic_transaction_signatures(
+                block,
+                pending_transaction_signatures,
+                self.system.chain_spec().protocol_settings(),
+            ) {
+                let error = format!(
+                    "import aborted at height {index}: optimistic transaction signature verification failed: {error}"
+                );
+                self.system.abort_store_commit();
+                self.ledger.rewind_to(durable_checkpoint_height);
+                return ImportBlocksReply::failed_with_stats(
+                    already_durable
+                        + durable_checkpoint_height.saturating_sub(durable_height) as usize,
+                    stats,
+                    error,
+                );
+            }
             imported += 1;
             last_imported_height = Some(index);
             if defer_store_commit {
@@ -327,6 +382,98 @@ where
         if let Some(error) = import_error {
             return ImportBlocksReply::failed_with_stats(imported, stats, error);
         }
+        if verify && defer_store_commit && imported > 0 && optimistic_signature_jobs > 0 {
+            let elapsed = import_start.elapsed();
+            tracing::info!(
+                target: "neo::performance",
+                mode = "optimistic_signature_import",
+                blocks = imported,
+                signature_jobs = optimistic_signature_jobs,
+                elapsed_ms = elapsed.as_secs_f64() * 1_000.0,
+                blocks_per_second = imported as f64 / elapsed.as_secs_f64().max(1e-9),
+                "optimistic transaction signature import completed"
+            );
+        }
         ImportBlocksReply::ok_with_stats(imported, stats)
+    }
+
+    fn submit_optimistic_transaction_signatures(
+        &self,
+        block: &Block,
+        settings: Arc<ProtocolSettings>,
+    ) -> Result<(Vec<(usize, TransactionSignatureVerificationTicket)>, usize), String> {
+        let Some(pool) = self.optimistic_signature_verification.as_ref() else {
+            return Ok((Vec::new(), 0));
+        };
+
+        let mut tickets = Vec::new();
+        let mut submitted = 0usize;
+        for (transaction_index, transaction) in block.transactions.iter().enumerate() {
+            if !neo_mempool::transaction_witnesses_are_state_independent(transaction) {
+                continue;
+            }
+
+            let fallback = || {
+                let result = neo_mempool::verify_state_independent(transaction, settings.as_ref());
+                (result == neo_primitives::VerifyResult::Succeed).then_some(())
+            };
+            match pool.try_submit_transaction_state_independent(
+                Arc::new(transaction.clone()),
+                Arc::clone(&settings),
+            ) {
+                Ok(ticket) => {
+                    submitted += 1;
+                    tickets.push((transaction_index, ticket));
+                }
+                Err(crate::pipeline::signature_verification::SignatureVerificationSubmitError::QueueFull)
+                | Err(crate::pipeline::signature_verification::SignatureVerificationSubmitError::Closed) => {
+                    if fallback().is_none() {
+                        return Err(format!(
+                            "transaction {transaction_index} ({}) failed state-independent verification",
+                            transaction.try_hash().map_or_else(|_| "hash-error".to_owned(), |hash| hash.to_string())
+                        ));
+                    }
+                }
+                Err(crate::pipeline::signature_verification::SignatureVerificationSubmitError::InvalidInput(reason)) => {
+                    return Err(format!(
+                        "transaction {transaction_index} cannot enter optimistic signature lane: {reason}"
+                    ));
+                }
+            }
+        }
+        Ok((tickets, submitted))
+    }
+
+    fn wait_optimistic_transaction_signatures(
+        &self,
+        block: &Block,
+        tickets: Vec<(usize, TransactionSignatureVerificationTicket)>,
+        settings: &ProtocolSettings,
+    ) -> Result<(), String> {
+        for (transaction_index, ticket) in tickets {
+            let transaction = block
+                .transactions
+                .get(transaction_index)
+                .ok_or_else(|| format!("transaction {transaction_index} disappeared"))?;
+            match ticket.wait() {
+                Ok(receipt) if receipt.matches(transaction, settings) => {}
+                Ok(_)
+                | Err(
+                    SignatureVerificationError::WorkerPanicked
+                    | SignatureVerificationError::WorkerUnavailable,
+                ) => {
+                    let result = neo_mempool::verify_state_independent(transaction, settings);
+                    if result != neo_primitives::VerifyResult::Succeed {
+                        return Err(format!(
+                            "transaction {transaction_index} failed synchronous fallback: {result:?}"
+                        ));
+                    }
+                }
+                Err(SignatureVerificationError::InvalidWitness(reason)) => {
+                    return Err(format!("transaction {transaction_index}: {reason}"));
+                }
+            }
+        }
+        Ok(())
     }
 }

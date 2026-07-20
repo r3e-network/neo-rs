@@ -17,7 +17,7 @@ use neo_crypto::Crypto;
 use neo_execution::Helper;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::{BinaryWriter, Serializable};
-use neo_payloads::{Header, Witness};
+use neo_payloads::{Header, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::{CacheRead, DataCache, DataCacheVersion};
 
@@ -171,10 +171,7 @@ struct SignatureVerificationPoolMetrics {
 }
 
 impl SignatureVerificationPoolMetrics {
-    fn record_result(
-        &self,
-        result: &Result<SignatureVerificationReceipt, SignatureVerificationError>,
-    ) {
+    fn record_result<R>(&self, result: &Result<R, SignatureVerificationError>) {
         match result {
             Ok(_) => {
                 self.valid.fetch_add(1, Ordering::Relaxed);
@@ -205,21 +202,21 @@ impl SignatureVerificationPoolMetrics {
 }
 
 /// A completed verification ticket.
-pub struct SignatureVerificationTicket {
-    receiver: Receiver<Result<SignatureVerificationReceipt, SignatureVerificationError>>,
+pub struct SignatureVerificationTicket<R = SignatureVerificationReceipt> {
+    receiver: Receiver<Result<R, SignatureVerificationError>>,
     metrics: Arc<SignatureVerificationPoolMetrics>,
 }
 
-impl std::fmt::Debug for SignatureVerificationTicket {
+impl<R> std::fmt::Debug for SignatureVerificationTicket<R> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("SignatureVerificationTicket(..)")
     }
 }
 
-impl SignatureVerificationTicket {
+impl<R> SignatureVerificationTicket<R> {
     /// Waits for the worker result.  This is intentionally blocking: callers
     /// use it at the ordered publication fence, after work has overlapped.
-    pub fn wait(self) -> Result<SignatureVerificationReceipt, SignatureVerificationError> {
+    pub fn wait(self) -> Result<R, SignatureVerificationError> {
         match self.receiver.recv() {
             Ok(result) => result,
             Err(_) => {
@@ -231,6 +228,40 @@ impl SignatureVerificationTicket {
         }
     }
 }
+
+/// A receipt for a transaction whose complete signer witness set used only
+/// state-independent standard signature scripts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransactionSignatureVerificationReceipt {
+    transaction_hash: UInt256,
+    transaction_digest: UInt256,
+    network_magic: u32,
+    chain_spec_id: UInt256,
+}
+
+impl TransactionSignatureVerificationReceipt {
+    /// Transaction hash covered by this receipt.
+    #[must_use]
+    pub const fn transaction_hash(&self) -> UInt256 {
+        self.transaction_hash
+    }
+
+    /// Checks that the receipt still covers the exact transaction and chain
+    /// identity at the publication fence.
+    #[must_use]
+    pub fn matches(&self, transaction: &Transaction, settings: &ProtocolSettings) -> bool {
+        transaction.try_hash().ok().is_some_and(|hash| {
+            self.transaction_hash == hash
+                && transaction_digest(transaction) == Some(self.transaction_digest)
+                && self.network_magic == settings.network
+                && self.chain_spec_id == protocol_settings_identity_digest(settings)
+        })
+    }
+}
+
+/// Ticket returned for a transaction signature job.
+pub type TransactionSignatureVerificationTicket =
+    SignatureVerificationTicket<TransactionSignatureVerificationReceipt>;
 
 /// Typed proof produced by one successful header-witness verification.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -393,14 +424,13 @@ impl SignatureVerificationPool {
     }
 
     /// Schedules one arbitrary typed verification job.
-    pub fn try_submit<F>(
+    pub fn try_submit<R, F>(
         &self,
         job: F,
-    ) -> Result<SignatureVerificationTicket, SignatureVerificationSubmitError>
+    ) -> Result<SignatureVerificationTicket<R>, SignatureVerificationSubmitError>
     where
-        F: FnOnce() -> Result<SignatureVerificationReceipt, SignatureVerificationError>
-            + Send
-            + 'static,
+        R: Send + 'static,
+        F: FnOnce() -> Result<R, SignatureVerificationError> + Send + 'static,
     {
         let (result_tx, result_rx) = mpsc::sync_channel(1);
         let metrics = Arc::clone(&self.metrics);
@@ -463,6 +493,43 @@ impl SignatureVerificationPool {
                 snapshot.as_ref(),
                 native_contract_provider,
             )
+        })
+    }
+
+    /// Schedules state-independent standard transaction signature checks.
+    ///
+    /// Contract-account and witness-rule transactions are rejected before
+    /// queue admission because their verification depends on canonical state.
+    /// Callers must leave those transactions on the ordinary verifier path.
+    pub fn try_submit_transaction_state_independent(
+        &self,
+        transaction: Arc<Transaction>,
+        settings: Arc<ProtocolSettings>,
+    ) -> Result<TransactionSignatureVerificationTicket, SignatureVerificationSubmitError> {
+        if !neo_mempool::transaction_witnesses_are_state_independent(&transaction) {
+            return Err(SignatureVerificationSubmitError::InvalidInput(
+                "transaction witness requires state-dependent verification",
+            ));
+        }
+        let transaction_hash = transaction
+            .try_hash()
+            .map_err(|_| SignatureVerificationSubmitError::InvalidInput("transaction hash"))?;
+        let transaction_digest = transaction_digest(&transaction).ok_or(
+            SignatureVerificationSubmitError::InvalidInput("transaction encoding"),
+        )?;
+        self.try_submit(move || {
+            let result = neo_mempool::verify_state_independent(&transaction, &settings);
+            if result != neo_primitives::VerifyResult::Succeed {
+                return Err(invalid(format!(
+                    "transaction signature verification failed: {result:?}"
+                )));
+            }
+            Ok(TransactionSignatureVerificationReceipt {
+                transaction_hash,
+                transaction_digest,
+                network_magic: settings.network,
+                chain_spec_id: protocol_settings_identity_digest(&settings),
+            })
         })
     }
 }
@@ -545,6 +612,12 @@ fn invalid(reason: impl Into<String>) -> SignatureVerificationError {
 fn witness_digest(witness: &Witness) -> Option<UInt256> {
     let mut writer = BinaryWriter::new();
     witness.serialize(&mut writer).ok()?;
+    Some(UInt256::from(Crypto::sha256(&writer.into_bytes())))
+}
+
+fn transaction_digest(transaction: &Transaction) -> Option<UInt256> {
+    let mut writer = BinaryWriter::new();
+    transaction.serialize(&mut writer).ok()?;
     Some(UInt256::from(Crypto::sha256(&writer.into_bytes())))
 }
 
@@ -644,7 +717,8 @@ fn verify_signature_synchronously(
 mod tests {
     use super::*;
     use neo_config::ProtocolSettings;
-    use neo_payloads::Witness;
+    use neo_payloads::{Signer, Transaction, Witness};
+    use neo_primitives::WitnessScope;
 
     fn test_parent(witness: &Witness) -> ParentHeaderContext {
         ParentHeaderContext {
@@ -671,6 +745,21 @@ mod tests {
             witness.script_hash(),
             witness,
         )
+    }
+
+    fn standard_transaction_with_signature(signature: [u8; 64]) -> Transaction {
+        let verification =
+            neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+                &[2u8; 33],
+            );
+        let mut invocation = vec![neo_vm::OpCode::PUSHDATA1.byte(), 64];
+        invocation.extend_from_slice(&signature);
+        let account = UInt160::from_script(&verification);
+        let mut transaction = Transaction::new();
+        transaction.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
+        transaction.set_signers(vec![Signer::new(account, WitnessScope::NONE)]);
+        transaction.set_witnesses(vec![Witness::new_with_scripts(invocation, verification)]);
+        transaction
     }
 
     fn test_receipt() -> SignatureVerificationReceipt {
@@ -739,7 +828,11 @@ mod tests {
             .try_submit(|| Ok(test_receipt()))
             .expect("valid ticket");
         let invalid = pool
-            .try_submit(|| Err(SignatureVerificationError::InvalidWitness("invalid".into())))
+            .try_submit(
+                || -> Result<SignatureVerificationReceipt, SignatureVerificationError> {
+                    Err(SignatureVerificationError::InvalidWitness("invalid".into()))
+                },
+            )
             .expect("invalid ticket");
         assert!(valid.wait().is_ok());
         assert!(matches!(
@@ -809,7 +902,7 @@ mod tests {
         let metrics = Arc::clone(&pool.metrics);
         let (result_tx, result_rx) = mpsc::sync_channel(1);
         drop(result_tx);
-        let ticket = SignatureVerificationTicket {
+        let ticket = SignatureVerificationTicket::<SignatureVerificationReceipt> {
             receiver: result_rx,
             metrics,
         };
@@ -875,6 +968,78 @@ mod tests {
             .expect("ticket");
         let receipt = ticket.wait().expect("valid witness");
         assert!(receipt.matches(&header, &parent, settings.as_ref(), &snapshot.version(),));
+    }
+
+    #[test]
+    fn transaction_job_rejects_invalid_standard_signature() {
+        let pool = SignatureVerificationPool::new(SignatureVerificationPoolConfig {
+            workers: 1,
+            queue_capacity: 1,
+        })
+        .expect("pool");
+        let transaction = Arc::new(standard_transaction_with_signature([0u8; 64]));
+        let ticket = pool
+            .try_submit_transaction_state_independent(
+                Arc::clone(&transaction),
+                Arc::new(ProtocolSettings::default()),
+            )
+            .expect("ticket");
+        assert!(matches!(
+            ticket.wait(),
+            Err(SignatureVerificationError::InvalidWitness(reason))
+                if reason.contains("transaction signature verification failed")
+        ));
+    }
+
+    #[test]
+    fn transaction_job_skips_state_dependent_witnesses() {
+        let pool = SignatureVerificationPool::new(SignatureVerificationPoolConfig {
+            workers: 1,
+            queue_capacity: 1,
+        })
+        .expect("pool");
+        let mut transaction = Transaction::new();
+        transaction.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
+        transaction.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
+        transaction.set_witnesses(vec![Witness::new_with_scripts(
+            Vec::new(),
+            vec![neo_vm::OpCode::PUSH1.byte()],
+        )]);
+        assert!(matches!(
+            pool.try_submit_transaction_state_independent(
+                Arc::new(transaction),
+                Arc::new(ProtocolSettings::default()),
+            ),
+            Err(SignatureVerificationSubmitError::InvalidInput(reason))
+                if reason.contains("state-dependent")
+        ));
+    }
+
+    #[test]
+    fn transaction_receipt_rejects_changed_witness_with_same_unsigned_hash() {
+        let settings = ProtocolSettings::default();
+        let transaction = standard_transaction_with_signature([0u8; 64]);
+        let receipt = TransactionSignatureVerificationReceipt {
+            transaction_hash: transaction.try_hash().expect("transaction hash"),
+            transaction_digest: transaction_digest(&transaction).expect("transaction digest"),
+            network_magic: settings.network,
+            chain_spec_id: protocol_settings_identity_digest(&settings),
+        };
+
+        let mut changed = transaction.clone();
+        changed.set_witnesses(vec![Witness::new_with_scripts(
+            {
+                let mut invocation = vec![neo_vm::OpCode::PUSHDATA1.byte(), 64];
+                invocation.extend_from_slice(&[1u8; 64]);
+                invocation
+            },
+            changed.witnesses()[0].verification_script().to_vec(),
+        )]);
+        assert_eq!(
+            transaction.try_hash().expect("transaction hash"),
+            changed.try_hash().expect("unsigned hash is unchanged")
+        );
+        assert!(!receipt.matches(&changed, &settings));
     }
 
     #[test]

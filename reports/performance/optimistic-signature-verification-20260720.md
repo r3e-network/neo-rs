@@ -5,15 +5,19 @@ Date: 2026-07-20
 ## Scope
 
 The bounded `SignatureVerificationPool` overlaps NeoVM verification of header
-consensus witnesses with header intake. A receipt is bound to the exact
-unsigned header hash, parent context, chain identity, witness digest, and the
-applicable cache revision. The ordered import path rechecks that receipt before
-`HeaderCache`, Ledger, MPT, StateService, events, relay, or durable publication
-can advance. Invalid receipts stop at the valid prefix; worker failures use the
-canonical synchronous verifier.
+consensus witnesses with header intake and state-independent standard
+transaction signature checks with deferred verified-sync block execution. A
+receipt is bound to the exact header/transaction bytes, parent context where
+applicable, chain identity, witness digest, and the applicable cache revision.
+The ordered import path rechecks that receipt before `HeaderCache`, Ledger, MPT,
+StateService, events, relay, or durable publication can advance. Invalid
+transaction receipts abort the staged batch and rewind to the last durable
+checkpoint; worker failures and stale receipts use the canonical synchronous
+verifier. Contract-account and witness-rule transactions remain on the
+state-dependent path.
 
-The pool is disabled by default. It does not assume transaction signatures are
-valid and does not publish unverified block state.
+The pool is disabled by default. It overlaps work but never publishes
+unverified block state.
 
 ## Performance verdict
 
