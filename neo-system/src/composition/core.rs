@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use neo_blockchain::pipeline::signature_verification::SignatureVerificationPool;
 use neo_blockchain::{
     BlockchainHandle, BlockchainService, HeaderCache, LedgerContext, NativePersistResources,
     OptionalStaticLedgerProvider,
@@ -42,6 +43,7 @@ where
     hooks: Arc<H>,
     persisted_height: u32,
     stop_at_height: Option<u32>,
+    optimistic_signature_verification: Option<Arc<SignatureVerificationPool>>,
 }
 
 impl<P, S, H> NodeCoreBuilder<P, S, H>
@@ -67,12 +69,22 @@ where
             hooks,
             persisted_height,
             stop_at_height: None,
+            optimistic_signature_verification: None,
         }
     }
 
     /// Limit persistence to a validation/import target height.
     pub fn with_stop_at_height(mut self, stop_at_height: Option<u32>) -> Self {
         self.stop_at_height = stop_at_height;
+        self
+    }
+
+    /// Install the explicitly enabled bounded header-witness verifier.
+    pub fn with_optimistic_signature_verification(
+        mut self,
+        pool: Arc<SignatureVerificationPool>,
+    ) -> Self {
+        self.optimistic_signature_verification = Some(pool);
         self
     }
 
@@ -130,6 +142,7 @@ where
             Arc::clone(&mempool),
         );
         service.set_stop_at_height(self.stop_at_height);
+        service.set_optimistic_signature_verification(self.optimistic_signature_verification);
 
         NodeCoreLaunch {
             core: NodeCore {

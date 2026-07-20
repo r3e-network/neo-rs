@@ -7,6 +7,7 @@ use neo_execution::specialization::{
 };
 use neo_vm::SpecializationMode;
 use serde::Deserialize;
+use std::sync::Arc;
 
 /// `[execution]`: explicitly gated execution experiments.
 #[derive(Debug, Default, Deserialize)]
@@ -15,6 +16,94 @@ pub(in crate::node) struct ExecutionSection {
     /// Ordinary-authoritative differential execution for audited candidates.
     #[serde(default)]
     pub(in crate::node) specialization_shadow: SpecializationShadowSection,
+    /// Bounded header-witness preverification. Disabled unless explicitly
+    /// enabled because it is an execution-policy experiment.
+    #[serde(default)]
+    pub(in crate::node) optimistic_signature_verification: OptimisticSignatureVerificationSection,
+}
+
+/// `[execution.optimistic_signature_verification]`: overlap header witness
+/// verification with header import while retaining ordered publication.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(in crate::node) struct OptimisticSignatureVerificationSection {
+    /// Process-wide opt-in. The ordinary synchronous path remains default.
+    #[serde(default)]
+    enabled: bool,
+    /// Number of dedicated NeoVM verification workers.
+    #[serde(default = "default_signature_workers")]
+    workers: usize,
+    /// Bounded queued jobs behind the workers.
+    #[serde(default = "default_signature_queue_capacity")]
+    queue_capacity: usize,
+}
+
+impl Default for OptimisticSignatureVerificationSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            workers: default_signature_workers(),
+            queue_capacity: default_signature_queue_capacity(),
+        }
+    }
+}
+
+const fn default_signature_workers() -> usize {
+    4
+}
+
+const fn default_signature_queue_capacity() -> usize {
+    32
+}
+
+/// Process resources created only for explicit optimistic verification.
+pub(in crate::node) struct OptimisticSignatureVerificationRuntime {
+    pub(in crate::node) pool:
+        Arc<neo_blockchain::pipeline::signature_verification::SignatureVerificationPool>,
+}
+
+impl OptimisticSignatureVerificationSection {
+    pub(in crate::node) fn validate(&self, local_execution: bool) -> anyhow::Result<()> {
+        let config =
+            neo_blockchain::pipeline::signature_verification::SignatureVerificationPoolConfig {
+                workers: self.workers,
+                queue_capacity: self.queue_capacity,
+            };
+        config.validate().map_err(|error| {
+            anyhow::anyhow!("invalid [execution.optimistic_signature_verification]: {error}")
+        })?;
+        if self.enabled && !local_execution {
+            anyhow::bail!(
+                "[execution.optimistic_signature_verification] requires local ledger execution"
+            );
+        }
+        Ok(())
+    }
+
+    pub(in crate::node) fn build_runtime(
+        &self,
+        local_execution: bool,
+    ) -> anyhow::Result<Option<OptimisticSignatureVerificationRuntime>> {
+        self.validate(local_execution)?;
+        if !self.enabled {
+            return Ok(None);
+        }
+        let config =
+            neo_blockchain::pipeline::signature_verification::SignatureVerificationPoolConfig {
+                workers: self.workers,
+                queue_capacity: self.queue_capacity,
+            };
+        let pool =
+            neo_blockchain::pipeline::signature_verification::SignatureVerificationPool::new(
+                config,
+            )
+            .map_err(|error| {
+                anyhow::anyhow!("failed to start optimistic signature verification: {error}")
+            })?;
+        Ok(Some(OptimisticSignatureVerificationRuntime {
+            pool: Arc::new(pool),
+        }))
+    }
 }
 
 /// One exact specialization candidate exposed by the node configuration.

@@ -50,6 +50,10 @@ fn validate_config_with_local_replay_services(
         .execution
         .specialization_shadow
         .validate(validate_local_replay_services)?;
+    config
+        .execution
+        .optimistic_signature_verification
+        .validate(validate_local_replay_services)?;
 
     if let Some(bind_address) = config.p2p.bind_address.as_deref() {
         bind_address

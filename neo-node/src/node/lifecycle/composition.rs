@@ -193,6 +193,10 @@ pub(in crate::node) async fn build_node(
         .execution
         .specialization_shadow
         .build_runtime(ledger_mode.uses_local_replay_services())?;
+    let optimistic_signature_verification = config
+        .execution
+        .optimistic_signature_verification
+        .build_runtime(ledger_mode.uses_local_replay_services())?;
 
     let OperationalServices {
         state_store,
@@ -252,6 +256,10 @@ pub(in crate::node) async fn build_node(
     if let Some(runtime) = specialization_shadow.as_ref() {
         core_builder = core_builder
             .with_specialization_shadow(runtime.control.clone(), runtime.artifact_limits);
+    }
+    if let Some(runtime) = optimistic_signature_verification.as_ref() {
+        core_builder =
+            core_builder.with_optimistic_signature_verification(Arc::clone(&runtime.pool));
     }
     let core_launch = core_builder.build();
     let (core, blockchain_task) = core_launch.into_parts();
