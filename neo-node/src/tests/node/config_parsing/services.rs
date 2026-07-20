@@ -74,7 +74,6 @@ fn shipped_node_configs_enable_durable_rpc_service_stack() {
         .parent()
         .expect("neo-node has a workspace parent");
     let cases = [
-        "config/local.toml",
         "config/mainnet.toml",
         "config/mainnet-service.toml",
         "config/mainnet-stateroot.toml",
@@ -87,8 +86,9 @@ fn shipped_node_configs_enable_durable_rpc_service_stack() {
 
     for relative in cases {
         let path = workspace.join(relative);
-        let (settings, config) =
+        let (chain_spec, config) =
             load_config(&path, None).unwrap_or_else(|err| panic!("load {}: {err}", path.display()));
+        let settings = chain_spec.protocol_settings();
         validate_config(&config, settings.network)
             .unwrap_or_else(|err| panic!("validate {}: {err}", path.display()));
 
@@ -130,6 +130,22 @@ fn shipped_node_configs_enable_durable_rpc_service_stack() {
     }
 }
 
+#[test]
+fn shipped_local_config_selects_the_complete_builtin_testnet_chain_spec() {
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("neo-node has a workspace parent");
+    let path = workspace.join("config/local.toml");
+
+    let (chain_spec, config) = load_config(&path, None).expect("local config must load");
+    let settings = chain_spec.protocol_settings();
+    assert_eq!(settings.network, neo_primitives::constants::TESTNET_MAGIC);
+    validate_config(&config, settings.network).expect("local config must satisfy TestNet rules");
+    assert_eq!(chain_spec.network_magic(), settings.network);
+    assert_eq!(settings.milliseconds_per_block, 15_000);
+    assert_eq!(settings.max_transactions_per_block, 5_000);
+}
+
 /// Service-provider presets prepare the full public query stack a NeoFura-style
 /// operator needs while retaining the explicit runtime gate for state proofs.
 #[test]
@@ -144,8 +160,9 @@ fn shipped_service_provider_configs_prepare_neofura_surface_with_explicit_stater
 
     for (relative, expected_network, expected_rpc_port, data_scope) in cases {
         let path = workspace.join(relative);
-        let (settings, config) =
+        let (chain_spec, config) =
             load_config(&path, None).unwrap_or_else(|err| panic!("load {}: {err}", path.display()));
+        let settings = chain_spec.protocol_settings();
         validate_config(&config, settings.network)
             .unwrap_or_else(|err| panic!("validate {}: {err}", path.display()));
 

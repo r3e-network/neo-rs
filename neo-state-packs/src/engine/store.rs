@@ -19,6 +19,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+mod api;
+pub(crate) use api::CompactionConfig;
+pub use api::{
+    OpenValidation, PackCommitHorizon, PackFrameReceipt, PackStoreError, PackStoreOptions,
+    PreparedAppend, SealedAppend,
+};
+use api::{validate_compaction_config, validate_store_options};
 mod frame_builder;
 pub use frame_builder::PackFrameBuilder;
 mod frame_codec;
@@ -32,6 +39,7 @@ use compaction::*;
 mod index_format;
 use index_format::*;
 mod read_view;
+use super::metrics::{CompactionDebt, CompactionStats, GcStats, PackMetrics, ReadCounters};
 use read_view::ReadView;
 pub use read_view::Snapshot;
 mod scrub;
@@ -84,88 +92,6 @@ const COMPACTION_IO_BUFFER_BYTES: usize = 512 * 1024;
 
 static NEXT_STORE_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Typed operational failures specific to the pack store.
-///
-/// Other format and I/O failures retain their detailed `anyhow` context.
-/// Callers can downcast errors to distinguish active-writer ownership and
-/// resource deferral from corruption or ordinary I/O failure.
-#[derive(Debug, thiserror::Error)]
-pub enum PackStoreError {
-    /// Another process or handle owns the recovery and writer lease.
-    #[error("node-pack writer is already active for {}", path.display())]
-    WriterOwned {
-        /// Lease-file path used for the ownership check.
-        path: PathBuf,
-    },
-    /// The operating system could not acquire the kernel lease.
-    #[error("failed to acquire node-pack writer lease for {}", path.display())]
-    WriterLease {
-        /// Lease-file path involved in the failed system call.
-        path: PathBuf,
-        /// Underlying operating-system error.
-        #[source]
-        source: std::io::Error,
-    },
-    /// The current in-memory compaction implementation cannot build this
-    /// output without exceeding the configured transient workspace bound.
-    /// Source runs remain live and no output file has been created.
-    #[error(
-        "compaction workspace estimate {estimated_bytes} bytes exceeds configured bound {max_bytes} bytes"
-    )]
-    CompactionWorkspaceExceeded {
-        /// Conservative peak allocation estimate for the selected inputs.
-        estimated_bytes: u64,
-        /// Maximum transient workspace allowed for one compaction build.
-        max_bytes: u64,
-    },
-}
-
-/// Physical read-path options that do not change pack bytes or lookup
-/// semantics. Every accelerator is disabled by default.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PackStoreOptions {
-    /// Map immutable pack and index files a second time with `MADV_RANDOM`.
-    /// All index-located payloads and sparse index-window probes use that view;
-    /// compaction, validation, and scrub keep the ordinary mapping.
-    pub random_point_mmap: bool,
-    /// Workers used to copy values for large sorted batch reads. A value of
-    /// one keeps the sequential path. Values above one split only immutable
-    /// payload reads; index lookup and result publication remain ordered.
-    pub batch_value_workers: usize,
-}
-
-impl PackStoreOptions {
-    /// Configured worker count capped by the logical CPUs visible to this
-    /// process. Failure to query the host fails closed to the sequential path.
-    pub fn effective_batch_value_workers(self) -> usize {
-        let available = std::thread::available_parallelism().map_or(1, usize::from);
-        self.batch_value_workers.min(available)
-    }
-
-    /// Minimum number of located values required before parallel copying is
-    /// worthwhile for this configuration.
-    pub fn batch_value_parallel_threshold(self) -> usize {
-        self.effective_batch_value_workers()
-            .saturating_mul(read_view::PACK_BATCH_VALUES_PER_WORKER)
-    }
-
-    fn normalized_for_host(self) -> Self {
-        Self {
-            random_point_mmap: self.random_point_mmap,
-            batch_value_workers: self.effective_batch_value_workers(),
-        }
-    }
-}
-
-impl Default for PackStoreOptions {
-    fn default() -> Self {
-        Self {
-            random_point_mmap: false,
-            batch_value_workers: 1,
-        }
-    }
-}
-
 /// One immutable sorted run: records stay on disk and are probed through a
 /// read-only memory map; only the xor filter and the sparse fences stay
 /// resident. `min_prefix`/`max_prefix` are the big-endian leading u64 of the
@@ -212,201 +138,6 @@ struct LiveRun {
     level: u32,
     min_epoch: u64,
     max_epoch: u64,
-}
-
-/// Durable placement and checksum of the most recently appended frame.
-///
-/// The MDBX high-water marker (see [`crate::shadow`]) records these fields so
-/// a later recovery phase can validate the committed pack tip against the
-/// canonical marker without re-reading the frame chain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PackFrameReceipt {
-    /// Commit epoch of the frame (0-based, contiguous).
-    pub epoch: u64,
-    /// Absolute byte offset of the frame header inside `frames.pack`.
-    pub frame_start: u64,
-    /// Absolute byte offset one past the frame payload.
-    pub frame_end: u64,
-    /// Number of operations encoded in the frame.
-    pub rows: u64,
-    /// Frame payload length in bytes (without the 72-byte header).
-    pub payload_bytes: u64,
-    /// SHA-256 checksum of the frame payload, as stored in the frame header.
-    pub payload_sha256: [u8; 32],
-}
-
-/// Opaque handle for one durable but not-yet-visible append.
-///
-/// The receipt is suitable for recording in an external canonical commit
-/// marker. The handle remains bound to the store instance that prepared it;
-/// activation fails closed for stale, duplicated, reordered, or foreign
-/// handles.
-#[derive(Debug, Clone, Copy)]
-pub struct PreparedAppend {
-    receipt: PackFrameReceipt,
-    stage_totals: PackStageTotals,
-    store_instance_id: u64,
-    serial: u64,
-}
-
-impl PreparedAppend {
-    /// Durable frame placement and checksum to record in the external marker.
-    pub const fn receipt(self) -> PackFrameReceipt {
-        self.receipt
-    }
-
-    /// Append and sync work completed by the prepare phase.
-    pub const fn stage_totals(self) -> PackStageTotals {
-        self.stage_totals
-    }
-
-    /// Minimal external commit horizon corresponding to this prepared frame.
-    pub const fn commit_horizon(self) -> PackCommitHorizon {
-        PackCommitHorizon {
-            epoch: self.receipt.epoch,
-            payload_sha256: self.receipt.payload_sha256,
-        }
-    }
-}
-
-/// A fully validated and published pack generation awaiting its external
-/// canonical commit decision.
-///
-/// [`PackStore::seal_prepared`] creates and pins the snapshot before returning,
-/// so after the caller commits [`Self::commit_horizon`] its only required
-/// in-process action is to swap [`Self::into_snapshot`] into the node's read
-/// view. The manifest on disk is provisional until that external commit. If
-/// the commit fails, the writer must be dropped and reopened through the prior
-/// horizon; [`PackStore::open_at_commit_horizon`] then discards this suffix.
-#[must_use = "a sealed append must be committed externally or discarded by reopening at the prior horizon"]
-pub struct SealedAppend {
-    commit_horizon: PackCommitHorizon,
-    snapshot: Arc<Snapshot>,
-}
-
-impl SealedAppend {
-    /// Exact horizon to persist in the external canonical commit marker.
-    pub const fn commit_horizon(&self) -> PackCommitHorizon {
-        self.commit_horizon
-    }
-
-    /// Already-created snapshot for the provisional generation.
-    pub const fn snapshot(&self) -> &Arc<Snapshot> {
-        &self.snapshot
-    }
-
-    /// Consumes the handoff and returns the snapshot for a non-fallible
-    /// post-marker pointer swap.
-    pub fn into_snapshot(self) -> Arc<Snapshot> {
-        self.snapshot
-    }
-}
-
-/// Canonical commit horizon supplied by the caller's durable commit marker.
-///
-/// Pack manifests and index runs are derived visibility aids. A caller that
-/// coordinates packs with another authoritative store must reopen through
-/// this horizon so a frame published before that store's commit cannot be
-/// mistaken for canonical after a crash.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PackCommitHorizon {
-    /// Newest canonically committed frame epoch.
-    pub epoch: u64,
-    /// SHA-256 checksum of that frame's payload.
-    pub payload_sha256: [u8; 32],
-}
-
-/// Structural counts observed while opening a pack store.
-#[derive(Debug, Clone, Copy)]
-pub struct OpenValidation {
-    /// Committed frames validated while opening.
-    pub frames: u64,
-    /// Immutable index runs validated while opening.
-    pub runs: u64,
-    /// Decoded index records counted while opening.
-    pub index_entries: u64,
-}
-
-/// Leveled compaction bounds for the derived index runs. Level 0 holds the
-/// most recent append runs; when a level exceeds its run bound the oldest
-/// runs (up to `fanout`) merge into one run at the next level. Payload
-/// frames are never rewritten; compacted records keep pointing at the
-/// original frame bytes.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct CompactionConfig {
-    l0_bound: usize,
-    l1_bound: usize,
-    fanout: usize,
-}
-
-impl Default for CompactionConfig {
-    /// Every level holds at most 8 runs; one cycle merges up to 16 inputs.
-    fn default() -> Self {
-        Self {
-            l0_bound: 8,
-            l1_bound: 8,
-            fanout: 16,
-        }
-    }
-}
-
-/// Current derived-index compaction debt.
-///
-/// The soft bound schedules background maintenance. The hard bound is one
-/// additional fanout beyond it; callers must apply backpressure there rather
-/// than allowing an unbounded run queue to accumulate.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct CompactionDebt {
-    /// Immutable runs referenced by the current manifest.
-    pub live_runs: u64,
-    /// Runs above their per-level soft bounds.
-    pub excess_runs: u64,
-    /// Resident filter/fence metadata charged to the configured memory bound.
-    pub decoded_index_bytes: u64,
-    /// Configured resident metadata hard bound.
-    pub max_index_memory_bytes: u64,
-    /// A level reached its bounded producer-stall threshold.
-    pub backpressure_required: bool,
-}
-
-/// Cumulative compaction and reclamation evidence for one pack store.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct CompactionStats {
-    /// Completed compaction cycles (one merge plus manifest publication each).
-    pub cycles: u64,
-    /// Input runs consumed across all cycles.
-    pub runs_merged: u64,
-    /// Output runs produced across all cycles.
-    pub runs_produced: u64,
-    /// Index records read from compaction inputs.
-    pub input_records: u64,
-    /// Index records written after newest-epoch-wins dedup.
-    pub output_records: u64,
-    /// Bytes of compacted run files written.
-    pub bytes_written: u64,
-    /// Wall time spent building and adopting compacted runs.
-    pub wall_ns: u64,
-    /// High-water mark of concurrently live runs.
-    pub peak_live_runs: u64,
-    /// Explicit reclamation passes executed.
-    pub gc_cycles: u64,
-    /// Superseded run files deleted by reclamation.
-    pub gc_runs_deleted: u64,
-    /// Superseded manifests deleted by reclamation.
-    pub gc_manifests_deleted: u64,
-    /// Bytes reclaimed by deletion.
-    pub gc_bytes_reclaimed: u64,
-}
-
-/// One explicit reclamation pass over superseded runs and manifests.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct GcStats {
-    /// Superseded run files deleted in this pass.
-    pub runs_deleted: u64,
-    /// Superseded manifests deleted in this pass.
-    pub manifests_deleted: u64,
-    /// Bytes reclaimed by deletion in this pass.
-    pub bytes_reclaimed: u64,
 }
 
 /// Results from a full sequential scrub of the committed frame prefix.
@@ -547,6 +278,7 @@ struct PendingAppend {
 /// before manifest publication.
 struct ValidatedAppend {
     receipt: PackFrameReceipt,
+    stage_totals: PackStageTotals,
     pack_map: Arc<Mmap>,
     lookup_pack_map: Option<Arc<Mmap>>,
     runs: Vec<LiveRun>,
@@ -555,6 +287,14 @@ struct ValidatedAppend {
     next_epoch: u64,
     generation: u64,
     manifest: Manifest,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct RebuildMetrics {
+    frames: u64,
+    runs: u64,
+    index_entries: u64,
+    wall_ns: u64,
 }
 
 /// Append-only pack store: one operation stream (`frames.pack`), immutable
@@ -586,6 +326,10 @@ pub struct PackStore {
     compaction: CompactionConfig,
     options: PackStoreOptions,
     stats: CompactionStats,
+    stage_totals: PackStageTotals,
+    logical_payload_bytes: u64,
+    rebuild: RebuildMetrics,
+    read_counters: Arc<ReadCounters>,
     /// Live snapshot leases per manifest generation.
     leases: Arc<Mutex<BTreeMap<u64, usize>>>,
     open_validation: OpenValidation,
@@ -680,23 +424,6 @@ fn charge_run_memory(loaded: &mut LoadedRuns, run: &IndexRun, bound: u64) -> Res
         .index_entries
         .checked_add(run.record_count)
         .context("index entry count overflows")?;
-    Ok(())
-}
-
-fn validate_compaction_config(config: CompactionConfig) -> Result<()> {
-    ensure!(
-        config.l0_bound >= 1 && config.l1_bound >= 1,
-        "compaction level bounds must be non-zero"
-    );
-    ensure!(config.fanout >= 2, "compaction fanout must exceed one");
-    Ok(())
-}
-
-fn validate_store_options(options: PackStoreOptions) -> Result<()> {
-    ensure!(
-        (1..=8).contains(&options.batch_value_workers),
-        "batch value workers must be in 1..=8"
-    );
     Ok(())
 }
 

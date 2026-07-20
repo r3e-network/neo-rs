@@ -690,6 +690,11 @@ mod tests {
             reopened.snapshot().expect("rebuilt snapshot").generation() > generation,
             "recovery must publish a new manifest generation"
         );
+        assert_eq!(
+            reopened.metrics().expect("rebuild metrics").rebuild_frames,
+            1,
+            "recovery rebuild must report the committed frame prefix"
+        );
     }
 
     #[test]
@@ -1137,6 +1142,46 @@ mod tests {
         );
         assert_eq!(reopened.open_validation().runs, 1);
         assert_eq!(reopened.open_validation().frames, 9);
+    }
+
+    #[test]
+    fn metrics_cover_store_and_snapshot_reads_without_dynamic_labels() {
+        let root = tempdir().expect("temporary append store");
+        let mut store = PackStore::create(root.path(), 1024 * 1024).expect("create store");
+        let first = key(1);
+        let second = key(2);
+        let absent = key(3);
+        store
+            .append(&[put(first, b"one"), put(second, b"two")])
+            .expect("append values");
+
+        let snapshot = store.snapshot().expect("pin snapshot");
+        assert_eq!(store.get(&first).expect("store point read"), Some(b"one".to_vec()));
+        assert_eq!(store.get(&absent).expect("store miss"), None);
+        assert_eq!(
+            snapshot.get(&second).expect("snapshot point read"),
+            Some(b"two".to_vec())
+        );
+        let keys = [first, second, absent];
+        let values = snapshot
+            .get_many_sorted(&keys)
+            .expect("snapshot sorted read");
+        assert_eq!(values, vec![Some(b"one".to_vec()), Some(b"two".to_vec()), None]);
+
+        let metrics = store.metrics().expect("metrics snapshot");
+        assert_eq!(metrics.append.frames, 1);
+        assert_eq!(metrics.append.index_entries, 2);
+        assert!(metrics.logical_payload_bytes > 0);
+        assert_eq!(metrics.reads.point_reads, 3);
+        assert_eq!(metrics.reads.point_hits, 2);
+        assert_eq!(metrics.reads.point_misses, 1);
+        assert_eq!(metrics.reads.sorted_batches, 1);
+        assert_eq!(metrics.reads.sorted_keys, 3);
+        assert_eq!(metrics.reads.sorted_hits, 2);
+        assert_eq!(metrics.reads.sorted_value_bytes, 6);
+        assert_eq!(metrics.live_runs, 1);
+        assert!(!metrics.debt.backpressure_required);
+        assert!(metrics.physical_layout_amplification_milli().is_some());
     }
 
     include!("compaction_recovery_tests.rs");

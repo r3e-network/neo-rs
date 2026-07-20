@@ -92,6 +92,10 @@ impl PackStore {
             compaction,
             options,
             stats: CompactionStats::default(),
+            stage_totals: PackStageTotals::default(),
+            logical_payload_bytes: 0,
+            rebuild: RebuildMetrics::default(),
+            read_counters: Arc::new(ReadCounters::default()),
             leases: Arc::new(Mutex::new(BTreeMap::new())),
             open_validation: OpenValidation {
                 frames: 0,
@@ -329,6 +333,7 @@ impl PackStore {
             u64::try_from(scan.frame_ends.len()).context("frame count does not fit u64")?;
         let manifests = manifest::list_manifest_files(root)?;
         let mut generation = 0u64;
+        let mut rebuild = RebuildMetrics::default();
         let loaded = match manifests.first() {
             Some((_, path)) => {
                 let current = manifest::read_manifest(path).with_context(|| {
@@ -354,6 +359,7 @@ impl PackStore {
                         // canonical marker. Raw frames beyond it stay orphaned.
                         let prefix = &scan.frame_ends[..=usize::try_from(current.max_epoch())
                             .context("manifest epoch does not fit usize")?];
+                        let rebuild_started = Instant::now();
                         let loaded = Self::rebuild_runs_from_frames(
                             &pack,
                             prefix,
@@ -362,6 +368,14 @@ impl PackStore {
                             options,
                         )
                         .with_context(|| format!("rebuild manifest index runs: {error:#}"))?;
+                        rebuild = RebuildMetrics {
+                            frames: u64::try_from(prefix.len())
+                                .context("rebuild frame count does not fit u64")?,
+                            runs: u64::try_from(loaded.runs.len())
+                                .context("rebuild run count does not fit u64")?,
+                            index_entries: loaded.index_entries,
+                            wall_ns: duration_ns(rebuild_started.elapsed()),
+                        };
                         generation = publish_rebuilt_manifest(root, &manifests, &loaded)?;
                         loaded
                     }
@@ -382,6 +396,7 @@ impl PackStore {
             max_index_memory_bytes,
             compaction,
             options,
+            rebuild,
             writer_lease,
         )
     }
@@ -481,6 +496,7 @@ impl PackStore {
         max_index_memory_bytes: u64,
         compaction: CompactionConfig,
         options: PackStoreOptions,
+        rebuild: RebuildMetrics,
         writer_lease: File,
     ) -> Result<Self> {
         let last_frame_receipt = loaded
@@ -550,6 +566,10 @@ impl PackStore {
             compaction,
             options,
             stats,
+            rebuild,
+            stage_totals: PackStageTotals::default(),
+            logical_payload_bytes: 0,
+            read_counters: Arc::new(ReadCounters::default()),
             leases: Arc::new(Mutex::new(BTreeMap::new())),
             open_validation: OpenValidation {
                 frames,

@@ -538,6 +538,24 @@ fn verify_authority(
         debt.max_index_memory_bytes,
         debt.backpressure_required,
     );
+    let metrics = pack.metrics().context("read pack performance metrics")?;
+    println!(
+        "pack metrics: append_frames={} append_entries={} append_overlap_ns={} point_reads={} point_hits={} point_misses={} sorted_batches={} sorted_keys={} sorted_hits={} logical_payload_bytes={} physical_pack_bytes={} physical_index_bytes={} live_runs={} decoded_index_memory_bytes={}",
+        metrics.append.frames,
+        metrics.append.index_entries,
+        metrics.append.publication_overlap_ns,
+        metrics.reads.point_reads,
+        metrics.reads.point_hits,
+        metrics.reads.point_misses,
+        metrics.reads.sorted_batches,
+        metrics.reads.sorted_keys,
+        metrics.reads.sorted_hits,
+        metrics.logical_payload_bytes,
+        metrics.physical_pack_bytes,
+        metrics.physical_index_bytes,
+        metrics.live_runs,
+        metrics.decoded_index_memory_bytes,
+    );
     if let Some(plan) = pack
         .plan_compaction()
         .context("plan derived index maintenance")?

@@ -34,6 +34,9 @@
 //! [`PackStore::gc`]. Missing or corrupt derived index runs are rebuilt from
 //! committed frames on open.
 //!
+//! [`PackStore::metrics`] exposes fixed-cardinality append, read, layout, and
+//! compaction-debt counters for replay profiling without per-key labels.
+//!
 //! ## Two-phase publication
 //!
 //! [`PackStore::prepare_append`] durably syncs a frame and immutable run but
@@ -71,8 +74,8 @@ pub use engine::{
     CompactionStats, GcStats, OpenValidation, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
     PACK_INDEX_RUN_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION, PackCommitHorizon,
     PackCompactionPlan, PackFrameBuilder, PackFrameReceipt, PackIndexScrubStats,
-    PackMaterializedViewEvidence, PackScrubStats, PackStore, PackStoreError, PackStoreOptions,
-    PreparedAppend, PreparedPackCompaction, SealedAppend, Snapshot,
+    PackMaterializedViewEvidence, PackMetrics, PackScrubStats, PackStore, PackStoreError,
+    PackStoreOptions, PreparedAppend, PreparedPackCompaction, ReadMetrics, SealedAppend, Snapshot,
 };
 
 /// Byte length of one pack key (the StateService `0xf0 || node_hash` node
@@ -101,12 +104,18 @@ pub enum PackOpKind {
 
 /// Per-frame stage timings and counters produced by
 /// [`PackStore::prepare_append`] and returned by [`PackStore::append`].
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub struct PackStageTotals {
     /// Time spent writing append-frame bytes.
     pub append_write_ns: u64,
     /// Time spent syncing the append pack.
     pub pack_sync_ns: u64,
+    /// Time spent building the immutable run in memory.
+    pub index_build_ns: u64,
+    /// Wall time covering the overlapping append-pack sync and index build.
+    /// This is a wall-time measurement and must not be added to either child
+    /// stage when deriving total publication time.
+    pub publication_overlap_ns: u64,
     /// Time spent writing the immutable index run.
     pub index_write_ns: u64,
     /// Time spent syncing the immutable index run.
@@ -124,6 +133,10 @@ impl PackStageTotals {
     pub fn merge(&mut self, other: Self) {
         self.append_write_ns = self.append_write_ns.saturating_add(other.append_write_ns);
         self.pack_sync_ns = self.pack_sync_ns.saturating_add(other.pack_sync_ns);
+        self.index_build_ns = self.index_build_ns.saturating_add(other.index_build_ns);
+        self.publication_overlap_ns = self
+            .publication_overlap_ns
+            .saturating_add(other.publication_overlap_ns);
         self.index_write_ns = self.index_write_ns.saturating_add(other.index_write_ns);
         self.index_sync_ns = self.index_sync_ns.saturating_add(other.index_sync_ns);
         self.directory_sync_ns = self

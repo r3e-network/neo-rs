@@ -20,16 +20,18 @@ mod failpoint;
 mod filter;
 mod manifest;
 mod merge;
+mod metrics;
 #[allow(unsafe_code)]
 mod mmap;
 mod store;
 
+pub use metrics::{CompactionDebt, CompactionStats, GcStats, PackMetrics, ReadMetrics};
+
 pub use manifest::PACK_MANIFEST_FORMAT_VERSION;
 pub use store::{
-    CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, CheckpointNamespaceEvidence, CompactionDebt,
-    CompactionStats, GcStats, OpenValidation, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
-    PACK_INDEX_RUN_FORMAT_VERSION, PackCommitHorizon, PackCompactionPlan, PackFrameBuilder,
-    PackFrameReceipt, PackIndexScrubStats, PackMaterializedViewEvidence, PackScrubStats, PackStore,
-    PackStoreError, PackStoreOptions, PreparedAppend, PreparedPackCompaction, SealedAppend,
-    Snapshot,
+    CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, CheckpointNamespaceEvidence, OpenValidation,
+    PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_INDEX_RUN_FORMAT_VERSION,
+    PackCommitHorizon, PackCompactionPlan, PackFrameBuilder, PackFrameReceipt, PackIndexScrubStats,
+    PackMaterializedViewEvidence, PackScrubStats, PackStore, PackStoreError, PackStoreOptions,
+    PreparedAppend, PreparedPackCompaction, SealedAppend, Snapshot,
 };

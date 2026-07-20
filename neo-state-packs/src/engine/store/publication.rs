@@ -101,9 +101,6 @@ impl PackStore {
             .write_all(&payload)
             .context("write frame payload")?;
         let append_write_ns = duration_ns(write_started.elapsed());
-        let sync_started = Instant::now();
-        self.pack.sync_data().context("sync append pack frame")?;
-        let pack_sync_ns = duration_ns(sync_started.elapsed());
         let pack_len = frame_start
             .checked_add(FRAME_HEADER_LEN as u64)
             .and_then(|end| end.checked_add(payload.len() as u64))
@@ -118,13 +115,46 @@ impl PackStore {
             payload_sha256: payload_checksum,
         };
 
-        let min_key = entries.first().expect("non-empty frame").key;
-        let max_key = entries.last().expect("non-empty frame").key;
-        let fences = build_fences(&entries);
-        let filter =
-            XorFilter::build(&keys, filter_seed(epoch)).context("build run membership filter")?;
-        let (index_bytes, records_sha256) =
-            encode_index_run(epoch, &entries, &fences, &filter, &min_key, &max_key)?;
+        // The append frame is now fully written. Its durable sync and the
+        // immutable index's pure CPU build do not touch shared mutable state,
+        // so overlap them. All fallible publication steps below remain
+        // ordered after this join and before the external marker commit.
+        let overlap_started = Instant::now();
+        let (pack_sync, index_build) = rayon::join(
+            || {
+                let started = Instant::now();
+                let result = self.pack.sync_data().context("sync append pack frame");
+                (result, duration_ns(started.elapsed()))
+            },
+            || {
+                let started = Instant::now();
+                let min_key = entries.first().expect("non-empty frame").key;
+                let max_key = entries.last().expect("non-empty frame").key;
+                let fences = build_fences(&entries);
+                let filter = XorFilter::build(&keys, filter_seed(epoch))
+                    .context("build run membership filter");
+                let result = filter.and_then(|filter| {
+                    encode_index_run(epoch, &entries, &fences, &filter, &min_key, &max_key).map(
+                        |(index_bytes, records_sha256)| {
+                            (
+                                min_key,
+                                max_key,
+                                fences,
+                                filter,
+                                index_bytes,
+                                records_sha256,
+                            )
+                        },
+                    )
+                });
+                (result, duration_ns(started.elapsed()))
+            },
+        );
+        let publication_overlap_ns = duration_ns(overlap_started.elapsed());
+        let (pack_sync_result, pack_sync_ns) = pack_sync;
+        pack_sync_result?;
+        let (index_result, index_build_ns) = index_build;
+        let (min_key, max_key, fences, filter, index_bytes, records_sha256) = index_result?;
         let final_path = self.runs_dir.join(run_file_name(0, epoch, epoch));
         let temp_path = self.runs_dir.join(format!("run-{epoch:020}.tmp"));
         let index_write_started = Instant::now();
@@ -190,6 +220,8 @@ impl PackStore {
         let stage_totals = PackStageTotals {
             append_write_ns,
             pack_sync_ns,
+            index_build_ns,
+            publication_overlap_ns,
             index_write_ns,
             index_sync_ns,
             directory_sync_ns,
@@ -379,6 +411,7 @@ impl PackStore {
         let entries = activated_runs.iter().map(manifest_entry_of).collect();
         Ok(ValidatedAppend {
             receipt: prepared.receipt,
+            stage_totals: prepared.stage_totals(),
             pack_map,
             lookup_pack_map,
             runs: activated_runs,
@@ -397,6 +430,10 @@ impl PackStore {
     /// method is intentionally infallible so a successful seal cannot leave
     /// disk publication ahead of the writer's in-process bookkeeping.
     fn install_validated_append(&mut self, validated: ValidatedAppend) {
+        self.stage_totals.merge(validated.stage_totals);
+        self.logical_payload_bytes = self
+            .logical_payload_bytes
+            .saturating_add(validated.receipt.payload_bytes);
         self.pack_map = validated.pack_map;
         self.lookup_pack_map = validated.lookup_pack_map;
         self.runs = validated.runs;

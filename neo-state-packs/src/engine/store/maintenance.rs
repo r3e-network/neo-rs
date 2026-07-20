@@ -131,7 +131,11 @@ impl PackStore {
 
     /// Newest-committed-version point read.
     pub fn get(&self, key: &[u8; PACK_KEY_BYTES]) -> Result<Option<Vec<u8>>> {
-        self.view().get(key)
+        let result = self.view().get(key);
+        if let Ok(value) = &result {
+            self.read_counters.record_point(value.is_some());
+        }
+        result
     }
 
     /// Newest-committed-version point read that rejects an oversized indexed
@@ -141,7 +145,11 @@ impl PackStore {
         key: &[u8; PACK_KEY_BYTES],
         max_value_bytes: u64,
     ) -> Result<Option<Vec<u8>>> {
-        self.view().get_bounded(key, max_value_bytes)
+        let result = self.view().get_bounded(key, max_value_bytes);
+        if let Ok(value) = &result {
+            self.read_counters.record_point(value.is_some());
+        }
+        result
     }
 
     /// Filter-assisted k-way merge: per-run cursors gallop forward over the
@@ -150,7 +158,11 @@ impl PackStore {
     /// Filter-assisted k-way batch read. Keys must be sorted ascending;
     /// results align one-to-one with the input order.
     pub fn get_many_sorted(&self, keys: &[[u8; PACK_KEY_BYTES]]) -> Result<Vec<Option<Vec<u8>>>> {
-        self.view().get_many_sorted(keys)
+        let result = self.view().get_many_sorted(keys);
+        if let Ok(values) = &result {
+            self.read_counters.record_sorted(keys.len(), values);
+        }
+        result
     }
 
     /// Sorted batch read that validates every indexed value and the complete
@@ -161,8 +173,13 @@ impl PackStore {
         max_value_bytes: u64,
         max_total_value_bytes: u64,
     ) -> Result<Vec<Option<Vec<u8>>>> {
-        self.view()
-            .get_many_sorted_bounded(keys, max_value_bytes, max_total_value_bytes)
+        let result =
+            self.view()
+                .get_many_sorted_bounded(keys, max_value_bytes, max_total_value_bytes);
+        if let Ok(values) = &result {
+            self.read_counters.record_sorted(keys.len(), values);
+        }
+        result
     }
 
     /// Drops resident pages from explicit random-advised lookup mappings.
@@ -357,6 +374,7 @@ impl PackStore {
             pack_map: Arc::clone(pack_map),
             lookup_pack_map: lookup_pack_map.map(Arc::clone),
             batch_value_workers: self.options.batch_value_workers,
+            read_counters: Arc::clone(&self.read_counters),
             leases: Arc::clone(&self.leases),
         })
     }
@@ -479,6 +497,30 @@ impl PackStore {
             u64::try_from(self.runs.len()).context("run count does not fit u64")?,
             self.decoded_index_bytes,
         ))
+    }
+
+    /// Returns one fixed-cardinality performance snapshot for this handle.
+    ///
+    /// The filesystem stat is intentionally performed only when the caller
+    /// asks for metrics; normal appends and reads do not pay that I/O cost.
+    pub fn metrics(&self) -> Result<PackMetrics> {
+        let (physical_pack_bytes, physical_index_bytes, live_runs, decoded_index_memory_bytes) =
+            self.layout()?;
+        Ok(PackMetrics {
+            append: self.stage_totals,
+            reads: self.read_counters.snapshot(),
+            compaction: self.stats,
+            rebuild_frames: self.rebuild.frames,
+            rebuild_runs: self.rebuild.runs,
+            rebuild_index_entries: self.rebuild.index_entries,
+            rebuild_wall_ns: self.rebuild.wall_ns,
+            logical_payload_bytes: self.logical_payload_bytes,
+            physical_pack_bytes,
+            physical_index_bytes,
+            live_runs,
+            decoded_index_memory_bytes,
+            debt: self.compaction_debt(),
+        })
     }
 
     /// Structural counts observed when this handle opened the store.

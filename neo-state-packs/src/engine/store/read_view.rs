@@ -288,6 +288,7 @@ pub struct Snapshot {
     pub(super) pack_map: Arc<Mmap>,
     pub(super) lookup_pack_map: Option<Arc<Mmap>>,
     pub(super) batch_value_workers: usize,
+    pub(super) read_counters: Arc<ReadCounters>,
     pub(super) leases: Arc<Mutex<BTreeMap<u64, usize>>>,
 }
 
@@ -299,7 +300,11 @@ impl Snapshot {
 
     /// Newest-committed-version point read.
     pub fn get(&self, key: &[u8; PACK_KEY_BYTES]) -> Result<Option<Vec<u8>>> {
-        self.view().get(key)
+        let result = self.view().get(key);
+        if let Ok(value) = &result {
+            self.read_counters.record_point(value.is_some());
+        }
+        result
     }
 
     /// Newest-committed-version point read that rejects an oversized indexed
@@ -309,13 +314,21 @@ impl Snapshot {
         key: &[u8; PACK_KEY_BYTES],
         max_value_bytes: u64,
     ) -> Result<Option<Vec<u8>>> {
-        self.view().get_bounded(key, max_value_bytes)
+        let result = self.view().get_bounded(key, max_value_bytes);
+        if let Ok(value) = &result {
+            self.read_counters.record_point(value.is_some());
+        }
+        result
     }
 
     /// Filter-assisted k-way batch read. Keys must be sorted ascending;
     /// results align one-to-one with the input order.
     pub fn get_many_sorted(&self, keys: &[[u8; PACK_KEY_BYTES]]) -> Result<Vec<Option<Vec<u8>>>> {
-        self.view().get_many_sorted(keys)
+        let result = self.view().get_many_sorted(keys);
+        if let Ok(values) = &result {
+            self.read_counters.record_sorted(keys.len(), values);
+        }
+        result
     }
 
     /// Sorted batch read that validates every indexed value and the complete
@@ -326,8 +339,13 @@ impl Snapshot {
         max_value_bytes: u64,
         max_total_value_bytes: u64,
     ) -> Result<Vec<Option<Vec<u8>>>> {
-        self.view()
-            .get_many_sorted_bounded(keys, max_value_bytes, max_total_value_bytes)
+        let result =
+            self.view()
+                .get_many_sorted_bounded(keys, max_value_bytes, max_total_value_bytes);
+        if let Ok(values) = &result {
+            self.read_counters.record_sorted(keys.len(), values);
+        }
+        result
     }
 
     fn view(&self) -> ReadView<'_> {
