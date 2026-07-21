@@ -1257,6 +1257,47 @@ fn test_canonical_storage_requires_transactional_store_and_uses_data_cache_overl
     );
 }
 
+#[test]
+fn test_node_commit_policy_does_not_redefine_coordinated_storage() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let context_source =
+        fs::read_to_string(workspace_root.join("neo-node/src/node/context/mod.rs"))
+            .expect("read daemon commit-hook composition");
+    let policy_source =
+        fs::read_to_string(workspace_root.join("neo-node/src/node/context/plugins.rs"))
+            .expect("read daemon commit policy");
+    let storage_source = fs::read_to_string(
+        workspace_root.join("neo-storage/src/persistence/providers/runtime_store.rs"),
+    )
+    .expect("read RuntimeStore coordinated storage implementation");
+
+    for forbidden in ["CoordinatedNodeStoreWith", "commit_node_overlays"] {
+        assert!(
+            !context_source.contains(forbidden) && !policy_source.contains(forbidden),
+            "neo-node must not redefine coordinated storage through `{forbidden}`"
+        );
+    }
+    for required in [
+        "commit_coordinated_overlays(",
+        "commit_coordinated_overlays_with_shadow(",
+        "commit_coordinated_overlays_with_required_marker(",
+    ] {
+        assert!(
+            storage_source.contains(required),
+            "RuntimeStore must own `{required}`"
+        );
+        assert!(
+            policy_source.contains(required),
+            "daemon commit policy must call storage-owned `{required}` directly"
+        );
+    }
+    assert!(
+        context_source.contains("StateServiceCommitHandlers<RuntimeStore>")
+            && context_source.contains("StoreCacheBacking<RuntimeStore>"),
+        "daemon hooks must bind canonical Ledger and StateService storage to RuntimeStore"
+    );
+}
+
 #[tokio::test]
 async fn test_no_circular_dependencies() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();

@@ -20,12 +20,11 @@ fn daemon_context_indexes_application_executed_notifications() {
     use neo_blockchain::SystemContext;
     use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
     use neo_primitives::{TriggerType, UInt160, UInt256, WitnessScope};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_vm::VmState as VMState;
 
     let store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
+    let store_cache = runtime_store_cache(&store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let indexer = Arc::new(neo_indexer::IndexerService::new());
     let mut previous_hash = UInt256::zero();
@@ -94,11 +93,10 @@ fn daemon_context_indexes_application_executed_notifications() {
 fn daemon_context_does_not_create_ahead_of_stage_index_gap() {
     use neo_blockchain::SystemContext;
     use neo_payloads::{Block, Header};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
 
     let store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
+    let store_cache = runtime_store_cache(&store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let indexer = Arc::new(neo_indexer::IndexerService::new());
     let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
@@ -126,7 +124,6 @@ fn persistent_indexer_write_failure_rejects_precommit_and_requests_shutdown() {
     use neo_blockchain::SystemContext;
     use neo_payloads::{Block, Header};
     use neo_storage::mdbx::MdbxStoreProvider;
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_storage::persistence::storage::StorageConfig;
 
@@ -153,7 +150,7 @@ fn persistent_indexer_write_failure_rejects_precommit_and_requests_shutdown() {
     );
 
     let chain_store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let store_cache = runtime_store_cache(&chain_store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
         Arc::new(ProtocolSettings::default()),
@@ -183,7 +180,6 @@ fn persistent_indexer_write_failure_rejects_precommit_and_requests_shutdown() {
 fn persistent_indexer_arms_replay_marker_before_precommit_write() {
     use neo_blockchain::BlockPersistContext;
     use neo_payloads::{Block, Header};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_system::BlockCommitHooks;
 
@@ -196,7 +192,6 @@ fn persistent_indexer_arms_replay_marker_before_precommit_write() {
     );
     let hooks: DaemonCommitHooks<
         neo_native_contracts::StandardNativeProvider,
-        MemoryStore,
         MemoryStore,
         MemoryStore,
     > = DaemonCommitHooks::new(
@@ -212,7 +207,7 @@ fn persistent_indexer_arms_replay_marker_before_precommit_write() {
         )),
     );
     let chain_store = Arc::new(MemoryStore::new());
-    let snapshot = StoreCache::new_from_store(chain_store, false)
+    let snapshot = runtime_store_cache(&chain_store, false)
         .data_cache()
         .clone();
     let mut header = Header::new();
@@ -235,8 +230,7 @@ fn persistent_indexer_arms_replay_marker_before_precommit_write() {
         neo_native_contracts::StandardNativeProvider,
         MemoryStore,
         MemoryStore,
-        MemoryStore,
-    > as BlockCommitHooks<MemoryStore>>::fence_precommit_durability(&hooks)
+    > as BlockCommitHooks<RuntimeStore>>::fence_precommit_durability(&hooks)
     .expect("persistent indexer durability fence");
     crate::node::recovery::refuse_local_replay_marker(Some(&marker))
         .expect_err("startup must reject an indexer pre-commit without canonical Ledger");

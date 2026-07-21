@@ -8,14 +8,15 @@
 use neo_blockchain::{BlockPersistContext, FinalizedBlock, SyncBatchCommitPolicy};
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
+use neo_storage::persistence::Store;
 use neo_storage::persistence::StoreCacheBacking;
-use neo_storage::persistence::{Store, TransactionalStore};
+use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::{CacheRead, DataCache, StorageError};
 use neo_system::{BlockCommitHooks, CanonicalCommit};
 use std::sync::Arc;
 use tracing::{debug, warn};
 
-use super::{CoordinatedNodeStoreWith, DaemonCommitHooks};
+use super::DaemonCommitHooks;
 use crate::node::static_files::{
     STATIC_ARCHIVE_MAX_DEFERRED_BLOCKS, STATIC_ARCHIVE_PRUNE_BATCH_FRAMES, hot_ledger_prune_target,
 };
@@ -23,13 +24,11 @@ use crate::node::static_files::{
 const COMMITTED_CATCHUP_DISTANCE: u64 = 1_000;
 const COMMITTING_CATCHUP_DISTANCE: u64 = 10_000;
 
-impl<P, S, L, T, C> DaemonCommitHooks<P, S, L, T, C>
+impl<P, L, T> DaemonCommitHooks<P, L, T>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
-    C: Store + 'static,
 {
     #[cfg(test)]
     pub(in crate::node) fn block_committing_with_live_tip<B: CacheRead>(
@@ -156,13 +155,11 @@ where
     }
 }
 
-impl<P, S, L, T, C> BlockCommitHooks<C> for DaemonCommitHooks<P, S, L, T, C>
+impl<P, L, T> BlockCommitHooks<RuntimeStore> for DaemonCommitHooks<P, L, T>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
-    C: TransactionalStore + CoordinatedNodeStoreWith<S> + 'static,
 {
     fn requires_replay_artifacts(&self, _block: &Block, context: BlockPersistContext) -> bool {
         if context.skips_live_observers() {
@@ -175,7 +172,7 @@ where
     fn block_committing(
         &self,
         block: &Block,
-        snapshot: &DataCache<StoreCacheBacking<C>>,
+        snapshot: &DataCache<StoreCacheBacking<RuntimeStore>>,
         application_executed: &[ApplicationExecuted],
         live_tip: u64,
         context: BlockPersistContext,
@@ -191,7 +188,7 @@ where
 
     async fn block_finalized(
         &self,
-        finalized: FinalizedBlock<StoreCacheBacking<C>>,
+        finalized: FinalizedBlock<StoreCacheBacking<RuntimeStore>>,
         live_tip: u64,
     ) -> Result<(), String> {
         let block_index = finalized.block().index();
@@ -303,7 +300,7 @@ where
 
     fn commit_canonical<K>(&self, canonical_commit: &mut K) -> Result<(), String>
     where
-        K: CanonicalCommit<C>,
+        K: CanonicalCommit<RuntimeStore>,
     {
         if let Err(error) = self.fence_precommit_durability() {
             canonical_commit.discard_pending();
@@ -326,7 +323,7 @@ where
                                 return authority.commit_prepared(
                                     state_overlay,
                                     |metadata, marker| {
-                                        canonical.commit_node_overlays_with_required_marker(
+                                        canonical.commit_coordinated_overlays_with_required_marker(
                                             canonical_overlay,
                                             state_backing,
                                             metadata,
@@ -342,13 +339,13 @@ where
                                 }
                             });
                             match shadow_hook.as_mut() {
-                                Some(hook) => canonical.commit_node_overlays_with_shadow(
+                                Some(hook) => canonical.commit_coordinated_overlays_with_shadow(
                                     canonical_overlay,
                                     state_backing,
                                     state_overlay,
                                     Some(hook),
                                 ),
-                                None => canonical.commit_node_overlays(
+                                None => canonical.commit_coordinated_overlays(
                                     canonical_overlay,
                                     state_backing,
                                     state_overlay,

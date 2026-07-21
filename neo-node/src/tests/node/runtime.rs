@@ -1,25 +1,22 @@
 use super::*;
-use crate::node::context::CoordinatedNodeStoreWith;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_storage::persistence::StoreDataCache;
-use neo_storage::persistence::providers::MemoryStore;
-use neo_storage::persistence::{Store, StoreBackendKind, TransactionalStore};
+use neo_storage::persistence::providers::{MemoryStore, RuntimeStore};
+use neo_storage::persistence::{Store, StoreBackendKind};
 use neo_system::NodeSystemContext;
 
-struct TestDaemonContext<P, C = MemoryStore, S = MemoryStore, L = MemoryStore, T = MemoryStore>
+struct TestDaemonContext<P, L = MemoryStore, T = MemoryStore>
 where
     P: NativeContractProvider + 'static,
-    C: TransactionalStore + CoordinatedNodeStoreWith<S> + 'static,
-    S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
 {
-    core: NodeSystemContext<P, C, DaemonCommitHooks<P, S, L, T, C>>,
-    hooks: Arc<DaemonCommitHooks<P, S, L, T, C>>,
+    core: NodeSystemContext<P, RuntimeStore, DaemonCommitHooks<P, L, T>>,
+    hooks: Arc<DaemonCommitHooks<P, L, T>>,
     finalized_stream: parking_lot::Mutex<
         Option<
             neo_system::FinalizedBlockStream<
-                neo_storage::persistence::StoreCacheBacking<C>,
+                neo_storage::persistence::StoreCacheBacking<RuntimeStore>,
                 crate::node::context::FinalizedProjectionConsumer<P, L, T>,
             >,
         >,
@@ -27,33 +24,29 @@ where
     shutdown: tokio_util::sync::CancellationToken,
 }
 
-impl<P, C, S, L, T> std::ops::Deref for TestDaemonContext<P, C, S, L, T>
+impl<P, L, T> std::ops::Deref for TestDaemonContext<P, L, T>
 where
     P: NativeContractProvider + 'static,
-    C: TransactionalStore + CoordinatedNodeStoreWith<S> + 'static,
-    S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
 {
-    type Target = NodeSystemContext<P, C, DaemonCommitHooks<P, S, L, T, C>>;
+    type Target = NodeSystemContext<P, RuntimeStore, DaemonCommitHooks<P, L, T>>;
 
     fn deref(&self) -> &Self::Target {
         &self.core
     }
 }
 
-impl<P, C, S, L, T> TestDaemonContext<P, C, S, L, T>
+impl<P, L, T> TestDaemonContext<P, L, T>
 where
     P: NativeContractProvider + 'static,
-    C: TransactionalStore + CoordinatedNodeStoreWith<S> + 'static,
-    S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
 {
     fn block_committing_with_live_tip(
         &self,
         block: &neo_payloads::Block,
-        snapshot: &StoreDataCache<C>,
+        snapshot: &StoreDataCache<RuntimeStore>,
         application_executed: &[neo_payloads::ApplicationExecuted],
         live_tip: u64,
     ) -> bool {
@@ -73,25 +66,25 @@ where
     }
 }
 
-fn daemon_context<P, C, S, L, T>(
+fn daemon_context<P, L, T>(
     settings: Arc<ProtocolSettings>,
-    snapshot: Arc<StoreDataCache<C>>,
-    store_cache: neo_storage::persistence::StoreCache<C>,
-    state_service: Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers<S>>>,
+    snapshot: Arc<StoreDataCache<RuntimeStore>>,
+    store_cache: neo_storage::persistence::StoreCache<RuntimeStore>,
+    state_service: Option<
+        Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers<RuntimeStore>>,
+    >,
     state_service_track_during_catchup: bool,
     indexer_service: Option<Arc<neo_indexer::IndexerService>>,
     native_contract_provider: Arc<P>,
     application_logs_service: Option<Arc<neo_rpc::application_logs::ApplicationLogsService<L>>>,
-) -> TestDaemonContext<P, C, S, L, T>
+) -> TestDaemonContext<P, L, T>
 where
     P: NativeContractProvider + 'static,
-    C: TransactionalStore + CoordinatedNodeStoreWith<S> + 'static,
-    S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
 {
     let shutdown = tokio_util::sync::CancellationToken::new();
-    let (hooks, finalized_stream) = DaemonCommitHooks::<P, S, L, T, C>::compose(
+    let (hooks, finalized_stream) = DaemonCommitHooks::<P, L, T>::compose(
         settings.network,
         state_service,
         state_service_track_during_catchup,
@@ -125,10 +118,22 @@ fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
     Arc::new(neo_native_contracts::StandardNativeProvider::new())
 }
 
-fn memory_runtime_store() -> Arc<neo_storage::persistence::providers::RuntimeStore> {
-    Arc::new(neo_storage::persistence::providers::RuntimeStore::Memory(
-        MemoryStore::new(),
-    ))
+fn memory_runtime_store() -> Arc<RuntimeStore> {
+    Arc::new(RuntimeStore::Memory(MemoryStore::new()))
+}
+
+fn runtime_store_from_memory(store: &Arc<MemoryStore>) -> Arc<RuntimeStore> {
+    Arc::new(RuntimeStore::Memory(store.as_ref().clone()))
+}
+
+fn runtime_store_cache(
+    store: &Arc<MemoryStore>,
+    read_only: bool,
+) -> neo_storage::persistence::StoreCache<RuntimeStore> {
+    neo_storage::persistence::StoreCache::new_from_store(
+        runtime_store_from_memory(store),
+        read_only,
+    )
 }
 
 #[path = "runtime/indexer.rs"]
@@ -140,9 +145,12 @@ fn state_service_only_composition_skips_replay_artifact_copies() {
 
     let settings = Arc::new(ProtocolSettings::default());
     let store = Arc::new(MemoryStore::new());
-    let store_cache = neo_storage::persistence::StoreCache::new_from_store(store, false);
+    let store_cache = runtime_store_cache(&store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
-    let state_store = Arc::new(neo_state_service::StateStore::with_mpt(false));
+    let state_store = Arc::new(
+        neo_state_service::StateStore::with_mpt_store(false, memory_runtime_store())
+            .expect("open runtime-backed StateService MPT"),
+    );
     let state_service =
         Arc::new(neo_state_service::commit_handlers::StateServiceCommitHandlers::new(state_store));
     let context: TestDaemonContext<neo_native_contracts::StandardNativeProvider> = daemon_context(
@@ -173,16 +181,12 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_system::BlockCommitHooks;
 
-    type Hooks = DaemonCommitHooks<
-        neo_native_contracts::StandardNativeProvider,
-        MemoryStore,
-        MemoryStore,
-        MemoryStore,
-    >;
+    type Hooks =
+        DaemonCommitHooks<neo_native_contracts::StandardNativeProvider, MemoryStore, MemoryStore>;
 
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(
-        StoreCache::new_from_store(Arc::new(MemoryStore::new()), false)
+        StoreCache::new_from_store(memory_runtime_store(), false)
             .data_cache()
             .clone(),
     );
@@ -214,7 +218,7 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         Arc::new(crate::node::recovery::LocalReplayGuard::new(None, shutdown)),
     );
 
-    assert!(<Hooks as BlockCommitHooks<MemoryStore>>::block_committing(
+    assert!(<Hooks as BlockCommitHooks<RuntimeStore>>::block_committing(
         &hooks,
         block.as_ref(),
         snapshot.as_ref(),
@@ -227,14 +231,14 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         None,
         "pre-commit capture must stay in memory"
     );
-    <Hooks as BlockCommitHooks<MemoryStore>>::fence_precommit_durability(&hooks)
+    <Hooks as BlockCommitHooks<RuntimeStore>>::fence_precommit_durability(&hooks)
         .expect("durably stage archive before canonical commit");
     assert_eq!(
         archive.tip(),
         None,
         "the staged cold frame must remain hidden before canonical commit"
     );
-    <Hooks as BlockCommitHooks<MemoryStore>>::canonical_commit_succeeded(&hooks);
+    <Hooks as BlockCommitHooks<RuntimeStore>>::canonical_commit_succeeded(&hooks);
     assert_eq!(archive.tip(), Some(0));
     assert_eq!(
         archive
@@ -264,7 +268,7 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
             tokio_util::sync::CancellationToken::new(),
         )),
     );
-    assert!(<Hooks as BlockCommitHooks<MemoryStore>>::block_committing(
+    assert!(<Hooks as BlockCommitHooks<RuntimeStore>>::block_committing(
         &discarded,
         block.as_ref(),
         snapshot.as_ref(),
@@ -272,11 +276,11 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         0,
         BlockPersistContext::live(),
     ));
-    <Hooks as BlockCommitHooks<MemoryStore>>::canonical_commit_failed(
+    <Hooks as BlockCommitHooks<RuntimeStore>>::canonical_commit_failed(
         &discarded,
         "injected canonical failure",
     );
-    <Hooks as BlockCommitHooks<MemoryStore>>::canonical_commit_succeeded(&discarded);
+    <Hooks as BlockCommitHooks<RuntimeStore>>::canonical_commit_succeeded(&discarded);
     assert_eq!(discarded_archive.tip(), None);
 
     let ahead_temp = tempfile::tempdir().expect("tempdir");
@@ -298,7 +302,7 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
             tokio_util::sync::CancellationToken::new(),
         )),
     );
-    assert!(<Hooks as BlockCommitHooks<MemoryStore>>::block_committing(
+    assert!(<Hooks as BlockCommitHooks<RuntimeStore>>::block_committing(
         &ahead,
         block.as_ref(),
         snapshot.as_ref(),
@@ -306,9 +310,9 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         0,
         BlockPersistContext::live(),
     ));
-    <Hooks as BlockCommitHooks<MemoryStore>>::fence_precommit_durability(&ahead)
+    <Hooks as BlockCommitHooks<RuntimeStore>>::fence_precommit_durability(&ahead)
         .expect("publish ahead archive frame");
-    <Hooks as BlockCommitHooks<MemoryStore>>::canonical_commit_failed(
+    <Hooks as BlockCommitHooks<RuntimeStore>>::canonical_commit_failed(
         &ahead,
         "injected failure after cold durability",
     );
@@ -329,9 +333,11 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         .expect("truncate uncommitted ahead archive frame");
     assert_eq!(recovery.truncated_blocks, 1);
     assert_eq!(recovered_archive.tip(), None);
-    assert!(!<Hooks as BlockCommitHooks<MemoryStore>>::allows_empty_block_fast_forward(&discarded));
     assert!(
-        <Hooks as BlockCommitHooks<MemoryStore>>::allows_empty_block_committing_fast_forward(
+        !<Hooks as BlockCommitHooks<RuntimeStore>>::allows_empty_block_fast_forward(&discarded)
+    );
+    assert!(
+        <Hooks as BlockCommitHooks<RuntimeStore>>::allows_empty_block_committing_fast_forward(
             &discarded
         )
     );
@@ -352,16 +358,12 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
     use neo_storage::persistence::store::Store;
     use neo_system::BlockCommitHooks;
 
-    type Hooks = DaemonCommitHooks<
-        neo_native_contracts::StandardNativeProvider,
-        MemoryStore,
-        MemoryStore,
-        MemoryStore,
-    >;
+    type Hooks =
+        DaemonCommitHooks<neo_native_contracts::StandardNativeProvider, MemoryStore, MemoryStore>;
 
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(
-        StoreCache::new_from_store(Arc::new(MemoryStore::new()), false)
+        StoreCache::new_from_store(memory_runtime_store(), false)
             .data_cache()
             .clone(),
     );
@@ -413,7 +415,7 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
     );
     hooks.configure_hot_ledger_pruning(Arc::clone(&store), 0);
 
-    assert!(<Hooks as BlockCommitHooks<MemoryStore>>::block_committing(
+    assert!(<Hooks as BlockCommitHooks<RuntimeStore>>::block_committing(
         &hooks,
         block.as_ref(),
         snapshot.as_ref(),
@@ -421,9 +423,9 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
         0,
         BlockPersistContext::live(),
     ));
-    <Hooks as BlockCommitHooks<MemoryStore>>::fence_precommit_durability(&hooks)
+    <Hooks as BlockCommitHooks<RuntimeStore>>::fence_precommit_durability(&hooks)
         .expect("stage archive");
-    <Hooks as BlockCommitHooks<MemoryStore>>::canonical_commit_succeeded(&hooks);
+    <Hooks as BlockCommitHooks<RuntimeStore>>::canonical_commit_succeeded(&hooks);
 
     let mut block_hash_key = vec![9];
     block_hash_key.extend_from_slice(&0u32.to_be_bytes());
@@ -472,10 +474,9 @@ fn daemon_commit_hooks_do_not_own_core_system_resources() {
 #[test]
 fn canonical_store_failure_requests_shutdown_without_precommit_observers() {
     use neo_blockchain::SystemContext;
-    use neo_storage::persistence::StoreCache;
 
     let chain_store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(chain_store, true);
+    let store_cache = runtime_store_cache(&chain_store, true);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
         Arc::new(ProtocolSettings::default()),
@@ -502,13 +503,15 @@ fn daemon_context_skips_state_service_mpt_during_default_cold_catchup() {
     use neo_blockchain::{BlockPersistContext, SystemContext};
     use neo_payloads::{Block, Header};
     use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
 
     let chain_store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let store_cache = runtime_store_cache(&chain_store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
-    let state_store = Arc::new(StateStore::with_mpt(true));
+    let state_store = Arc::new(
+        StateStore::with_mpt_store(true, memory_runtime_store())
+            .expect("open runtime-backed StateService MPT"),
+    );
     let state_service = Arc::new(StateServiceCommitHandlers::new(Arc::clone(&state_store)));
     let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
         Arc::new(ProtocolSettings::default()),
@@ -560,13 +563,15 @@ fn daemon_context_can_track_state_service_mpt_during_cold_catchup_for_validation
     use neo_blockchain::{BlockPersistContext, SystemContext};
     use neo_payloads::{Block, Header};
     use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
 
     let chain_store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let store_cache = runtime_store_cache(&chain_store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
-    let state_store = Arc::new(StateStore::with_mpt(true));
+    let state_store = Arc::new(
+        StateStore::with_mpt_store(true, memory_runtime_store())
+            .expect("open runtime-backed StateService MPT"),
+    );
     let state_service = Arc::new(StateServiceCommitHandlers::new(Arc::clone(&state_store)));
     let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
         Arc::new(ProtocolSettings::default()),
@@ -741,7 +746,6 @@ path = "{}"
 #[test]
 fn coordinated_mdbx_commit_publishes_ledger_and_state_root_atomically() {
     use neo_blockchain::{BlockPersistContext, SystemContext};
-    use neo_storage::persistence::providers::RuntimeStore;
     use neo_storage::persistence::{RawReadOnlyStore, StoreCache};
     use neo_storage::{StorageItem, StorageKey};
 
@@ -796,10 +800,8 @@ track_during_catchup = true
     let shutdown = tokio_util::sync::CancellationToken::new();
     let (hooks, _stream) = DaemonCommitHooks::<
         neo_native_contracts::StandardNativeProvider,
-        RuntimeStore,
         MemoryStore,
         MemoryStore,
-        RuntimeStore,
     >::compose(
         0x334F_454E,
         Some(state_service),
@@ -1008,7 +1010,6 @@ track_during_catchup = true
 fn daemon_context_bulk_sync_flush_reports_async_state_service_failure() {
     use neo_blockchain::{BlockPersistContext, SystemContext};
     use neo_payloads::{Block, Header};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_storage::{StorageItem, StorageKey};
 
@@ -1040,23 +1041,22 @@ track_during_catchup = true
     );
 
     let chain_store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let store_cache = runtime_store_cache(&chain_store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     snapshot.add(
         StorageKey::new(5, vec![0xAA]),
         StorageItem::from_bytes(vec![0x01]),
     );
-    let ctx: TestDaemonContext<_, MemoryStore, neo_storage::persistence::providers::RuntimeStore> =
-        daemon_context(
-            Arc::new(ProtocolSettings::default()),
-            Arc::clone(&snapshot),
-            store_cache,
-            Some(state_service),
-            true,
-            None,
-            native_provider(),
-            None,
-        );
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
+        Arc::new(ProtocolSettings::default()),
+        Arc::clone(&snapshot),
+        store_cache,
+        Some(state_service),
+        true,
+        None,
+        native_provider(),
+        None,
+    );
 
     let mut header = Header::new();
     header.set_index(5);
@@ -1088,7 +1088,6 @@ track_during_catchup = true
 fn daemon_context_live_async_state_service_failure_is_immediate() {
     use neo_blockchain::{BlockPersistContext, SystemContext};
     use neo_payloads::{Block, Header};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_storage::{StorageItem, StorageKey};
 
@@ -1120,23 +1119,22 @@ track_during_catchup = true
     );
 
     let chain_store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let store_cache = runtime_store_cache(&chain_store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     snapshot.add(
         StorageKey::new(5, vec![0xAA]),
         StorageItem::from_bytes(vec![0x01]),
     );
-    let ctx: TestDaemonContext<_, MemoryStore, neo_storage::persistence::providers::RuntimeStore> =
-        daemon_context(
-            Arc::new(ProtocolSettings::default()),
-            Arc::clone(&snapshot),
-            store_cache,
-            Some(state_service),
-            true,
-            None,
-            native_provider(),
-            None,
-        );
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
+        Arc::new(ProtocolSettings::default()),
+        Arc::clone(&snapshot),
+        store_cache,
+        Some(state_service),
+        true,
+        None,
+        native_provider(),
+        None,
+    );
 
     let mut header = Header::new();
     header.set_index(5);
@@ -1200,7 +1198,6 @@ track_during_catchup = false
 #[test]
 fn validation_state_service_reports_non_contiguous_root_before_chain_commit() {
     use neo_payloads::{Block, Header};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_storage::{StorageItem, StorageKey};
 
@@ -1233,23 +1230,22 @@ track_during_catchup = true
         .clone();
 
     let chain_store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let store_cache = runtime_store_cache(&chain_store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     snapshot.add(
         StorageKey::new(5, vec![0xAA]),
         StorageItem::from_bytes(vec![0x01]),
     );
-    let ctx: TestDaemonContext<_, MemoryStore, neo_storage::persistence::providers::RuntimeStore> =
-        daemon_context(
-            Arc::new(ProtocolSettings::default()),
-            Arc::clone(&snapshot),
-            store_cache,
-            Some(state_service),
-            true,
-            None,
-            native_provider(),
-            None,
-        );
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
+        Arc::new(ProtocolSettings::default()),
+        Arc::clone(&snapshot),
+        store_cache,
+        Some(state_service),
+        true,
+        None,
+        native_provider(),
+        None,
+    );
 
     let mut header = Header::new();
     header.set_index(5);
@@ -1267,7 +1263,6 @@ track_during_catchup = true
 #[test]
 fn default_state_service_reports_near_tip_root_failure_before_chain_commit() {
     use neo_payloads::{Block, Header};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_storage::{StorageItem, StorageKey};
 
@@ -1299,23 +1294,22 @@ full_state = true
         .clone();
 
     let chain_store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let store_cache = runtime_store_cache(&chain_store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     snapshot.add(
         StorageKey::new(5, vec![0xBB]),
         StorageItem::from_bytes(vec![0x02]),
     );
-    let ctx: TestDaemonContext<_, MemoryStore, neo_storage::persistence::providers::RuntimeStore> =
-        daemon_context(
-            Arc::new(ProtocolSettings::default()),
-            Arc::clone(&snapshot),
-            store_cache,
-            Some(state_service),
-            false,
-            None,
-            native_provider(),
-            None,
-        );
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
+        Arc::new(ProtocolSettings::default()),
+        Arc::clone(&snapshot),
+        store_cache,
+        Some(state_service),
+        false,
+        None,
+        native_provider(),
+        None,
+    );
 
     let mut header = Header::new();
     header.set_index(5);
@@ -1624,7 +1618,7 @@ fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
         neo_native_contracts::StandardNativeProvider::new(),
     ));
     let store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
+    let store_cache = runtime_store_cache(&store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
         Arc::new(ProtocolSettings::default()),
@@ -1677,13 +1671,12 @@ async fn daemon_context_dispatches_application_logs_handlers() {
     use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
     use neo_primitives::{TriggerType, UInt160, WitnessScope};
     use neo_rpc::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_vm::VmState as VMState;
 
     let settings = Arc::new(ProtocolSettings::default());
     let chain_store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let store_cache = runtime_store_cache(&chain_store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
     let mut logs_settings = ApplicationLogsSettings::default();
@@ -1766,7 +1759,6 @@ fn post_canonical_application_logs_do_not_arm_replay_marker() {
     use neo_blockchain::BlockPersistContext;
     use neo_payloads::{Block, Header};
     use neo_rpc::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_system::BlockCommitHooks;
 
@@ -1785,7 +1777,6 @@ fn post_canonical_application_logs_do_not_arm_replay_marker() {
         neo_native_contracts::StandardNativeProvider,
         MemoryStore,
         MemoryStore,
-        MemoryStore,
     > = DaemonCommitHooks::new(
         settings.network,
         None,
@@ -1799,7 +1790,7 @@ fn post_canonical_application_logs_do_not_arm_replay_marker() {
         )),
     );
     let chain_store = Arc::new(MemoryStore::new());
-    let snapshot = StoreCache::new_from_store(chain_store, false)
+    let snapshot = runtime_store_cache(&chain_store, false)
         .data_cache()
         .clone();
     let mut header = Header::new();
@@ -1825,12 +1816,8 @@ fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
     use neo_rpc::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
     use neo_system::BlockCommitHooks;
 
-    type Hooks = DaemonCommitHooks<
-        neo_native_contracts::StandardNativeProvider,
-        MemoryStore,
-        MemoryStore,
-        MemoryStore,
-    >;
+    type Hooks =
+        DaemonCommitHooks<neo_native_contracts::StandardNativeProvider, MemoryStore, MemoryStore>;
 
     let settings = ProtocolSettings::default();
     let mut logs_settings = ApplicationLogsSettings::default();
@@ -1854,14 +1841,14 @@ fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
     );
 
     assert_eq!(
-        <Hooks as BlockCommitHooks<MemoryStore>>::sync_batch_commit_policy(
+        <Hooks as BlockCommitHooks<RuntimeStore>>::sync_batch_commit_policy(
             &guarded, 1, 100, 10_100,
         ),
         neo_blockchain::SyncBatchCommitPolicy::PerBlock,
         "the exact catch-up boundary still runs per-block plugin staging",
     );
     assert_eq!(
-        <Hooks as BlockCommitHooks<MemoryStore>>::sync_batch_commit_policy(
+        <Hooks as BlockCommitHooks<RuntimeStore>>::sync_batch_commit_policy(
             &guarded, 1, 100, 10_101,
         ),
         neo_blockchain::SyncBatchCommitPolicy::DeferredCatchUp,
@@ -1881,7 +1868,7 @@ fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
         )),
     );
     assert_eq!(
-        <Hooks as BlockCommitHooks<MemoryStore>>::sync_batch_commit_policy(
+        <Hooks as BlockCommitHooks<RuntimeStore>>::sync_batch_commit_policy(
             &observer_free,
             1,
             100,
@@ -1897,12 +1884,8 @@ fn static_archive_bounds_deferred_commit_staging() {
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
     use neo_system::BlockCommitHooks;
 
-    type Hooks = DaemonCommitHooks<
-        neo_native_contracts::StandardNativeProvider,
-        MemoryStore,
-        MemoryStore,
-        MemoryStore,
-    >;
+    type Hooks =
+        DaemonCommitHooks<neo_native_contracts::StandardNativeProvider, MemoryStore, MemoryStore>;
 
     let temp = tempfile::tempdir().expect("temp dir");
     let files = StaticFileArchiveFactory::default()
@@ -1922,12 +1905,12 @@ fn static_archive_bounds_deferred_commit_staging() {
     );
 
     assert_eq!(
-        <Hooks as BlockCommitHooks<MemoryStore>>::sync_batch_commit_policy(&hooks, 1, 64, 0),
+        <Hooks as BlockCommitHooks<RuntimeStore>>::sync_batch_commit_policy(&hooks, 1, 64, 0),
         neo_blockchain::SyncBatchCommitPolicy::DeferredLive,
         "a bounded archive batch should retain one canonical commit",
     );
     assert_eq!(
-        <Hooks as BlockCommitHooks<MemoryStore>>::sync_batch_commit_policy(&hooks, 1, 65, 0),
+        <Hooks as BlockCommitHooks<RuntimeStore>>::sync_batch_commit_policy(&hooks, 1, 65, 0),
         neo_blockchain::SyncBatchCommitPolicy::PerBlock,
         "oversized archive staging must fall back to bounded per-block commits",
     );
@@ -1939,13 +1922,12 @@ async fn daemon_context_skips_application_logs_finalized_projection_during_bulk_
     use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
     use neo_primitives::{TriggerType, UInt160, WitnessScope};
     use neo_rpc::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
-    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_vm::VmState as VMState;
 
     let settings = Arc::new(ProtocolSettings::default());
     let chain_store = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let store_cache = runtime_store_cache(&chain_store, false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
     let mut logs_settings = ApplicationLogsSettings::default();

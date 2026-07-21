@@ -227,19 +227,18 @@ pub(in crate::node) async fn build_node(
     let replay_guard = Arc::new(LocalReplayGuard::new(replay_marker_path, shutdown.clone()));
     let append_shadow =
         crate::node::append_shadow::open_append_shadow(config, settings.network, store.as_ref());
-    let (daemon_hooks, finalized_block_stream) =
-        DaemonCommitHooks::<_, _, _, _, RuntimeStore>::compose(
-            settings.network,
-            state_service.clone(),
-            config.state_service.track_during_catchup,
-            indexer_service.clone(),
-            application_logs_service.clone(),
-            tokens_tracker,
-            static_archive.clone(),
-            Arc::clone(&replay_guard),
-            append_shadow,
-            authoritative_pack,
-        );
+    let (daemon_hooks, finalized_block_stream) = DaemonCommitHooks::<_, _, _>::compose(
+        settings.network,
+        state_service.clone(),
+        config.state_service.track_during_catchup,
+        indexer_service.clone(),
+        application_logs_service.clone(),
+        tokens_tracker,
+        static_archive.clone(),
+        Arc::clone(&replay_guard),
+        append_shadow,
+        authoritative_pack,
+    );
     if static_archive_enabled {
         daemon_hooks
             .configure_hot_ledger_pruning(Arc::clone(&store), settings.max_traceable_blocks);
