@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "date": "2026-07-21",
+  "git_commit": "2c6486e17ced1f71be04eaa76578d200797e3c91",
+  "state_root_enabled": true,
+  "verified_import": true,
+  "feature_default_enabled": false,
+  "node_sha256": "898d72eb0c29dc12c51bedc9d8414be6e2948ee2336b69781ca90cf062a0780d",
+  "harness_sha256": "e55531c6726dac00f6541d3d3be7bf709c2936c7b49cd23814be29a2ce2d731d",
+  "inputs": {
+    "database_sha256": "b2be935ef66c7330b1a005d3532a86e4d1430d5e2a1a38a25acb56ddbbda9e1f",
+    "archive_sha256": "6043a5c91735087bfb4dda33a2755603f58b6ce3706104510e726ea9aa78b1c0",
+    "start_height": 3452022,
+    "target_height": 3457022,
+    "blocks": 5000,
+    "empty_blocks": 4251,
+    "transaction_blocks": 749,
+    "transactions": 877
+  },
+  "configuration": {
+    "workers": 4,
+    "queue_capacity": 32,
+    "ordered_window": 36
+  },
+  "pairs": [
+    {
+      "order": "off-on",
+      "disabled_bps": 260.6821243789467,
+      "enabled_bps": 357.93108610328363,
+      "delta_percent": 37.30557358162721,
+      "disabled_transaction_block_bps": 222.6001026219759,
+      "enabled_transaction_block_bps": 238.92879456632818,
+      "disabled_finalization_store_seconds": 10.753176577,
+      "enabled_finalization_store_seconds": 10.298650334,
+      "queue_full": 572
+    },
+    {
+      "order": "on-off",
+      "disabled_bps": 249.3948575313583,
+      "enabled_bps": 335.32030721161834,
+      "delta_percent": 34.45357716305597,
+      "disabled_transaction_block_bps": 236.84367684269583,
+      "enabled_transaction_block_bps": 235.2239472012547,
+      "disabled_finalization_store_seconds": 11.947575489,
+      "enabled_finalization_store_seconds": 11.18095758,
+      "queue_full": 510
+    }
+  ],
+  "aggregate": {
+    "disabled_mean_bps": 255.0384909551525,
+    "enabled_mean_bps": 346.625696657451,
+    "mean_delta_percent": 35.911130652981996,
+    "required_bps": 2000.0,
+    "remaining_gap_factor": 5.769912673198253,
+    "disabled_mean_finalization_store_seconds": 11.350376033,
+    "enabled_mean_finalization_store_seconds": 10.739803957
+  },
+  "enabled_arm_signature_counters_per_pair": {
+    "submitted": 4999,
+    "completed": 4999,
+    "preverified_ecdsa_operations": 33188,
+    "canonical_cache_lookups": 33188,
+    "canonical_cache_hits": 33188,
+    "canonical_cache_misses": 0,
+    "invalid": 0,
+    "cancelled": 0,
+    "worker_panics": 0,
+    "worker_unavailable": 0,
+    "queue_closed": 0
+  },
+  "correctness": {
+    "target_state_root": "0x10c5f09f30c7ba565b522b56c4194bcf88bd7ee79484344e6dea556adb8fd5f6",
+    "pack_epoch": 297,
+    "pack_frame_end": 56517773366,
+    "pack_root": "0xf6d58fdb6a55ea6d4e348494e77ebd88cf4b19c4562b525b56bac7309ff0c510",
+    "pack_payload_sha256": "0xbcbabe26106cc0506fa3cfdade4240c70a472671ffe6f1756d869e336d55bc5f",
+    "state_and_ledger_heights_match": true,
+    "off_on_markers_match": true,
+    "on_off_markers_match": true,
+    "full_pack_scrub_passed": true
+  },
+  "evidence_paths": [
+    "/tmp/neo-signature-cache-ab-20260721T120107Z-evidence",
+    "/tmp/neo-signature-cache-ab-20260721T121451Z-evidence"
+  ],
+  "measurement_scope": "BPS covers the measured chain import interval; process startup, pack open/recovery, postflight probes, and pack scrubs are excluded."
+}
