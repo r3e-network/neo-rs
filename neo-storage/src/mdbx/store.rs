@@ -664,8 +664,9 @@ impl MdbxStore {
     /// the captured entries; a returned marker row is written into the
     /// maintenance table inside the same transaction (cold-first ordering:
     /// the shadow's frame is durable before the marker can commit). A shadow
-    /// error is counted and logged and never fails the canonical commit —
-    /// the transaction simply commits without the marker.
+    /// error is counted and logged and never fails the canonical commit; the
+    /// hook supplies a degraded marker that is committed atomically so restart
+    /// cannot resume an incomplete shadow history.
     pub fn commit_coordinated_overlays_with_shadow<P, S>(
         &self,
         primary: &mut P,

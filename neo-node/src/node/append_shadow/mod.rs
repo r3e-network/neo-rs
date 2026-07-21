@@ -287,7 +287,15 @@ pub(in crate::node) fn state_root_span(
         if is_max {
             block_index_max = Some(index);
             state_root = value.as_deref().and_then(|value| {
-                if value.len() < STATE_ROOT_VALUE_UNSIGNED_LEN {
+                if value.len() < STATE_ROOT_VALUE_UNSIGNED_LEN || value[0] != 0 {
+                    return None;
+                }
+                let encoded_index = u32::from_le_bytes(
+                    value[1..STATE_ROOT_VALUE_ROOT_OFFSET]
+                        .try_into()
+                        .expect("four-byte encoded state-root index"),
+                );
+                if encoded_index != index {
                     return None;
                 }
                 let mut root = [0u8; 32];
@@ -355,6 +363,18 @@ mod tests {
         assert_eq!(min, Some(7));
         assert_eq!(max, Some(7));
         assert_eq!(root, None);
+    }
+
+    #[test]
+    fn state_root_span_rejects_noncanonical_record_metadata() {
+        let mut wrong_version = state_root_entry(7, 0x77);
+        wrong_version.1.as_mut().expect("state-root value")[0] = 1;
+        assert_eq!(state_root_span(&[wrong_version]), (Some(7), Some(7), None));
+
+        let mut wrong_index = state_root_entry(7, 0x77);
+        wrong_index.1.as_mut().expect("state-root value")[1..5]
+            .copy_from_slice(&8u32.to_le_bytes());
+        assert_eq!(state_root_span(&[wrong_index]), (Some(7), Some(7), None));
     }
 
     fn node_key(tag: u8) -> Vec<u8> {
