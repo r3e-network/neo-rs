@@ -114,6 +114,10 @@ pub struct AppendPhaseReport {
     pub append_write_ns: u64,
     /// Time spent syncing the append pack.
     pub pack_sync_ns: u64,
+    /// Time spent building immutable run bytes in memory.
+    pub index_build_ns: u64,
+    /// Wall time covering the overlapping pack sync and index build.
+    pub publication_overlap_ns: u64,
     /// Time spent writing immutable index runs.
     pub index_write_ns: u64,
     /// Time spent syncing immutable index runs.

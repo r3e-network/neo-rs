@@ -58,6 +58,7 @@ impl PackStore {
         let PreparedPackCompaction {
             pending,
             _source_snapshot,
+            _output_lease,
         } = prepared;
         let decoded_index_bytes = self
             .decoded_index_bytes
@@ -250,6 +251,12 @@ impl PackStore {
         if inputs.len() < 2 {
             return Ok(None);
         }
+        let min_epoch = inputs.first().expect("at least two inputs").min_epoch;
+        let max_epoch = inputs.last().expect("at least two inputs").max_epoch;
+        let output_lease = CompactionOutputLease::acquire(
+            Arc::clone(&self.inflight_compaction_outputs),
+            run_file_name(level + 1, min_epoch, max_epoch),
+        )?;
         let estimated_workspace_bytes =
             estimate_compaction_workspace_for_inputs(&inputs, self.decoded_index_bytes);
         Ok(Some(PackCompactionPlan {
@@ -261,6 +268,7 @@ impl PackStore {
             resident_index_bytes: self.decoded_index_bytes,
             max_index_memory_bytes: self.max_index_memory_bytes,
             _source_snapshot: source_snapshot,
+            _output_lease: output_lease,
         }))
     }
 
@@ -406,6 +414,12 @@ impl PackStore {
                 .with_context(|| format!("load protected manifest generation {generation}"))?;
             protected_runs.extend(manifest.entries.into_iter().map(|entry| entry.file_name));
         }
+        let inflight_outputs = self
+            .inflight_compaction_outputs
+            .lock()
+            .map_err(|error| anyhow::anyhow!("compaction output registry is poisoned: {error}"))?;
+        protected_runs.extend(inflight_outputs.iter().cloned());
+        drop(inflight_outputs);
         let mut stats = GcStats::default();
         for entry in fs::read_dir(&self.runs_dir)
             .with_context(|| format!("read index-run directory {}", self.runs_dir.display()))?

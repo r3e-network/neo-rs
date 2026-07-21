@@ -21,6 +21,13 @@
         append_without_maintenance(&mut store, &[put(target, b"v3")]);
         store.gc().expect("gc honors the plan's source lease");
         let prepared = plan.build().expect("build compacted output");
+        let output = root
+            .path()
+            .join("runs/run-l1-00000000000000000000-00000000000000000002.idx");
+        store
+            .gc()
+            .expect("gc must honor the in-flight output lease");
+        assert!(output.exists(), "prepared output must survive runtime GC");
         store
             .adopt_compaction(prepared)
             .expect("adopt against the later generation");
@@ -96,12 +103,10 @@
         file.sync_all().expect("sync middle record corruption");
         drop(file);
 
-        let reopened = PackStore::open(root.path(), 1024 * 1024)
-            .expect("ordinary open leaves non-tail validation to the explicit scrub gate");
-        let error = reopened
-            .scrub_index_runs()
-            .expect_err("full index scrub must reject middle-record corruption");
-        assert!(error.to_string().contains("checksum mismatch"));
+        let error = PackStore::open(root.path(), 1024 * 1024)
+            .err()
+            .expect("ordinary open must reject middle-record corruption");
+        assert!(format!("{error:#}").contains("checksum mismatch"));
     }
 
     #[test]

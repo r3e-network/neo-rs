@@ -475,26 +475,26 @@ pub(super) fn read_index_run_with_options(
     })
 }
 
-/// Fully re-verifies the records checksum of the newest run. This is the
-/// only run payload read during open; older runs were verified when written
-/// and are re-checked by scrubbing.
-pub(super) fn verify_tail_run(run: &IndexRun) -> Result<()> {
+/// Fully re-verifies the records checksum of one committed run. Recovery
+/// applies this to every run in the selected manifest so an older corrupted
+/// index cannot be exposed until an explicit rebuild succeeds.
+pub(super) fn verify_run(run: &IndexRun) -> Result<()> {
     let records_len = usize::try_from(
         run.record_count
             .checked_mul(INDEX_RECORD_LEN as u64)
-            .context("tail run records length overflows")?,
+            .context("index run records length overflows")?,
     )
-    .context("tail run records length does not fit usize")?;
+    .context("index run records length does not fit usize")?;
     let records_start =
         usize::try_from(run.records_offset).context("records offset does not fit usize")?;
     let records = run
         .map
         .as_slice()
         .get(records_start..records_start + records_len)
-        .context("read committed tail run records")?;
+        .context("read committed index run records")?;
     ensure!(
         digest(records).as_slice() == run.records_sha256,
-        "index records checksum mismatch in committed tail run"
+        "index records checksum mismatch in committed run"
     );
     Ok(())
 }

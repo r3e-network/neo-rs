@@ -32,7 +32,7 @@ mod frame_codec;
 use frame_codec::{
     FrameScan, decode_frame_payload, encode_frame_header, encode_frame_payload, read_frame_receipt,
     read_frame_receipt_at, reset_derived_state_to_frame_prefix, scan_frames, validate_frame_header,
-    validate_payload_rows_with_progress, verify_tail_frame,
+    validate_payload_rows_with_progress, verify_frame,
 };
 mod compaction;
 use compaction::*;
@@ -221,6 +221,10 @@ pub struct PackCompactionPlan {
     resident_index_bytes: u64,
     max_index_memory_bytes: u64,
     _source_snapshot: Snapshot,
+    /// Keeps the deterministic output run alive while build runs outside the
+    /// writer lock. Runtime GC consults the same registry before deleting an
+    /// unreferenced `.idx` file.
+    _output_lease: CompactionOutputLease,
 }
 
 /// A fully written and validated derived run awaiting short manifest adoption.
@@ -229,6 +233,37 @@ pub struct PackCompactionPlan {
 pub struct PreparedPackCompaction {
     pending: PendingMerge,
     _source_snapshot: Snapshot,
+    _output_lease: CompactionOutputLease,
+}
+
+/// Process-local lease for a compaction output that has been renamed but is
+/// not yet referenced by a manifest. The file is durable, but remains
+/// invisible until adoption; GC must not delete it in that interval.
+struct CompactionOutputLease {
+    registry: Arc<Mutex<HashSet<String>>>,
+    name: String,
+}
+
+impl CompactionOutputLease {
+    fn acquire(registry: Arc<Mutex<HashSet<String>>>, name: String) -> Result<Self> {
+        let mut outputs = registry
+            .lock()
+            .map_err(|error| anyhow::anyhow!("compaction output registry is poisoned: {error}"))?;
+        ensure!(
+            outputs.insert(name.clone()),
+            "compaction output {name} is already in flight"
+        );
+        drop(outputs);
+        Ok(Self { registry, name })
+    }
+}
+
+impl Drop for CompactionOutputLease {
+    fn drop(&mut self) {
+        if let Ok(mut outputs) = self.registry.lock() {
+            outputs.remove(&self.name);
+        }
+    }
 }
 
 impl PackCompactionPlan {
@@ -246,21 +281,33 @@ impl PackCompactionPlan {
     /// Merges, writes, syncs, and validates the output run. This is the
     /// expensive phase and does not borrow or mutate [`PackStore`].
     pub fn build(self) -> Result<PreparedPackCompaction> {
-        ensure_compaction_workspace(self.estimated_workspace_bytes, self.max_index_memory_bytes)?;
+        let PackCompactionPlan {
+            level,
+            inputs,
+            runs_dir,
+            random_point_mmap,
+            estimated_workspace_bytes,
+            resident_index_bytes,
+            max_index_memory_bytes,
+            _source_snapshot,
+            _output_lease,
+        } = self;
+        ensure_compaction_workspace(estimated_workspace_bytes, max_index_memory_bytes)?;
         let started = Instant::now();
         let mut pending = build_compacted_run_from_inputs(
-            self.level,
-            &self.inputs,
-            &self.runs_dir,
-            self.random_point_mmap,
-            self.resident_index_bytes,
-            self.max_index_memory_bytes,
+            level,
+            &inputs,
+            &runs_dir,
+            random_point_mmap,
+            resident_index_bytes,
+            max_index_memory_bytes,
         )?;
-        pending.inputs = self.inputs;
+        pending.inputs = inputs;
         pending.wall_ns = duration_ns(started.elapsed());
         Ok(PreparedPackCompaction {
             pending,
-            _source_snapshot: self._source_snapshot,
+            _source_snapshot,
+            _output_lease,
         })
     }
 }
@@ -342,6 +389,8 @@ pub struct PackStore {
     next_prepare_serial: u64,
     /// Kernel lease held across recovery, mutation, and derived maintenance.
     _writer_lease: File,
+    /// Output names of compactions currently building outside the writer lock.
+    inflight_compaction_outputs: Arc<Mutex<HashSet<String>>>,
 }
 
 /// Order-equivalent leading-u64 key range of one run.

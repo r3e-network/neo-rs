@@ -3,11 +3,18 @@ use super::*;
 impl PackStore {
     /// Compatibility append API: durably prepares one frame and then
     /// immediately activates it through its matching commit horizon.
+    ///
+    /// If post-activation index maintenance fails, the returned error is
+    /// [`PackStoreError::CommittedMaintenance`]. The frame is already visible
+    /// and callers must not retry the same logical append through this handle.
     pub fn append(&mut self, operations: &[PackOperation]) -> Result<PackStageTotals> {
         let prepared = self.prepare_append(operations)?;
         let totals = prepared.stage_totals();
         self.activate_prepared(prepared, prepared.commit_horizon())?;
-        self.maintain()?;
+        self.maintain()
+            .map_err(|error| PackStoreError::CommittedMaintenance {
+                details: format!("{error:#}"),
+            })?;
         Ok(totals)
     }
 
@@ -16,7 +23,10 @@ impl PackStore {
         let prepared = self.prepare_built_append(builder)?;
         let totals = prepared.stage_totals();
         self.activate_prepared(prepared, prepared.commit_horizon())?;
-        self.maintain()?;
+        self.maintain()
+            .map_err(|error| PackStoreError::CommittedMaintenance {
+                details: format!("{error:#}"),
+            })?;
         Ok(totals)
     }
 
@@ -370,7 +380,7 @@ impl PackStore {
             self.options,
         )?
         .map(Arc::new);
-        verify_tail_frame(
+        verify_frame(
             &pack_map,
             prepared.receipt.frame_start,
             prepared.receipt.frame_end,
@@ -384,7 +394,7 @@ impl PackStore {
             prepared.receipt.epoch,
         ));
         let verified_run = read_index_run_with_options(&run_path, self.options)?;
-        verify_tail_run(&verified_run)?;
+        verify_run(&verified_run)?;
         ensure!(
             verified_run.epoch == prepared_run.epoch
                 && verified_run.record_count == prepared_run.record_count

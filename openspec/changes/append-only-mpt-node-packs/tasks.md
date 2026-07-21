@@ -1,7 +1,7 @@
 ## 1. Reproducible Persistence Bakeoff
 
 - [x] 1.1 Encode deterministic prefilled workload campaigns from the measured high-height key size, value distribution, version-hit ratio, tombstone ratio, and commit cadence
-- [ ] 1.2 Benchmark durable current-MDBX campaigns with logical/physical bytes, sync latency, CPU, RSS, and point/sorted-batch read percentiles
+- [x] 1.2 Benchmark durable current-MDBX campaigns with logical/physical bytes, sync latency, CPU, RSS, and point/sorted-batch read percentiles
 - [x] 1.3 Implement a benchmark-only append-frame plus sorted-run index prototype and run the identical sustained campaigns
 - [x] 1.4 Benchmark a ParityDB hash-index column on the identical durability, filesystem, workload, lookup, reopen, and compaction conditions
 - [x] 1.5 Record the backend decision and reject candidates that do not reduce physical write amplification by at least one order of magnitude without unacceptable lookup or recovery cost

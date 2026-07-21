@@ -1,0 +1,2901 @@
+{
+  "schema_version": 1,
+  "status": "completed",
+  "backend": "mdbx",
+  "pid": 2667960,
+  "started_unix_ns": 1784593093425131089,
+  "finished_unix_ns": 1784593107913456283,
+  "total_wall_ns": 14488325477,
+  "clock_ticks_per_second": 100,
+  "effective_mdbx_sync_mode": "durable",
+  "scale": "smoke",
+  "labels": {
+    "hardware": "ultra9-285k-vcpu8",
+    "filesystem": "ext4-shared-vm",
+    "durability": "mdbx-safe-durable",
+    "read_cache_state": "uncontrolled-warm-after-prefill"
+  },
+  "build": {
+    "package_version": "0.10.0",
+    "profile": "release",
+    "opt_level": "3",
+    "debug_assertions": false,
+    "target": "x86_64-unknown-linux-gnu",
+    "host": "x86_64-unknown-linux-gnu",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "executable": "/home/neo/git/neo-rs/target/release/mdbx-persistence-bench",
+    "git_revision": "9711dcb9cd5e8b78d00cac0549c7ebfe8dde3a32",
+    "git_dirty": true
+  },
+  "mdbx_runtime": {
+    "sync_mode": "durable",
+    "cursor_write_mode": "search",
+    "coalesce": false,
+    "no_meminit": false,
+    "prefix_index_path": null,
+    "batch_read_threads": 1,
+    "write_intent_read_threads": 1,
+    "geometry_upper_bytes": 274877906944,
+    "geometry_growth_bytes": 268435456,
+    "requested_max_readers": 4096
+  },
+  "database": "/tmp/neo-mdbx-1m-20260721-b",
+  "evidence_log": "/tmp/neo-mdbx-1m-20260721-b.jsonl",
+  "workload": {
+    "source": "neo-n3-mainnet-1877001-1887000",
+    "seed": 5640001189223798919,
+    "prefill_rows": 1048576,
+    "blocks": 1300,
+    "commits": 8,
+    "puts": 131072,
+    "tombstones": 0,
+    "version_hits": 1118,
+    "value_size_counts": [
+      36474,
+      31384,
+      15187,
+      27867,
+      20159,
+      1,
+      0,
+      0
+    ],
+    "value_size_bytes": [
+      1170206,
+      2759825,
+      2999717,
+      12114066,
+      10739241,
+      2064,
+      0,
+      0
+    ]
+  },
+  "controls": {
+    "prefill_batch_entries": 32768,
+    "point_queries": 16384,
+    "point_rounds": 5,
+    "sorted_batch_keys": 8192,
+    "sorted_batch_rounds": 5,
+    "smoke": {
+      "prefill_rows": 1048576,
+      "operations": 131072,
+      "blocks": 1300
+    }
+  },
+  "prefill": {
+    "name": "prefill",
+    "wall_ns": 11087275819,
+    "logical": {
+      "puts": 1048576,
+      "tombstones": 0,
+      "entries": 1048576,
+      "key_bytes": 34603008,
+      "value_bytes": 238280952,
+      "mutation_bytes": 272883960,
+      "value_size_counts": [
+        291792,
+        251072,
+        121496,
+        222936,
+        161272,
+        8,
+        0,
+        0
+      ]
+    },
+    "before": {
+      "unix_time_ns": 1784593093427417725,
+      "process": {
+        "available": true,
+        "user_cpu_ticks": 0,
+        "system_cpu_ticks": 2,
+        "rss_bytes": 3911680,
+        "rss_high_water_bytes": 3911680,
+        "rss_anon_bytes": 397312,
+        "rss_file_bytes": 3514368,
+        "rss_shared_bytes": 0,
+        "io": {
+          "read_chars": 336323,
+          "write_chars": 71250,
+          "read_syscalls": 207,
+          "write_syscalls": 17,
+          "read_bytes": 94208,
+          "write_bytes": 28672,
+          "cancelled_write_bytes": 0
+        }
+      },
+      "files": {
+        "regular_files": 2,
+        "directories": 1,
+        "symlinks": 0,
+        "logical_bytes": 268439552,
+        "allocated_bytes": 24576
+      }
+    },
+    "after": {
+      "unix_time_ns": 1784593104514796574,
+      "process": {
+        "available": true,
+        "user_cpu_ticks": 208,
+        "system_cpu_ticks": 183,
+        "rss_bytes": 712450048,
+        "rss_high_water_bytes": 712450048,
+        "rss_anon_bytes": 152420352,
+        "rss_file_bytes": 560029696,
+        "rss_shared_bytes": 0,
+        "io": {
+          "read_chars": 720690,
+          "write_chars": 3220509426,
+          "read_syscalls": 2633,
+          "write_syscalls": 423564,
+          "read_bytes": 106496,
+          "write_bytes": 9634254848,
+          "cancelled_write_bytes": 0
+        }
+      },
+      "files": {
+        "regular_files": 2,
+        "directories": 1,
+        "symlinks": 0,
+        "logical_bytes": 805310464,
+        "allocated_bytes": 571752448
+      }
+    },
+    "evidence_delta": {
+      "process": {
+        "user_cpu_ticks": 208,
+        "system_cpu_ticks": 181,
+        "cpu_seconds": 3.89,
+        "one_core_utilization_percent": 35.08526407662556,
+        "read_bytes": 12288,
+        "write_bytes": 9634226176,
+        "cancelled_write_bytes": 0,
+        "write_chars": 3220438176,
+        "write_syscalls": 423547
+      },
+      "files": {
+        "logical_bytes": 536870912,
+        "allocated_bytes": 571727872,
+        "regular_files": 0
+      }
+    },
+    "sampled_rss": {
+      "peak_rss_bytes": 712450048,
+      "samples": 222,
+      "interval_ms": 50
+    },
+    "mdbx": {
+      "attempts": 32,
+      "failures": 0,
+      "committed_transactions": 32,
+      "durable_commit_us": 9447806,
+      "stages": [
+        {
+          "name": "total",
+          "samples": 32,
+          "total": 10728350
+        },
+        {
+          "name": "transaction_open",
+          "samples": 32,
+          "total": 2039
+        },
+        {
+          "name": "table_open",
+          "samples": 32,
+          "total": 32
+        },
+        {
+          "name": "cursor_open",
+          "samples": 32,
+          "total": 27
+        },
+        {
+          "name": "overlay_sort",
+          "samples": 32,
+          "total": 52231
+        },
+        {
+          "name": "overlay_visit",
+          "samples": 32,
+          "total": 1224051
+        },
+        {
+          "name": "cursor_write",
+          "samples": 32,
+          "total": 1196668
+        },
+        {
+          "name": "cursor_resolve",
+          "samples": 32,
+          "total": 51
+        },
+        {
+          "name": "commit",
+          "samples": 32,
+          "total": 9447806
+        }
+      ],
+      "counts": [
+        {
+          "name": "tables",
+          "samples": 32,
+          "total": 32
+        },
+        {
+          "name": "entries",
+          "samples": 32,
+          "total": 1048576
+        },
+        {
+          "name": "puts",
+          "samples": 32,
+          "total": 1048576
+        },
+        {
+          "name": "deletes",
+          "samples": 32,
+          "total": 0
+        },
+        {
+          "name": "key_bytes",
+          "samples": 32,
+          "total": 34603008
+        },
+        {
+          "name": "value_bytes",
+          "samples": 32,
+          "total": 238280952
+        },
+        {
+          "name": "value_size_0_64",
+          "samples": 32,
+          "total": 291792
+        },
+        {
+          "name": "value_size_65_128",
+          "samples": 32,
+          "total": 251072
+        },
+        {
+          "name": "value_size_129_256",
+          "samples": 32,
+          "total": 121496
+        },
+        {
+          "name": "value_size_257_512",
+          "samples": 32,
+          "total": 222936
+        },
+        {
+          "name": "value_size_513_1024",
+          "samples": 32,
+          "total": 161272
+        },
+        {
+          "name": "value_size_1025_4096",
+          "samples": 32,
+          "total": 8
+        },
+        {
+          "name": "value_size_4097_16384",
+          "samples": 32,
+          "total": 0
+        },
+        {
+          "name": "value_size_over_16384",
+          "samples": 32,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_present",
+          "samples": 32,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_absent",
+          "samples": 32,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_read_bytes",
+          "samples": 32,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_write_bytes",
+          "samples": 32,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_minor_faults",
+          "samples": 32,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_major_faults",
+          "samples": 32,
+          "total": 0
+        }
+      ]
+    },
+    "process_physical_write_bytes": 9634226176,
+    "write_amplification_vs_values": 40.43221287784682,
+    "write_amplification_vs_mutations": 35.30521242802252
+  },
+  "epochs": [
+    {
+      "index": 0,
+      "blocks": 162,
+      "phase": {
+        "name": "campaign_epoch_0",
+        "wall_ns": 324832959,
+        "logical": {
+          "puts": 16384,
+          "tombstones": 0,
+          "entries": 16384,
+          "key_bytes": 540672,
+          "value_bytes": 3723715,
+          "mutation_bytes": 4264387,
+          "value_size_counts": [
+            4558,
+            3918,
+            1905,
+            3482,
+            2521,
+            0,
+            0,
+            0
+          ]
+        },
+        "before": {
+          "unix_time_ns": 1784593104515108866,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 208,
+            "system_cpu_ticks": 183,
+            "rss_bytes": 712581120,
+            "rss_high_water_bytes": 712581120,
+            "rss_anon_bytes": 152420352,
+            "rss_file_bytes": 560160768,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 726417,
+              "write_chars": 3220510852,
+              "read_syscalls": 2677,
+              "write_syscalls": 423584,
+              "read_bytes": 106496,
+              "write_bytes": 9634254848,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "after": {
+          "unix_time_ns": 1784593104839983256,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 213,
+            "system_cpu_ticks": 188,
+            "rss_bytes": 728055808,
+            "rss_high_water_bytes": 728055808,
+            "rss_anon_bytes": 153157632,
+            "rss_file_bytes": 574898176,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 751755,
+              "write_chars": 3296246831,
+              "read_syscalls": 2827,
+              "write_syscalls": 438276,
+              "read_bytes": 106496,
+              "write_bytes": 9993695232,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "evidence_delta": {
+          "process": {
+            "user_cpu_ticks": 5,
+            "system_cpu_ticks": 5,
+            "cpu_seconds": 0.1,
+            "one_core_utilization_percent": 30.78505343418677,
+            "read_bytes": 0,
+            "write_bytes": 359440384,
+            "cancelled_write_bytes": 0,
+            "write_chars": 75735979,
+            "write_syscalls": 14692
+          },
+          "files": {
+            "logical_bytes": 0,
+            "allocated_bytes": 0,
+            "regular_files": 0
+          }
+        },
+        "sampled_rss": {
+          "peak_rss_bytes": 728055808,
+          "samples": 8,
+          "interval_ms": 50
+        },
+        "mdbx": {
+          "attempts": 1,
+          "failures": 0,
+          "committed_transactions": 1,
+          "durable_commit_us": 294058,
+          "stages": [
+            {
+              "name": "total",
+              "samples": 1,
+              "total": 318243
+            },
+            {
+              "name": "transaction_open",
+              "samples": 1,
+              "total": 38
+            },
+            {
+              "name": "table_open",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "cursor_open",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "overlay_sort",
+              "samples": 1,
+              "total": 705
+            },
+            {
+              "name": "overlay_visit",
+              "samples": 1,
+              "total": 23373
+            },
+            {
+              "name": "cursor_write",
+              "samples": 1,
+              "total": 23048
+            },
+            {
+              "name": "cursor_resolve",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "commit",
+              "samples": 1,
+              "total": 294058
+            }
+          ],
+          "counts": [
+            {
+              "name": "tables",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "entries",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "puts",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "deletes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "key_bytes",
+              "samples": 1,
+              "total": 540672
+            },
+            {
+              "name": "value_bytes",
+              "samples": 1,
+              "total": 3723715
+            },
+            {
+              "name": "value_size_0_64",
+              "samples": 1,
+              "total": 4558
+            },
+            {
+              "name": "value_size_65_128",
+              "samples": 1,
+              "total": 3918
+            },
+            {
+              "name": "value_size_129_256",
+              "samples": 1,
+              "total": 1905
+            },
+            {
+              "name": "value_size_257_512",
+              "samples": 1,
+              "total": 3482
+            },
+            {
+              "name": "value_size_513_1024",
+              "samples": 1,
+              "total": 2521
+            },
+            {
+              "name": "value_size_1025_4096",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_4097_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_over_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_present",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_absent",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_read_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_write_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_minor_faults",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_major_faults",
+              "samples": 1,
+              "total": 0
+            }
+          ]
+        },
+        "process_physical_write_bytes": 359440384,
+        "write_amplification_vs_values": 96.52736151934292,
+        "write_amplification_vs_mutations": 84.2888752826608
+      }
+    },
+    {
+      "index": 1,
+      "blocks": 163,
+      "phase": {
+        "name": "campaign_epoch_1",
+        "wall_ns": 363525080,
+        "logical": {
+          "puts": 16384,
+          "tombstones": 0,
+          "entries": 16384,
+          "key_bytes": 540672,
+          "value_bytes": 3724170,
+          "mutation_bytes": 4264842,
+          "value_size_counts": [
+            4560,
+            3921,
+            1894,
+            3491,
+            2518,
+            0,
+            0,
+            0
+          ]
+        },
+        "before": {
+          "unix_time_ns": 1784593104840714874,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 213,
+            "system_cpu_ticks": 188,
+            "rss_bytes": 728055808,
+            "rss_high_water_bytes": 728055808,
+            "rss_anon_bytes": 153157632,
+            "rss_file_bytes": 574898176,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 755416,
+              "write_chars": 3296247560,
+              "read_syscalls": 2853,
+              "write_syscalls": 438286,
+              "read_bytes": 106496,
+              "write_bytes": 9993695232,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "after": {
+          "unix_time_ns": 1784593105204302576,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 220,
+            "system_cpu_ticks": 193,
+            "rss_bytes": 728600576,
+            "rss_high_water_bytes": 728600576,
+            "rss_anon_bytes": 153235456,
+            "rss_file_bytes": 575365120,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 782348,
+              "write_chars": 3372405427,
+              "read_syscalls": 3011,
+              "write_syscalls": 453629,
+              "read_bytes": 106496,
+              "write_bytes": 10469195776,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "evidence_delta": {
+          "process": {
+            "user_cpu_ticks": 7,
+            "system_cpu_ticks": 5,
+            "cpu_seconds": 0.12,
+            "one_core_utilization_percent": 33.01010208154001,
+            "read_bytes": 0,
+            "write_bytes": 475500544,
+            "cancelled_write_bytes": 0,
+            "write_chars": 76157867,
+            "write_syscalls": 15343
+          },
+          "files": {
+            "logical_bytes": 0,
+            "allocated_bytes": 0,
+            "regular_files": 0
+          }
+        },
+        "sampled_rss": {
+          "peak_rss_bytes": 728600576,
+          "samples": 9,
+          "interval_ms": 50
+        },
+        "mdbx": {
+          "attempts": 1,
+          "failures": 0,
+          "committed_transactions": 1,
+          "durable_commit_us": 307325,
+          "stages": [
+            {
+              "name": "total",
+              "samples": 1,
+              "total": 358917
+            },
+            {
+              "name": "transaction_open",
+              "samples": 1,
+              "total": 52
+            },
+            {
+              "name": "table_open",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "cursor_open",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "overlay_sort",
+              "samples": 1,
+              "total": 760
+            },
+            {
+              "name": "overlay_visit",
+              "samples": 1,
+              "total": 50720
+            },
+            {
+              "name": "cursor_write",
+              "samples": 1,
+              "total": 50720
+            },
+            {
+              "name": "cursor_resolve",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "commit",
+              "samples": 1,
+              "total": 307325
+            }
+          ],
+          "counts": [
+            {
+              "name": "tables",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "entries",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "puts",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "deletes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "key_bytes",
+              "samples": 1,
+              "total": 540672
+            },
+            {
+              "name": "value_bytes",
+              "samples": 1,
+              "total": 3724170
+            },
+            {
+              "name": "value_size_0_64",
+              "samples": 1,
+              "total": 4560
+            },
+            {
+              "name": "value_size_65_128",
+              "samples": 1,
+              "total": 3921
+            },
+            {
+              "name": "value_size_129_256",
+              "samples": 1,
+              "total": 1894
+            },
+            {
+              "name": "value_size_257_512",
+              "samples": 1,
+              "total": 3491
+            },
+            {
+              "name": "value_size_513_1024",
+              "samples": 1,
+              "total": 2518
+            },
+            {
+              "name": "value_size_1025_4096",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_4097_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_over_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_present",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_absent",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_read_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_write_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_minor_faults",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_major_faults",
+              "samples": 1,
+              "total": 0
+            }
+          ]
+        },
+        "process_physical_write_bytes": 475500544,
+        "write_amplification_vs_values": 127.67960216638875,
+        "write_amplification_vs_mutations": 111.49312072991215
+      }
+    },
+    {
+      "index": 2,
+      "blocks": 162,
+      "phase": {
+        "name": "campaign_epoch_2",
+        "wall_ns": 389309629,
+        "logical": {
+          "puts": 16384,
+          "tombstones": 0,
+          "entries": 16384,
+          "key_bytes": 540672,
+          "value_bytes": 3720517,
+          "mutation_bytes": 4261189,
+          "value_size_counts": [
+            4560,
+            3930,
+            1898,
+            3474,
+            2522,
+            0,
+            0,
+            0
+          ]
+        },
+        "before": {
+          "unix_time_ns": 1784593105205385011,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 220,
+            "system_cpu_ticks": 193,
+            "rss_bytes": 728600576,
+            "rss_high_water_bytes": 728600576,
+            "rss_anon_bytes": 153235456,
+            "rss_file_bytes": 575365120,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 786010,
+              "write_chars": 3372406157,
+              "read_syscalls": 3037,
+              "write_syscalls": 453639,
+              "read_bytes": 106496,
+              "write_bytes": 10469199872,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "after": {
+          "unix_time_ns": 1784593105594764987,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 228,
+            "system_cpu_ticks": 199,
+            "rss_bytes": 728600576,
+            "rss_high_water_bytes": 728600576,
+            "rss_anon_bytes": 153235456,
+            "rss_file_bytes": 575365120,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 814540,
+              "write_chars": 3448670521,
+              "read_syscalls": 3203,
+              "write_syscalls": 469640,
+              "read_bytes": 106496,
+              "write_bytes": 11034468352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "evidence_delta": {
+          "process": {
+            "user_cpu_ticks": 8,
+            "system_cpu_ticks": 6,
+            "cpu_seconds": 0.14,
+            "one_core_utilization_percent": 35.9610935798354,
+            "read_bytes": 0,
+            "write_bytes": 565268480,
+            "cancelled_write_bytes": 0,
+            "write_chars": 76264364,
+            "write_syscalls": 16001
+          },
+          "files": {
+            "logical_bytes": 0,
+            "allocated_bytes": 0,
+            "regular_files": 0
+          }
+        },
+        "sampled_rss": {
+          "peak_rss_bytes": 728600576,
+          "samples": 9,
+          "interval_ms": 50
+        },
+        "mdbx": {
+          "attempts": 1,
+          "failures": 0,
+          "committed_transactions": 1,
+          "durable_commit_us": 332067,
+          "stages": [
+            {
+              "name": "total",
+              "samples": 1,
+              "total": 384613
+            },
+            {
+              "name": "transaction_open",
+              "samples": 1,
+              "total": 65
+            },
+            {
+              "name": "table_open",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "cursor_open",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "overlay_sort",
+              "samples": 1,
+              "total": 693
+            },
+            {
+              "name": "overlay_visit",
+              "samples": 1,
+              "total": 51704
+            },
+            {
+              "name": "cursor_write",
+              "samples": 1,
+              "total": 35340
+            },
+            {
+              "name": "cursor_resolve",
+              "samples": 1,
+              "total": 2
+            },
+            {
+              "name": "commit",
+              "samples": 1,
+              "total": 332067
+            }
+          ],
+          "counts": [
+            {
+              "name": "tables",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "entries",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "puts",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "deletes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "key_bytes",
+              "samples": 1,
+              "total": 540672
+            },
+            {
+              "name": "value_bytes",
+              "samples": 1,
+              "total": 3720517
+            },
+            {
+              "name": "value_size_0_64",
+              "samples": 1,
+              "total": 4560
+            },
+            {
+              "name": "value_size_65_128",
+              "samples": 1,
+              "total": 3930
+            },
+            {
+              "name": "value_size_129_256",
+              "samples": 1,
+              "total": 1898
+            },
+            {
+              "name": "value_size_257_512",
+              "samples": 1,
+              "total": 3474
+            },
+            {
+              "name": "value_size_513_1024",
+              "samples": 1,
+              "total": 2522
+            },
+            {
+              "name": "value_size_1025_4096",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_4097_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_over_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_present",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_absent",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_read_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_write_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_minor_faults",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_major_faults",
+              "samples": 1,
+              "total": 0
+            }
+          ]
+        },
+        "process_physical_write_bytes": 565268480,
+        "write_amplification_vs_values": 151.93277708447508,
+        "write_amplification_vs_mutations": 132.6551063564653
+      }
+    },
+    {
+      "index": 3,
+      "blocks": 163,
+      "phase": {
+        "name": "campaign_epoch_3",
+        "wall_ns": 432008644,
+        "logical": {
+          "puts": 16384,
+          "tombstones": 0,
+          "entries": 16384,
+          "key_bytes": 540672,
+          "value_bytes": 3724679,
+          "mutation_bytes": 4265351,
+          "value_size_counts": [
+            4560,
+            3917,
+            1899,
+            3487,
+            2521,
+            0,
+            0,
+            0
+          ]
+        },
+        "before": {
+          "unix_time_ns": 1784593105595858444,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 228,
+            "system_cpu_ticks": 199,
+            "rss_bytes": 728600576,
+            "rss_high_water_bytes": 728600576,
+            "rss_anon_bytes": 153235456,
+            "rss_file_bytes": 575365120,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 818202,
+              "write_chars": 3448671251,
+              "read_syscalls": 3229,
+              "write_syscalls": 469650,
+              "read_bytes": 106496,
+              "write_bytes": 11034468352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "after": {
+          "unix_time_ns": 1784593106027944692,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 236,
+            "system_cpu_ticks": 205,
+            "rss_bytes": 728600576,
+            "rss_high_water_bytes": 728600576,
+            "rss_anon_bytes": 153235456,
+            "rss_file_bytes": 575365120,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 848327,
+              "write_chars": 3525033919,
+              "read_syscalls": 3403,
+              "write_syscalls": 485513,
+              "read_bytes": 106496,
+              "write_bytes": 11599548416,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "evidence_delta": {
+          "process": {
+            "user_cpu_ticks": 8,
+            "system_cpu_ticks": 6,
+            "cpu_seconds": 0.14,
+            "one_core_utilization_percent": 32.406758972165385,
+            "read_bytes": 0,
+            "write_bytes": 565080064,
+            "cancelled_write_bytes": 0,
+            "write_chars": 76362668,
+            "write_syscalls": 15863
+          },
+          "files": {
+            "logical_bytes": 0,
+            "allocated_bytes": 0,
+            "regular_files": 0
+          }
+        },
+        "sampled_rss": {
+          "peak_rss_bytes": 728600576,
+          "samples": 10,
+          "interval_ms": 50
+        },
+        "mdbx": {
+          "attempts": 1,
+          "failures": 0,
+          "committed_transactions": 1,
+          "durable_commit_us": 376006,
+          "stages": [
+            {
+              "name": "total",
+              "samples": 1,
+              "total": 427135
+            },
+            {
+              "name": "transaction_open",
+              "samples": 1,
+              "total": 47
+            },
+            {
+              "name": "table_open",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "cursor_open",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "overlay_sort",
+              "samples": 1,
+              "total": 631
+            },
+            {
+              "name": "overlay_visit",
+              "samples": 1,
+              "total": 50395
+            },
+            {
+              "name": "cursor_write",
+              "samples": 1,
+              "total": 50395
+            },
+            {
+              "name": "cursor_resolve",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "commit",
+              "samples": 1,
+              "total": 376006
+            }
+          ],
+          "counts": [
+            {
+              "name": "tables",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "entries",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "puts",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "deletes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "key_bytes",
+              "samples": 1,
+              "total": 540672
+            },
+            {
+              "name": "value_bytes",
+              "samples": 1,
+              "total": 3724679
+            },
+            {
+              "name": "value_size_0_64",
+              "samples": 1,
+              "total": 4560
+            },
+            {
+              "name": "value_size_65_128",
+              "samples": 1,
+              "total": 3917
+            },
+            {
+              "name": "value_size_129_256",
+              "samples": 1,
+              "total": 1899
+            },
+            {
+              "name": "value_size_257_512",
+              "samples": 1,
+              "total": 3487
+            },
+            {
+              "name": "value_size_513_1024",
+              "samples": 1,
+              "total": 2521
+            },
+            {
+              "name": "value_size_1025_4096",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_4097_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_over_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_present",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_absent",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_read_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_write_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_minor_faults",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_major_faults",
+              "samples": 1,
+              "total": 0
+            }
+          ]
+        },
+        "process_physical_write_bytes": 565080064,
+        "write_amplification_vs_values": 151.71241978167782,
+        "write_amplification_vs_mutations": 132.48149191004444
+      }
+    },
+    {
+      "index": 4,
+      "blocks": 162,
+      "phase": {
+        "name": "campaign_epoch_4",
+        "wall_ns": 537670195,
+        "logical": {
+          "puts": 16384,
+          "tombstones": 0,
+          "entries": 16384,
+          "key_bytes": 540672,
+          "value_bytes": 3722564,
+          "mutation_bytes": 4263236,
+          "value_size_counts": [
+            4560,
+            3924,
+            1896,
+            3487,
+            2517,
+            0,
+            0,
+            0
+          ]
+        },
+        "before": {
+          "unix_time_ns": 1784593106028957397,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 236,
+            "system_cpu_ticks": 205,
+            "rss_bytes": 728600576,
+            "rss_high_water_bytes": 728600576,
+            "rss_anon_bytes": 153235456,
+            "rss_file_bytes": 575365120,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 851989,
+              "write_chars": 3525034649,
+              "read_syscalls": 3429,
+              "write_syscalls": 485523,
+              "read_bytes": 106496,
+              "write_bytes": 11599548416,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "after": {
+          "unix_time_ns": 1784593106566704774,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 243,
+            "system_cpu_ticks": 211,
+            "rss_bytes": 728616960,
+            "rss_high_water_bytes": 728616960,
+            "rss_anon_bytes": 153239552,
+            "rss_file_bytes": 575377408,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 890088,
+              "write_chars": 3601749573,
+              "read_syscalls": 3643,
+              "write_syscalls": 501617,
+              "read_bytes": 106496,
+              "write_bytes": 12164911104,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "evidence_delta": {
+          "process": {
+            "user_cpu_ticks": 7,
+            "system_cpu_ticks": 6,
+            "cpu_seconds": 0.13,
+            "one_core_utilization_percent": 24.17839062103861,
+            "read_bytes": 0,
+            "write_bytes": 565362688,
+            "cancelled_write_bytes": 0,
+            "write_chars": 76714924,
+            "write_syscalls": 16094
+          },
+          "files": {
+            "logical_bytes": 0,
+            "allocated_bytes": 0,
+            "regular_files": 0
+          }
+        },
+        "sampled_rss": {
+          "peak_rss_bytes": 728616960,
+          "samples": 12,
+          "interval_ms": 50
+        },
+        "mdbx": {
+          "attempts": 1,
+          "failures": 0,
+          "committed_transactions": 1,
+          "durable_commit_us": 483287,
+          "stages": [
+            {
+              "name": "total",
+              "samples": 1,
+              "total": 532944
+            },
+            {
+              "name": "transaction_open",
+              "samples": 1,
+              "total": 32
+            },
+            {
+              "name": "table_open",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_open",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "overlay_sort",
+              "samples": 1,
+              "total": 603
+            },
+            {
+              "name": "overlay_visit",
+              "samples": 1,
+              "total": 48960
+            },
+            {
+              "name": "cursor_write",
+              "samples": 1,
+              "total": 41594
+            },
+            {
+              "name": "cursor_resolve",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "commit",
+              "samples": 1,
+              "total": 483287
+            }
+          ],
+          "counts": [
+            {
+              "name": "tables",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "entries",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "puts",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "deletes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "key_bytes",
+              "samples": 1,
+              "total": 540672
+            },
+            {
+              "name": "value_bytes",
+              "samples": 1,
+              "total": 3722564
+            },
+            {
+              "name": "value_size_0_64",
+              "samples": 1,
+              "total": 4560
+            },
+            {
+              "name": "value_size_65_128",
+              "samples": 1,
+              "total": 3924
+            },
+            {
+              "name": "value_size_129_256",
+              "samples": 1,
+              "total": 1896
+            },
+            {
+              "name": "value_size_257_512",
+              "samples": 1,
+              "total": 3487
+            },
+            {
+              "name": "value_size_513_1024",
+              "samples": 1,
+              "total": 2517
+            },
+            {
+              "name": "value_size_1025_4096",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_4097_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_over_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_present",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_absent",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_read_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_write_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_minor_faults",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_major_faults",
+              "samples": 1,
+              "total": 0
+            }
+          ]
+        },
+        "process_physical_write_bytes": 565362688,
+        "write_amplification_vs_values": 151.87453808718936,
+        "write_amplification_vs_mutations": 132.61350955002257
+      }
+    },
+    {
+      "index": 5,
+      "blocks": 163,
+      "phase": {
+        "name": "campaign_epoch_5",
+        "wall_ns": 548787188,
+        "logical": {
+          "puts": 16384,
+          "tombstones": 0,
+          "entries": 16384,
+          "key_bytes": 540672,
+          "value_bytes": 3723154,
+          "mutation_bytes": 4263826,
+          "value_size_counts": [
+            4558,
+            3925,
+            1904,
+            3475,
+            2521,
+            1,
+            0,
+            0
+          ]
+        },
+        "before": {
+          "unix_time_ns": 1784593106567875225,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 244,
+            "system_cpu_ticks": 211,
+            "rss_bytes": 728616960,
+            "rss_high_water_bytes": 728616960,
+            "rss_anon_bytes": 153239552,
+            "rss_file_bytes": 575377408,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 893750,
+              "write_chars": 3601750303,
+              "read_syscalls": 3669,
+              "write_syscalls": 501627,
+              "read_bytes": 106496,
+              "write_bytes": 12164915200,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "after": {
+          "unix_time_ns": 1784593107116745925,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 251,
+            "system_cpu_ticks": 217,
+            "rss_bytes": 728616960,
+            "rss_high_water_bytes": 728616960,
+            "rss_anon_bytes": 153239552,
+            "rss_file_bytes": 575377408,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 931850,
+              "write_chars": 3678629067,
+              "read_syscalls": 3883,
+              "write_syscalls": 517740,
+              "read_bytes": 106496,
+              "write_bytes": 12730576896,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "evidence_delta": {
+          "process": {
+            "user_cpu_ticks": 7,
+            "system_cpu_ticks": 6,
+            "cpu_seconds": 0.13,
+            "one_core_utilization_percent": 23.688599668984985,
+            "read_bytes": 0,
+            "write_bytes": 565661696,
+            "cancelled_write_bytes": 0,
+            "write_chars": 76878764,
+            "write_syscalls": 16113
+          },
+          "files": {
+            "logical_bytes": 0,
+            "allocated_bytes": 0,
+            "regular_files": 0
+          }
+        },
+        "sampled_rss": {
+          "peak_rss_bytes": 728616960,
+          "samples": 12,
+          "interval_ms": 50
+        },
+        "mdbx": {
+          "attempts": 1,
+          "failures": 0,
+          "committed_transactions": 1,
+          "durable_commit_us": 496725,
+          "stages": [
+            {
+              "name": "total",
+              "samples": 1,
+              "total": 543954
+            },
+            {
+              "name": "transaction_open",
+              "samples": 1,
+              "total": 56
+            },
+            {
+              "name": "table_open",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "cursor_open",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "overlay_sort",
+              "samples": 1,
+              "total": 716
+            },
+            {
+              "name": "overlay_visit",
+              "samples": 1,
+              "total": 46387
+            },
+            {
+              "name": "cursor_write",
+              "samples": 1,
+              "total": 46387
+            },
+            {
+              "name": "cursor_resolve",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "commit",
+              "samples": 1,
+              "total": 496725
+            }
+          ],
+          "counts": [
+            {
+              "name": "tables",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "entries",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "puts",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "deletes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "key_bytes",
+              "samples": 1,
+              "total": 540672
+            },
+            {
+              "name": "value_bytes",
+              "samples": 1,
+              "total": 3723154
+            },
+            {
+              "name": "value_size_0_64",
+              "samples": 1,
+              "total": 4558
+            },
+            {
+              "name": "value_size_65_128",
+              "samples": 1,
+              "total": 3925
+            },
+            {
+              "name": "value_size_129_256",
+              "samples": 1,
+              "total": 1904
+            },
+            {
+              "name": "value_size_257_512",
+              "samples": 1,
+              "total": 3475
+            },
+            {
+              "name": "value_size_513_1024",
+              "samples": 1,
+              "total": 2521
+            },
+            {
+              "name": "value_size_1025_4096",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "value_size_4097_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_over_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_present",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_absent",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_read_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_write_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_minor_faults",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_major_faults",
+              "samples": 1,
+              "total": 0
+            }
+          ]
+        },
+        "process_physical_write_bytes": 565661696,
+        "write_amplification_vs_values": 151.93078126771013,
+        "write_amplification_vs_mutations": 132.66528605998462
+      }
+    },
+    {
+      "index": 6,
+      "blocks": 162,
+      "phase": {
+        "name": "campaign_epoch_6",
+        "wall_ns": 364805797,
+        "logical": {
+          "puts": 16384,
+          "tombstones": 0,
+          "entries": 16384,
+          "key_bytes": 540672,
+          "value_bytes": 3726135,
+          "mutation_bytes": 4266807,
+          "value_size_counts": [
+            4557,
+            3919,
+            1895,
+            3492,
+            2521,
+            0,
+            0,
+            0
+          ]
+        },
+        "before": {
+          "unix_time_ns": 1784593107117804967,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 251,
+            "system_cpu_ticks": 217,
+            "rss_bytes": 728616960,
+            "rss_high_water_bytes": 728616960,
+            "rss_anon_bytes": 153239552,
+            "rss_file_bytes": 575377408,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 935512,
+              "write_chars": 3678629797,
+              "read_syscalls": 3909,
+              "write_syscalls": 517750,
+              "read_bytes": 106496,
+              "write_bytes": 12730576896,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 571752448
+          }
+        },
+        "after": {
+          "unix_time_ns": 1784593107482676261,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 257,
+            "system_cpu_ticks": 222,
+            "rss_bytes": 728616960,
+            "rss_high_water_bytes": 728616960,
+            "rss_anon_bytes": 153239552,
+            "rss_file_bytes": 575377408,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 962448,
+              "write_chars": 3755627345,
+              "read_syscalls": 4067,
+              "write_syscalls": 533692,
+              "read_bytes": 106496,
+              "write_bytes": 13297549312,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 572919808
+          }
+        },
+        "evidence_delta": {
+          "process": {
+            "user_cpu_ticks": 6,
+            "system_cpu_ticks": 5,
+            "cpu_seconds": 0.11,
+            "one_core_utilization_percent": 30.153029613177996,
+            "read_bytes": 0,
+            "write_bytes": 566972416,
+            "cancelled_write_bytes": 0,
+            "write_chars": 76997548,
+            "write_syscalls": 15942
+          },
+          "files": {
+            "logical_bytes": 0,
+            "allocated_bytes": 1167360,
+            "regular_files": 0
+          }
+        },
+        "sampled_rss": {
+          "peak_rss_bytes": 728616960,
+          "samples": 9,
+          "interval_ms": 50
+        },
+        "mdbx": {
+          "attempts": 1,
+          "failures": 0,
+          "committed_transactions": 1,
+          "durable_commit_us": 318863,
+          "stages": [
+            {
+              "name": "total",
+              "samples": 1,
+              "total": 359788
+            },
+            {
+              "name": "transaction_open",
+              "samples": 1,
+              "total": 63
+            },
+            {
+              "name": "table_open",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "cursor_open",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "overlay_sort",
+              "samples": 1,
+              "total": 611
+            },
+            {
+              "name": "overlay_visit",
+              "samples": 1,
+              "total": 40183
+            },
+            {
+              "name": "cursor_write",
+              "samples": 1,
+              "total": 38800
+            },
+            {
+              "name": "cursor_resolve",
+              "samples": 1,
+              "total": 2
+            },
+            {
+              "name": "commit",
+              "samples": 1,
+              "total": 318863
+            }
+          ],
+          "counts": [
+            {
+              "name": "tables",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "entries",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "puts",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "deletes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "key_bytes",
+              "samples": 1,
+              "total": 540672
+            },
+            {
+              "name": "value_bytes",
+              "samples": 1,
+              "total": 3726135
+            },
+            {
+              "name": "value_size_0_64",
+              "samples": 1,
+              "total": 4557
+            },
+            {
+              "name": "value_size_65_128",
+              "samples": 1,
+              "total": 3919
+            },
+            {
+              "name": "value_size_129_256",
+              "samples": 1,
+              "total": 1895
+            },
+            {
+              "name": "value_size_257_512",
+              "samples": 1,
+              "total": 3492
+            },
+            {
+              "name": "value_size_513_1024",
+              "samples": 1,
+              "total": 2521
+            },
+            {
+              "name": "value_size_1025_4096",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_4097_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_over_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_present",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_absent",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_read_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_write_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_minor_faults",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_major_faults",
+              "samples": 1,
+              "total": 0
+            }
+          ]
+        },
+        "process_physical_write_bytes": 566972416,
+        "write_amplification_vs_values": 152.16099685062403,
+        "write_amplification_vs_mutations": 132.87978950067347
+      }
+    },
+    {
+      "index": 7,
+      "blocks": 163,
+      "phase": {
+        "name": "campaign_epoch_7",
+        "wall_ns": 329881137,
+        "logical": {
+          "puts": 16384,
+          "tombstones": 0,
+          "entries": 16384,
+          "key_bytes": 540672,
+          "value_bytes": 3720185,
+          "mutation_bytes": 4260857,
+          "value_size_counts": [
+            4561,
+            3930,
+            1896,
+            3479,
+            2518,
+            0,
+            0,
+            0
+          ]
+        },
+        "before": {
+          "unix_time_ns": 1784593107483824429,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 257,
+            "system_cpu_ticks": 222,
+            "rss_bytes": 728616960,
+            "rss_high_water_bytes": 728616960,
+            "rss_anon_bytes": 153239552,
+            "rss_file_bytes": 575377408,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 966110,
+              "write_chars": 3755628075,
+              "read_syscalls": 4093,
+              "write_syscalls": 533702,
+              "read_bytes": 106496,
+              "write_bytes": 13297549312,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 572919808
+          }
+        },
+        "after": {
+          "unix_time_ns": 1784593107813769354,
+          "process": {
+            "available": true,
+            "user_cpu_ticks": 263,
+            "system_cpu_ticks": 228,
+            "rss_bytes": 729784320,
+            "rss_high_water_bytes": 729784320,
+            "rss_anon_bytes": 153239552,
+            "rss_file_bytes": 576544768,
+            "rss_shared_bytes": 0,
+            "io": {
+              "read_chars": 991451,
+              "write_chars": 3832580567,
+              "read_syscalls": 4243,
+              "write_syscalls": 548659,
+              "read_bytes": 106496,
+              "write_bytes": 13869813760,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "files": {
+            "regular_files": 2,
+            "directories": 1,
+            "symlinks": 0,
+            "logical_bytes": 805310464,
+            "allocated_bytes": 579870720
+          }
+        },
+        "evidence_delta": {
+          "process": {
+            "user_cpu_ticks": 6,
+            "system_cpu_ticks": 6,
+            "cpu_seconds": 0.12,
+            "one_core_utilization_percent": 36.37673893430287,
+            "read_bytes": 0,
+            "write_bytes": 572264448,
+            "cancelled_write_bytes": 0,
+            "write_chars": 76952492,
+            "write_syscalls": 14957
+          },
+          "files": {
+            "logical_bytes": 0,
+            "allocated_bytes": 6950912,
+            "regular_files": 0
+          }
+        },
+        "sampled_rss": {
+          "peak_rss_bytes": 729784320,
+          "samples": 8,
+          "interval_ms": 50
+        },
+        "mdbx": {
+          "attempts": 1,
+          "failures": 0,
+          "committed_transactions": 1,
+          "durable_commit_us": 296358,
+          "stages": [
+            {
+              "name": "total",
+              "samples": 1,
+              "total": 325051
+            },
+            {
+              "name": "transaction_open",
+              "samples": 1,
+              "total": 44
+            },
+            {
+              "name": "table_open",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "cursor_open",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "overlay_sort",
+              "samples": 1,
+              "total": 715
+            },
+            {
+              "name": "overlay_visit",
+              "samples": 1,
+              "total": 27869
+            },
+            {
+              "name": "cursor_write",
+              "samples": 1,
+              "total": 27869
+            },
+            {
+              "name": "cursor_resolve",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "commit",
+              "samples": 1,
+              "total": 296358
+            }
+          ],
+          "counts": [
+            {
+              "name": "tables",
+              "samples": 1,
+              "total": 1
+            },
+            {
+              "name": "entries",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "puts",
+              "samples": 1,
+              "total": 16384
+            },
+            {
+              "name": "deletes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "key_bytes",
+              "samples": 1,
+              "total": 540672
+            },
+            {
+              "name": "value_bytes",
+              "samples": 1,
+              "total": 3720185
+            },
+            {
+              "name": "value_size_0_64",
+              "samples": 1,
+              "total": 4561
+            },
+            {
+              "name": "value_size_65_128",
+              "samples": 1,
+              "total": 3930
+            },
+            {
+              "name": "value_size_129_256",
+              "samples": 1,
+              "total": 1896
+            },
+            {
+              "name": "value_size_257_512",
+              "samples": 1,
+              "total": 3479
+            },
+            {
+              "name": "value_size_513_1024",
+              "samples": 1,
+              "total": 2518
+            },
+            {
+              "name": "value_size_1025_4096",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_4097_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "value_size_over_16384",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_present",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_absent",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_read_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_write_bytes",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_minor_faults",
+              "samples": 1,
+              "total": 0
+            },
+            {
+              "name": "cursor_resolve_major_faults",
+              "samples": 1,
+              "total": 0
+            }
+          ]
+        },
+        "process_physical_write_bytes": 572264448,
+        "write_amplification_vs_values": 153.82687903961767,
+        "write_amplification_vs_mutations": 134.3073583553731
+      }
+    }
+  ],
+  "campaign": {
+    "name": "campaign",
+    "wall_ns": 3299765163,
+    "logical": {
+      "puts": 131072,
+      "tombstones": 0,
+      "entries": 131072,
+      "key_bytes": 4325376,
+      "value_bytes": 29785119,
+      "mutation_bytes": 34110495,
+      "value_size_counts": [
+        36474,
+        31384,
+        15187,
+        27867,
+        20159,
+        1,
+        0,
+        0
+      ]
+    },
+    "before": {
+      "unix_time_ns": 1784593104515021999,
+      "process": {
+        "available": true,
+        "user_cpu_ticks": 208,
+        "system_cpu_ticks": 183,
+        "rss_bytes": 712581120,
+        "rss_high_water_bytes": 712581120,
+        "rss_anon_bytes": 152420352,
+        "rss_file_bytes": 560160768,
+        "rss_shared_bytes": 0,
+        "io": {
+          "read_chars": 724351,
+          "write_chars": 3220510137,
+          "read_syscalls": 2659,
+          "write_syscalls": 423574,
+          "read_bytes": 106496,
+          "write_bytes": 9634254848,
+          "cancelled_write_bytes": 0
+        }
+      },
+      "files": {
+        "regular_files": 2,
+        "directories": 1,
+        "symlinks": 0,
+        "logical_bytes": 805310464,
+        "allocated_bytes": 571752448
+      }
+    },
+    "after": {
+      "unix_time_ns": 1784593107814847180,
+      "process": {
+        "available": true,
+        "user_cpu_ticks": 263,
+        "system_cpu_ticks": 228,
+        "rss_bytes": 729784320,
+        "rss_high_water_bytes": 729784320,
+        "rss_anon_bytes": 153239552,
+        "rss_file_bytes": 576544768,
+        "rss_shared_bytes": 0,
+        "io": {
+          "read_chars": 995113,
+          "write_chars": 3832581297,
+          "read_syscalls": 4269,
+          "write_syscalls": 548669,
+          "read_bytes": 106496,
+          "write_bytes": 13869813760,
+          "cancelled_write_bytes": 0
+        }
+      },
+      "files": {
+        "regular_files": 2,
+        "directories": 1,
+        "symlinks": 0,
+        "logical_bytes": 805310464,
+        "allocated_bytes": 579870720
+      }
+    },
+    "evidence_delta": {
+      "process": {
+        "user_cpu_ticks": 55,
+        "system_cpu_ticks": 45,
+        "cpu_seconds": 1.0,
+        "one_core_utilization_percent": 30.305186902780818,
+        "read_bytes": 0,
+        "write_bytes": 4235558912,
+        "cancelled_write_bytes": 0,
+        "write_chars": 612071160,
+        "write_syscalls": 125095
+      },
+      "files": {
+        "logical_bytes": 0,
+        "allocated_bytes": 8118272,
+        "regular_files": 0
+      }
+    },
+    "sampled_rss": {
+      "peak_rss_bytes": 729784320,
+      "samples": 67,
+      "interval_ms": 50
+    },
+    "mdbx": {
+      "attempts": 8,
+      "failures": 0,
+      "committed_transactions": 8,
+      "durable_commit_us": 2904689,
+      "stages": [
+        {
+          "name": "total",
+          "samples": 8,
+          "total": 3250645
+        },
+        {
+          "name": "transaction_open",
+          "samples": 8,
+          "total": 397
+        },
+        {
+          "name": "table_open",
+          "samples": 8,
+          "total": 7
+        },
+        {
+          "name": "cursor_open",
+          "samples": 8,
+          "total": 4
+        },
+        {
+          "name": "overlay_sort",
+          "samples": 8,
+          "total": 5434
+        },
+        {
+          "name": "overlay_visit",
+          "samples": 8,
+          "total": 339591
+        },
+        {
+          "name": "cursor_write",
+          "samples": 8,
+          "total": 314153
+        },
+        {
+          "name": "cursor_resolve",
+          "samples": 8,
+          "total": 10
+        },
+        {
+          "name": "commit",
+          "samples": 8,
+          "total": 2904689
+        }
+      ],
+      "counts": [
+        {
+          "name": "tables",
+          "samples": 8,
+          "total": 8
+        },
+        {
+          "name": "entries",
+          "samples": 8,
+          "total": 131072
+        },
+        {
+          "name": "puts",
+          "samples": 8,
+          "total": 131072
+        },
+        {
+          "name": "deletes",
+          "samples": 8,
+          "total": 0
+        },
+        {
+          "name": "key_bytes",
+          "samples": 8,
+          "total": 4325376
+        },
+        {
+          "name": "value_bytes",
+          "samples": 8,
+          "total": 29785119
+        },
+        {
+          "name": "value_size_0_64",
+          "samples": 8,
+          "total": 36474
+        },
+        {
+          "name": "value_size_65_128",
+          "samples": 8,
+          "total": 31384
+        },
+        {
+          "name": "value_size_129_256",
+          "samples": 8,
+          "total": 15187
+        },
+        {
+          "name": "value_size_257_512",
+          "samples": 8,
+          "total": 27867
+        },
+        {
+          "name": "value_size_513_1024",
+          "samples": 8,
+          "total": 20159
+        },
+        {
+          "name": "value_size_1025_4096",
+          "samples": 8,
+          "total": 1
+        },
+        {
+          "name": "value_size_4097_16384",
+          "samples": 8,
+          "total": 0
+        },
+        {
+          "name": "value_size_over_16384",
+          "samples": 8,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_present",
+          "samples": 8,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_absent",
+          "samples": 8,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_read_bytes",
+          "samples": 8,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_write_bytes",
+          "samples": 8,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_minor_faults",
+          "samples": 8,
+          "total": 0
+        },
+        {
+          "name": "cursor_resolve_major_faults",
+          "samples": 8,
+          "total": 0
+        }
+      ]
+    },
+    "process_physical_write_bytes": 4235558912,
+    "write_amplification_vs_values": 142.20386065941184,
+    "write_amplification_vs_mutations": 124.1717222807819
+  },
+  "campaign_throughput": {
+    "ingestion": {
+      "elapsed_ns": 3290820629,
+      "blocks_per_second": 395.0382432101862,
+      "operations_per_second": 39829.578933881174,
+      "value_mib_per_second": 8.631677688867377,
+      "mutation_mib_per_second": 9.885164422130467
+    },
+    "backend_commit": {
+      "elapsed_ns": 3250645000,
+      "blocks_per_second": 399.92063113628217,
+      "operations_per_second": 40321.84381868829,
+      "value_mib_per_second": 8.738359003029801,
+      "mutation_mib_per_second": 10.007337928750697
+    },
+    "durable_commit": {
+      "elapsed_ns": 2904689000,
+      "blocks_per_second": 447.55221643349773,
+      "operations_per_second": 45124.28008643955,
+      "value_mib_per_second": 9.779120243648737,
+      "mutation_mib_per_second": 11.199237853485798
+    }
+  },
+  "final_flush_ns": 1391,
+  "reads": {
+    "percentile_method": "nearest_rank",
+    "point": {
+      "mode": "point",
+      "cache_state": "uncontrolled-warm-after-prefill",
+      "rounds": 5,
+      "keys": 81920,
+      "hits": 40960,
+      "misses": 40960,
+      "value_bytes": 9311170,
+      "target_keys_per_call": 1,
+      "min_keys_per_call": 1,
+      "max_keys_per_call": 1,
+      "call_latency": {
+        "samples": 81920,
+        "min_ns": 86,
+        "mean_ns": 404,
+        "p50_ns": 274,
+        "p95_ns": 987,
+        "p99_ns": 1308,
+        "max_ns": 64397
+      },
+      "normalized_per_key_latency": {
+        "samples": 81920,
+        "min_ns": 86,
+        "mean_ns": 404,
+        "p50_ns": 274,
+        "p95_ns": 987,
+        "p99_ns": 1308,
+        "max_ns": 64397
+      }
+    },
+    "sorted_batch": {
+      "mode": "sorted_batch",
+      "cache_state": "uncontrolled-warm-after-prefill",
+      "rounds": 5,
+      "keys": 81920,
+      "hits": 40960,
+      "misses": 40960,
+      "value_bytes": 9311170,
+      "target_keys_per_call": 8192,
+      "min_keys_per_call": 8192,
+      "max_keys_per_call": 8192,
+      "call_latency": {
+        "samples": 10,
+        "min_ns": 28627,
+        "mean_ns": 2309697,
+        "p50_ns": 34329,
+        "p95_ns": 5343162,
+        "p99_ns": 5343162,
+        "max_ns": 5343162
+      },
+      "normalized_per_key_latency": {
+        "samples": 10,
+        "min_ns": 3,
+        "mean_ns": 281,
+        "p50_ns": 4,
+        "p95_ns": 652,
+        "p99_ns": 652,
+        "max_ns": 652
+      }
+    }
+  },
+  "reopen": {
+    "open_ns": 824039,
+    "verified_keys": 32798,
+    "prefill_keys": 8192,
+    "campaign_keys": 8199,
+    "version_hit_puts": 8,
+    "tombstones": 0,
+    "absent_keys": 16399,
+    "epoch_coverage": [
+      {
+        "epoch": 0,
+        "new_puts": 8192,
+        "version_hit_puts": 1,
+        "tombstones": 0
+      },
+      {
+        "epoch": 1,
+        "new_puts": 1,
+        "version_hit_puts": 1,
+        "tombstones": 0
+      },
+      {
+        "epoch": 2,
+        "new_puts": 1,
+        "version_hit_puts": 1,
+        "tombstones": 0
+      },
+      {
+        "epoch": 3,
+        "new_puts": 1,
+        "version_hit_puts": 1,
+        "tombstones": 0
+      },
+      {
+        "epoch": 4,
+        "new_puts": 1,
+        "version_hit_puts": 1,
+        "tombstones": 0
+      },
+      {
+        "epoch": 5,
+        "new_puts": 1,
+        "version_hit_puts": 1,
+        "tombstones": 0
+      },
+      {
+        "epoch": 6,
+        "new_puts": 1,
+        "version_hit_puts": 1,
+        "tombstones": 0
+      },
+      {
+        "epoch": 7,
+        "new_puts": 1,
+        "version_hit_puts": 1,
+        "tombstones": 0
+      }
+    ],
+    "expected_digest": "73c932fc04bb1e68dadf20dce6ec302edb0cdd4b2dc661fccaef063eaf728a44",
+    "actual_digest": "73c932fc04bb1e68dadf20dce6ec302edb0cdd4b2dc661fccaef063eaf728a44",
+    "matched": true,
+    "pre_drop_transaction_id": 819,
+    "transaction_id": 819
+  },
+  "digests": {
+    "prefill_sha256": "7d59a88eed8158dbf6a2f12eb16193fa92e036c20cd3dfe18ab9d8e13a6537ba",
+    "campaign_sha256": "320749535a057994ede6bf31b0f97846c3cc5d1d8a800aceec0b2d396f07eac1"
+  },
+  "environment": {
+    "map_size": 274877906944,
+    "last_page_number": 141567,
+    "transaction_id": 819,
+    "max_readers": 114,
+    "readers": 1
+  },
+  "evidence_limitations": [
+    "/proc/self/io write_bytes is process-attributed storage-layer traffic, not complete filesystem journal or device traffic",
+    "allocated file bytes measure retained footprint, not rewrite traffic",
+    "VmHWM is process-lifetime high water; timed peaks use the bounded 50 ms sampler",
+    "device-level promotion evidence requires an isolated volume or correlated external block/eBPF/NVMe counters",
+    "process I/O includes the optional evidence JSONL stream when configured",
+    "process CPU, RSS, I/O, and MDBX metric families are process-global; the runner serializes its own campaigns but promotion runs require an otherwise isolated process",
+    "ingestion throughput includes deterministic generation, allocation, accounting, hashing, backend commit, and post-commit sample maintenance; backend and durable-commit rates use MDBX-owned stage timers"
+  ]
+}

@@ -341,19 +341,21 @@ pub(super) fn reset_derived_state_to_frame_prefix(
     Ok(())
 }
 
-/// Fully verifies the committed tail frame: header, payload checksum, and
-/// row structure. This is the only payload read during open.
-pub(super) fn verify_tail_frame(
+/// Fully verifies one committed frame: header, payload checksum, and row
+/// structure. Recovery calls this for every frame selected by the committed
+/// manifest/marker, not only the newest frame, so older bit-rot cannot remain
+/// silently readable.
+pub(super) fn verify_frame(
     pack: &Mmap,
     frame_start: u64,
     frame_end: u64,
     epoch: u64,
 ) -> Result<()> {
-    let start = usize::try_from(frame_start).context("tail frame offset does not fit usize")?;
+    let start = usize::try_from(frame_start).context("frame offset does not fit usize")?;
     let header: &[u8; FRAME_HEADER_LEN] = pack
         .as_slice()
         .get(start..start + FRAME_HEADER_LEN)
-        .context("read committed tail frame header")?
+        .context("read committed frame header")?
         .try_into()
         .expect("frame header length");
     let payload_len = validate_frame_header(header, epoch)?;
@@ -363,16 +365,16 @@ pub(super) fn verify_tail_frame(
             .checked_add(FRAME_HEADER_LEN as u64)
             .and_then(|end| end.checked_add(payload_len))
             == Some(frame_end),
-        "committed tail frame length mismatch"
+        "committed frame length mismatch"
     );
-    let payload_end = usize::try_from(frame_end).context("tail frame end does not fit usize")?;
+    let payload_end = usize::try_from(frame_end).context("frame end does not fit usize")?;
     let payload = pack
         .as_slice()
         .get(start + FRAME_HEADER_LEN..payload_end)
-        .context("read committed tail frame payload")?;
+        .context("read committed frame payload")?;
     ensure!(
         digest(payload).as_slice() == &header[40..72],
-        "frame payload checksum mismatch in committed tail frame"
+        "frame payload checksum mismatch in committed frame"
     );
     validate_payload_rows(payload, row_count)?;
     Ok(())

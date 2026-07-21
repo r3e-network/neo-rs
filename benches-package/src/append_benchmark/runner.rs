@@ -80,6 +80,12 @@ pub fn run_append_benchmark(config: &AppendBenchmarkConfig) -> Result<AppendBenc
         verification.prefill_keys,
         verification.requested_prefill_keys
     );
+    ensure!(
+        prefill_volume.entries == shape.prefill_rows,
+        "generated prefill entry count {} does not match resolved shape {}",
+        prefill_volume.entries,
+        shape.prefill_rows
+    );
     let prefill_report = prefill_measurement.finish(
         &config.database,
         &mut evidence_log,
@@ -115,6 +121,14 @@ pub fn run_append_benchmark(config: &AppendBenchmarkConfig) -> Result<AppendBenc
         campaign_totals,
         clock_ticks,
     )?;
+    ensure!(
+        campaign_volume.entries == campaign.operation_count(),
+        "generated campaign operation count does not match resolved shape"
+    );
+    ensure!(
+        u128::from(campaign_volume.value_bytes) == campaign.logical_value_bytes(),
+        "generated campaign value bytes do not match resolved shape"
+    );
     // Reclaim superseded runs and manifests before the read phase, so the
     // measured reads run against the compacted, garbage-collected layout.
     store
@@ -208,7 +222,7 @@ pub fn run_append_benchmark(config: &AppendBenchmarkConfig) -> Result<AppendBenc
         total_wall_ns: duration_ns(run_started.elapsed()),
         evidence_limitations: vec![
             "prototype compaction of derived index runs is synchronous inside the append path; manifest generations gate visibility and snapshot leases pin generations, but the MDBX high-water commit marker and node shadow integration are not implemented".to_owned(),
-            "open validates the manifest, frame structure, and the committed tail frame; committed frame payloads are verified when written, not by a full re-hash on open".to_owned(),
+            "open fully re-hashes every frame and immutable index run selected by the committed manifest; this is correctness-first and can make startup expensive for a large history".to_owned(),
             "process I/O includes report checkpoints when an evidence log is configured".to_owned(),
             "resident index memory (filters, fences, and run metadata) is deliberately bounded; reaching the bound fails the campaign rather than allocating without limit".to_owned(),
         ],
@@ -332,6 +346,8 @@ impl PhaseMeasurement {
             write_amplification_vs_mutations: ratio(write_bytes, logical.mutation_bytes),
             append_write_ns: stages.append_write_ns,
             pack_sync_ns: stages.pack_sync_ns,
+            index_build_ns: stages.index_build_ns,
+            publication_overlap_ns: stages.publication_overlap_ns,
             index_write_ns: stages.index_write_ns,
             index_sync_ns: stages.index_sync_ns,
             directory_sync_ns: stages.directory_sync_ns,
@@ -673,7 +689,12 @@ fn benchmark_reads(
             let actual = store.get_many_sorted(&keys)?;
             let elapsed = duration_ns(started.elapsed());
             batch_calls.push(elapsed);
-            batch_per_key.push(elapsed / u64::try_from(chunk.len()).context("empty read chunk")?);
+            let chunk_len = u64::try_from(chunk.len()).context("empty read chunk")?;
+            ensure!(
+                actual.len() == chunk.len(),
+                "append sorted lookup changed result count"
+            );
+            batch_per_key.push(elapsed / chunk_len);
             for (actual, expected) in actual.iter().zip(chunk) {
                 ensure!(actual == &expected.expected, "append sorted read mismatch");
                 batch_bytes = batch_bytes

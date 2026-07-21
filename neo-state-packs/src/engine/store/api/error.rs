@@ -36,4 +36,13 @@ pub enum PackStoreError {
         /// Maximum transient workspace allowed for one compaction build.
         max_bytes: u64,
     },
+    /// The frame and manifest were durably activated, but best-effort derived
+    /// index maintenance failed afterwards. Callers must not retry the same
+    /// logical append through this store; reopen through the canonical marker
+    /// and either rebuild or schedule maintenance instead.
+    #[error("append committed; derived-index maintenance failed: {details}")]
+    CommittedMaintenance {
+        /// Stable, contextual maintenance failure text.
+        details: String,
+    },
 }

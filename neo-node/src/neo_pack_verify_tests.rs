@@ -388,7 +388,12 @@ mod tests {
             false,
         )
         .expect_err("non-tail index corruption must fail before any sampled lookup");
-        assert!(format!("{error:#}").contains("checksum mismatch during scrub"));
+        let details = format!("{error:#}");
+        assert!(
+            details.contains("checksum mismatch in committed run")
+                || details.contains("checksum mismatch during scrub"),
+            "unexpected corruption error: {details}"
+        );
     }
 
     #[test]

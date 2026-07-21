@@ -107,16 +107,14 @@ impl PackStore {
             instance_id: next_store_instance_id(),
             next_prepare_serial: 0,
             _writer_lease: writer_lease,
+            inflight_compaction_outputs: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
-    /// Opens a store through the newest manifest generation with structural
-    /// frame validation, committed-tail verification, and per-run structure
-    /// checks. Index records are not decoded into memory and payloads are
-    /// not re-hashed; older committed frames were verified when written and
-    /// are re-checked by scrubbing. Missing or corrupt derived indexes are
-    /// rebuilt from committed frames (a slow but correct recovery path);
-    /// a manifest ahead of the validated frame chain is fatal.
+    /// Opens a store through the newest manifest generation with complete
+    /// committed-frame and index-record authentication. Missing or corrupt
+    /// derived indexes are rebuilt from committed frames (a slow but correct
+    /// recovery path); a manifest ahead of the validated frame chain is fatal.
     pub fn open(root: &Path, max_index_memory_bytes: u64) -> Result<Self> {
         Self::open_with_compaction(root, max_index_memory_bytes, CompactionConfig::default())
     }
@@ -485,7 +483,7 @@ impl PackStore {
     }
 
     /// Shared open tail: truncate everything past the committed frame prefix,
-    /// map the pack, and fully verify the committed tail frame and tail run.
+    /// map the pack, and fully verify every committed frame and index run.
     fn finish_open(
         root: &Path,
         pack: File,
@@ -524,15 +522,28 @@ impl PackStore {
         // them here keeps the create-new publication steps from tripping
         // over a crashed predecessor's leftovers.
         clear_stale_temp_files(root)?;
-        if let Some(tail) = loaded.runs.last() {
-            let tail_start = if tail.max_epoch == 0 {
+        let committed_frames = loaded.runs.last().map_or(0, |tail| tail.max_epoch + 1);
+        for epoch in 0..committed_frames {
+            let index = usize::try_from(epoch).context("frame epoch does not fit usize")?;
+            let frame_end = *scan
+                .frame_ends
+                .get(index)
+                .with_context(|| format!("missing committed frame {epoch}"))?;
+            let frame_start = if index == 0 {
                 0
             } else {
-                scan.frame_ends[usize::try_from(tail.max_epoch - 1)
-                    .context("previous epoch does not fit usize")?]
+                scan.frame_ends[index - 1]
             };
-            verify_tail_frame(&pack_map, tail_start, committed_end, tail.max_epoch)?;
-            verify_tail_run(&tail.run)?;
+            verify_frame(&pack_map, frame_start, frame_end, epoch)
+                .with_context(|| format!("verify committed frame {epoch}"))?;
+        }
+        for live in &loaded.runs {
+            verify_run(&live.run).with_context(|| {
+                format!(
+                    "verify committed index run through epoch {}",
+                    live.max_epoch
+                )
+            })?;
         }
         let ranges = loaded
             .runs
@@ -581,6 +592,7 @@ impl PackStore {
             instance_id: next_store_instance_id(),
             next_prepare_serial: 0,
             _writer_lease: writer_lease,
+            inflight_compaction_outputs: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 }

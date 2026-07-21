@@ -185,7 +185,11 @@ mod tests {
         let error = excess_rows
             .push(&key(4), Some(b"two"))
             .expect_err("excess row must fail");
-        assert!(error.to_string().contains("more than its declared row count"));
+        assert!(
+            error
+                .to_string()
+                .contains("more than its declared row count")
+        );
 
         let mut undersized =
             PackFrameBuilder::with_value_bytes(1, 2).expect("create undersized builder");
@@ -444,7 +448,9 @@ mod tests {
         assert!(error.to_string().contains("exceeding the configured limit"));
         let pinned = store.snapshot().expect("pin parallel read generation");
         assert_eq!(
-            pinned.get_many_sorted(&keys).expect("parallel snapshot batch"),
+            pinned
+                .get_many_sorted(&keys)
+                .expect("parallel snapshot batch"),
             expected
         );
         drop(pinned);
@@ -646,7 +652,7 @@ mod tests {
         let error = PackStore::open(root.path(), 1024 * 1024)
             .err()
             .expect("corrupt frame must fail reopen");
-        assert!(error.to_string().contains("checksum mismatch"));
+        assert!(format!("{error:#}").contains("checksum mismatch"));
     }
 
     fn assert_corrupt_index_structure_is_rebuilt(byte_offset: u64) {
@@ -869,15 +875,12 @@ mod tests {
         pack.sync_all().expect("sync corruption");
         drop(pack);
 
-        let reopened = PackStore::open(root.path(), 1024 * 1024)
-            .expect("normal open verifies only the committed tail payload");
-        let error = reopened
-            .scrub_committed_frames()
-            .expect_err("full scrub must reject the older corrupt frame");
+        let error = PackStore::open(root.path(), 1024 * 1024)
+            .err()
+            .expect("normal open must reject the older corrupt frame");
         assert!(
-            error
-                .to_string()
-                .contains("frame 0 payload checksum mismatch")
+            format!("{error:#}").contains("frame 0"),
+            "unexpected corruption error: {error:#}"
         );
     }
 
@@ -1156,7 +1159,10 @@ mod tests {
             .expect("append values");
 
         let snapshot = store.snapshot().expect("pin snapshot");
-        assert_eq!(store.get(&first).expect("store point read"), Some(b"one".to_vec()));
+        assert_eq!(
+            store.get(&first).expect("store point read"),
+            Some(b"one".to_vec())
+        );
         assert_eq!(store.get(&absent).expect("store miss"), None);
         assert_eq!(
             snapshot.get(&second).expect("snapshot point read"),
@@ -1166,7 +1172,10 @@ mod tests {
         let values = snapshot
             .get_many_sorted(&keys)
             .expect("snapshot sorted read");
-        assert_eq!(values, vec![Some(b"one".to_vec()), Some(b"two".to_vec()), None]);
+        assert_eq!(
+            values,
+            vec![Some(b"one".to_vec()), Some(b"two".to_vec()), None]
+        );
 
         let metrics = store.metrics().expect("metrics snapshot");
         assert_eq!(metrics.append.frames, 1);
