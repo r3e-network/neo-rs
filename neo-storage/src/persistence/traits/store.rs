@@ -138,6 +138,26 @@ pub struct ShadowCommitMarker {
     pub value: Vec<u8>,
 }
 
+/// Result of mirroring one secondary overlay inside a canonical transaction.
+///
+/// A degraded result still carries a maintenance marker. This is deliberate:
+/// the canonical transaction may continue, but the failed shadow history must
+/// be durably poisoned so a later process cannot resume after a missing window.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShadowCommitOutcome {
+    /// The overlay carried no rows owned by the shadow.
+    Unchanged,
+    /// The shadow bytes are durable and this high-water marker may be committed.
+    Prepared(ShadowCommitMarker),
+    /// The shadow failed; commit `marker` atomically and report `error`.
+    Degraded {
+        /// Durable fail-closed marker for the incomplete shadow history.
+        marker: ShadowCommitMarker,
+        /// Diagnostic text logged by the storage backend.
+        error: String,
+    },
+}
+
 /// Mandatory maintenance marker committed with coordinated overlays.
 ///
 /// This uses the same key/value carrier as shadow publication, but callers of
@@ -148,13 +168,11 @@ pub type CoordinatedCommitMarker = ShadowCommitMarker;
 /// Shadow dual-write hook invoked inside a coordinated commit after both
 /// overlays are applied and before the transaction commits.
 ///
-/// The hook receives the captured secondary-overlay entries and returns the
-/// high-water marker the canonical transaction must persist, or `None` when
-/// the window carried nothing the shadow tracks. Backends log and count hook
-/// errors and continue the canonical commit without the marker: a shadow
-/// failure must never fail the authoritative commit.
-pub type ShadowCommitHook<'a> =
-    dyn FnMut(ShadowOverlayEntries) -> Result<Option<ShadowCommitMarker>, String> + Send + 'a;
+/// The hook receives the captured secondary-overlay entries and returns an
+/// explicit outcome. A failure must carry a degraded marker so the canonical
+/// transaction records that the shadow history is incomplete. Backends log and
+/// count degraded outcomes while continuing the authoritative commit.
+pub type ShadowCommitHook<'a> = dyn FnMut(ShadowOverlayEntries) -> ShadowCommitOutcome + Send + 'a;
 
 /// This interface provides methods for reading, writing from/to database.
 /// Developers should implement this interface to provide new storage engines for NEO.

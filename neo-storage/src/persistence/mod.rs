@@ -80,8 +80,8 @@ pub use read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric}
 pub use seek_direction::SeekDirection;
 pub use store::{
     CoordinatedCommitMarker, MdbxEnvironmentInfo, RawOverlayCursor, RawOverlaySink,
-    RawOverlaySource, ShadowCommitHook, ShadowCommitMarker, ShadowOverlayEntries, Store,
-    StoreBackendKind,
+    RawOverlaySource, ShadowCommitHook, ShadowCommitMarker, ShadowCommitOutcome,
+    ShadowOverlayEntries, Store, StoreBackendKind,
 };
 pub use store_cache::{StoreCache, StoreCacheBacking, StoreDataCache};
 pub use store_factory::StoreFactory;

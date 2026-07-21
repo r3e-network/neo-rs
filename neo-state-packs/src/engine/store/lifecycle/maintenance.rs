@@ -60,6 +60,8 @@ impl PackStore {
             self.pending_append.is_none(),
             "cannot adopt compaction while an append awaits activation"
         );
+        self.scrub_prepared_compaction(&prepared)
+            .context("validate prepared compaction before manifest publication")?;
         let adoption_started = Instant::now();
         let PreparedPackCompaction {
             pending,
@@ -350,12 +352,37 @@ impl PackStore {
         Ok(candidate_runs)
     }
 
-    /// Fully validates the staged output's records, fences, and membership
-    /// filter before its manifest can become the newest readable generation.
+    /// Reopens and fully validates the staged output's authenticated structure,
+    /// records, fences, and membership filter before manifest publication.
+    ///
+    /// Reopening is required: the prepared handle retains decoded fences from
+    /// build time, while the manifest will authorize the durable file currently
+    /// at the canonical run path. The scrub must therefore prove those exact
+    /// bytes rather than only the earlier in-memory representation.
     pub fn scrub_prepared_compaction(&self, prepared: &PreparedPackCompaction) -> Result<()> {
         let pending = &prepared.pending;
+        let path = self.runs_dir.join(run_file_name(
+            pending.level,
+            pending.min_epoch,
+            pending.max_epoch,
+        ));
+        let reopened = read_index_run_with_options(&path, self.config.read_options())
+            .context("reopen prepared compaction output for validation")?;
+        ensure!(
+            reopened.format_version == pending.run.format_version
+                && reopened.epoch == pending.run.epoch
+                && reopened.record_count == pending.run.record_count
+                && reopened.records_offset == pending.run.records_offset
+                && reopened.file_bytes == pending.run.file_bytes
+                && reopened.min_key == pending.run.min_key
+                && reopened.max_key == pending.run.max_key
+                && reopened.fences == pending.run.fences
+                && reopened.records_sha256 == pending.run.records_sha256
+                && reopened.memory_bytes == pending.run.memory_bytes,
+            "prepared compaction output no longer matches its validated build"
+        );
         let live = LiveRun {
-            run: Arc::clone(&pending.run),
+            run: Arc::new(reopened),
             level: pending.level,
             min_epoch: pending.min_epoch,
             max_epoch: pending.max_epoch,

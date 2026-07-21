@@ -19,8 +19,8 @@ use crate::persistence::providers::RuntimeStore;
 use crate::persistence::{
     CoordinatedCommitMarker, CoordinatedTransactionalStore, RawOverlayCursor, RawOverlaySink,
     RawOverlaySource, RawReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, ShadowCommitMarker,
-    Store, StoreCache, StoreMaintenanceBatch, StoreSnapshot, TransactionalStore, WriteStore,
-    storage::StorageConfig,
+    ShadowCommitOutcome, Store, StoreCache, StoreMaintenanceBatch, StoreSnapshot,
+    TransactionalStore, WriteStore, storage::StorageConfig,
 };
 use crate::{StorageError, StorageItem, StorageKey};
 use std::fs;
@@ -315,10 +315,10 @@ fn shadow_hook_captures_both_channels_and_commits_marker_atomically() {
     let marker_value_hook = marker_value.clone();
     let mut hook = move |entries: Vec<(Vec<u8>, Option<Vec<u8>>)>| {
         captured_sink.lock().expect("captured lock").push(entries);
-        Ok(Some(ShadowCommitMarker {
+        ShadowCommitOutcome::Prepared(ShadowCommitMarker {
             key: marker_key_hook.clone(),
             value: marker_value_hook.clone(),
-        }))
+        })
     };
 
     canonical
@@ -377,7 +377,7 @@ fn shadow_hook_captures_both_channels_and_commits_marker_atomically() {
 }
 
 #[test]
-fn shadow_hook_failure_never_fails_the_canonical_commit() {
+fn shadow_hook_degradation_commits_poison_without_failing_canonical_data() {
     let tmp = TempDir::new().expect("tempdir");
     let canonical = open_store(&tmp, "shadow-failure");
     let state_service = canonical
@@ -387,10 +387,17 @@ fn shadow_hook_failure_never_fails_the_canonical_commit() {
 
     let mut canonical_overlay = TestOverlay(vec![(b"canonical-tip".to_vec(), Some(vec![7u8]))]);
     let mut state_overlay = TestOverlay(vec![(b"\xf0node-a".to_vec(), Some(b"value-a".to_vec()))]);
-    let mut hook =
-        |_entries: Vec<(Vec<u8>, Option<Vec<u8>>)>| -> Result<Option<ShadowCommitMarker>, String> {
-            Err("simulated shadow disk failure".to_owned())
-        };
+    let degraded_key = b"shadow-degraded".to_vec();
+    let degraded_value = b"poison-v1".to_vec();
+    let expected_key = degraded_key.clone();
+    let expected_value = degraded_value.clone();
+    let mut hook = move |_entries: Vec<(Vec<u8>, Option<Vec<u8>>)>| ShadowCommitOutcome::Degraded {
+        marker: ShadowCommitMarker {
+            key: degraded_key.clone(),
+            value: degraded_value.clone(),
+        },
+        error: "simulated shadow disk failure".to_owned(),
+    };
 
     canonical
         .commit_coordinated_overlays_with_shadow(
@@ -410,6 +417,13 @@ fn shadow_hook_failure_never_fails_the_canonical_commit() {
         Some(b"value-a".to_vec())
     );
     assert_eq!(
+        canonical
+            .maintenance_metadata(&expected_key)
+            .expect("read degraded marker"),
+        Some(expected_value),
+        "degraded marker must commit atomically with the canonical overlays"
+    );
+    assert_eq!(
         MdbxCommitMetrics::shadow_commit_failures(),
         failures_before + 1
     );
@@ -425,10 +439,7 @@ fn shadow_hook_without_marker_commits_normally() {
 
     let mut canonical_overlay = TestOverlay(vec![(b"canonical-tip".to_vec(), Some(vec![3u8]))]);
     let mut state_overlay = TestOverlay(vec![(b"\xf0node-a".to_vec(), Some(b"value-a".to_vec()))]);
-    let mut hook =
-        |_entries: Vec<(Vec<u8>, Option<Vec<u8>>)>| -> Result<Option<ShadowCommitMarker>, String> {
-            Ok(None)
-        };
+    let mut hook = |_entries: Vec<(Vec<u8>, Option<Vec<u8>>)>| ShadowCommitOutcome::Unchanged;
 
     canonical
         .commit_coordinated_overlays_with_shadow(

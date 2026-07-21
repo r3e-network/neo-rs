@@ -129,9 +129,18 @@ impl PackStore {
             );
             let receipt = read_frame_receipt(&pack, &scan, horizon.epoch)?;
             ensure!(
-                receipt.segment_id == horizon.segment_id && receipt.frame_end == horizon.frame_end,
-                "pack commit marker position does not match frame {}",
-                horizon.epoch
+                receipt.segment_id == horizon.segment_id,
+                "pack commit marker segment {} does not match frame {} segment {}",
+                horizon.segment_id,
+                horizon.epoch,
+                receipt.segment_id
+            );
+            ensure!(
+                receipt.frame_end == horizon.frame_end,
+                "pack commit marker end {} does not match frame {} end {}",
+                horizon.frame_end,
+                horizon.epoch,
+                receipt.frame_end
             );
             ensure!(
                 receipt.payload_sha256 == horizon.payload_sha256,

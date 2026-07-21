@@ -9,7 +9,8 @@
 //! directory and persists a pack high-water record into the MDBX maintenance
 //! table inside the same canonical transaction. MDBX remains authoritative
 //! for every row: a shadow failure is logged and counted by the storage
-//! backend and the canonical commit continues without the marker.
+//! backend and the canonical commit continues with a durable degraded marker.
+//! That marker prevents a later process from resuming after a missing window.
 //!
 //! ## Boundary
 //!
@@ -29,10 +30,13 @@ use std::sync::Arc;
 use anyhow::Context;
 use neo_state_packs::PackStoreConfig;
 use neo_state_packs::shadow::{
-    PreparedShadowFrame, SHADOW_HIGH_WATER_KEY, ShadowHighWaterRecord, ShadowPackWriter,
+    PreparedShadowFrame, SHADOW_DEGRADED_KEY, SHADOW_HIGH_WATER_KEY, ShadowDegradedRecord,
+    ShadowHighWaterRecord, ShadowPackWriter,
 };
 use neo_storage::persistence::providers::RuntimeStore;
-use neo_storage::persistence::{ShadowCommitMarker, ShadowOverlayEntries, TransactionalStore};
+use neo_storage::persistence::{
+    ShadowCommitMarker, ShadowCommitOutcome, ShadowOverlayEntries, TransactionalStore,
+};
 use parking_lot::Mutex;
 use tracing::{info, warn};
 
@@ -50,9 +54,9 @@ const STATE_ROOT_VALUE_UNSIGNED_LEN: usize = 1 + 4 + 32;
 ///
 /// The writer sits behind a mutex (the canonical commit serializes StateService
 /// publication, so contention is minimal). After a shadow failure the writer is
-/// dropped: torn bytes from the failed frame are truncated by the engine on the
-/// next process open, and the MDBX layer has already logged and counted the
-/// failure, so the node keeps importing with the shadow disabled.
+/// dropped: torn bytes from the failed frame remain unreachable, while the
+/// canonical transaction records a degraded marker. Restart keeps the shadow
+/// disabled until an explicit rebuild or reseed removes that marker.
 pub(in crate::node) struct AppendShadow {
     state: Mutex<AppendShadowState>,
 }
@@ -66,40 +70,53 @@ impl AppendShadow {
     /// Shadow hook invoked inside the canonical transaction: mirrors the
     /// window's StateService entries and returns the high-water marker row
     /// for the maintenance table. Errors bubble up to the MDBX commit layer,
-    /// which logs and counts them and commits without the marker.
+    /// which logs and counts them and commits a degraded marker.
     pub(in crate::node) fn mirror_window(
         &self,
         entries: ShadowOverlayEntries,
-    ) -> Result<Option<ShadowCommitMarker>, String> {
+    ) -> ShadowCommitOutcome {
         let (block_index_min, block_index_max, state_root) = state_root_span(&entries);
         let mut state = self.state.lock();
         if state.pending.is_some() {
-            return Err(
+            state.pending = None;
+            state.writer = None;
+            return degraded_outcome(
+                block_index_max,
+                state_root,
                 "append shadow already has a frame awaiting canonical publication".to_owned(),
             );
         }
-        let Some(writer) = state.writer.as_mut() else {
-            return Err("append shadow writer is disabled after an earlier failure".to_owned());
+        if state.writer.is_none() {
+            return degraded_outcome(
+                block_index_max,
+                state_root,
+                "append shadow writer is disabled after an earlier failure".to_owned(),
+            );
         };
-        let prepared = match writer.prepare_state_overlay(entries) {
+        let prepared = match state
+            .writer
+            .as_mut()
+            .expect("shadow writer checked above")
+            .prepare_state_overlay(entries)
+        {
             Ok(receipt) => receipt,
             Err(error) => {
                 let message = format!("shadow pack prepare failed: {error:#}");
                 state.writer = None;
-                return Err(message);
+                return degraded_outcome(block_index_max, state_root, message);
             }
         };
         let Some(prepared) = prepared else {
-            return Ok(None);
+            return ShadowCommitOutcome::Unchanged;
         };
         let receipt = prepared.receipt();
         state.pending = Some(prepared);
         let record =
             ShadowHighWaterRecord::new(&receipt, block_index_min, block_index_max, state_root);
-        Ok(Some(ShadowCommitMarker {
+        ShadowCommitOutcome::Prepared(ShadowCommitMarker {
             key: SHADOW_HIGH_WATER_KEY.to_vec(),
             value: record.encode(),
-        }))
+        })
     }
 
     /// Activates the prepared frame after the canonical MDBX marker commits.
@@ -148,8 +165,8 @@ pub(in crate::node) fn open_append_shadow(
         .path
         .as_deref()
         .map(|path| network_scoped_path(path, network))?;
-    let high_water = match load_high_water(canonical_store) {
-        Ok(high_water) => high_water,
+    let (high_water, degraded) = match load_recovery_markers(canonical_store) {
+        Ok(markers) => markers,
         Err(error) => {
             warn!(
                 target: "neo::append_shadow",
@@ -160,6 +177,16 @@ pub(in crate::node) fn open_append_shadow(
             return None;
         }
     };
+    if let Some(degraded) = degraded {
+        warn!(
+            target: "neo::append_shadow",
+            path = %path.display(),
+            block_index = ?degraded.block_index,
+            state_root = ?degraded.state_root.map(hex::encode),
+            "append shadow history is marked incomplete; rebuild or reseed it before removing the degraded marker"
+        );
+        return None;
+    }
     match open_writer(&path, section, high_water.as_ref()) {
         Ok(writer) => {
             info!(
@@ -199,19 +226,42 @@ fn open_writer(
         .with_context(|| format!("open append shadow store at {}", path.display()))
 }
 
-fn load_high_water(
+fn load_recovery_markers(
     canonical_store: &RuntimeStore,
-) -> anyhow::Result<Option<ShadowHighWaterRecord>> {
+) -> anyhow::Result<(Option<ShadowHighWaterRecord>, Option<ShadowDegradedRecord>)> {
     let state_service = canonical_store
         .open_coordinated_namespace(neo_state_service::MDBX_STATE_SERVICE_NAMESPACE)
         .context("open coordinated StateService namespace for append shadow recovery")?;
-    state_service
+    let high_water = state_service
         .maintenance_metadata(SHADOW_HIGH_WATER_KEY)
         .context("read append shadow high-water marker")?
         .map(|bytes| {
             ShadowHighWaterRecord::decode(&bytes).context("decode append shadow high-water marker")
         })
-        .transpose()
+        .transpose()?;
+    let degraded = state_service
+        .maintenance_metadata(SHADOW_DEGRADED_KEY)
+        .context("read append shadow degraded marker")?
+        .map(|bytes| {
+            ShadowDegradedRecord::decode(&bytes).context("decode append shadow degraded marker")
+        })
+        .transpose()?;
+    Ok((high_water, degraded))
+}
+
+fn degraded_outcome(
+    block_index: Option<u32>,
+    state_root: Option<[u8; 32]>,
+    error: String,
+) -> ShadowCommitOutcome {
+    let record = ShadowDegradedRecord::new(block_index, state_root);
+    ShadowCommitOutcome::Degraded {
+        marker: ShadowCommitMarker {
+            key: SHADOW_DEGRADED_KEY.to_vec(),
+            value: record.encode().to_vec(),
+        },
+        error,
+    }
 }
 
 /// Extracts the block-index span and newest state root from the mirrored
@@ -254,6 +304,8 @@ pub(in crate::node) fn state_root_span(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_storage::mdbx::MdbxStoreProvider;
+    use neo_storage::persistence::{StoreMaintenanceBatch, storage::StorageConfig};
 
     fn test_pack_config() -> PackStoreConfig {
         PackStoreConfig::default()
@@ -320,6 +372,13 @@ mod tests {
         }
     }
 
+    fn prepared_marker(outcome: ShadowCommitOutcome) -> ShadowCommitMarker {
+        match outcome {
+            ShadowCommitOutcome::Prepared(marker) => marker,
+            other => panic!("expected prepared shadow marker, got {other:?}"),
+        }
+    }
+
     #[test]
     fn mirror_window_produces_marker_and_reopenable_exact_shadow() {
         let temp = tempfile::tempdir().expect("temp shadow root");
@@ -334,10 +393,7 @@ mod tests {
             (node_key(2), Some(b"node-two".to_vec())),
             (vec![0x02], Some(41u32.to_le_bytes().to_vec())),
         ];
-        let marker = shadow
-            .mirror_window(entries)
-            .expect("mirror first window")
-            .expect("window with node entries yields a marker");
+        let marker = prepared_marker(shadow.mirror_window(entries));
         assert_eq!(marker.key, SHADOW_HIGH_WATER_KEY);
         let record = ShadowHighWaterRecord::decode(&marker.value).expect("decode marker");
         assert_eq!(record.epoch, 0);
@@ -353,10 +409,7 @@ mod tests {
             (node_key(1), Some(b"node-one-new".to_vec())),
             (node_key(2), None),
         ];
-        let marker = shadow
-            .mirror_window(entries)
-            .expect("mirror second window")
-            .expect("second window yields a marker");
+        let marker = prepared_marker(shadow.mirror_window(entries));
         let record = ShadowHighWaterRecord::decode(&marker.value).expect("decode second marker");
         assert_eq!(record.epoch, 1);
         assert_eq!(record.block_index_max, Some(42));
@@ -388,10 +441,10 @@ mod tests {
             .expect("create shadow writer");
         let shadow = append_shadow(writer);
         let entries = vec![state_root_entry(9, 0x99)];
-        let marker = shadow
-            .mirror_window(entries)
-            .expect("metadata-only window must not fail");
-        assert!(marker.is_none());
+        assert_eq!(
+            shadow.mirror_window(entries),
+            ShadowCommitOutcome::Unchanged
+        );
     }
 
     #[test]
@@ -401,13 +454,10 @@ mod tests {
         let writer = ShadowPackWriter::open_or_create(&shadow_path, test_pack_config())
             .expect("create shadow writer");
         let shadow = append_shadow(writer);
-        let marker = shadow
-            .mirror_window(vec![
-                state_root_entry(41, 0x11),
-                (node_key(1), Some(b"node-one".to_vec())),
-            ])
-            .expect("prepare shadow window")
-            .expect("node window yields marker");
+        let marker = prepared_marker(shadow.mirror_window(vec![
+            state_root_entry(41, 0x11),
+            (node_key(1), Some(b"node-one".to_vec())),
+        ]));
 
         let manifests_before = std::fs::read_dir(&shadow_path)
             .expect("list shadow root before activation")
@@ -457,23 +507,18 @@ mod tests {
         let writer = ShadowPackWriter::open_or_create(&shadow_path, test_pack_config())
             .expect("create shadow writer");
         let shadow = append_shadow(writer);
-        let first = shadow
-            .mirror_window(vec![
-                state_root_entry(41, 0x11),
-                (node_key(1), Some(b"committed".to_vec())),
-            ])
-            .expect("prepare first window")
-            .expect("first marker");
+        let first = prepared_marker(shadow.mirror_window(vec![
+            state_root_entry(41, 0x11),
+            (node_key(1), Some(b"committed".to_vec())),
+        ]));
         let committed = ShadowHighWaterRecord::decode(&first.value).expect("decode first marker");
         shadow.canonical_commit_succeeded();
 
-        shadow
-            .mirror_window(vec![
-                state_root_entry(42, 0x22),
-                (node_key(1), Some(b"orphan".to_vec())),
-            ])
-            .expect("prepare orphan window")
-            .expect("orphan marker");
+        let orphan = prepared_marker(shadow.mirror_window(vec![
+            state_root_entry(42, 0x22),
+            (node_key(1), Some(b"orphan".to_vec())),
+        ]));
+        assert_eq!(orphan.key, SHADOW_HIGH_WATER_KEY);
         shadow.canonical_commit_failed();
         drop(shadow);
 
@@ -494,5 +539,79 @@ mod tests {
             Some(b"committed".to_vec())
         );
         assert_eq!(store.open_validation().frames, 1);
+    }
+
+    #[test]
+    fn unresolved_window_returns_a_durable_degraded_marker() {
+        let temp = tempfile::tempdir().expect("temp shadow root");
+        let shadow_path = temp.path().join("shadow-packs");
+        let writer = ShadowPackWriter::open_or_create(&shadow_path, test_pack_config())
+            .expect("create shadow writer");
+        let shadow = append_shadow(writer);
+
+        let first = shadow.mirror_window(vec![
+            state_root_entry(41, 0x11),
+            (node_key(1), Some(b"pending".to_vec())),
+        ]);
+        assert!(matches!(first, ShadowCommitOutcome::Prepared(_)));
+
+        let degraded = shadow.mirror_window(vec![
+            state_root_entry(42, 0x22),
+            (node_key(1), Some(b"missed".to_vec())),
+        ]);
+        let ShadowCommitOutcome::Degraded { marker, .. } = degraded else {
+            panic!("overlapping window must poison shadow continuity");
+        };
+        assert_eq!(marker.key, SHADOW_DEGRADED_KEY);
+        assert_eq!(
+            ShadowDegradedRecord::decode(&marker.value),
+            Some(ShadowDegradedRecord::new(Some(42), Some([0x22; 32])))
+        );
+
+        let later = shadow.mirror_window(vec![
+            state_root_entry(43, 0x33),
+            (node_key(1), Some(b"later".to_vec())),
+        ]);
+        assert!(matches!(later, ShadowCommitOutcome::Degraded { .. }));
+    }
+
+    #[test]
+    fn durable_degraded_marker_prevents_shadow_restart() {
+        let temp = tempfile::tempdir().expect("temp MDBX root");
+        let provider = MdbxStoreProvider::new(StorageConfig {
+            path: temp.path().join("canonical"),
+            mdbx_geometry_upper_bytes: Some(64 * 1024 * 1024),
+            mdbx_geometry_growth_bytes: Some(4 * 1024 * 1024),
+            ..StorageConfig::default()
+        });
+        let canonical = RuntimeStore::Mdbx(
+            provider
+                .get_mdbx_store(Path::new(""))
+                .expect("open canonical MDBX"),
+        );
+        let state_service = canonical
+            .open_coordinated_namespace(neo_state_service::MDBX_STATE_SERVICE_NAMESPACE)
+            .expect("open StateService namespace");
+        let degraded = ShadowDegradedRecord::new(Some(42), Some([0x22; 32]));
+        let mut maintenance = StoreMaintenanceBatch::new();
+        maintenance.put_metadata(SHADOW_DEGRADED_KEY.to_vec(), degraded.encode().to_vec());
+        state_service
+            .commit_maintenance(&maintenance)
+            .expect("commit degraded marker");
+
+        let shadow_root = temp.path().join("shadow");
+        let mut config = NodeConfig::default();
+        config.storage.append_shadow.enabled = true;
+        config.storage.append_shadow.path = Some(shadow_root.clone());
+        config.storage.append_shadow.max_index_memory_mb = Some(64);
+
+        assert!(
+            open_append_shadow(&config, 0x334F_454E, &canonical).is_none(),
+            "startup must not resume after a durably poisoned shadow window"
+        );
+        assert!(
+            !shadow_root.exists(),
+            "startup must reject the degraded history before opening pack bytes"
+        );
     }
 }

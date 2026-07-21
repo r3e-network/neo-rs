@@ -15,7 +15,8 @@ use crate::persistence::{
     seek_direction::SeekDirection,
     store::{
         CoordinatedCommitMarker, MdbxEnvironmentInfo, RawOverlayCursor, RawOverlaySink,
-        RawOverlaySource, ShadowCommitHook, ShadowOverlayEntries, Store, StoreBackendKind,
+        RawOverlaySource, ShadowCommitHook, ShadowCommitOutcome, ShadowOverlayEntries, Store,
+        StoreBackendKind,
     },
     store_maintenance::StoreMaintenanceBatch,
     transactional_store::{CoordinatedTransactionalStore, TransactionalStore},
@@ -789,7 +790,7 @@ impl MdbxStore {
                 cursor_write_mode,
             )?;
             match hook(std::mem::take(&mut captured)) {
-                Ok(Some(marker)) => {
+                ShadowCommitOutcome::Prepared(marker) => {
                     let maintenance =
                         timed_result(&mut recorder, MdbxCommitStage::TableOpen, || {
                             tx.create_table(Some(MAINTENANCE_TABLE), TableFlags::empty())
@@ -799,13 +800,20 @@ impl MdbxStore {
                         .map_err(mdbx_error)?;
                     shadow_marker_staged = true;
                 }
-                Ok(None) => {}
-                Err(error) => {
+                ShadowCommitOutcome::Unchanged => {}
+                ShadowCommitOutcome::Degraded { marker, error } => {
+                    let maintenance =
+                        timed_result(&mut recorder, MdbxCommitStage::TableOpen, || {
+                            tx.create_table(Some(MAINTENANCE_TABLE), TableFlags::empty())
+                                .map_err(mdbx_error)
+                        })?;
+                    tx.put(&maintenance, &marker.key, &marker.value, WriteFlags::UPSERT)
+                        .map_err(mdbx_error)?;
                     record_shadow_commit_failure();
                     warn!(
                         target: "neo::storage::mdbx",
                         error = %error,
-                        "append shadow dual-write failed; canonical commit continues without the pack high-water marker"
+                        "append shadow dual-write failed; canonical commit records a degraded marker and continues"
                     );
                 }
             }

@@ -354,9 +354,12 @@ impl PackStore {
             "external commit marker epoch does not match the prepared frame"
         );
         ensure!(
-            committed.segment_id == prepared.receipt.segment_id
-                && committed.frame_end == prepared.receipt.frame_end,
-            "external commit marker position does not match the prepared frame"
+            committed.segment_id == prepared.receipt.segment_id,
+            "external commit marker segment does not match the prepared frame"
+        );
+        ensure!(
+            committed.frame_end == prepared.receipt.frame_end,
+            "external commit marker end does not match the prepared frame"
         );
         ensure!(
             committed.payload_sha256 == prepared.receipt.payload_sha256,

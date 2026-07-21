@@ -5,8 +5,8 @@
 //! the MPT node entries (`0xf0 || node_hash`, 33-byte keys) of each
 //! coordinated commit window into a [`PackStore`] in its own directory — one
 //! frame plus one immutable index run per window. It is a verification
-//! shadow: any error is returned to the caller, whose contract is to log and
-//! ignore it (never fail the canonical commit).
+//! shadow: any error is returned to the caller, whose contract is to commit a
+//! degraded marker and continue canonical publication.
 //!
 //! On success the caller also persists a [`ShadowHighWaterRecord`] into the
 //! MDBX maintenance table inside the same canonical transaction (cold-first
@@ -44,12 +44,27 @@ pub const STATE_NODE_KEY_PREFIX: u8 = 0xf0;
 /// mirrored overlay, so it can never point past a durable frame.
 pub const SHADOW_HIGH_WATER_KEY: &[u8] = b"neo_state_packs_high_water";
 
+/// Maintenance-table key written when a shadow window cannot be mirrored.
+///
+/// Once present, startup must not resume from the older high-water marker.
+/// The operator must rebuild or explicitly reseed the shadow before removing
+/// this record.
+pub const SHADOW_DEGRADED_KEY: &[u8] = b"neo_state_packs_degraded";
+
 const HIGH_WATER_MAGIC: &[u8; 8] = b"N3PHWM01";
 const HIGH_WATER_FORMAT_VERSION: u32 = 4;
 /// magic(8) + marker version(4) + segment format(4) + epoch(8) + frames(8) + segment id(8)
 /// + frame end(8) + ops(8) + value bytes(8) + payload checksum(32)
 /// + block min(4) + block max(4) + root(32).
 pub const HIGH_WATER_RECORD_LEN: usize = 136;
+
+const DEGRADED_MAGIC: &[u8; 8] = b"N3PSDG01";
+const DEGRADED_FORMAT_VERSION: u32 = 1;
+const DEGRADED_HAS_BLOCK_INDEX: u32 = 1;
+const DEGRADED_HAS_STATE_ROOT: u32 = 2;
+const DEGRADED_KNOWN_FLAGS: u32 = DEGRADED_HAS_BLOCK_INDEX | DEGRADED_HAS_STATE_ROOT;
+/// Exact encoded byte length of [`ShadowDegradedRecord`].
+pub const SHADOW_DEGRADED_RECORD_LEN: usize = 52;
 
 const NO_BLOCK_INDEX: u32 = u32::MAX;
 
@@ -242,6 +257,83 @@ impl ShadowHighWaterRecord {
             frame_end: self.frame_end,
             payload_sha256: self.frame_payload_sha256,
         }
+    }
+}
+
+/// Durable fail-closed marker for an incomplete shadow history.
+///
+/// This marker is committed in the same canonical MDBX transaction whose
+/// StateService overlay could not be mirrored. Its presence is authoritative:
+/// a later process must not append after the old high-water and silently skip
+/// the failed window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShadowDegradedRecord {
+    /// Newest canonical block represented by the failed window, when present.
+    pub block_index: Option<u32>,
+    /// State root at `block_index`, when the overlay carried a decodable root.
+    pub state_root: Option<[u8; 32]>,
+}
+
+impl ShadowDegradedRecord {
+    /// Creates a degraded marker from the failed canonical window.
+    pub fn new(block_index: Option<u32>, state_root: Option<[u8; 32]>) -> Self {
+        Self {
+            block_index,
+            state_root: state_root.filter(|_| block_index.is_some()),
+        }
+    }
+
+    /// Encodes the fixed-size degraded marker.
+    pub fn encode(&self) -> [u8; SHADOW_DEGRADED_RECORD_LEN] {
+        let mut bytes = [0u8; SHADOW_DEGRADED_RECORD_LEN];
+        bytes[0..8].copy_from_slice(DEGRADED_MAGIC);
+        bytes[8..12].copy_from_slice(&DEGRADED_FORMAT_VERSION.to_le_bytes());
+        let mut flags = 0u32;
+        if self.block_index.is_some() {
+            flags |= DEGRADED_HAS_BLOCK_INDEX;
+        }
+        if self.state_root.is_some() {
+            flags |= DEGRADED_HAS_STATE_ROOT;
+        }
+        bytes[12..16].copy_from_slice(&flags.to_le_bytes());
+        bytes[16..20].copy_from_slice(&self.block_index.unwrap_or_default().to_le_bytes());
+        bytes[20..52].copy_from_slice(&self.state_root.unwrap_or([0u8; 32]));
+        bytes
+    }
+
+    /// Strictly decodes one degraded marker.
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != SHADOW_DEGRADED_RECORD_LEN || &bytes[0..8] != DEGRADED_MAGIC {
+            return None;
+        }
+        if u32::from_le_bytes(bytes[8..12].try_into().ok()?) != DEGRADED_FORMAT_VERSION {
+            return None;
+        }
+        let flags = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
+        if flags & !DEGRADED_KNOWN_FLAGS != 0
+            || flags & DEGRADED_HAS_STATE_ROOT != 0 && flags & DEGRADED_HAS_BLOCK_INDEX == 0
+        {
+            return None;
+        }
+        let has_block_index = flags & DEGRADED_HAS_BLOCK_INDEX != 0;
+        let has_state_root = flags & DEGRADED_HAS_STATE_ROOT != 0;
+        if !has_block_index && bytes[16..20].iter().any(|byte| *byte != 0)
+            || !has_state_root && bytes[20..52].iter().any(|byte| *byte != 0)
+        {
+            return None;
+        }
+        let block_index = has_block_index.then(|| {
+            u32::from_le_bytes(bytes[16..20].try_into().expect("fixed block-index range"))
+        });
+        let state_root = has_state_root.then(|| {
+            bytes[20..52]
+                .try_into()
+                .expect("fixed degraded state-root range")
+        });
+        Some(Self {
+            block_index,
+            state_root,
+        })
     }
 }
 
@@ -640,6 +732,36 @@ mod tests {
         let mut impossible_segment = record.encode();
         impossible_segment[32..40].copy_from_slice(&receipt.epoch.saturating_add(1).to_le_bytes());
         assert!(ShadowHighWaterRecord::decode(&impossible_segment).is_none());
+
+        let mut missing_frame_end = record.encode();
+        missing_frame_end[40..48].fill(0);
+        assert!(ShadowHighWaterRecord::decode(&missing_frame_end).is_none());
+    }
+
+    #[test]
+    fn degraded_record_round_trips_and_rejects_invalid_flags() {
+        let record = ShadowDegradedRecord::new(Some(42), Some([0x22; 32]));
+        assert_eq!(ShadowDegradedRecord::decode(&record.encode()), Some(record));
+
+        let sparse = ShadowDegradedRecord::new(None, Some([0x33; 32]));
+        assert_eq!(sparse.state_root, None);
+        assert_eq!(ShadowDegradedRecord::decode(&sparse.encode()), Some(sparse));
+
+        let mut root_without_index = record.encode();
+        root_without_index[12..16].copy_from_slice(&DEGRADED_HAS_STATE_ROOT.to_le_bytes());
+        assert!(ShadowDegradedRecord::decode(&root_without_index).is_none());
+
+        let mut unknown_flag = record.encode();
+        unknown_flag[12..16].copy_from_slice(&0x8000_0000u32.to_le_bytes());
+        assert!(ShadowDegradedRecord::decode(&unknown_flag).is_none());
+
+        let mut undeclared_block_index = sparse.encode();
+        undeclared_block_index[16..20].copy_from_slice(&42u32.to_le_bytes());
+        assert!(ShadowDegradedRecord::decode(&undeclared_block_index).is_none());
+
+        let mut undeclared_state_root = ShadowDegradedRecord::new(Some(42), None).encode();
+        undeclared_state_root[20..52].fill(0x44);
+        assert!(ShadowDegradedRecord::decode(&undeclared_state_root).is_none());
     }
 
     #[test]

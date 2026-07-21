@@ -124,6 +124,10 @@ pub struct PackCommitHorizon {
     /// Segment containing the canonically committed frame.
     pub segment_id: PackSegmentId,
     /// Segment-relative byte offset immediately after the committed frame.
+    ///
+    /// Binding the external marker to both the checksum and placement rejects
+    /// a structurally valid frame chain whose canonical high-water record was
+    /// corrupted or belongs to another pack layout.
     pub frame_end: u64,
     /// SHA-256 checksum of that frame's payload.
     pub payload_sha256: [u8; 32],

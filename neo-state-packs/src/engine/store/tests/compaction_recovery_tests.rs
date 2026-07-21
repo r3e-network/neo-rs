@@ -62,6 +62,156 @@
         );
     }
 
+    fn flip_persisted_run_byte(path: &Path, offset: u64) {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .expect("open prepared compaction output");
+        let mut byte = [0u8; 1];
+        file.read_exact_at(&mut byte, offset)
+            .expect("read prepared compaction byte");
+        file.write_all_at(&[byte[0] ^ 0x40], offset)
+            .expect("corrupt prepared compaction byte");
+        file.sync_all()
+            .expect("sync corrupted prepared compaction output");
+    }
+
+    fn rewrite_prepared_filter_with_valid_structure_checksum(
+        path: &Path,
+        prepared: &PreparedPackCompaction,
+    ) {
+        let run = &prepared.pending.run;
+        assert_eq!(run.format_version, PACK_INDEX_RUN_FORMAT_VERSION);
+        let records_start = usize::try_from(run.records_offset).expect("records offset fits usize");
+        let filter_start = INDEX_HEADER_LEN + run.fences.len() * FENCE_KEY_BYTES;
+        assert!(filter_start < records_start, "prepared run has a filter");
+
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .expect("open prepared filter for rewrite");
+        let mut header = [0u8; INDEX_HEADER_LEN];
+        file.read_exact_at(&mut header, 0)
+            .expect("read prepared index header");
+        let mut structure = vec![0u8; records_start - INDEX_HEADER_LEN];
+        file.read_exact_at(&mut structure, INDEX_HEADER_LEN as u64)
+            .expect("read prepared index structure");
+        structure[filter_start - INDEX_HEADER_LEN..].fill(0);
+
+        let structure_sha256 = index_structure_digest(
+            PACK_INDEX_RUN_FORMAT_VERSION,
+            &header,
+            &structure,
+        )
+        .expect("recompute index structure checksum");
+        header[INDEX_STRUCTURE_SHA256_START..INDEX_STRUCTURE_SHA256_END]
+            .copy_from_slice(&structure_sha256);
+        let header_tag = digest(&header[..INDEX_HEADER_TAG_START]);
+        header[INDEX_HEADER_TAG_START..INDEX_HEADER_LEN].copy_from_slice(&header_tag[..4]);
+        file.write_all_at(&header, 0)
+            .expect("rewrite prepared index header");
+        file.write_all_at(&structure, INDEX_HEADER_LEN as u64)
+            .expect("rewrite prepared index structure");
+        file.sync_all()
+            .expect("sync internally checksummed bad filter");
+
+        read_index_run(path).expect("bad filter remains internally checksummed");
+    }
+
+    fn assert_prepared_compaction_corruption_is_not_adopted(
+        corrupt: impl FnOnce(&Path, &PreparedPackCompaction),
+    ) -> String {
+        let root = tempdir().expect("temporary append store");
+        let mut store = PackStore::create(root.path(), small_compaction_config(1024 * 1024))
+            .expect("create store");
+        let expected = [
+            (key(1), b"one".as_slice()),
+            (key(2), b"two".as_slice()),
+            (key(3), b"three".as_slice()),
+        ];
+        for (key, value) in expected {
+            append_without_maintenance(&mut store, &[put(key, value)]);
+        }
+        let plan = store
+            .plan_compaction()
+            .expect("plan compaction")
+            .expect("overfull level has a plan");
+        let prepared = plan.build().expect("build prepared compaction");
+        let path = root.path().join("runs").join(run_file_name(
+            prepared.pending.level,
+            prepared.pending.min_epoch,
+            prepared.pending.max_epoch,
+        ));
+
+        let generation = store.generation;
+        let run_identity: Vec<_> = store
+            .runs
+            .iter()
+            .map(|run| (run.level, run.min_epoch, run.max_epoch))
+            .collect();
+        let decoded_index_bytes = store.decoded_index_bytes;
+        let compaction_stats = store.compaction_stats();
+        let manifests = manifest::list_manifest_files(root.path()).expect("list live manifests");
+
+        corrupt(&path, &prepared);
+        let error = store
+            .adopt_compaction(prepared)
+            .expect_err("corrupt prepared output must not be adopted");
+
+        assert_eq!(store.generation, generation);
+        assert_eq!(
+            store
+                .runs
+                .iter()
+                .map(|run| (run.level, run.min_epoch, run.max_epoch))
+                .collect::<Vec<_>>(),
+            run_identity
+        );
+        assert_eq!(store.decoded_index_bytes, decoded_index_bytes);
+        assert_eq!(store.compaction_stats(), compaction_stats);
+        assert_eq!(
+            manifest::list_manifest_files(root.path()).expect("re-list live manifests"),
+            manifests
+        );
+        for (key, value) in expected {
+            assert_eq!(
+                store.get(&key).expect("read prior authoritative generation"),
+                Some(value.to_vec())
+            );
+        }
+        format!("{error:#}")
+    }
+
+    #[test]
+    fn corrupt_prepared_compaction_record_cannot_be_adopted() {
+        let error = assert_prepared_compaction_corruption_is_not_adopted(|path, prepared| {
+            let second_record_value_offset = prepared.pending.run.records_offset
+                + INDEX_RECORD_LEN as u64
+                + PACK_KEY_BYTES as u64
+                + 4;
+            flip_persisted_run_byte(path, second_record_value_offset);
+        });
+        assert!(error.contains("records checksum mismatch during scrub"));
+    }
+
+    #[test]
+    fn corrupt_prepared_compaction_fence_cannot_be_adopted() {
+        let error = assert_prepared_compaction_corruption_is_not_adopted(|path, _| {
+            flip_persisted_run_byte(path, INDEX_HEADER_LEN as u64);
+        });
+        assert!(error.contains("index structure checksum mismatch"));
+    }
+
+    #[test]
+    fn internally_checksummed_false_negative_filter_cannot_be_adopted() {
+        let error = assert_prepared_compaction_corruption_is_not_adopted(|path, prepared| {
+            rewrite_prepared_filter_with_valid_structure_checksum(path, prepared);
+        });
+        assert!(error.contains("index filter rejected a persisted key"));
+    }
+
     #[test]
     fn index_scrub_detects_middle_record_corruption_in_a_non_tail_v4_run() {
         let root = tempdir().expect("temporary append store");
@@ -705,6 +855,17 @@
         assert!(checksum_error.to_string().contains("checksum"));
         assert_eq!(store.get(&first_key).expect("read after bad marker"), None);
 
+        let mut wrong_frame_end = first.commit_horizon();
+        wrong_frame_end.frame_end += 1;
+        let frame_end_error = store
+            .activate_prepared(first, wrong_frame_end)
+            .expect_err("wrong marker frame end must fail");
+        assert!(frame_end_error.to_string().contains("end"));
+        assert_eq!(
+            store.get(&first_key).expect("read after bad frame end"),
+            None
+        );
+
         let wrong_epoch = PackCommitHorizon {
             epoch: first.receipt().epoch + 1,
             segment_id: first.receipt().segment_id,
@@ -946,4 +1107,59 @@
         )
         .expect("valid marker remains recoverable");
         assert_eq!(reopened.open_validation().frames, 1);
+    }
+
+    #[test]
+    fn external_commit_horizon_rejects_wrong_frame_end_without_changing_visibility() {
+        let root = tempdir().expect("temporary append store");
+        let target = key(4);
+        let mut store =
+            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+        store
+            .append(&[put(target, b"committed")])
+            .expect("append committed frame");
+        let receipt = store.last_frame_receipt().expect("frame receipt");
+        let manifests = manifest::list_manifest_files(root.path()).expect("list manifests");
+        drop(store);
+
+        let pack_path = root.path().join(PackSegmentId::INITIAL.file_name());
+        let pack_bytes = fs::metadata(&pack_path).expect("stat append pack").len();
+        let error = PackStore::open_at_commit_horizon(
+            root.path(),
+            store_config(1024 * 1024),
+            Some(PackCommitHorizon {
+                epoch: receipt.epoch,
+                segment_id: receipt.segment_id,
+                frame_end: receipt.frame_end + 1,
+                payload_sha256: receipt.payload_sha256,
+            }),
+        )
+        .err()
+        .expect("wrong marker frame end must fail");
+        assert!(error.to_string().contains("does not match frame"));
+        assert_eq!(
+            fs::metadata(&pack_path).expect("re-stat append pack").len(),
+            pack_bytes
+        );
+        assert_eq!(
+            manifest::list_manifest_files(root.path()).expect("re-list manifests"),
+            manifests
+        );
+
+        let reopened = PackStore::open_at_commit_horizon(
+            root.path(),
+            store_config(1024 * 1024),
+            Some(PackCommitHorizon {
+                epoch: receipt.epoch,
+                segment_id: receipt.segment_id,
+                frame_end: receipt.frame_end,
+                payload_sha256: receipt.payload_sha256,
+            }),
+        )
+        .expect("correct marker remains recoverable");
+        assert_eq!(reopened.last_frame_receipt(), Some(receipt));
+        assert_eq!(
+            reopened.get(&target).expect("read committed value"),
+            Some(b"committed".to_vec())
+        );
     }
