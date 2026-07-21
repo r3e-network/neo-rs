@@ -577,6 +577,19 @@ impl SignatureVerificationPool {
         }
     }
 
+    /// Submits a deterministic blocking job for crate-level queue/backpressure tests.
+    #[cfg(test)]
+    pub(crate) fn try_submit_for_test<R, F>(
+        &self,
+        job: F,
+    ) -> Result<SignatureVerificationTicket<R>, SignatureVerificationSubmitError>
+    where
+        R: Send + 'static,
+        F: FnOnce() -> Result<R, SignatureVerificationError> + Send + 'static,
+    {
+        self.try_submit(job)
+    }
+
     fn try_submit_cancellable<R, F>(
         &self,
         cancelled: Arc<AtomicBool>,

@@ -263,34 +263,42 @@ where
                         continue;
                     }
                     Err(SignatureVerificationSubmitError::QueueFull) => {
-                        // The caller-side window should prevent this in
-                        // normal operation. Drain one completed ticket and
-                        // retry once to keep backpressure lossless.
-                        let Some(verified) = self.drain_header_preverification_ticket(
-                            &mut pending,
-                            settings.as_ref(),
-                            snapshot.as_ref(),
-                            Arc::clone(&native_contract_provider),
-                        ) else {
-                            return HeaderValidationOutcome::new(accepted, frontier);
-                        };
-                        if !self.header_cache.add(verified.clone()) {
-                            return HeaderValidationOutcome::new(accepted, frontier);
-                        }
-                        accepted += 1;
-                        frontier = Some(verified);
-                        match pool.try_submit_header_witness_cancellable(
-                            header.clone(),
-                            Arc::clone(&settings),
-                            &cancellation,
-                        ) {
-                            Ok(ticket) => {
-                                pending.push_back((header.clone(), parent, ticket));
-                                virtual_prev = header;
-                                virtual_height = index;
-                                continue;
+                        // The caller-side window normally prevents this. If a
+                        // different consumer has filled the shared pool while
+                        // this batch has no pending ticket, disable speculation
+                        // and continue through the canonical synchronous path;
+                        // queue contention must not truncate a valid header
+                        // batch. With pending work, drain one ticket and retry
+                        // once so an invalid older prefix still stops the batch.
+                        if pending.is_empty() {
+                            pool_enabled = false;
+                        } else {
+                            let Some(verified) = self.drain_header_preverification_ticket(
+                                &mut pending,
+                                settings.as_ref(),
+                                snapshot.as_ref(),
+                                Arc::clone(&native_contract_provider),
+                            ) else {
+                                return HeaderValidationOutcome::new(accepted, frontier);
+                            };
+                            if !self.header_cache.add(verified.clone()) {
+                                return HeaderValidationOutcome::new(accepted, frontier);
                             }
-                            Err(_) => pool_enabled = false,
+                            accepted += 1;
+                            frontier = Some(verified);
+                            match pool.try_submit_header_witness_cancellable(
+                                header.clone(),
+                                Arc::clone(&settings),
+                                &cancellation,
+                            ) {
+                                Ok(ticket) => {
+                                    pending.push_back((header.clone(), parent, ticket));
+                                    virtual_prev = header;
+                                    virtual_height = index;
+                                    continue;
+                                }
+                                Err(_) => pool_enabled = false,
+                            }
                         }
                     }
                     Err(SignatureVerificationSubmitError::Closed)

@@ -5,7 +5,7 @@ use crate::handle::BlockchainHandle;
 use crate::header_cache::HeaderCache;
 use crate::ledger_context::LedgerContext;
 use crate::pipeline::signature_verification::{
-    SignatureVerificationPool, SignatureVerificationPoolConfig,
+    SignatureVerificationError, SignatureVerificationPool, SignatureVerificationPoolConfig,
 };
 use crate::relay_result::RelayResult;
 use crate::service::MempoolLike;
@@ -15,8 +15,8 @@ use neo_payloads::Block;
 use neo_payloads::InventoryType;
 use neo_payloads::Transaction;
 use neo_payloads::header::Header;
-use neo_primitives::UInt256;
 use neo_primitives::verify_result::VerifyResult;
+use neo_primitives::{UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
 use neo_vm::ExecutionEngineLimits;
@@ -466,6 +466,142 @@ fn optimistic_header_verification_publishes_only_the_verified_prefix() {
     assert_eq!(outcome.accepted, 1);
     assert_eq!(service.header_cache.hash_at(1), Some(valid.hash()));
     assert_eq!(service.header_cache.hash_at(2), None);
+}
+
+#[test]
+fn optimistic_header_queue_contention_falls_back_without_truncating_valid_batch() {
+    let settings = neo_config::ProtocolSettings::default();
+    let (mut service, _handle, _snapshot) = store_fixture_with(settings.clone());
+    let private_key = [7u8; 32];
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("derive public key");
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public_key);
+    let next_consensus = UInt160::from_script(&verification);
+
+    let mut anchor = Header::new();
+    anchor.set_index(0);
+    anchor.set_timestamp(10);
+    anchor.set_next_consensus(next_consensus);
+    assert!(service.header_cache.add(anchor.clone()));
+
+    let mut first = Header::new();
+    first.set_index(1);
+    first.set_prev_hash(anchor.hash());
+    first.set_timestamp(20);
+    first.set_next_consensus(next_consensus);
+    first.witness = sign_header_for_test(&first, settings.network, &private_key, &verification);
+
+    let mut second = Header::new();
+    second.set_index(2);
+    second.set_prev_hash(first.hash());
+    second.set_timestamp(30);
+    second.set_next_consensus(next_consensus);
+    second.witness = sign_header_for_test(&second, settings.network, &private_key, &verification);
+
+    let pool = Arc::new(
+        SignatureVerificationPool::new(SignatureVerificationPoolConfig {
+            workers: 1,
+            queue_capacity: 1,
+        })
+        .expect("pool"),
+    );
+    let (started_tx, started_rx) = std::sync::mpsc::sync_channel(0);
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+    let running = pool
+        .try_submit_for_test(move || {
+            started_tx.send(()).expect("worker started");
+            release_rx.recv().expect("release worker");
+            Ok::<(), SignatureVerificationError>(())
+        })
+        .expect("running job");
+    started_rx.recv().expect("worker started");
+    let queued = pool
+        .try_submit_for_test(|| Ok::<(), SignatureVerificationError>(()))
+        .expect("queued job");
+
+    service.set_optimistic_signature_verification(Some(Arc::clone(&pool)));
+    let outcome = service.handle_headers(vec![first.clone(), second.clone()]);
+
+    assert_eq!(
+        outcome.accepted, 2,
+        "queue contention must use sync fallback"
+    );
+    assert_eq!(service.header_cache.hash_at(1), Some(first.hash()));
+    assert_eq!(service.header_cache.hash_at(2), Some(second.hash()));
+    assert!(pool.metrics_snapshot().queue_full >= 1);
+
+    release_tx.send(()).expect("release worker");
+    running.wait().expect("running success");
+    queued.wait().expect("queued success");
+}
+
+#[test]
+fn optimistic_header_queue_contention_keeps_canonical_invalid_prefix() {
+    let settings = neo_config::ProtocolSettings::default();
+    let (mut service, _handle, _snapshot) = store_fixture_with(settings.clone());
+    let private_key = [7u8; 32];
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("derive public key");
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public_key);
+    let next_consensus = UInt160::from_script(&verification);
+
+    let mut anchor = Header::new();
+    anchor.set_index(0);
+    anchor.set_timestamp(10);
+    anchor.set_next_consensus(next_consensus);
+    assert!(service.header_cache.add(anchor.clone()));
+
+    let mut valid = Header::new();
+    valid.set_index(1);
+    valid.set_prev_hash(anchor.hash());
+    valid.set_timestamp(20);
+    valid.set_next_consensus(next_consensus);
+    valid.witness = sign_header_for_test(&valid, settings.network, &private_key, &verification);
+
+    let mut invalid = valid.clone();
+    invalid.set_index(2);
+    invalid.set_prev_hash(valid.hash());
+    invalid.set_timestamp(30);
+    invalid.witness =
+        neo_payloads::Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH0.byte()]);
+
+    let pool = Arc::new(
+        SignatureVerificationPool::new(SignatureVerificationPoolConfig {
+            workers: 1,
+            queue_capacity: 1,
+        })
+        .expect("pool"),
+    );
+    let (started_tx, started_rx) = std::sync::mpsc::sync_channel(0);
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+    let running = pool
+        .try_submit_for_test(move || {
+            started_tx.send(()).expect("worker started");
+            release_rx.recv().expect("release worker");
+            Ok::<(), SignatureVerificationError>(())
+        })
+        .expect("running job");
+    started_rx.recv().expect("worker started");
+    let queued = pool
+        .try_submit_for_test(|| Ok::<(), SignatureVerificationError>(()))
+        .expect("queued job");
+
+    service.set_optimistic_signature_verification(Some(Arc::clone(&pool)));
+    let outcome = service.handle_headers(vec![valid.clone(), invalid]);
+
+    assert_eq!(
+        outcome.accepted, 1,
+        "sync fallback must retain only valid prefix"
+    );
+    assert_eq!(service.header_cache.hash_at(1), Some(valid.hash()));
+    assert_eq!(service.header_cache.hash_at(2), None);
+    assert!(pool.metrics_snapshot().queue_full >= 1);
+
+    release_tx.send(()).expect("release worker");
+    running.wait().expect("running success");
+    queued.wait().expect("queued success");
 }
 
 #[test]
