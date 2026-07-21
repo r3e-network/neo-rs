@@ -107,7 +107,7 @@ where
             SyncBatchCommitPolicy::DeferredLive => (true, BlockPersistContext::sync_batch()),
             SyncBatchCommitPolicy::DeferredCatchUp => (true, BlockPersistContext::catch_up()),
         };
-        let settings = self.system.chain_spec().protocol_settings_arc();
+        let settings = self.system.settings();
         let mut imported = 0usize;
         let mut direct_imported = 0usize;
         let mut committed_blocks = Vec::new();
@@ -610,11 +610,11 @@ where
             timestamp: parent.timestamp(),
             next_consensus: *parent.next_consensus(),
         };
-        let chain_spec = self.system.chain_spec();
+        let settings = self.system.settings();
         receipt.matches(
             &block.header,
             &parent,
-            chain_spec.protocol_settings(),
+            settings.as_ref(),
             &snapshot.version(),
         )
     }
@@ -642,10 +642,7 @@ where
         self.mempool.block_persisted(block.as_ref());
         self.reverify_mempool_after_persist(
             index,
-            self.system
-                .chain_spec()
-                .protocol_settings()
-                .max_transactions_per_block as usize,
+            self.system.settings().max_transactions_per_block as usize,
         );
 
         self.event_tx

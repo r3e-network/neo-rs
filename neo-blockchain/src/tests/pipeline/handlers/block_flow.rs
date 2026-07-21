@@ -2762,8 +2762,7 @@ async fn optimistic_inventory_batch_verifies_next_header_while_persisting_curren
         )
         .expect("pool"),
     )));
-    let genesis =
-        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
 
     let sign = |header: &Header| {
         let mut sign_data = Vec::with_capacity(36);
@@ -2829,8 +2828,7 @@ async fn optimistic_inventory_window_stops_at_an_invalid_deep_header() {
         .expect("pool"),
     );
     service.set_optimistic_signature_verification(Some(Arc::clone(&pool)));
-    let genesis =
-        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
 
     let sign = |header: &Header| {
         let mut sign_data = Vec::with_capacity(36);
@@ -2903,7 +2901,7 @@ async fn canonical_import_does_not_add_transaction_signature_gate() {
     let abort_store_commit_calls = Arc::new(AtomicUsize::new(0));
     let system = Arc::new(FailingSecondCommitContext {
         snapshot: Arc::clone(&snapshot),
-        chain_spec: chain_spec_for_settings(&settings),
+        settings: Arc::new(settings.clone()),
         commit_attempts: Arc::clone(&commit_attempts),
         commit_to_store_calls: Arc::clone(&commit_to_store_calls),
         abort_store_commit_calls: Arc::clone(&abort_store_commit_calls),
@@ -2919,8 +2917,7 @@ async fn canonical_import_does_not_add_transaction_signature_gate() {
     commit_attempts.store(0, Ordering::SeqCst);
     commit_to_store_calls.store(0, Ordering::SeqCst);
 
-    let genesis =
-        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
     let transaction_verification =
         neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&[2u8; 33]);
     let transaction_account = neo_primitives::UInt160::from_script(&transaction_verification);
