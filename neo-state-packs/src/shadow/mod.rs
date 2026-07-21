@@ -26,7 +26,8 @@
 //! - Bounded counters for frames and node operations.
 
 use crate::{
-    PACK_KEY_BYTES, PackCommitHorizon, PackFrameReceipt, PackOpKind, PackOperation, PackStore,
+    PACK_KEY_BYTES, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackCommitHorizon,
+    PackFrameReceipt, PackOpKind, PackOperation, PackSegmentId, PackStore, PackStoreConfig,
     PreparedAppend,
 };
 use anyhow::{Context, Result, ensure};
@@ -44,10 +45,11 @@ pub const STATE_NODE_KEY_PREFIX: u8 = 0xf0;
 pub const SHADOW_HIGH_WATER_KEY: &[u8] = b"neo_state_packs_high_water";
 
 const HIGH_WATER_MAGIC: &[u8; 8] = b"N3PHWM01";
-const HIGH_WATER_FORMAT_VERSION: u32 = 1;
-/// magic(8) + version(4) + epoch(8) + frames(8) + ops(8) + value bytes(8)
-/// + payload checksum(32) + block min(4) + block max(4) + root(32).
-pub const HIGH_WATER_RECORD_LEN: usize = 116;
+const HIGH_WATER_FORMAT_VERSION: u32 = 4;
+/// magic(8) + marker version(4) + segment format(4) + epoch(8) + frames(8) + segment id(8)
+/// + frame end(8) + ops(8) + value bytes(8) + payload checksum(32)
+/// + block min(4) + block max(4) + root(32).
+pub const HIGH_WATER_RECORD_LEN: usize = 136;
 
 const NO_BLOCK_INDEX: u32 = u32::MAX;
 
@@ -87,7 +89,8 @@ impl PreparedShadowFrame {
 /// [`SHADOW_HIGH_WATER_KEY`] for every successfully mirrored window.
 ///
 /// Layout (all integers little-endian):
-/// `magic(8) | version(4) | epoch(8) | frames_total(8) | node_operations(8)
+/// `magic(8) | marker_version(4) | segment_format_version(4) | epoch(8)
+/// | frames_total(8) | segment_id(8) | frame_end(8) | node_operations(8)
 /// | node_put_value_bytes(8) | frame payload SHA-256(32) | block_min(4)
 /// | block_max(4) | state_root(32)`.
 ///
@@ -99,6 +102,10 @@ pub struct ShadowHighWaterRecord {
     pub epoch: u64,
     /// Total durable frames in the shadow store at marker publication.
     pub frames_total: u64,
+    /// Segment containing the newest mirrored frame.
+    pub segment_id: PackSegmentId,
+    /// Segment-relative byte offset immediately after that frame.
+    pub frame_end: u64,
     /// Node operations mirrored by the newest frame.
     pub node_operations: u64,
     /// Put value bytes mirrored by the newest frame.
@@ -124,6 +131,8 @@ impl ShadowHighWaterRecord {
         Self {
             epoch: receipt.epoch,
             frames_total: receipt.frames_total,
+            segment_id: receipt.frame.segment_id,
+            frame_end: receipt.frame.frame_end,
             node_operations: receipt.node_operations,
             node_put_value_bytes: receipt.node_put_value_bytes,
             frame_payload_sha256: receipt.frame.payload_sha256,
@@ -138,8 +147,11 @@ impl ShadowHighWaterRecord {
         let mut bytes = Vec::with_capacity(HIGH_WATER_RECORD_LEN);
         bytes.extend_from_slice(HIGH_WATER_MAGIC);
         bytes.extend_from_slice(&HIGH_WATER_FORMAT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&PACK_SEGMENT_FORMAT_VERSION.to_le_bytes());
         bytes.extend_from_slice(&self.epoch.to_le_bytes());
         bytes.extend_from_slice(&self.frames_total.to_le_bytes());
+        bytes.extend_from_slice(&self.segment_id.get().to_le_bytes());
+        bytes.extend_from_slice(&self.frame_end.to_le_bytes());
         bytes.extend_from_slice(&self.node_operations.to_le_bytes());
         bytes.extend_from_slice(&self.node_put_value_bytes.to_le_bytes());
         bytes.extend_from_slice(&self.frame_payload_sha256);
@@ -159,6 +171,9 @@ impl ShadowHighWaterRecord {
         if u32::from_le_bytes(bytes[8..12].try_into().ok()?) != HIGH_WATER_FORMAT_VERSION {
             return None;
         }
+        if u32::from_le_bytes(bytes[12..16].try_into().ok()?) != PACK_SEGMENT_FORMAT_VERSION {
+            return None;
+        }
         let u64_at = |offset: usize| -> Option<u64> {
             Some(u64::from_le_bytes(
                 bytes.get(offset..offset + 8)?.try_into().ok()?,
@@ -169,23 +184,31 @@ impl ShadowHighWaterRecord {
                 bytes.get(offset..offset + 4)?.try_into().ok()?,
             ))
         };
-        let epoch = u64_at(12)?;
-        let frames_total = u64_at(20)?;
+        let epoch = u64_at(16)?;
+        let frames_total = u64_at(24)?;
         if epoch.checked_add(1) != Some(frames_total) {
             return None;
         }
-        let block_index_min = match u32_at(76)? {
+        let segment_id = PackSegmentId::new(u64_at(32)?);
+        if segment_id.get() > epoch {
+            return None;
+        }
+        let frame_end = u64_at(40)?;
+        if frame_end <= PACK_SEGMENT_HEADER_LEN {
+            return None;
+        }
+        let block_index_min = match u32_at(96)? {
             NO_BLOCK_INDEX => None,
             value => Some(value),
         };
-        let block_index_max = match u32_at(80)? {
+        let block_index_max = match u32_at(100)? {
             NO_BLOCK_INDEX => None,
             value => Some(value),
         };
         let mut frame_payload_sha256 = [0u8; 32];
-        frame_payload_sha256.copy_from_slice(bytes.get(44..76)?);
+        frame_payload_sha256.copy_from_slice(bytes.get(64..96)?);
         let mut state_root = [0u8; 32];
-        state_root.copy_from_slice(bytes.get(84..116)?);
+        state_root.copy_from_slice(bytes.get(104..136)?);
         if block_index_min.is_some() != block_index_max.is_some()
             || block_index_min
                 .zip(block_index_max)
@@ -200,8 +223,10 @@ impl ShadowHighWaterRecord {
         Some(Self {
             epoch,
             frames_total,
-            node_operations: u64_at(28)?,
-            node_put_value_bytes: u64_at(36)?,
+            segment_id,
+            frame_end,
+            node_operations: u64_at(48)?,
+            node_put_value_bytes: u64_at(56)?,
             frame_payload_sha256,
             block_index_min,
             block_index_max,
@@ -213,6 +238,8 @@ impl ShadowHighWaterRecord {
     pub const fn commit_horizon(&self) -> PackCommitHorizon {
         PackCommitHorizon {
             epoch: self.epoch,
+            segment_id: self.segment_id,
+            frame_end: self.frame_end,
             payload_sha256: self.frame_payload_sha256,
         }
     }
@@ -231,12 +258,12 @@ impl ShadowPackWriter {
     /// Opens the shadow store at `root`, creating it when missing. Reopen
     /// runs the engine's recovery (torn-tail truncation, derived-index
     /// rebuild), so an interrupted shadow append never wedges the writer.
-    pub fn open_or_create(root: &Path, max_index_memory_bytes: u64) -> Result<Self> {
-        let store = if root.join("frames.pack").exists() {
-            PackStore::open(root, max_index_memory_bytes)
+    pub fn open_or_create(root: &Path, config: PackStoreConfig) -> Result<Self> {
+        let store = if crate::engine::initial_segment_exists(root) {
+            PackStore::open(root, config)
                 .with_context(|| format!("reopen shadow pack store at {}", root.display()))?
         } else {
-            PackStore::create(root, max_index_memory_bytes)
+            PackStore::create(root, config)
                 .with_context(|| format!("create shadow pack store at {}", root.display()))?
         };
         Ok(Self {
@@ -256,10 +283,10 @@ impl ShadowPackWriter {
     /// leaving MDBX authority untouched.
     pub fn open_or_create_at_high_water(
         root: &Path,
-        max_index_memory_bytes: u64,
+        config: PackStoreConfig,
         high_water: Option<&ShadowHighWaterRecord>,
     ) -> Result<Self> {
-        let store = if root.join("frames.pack").exists() {
+        let store = if crate::engine::initial_segment_exists(root) {
             if let Some(high_water) = high_water {
                 ensure!(
                     high_water.epoch.checked_add(1) == Some(high_water.frames_total),
@@ -268,7 +295,7 @@ impl ShadowPackWriter {
             }
             PackStore::open_at_commit_horizon(
                 root,
-                max_index_memory_bytes,
+                config,
                 high_water.map(|record| record.commit_horizon()),
             )
             .with_context(|| {
@@ -283,7 +310,7 @@ impl ShadowPackWriter {
                 "MDBX high-water marker exists but shadow pack store is missing at {}",
                 root.display()
             );
-            PackStore::create(root, max_index_memory_bytes)
+            PackStore::create(root, config)
                 .with_context(|| format!("create shadow pack store at {}", root.display()))?
         };
         Ok(Self {
@@ -393,6 +420,12 @@ mod tests {
 
     const INDEX_MEMORY_BOUND: u64 = 64 * 1024 * 1024;
 
+    fn test_config() -> PackStoreConfig {
+        PackStoreConfig::default()
+            .with_max_index_memory_bytes(INDEX_MEMORY_BOUND)
+            .expect("valid shadow test configuration")
+    }
+
     fn node_key(tag: u8) -> Vec<u8> {
         let mut key = vec![tag; PACK_KEY_BYTES];
         key[0] = STATE_NODE_KEY_PREFIX;
@@ -436,7 +469,7 @@ mod tests {
     #[test]
     fn mirrored_windows_round_trip_byte_for_byte_across_reopen() {
         let root = tempdir().expect("temporary shadow root");
-        let mut writer = ShadowPackWriter::open_or_create(root.path(), INDEX_MEMORY_BOUND)
+        let mut writer = ShadowPackWriter::open_or_create(root.path(), test_config())
             .expect("create shadow writer");
 
         let first = writer
@@ -461,7 +494,7 @@ mod tests {
         assert_eq!(writer.node_operations_appended(), 5);
         drop(writer);
 
-        let store = PackStore::open(root.path(), INDEX_MEMORY_BOUND).expect("reopen shadow packs");
+        let store = PackStore::open(root.path(), test_config()).expect("reopen shadow packs");
         assert_eq!(store.open_validation().frames, 2);
         let keys = sorted_node_keys(&[1, 2, 3]);
         let results = store
@@ -481,7 +514,7 @@ mod tests {
     #[test]
     fn window_without_node_entries_appends_no_frame() {
         let root = tempdir().expect("temporary shadow root");
-        let mut writer = ShadowPackWriter::open_or_create(root.path(), INDEX_MEMORY_BOUND)
+        let mut writer = ShadowPackWriter::open_or_create(root.path(), test_config())
             .expect("create shadow writer");
         let metadata_only = vec![
             (state_root_record(7), Some(vec![1u8; 38])),
@@ -494,21 +527,21 @@ mod tests {
         assert_eq!(writer.frames_appended(), 0);
         drop(writer);
 
-        let store = PackStore::open(root.path(), INDEX_MEMORY_BOUND).expect("reopen shadow packs");
+        let store = PackStore::open(root.path(), test_config()).expect("reopen shadow packs");
         assert_eq!(store.open_validation().frames, 0);
     }
 
     #[test]
     fn reopen_continues_epochs_contiguously() {
         let root = tempdir().expect("temporary shadow root");
-        let mut writer = ShadowPackWriter::open_or_create(root.path(), INDEX_MEMORY_BOUND)
+        let mut writer = ShadowPackWriter::open_or_create(root.path(), test_config())
             .expect("create shadow writer");
         writer
             .append_state_overlay(window_one())
             .expect("mirror first window");
         drop(writer);
 
-        let mut writer = ShadowPackWriter::open_or_create(root.path(), INDEX_MEMORY_BOUND)
+        let mut writer = ShadowPackWriter::open_or_create(root.path(), test_config())
             .expect("reopen shadow writer");
         let receipt = writer
             .append_state_overlay(window_two())
@@ -521,7 +554,7 @@ mod tests {
     #[test]
     fn high_water_reopen_discards_a_manifested_orphan_frame() {
         let root = tempdir().expect("temporary shadow root");
-        let mut writer = ShadowPackWriter::open_or_create(root.path(), INDEX_MEMORY_BOUND)
+        let mut writer = ShadowPackWriter::open_or_create(root.path(), test_config())
             .expect("create shadow writer");
         let committed = writer
             .append_state_overlay(window_one())
@@ -536,7 +569,7 @@ mod tests {
 
         let mut writer = ShadowPackWriter::open_or_create_at_high_water(
             root.path(),
-            INDEX_MEMORY_BOUND,
+            test_config(),
             Some(&marker),
         )
         .expect("reconcile writer to MDBX marker");
@@ -548,15 +581,14 @@ mod tests {
         assert_eq!(replacement.frames_total, 2);
         drop(writer);
 
-        let store =
-            PackStore::open(root.path(), INDEX_MEMORY_BOUND).expect("reopen reconciled pack");
+        let store = PackStore::open(root.path(), test_config()).expect("reopen reconciled pack");
         assert_eq!(store.open_validation().frames, 2);
     }
 
     #[test]
     fn high_water_record_round_trips() {
         let root = tempdir().expect("temporary shadow root");
-        let mut writer = ShadowPackWriter::open_or_create(root.path(), INDEX_MEMORY_BOUND)
+        let mut writer = ShadowPackWriter::open_or_create(root.path(), test_config())
             .expect("create shadow writer");
         let receipt = writer
             .append_state_overlay(window_one())
@@ -565,10 +597,14 @@ mod tests {
         let record = ShadowHighWaterRecord::new(&receipt, Some(41), Some(41), Some([7u8; 32]));
         let decoded = ShadowHighWaterRecord::decode(&record.encode()).expect("decode marker");
         assert_eq!(decoded, record);
-        assert_eq!(decoded.commit_horizon().epoch, receipt.epoch);
         assert_eq!(
-            decoded.commit_horizon().payload_sha256,
-            receipt.frame.payload_sha256
+            decoded.commit_horizon(),
+            PackCommitHorizon {
+                epoch: receipt.epoch,
+                segment_id: receipt.frame.segment_id,
+                frame_end: receipt.frame.frame_end,
+                payload_sha256: receipt.frame.payload_sha256,
+            }
         );
 
         let sparse = ShadowHighWaterRecord::new(&receipt, None, None, None);
@@ -585,8 +621,25 @@ mod tests {
         assert!(ShadowHighWaterRecord::decode(&truncated).is_none());
 
         let mut inconsistent_frames = record.encode();
-        inconsistent_frames[20..28].copy_from_slice(&99u64.to_le_bytes());
+        inconsistent_frames[24..32].copy_from_slice(&99u64.to_le_bytes());
         assert!(ShadowHighWaterRecord::decode(&inconsistent_frames).is_none());
+
+        let mut old_schema = record.encode();
+        old_schema[8..12].copy_from_slice(&(HIGH_WATER_FORMAT_VERSION - 1).to_le_bytes());
+        assert!(ShadowHighWaterRecord::decode(&old_schema).is_none());
+
+        let mut wrong_segment_format = record.encode();
+        wrong_segment_format[12..16]
+            .copy_from_slice(&(PACK_SEGMENT_FORMAT_VERSION + 1).to_le_bytes());
+        assert!(ShadowHighWaterRecord::decode(&wrong_segment_format).is_none());
+
+        let mut impossible_position = record.encode();
+        impossible_position[40..48].copy_from_slice(&PACK_SEGMENT_HEADER_LEN.to_le_bytes());
+        assert!(ShadowHighWaterRecord::decode(&impossible_position).is_none());
+
+        let mut impossible_segment = record.encode();
+        impossible_segment[32..40].copy_from_slice(&receipt.epoch.saturating_add(1).to_le_bytes());
+        assert!(ShadowHighWaterRecord::decode(&impossible_segment).is_none());
     }
 
     #[test]

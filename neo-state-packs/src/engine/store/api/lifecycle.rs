@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::PackStageTotals;
 
 use super::super::Snapshot;
+use super::identity::{PackPosition, PackSegmentId};
 
 /// Durable placement and checksum of the most recently appended frame.
 ///
@@ -15,9 +16,11 @@ use super::super::Snapshot;
 pub struct PackFrameReceipt {
     /// Commit epoch of the frame (0-based, contiguous).
     pub epoch: u64,
-    /// Absolute byte offset of the frame header inside `frames.pack`.
+    /// Segment containing the complete frame.
+    pub segment_id: PackSegmentId,
+    /// Segment-relative byte offset of the frame header.
     pub frame_start: u64,
-    /// Absolute byte offset one past the frame payload.
+    /// Segment-relative byte offset one past the frame payload.
     pub frame_end: u64,
     /// Number of operations encoded in the frame.
     pub rows: u64,
@@ -25,6 +28,18 @@ pub struct PackFrameReceipt {
     pub payload_bytes: u64,
     /// SHA-256 checksum of the frame payload, as stored in the frame header.
     pub payload_sha256: [u8; 32],
+}
+
+impl PackFrameReceipt {
+    /// Returns the segment-relative start position of this frame.
+    pub const fn start_position(self) -> PackPosition {
+        PackPosition::new(self.segment_id, self.frame_start)
+    }
+
+    /// Returns the segment-relative end position of this frame.
+    pub const fn end_position(self) -> PackPosition {
+        PackPosition::new(self.segment_id, self.frame_end)
+    }
 }
 
 /// Opaque handle for one durable but not-yet-visible append.
@@ -56,6 +71,8 @@ impl PreparedAppend {
     pub const fn commit_horizon(self) -> PackCommitHorizon {
         PackCommitHorizon {
             epoch: self.receipt.epoch,
+            segment_id: self.receipt.segment_id,
+            frame_end: self.receipt.frame_end,
             payload_sha256: self.receipt.payload_sha256,
         }
     }
@@ -104,8 +121,19 @@ impl SealedAppend {
 pub struct PackCommitHorizon {
     /// Newest canonically committed frame epoch.
     pub epoch: u64,
+    /// Segment containing the canonically committed frame.
+    pub segment_id: PackSegmentId,
+    /// Segment-relative byte offset immediately after the committed frame.
+    pub frame_end: u64,
     /// SHA-256 checksum of that frame's payload.
     pub payload_sha256: [u8; 32],
+}
+
+impl PackCommitHorizon {
+    /// Returns the exact segment-relative end selected by this horizon.
+    pub const fn end_position(self) -> PackPosition {
+        PackPosition::new(self.segment_id, self.frame_end)
+    }
 }
 
 /// Structural counts observed while opening a pack store.

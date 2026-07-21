@@ -1,4 +1,4 @@
-//! Pack-store API data contracts.
+//! # Pack-store API
 //!
 //! ## Boundary
 //!
@@ -10,16 +10,22 @@
 //!
 //! - `config`: bounded physical read and compaction settings.
 //! - `error`: typed operational failures callers may classify.
+//! - `identity`: stable segment identities and positioned locations.
 //! - `lifecycle`: receipts and handoff values for cold-first publication.
 
 mod config;
 mod error;
+mod identity;
 mod lifecycle;
 
-pub(crate) use config::CompactionConfig;
-pub use config::PackStoreOptions;
-pub(in crate::engine::store) use config::{validate_compaction_config, validate_store_options};
-pub use error::PackStoreError;
+pub use config::{PackStoreConfig, PackStoreConfigError, PackStoreConfigField, PackStoreOptions};
+pub use error::{
+    PackStoreArtifact, PackStoreError, PackStoreErrorSource, PackStoreLimit, PackStoreOperation,
+    PackStoreResult,
+};
+pub use identity::{
+    PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackPosition, PackSegmentId,
+};
 pub use lifecycle::{
     OpenValidation, PackCommitHorizon, PackFrameReceipt, PreparedAppend, SealedAppend,
 };

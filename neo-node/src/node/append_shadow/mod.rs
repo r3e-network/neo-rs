@@ -27,6 +27,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
+use neo_state_packs::PackStoreConfig;
 use neo_state_packs::shadow::{
     PreparedShadowFrame, SHADOW_HIGH_WATER_KEY, ShadowHighWaterRecord, ShadowPackWriter,
 };
@@ -191,12 +192,11 @@ fn open_writer(
     section: &AppendShadowSection,
     high_water: Option<&ShadowHighWaterRecord>,
 ) -> anyhow::Result<ShadowPackWriter> {
-    ShadowPackWriter::open_or_create_at_high_water(
-        path,
-        section.max_index_memory_bytes(),
-        high_water,
-    )
-    .with_context(|| format!("open append shadow store at {}", path.display()))
+    let pack_config = PackStoreConfig::default()
+        .with_max_index_memory_bytes(section.max_index_memory_bytes())
+        .context("validate append shadow pack-store configuration")?;
+    ShadowPackWriter::open_or_create_at_high_water(path, pack_config, high_water)
+        .with_context(|| format!("open append shadow store at {}", path.display()))
 }
 
 fn load_high_water(
@@ -254,6 +254,12 @@ pub(in crate::node) fn state_root_span(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_pack_config() -> PackStoreConfig {
+        PackStoreConfig::default()
+            .with_max_index_memory_bytes(64 * 1024 * 1024)
+            .expect("valid append-shadow test configuration")
+    }
 
     fn state_root_entry(index: u32, root_byte: u8) -> (Vec<u8>, Option<Vec<u8>>) {
         let mut key = vec![STATE_ROOT_KEY_PREFIX];
@@ -318,7 +324,7 @@ mod tests {
     fn mirror_window_produces_marker_and_reopenable_exact_shadow() {
         let temp = tempfile::tempdir().expect("temp shadow root");
         let shadow_path = temp.path().join("shadow-packs");
-        let writer = ShadowPackWriter::open_or_create(&shadow_path, 64 * 1024 * 1024)
+        let writer = ShadowPackWriter::open_or_create(&shadow_path, test_pack_config())
             .expect("create shadow writer");
         let shadow = append_shadow(writer);
 
@@ -358,7 +364,7 @@ mod tests {
         shadow.canonical_commit_succeeded();
         drop(shadow);
 
-        let store = neo_state_packs::PackStore::open(&shadow_path, 64 * 1024 * 1024)
+        let store = neo_state_packs::PackStore::open(&shadow_path, test_pack_config())
             .expect("reopen shadow packs");
         assert_eq!(store.open_validation().frames, 2);
         let mut keys: Vec<[u8; 33]> = vec![
@@ -378,7 +384,7 @@ mod tests {
     fn mirror_window_without_node_entries_yields_no_marker() {
         let temp = tempfile::tempdir().expect("temp shadow root");
         let shadow_path = temp.path().join("shadow-packs");
-        let writer = ShadowPackWriter::open_or_create(&shadow_path, 64 * 1024 * 1024)
+        let writer = ShadowPackWriter::open_or_create(&shadow_path, test_pack_config())
             .expect("create shadow writer");
         let shadow = append_shadow(writer);
         let entries = vec![state_root_entry(9, 0x99)];
@@ -392,7 +398,7 @@ mod tests {
     fn mirror_window_is_invisible_until_canonical_success() {
         let temp = tempfile::tempdir().expect("temp shadow root");
         let shadow_path = temp.path().join("shadow-packs");
-        let writer = ShadowPackWriter::open_or_create(&shadow_path, 64 * 1024 * 1024)
+        let writer = ShadowPackWriter::open_or_create(&shadow_path, test_pack_config())
             .expect("create shadow writer");
         let shadow = append_shadow(writer);
         let marker = shadow
@@ -432,9 +438,11 @@ mod tests {
         drop(shadow);
         let store = neo_state_packs::PackStore::open_at_commit_horizon(
             &shadow_path,
-            64 * 1024 * 1024,
+            test_pack_config(),
             Some(neo_state_packs::PackCommitHorizon {
                 epoch: record.epoch,
+                segment_id: record.segment_id,
+                frame_end: record.frame_end,
                 payload_sha256: record.frame_payload_sha256,
             }),
         )
@@ -446,7 +454,7 @@ mod tests {
     fn canonical_failure_leaves_only_an_uncommitted_orphan_suffix() {
         let temp = tempfile::tempdir().expect("temp shadow root");
         let shadow_path = temp.path().join("shadow-packs");
-        let writer = ShadowPackWriter::open_or_create(&shadow_path, 64 * 1024 * 1024)
+        let writer = ShadowPackWriter::open_or_create(&shadow_path, test_pack_config())
             .expect("create shadow writer");
         let shadow = append_shadow(writer);
         let first = shadow
@@ -471,9 +479,11 @@ mod tests {
 
         let store = neo_state_packs::PackStore::open_at_commit_horizon(
             &shadow_path,
-            64 * 1024 * 1024,
+            test_pack_config(),
             Some(neo_state_packs::PackCommitHorizon {
                 epoch: committed.epoch,
+                segment_id: committed.segment_id,
+                frame_end: committed.frame_end,
                 payload_sha256: committed.frame_payload_sha256,
             }),
         )

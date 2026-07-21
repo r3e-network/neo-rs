@@ -17,7 +17,8 @@
 
 use crate::{
     PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION,
-    PackCommitHorizon, PackFrameReceipt,
+    PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackCommitHorizon, PackFrameReceipt,
+    PackSegmentId,
 };
 use thiserror::Error;
 
@@ -25,15 +26,15 @@ use thiserror::Error;
 pub const AUTHORITATIVE_HIGH_WATER_KEY: &[u8] = b"neo_state_packs_authoritative_high_water";
 
 const MARKER_MAGIC: &[u8; 8] = b"N3PAWM01";
-const MARKER_SCHEMA_VERSION: u32 = 1;
+const MARKER_SCHEMA_VERSION: u32 = 2;
 
 /// Exact encoded byte length of [`AuthoritativeHighWaterRecord`].
-pub const AUTHORITATIVE_HIGH_WATER_RECORD_LEN: usize = 144;
+pub const AUTHORITATIVE_HIGH_WATER_RECORD_LEN: usize = 156;
 
 /// Strict authoritative marker decode or identity error.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum AuthorityMarkerError {
-    /// Record length differs from the fixed v1 layout.
+    /// Record length differs from the fixed v2 layout.
     #[error("authoritative pack marker length is {actual}, expected {expected}")]
     InvalidLength {
         /// Observed byte length.
@@ -49,15 +50,19 @@ pub enum AuthorityMarkerError {
     UnsupportedSchema(u32),
     /// Pack format tuple differs from this binary.
     #[error(
-        "authoritative marker pack formats ({frame}, {index}, {manifest}) differ from binary ({expected_frame}, {expected_index}, {expected_manifest})"
+        "authoritative marker pack formats ({segment}, {frame}, {index}, {manifest}) differ from binary ({expected_segment}, {expected_frame}, {expected_index}, {expected_manifest})"
     )]
     PackFormatMismatch {
+        /// Encoded segment format.
+        segment: u32,
         /// Encoded frame format.
         frame: u32,
         /// Encoded index format.
         index: u32,
         /// Encoded manifest format.
         manifest: u32,
+        /// Binary segment format.
+        expected_segment: u32,
         /// Binary frame format.
         expected_frame: u32,
         /// Binary index format.
@@ -68,6 +73,14 @@ pub enum AuthorityMarkerError {
     /// Frame placement is structurally impossible.
     #[error("authoritative pack marker frame end is invalid")]
     InvalidFrameEnd,
+    /// Segment identity is impossible for the named frame epoch.
+    #[error("authoritative pack marker segment {segment_id} cannot contain frame epoch {epoch}")]
+    InvalidSegmentId {
+        /// Encoded segment identity.
+        segment_id: PackSegmentId,
+        /// Encoded frame epoch.
+        epoch: u64,
+    },
     /// Marker belongs to another Neo network.
     #[error("authoritative pack marker network {actual:#010x} differs from {expected:#010x}")]
     NetworkMismatch {
@@ -90,7 +103,9 @@ pub struct AuthoritativeHighWaterRecord {
     pub store_identity: [u8; 32],
     /// Newest canonical pack frame epoch.
     pub epoch: u64,
-    /// Absolute end offset of that frame in `frames.pack`.
+    /// Segment containing the canonical frame.
+    pub segment_id: PackSegmentId,
+    /// Segment-relative end offset of that frame.
     pub frame_end: u64,
     /// SHA-256 checksum of the newest frame payload.
     pub frame_payload_sha256: [u8; 32],
@@ -113,6 +128,7 @@ impl AuthoritativeHighWaterRecord {
             network_magic,
             store_identity,
             epoch: receipt.epoch,
+            segment_id: receipt.segment_id,
             frame_end: receipt.frame_end,
             frame_payload_sha256: receipt.payload_sha256,
             block_index,
@@ -124,6 +140,8 @@ impl AuthoritativeHighWaterRecord {
     pub const fn commit_horizon(&self) -> PackCommitHorizon {
         PackCommitHorizon {
             epoch: self.epoch,
+            segment_id: self.segment_id,
+            frame_end: self.frame_end,
             payload_sha256: self.frame_payload_sha256,
         }
     }
@@ -137,21 +155,23 @@ impl AuthoritativeHighWaterRecord {
         }
     }
 
-    /// Encodes the fixed, versioned v1 marker.
+    /// Encodes the fixed, versioned v2 marker.
     pub fn encode(&self) -> [u8; AUTHORITATIVE_HIGH_WATER_RECORD_LEN] {
         let mut bytes = [0u8; AUTHORITATIVE_HIGH_WATER_RECORD_LEN];
         bytes[0..8].copy_from_slice(MARKER_MAGIC);
         bytes[8..12].copy_from_slice(&MARKER_SCHEMA_VERSION.to_le_bytes());
         bytes[12..16].copy_from_slice(&self.network_magic.to_le_bytes());
-        bytes[16..20].copy_from_slice(&PACK_FRAME_FORMAT_VERSION.to_le_bytes());
-        bytes[20..24].copy_from_slice(&PACK_INDEX_FORMAT_VERSION.to_le_bytes());
-        bytes[24..28].copy_from_slice(&PACK_MANIFEST_FORMAT_VERSION.to_le_bytes());
-        bytes[28..60].copy_from_slice(&self.store_identity);
-        bytes[60..68].copy_from_slice(&self.epoch.to_le_bytes());
-        bytes[68..76].copy_from_slice(&self.frame_end.to_le_bytes());
-        bytes[76..108].copy_from_slice(&self.frame_payload_sha256);
-        bytes[108..112].copy_from_slice(&self.block_index.to_le_bytes());
-        bytes[112..144].copy_from_slice(&self.state_root);
+        bytes[16..20].copy_from_slice(&PACK_SEGMENT_FORMAT_VERSION.to_le_bytes());
+        bytes[20..24].copy_from_slice(&PACK_FRAME_FORMAT_VERSION.to_le_bytes());
+        bytes[24..28].copy_from_slice(&PACK_INDEX_FORMAT_VERSION.to_le_bytes());
+        bytes[28..32].copy_from_slice(&PACK_MANIFEST_FORMAT_VERSION.to_le_bytes());
+        bytes[32..64].copy_from_slice(&self.store_identity);
+        bytes[64..72].copy_from_slice(&self.epoch.to_le_bytes());
+        bytes[72..80].copy_from_slice(&self.segment_id.get().to_le_bytes());
+        bytes[80..88].copy_from_slice(&self.frame_end.to_le_bytes());
+        bytes[88..120].copy_from_slice(&self.frame_payload_sha256);
+        bytes[120..124].copy_from_slice(&self.block_index.to_le_bytes());
+        bytes[124..156].copy_from_slice(&self.state_root);
         bytes
     }
 
@@ -170,37 +190,47 @@ impl AuthoritativeHighWaterRecord {
         if schema != MARKER_SCHEMA_VERSION {
             return Err(AuthorityMarkerError::UnsupportedSchema(schema));
         }
-        let frame = u32_at(bytes, 16);
-        let index = u32_at(bytes, 20);
-        let manifest = u32_at(bytes, 24);
-        if (frame, index, manifest)
+        let segment = u32_at(bytes, 16);
+        let frame = u32_at(bytes, 20);
+        let index = u32_at(bytes, 24);
+        let manifest = u32_at(bytes, 28);
+        if (segment, frame, index, manifest)
             != (
+                PACK_SEGMENT_FORMAT_VERSION,
                 PACK_FRAME_FORMAT_VERSION,
                 PACK_INDEX_FORMAT_VERSION,
                 PACK_MANIFEST_FORMAT_VERSION,
             )
         {
             return Err(AuthorityMarkerError::PackFormatMismatch {
+                segment,
                 frame,
                 index,
                 manifest,
+                expected_segment: PACK_SEGMENT_FORMAT_VERSION,
                 expected_frame: PACK_FRAME_FORMAT_VERSION,
                 expected_index: PACK_INDEX_FORMAT_VERSION,
                 expected_manifest: PACK_MANIFEST_FORMAT_VERSION,
             });
         }
-        let frame_end = u64_at(bytes, 68);
-        if frame_end == 0 {
+        let epoch = u64_at(bytes, 64);
+        let segment_id = PackSegmentId::new(u64_at(bytes, 72));
+        if segment_id.get() > epoch {
+            return Err(AuthorityMarkerError::InvalidSegmentId { segment_id, epoch });
+        }
+        let frame_end = u64_at(bytes, 80);
+        if frame_end <= PACK_SEGMENT_HEADER_LEN {
             return Err(AuthorityMarkerError::InvalidFrameEnd);
         }
         Ok(Self {
             network_magic: u32_at(bytes, 12),
-            store_identity: bytes[28..60].try_into().expect("fixed identity range"),
-            epoch: u64_at(bytes, 60),
+            store_identity: bytes[32..64].try_into().expect("fixed identity range"),
+            epoch,
+            segment_id,
             frame_end,
-            frame_payload_sha256: bytes[76..108].try_into().expect("fixed checksum range"),
-            block_index: u32_at(bytes, 108),
-            state_root: bytes[112..144].try_into().expect("fixed root range"),
+            frame_payload_sha256: bytes[88..120].try_into().expect("fixed checksum range"),
+            block_index: u32_at(bytes, 120),
+            state_root: bytes[124..156].try_into().expect("fixed root range"),
         })
     }
 
@@ -249,6 +279,7 @@ mod tests {
             [0x11; 32],
             PackFrameReceipt {
                 epoch: 7,
+                segment_id: PackSegmentId::new(3),
                 frame_start: 1_000,
                 frame_end: 2_000,
                 rows: 3,
@@ -271,6 +302,8 @@ mod tests {
             marker.commit_horizon(),
             PackCommitHorizon {
                 epoch: 7,
+                segment_id: PackSegmentId::new(3),
+                frame_end: 2_000,
                 payload_sha256: [0x22; 32],
             }
         );
@@ -296,6 +329,50 @@ mod tests {
         assert_eq!(
             marker.validate_identity(0x334F_454E, [0x99; 32]),
             Err(AuthorityMarkerError::StoreIdentityMismatch)
+        );
+    }
+
+    #[test]
+    fn authoritative_marker_rejects_old_schema_and_segment_format_drift() {
+        let marker = marker();
+
+        let mut old_schema = marker.encode();
+        old_schema[8..12].copy_from_slice(&(MARKER_SCHEMA_VERSION - 1).to_le_bytes());
+        assert_eq!(
+            AuthoritativeHighWaterRecord::decode(&old_schema),
+            Err(AuthorityMarkerError::UnsupportedSchema(
+                MARKER_SCHEMA_VERSION - 1
+            ))
+        );
+
+        let mut wrong_segment_format = marker.encode();
+        wrong_segment_format[16..20]
+            .copy_from_slice(&(PACK_SEGMENT_FORMAT_VERSION + 1).to_le_bytes());
+        assert!(matches!(
+            AuthoritativeHighWaterRecord::decode(&wrong_segment_format),
+            Err(AuthorityMarkerError::PackFormatMismatch {
+                segment,
+                expected_segment,
+                ..
+            }) if segment == PACK_SEGMENT_FORMAT_VERSION + 1
+                && expected_segment == PACK_SEGMENT_FORMAT_VERSION
+        ));
+
+        let mut impossible_position = marker.encode();
+        impossible_position[80..88].copy_from_slice(&PACK_SEGMENT_HEADER_LEN.to_le_bytes());
+        assert_eq!(
+            AuthoritativeHighWaterRecord::decode(&impossible_position),
+            Err(AuthorityMarkerError::InvalidFrameEnd)
+        );
+
+        let mut impossible_segment = marker.encode();
+        impossible_segment[72..80].copy_from_slice(&8u64.to_le_bytes());
+        assert_eq!(
+            AuthoritativeHighWaterRecord::decode(&impossible_segment),
+            Err(AuthorityMarkerError::InvalidSegmentId {
+                segment_id: PackSegmentId::new(8),
+                epoch: 7,
+            })
         );
     }
 }

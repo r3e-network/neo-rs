@@ -8,7 +8,9 @@
 use super::AppendStageTotals;
 use crate::storage_workload::{MPT_NODE_KEY_BYTES, OperationKind, WorkloadOperation};
 use anyhow::Result;
-use neo_state_packs::{CompactionStats, GcStats, OpenValidation, PackFrameBuilder, PackStore};
+use neo_state_packs::{
+    CompactionStats, GcStats, OpenValidation, PackFrameBuilder, PackStore, PackStoreConfig,
+};
 use std::path::Path;
 
 pub(super) struct AppendStore {
@@ -17,14 +19,18 @@ pub(super) struct AppendStore {
 
 impl AppendStore {
     pub(super) fn create(root: &Path, max_index_memory_bytes: u64) -> Result<Self> {
+        let config =
+            PackStoreConfig::default().with_max_index_memory_bytes(max_index_memory_bytes)?;
         Ok(Self {
-            inner: PackStore::create(root, max_index_memory_bytes)?,
+            inner: PackStore::create(root, config)?,
         })
     }
 
     pub(super) fn open(root: &Path, max_index_memory_bytes: u64) -> Result<Self> {
+        let config =
+            PackStoreConfig::default().with_max_index_memory_bytes(max_index_memory_bytes)?;
         Ok(Self {
-            inner: PackStore::open(root, max_index_memory_bytes)?,
+            inner: PackStore::open(root, config)?,
         })
     }
 

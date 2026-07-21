@@ -58,7 +58,8 @@
     }
 
     fn create_crash_fixture(root: &Path) -> CrashBaseline {
-        let mut store = PackStore::create(root, 16 * 1024 * 1024).expect("create crash fixture");
+        let mut store = PackStore::create(root, store_config(16 * 1024 * 1024))
+            .expect("create crash fixture");
         let updated = key(100);
         let deleted = key(101);
         append_without_maintenance(&mut store, &[put(updated, b"v0")]);
@@ -74,7 +75,8 @@
             .expect("crash fixture evidence");
         assert_eq!(evidence.generation, 9);
         assert_eq!(evidence.live_runs, 9);
-        let frame_bytes = fs::read(root.join("frames.pack")).expect("read fixture frames");
+        let frame_bytes = fs::read(root.join(PackSegmentId::INITIAL.file_name()))
+            .expect("read fixture frames");
         let baseline = CrashBaseline {
             receipt,
             evidence,
@@ -90,8 +92,8 @@
     fn compaction_crash_worker() {
         let root = std::env::var_os(CRASH_ROOT_ENV).expect("crash fixture root is set");
         let root = PathBuf::from(root);
-        let mut store =
-            PackStore::open(&root, 16 * 1024 * 1024).expect("open crash fixture");
+        let mut store = PackStore::open(&root, store_config(16 * 1024 * 1024))
+            .expect("open crash fixture");
         let plan = store
             .plan_compaction()
             .expect("plan compaction")
@@ -128,10 +130,11 @@
                 String::from_utf8_lossy(&output.stderr),
             );
 
-            let frame_bytes = fs::read(root.path().join("frames.pack")).expect("read frames");
+            let frame_bytes = fs::read(root.path().join(PackSegmentId::INITIAL.file_name()))
+                .expect("read frames");
             assert_eq!(frame_bytes.len() as u64, baseline.frame_len);
             assert_eq!(digest(&frame_bytes), baseline.frame_sha256);
-            let mut recovered = PackStore::open(root.path(), 16 * 1024 * 1024)
+            let mut recovered = PackStore::open(root.path(), store_config(16 * 1024 * 1024))
                 .expect("reopen after injected crash");
             assert_eq!(recovered.last_frame_receipt(), Some(baseline.receipt));
             let recovered_evidence = recovered
@@ -199,7 +202,7 @@
             );
             drop(recovered);
 
-            let reopened = PackStore::open(root.path(), 16 * 1024 * 1024)
+            let reopened = PackStore::open(root.path(), store_config(16 * 1024 * 1024))
                 .expect("second reopen after GC");
             let final_evidence = reopened
                 .materialized_view_evidence(64)

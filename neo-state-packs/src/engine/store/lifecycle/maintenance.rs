@@ -1,6 +1,11 @@
 use super::*;
 
 impl PackStore {
+    /// Returns the validated resource contract used by this store handle.
+    pub const fn config(&self) -> PackStoreConfig {
+        self.config
+    }
+
     /// Runs derived index maintenance after no prepared append remains.
     ///
     /// Coordinated callers invoke this only after the external marker commits
@@ -25,13 +30,14 @@ impl PackStore {
         for (&level, &count) in &self.level_run_counts {
             let bound = self.level_run_bound(level);
             excess_runs = excess_runs.saturating_add(count.saturating_sub(bound));
-            backpressure_required |= count >= bound.saturating_add(self.compaction.fanout);
+            backpressure_required |=
+                count >= bound.saturating_add(self.config.compaction_config().fanout);
         }
         CompactionDebt {
             live_runs: u64::try_from(self.runs.len()).unwrap_or(u64::MAX),
             excess_runs: u64::try_from(excess_runs).unwrap_or(u64::MAX),
             decoded_index_bytes: self.decoded_index_bytes,
-            max_index_memory_bytes: self.max_index_memory_bytes,
+            max_index_memory_bytes: self.config.max_index_memory_bytes(),
             backpressure_required,
         }
     }
@@ -66,7 +72,7 @@ impl PackStore {
             .and_then(|bytes| bytes.checked_add(pending.run.memory_bytes))
             .context("decoded index bytes overflow")?;
         ensure!(
-            decoded_index_bytes <= self.max_index_memory_bytes,
+            decoded_index_bytes <= self.config.max_index_memory_bytes(),
             "compaction output exceeds configured index memory bound"
         );
         let file_bytes = pending.run.file_bytes;
@@ -196,7 +202,7 @@ impl PackStore {
             ranges: &self.ranges,
             pack_map: &self.pack_map,
             lookup_pack_map: self.lookup_pack_map.as_deref(),
-            batch_value_workers: self.options.batch_value_workers,
+            batch_value_workers: self.config.read_options().batch_value_workers,
         }
     }
 
@@ -223,9 +229,9 @@ impl PackStore {
 
     fn level_run_bound(&self, level: u32) -> usize {
         if level == 0 {
-            self.compaction.l0_bound
+            self.config.compaction_config().l0_bound
         } else {
-            self.compaction.l1_bound
+            self.config.compaction_config().l1_bound
         }
     }
 
@@ -245,7 +251,7 @@ impl PackStore {
             .runs
             .iter()
             .filter(|live| live.level == level)
-            .take(self.compaction.fanout)
+            .take(self.config.compaction_config().fanout)
             .cloned()
             .collect();
         if inputs.len() < 2 {
@@ -263,10 +269,10 @@ impl PackStore {
             level,
             inputs,
             runs_dir: self.runs_dir.clone(),
-            random_point_mmap: self.options.random_point_mmap,
+            random_point_mmap: self.config.read_options().random_point_mmap,
             estimated_workspace_bytes,
             resident_index_bytes: self.decoded_index_bytes,
-            max_index_memory_bytes: self.max_index_memory_bytes,
+            max_index_memory_bytes: self.config.max_index_memory_bytes(),
             _source_snapshot: source_snapshot,
             _output_lease: output_lease,
         }))
@@ -381,7 +387,7 @@ impl PackStore {
             ranges: ranges.to_vec(),
             pack_map: Arc::clone(pack_map),
             lookup_pack_map: lookup_pack_map.map(Arc::clone),
-            batch_value_workers: self.options.batch_value_workers,
+            batch_value_workers: self.config.read_options().batch_value_workers,
             read_counters: Arc::clone(&self.read_counters),
             leases: Arc::clone(&self.leases),
         })

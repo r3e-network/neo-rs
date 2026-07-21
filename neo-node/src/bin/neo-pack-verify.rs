@@ -25,7 +25,8 @@ use neo_state_packs::authority::{AUTHORITATIVE_HIGH_WATER_KEY, AuthoritativeHigh
 use neo_state_packs::shadow::{SHADOW_HIGH_WATER_KEY, ShadowHighWaterRecord};
 use neo_state_packs::{
     PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_KEY_BYTES,
-    PACK_MANIFEST_FORMAT_VERSION, PackCommitHorizon, PackStore, PackStoreOptions,
+    PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN,
+    PackCommitHorizon, PackSegmentId, PackStore, PackStoreConfig, PackStoreOptions,
 };
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
@@ -48,7 +49,7 @@ const CURRENT_LOCAL_ROOT_INDEX: &[u8] = &[0x02];
 const STATE_ROOT_PREFIX: u8 = 0x01;
 const STATE_ROOT_VALUE_ROOT_OFFSET: usize = 5;
 const STATE_ROOT_VALUE_UNSIGNED_LEN: usize = 1 + 4 + 32;
-const CHECKPOINT_SCHEMA_VERSION: u32 = 2;
+const CHECKPOINT_SCHEMA_VERSION: u32 = 3;
 const BATCH: usize = 1_024;
 // Neo MPT nodes are well below this defensive verifier ceiling. Keep a wider
 // protocol-independent margin while rejecting corrupt multi-gigabyte index
@@ -57,6 +58,20 @@ const AUTHORITY_LOOKUP_MAX_VALUE_BYTES: usize = 1024 * 1024;
 const AUTHORITY_LOOKUP_BATCH_VALUE_BYTES: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_INDEX_MEMORY_MB: u64 = 256;
 const DEFAULT_WALK_CAP: u64 = 100_000;
+
+fn pack_store_config(
+    max_index_memory_mb: u64,
+    options: PackStoreOptions,
+) -> Result<PackStoreConfig> {
+    let max_index_memory_bytes = max_index_memory_mb
+        .checked_mul(1024 * 1024)
+        .context("--max-index-memory-mb overflows bytes")?;
+    PackStoreConfig::default()
+        .with_max_index_memory_bytes(max_index_memory_bytes)
+        .context("validate pack index-memory bound")?
+        .with_read_options(options)
+        .context("validate pack read options")
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum VerificationMode {
@@ -89,10 +104,12 @@ struct CheckpointMarker {
     rows: u64,
     value_bytes: u64,
     frames: u64,
+    pack_segment_format_version: u32,
     pack_frame_format_version: u32,
     pack_index_format_version: u32,
     pack_manifest_format_version: u32,
     tip_epoch: u64,
+    tip_segment_id: u64,
     tip_frame_end: u64,
     tip_payload_sha256: String,
     scrubbed_frames: u64,
@@ -291,17 +308,17 @@ fn main() -> Result<()> {
         None => bail!("high-water marker is absent; no shadow pack prefix is canonical"),
     };
 
-    let max_index_memory_bytes = max_index_memory_mb
-        .checked_mul(1024 * 1024)
-        .context("--max-index-memory-mb overflows bytes")?;
-    let mut pack = PackStore::open_at_commit_horizon_with_options(
-        &pack_path,
-        max_index_memory_bytes,
-        Some(high_water.commit_horizon()),
+    let pack_config = pack_store_config(
+        max_index_memory_mb,
         PackStoreOptions {
             random_point_mmap,
             ..PackStoreOptions::default()
         },
+    )?;
+    let mut pack = PackStore::open_at_commit_horizon(
+        &pack_path,
+        pack_config,
+        Some(high_water.commit_horizon()),
     )
     .context("opening bounded shadow packs at the canonical high-water marker")?;
     let opened = pack.open_validation();
@@ -445,8 +462,9 @@ fn verify_authority(
                 "authoritative marker pack horizon predates its base checkpoint"
             );
             println!(
-                "authority marker: epoch={} frame_end={} block={} root=0x{} payload_sha256=0x{}",
+                "authority marker: epoch={} segment={} frame_end={} block={} root=0x{} payload_sha256=0x{}",
                 marker.epoch,
+                marker.segment_id,
                 marker.frame_end,
                 marker.block_index,
                 hex::encode(marker.state_root),
@@ -474,6 +492,8 @@ fn verify_authority(
                 AuthorityState::Checkpoint,
                 PackCommitHorizon {
                     epoch: checkpoint.tip_epoch,
+                    segment_id: PackSegmentId::new(checkpoint.tip_segment_id),
+                    frame_end: checkpoint.tip_frame_end,
                     payload_sha256: binding.tip_payload_sha256,
                 },
                 checkpoint.tip_frame_end,
@@ -494,27 +514,21 @@ fn verify_authority(
         "unactivated checkpoint authority verification requires --scrub-indexes of every derived run"
     );
 
-    let max_index_memory_bytes = max_index_memory_mb
-        .checked_mul(1024 * 1024)
-        .context("--max-index-memory-mb overflows bytes")?;
-    let mut pack = PackStore::open_at_commit_horizon_with_options(
-        pack_path,
-        max_index_memory_bytes,
-        Some(horizon),
-        pack_options,
-    )
-    .with_context(|| {
-        format!(
-            "open authoritative packs at the canonical horizon {}",
-            pack_path.display()
-        )
-    })?;
+    let pack_config = pack_store_config(max_index_memory_mb, pack_options)?;
+    let mut pack = PackStore::open_at_commit_horizon(pack_path, pack_config, Some(horizon))
+        .with_context(|| {
+            format!(
+                "open authoritative packs at the canonical horizon {}",
+                pack_path.display()
+            )
+        })?;
     let opened = pack.open_validation();
     let receipt = pack
         .last_frame_receipt()
         .context("authoritative pack has no committed frame")?;
     ensure!(
         receipt.epoch == horizon.epoch
+            && receipt.segment_id == horizon.segment_id
             && receipt.frame_end == expected_frame_end
             && receipt.payload_sha256 == expected_payload,
         "authoritative pack tip differs from its canonical checkpoint/marker"
@@ -526,8 +540,13 @@ fn verify_authority(
         );
     }
     println!(
-        "opened: frames={} runs={} index_entries={} tip_epoch={} tip_frame_end={}",
-        opened.frames, opened.runs, opened.index_entries, receipt.epoch, receipt.frame_end,
+        "opened: frames={} runs={} index_entries={} tip_epoch={} tip_segment={} tip_frame_end={}",
+        opened.frames,
+        opened.runs,
+        opened.index_entries,
+        receipt.epoch,
+        receipt.segment_id,
+        receipt.frame_end,
     );
     let debt = pack.compaction_debt();
     println!(
@@ -709,13 +728,8 @@ fn verify_authority(
             );
             scrub_indexes_with_label("post-maintenance", &pack)?;
             drop(pack);
-            pack = PackStore::open_at_commit_horizon_with_options(
-                pack_path,
-                max_index_memory_bytes,
-                Some(horizon),
-                pack_options,
-            )
-            .context("reopen authoritative packs after maintenance")?;
+            pack = PackStore::open_at_commit_horizon(pack_path, pack_config, Some(horizon))
+                .context("reopen authoritative packs after maintenance")?;
             let reopened = pack
                 .materialized_view_evidence(lookup_digest_samples)
                 .context("produce reopened materialized-view evidence")?;
@@ -729,6 +743,7 @@ fn verify_authority(
                 .context("reopened authoritative pack has no committed frame")?;
             ensure!(
                 reopened_receipt.epoch == horizon.epoch
+                    && reopened_receipt.segment_id == horizon.segment_id
                     && reopened_receipt.frame_end == expected_frame_end
                     && reopened_receipt.payload_sha256 == expected_payload,
                 "reopened authoritative pack tip differs from its canonical checkpoint/marker"
@@ -744,9 +759,8 @@ fn verify_authority(
         pack = gc_and_reopen_with_evidence(
             pack,
             pack_path,
-            max_index_memory_bytes,
+            pack_config,
             horizon,
-            pack_options,
             lookup_digest_samples,
             &before,
         )?;
@@ -820,10 +834,12 @@ fn validate_checkpoint(
     );
     ensure!(
         (
+            checkpoint.pack_segment_format_version,
             checkpoint.pack_frame_format_version,
             checkpoint.pack_index_format_version,
             checkpoint.pack_manifest_format_version,
         ) == (
+            PACK_SEGMENT_FORMAT_VERSION,
             PACK_FRAME_FORMAT_VERSION,
             PACK_INDEX_FORMAT_VERSION,
             PACK_MANIFEST_FORMAT_VERSION,
@@ -831,8 +847,14 @@ fn validate_checkpoint(
         "checkpoint pack format tuple differs from this binary"
     );
     ensure!(
-        checkpoint.rows > 0 && checkpoint.frames > 0 && checkpoint.tip_frame_end > 0,
+        checkpoint.rows > 0
+            && checkpoint.frames > 0
+            && checkpoint.tip_frame_end > PACK_SEGMENT_HEADER_LEN,
         "checkpoint pack geometry is empty"
+    );
+    ensure!(
+        checkpoint.tip_segment_id <= checkpoint.tip_epoch,
+        "checkpoint tip segment cannot contain a frame after the tip epoch"
     );
     ensure!(
         checkpoint.tip_epoch.checked_add(1) == Some(checkpoint.frames),
@@ -909,4 +931,4 @@ fn parse_u32(value: &str) -> Result<u32> {
     }
 }
 
-include!("../neo_pack_verify_tests.rs");
+include!("neo_pack_verify/tests.rs");

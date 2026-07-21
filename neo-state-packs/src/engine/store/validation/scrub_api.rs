@@ -1,3 +1,4 @@
+use super::segment::SEGMENT_HEADER_LEN;
 use super::*;
 
 impl PackStore {
@@ -84,8 +85,8 @@ impl PackStore {
         let mapping = Mmap::map_sequential(&self.pack, committed_bytes, &self.pack_path)?;
         let bytes = mapping.as_slice();
         let mut stats = PackScrubStats::default();
-        let mut offset = 0usize;
-        let mut release_start = 0usize;
+        let mut offset = SEGMENT_HEADER_LEN;
+        let mut release_start = SEGMENT_HEADER_LEN;
         let expected_frames = self
             .last_frame_receipt
             .map_or(0, |receipt| receipt.epoch.saturating_add(1));

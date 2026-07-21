@@ -1,3 +1,4 @@
+use super::segment::{SEGMENT_HEADER_LEN, segment_path};
 use super::*;
 
 pub(super) fn encode_frame_payload(
@@ -147,10 +148,15 @@ pub(super) fn validate_frame_header(
     expected_epoch: u64,
 ) -> Result<u64> {
     ensure!(&header[0..8] == FRAME_MAGIC, "invalid frame magic");
-    ensure!(
-        u32_at(header, 8)? == PACK_FRAME_FORMAT_VERSION,
-        "unsupported frame version"
-    );
+    let version = u32_at(header, 8)?;
+    if version != PACK_FRAME_FORMAT_VERSION {
+        return Err(PackStoreError::unsupported_version(
+            PackStoreArtifact::Frame,
+            version,
+            &[PACK_FRAME_FORMAT_VERSION],
+        )
+        .into());
+    }
     ensure!(
         u32_at(header, 12)? as usize == FRAME_HEADER_LEN,
         "invalid frame header length"
@@ -191,7 +197,11 @@ pub(super) struct FrameScan {
 pub(super) fn scan_frames(pack: &File) -> Result<FrameScan> {
     let file_len = pack.metadata().context("stat append pack")?.len();
     let mut frame_ends = Vec::new();
-    let mut offset = 0u64;
+    ensure!(
+        file_len >= SEGMENT_HEADER_LEN as u64,
+        "append pack is shorter than its segment header"
+    );
+    let mut offset = SEGMENT_HEADER_LEN as u64;
     let mut expected_epoch = 0u64;
     while offset < file_len {
         let mut header = [0u8; FRAME_HEADER_LEN];
@@ -238,7 +248,7 @@ pub(super) fn read_frame_receipt(
         .get(index)
         .with_context(|| format!("frame {epoch} is not present in the append pack"))?;
     let frame_start = if index == 0 {
-        0
+        SEGMENT_HEADER_LEN as u64
     } else {
         scan.frame_ends[index - 1]
     };
@@ -264,6 +274,7 @@ pub(super) fn read_frame_receipt_at(
     );
     Ok(PackFrameReceipt {
         epoch,
+        segment_id: PackSegmentId::INITIAL,
         frame_start,
         frame_end,
         rows: u64_at(&header, 24)?,
@@ -282,14 +293,14 @@ pub(super) fn reset_derived_state_to_frame_prefix(
 ) -> Result<()> {
     let expected = usize::try_from(expected_frames).context("frame count does not fit usize")?;
     let committed_end = if expected == 0 {
-        0
+        SEGMENT_HEADER_LEN as u64
     } else {
         *scan
             .frame_ends
             .get(expected - 1)
             .context("committed frame prefix is incomplete")?
     };
-    let pack_path = root.join("frames.pack");
+    let pack_path = segment_path(root, PackSegmentId::INITIAL);
     let pack = OpenOptions::new()
         .read(true)
         .write(true)

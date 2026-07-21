@@ -17,6 +17,7 @@
 //! retains format-v1 compatibility for already-created shadow checkpoints.
 
 use crate::engine::failpoint;
+use crate::engine::store::{PackStoreArtifact, PackStoreError};
 use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
@@ -27,6 +28,8 @@ const MANIFEST_MAGIC: &[u8; 8] = b"N3MANI01";
 const LEGACY_MANIFEST_FORMAT_VERSION: u32 = 1;
 /// Manifest format emitted by new publications; readers also accept v1.
 pub const PACK_MANIFEST_FORMAT_VERSION: u32 = 2;
+const SUPPORTED_MANIFEST_FORMAT_VERSIONS: &[u32] =
+    &[LEGACY_MANIFEST_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION];
 const LEGACY_MANIFEST_HEADER_LEN: usize = 64;
 const MANIFEST_HEADER_LEN: usize = 96;
 const MANIFEST_ENTRY_LEN: usize = 128;
@@ -181,7 +184,14 @@ pub(crate) fn read_manifest(path: &Path) -> Result<Manifest> {
     let expected_header_len = match version {
         LEGACY_MANIFEST_FORMAT_VERSION => LEGACY_MANIFEST_HEADER_LEN,
         PACK_MANIFEST_FORMAT_VERSION => MANIFEST_HEADER_LEN,
-        _ => anyhow::bail!("unsupported manifest version"),
+        _ => {
+            return Err(PackStoreError::UnsupportedVersion {
+                artifact: PackStoreArtifact::Manifest,
+                found: version,
+                supported: SUPPORTED_MANIFEST_FORMAT_VERSIONS,
+            }
+            .into());
+        }
     };
     ensure!(
         u32_at(prefix, 12)? as usize == expected_header_len,

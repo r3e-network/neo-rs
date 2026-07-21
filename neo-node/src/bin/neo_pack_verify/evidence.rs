@@ -2,18 +2,19 @@ use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
 use neo_state_packs::{
-    PackCommitHorizon, PackMaterializedViewEvidence, PackStore, PackStoreOptions,
+    PackCommitHorizon, PackMaterializedViewEvidence, PackStore, PackStoreConfig,
 };
 
 const MIN_AUTHORITY_MUTATION_LOOKUP_SAMPLES: usize = 100_000;
 
 pub(super) fn print_materialized_evidence(label: &str, evidence: &PackMaterializedViewEvidence) {
     println!(
-        "materialized evidence ({label}): generation={} live_runs={} source_records={} tip_epoch={} tip_frame_end={} winners={} puts={} tombstones={} value_bytes={} winner_records_sha256=0x{}",
+        "materialized evidence ({label}): generation={} live_runs={} source_records={} tip_epoch={} tip_segment={} tip_frame_end={} winners={} puts={} tombstones={} value_bytes={} winner_records_sha256=0x{}",
         evidence.generation,
         evidence.live_runs,
         evidence.source_records,
         evidence.tip_epoch,
+        evidence.tip_segment_id,
         evidence.tip_frame_end,
         evidence.winner_records,
         evidence.puts,
@@ -85,9 +86,8 @@ pub(super) fn validate_authority_mutation_flags(
 pub(super) fn gc_and_reopen_with_evidence(
     mut pack: PackStore,
     pack_path: &Path,
-    max_index_memory_bytes: u64,
+    config: PackStoreConfig,
     horizon: PackCommitHorizon,
-    options: PackStoreOptions,
     lookup_digest_samples: usize,
     before: &PackMaterializedViewEvidence,
 ) -> Result<PackStore> {
@@ -97,13 +97,8 @@ pub(super) fn gc_and_reopen_with_evidence(
         stats.runs_deleted, stats.manifests_deleted, stats.bytes_reclaimed,
     );
     drop(pack);
-    let reopened = PackStore::open_at_commit_horizon_with_options(
-        pack_path,
-        max_index_memory_bytes,
-        Some(horizon),
-        options,
-    )
-    .context("reopen authoritative packs after GC")?;
+    let reopened = PackStore::open_at_commit_horizon(pack_path, config, Some(horizon))
+        .context("reopen authoritative packs after GC")?;
     let after = reopened
         .materialized_view_evidence(lookup_digest_samples)
         .context("produce post-GC materialized-view evidence")?;

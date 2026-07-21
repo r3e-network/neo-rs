@@ -295,13 +295,17 @@ pub(super) fn read_index_run_with_options(
         path.display()
     );
     let format_version = u32_at(&header, 8)?;
-    ensure!(
-        matches!(
+    if !matches!(
+        format_version,
+        XOR_INDEX_RUN_FORMAT_VERSION | PACK_INDEX_RUN_FORMAT_VERSION
+    ) {
+        return Err(PackStoreError::unsupported_version(
+            PackStoreArtifact::IndexRun,
             format_version,
-            XOR_INDEX_RUN_FORMAT_VERSION | PACK_INDEX_RUN_FORMAT_VERSION
-        ),
-        "unsupported physical index-run version {format_version}"
-    );
+            &[XOR_INDEX_RUN_FORMAT_VERSION, PACK_INDEX_RUN_FORMAT_VERSION],
+        )
+        .into());
+    }
     ensure!(
         u32_at(&header, 12)? as usize == INDEX_HEADER_LEN,
         "invalid index header length"

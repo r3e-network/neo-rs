@@ -1,54 +1,21 @@
+use super::segment::{SEGMENT_HEADER_LEN, create_initial_segment, open_initial_segment};
 use super::*;
 
 impl PackStore {
-    /// Creates an empty pack store in `root` (which must be missing or empty)
-    /// with the default leveled-compaction bounds.
-    pub fn create(root: &Path, max_index_memory_bytes: u64) -> Result<Self> {
-        Self::create_with_compaction(root, max_index_memory_bytes, CompactionConfig::default())
+    /// Creates an empty pack store in `root` using one validated resource
+    /// contract. The directory must be missing or empty.
+    pub fn create(root: &Path, config: PackStoreConfig) -> PackStoreResult<Self> {
+        Self::create_inner(root, config)
+            .map_err(|error| PackStoreError::classify_create(error, root))
     }
 
-    /// Creates an empty store with explicit physical read-path options.
-    pub fn create_with_options(
-        root: &Path,
-        max_index_memory_bytes: u64,
-        options: PackStoreOptions,
-    ) -> Result<Self> {
-        Self::create_with_compaction_and_options(
-            root,
-            max_index_memory_bytes,
-            CompactionConfig::default(),
-            options,
-        )
-    }
-
-    pub(super) fn create_with_compaction(
-        root: &Path,
-        max_index_memory_bytes: u64,
-        compaction: CompactionConfig,
-    ) -> Result<Self> {
-        Self::create_with_compaction_and_options(
-            root,
-            max_index_memory_bytes,
-            compaction,
-            PackStoreOptions::default(),
-        )
-    }
-
-    pub(super) fn create_with_compaction_and_options(
-        root: &Path,
-        max_index_memory_bytes: u64,
-        compaction: CompactionConfig,
-        options: PackStoreOptions,
-    ) -> Result<Self> {
-        ensure!(
-            max_index_memory_bytes > 0,
-            "index memory bound must be non-zero"
-        );
-        validate_compaction_config(compaction)?;
-        validate_store_options(options)?;
-        let options = options.normalized_for_host();
+    fn create_inner(root: &Path, config: PackStoreConfig) -> Result<Self> {
+        config.validate()?;
+        let options = config.read_options().normalized_for_host();
+        let config = config.with_read_options(options)?;
         read_view::preflight_pack_value_pool(options.batch_value_workers)?;
-        if root.exists() {
+        let root_existed = root.exists();
+        if root_existed {
             ensure!(
                 fs::read_dir(root)
                     .with_context(|| format!("read pack store directory {}", root.display()))?
@@ -60,21 +27,16 @@ impl PackStore {
         } else {
             fs::create_dir_all(root)
                 .with_context(|| format!("create pack store directory {}", root.display()))?;
+            sync_parent_directory(root)?;
         }
         let writer_lease = acquire_writer_lease(root)?;
         let runs_dir = root.join("runs");
         fs::create_dir(&runs_dir)
             .with_context(|| format!("create index-run directory {}", runs_dir.display()))?;
-        let pack_path = root.join("frames.pack");
-        let pack = OpenOptions::new()
-            .create_new(true)
-            .read(true)
-            .append(true)
-            .open(&pack_path)
-            .with_context(|| format!("create append pack {}", pack_path.display()))?;
-        sync_directory(root)?;
-        let pack_map = Mmap::map(&pack, 0, &pack_path)?;
-        let lookup_pack_map = map_random_if_enabled(&pack, 0, &pack_path, options)?;
+        let (pack, pack_path) = create_initial_segment(root)?;
+        let initial_len = SEGMENT_HEADER_LEN as u64;
+        let pack_map = Mmap::map(&pack, initial_len, &pack_path)?;
+        let lookup_pack_map = map_random_if_enabled(&pack, initial_len, &pack_path, options)?;
         Ok(Self {
             root: root.to_path_buf(),
             runs_dir,
@@ -88,9 +50,7 @@ impl PackStore {
             next_epoch: 0,
             generation: 0,
             decoded_index_bytes: 0,
-            max_index_memory_bytes,
-            compaction,
-            options,
+            config,
             stats: CompactionStats::default(),
             stage_totals: PackStageTotals::default(),
             logical_payload_bytes: 0,
@@ -115,23 +75,8 @@ impl PackStore {
     /// committed-frame and index-record authentication. Missing or corrupt
     /// derived indexes are rebuilt from committed frames (a slow but correct
     /// recovery path); a manifest ahead of the validated frame chain is fatal.
-    pub fn open(root: &Path, max_index_memory_bytes: u64) -> Result<Self> {
-        Self::open_with_compaction(root, max_index_memory_bytes, CompactionConfig::default())
-    }
-
-    /// Opens the newest visible generation with explicit physical read-path
-    /// options. The options are not part of the durable format identity.
-    pub fn open_with_options(
-        root: &Path,
-        max_index_memory_bytes: u64,
-        options: PackStoreOptions,
-    ) -> Result<Self> {
-        Self::open_with_compaction_and_options(
-            root,
-            max_index_memory_bytes,
-            CompactionConfig::default(),
-            options,
-        )
+    pub fn open(root: &Path, config: PackStoreConfig) -> PackStoreResult<Self> {
+        Self::open_inner(root, config).map_err(|error| PackStoreError::classify_open(error, root))
     }
 
     /// Opens a pack at the exact horizon selected by an external durable
@@ -144,39 +89,25 @@ impl PackStore {
     /// closed.
     pub fn open_at_commit_horizon(
         root: &Path,
-        max_index_memory_bytes: u64,
+        config: PackStoreConfig,
         horizon: Option<PackCommitHorizon>,
-    ) -> Result<Self> {
-        Self::open_at_commit_horizon_with_options(
-            root,
-            max_index_memory_bytes,
-            horizon,
-            PackStoreOptions::default(),
-        )
+    ) -> PackStoreResult<Self> {
+        Self::open_at_commit_horizon_inner(root, config, horizon)
+            .map_err(|error| PackStoreError::classify_open(error, root))
     }
 
-    /// Opens at an externally committed horizon with explicit physical
-    /// read-path options. Recovery and canonical visibility are unchanged.
-    pub fn open_at_commit_horizon_with_options(
+    fn open_at_commit_horizon_inner(
         root: &Path,
-        max_index_memory_bytes: u64,
+        config: PackStoreConfig,
         horizon: Option<PackCommitHorizon>,
-        options: PackStoreOptions,
     ) -> Result<Self> {
-        ensure!(
-            max_index_memory_bytes > 0,
-            "index memory bound must be non-zero"
-        );
-        validate_store_options(options)?;
-        let options = options.normalized_for_host();
+        config.validate()?;
+        let options = config.read_options().normalized_for_host();
+        let config = config.with_read_options(options)?;
+        let max_index_memory_bytes = config.max_index_memory_bytes();
         read_view::preflight_pack_value_pool(options.batch_value_workers)?;
         let writer_lease = acquire_writer_lease(root)?;
-        let pack_path = root.join("frames.pack");
-        let pack = OpenOptions::new()
-            .read(true)
-            .append(true)
-            .open(&pack_path)
-            .with_context(|| format!("open append pack {}", pack_path.display()))?;
+        let (pack, pack_path) = open_initial_segment(root)?;
         let scan = scan_frames(&pack)?;
         let expected_frames = match horizon {
             Some(horizon) => horizon
@@ -191,7 +122,17 @@ impl PackStore {
             scan.frame_ends.len()
         );
         if let Some(horizon) = horizon {
+            ensure!(
+                horizon.segment_id == PackSegmentId::INITIAL,
+                "pack commit marker names unavailable segment {}",
+                horizon.segment_id
+            );
             let receipt = read_frame_receipt(&pack, &scan, horizon.epoch)?;
+            ensure!(
+                receipt.segment_id == horizon.segment_id && receipt.frame_end == horizon.frame_end,
+                "pack commit marker position does not match frame {}",
+                horizon.epoch
+            );
             ensure!(
                 receipt.payload_sha256 == horizon.payload_sha256,
                 "pack commit marker checksum does not match frame {}",
@@ -219,16 +160,11 @@ impl PackStore {
         if !fast_open {
             reset_derived_state_to_frame_prefix(root, &scan, expected_frames)?;
             if expected_frames > 0 {
-                let recovered_pack = OpenOptions::new()
-                    .read(true)
-                    .append(true)
-                    .open(&pack_path)
-                    .with_context(|| {
-                        format!(
-                            "open append pack {} for marker rebuild",
-                            pack_path.display()
-                        )
-                    })?;
+                let (recovered_pack, recovered_path) = open_initial_segment(root)?;
+                ensure!(
+                    recovered_path == pack_path,
+                    "marker rebuild opened a different pack segment"
+                );
                 let recovered_scan = scan_frames(&recovered_pack)?;
                 ensure!(
                     recovered_scan.frame_ends.len() as u64 == expected_frames,
@@ -251,13 +187,7 @@ impl PackStore {
             }
         }
 
-        let store = Self::open_with_compaction_and_lease(
-            root,
-            max_index_memory_bytes,
-            CompactionConfig::default(),
-            options,
-            writer_lease,
-        )?;
+        let store = Self::open_with_lease(root, config, writer_lease)?;
         ensure!(
             store.open_validation.frames == expected_frames,
             "recovered pack exposes {} frames, expected {expected_frames}",
@@ -265,7 +195,10 @@ impl PackStore {
         );
         match (horizon, store.last_frame_receipt) {
             (Some(horizon), Some(receipt)) => ensure!(
-                receipt.epoch == horizon.epoch && receipt.payload_sha256 == horizon.payload_sha256,
+                receipt.epoch == horizon.epoch
+                    && receipt.segment_id == horizon.segment_id
+                    && receipt.frame_end == horizon.frame_end
+                    && receipt.payload_sha256 == horizon.payload_sha256,
                 "recovered pack tail does not match the canonical commit marker"
             ),
             (Some(_), None) => anyhow::bail!("recovered pack has no committed tail frame"),
@@ -275,57 +208,21 @@ impl PackStore {
         Ok(store)
     }
 
-    fn open_with_compaction(
-        root: &Path,
-        max_index_memory_bytes: u64,
-        compaction: CompactionConfig,
-    ) -> Result<Self> {
-        Self::open_with_compaction_and_options(
-            root,
-            max_index_memory_bytes,
-            compaction,
-            PackStoreOptions::default(),
-        )
-    }
-
-    fn open_with_compaction_and_options(
-        root: &Path,
-        max_index_memory_bytes: u64,
-        compaction: CompactionConfig,
-        options: PackStoreOptions,
-    ) -> Result<Self> {
-        validate_store_options(options)?;
-        let options = options.normalized_for_host();
+    fn open_inner(root: &Path, config: PackStoreConfig) -> Result<Self> {
+        config.validate()?;
+        let options = config.read_options().normalized_for_host();
+        let config = config.with_read_options(options)?;
         read_view::preflight_pack_value_pool(options.batch_value_workers)?;
         let writer_lease = acquire_writer_lease(root)?;
-        Self::open_with_compaction_and_lease(
-            root,
-            max_index_memory_bytes,
-            compaction,
-            options,
-            writer_lease,
-        )
+        Self::open_with_lease(root, config, writer_lease)
     }
 
-    fn open_with_compaction_and_lease(
-        root: &Path,
-        max_index_memory_bytes: u64,
-        compaction: CompactionConfig,
-        options: PackStoreOptions,
-        writer_lease: File,
-    ) -> Result<Self> {
-        ensure!(
-            max_index_memory_bytes > 0,
-            "index memory bound must be non-zero"
-        );
-        validate_compaction_config(compaction)?;
+    fn open_with_lease(root: &Path, config: PackStoreConfig, writer_lease: File) -> Result<Self> {
+        config.validate()?;
+        let max_index_memory_bytes = config.max_index_memory_bytes();
+        let options = config.read_options();
         let runs_dir = root.join("runs");
-        let pack_path = root.join("frames.pack");
-        let pack = OpenOptions::new()
-            .read(true)
-            .append(true)
-            .open(&pack_path)
-            .with_context(|| format!("open append pack {}", pack_path.display()))?;
+        let (pack, pack_path) = open_initial_segment(root)?;
         let scan = scan_frames(&pack)?;
         let frame_count =
             u64::try_from(scan.frame_ends.len()).context("frame count does not fit u64")?;
@@ -391,9 +288,7 @@ impl PackStore {
             scan,
             generation,
             loaded,
-            max_index_memory_bytes,
-            compaction,
-            options,
+            config,
             rebuild,
             writer_lease,
         )
@@ -439,7 +334,7 @@ impl PackStore {
         options: PackStoreOptions,
     ) -> Result<LoadedRuns> {
         let mut loaded = LoadedRuns::default();
-        let mut frame_start = 0u64;
+        let mut frame_start = SEGMENT_HEADER_LEN as u64;
         for (epoch, frame_end) in frame_ends.iter().enumerate() {
             let epoch = u64::try_from(epoch).context("rebuilt epoch does not fit u64")?;
             let mut header = [0u8; FRAME_HEADER_LEN];
@@ -491,12 +386,11 @@ impl PackStore {
         scan: FrameScan,
         generation: u64,
         loaded: LoadedRuns,
-        max_index_memory_bytes: u64,
-        compaction: CompactionConfig,
-        options: PackStoreOptions,
+        config: PackStoreConfig,
         rebuild: RebuildMetrics,
         writer_lease: File,
     ) -> Result<Self> {
+        let options = config.read_options();
         let last_frame_receipt = loaded
             .runs
             .last()
@@ -507,7 +401,7 @@ impl PackStore {
                 scan.frame_ends[usize::try_from(tail.max_epoch)
                     .context("committed epoch does not fit usize")?]
             }
-            None => 0,
+            None => SEGMENT_HEADER_LEN as u64,
         };
         // A frame becomes visible only with its published manifest. Truncate
         // torn tail bytes and any frames whose publication was interrupted.
@@ -530,7 +424,7 @@ impl PackStore {
                 .get(index)
                 .with_context(|| format!("missing committed frame {epoch}"))?;
             let frame_start = if index == 0 {
-                0
+                SEGMENT_HEADER_LEN as u64
             } else {
                 scan.frame_ends[index - 1]
             };
@@ -573,9 +467,7 @@ impl PackStore {
             next_epoch: frames,
             generation,
             decoded_index_bytes: loaded.decoded_index_bytes,
-            max_index_memory_bytes,
-            compaction,
-            options,
+            config,
             stats,
             rebuild,
             stage_totals: PackStageTotals::default(),

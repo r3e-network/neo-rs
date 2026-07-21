@@ -10,6 +10,12 @@ mod tests {
     use serde_json::json;
     use tempfile::tempdir;
 
+    fn test_pack_config() -> PackStoreConfig {
+        PackStoreConfig::default()
+            .with_max_index_memory_bytes(1024 * 1024)
+            .expect("valid verifier test configuration")
+    }
+
     struct Fixture {
         _temporary: tempfile::TempDir,
         pack_path: PathBuf,
@@ -32,7 +38,7 @@ mod tests {
         auxiliary_key[1..].fill(0x44);
         let auxiliary_value = b"checkpoint-auxiliary-node".to_vec();
 
-        let mut pack = PackStore::create(&pack_path, 1024 * 1024).expect("create pack");
+        let mut pack = PackStore::create(&pack_path, test_pack_config()).expect("create pack");
         pack.append(&[PackOperation {
             key: auxiliary_key,
             kind: PackOpKind::Put(auxiliary_value.clone()),
@@ -72,10 +78,12 @@ mod tests {
             "rows": 2,
             "value_bytes": root_value.len() + auxiliary_value.len(),
             "frames": 2,
+            "pack_segment_format_version": PACK_SEGMENT_FORMAT_VERSION,
             "pack_frame_format_version": PACK_FRAME_FORMAT_VERSION,
             "pack_index_format_version": PACK_INDEX_FORMAT_VERSION,
             "pack_manifest_format_version": PACK_MANIFEST_FORMAT_VERSION,
             "tip_epoch": receipt.epoch,
+            "tip_segment_id": receipt.segment_id.get(),
             "tip_frame_end": receipt.frame_end,
             "tip_payload_sha256": format!("0x{}", hex::encode(receipt.payload_sha256)),
             "scrubbed_frames": scrub.frames,
@@ -124,7 +132,7 @@ mod tests {
     }
 
     fn append_unmaintained_frames(pack_path: &Path, count: u8) -> PackFrameReceipt {
-        let mut pack = PackStore::open(pack_path, 1024 * 1024).expect("open fixture pack");
+        let mut pack = PackStore::open(pack_path, test_pack_config()).expect("open fixture pack");
         let mut receipt = pack.last_frame_receipt().expect("fixture pack receipt");
         for tag in 1..=count {
             let mut key = [0u8; PACK_KEY_BYTES];
@@ -155,14 +163,14 @@ mod tests {
     }
 
     fn live_run_count(pack_path: &Path) -> u64 {
-        let pack = PackStore::open(pack_path, 1024 * 1024).expect("open fixture pack");
+        let pack = PackStore::open(pack_path, test_pack_config()).expect("open fixture pack");
         let runs = pack.open_validation().runs;
         drop(pack);
         runs
     }
 
     fn pack_generation(pack_path: &Path) -> u64 {
-        let pack = PackStore::open(pack_path, 1024 * 1024).expect("open fixture pack");
+        let pack = PackStore::open(pack_path, test_pack_config()).expect("open fixture pack");
         let generation = pack
             .materialized_view_evidence(16)
             .expect("read fixture evidence")
@@ -185,6 +193,78 @@ mod tests {
         let value_offset = bytes.len() - INDEX_RECORD_BYTES + PACK_KEY_BYTES + 4;
         bytes[value_offset] ^= 0x01;
         fs::write(oldest, bytes).expect("corrupt old fixture run");
+    }
+
+    #[test]
+    fn checkpoint_rejects_old_schema_and_missing_segment_identity() {
+        let fixture = fixture();
+        let checkpoint_path = fixture.pack_path.join("checkpoint.json");
+        let original: serde_json::Value =
+            serde_json::from_slice(&fs::read(&checkpoint_path).expect("read fixture checkpoint"))
+                .expect("decode fixture checkpoint");
+
+        let mut old_schema = original.clone();
+        old_schema["schema_version"] = json!(CHECKPOINT_SCHEMA_VERSION - 1);
+        fs::write(
+            &checkpoint_path,
+            serde_json::to_vec_pretty(&old_schema).expect("encode old checkpoint schema"),
+        )
+        .expect("write old checkpoint schema");
+        let checkpoint = read_checkpoint(&fixture.pack_path).expect("decode complete old schema");
+        assert!(
+            validate_checkpoint(&checkpoint, 0x334F_454E)
+                .expect_err("old checkpoint schema must fail")
+                .to_string()
+                .contains("unsupported")
+        );
+
+        for missing in ["pack_segment_format_version", "tip_segment_id"] {
+            let mut incomplete = original.clone();
+            incomplete
+                .as_object_mut()
+                .expect("checkpoint object")
+                .remove(missing);
+            fs::write(
+                &checkpoint_path,
+                serde_json::to_vec_pretty(&incomplete).expect("encode incomplete checkpoint"),
+            )
+            .expect("write incomplete checkpoint");
+            let error = read_checkpoint(&fixture.pack_path)
+                .expect_err("missing segment identity must fail decoding");
+            assert!(format!("{error:#}").contains(missing));
+        }
+
+        let mut header_position = original.clone();
+        header_position["tip_frame_end"] = json!(PACK_SEGMENT_HEADER_LEN);
+        fs::write(
+            &checkpoint_path,
+            serde_json::to_vec_pretty(&header_position).expect("encode header checkpoint tip"),
+        )
+        .expect("write header checkpoint tip");
+        let checkpoint = read_checkpoint(&fixture.pack_path).expect("decode header checkpoint tip");
+        assert!(
+            validate_checkpoint(&checkpoint, 0x334F_454E)
+                .expect_err("checkpoint tip inside its segment header must fail")
+                .to_string()
+                .contains("geometry")
+        );
+
+        let mut impossible_segment = original;
+        impossible_segment["tip_segment_id"] = json!(fixture.receipt.epoch + 1);
+        fs::write(
+            &checkpoint_path,
+            serde_json::to_vec_pretty(&impossible_segment)
+                .expect("encode impossible checkpoint segment"),
+        )
+        .expect("write impossible checkpoint segment");
+        let checkpoint =
+            read_checkpoint(&fixture.pack_path).expect("decode impossible checkpoint segment");
+        assert!(
+            validate_checkpoint(&checkpoint, 0x334F_454E)
+                .expect_err("segment after the tip epoch must fail")
+                .to_string()
+                .contains("after the tip epoch")
+        );
     }
 
     #[test]
@@ -409,7 +489,8 @@ mod tests {
             )
             .expect("write oversized source node");
         let checkpoint = read_checkpoint(&fixture.pack_path).expect("read fixture checkpoint");
-        let pack = PackStore::open(&fixture.pack_path, 1024 * 1024).expect("open fixture pack");
+        let pack =
+            PackStore::open(&fixture.pack_path, test_pack_config()).expect("open fixture pack");
 
         let error = compare_checkpoint_nodes(
             &fixture.state,

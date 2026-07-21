@@ -11,7 +11,7 @@ use crate::{PACK_KEY_BYTES, PackOpKind, PackOperation, PackStageTotals};
 use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
-use std::fs::{self, File, OpenOptions, TryLockError};
+use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
@@ -20,14 +20,25 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 mod api;
-pub(crate) use api::CompactionConfig;
 pub use api::{
-    OpenValidation, PackCommitHorizon, PackFrameReceipt, PackStoreError, PackStoreOptions,
-    PreparedAppend, SealedAppend,
+    OpenValidation, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackCommitHorizon,
+    PackFrameReceipt, PackPosition, PackSegmentId, PackStoreArtifact, PackStoreConfig,
+    PackStoreConfigError, PackStoreConfigField, PackStoreError, PackStoreErrorSource,
+    PackStoreLimit, PackStoreOperation, PackStoreOptions, PackStoreResult, PreparedAppend,
+    SealedAppend,
 };
-use api::{validate_compaction_config, validate_store_options};
+#[path = "store/format/hashing.rs"]
+mod hashing;
+use hashing::{digest, index_structure_digest, index_structure_digest_parts};
+#[path = "store/lifecycle/io.rs"]
+mod io;
+use io::{clear_stale_temp_files, sync_directory, sync_parent_directory};
+#[path = "store/lifecycle/lease.rs"]
+mod lease;
+use lease::acquire_writer_lease;
 mod frame_builder;
 pub use frame_builder::PackFrameBuilder;
+#[path = "store/format/frame_codec.rs"]
 mod frame_codec;
 use frame_codec::{
     FrameScan, decode_frame_payload, encode_frame_header, encode_frame_payload, read_frame_receipt,
@@ -36,20 +47,30 @@ use frame_codec::{
 };
 mod compaction;
 use compaction::*;
+#[path = "store/format/index_format.rs"]
 mod index_format;
 use index_format::*;
 mod read_view;
 use super::metrics::{CompactionDebt, CompactionStats, GcStats, PackMetrics, ReadCounters};
 use read_view::ReadView;
 pub use read_view::Snapshot;
+#[path = "store/validation/scrub.rs"]
 mod scrub;
 use scrub::*;
+#[path = "store/validation/evidence.rs"]
 mod evidence;
 pub use evidence::PackMaterializedViewEvidence;
+#[path = "store/lifecycle/maintenance.rs"]
 mod maintenance;
+#[path = "store/lifecycle/publication.rs"]
 mod publication;
+#[path = "store/lifecycle/recovery.rs"]
 mod recovery;
+#[path = "store/validation/scrub_api.rs"]
 mod scrub_api;
+#[path = "store/format/segment.rs"]
+mod segment;
+pub(crate) use segment::initial_segment_exists;
 
 const FRAME_MAGIC: &[u8; 8] = b"N3PACK01";
 const INDEX_MAGIC: &[u8; 8] = b"N3IDXR01";
@@ -69,16 +90,11 @@ const INDEX_HEADER_LEN: usize = 192;
 const INDEX_STRUCTURE_SHA256_START: usize = 154;
 const INDEX_STRUCTURE_SHA256_END: usize = INDEX_STRUCTURE_SHA256_START + 32;
 const INDEX_HEADER_TAG_START: usize = 188;
-const INDEX_STRUCTURE_DIGEST_DOMAIN_V3: &[u8] = b"neo-state-packs/index-structure/v3\0";
-const INDEX_STRUCTURE_DIGEST_DOMAIN_V4: &[u8] = b"neo-state-packs/index-structure/v4\0";
 /// Domain separator for a complete checkpoint's ordered key/value digest.
 pub const CHECKPOINT_NAMESPACE_DIGEST_DOMAIN: &[u8] = b"neo-state-packs-checkpoint-namespace-v1\0";
 const FRAME_ROW_HEADER_BYTES: u64 = (PACK_KEY_BYTES + 1 + 4) as u64;
-const MAX_FRAME_ROWS: u64 = 4_000_000;
-const MAX_FRAME_PAYLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-const WRITER_LEASE_FILE: &str = "writer.lock";
-const WRITER_LEASE_RETRY_ATTEMPTS: usize = 10;
-const WRITER_LEASE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(5);
+const MAX_FRAME_ROWS: u64 = PackStoreConfig::HARD_MAX_FRAME_ROWS;
+const MAX_FRAME_PAYLOAD_BYTES: u64 = PackStoreConfig::HARD_MAX_FRAME_PAYLOAD_BYTES;
 /// Sorted records covered by one sparse fence entry (~3.2 KiB of records).
 const FENCE_INTERVAL: usize = 64;
 /// Fence entries store the truncated first key of their record block.
@@ -344,7 +360,7 @@ struct RebuildMetrics {
     wall_ns: u64,
 }
 
-/// Append-only pack store: one operation stream (`frames.pack`), immutable
+/// Append-only pack store: one identified operation segment, immutable
 /// sorted index runs (`runs/`), and immutable manifest generations gating
 /// visibility. Single-writer: callers serialize appends (the node shadow
 /// writer holds it behind a mutex); readers pin generations through
@@ -369,9 +385,7 @@ pub struct PackStore {
     /// Current published manifest generation (0 before the first append).
     generation: u64,
     decoded_index_bytes: u64,
-    max_index_memory_bytes: u64,
-    compaction: CompactionConfig,
-    options: PackStoreOptions,
+    config: PackStoreConfig,
     stats: CompactionStats,
     stage_totals: PackStageTotals,
     logical_payload_bytes: u64,
@@ -476,141 +490,6 @@ fn charge_run_memory(loaded: &mut LoadedRuns, run: &IndexRun, bound: u64) -> Res
     Ok(())
 }
 
-/// Deletes leftover temp files from interrupted run or manifest
-/// publications. Only `.tmp` artifacts of the prototype's own naming scheme
-/// are touched, and only after the live generation is known.
-fn clear_stale_temp_files(root: &Path) -> Result<()> {
-    for directory in [root.to_path_buf(), root.join("runs")] {
-        let entries = match fs::read_dir(&directory) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("read directory {}", directory.display()));
-            }
-        };
-        for entry in entries {
-            let entry = entry.context("read directory entry")?;
-            let path = entry.path();
-            let is_stale_tmp =
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| {
-                        name.ends_with(".tmp")
-                            && (name.starts_with("run-") || name.starts_with("manifest-"))
-                    });
-            if is_stale_tmp {
-                fs::remove_file(&path)
-                    .with_context(|| format!("delete stale temp file {}", path.display()))?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn sync_directory(path: &Path) -> Result<()> {
-    File::open(path)
-        .with_context(|| format!("open directory {} for sync", path.display()))?
-        .sync_all()
-        .with_context(|| format!("sync directory {}", path.display()))
-}
-
-/// Acquires one kernel-held lease before startup recovery can inspect or
-/// mutate pack files. A dedicated inode keeps the lease stable while recovery
-/// reopens or truncates `frames.pack`.
-fn acquire_writer_lease(root: &Path) -> Result<File> {
-    let lease_path = root.join(WRITER_LEASE_FILE);
-    let (lease, created) = match OpenOptions::new()
-        .create_new(true)
-        .read(true)
-        .write(true)
-        .custom_flags(libc::O_CLOEXEC)
-        .open(&lease_path)
-    {
-        Ok(file) => (file, true),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (
-            OpenOptions::new()
-                .read(true)
-                .write(true)
-                .custom_flags(libc::O_CLOEXEC)
-                .open(&lease_path)
-                .with_context(|| format!("open writer lease {}", lease_path.display()))?,
-            false,
-        ),
-        Err(error) => {
-            return Err(error)
-                .with_context(|| format!("create writer lease {}", lease_path.display()));
-        }
-    };
-    for attempt in 0..=WRITER_LEASE_RETRY_ATTEMPTS {
-        match lease.try_lock() {
-            Ok(()) => break,
-            Err(TryLockError::WouldBlock) if attempt < WRITER_LEASE_RETRY_ATTEMPTS => {
-                // `flock` is inherited between fork and exec. A concurrent
-                // subprocess can therefore retain another test/thread's
-                // CLOEXEC lease for a few milliseconds after its owner drops.
-                std::thread::sleep(WRITER_LEASE_RETRY_DELAY);
-            }
-            Err(TryLockError::WouldBlock) => {
-                return Err(PackStoreError::WriterOwned {
-                    path: fs::canonicalize(&lease_path).unwrap_or(lease_path),
-                }
-                .into());
-            }
-            Err(TryLockError::Error(source)) => {
-                return Err(PackStoreError::WriterLease {
-                    path: fs::canonicalize(&lease_path).unwrap_or(lease_path),
-                    source,
-                }
-                .into());
-            }
-        }
-    }
-    if created {
-        sync_directory(root)?;
-    }
-    Ok(lease)
-}
-
-fn digest(bytes: &[u8]) -> [u8; 32] {
-    Sha256::digest(bytes).into()
-}
-
-fn index_structure_digest(
-    format_version: u32,
-    header: &[u8; INDEX_HEADER_LEN],
-    structure: &[u8],
-) -> Result<[u8; 32]> {
-    let mut hasher = index_structure_hasher(format_version, header)?;
-    hasher.update(structure);
-    Ok(hasher.finalize().into())
-}
-
-fn index_structure_digest_parts(
-    format_version: u32,
-    header: &[u8; INDEX_HEADER_LEN],
-    fences: &[u8],
-    filter: &[u8],
-) -> Result<[u8; 32]> {
-    let mut hasher = index_structure_hasher(format_version, header)?;
-    hasher.update(fences);
-    hasher.update(filter);
-    Ok(hasher.finalize().into())
-}
-
-fn index_structure_hasher(format_version: u32, header: &[u8; INDEX_HEADER_LEN]) -> Result<Sha256> {
-    let domain = match format_version {
-        XOR_INDEX_RUN_FORMAT_VERSION => INDEX_STRUCTURE_DIGEST_DOMAIN_V3,
-        PACK_INDEX_RUN_FORMAT_VERSION => INDEX_STRUCTURE_DIGEST_DOMAIN_V4,
-        _ => anyhow::bail!("unsupported physical index-run version {format_version}"),
-    };
-    let mut hasher = Sha256::new();
-    hasher.update(domain);
-    hasher.update(&header[..INDEX_STRUCTURE_SHA256_START]);
-    hasher.update(&header[INDEX_STRUCTURE_SHA256_END..INDEX_HEADER_TAG_START]);
-    Ok(hasher)
-}
-
 fn u32_at(bytes: &[u8], offset: usize) -> Result<u32> {
     let end = offset.checked_add(4).context("u32 offset overflows")?;
     let raw: [u8; 4] = bytes
@@ -649,4 +528,6 @@ fn next_store_instance_id() -> u64 {
     NEXT_STORE_INSTANCE_ID.fetch_add(1, Ordering::Relaxed)
 }
 
-include!("store/tests.rs");
+#[cfg(test)]
+#[path = "store/tests/mod.rs"]
+mod tests;

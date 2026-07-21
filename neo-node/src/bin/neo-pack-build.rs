@@ -22,7 +22,8 @@ use anyhow::{Context, Result, bail, ensure};
 use neo_crypto::Sha256Hasher;
 use neo_state_packs::{
     CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
-    PACK_MANIFEST_FORMAT_VERSION, PackFrameReceipt, PackOpKind, PackOperation, PackStore,
+    PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PackFrameReceipt, PackOpKind,
+    PackOperation, PackSegmentId, PackStore, PackStoreConfig,
 };
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
@@ -36,11 +37,17 @@ const CURRENT_LOCAL_ROOT_INDEX: &[u8] = &[0x02];
 const DEFAULT_ROWS_PER_FRAME: usize = 1_000_000;
 const DEFAULT_MAX_INDEX_MEMORY_MB: u64 = 512;
 const STATE_ROOT_UNSIGNED_LEN: usize = 1 + 4 + 32;
-const CHECKPOINT_SCHEMA_VERSION: u32 = 2;
+const CHECKPOINT_SCHEMA_VERSION: u32 = 3;
 const LEGACY_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
-const BUILD_IDENTITY_SCHEMA_VERSION: u32 = 1;
+const BUILD_IDENTITY_SCHEMA_VERSION: u32 = 2;
 const BUILD_IDENTITY_FILE: &str = "checkpoint-build.json";
 const BUILD_IDENTITY_TMP_FILE: &str = "checkpoint-build.json.tmp";
+
+fn pack_store_config(max_index_memory_bytes: u64) -> Result<PackStoreConfig> {
+    PackStoreConfig::default()
+        .with_max_index_memory_bytes(max_index_memory_bytes)
+        .context("validate checkpoint pack-store configuration")
+}
 
 #[derive(Clone, Debug)]
 struct Arguments {
@@ -70,6 +77,7 @@ struct BuildIdentity {
     source_height: u32,
     source_root_internal_bytes: String,
     rows_per_frame: usize,
+    pack_segment_format_version: u32,
     pack_frame_format_version: u32,
     pack_index_format_version: u32,
     pack_manifest_format_version: u32,
@@ -85,6 +93,7 @@ impl BuildIdentity {
             source_height: source_tip.height,
             source_root_internal_bytes: format!("0x{}", hex::encode(source_tip.root_internal)),
             rows_per_frame: arguments.rows_per_frame,
+            pack_segment_format_version: PACK_SEGMENT_FORMAT_VERSION,
             pack_frame_format_version: PACK_FRAME_FORMAT_VERSION,
             pack_index_format_version: PACK_INDEX_FORMAT_VERSION,
             pack_manifest_format_version: PACK_MANIFEST_FORMAT_VERSION,
@@ -116,10 +125,12 @@ struct CheckpointReport {
     gc_runs_deleted: u64,
     gc_manifests_deleted: u64,
     gc_bytes_reclaimed: u64,
+    pack_segment_format_version: u32,
     pack_frame_format_version: u32,
     pack_index_format_version: u32,
     pack_manifest_format_version: u32,
     tip_epoch: u64,
+    tip_segment_id: u64,
     tip_frame_end: u64,
     tip_payload_sha256: String,
     scrubbed_frames: u64,
@@ -337,10 +348,12 @@ fn main() -> Result<()> {
         gc_runs_deleted: gc.runs_deleted,
         gc_manifests_deleted: gc.manifests_deleted,
         gc_bytes_reclaimed: gc.bytes_reclaimed,
+        pack_segment_format_version: PACK_SEGMENT_FORMAT_VERSION,
         pack_frame_format_version: PACK_FRAME_FORMAT_VERSION,
         pack_index_format_version: PACK_INDEX_FORMAT_VERSION,
         pack_manifest_format_version: PACK_MANIFEST_FORMAT_VERSION,
         tip_epoch: tip.epoch,
+        tip_segment_id: tip.segment_id.get(),
         tip_frame_end: tip.frame_end,
         tip_payload_sha256: format!("0x{}", hex::encode(tip.payload_sha256)),
         scrubbed_frames: scrub.frames,
@@ -511,16 +524,23 @@ fn open_or_resume_pack(arguments: &Arguments, source_tip: SourceTip) -> Result<O
         checkpoint.display()
     );
     let expected_identity = BuildIdentity::current(arguments, source_tip);
-    if arguments.pack_path.join("frames.pack").exists() {
+    if arguments
+        .pack_path
+        .join(PackSegmentId::INITIAL.file_name())
+        .exists()
+    {
         let actual_identity = read_build_identity(&arguments.pack_path)?;
         validate_build_identity(&actual_identity, &expected_identity)?;
-        let pack = PackStore::open(&arguments.pack_path, arguments.max_index_memory_bytes)
-            .with_context(|| {
-                format!(
-                    "reopen partial checkpoint at {}",
-                    arguments.pack_path.display()
-                )
-            })?;
+        let pack = PackStore::open(
+            &arguments.pack_path,
+            pack_store_config(arguments.max_index_memory_bytes)?,
+        )
+        .with_context(|| {
+            format!(
+                "reopen partial checkpoint at {}",
+                arguments.pack_path.display()
+            )
+        })?;
         let validation = pack.open_validation();
         ensure!(
             validation.frames > 0 && validation.index_entries > 0,
@@ -557,13 +577,16 @@ fn open_or_resume_pack(arguments: &Arguments, source_tip: SourceTip) -> Result<O
         "checkpoint build identity exists without a pack at {}; refusing ambiguous recovery",
         build_identity.display()
     );
-    let pack = PackStore::create(&arguments.pack_path, arguments.max_index_memory_bytes)
-        .with_context(|| {
-            format!(
-                "create checkpoint pack at {}",
-                arguments.pack_path.display()
-            )
-        })?;
+    let pack = PackStore::create(
+        &arguments.pack_path,
+        pack_store_config(arguments.max_index_memory_bytes)?,
+    )
+    .with_context(|| {
+        format!(
+            "create checkpoint pack at {}",
+            arguments.pack_path.display()
+        )
+    })?;
     write_build_identity(&arguments.pack_path, &expected_identity)?;
     Ok(OpenedCheckpoint {
         pack,
@@ -597,13 +620,16 @@ fn open_legacy_complete_pack(
             .context("validate an interrupted legacy adoption identity")?;
     }
 
-    let pack = PackStore::open(&arguments.pack_path, arguments.max_index_memory_bytes)
-        .with_context(|| {
-            format!(
-                "reopen legacy complete checkpoint at {}",
-                arguments.pack_path.display()
-            )
-        })?;
+    let pack = PackStore::open(
+        &arguments.pack_path,
+        pack_store_config(arguments.max_index_memory_bytes)?,
+    )
+    .with_context(|| {
+        format!(
+            "reopen legacy complete checkpoint at {}",
+            arguments.pack_path.display()
+        )
+    })?;
     let validation = pack.open_validation();
     ensure!(
         validation.frames == legacy.frames,
@@ -665,16 +691,22 @@ fn open_legacy_partial_pack(arguments: &Arguments, checkpoint: &Path) -> Result<
         "legacy partial adoption found checkpoint-build.json; resume without the adoption flag"
     );
     ensure!(
-        arguments.pack_path.join("frames.pack").exists(),
-        "--adopt-legacy-partial-pack requires an existing frames.pack"
+        arguments
+            .pack_path
+            .join(PackSegmentId::INITIAL.file_name())
+            .exists(),
+        "--adopt-legacy-partial-pack requires an existing initial pack segment"
     );
-    let pack = PackStore::open(&arguments.pack_path, arguments.max_index_memory_bytes)
-        .with_context(|| {
-            format!(
-                "reopen legacy partial checkpoint at {}",
-                arguments.pack_path.display()
-            )
-        })?;
+    let pack = PackStore::open(
+        &arguments.pack_path,
+        pack_store_config(arguments.max_index_memory_bytes)?,
+    )
+    .with_context(|| {
+        format!(
+            "reopen legacy partial checkpoint at {}",
+            arguments.pack_path.display()
+        )
+    })?;
     let validation = pack.open_validation();
     ensure!(
         validation.frames > 0 && validation.index_entries > 0,
@@ -764,7 +796,8 @@ fn validate_build_identity(actual: &BuildIdentity, expected: &BuildIdentity) -> 
         expected.rows_per_frame
     );
     ensure!(
-        actual.pack_frame_format_version == expected.pack_frame_format_version
+        actual.pack_segment_format_version == expected.pack_segment_format_version
+            && actual.pack_frame_format_version == expected.pack_frame_format_version
             && actual.pack_index_format_version == expected.pack_index_format_version
             && actual.pack_manifest_format_version == expected.pack_manifest_format_version,
         "checkpoint pack format version changed"
@@ -951,7 +984,7 @@ fn publish_or_validate_build_identity(arguments: &Arguments, source_tip: SourceT
 }
 
 fn verify_tip_payload_checksum(pack_path: &Path, tip: PackFrameReceipt) -> Result<()> {
-    let path = pack_path.join("frames.pack");
+    let path = pack_path.join(tip.segment_id.file_name());
     let mut file = File::open(&path)
         .with_context(|| format!("open checkpoint pack {} for tip scrub", path.display()))?;
     let file_bytes = file
@@ -1070,8 +1103,11 @@ fn publish_after_reopen(
     write_checkpoint_temp(&checkpoint_tmp, report)?;
     drop(pack);
 
-    let reopened = PackStore::open(&arguments.pack_path, arguments.max_index_memory_bytes)
-        .context("reopen completed checkpoint pack")?;
+    let reopened = PackStore::open(
+        &arguments.pack_path,
+        pack_store_config(arguments.max_index_memory_bytes)?,
+    )
+    .context("reopen completed checkpoint pack")?;
     let validation = reopened.open_validation();
     ensure!(
         validation.frames == report.frames,
@@ -1087,6 +1123,7 @@ fn publish_after_reopen(
     verify_tip_payload_checksum(&arguments.pack_path, reopened_tip)?;
     ensure!(
         reopened_tip.epoch == report.tip_epoch
+            && reopened_tip.segment_id.get() == report.tip_segment_id
             && reopened_tip.frame_end == report.tip_frame_end
             && format!("0x{}", hex::encode(reopened_tip.payload_sha256))
                 == report.tip_payload_sha256,
@@ -1174,8 +1211,12 @@ mod tests {
                 }
             })
             .collect::<Vec<_>>();
-        let mut pack = PackStore::create(pack_path, arguments.max_index_memory_bytes)
-            .expect("create legacy pack");
+        let mut pack = PackStore::create(
+            pack_path,
+            pack_store_config(arguments.max_index_memory_bytes)
+                .expect("valid legacy pack configuration"),
+        )
+        .expect("create legacy pack");
         pack.append(&operations[..2])
             .expect("append full legacy frame");
         pack.append(&operations[2..])
@@ -1257,7 +1298,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_complete_adoption_reissues_v2_identity_from_cli_and_verified_pack() {
+    fn legacy_complete_adoption_reissues_current_identity_from_cli_and_verified_pack() {
         let temporary = tempdir().expect("temporary checkpoint parent");
         let pack_path = temporary.path().join("pack");
         let fixture = create_legacy_fixture(&pack_path);
@@ -1322,10 +1363,12 @@ mod tests {
             gc_runs_deleted: 0,
             gc_manifests_deleted: 0,
             gc_bytes_reclaimed: 0,
+            pack_segment_format_version: PACK_SEGMENT_FORMAT_VERSION,
             pack_frame_format_version: PACK_FRAME_FORMAT_VERSION,
             pack_index_format_version: PACK_INDEX_FORMAT_VERSION,
             pack_manifest_format_version: PACK_MANIFEST_FORMAT_VERSION,
             tip_epoch: tip.epoch,
+            tip_segment_id: tip.segment_id.get(),
             tip_frame_end: tip.frame_end,
             tip_payload_sha256: format!("0x{}", hex::encode(tip.payload_sha256)),
             scrubbed_frames: scrub.frames,
@@ -1346,6 +1389,11 @@ mod tests {
         assert_eq!(upgraded["schema_version"], CHECKPOINT_SCHEMA_VERSION);
         assert_eq!(upgraded["network_magic"], "0x334F454E");
         assert_eq!(upgraded["tip_epoch"], tip.epoch);
+        assert_eq!(upgraded["tip_segment_id"], tip.segment_id.get());
+        assert_eq!(
+            upgraded["pack_segment_format_version"],
+            PACK_SEGMENT_FORMAT_VERSION
+        );
         assert_eq!(
             upgraded["tip_payload_sha256"],
             format!("0x{}", hex::encode(tip.payload_sha256))
@@ -1435,7 +1483,7 @@ mod tests {
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
-            .open(pack_path.join("frames.pack"))
+            .open(pack_path.join(fixture.tip.segment_id.file_name()))
             .expect("open legacy pack for corruption");
         file.seek(SeekFrom::Start(corrupt_offset))
             .expect("seek legacy value byte");
@@ -1459,7 +1507,11 @@ mod tests {
     fn ordinary_resume_rejects_a_legacy_partial_pack_without_identity() {
         let temporary = tempdir().expect("temporary checkpoint parent");
         let pack_path = temporary.path().join("pack");
-        let mut pack = PackStore::create(&pack_path, 1024 * 1024).expect("create legacy partial");
+        let mut pack = PackStore::create(
+            &pack_path,
+            pack_store_config(1024 * 1024).expect("valid legacy partial configuration"),
+        )
+        .expect("create legacy partial");
         let mut key = [1u8; 33];
         key[0] = STATE_NODE_PREFIX;
         pack.append(&[PackOperation {
@@ -1504,8 +1556,11 @@ mod tests {
                 }
             })
             .collect::<Vec<_>>();
-        let mut pack =
-            PackStore::create(&pack_path, 1024 * 1024).expect("create legacy partial pack");
+        let mut pack = PackStore::create(
+            &pack_path,
+            pack_store_config(1024 * 1024).expect("valid legacy partial configuration"),
+        )
+        .expect("create legacy partial pack");
         pack.append(&operations[..2]).expect("append first frame");
         pack.append(&operations[2..]).expect("append second frame");
         drop(pack);
@@ -1547,8 +1602,11 @@ mod tests {
         let pack_path = temporary.path().join("pack");
         let mut key = [7u8; 33];
         key[0] = STATE_NODE_PREFIX;
-        let mut pack =
-            PackStore::create(&pack_path, 1024 * 1024).expect("create legacy partial pack");
+        let mut pack = PackStore::create(
+            &pack_path,
+            pack_store_config(1024 * 1024).expect("valid legacy partial configuration"),
+        )
+        .expect("create legacy partial pack");
         pack.append(&[PackOperation {
             key,
             kind: PackOpKind::Put(b"value".to_vec()),
@@ -1603,10 +1661,12 @@ mod tests {
             gc_runs_deleted: 0,
             gc_manifests_deleted: 0,
             gc_bytes_reclaimed: 0,
+            pack_segment_format_version: PACK_SEGMENT_FORMAT_VERSION,
             pack_frame_format_version: PACK_FRAME_FORMAT_VERSION,
             pack_index_format_version: PACK_INDEX_FORMAT_VERSION,
             pack_manifest_format_version: PACK_MANIFEST_FORMAT_VERSION,
             tip_epoch: 0,
+            tip_segment_id: PackSegmentId::INITIAL.get(),
             tip_frame_end: 30,
             tip_payload_sha256: format!("0x{}", hex::encode([0u8; 32])),
             scrubbed_frames: 1,
@@ -1623,12 +1683,17 @@ mod tests {
         assert_eq!(json["authoritative_ready"], false);
         assert_eq!(json["schema_version"], CHECKPOINT_SCHEMA_VERSION);
         assert_eq!(json["network_magic"], "0x334F454E");
+        assert_eq!(
+            json["pack_segment_format_version"],
+            PACK_SEGMENT_FORMAT_VERSION
+        );
         assert_eq!(json["pack_frame_format_version"], PACK_FRAME_FORMAT_VERSION);
         assert_eq!(json["pack_index_format_version"], PACK_INDEX_FORMAT_VERSION);
         assert_eq!(
             json["pack_manifest_format_version"],
             PACK_MANIFEST_FORMAT_VERSION
         );
+        assert_eq!(json["tip_segment_id"], PackSegmentId::INITIAL.get());
     }
 
     #[test]

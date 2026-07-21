@@ -8,7 +8,14 @@ use std::sync::OnceLock;
 pub(super) const PACK_BATCH_VALUES_PER_WORKER: usize = 256;
 const MAX_PACK_VALUE_POOL_WORKERS: usize = 8;
 
-static PACK_VALUE_POOL: OnceLock<std::result::Result<ThreadPool, String>> = OnceLock::new();
+static PACK_VALUE_POOL: OnceLock<std::result::Result<ThreadPool, ReadPoolFailure>> =
+    OnceLock::new();
+
+#[derive(Debug)]
+struct ReadPoolFailure {
+    workers: usize,
+    details: String,
+}
 
 fn pack_value_pool() -> Result<&'static ThreadPool> {
     match PACK_VALUE_POOL.get_or_init(|| {
@@ -19,10 +26,17 @@ fn pack_value_pool() -> Result<&'static ThreadPool> {
             .num_threads(workers)
             .thread_name(|index| format!("neo-pack-read-{index}"))
             .build()
-            .map_err(|error| error.to_string())
+            .map_err(|error| ReadPoolFailure {
+                workers,
+                details: error.to_string(),
+            })
     }) {
         Ok(pool) => Ok(pool),
-        Err(error) => Err(anyhow::anyhow!("create shared pack value pool: {error}")),
+        Err(error) => Err(PackStoreError::read_worker_pool_unavailable(
+            error.workers,
+            error.details.clone(),
+        )
+        .into()),
     }
 }
 

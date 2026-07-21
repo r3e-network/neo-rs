@@ -1,3 +1,4 @@
+use super::segment::SEGMENT_HEADER_LEN;
 use super::*;
 
 impl PackStore {
@@ -12,9 +13,7 @@ impl PackStore {
         let totals = prepared.stage_totals();
         self.activate_prepared(prepared, prepared.commit_horizon())?;
         self.maintain()
-            .map_err(|error| PackStoreError::CommittedMaintenance {
-                details: format!("{error:#}"),
-            })?;
+            .map_err(PackStoreError::committed_maintenance)?;
         Ok(totals)
     }
 
@@ -24,9 +23,7 @@ impl PackStore {
         let totals = prepared.stage_totals();
         self.activate_prepared(prepared, prepared.commit_horizon())?;
         self.maintain()
-            .map_err(|error| PackStoreError::CommittedMaintenance {
-                details: format!("{error:#}"),
-            })?;
+            .map_err(PackStoreError::committed_maintenance)?;
         Ok(totals)
     }
 
@@ -79,6 +76,36 @@ impl PackStore {
     ) -> Result<PreparedAppend> {
         ensure!(rows > 0, "append frame must not be empty");
         ensure!(entries.len() == rows, "frame index row count mismatch");
+        let rows_u64 = u64::try_from(rows).context("frame row count does not fit u64")?;
+        if rows_u64 > self.config.max_frame_rows() {
+            return Err(PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::FrameRows,
+                actual: rows_u64,
+                maximum: self.config.max_frame_rows(),
+            }
+            .into());
+        }
+        let payload_bytes =
+            u64::try_from(payload.len()).context("frame payload length does not fit u64")?;
+        if payload_bytes > self.config.max_frame_payload_bytes() {
+            return Err(PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::FramePayloadBytes,
+                actual: payload_bytes,
+                maximum: self.config.max_frame_payload_bytes(),
+            }
+            .into());
+        }
+        let frame_bytes = payload_bytes
+            .checked_add(FRAME_HEADER_LEN as u64)
+            .context("encoded frame length overflows")?;
+        if frame_bytes > self.config.max_pending_bytes() {
+            return Err(PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::PendingBytes,
+                actual: frame_bytes,
+                maximum: self.config.max_pending_bytes(),
+            }
+            .into());
+        }
         let epoch = self.next_epoch;
         let next_prepare_serial = self
             .next_prepare_serial
@@ -98,9 +125,9 @@ impl PackStore {
             .checked_add(structured)
             .context("decoded index bytes overflow")?;
         ensure!(
-            prospective <= self.max_index_memory_bytes,
+            prospective <= self.config.max_index_memory_bytes(),
             "decoded index memory {prospective} exceeds configured bound {}",
-            self.max_index_memory_bytes
+            self.config.max_index_memory_bytes()
         );
         let payload_checksum = digest(&payload);
         let header = encode_frame_header(epoch, rows, payload.len(), payload_checksum)?;
@@ -117,11 +144,11 @@ impl PackStore {
             .context("appended pack length overflows")?;
         let receipt = PackFrameReceipt {
             epoch,
+            segment_id: PackSegmentId::INITIAL,
             frame_start,
             frame_end: pack_len,
-            rows: u64::try_from(rows).context("frame row count does not fit u64")?,
-            payload_bytes: u64::try_from(payload.len())
-                .context("frame payload length does not fit u64")?,
+            rows: rows_u64,
+            payload_bytes,
             payload_sha256: payload_checksum,
         };
 
@@ -327,6 +354,11 @@ impl PackStore {
             "external commit marker epoch does not match the prepared frame"
         );
         ensure!(
+            committed.segment_id == prepared.receipt.segment_id
+                && committed.frame_end == prepared.receipt.frame_end,
+            "external commit marker position does not match the prepared frame"
+        );
+        ensure!(
             committed.payload_sha256 == prepared.receipt.payload_sha256,
             "external commit marker checksum does not match the prepared frame"
         );
@@ -353,7 +385,7 @@ impl PackStore {
         );
         let expected_frame_start = self
             .last_frame_receipt
-            .map_or(0, |receipt| receipt.frame_end);
+            .map_or(SEGMENT_HEADER_LEN as u64, |receipt| receipt.frame_end);
         ensure!(
             prepared.receipt.frame_start == expected_frame_start,
             "prepared frame does not continue the committed pack tail"
@@ -377,7 +409,7 @@ impl PackStore {
             &self.pack,
             prepared.receipt.frame_end,
             &self.pack_path,
-            self.options,
+            self.config.read_options(),
         )?
         .map(Arc::new);
         verify_frame(
@@ -393,7 +425,7 @@ impl PackStore {
             prepared.receipt.epoch,
             prepared.receipt.epoch,
         ));
-        let verified_run = read_index_run_with_options(&run_path, self.options)?;
+        let verified_run = read_index_run_with_options(&run_path, self.config.read_options())?;
         verify_run(&verified_run)?;
         ensure!(
             verified_run.epoch == prepared_run.epoch

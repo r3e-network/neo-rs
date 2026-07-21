@@ -1,8 +1,8 @@
 #[test]
 fn materialized_evidence_is_stable_across_compaction_and_reopen() {
     let root = tempdir().expect("temporary append store");
-    let mut store = PackStore::create_with_compaction(root.path(), 1024 * 1024, small_compaction())
-        .expect("create store");
+    let mut store =
+        PackStore::create(root.path(), small_compaction_config(1024 * 1024)).expect("create store");
     let updated = key(90);
     let deleted = key(91);
     append_without_maintenance(&mut store, &[put(updated, b"v1"), put(key(92), b"stable")]);
@@ -16,6 +16,16 @@ fn materialized_evidence_is_stable_across_compaction_and_reopen() {
         .materialized_view_evidence(64)
         .expect("repeat deterministic evidence");
     assert!(before.state_matches(&repeated));
+
+    let mut other_segment = repeated;
+    other_segment.tip_segment_id = PackSegmentId::new(
+        repeated
+            .tip_segment_id
+            .get()
+            .checked_add(1)
+            .expect("fixture segment identity increments"),
+    );
+    assert!(!before.state_matches(&other_segment));
     assert_eq!(before.generation, repeated.generation);
     assert_eq!(before.live_runs, repeated.live_runs);
     assert_eq!(before.source_records, repeated.source_records);
@@ -53,9 +63,7 @@ fn materialized_evidence_is_stable_across_compaction_and_reopen() {
         .expect("current evidence remains unchanged before adoption");
     assert_eq!(still_current.generation, before.generation);
     assert_eq!(still_current.live_runs, before.live_runs);
-    store
-        .adopt_compaction(prepared)
-        .expect("adopt compaction");
+    store.adopt_compaction(prepared).expect("adopt compaction");
     let after = store
         .materialized_view_evidence(64)
         .expect("post-compaction evidence");
@@ -65,7 +73,8 @@ fn materialized_evidence_is_stable_across_compaction_and_reopen() {
     assert_ne!(before.generation, after.generation);
 
     drop(store);
-    let reopened = PackStore::open(root.path(), 1024 * 1024).expect("reopen compacted store");
+    let reopened =
+        PackStore::open(root.path(), store_config(1024 * 1024)).expect("reopen compacted store");
     let reopened_evidence = reopened
         .materialized_view_evidence(64)
         .expect("reopened evidence");
@@ -84,7 +93,8 @@ fn materialized_evidence_is_stable_across_compaction_and_reopen() {
 #[test]
 fn materialized_evidence_compares_lookup_results_with_winner_offsets() {
     let root = tempdir().expect("temporary append store");
-    let mut store = PackStore::create(root.path(), 1024 * 1024).expect("create store");
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
     store.append(&[put(key(95), b"value")]).expect("append");
     store
         .materialized_view_evidence(1)
@@ -100,7 +110,8 @@ fn materialized_evidence_compares_lookup_results_with_winner_offsets() {
 #[test]
 fn materialized_evidence_rejects_an_unbounded_sample_before_work() {
     let root = tempdir().expect("temporary append store");
-    let mut store = PackStore::create(root.path(), 1024 * 1024).expect("create store");
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
     store.append(&[put(key(94), b"value")]).expect("append");
     let error = store
         .materialized_view_evidence(1_000_001)
@@ -114,7 +125,8 @@ fn materialized_evidence_bounds_large_value_lookup_batches() {
     const LARGE_VALUES: u32 = 260;
 
     let root = tempdir().expect("temporary append store");
-    let mut store = PackStore::create(root.path(), 1024 * 1024).expect("create store");
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
     let value = vec![0xA5; LARGE_VALUE_BYTES];
     let operations: Vec<_> = (0..LARGE_VALUES)
         .map(|ordinal| {
@@ -146,7 +158,8 @@ fn materialized_evidence_bounds_large_value_lookup_batches() {
 #[test]
 fn materialized_evidence_hashes_a_multichunk_frame_reference_value() {
     let root = tempdir().expect("temporary append store");
-    let mut store = PackStore::create(root.path(), 8 * 1024 * 1024).expect("create store");
+    let mut store =
+        PackStore::create(root.path(), store_config(8 * 1024 * 1024)).expect("create store");
     let value = vec![0x5A; evidence::FRAME_REFERENCE_VALUE_HASH_CHUNK_BYTES + 17];
     store
         .append(&[put(key(97), &value)])
@@ -171,7 +184,9 @@ fn lookup_batch_rejects_one_value_above_the_byte_limit() {
     }];
     let error = evidence::next_lookup_batch(&entries, 0)
         .expect_err("oversized sampled value must fail closed");
-    assert!(error
-        .to_string()
-        .contains("exceeds the sorted lookup batch limit"));
+    assert!(
+        error
+            .to_string()
+            .contains("exceeds the sorted lookup batch limit")
+    );
 }

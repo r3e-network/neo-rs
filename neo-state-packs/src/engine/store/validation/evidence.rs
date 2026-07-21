@@ -38,6 +38,8 @@ pub struct PackMaterializedViewEvidence {
     pub source_records: u64,
     /// Canonical frame epoch bound to the evidence.
     pub tip_epoch: u64,
+    /// Segment containing the canonical frame bound to the evidence.
+    pub tip_segment_id: PackSegmentId,
     /// Canonical committed frame end bound to the evidence.
     pub tip_frame_end: u64,
     /// Canonical tip payload checksum bound to the evidence.
@@ -97,6 +99,7 @@ impl PackMaterializedViewEvidence {
     /// Physical generation/run/source counts are intentionally excluded.
     pub fn state_matches(&self, other: &Self) -> bool {
         self.tip_epoch == other.tip_epoch
+            && self.tip_segment_id == other.tip_segment_id
             && self.tip_frame_end == other.tip_frame_end
             && self.tip_payload_sha256 == other.tip_payload_sha256
             && self.winner_records == other.winner_records
@@ -217,6 +220,7 @@ impl PackStore {
             live_runs: u64::try_from(snapshot.runs.len()).unwrap_or(u64::MAX),
             source_records,
             tip_epoch: receipt.epoch,
+            tip_segment_id: receipt.segment_id,
             tip_frame_end: receipt.frame_end,
             tip_payload_sha256: receipt.payload_sha256,
             winner_records: merged.output_records,

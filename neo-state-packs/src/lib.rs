@@ -6,8 +6,9 @@
 //!
 //! ## On-disk layout
 //!
-//! - `frames.pack`: one ordered operation stream per commit epoch. Every
-//!   frame has a 72-byte versioned header (`N3PACK01`, epoch, row count,
+//! - `frames-{segment_id}.pack`: one identified, versioned append segment
+//!   carrying the ordered operation stream. Every frame has a 72-byte
+//!   versioned header (`N3PACK01`, epoch, row count,
 //!   payload length, SHA-256 payload checksum) followed by rows of
 //!   `key(33) || kind(1) || value_len(4 LE) || value`. A frame becomes
 //!   visible only when a manifest generation referencing its index run is
@@ -19,7 +20,7 @@
 //!   domain-separated structure SHA-256, sparse 16-byte fence keys every 64
 //!   records, and fixed 50-byte records
 //!   (`key(33) || sequence(4) || value_offset(8) || value_len(4) ||
-//!   tombstone(1)`). Records point into `frames.pack`; compaction merges
+//!   tombstone(1)`). Records point into an identified segment; compaction merges
 //!   runs newest-epoch-wins without rewriting payloads.
 //! - `manifest-*.man`: immutable manifest generations (`N3MANI01`) listing
 //!   the live runs. Publication is atomic (write `.tmp`, sync, rename,
@@ -72,10 +73,13 @@ pub mod shadow;
 pub use engine::{
     CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, CheckpointNamespaceEvidence, CompactionDebt,
     CompactionStats, GcStats, OpenValidation, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
-    PACK_INDEX_RUN_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION, PackCommitHorizon,
-    PackCompactionPlan, PackFrameBuilder, PackFrameReceipt, PackIndexScrubStats,
-    PackMaterializedViewEvidence, PackMetrics, PackScrubStats, PackStore, PackStoreError,
-    PackStoreOptions, PreparedAppend, PreparedPackCompaction, ReadMetrics, SealedAppend, Snapshot,
+    PACK_INDEX_RUN_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION,
+    PACK_SEGMENT_HEADER_LEN, PackCommitHorizon, PackCompactionPlan, PackFrameBuilder,
+    PackFrameReceipt, PackIndexScrubStats, PackMaterializedViewEvidence, PackMetrics, PackPosition,
+    PackScrubStats, PackSegmentId, PackStore, PackStoreArtifact, PackStoreConfig,
+    PackStoreConfigError, PackStoreConfigField, PackStoreError, PackStoreErrorSource,
+    PackStoreLimit, PackStoreOperation, PackStoreOptions, PackStoreResult, PreparedAppend,
+    PreparedPackCompaction, ReadMetrics, SealedAppend, Snapshot,
 };
 
 /// Byte length of one pack key (the StateService `0xf0 || node_hash` node

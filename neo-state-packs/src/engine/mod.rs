@@ -24,6 +24,7 @@ mod metrics;
 #[allow(unsafe_code)]
 mod mmap;
 mod store;
+pub(crate) use store::initial_segment_exists;
 
 pub use metrics::{CompactionDebt, CompactionStats, GcStats, PackMetrics, ReadMetrics};
 
@@ -31,7 +32,10 @@ pub use manifest::PACK_MANIFEST_FORMAT_VERSION;
 pub use store::{
     CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, CheckpointNamespaceEvidence, OpenValidation,
     PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_INDEX_RUN_FORMAT_VERSION,
-    PackCommitHorizon, PackCompactionPlan, PackFrameBuilder, PackFrameReceipt, PackIndexScrubStats,
-    PackMaterializedViewEvidence, PackScrubStats, PackStore, PackStoreError, PackStoreOptions,
-    PreparedAppend, PreparedPackCompaction, SealedAppend, Snapshot,
+    PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackCommitHorizon, PackCompactionPlan,
+    PackFrameBuilder, PackFrameReceipt, PackIndexScrubStats, PackMaterializedViewEvidence,
+    PackPosition, PackScrubStats, PackSegmentId, PackStore, PackStoreArtifact, PackStoreConfig,
+    PackStoreConfigError, PackStoreConfigField, PackStoreError, PackStoreErrorSource,
+    PackStoreLimit, PackStoreOperation, PackStoreOptions, PackStoreResult, PreparedAppend,
+    PreparedPackCompaction, SealedAppend, Snapshot,
 };
