@@ -29,6 +29,8 @@
 //! - `iterators`: Iterator adapters exposed to contract execution and storage
 //!   search.
 //! - `native`: Native contract abstractions and registries used by execution.
+//! - `verification`: bounded advisory ECDSA outcomes for canonical standard
+//!   witnesses while retaining complete NeoVM verification.
 //! - `runtime`: Runtime flags, execution context state, and VM-facing support
 //!   types.
 //! - `storage`: Storage contexts, key builders, and storage item helpers for
@@ -68,6 +70,8 @@ pub mod runtime;
 pub mod specialization;
 /// Storage-key and storage-context helpers used during execution.
 pub mod storage;
+/// Bounded advisory ECDSA outcomes for canonical standard witnesses.
+pub mod verification;
 
 // ============================================================================
 // Re-exports at the crate root
@@ -124,6 +128,10 @@ pub use optimistic_execution::{
 };
 pub use storage_context::StorageContext;
 pub use storage_item_ext::StorageItemExt;
+pub use verification::{
+    PreverifiedSignatureCache, PreverifiedSignatureCacheMetricsSnapshot,
+    preverify_standard_witness_signatures,
+};
 
 pub use contracts::{
     contract, contract_parameter, contract_parameters_context, contract_state, deployed_contract,

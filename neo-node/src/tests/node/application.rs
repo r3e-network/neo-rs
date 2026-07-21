@@ -15,6 +15,7 @@ fn node_command_rejects_conflicting_modes_before_runtime_open() {
         check_storage: false,
         check_all: false,
         import_chain: Some(PathBuf::from("chain.acc")),
+        verify_import_chain: false,
         fast_sync: false,
         fast_sync_cache: None,
         fast_sync_reference_rpc: None,
@@ -145,5 +146,21 @@ fn startup_metrics_precede_bulk_import_without_starting_live_network_services() 
     assert!(
         !live_services_body.contains("start_metrics_endpoint("),
         "post-import live services must not bind the metrics endpoint twice"
+    );
+}
+
+#[test]
+fn startup_chain_import_forwards_explicit_verification_policy() {
+    let source = include_str!("../../node/lifecycle/startup_import.rs");
+    let compact = source
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>();
+
+    assert!(
+        compact.contains(
+            "chain_acc::import_chain_acc_until_height(&blockchain,import_path,ctx.cli.verify_import_chain,"
+        ),
+        "--verify-import-chain must reach the chain.acc driver"
     );
 }

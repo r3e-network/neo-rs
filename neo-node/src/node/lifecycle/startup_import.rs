@@ -77,7 +77,7 @@ where
     match chain_acc::import_chain_acc_until_height(
         &blockchain,
         import_path,
-        false,
+        ctx.cli.verify_import_chain,
         ctx.cli.stop_at_height,
         Some(ctx.node.storage()),
     )

@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -9,10 +8,8 @@ use tracing::{debug, info, warn};
 
 use crate::block_processing::BlockCommitArtifacts;
 use crate::internal::BlockIntegrity;
-use crate::ledger_provider::BlockProvider;
-use crate::pipeline::consensus_witness_stage::ParentHeaderContext;
 use crate::pipeline::signature_verification::{
-    SignatureVerificationReceipt, SignatureVerificationSubmitError, SignatureVerificationTicket,
+    HeaderSignaturePreverification, OrderedHeaderVerificationWindow,
 };
 use crate::service::{BlockchainService, MempoolLike};
 use crate::service_context::{BlockPersistContext, SyncBatchCommitPolicy};
@@ -90,6 +87,10 @@ where
         integrity: BlockIntegrity,
     ) -> CoreResult<usize> {
         let batch_start = Instant::now();
+        let signature_metrics_before = self
+            .optimistic_signature_verification
+            .as_ref()
+            .map(|pool| pool.metrics_snapshot());
         let durable_height = self.ledger.current_height();
         let range_end = blocks
             .iter()
@@ -111,113 +112,25 @@ where
         let mut imported = 0usize;
         let mut direct_imported = 0usize;
         let mut committed_blocks = Vec::new();
-        // Keep a bounded ordered window of header tickets.  One ticket leaves
-        // all but one worker idle when the configured pool is larger; the
-        // queue remains bounded by the pool's own worker + backlog window.
-        let mut pending_signatures: VecDeque<(
-            Arc<Block>,
-            ParentHeaderContext,
-            SignatureVerificationTicket,
-        )> = VecDeque::new();
-        let mut optimistic_pool_enabled = true;
-        let mut prefetched_headers = 0usize;
-        let mut max_pending_signatures = 0usize;
+        let mut signature_window = OrderedHeaderVerificationWindow::default();
         for position in 0..blocks.len() {
             let block = Arc::clone(&blocks[position]);
-            let current_signature = match pending_signatures.front() {
-                Some((candidate, _, _)) if candidate.index() == block.index() => {
-                    pending_signatures.pop_front()
-                }
-                Some(_) => {
-                    // The input stopped being the contiguous chain that the
-                    // speculative parent contexts were built from.  Those
-                    // receipts are no longer useful and must never be used
-                    // after the canonical lane takes a different path.
-                    pending_signatures.clear();
-                    optimistic_pool_enabled = false;
-                    None
-                }
-                None => None,
-            };
+            let current_signature = signature_window.take_current(block.as_ref());
 
             // Fill the bounded look-ahead window before executing the current
             // block.  Every ticket is tied to the exact preceding input header;
             // cheap linkage checks prevent speculative work across a gap.
-            if optimistic_pool_enabled
+            if !consensus_witness_verified
                 && let Some(pool) = self.optimistic_signature_verification.as_ref()
             {
-                while pending_signatures.len() < pool.window() {
-                    let Some(next_position) = position
-                        .checked_add(1)
-                        .and_then(|next| next.checked_add(pending_signatures.len()))
-                    else {
-                        break;
-                    };
-                    let Some(next_block) = blocks.get(next_position) else {
-                        break;
-                    };
-                    let Some(parent_block) = blocks.get(next_position.saturating_sub(1)) else {
-                        break;
-                    };
-                    let parent = ParentHeaderContext {
-                        hash: parent_block.header.hash(),
-                        index: parent_block.index(),
-                        timestamp: parent_block.timestamp(),
-                        next_consensus: *parent_block.header.next_consensus(),
-                    };
-                    if next_block.index() != parent.index.saturating_add(1)
-                        || next_block.header.prev_hash() != &parent.hash
-                        || next_block.timestamp() <= parent.timestamp
-                        || i32::from(next_block.primary_index()) >= settings.validators_count
-                    {
-                        optimistic_pool_enabled = false;
-                        break;
-                    }
-                    let Some(snapshot) = self.system.store_snapshot() else {
-                        optimistic_pool_enabled = false;
-                        break;
-                    };
-                    let Some(native_provider) = self.system.native_contract_provider() else {
-                        optimistic_pool_enabled = false;
-                        break;
-                    };
-                    match pool.try_submit_header_witness(
-                        next_block.header.clone(),
-                        parent,
-                        Arc::clone(&settings),
-                        snapshot,
-                        native_provider,
-                    ) {
-                        Ok(ticket) => {
-                            pending_signatures.push_back((Arc::clone(next_block), parent, ticket));
-                            prefetched_headers = prefetched_headers.saturating_add(1);
-                            max_pending_signatures =
-                                max_pending_signatures.max(pending_signatures.len());
-                        }
-                        Err(SignatureVerificationSubmitError::QueueFull) => break,
-                        Err(
-                            SignatureVerificationSubmitError::Closed
-                            | SignatureVerificationSubmitError::InvalidInput(_),
-                        ) => {
-                            optimistic_pool_enabled = false;
-                            break;
-                        }
-                    }
-                }
+                signature_window.fill_after(position, &blocks, pool, Arc::clone(&settings));
             }
 
             let committed_block = Arc::clone(&block);
             let before_height = self.ledger.current_height();
-            let signature_receipt = current_signature.and_then(|(candidate, _parent, ticket)| {
-                if candidate.index() != block.index() {
-                    return None;
-                }
-                // The exact header/parent/cache receipt is checked once at the
-                // canonical persistence fence below.  Avoid repeating the
-                // provider lookup here while still falling back synchronously
-                // when the worker did not return a receipt.
-                ticket.wait().ok()
-            });
+            let signature_preverification = current_signature
+                .and_then(|ticket| ticket.wait().ok())
+                .flatten();
             match self
                 .handle_block_inventory_without_drain_with_signature(
                     block,
@@ -226,7 +139,7 @@ where
                     integrity,
                     defer_store_commit,
                     persist_context,
-                    signature_receipt,
+                    signature_preverification,
                 )
                 .await
             {
@@ -241,10 +154,9 @@ where
                     }
                     // A failed canonical step can change the parent frontier
                     // or leave a future block parked. Discard every later
-                    // receipt instead of letting it authorize a different
-                    // chain shape.
-                    pending_signatures.clear();
-                    optimistic_pool_enabled = false;
+                    // preverification instead of routing it to a different
+                    // header.
+                    signature_window.disable();
                     warn!(target: "neo", %error, "inventory block rejected in batch");
                     continue;
                 }
@@ -279,22 +191,31 @@ where
             && direct_imported > 0
         {
             let elapsed = batch_start.elapsed();
-            let metrics = pool.metrics_snapshot();
+            let before = signature_metrics_before.unwrap_or_default();
+            let after = pool.metrics_snapshot();
             info!(
                 target: "neo::performance",
                 mode = "optimistic_signature_inventory",
                 blocks = direct_imported,
                 elapsed_ms = elapsed.as_secs_f64() * 1_000.0,
                 blocks_per_second = direct_imported as f64 / elapsed.as_secs_f64().max(1e-9),
-                signature_submitted = metrics.submitted,
-                signature_valid = metrics.valid,
-                signature_invalid = metrics.invalid,
-                signature_worker_panics = metrics.worker_panics,
-                signature_worker_unavailable = metrics.worker_unavailable,
-                signature_queue_full = metrics.queue_full,
-                signature_queue_closed = metrics.queue_closed,
-                signature_prefetched_headers = prefetched_headers,
-                signature_max_pending = max_pending_signatures,
+                signature_submitted = after.submitted.saturating_sub(before.submitted),
+                signature_completed = after.completed.saturating_sub(before.completed),
+                signature_invalid = after.invalid.saturating_sub(before.invalid),
+                signature_cancelled = after.cancelled.saturating_sub(before.cancelled),
+                signature_worker_panics = after.worker_panics.saturating_sub(before.worker_panics),
+                signature_worker_unavailable = after.worker_unavailable.saturating_sub(before.worker_unavailable),
+                signature_queue_full = after.queue_full.saturating_sub(before.queue_full),
+                signature_queue_closed = after.queue_closed.saturating_sub(before.queue_closed),
+                header_standard_caches_prepared = after.header_standard_caches_prepared.saturating_sub(before.header_standard_caches_prepared),
+                header_unsupported_witness_fallbacks = after.header_unsupported_witness_fallbacks.saturating_sub(before.header_unsupported_witness_fallbacks),
+                header_preverified_ecdsa_operations = after.header_preverified_ecdsa_operations.saturating_sub(before.header_preverified_ecdsa_operations),
+                header_canonical_cache_consumptions = after.header_canonical_cache_consumptions.saturating_sub(before.header_canonical_cache_consumptions),
+                header_canonical_cache_lookups = after.header_canonical_cache_lookups.saturating_sub(before.header_canonical_cache_lookups),
+                header_canonical_cache_hits = after.header_canonical_cache_hits.saturating_sub(before.header_canonical_cache_hits),
+                header_canonical_cache_misses = after.header_canonical_cache_misses.saturating_sub(before.header_canonical_cache_misses),
+                signature_prefetched_headers = signature_window.submitted(),
+                signature_max_pending = signature_window.max_pending(),
                 "optimistic inventory batch completed"
             );
         }
@@ -330,7 +251,7 @@ where
         integrity: BlockIntegrity,
         defer_store_commit: bool,
         persist_context: BlockPersistContext,
-        signature_receipt: Option<SignatureVerificationReceipt>,
+        signature_preverification: Option<HeaderSignaturePreverification>,
     ) -> CoreResult<()> {
         let index = block.index();
         let current_height = self.ledger.current_height();
@@ -365,7 +286,7 @@ where
             integrity,
             defer_store_commit,
             persist_context,
-            signature_receipt,
+            signature_preverification,
         )
         .await
     }
@@ -396,7 +317,7 @@ where
         integrity: BlockIntegrity,
         defer_store_commit: bool,
         persist_context: BlockPersistContext,
-        signature_receipt: Option<SignatureVerificationReceipt>,
+        signature_preverification: Option<HeaderSignaturePreverification>,
     ) -> CoreResult<()> {
         self.persist_next_expected_block_with_commit_policy_and_signature(
             block,
@@ -405,7 +326,7 @@ where
             integrity,
             defer_store_commit,
             persist_context,
-            signature_receipt,
+            signature_preverification,
         )
         .await
     }
@@ -439,7 +360,7 @@ where
         integrity: BlockIntegrity,
         defer_store_commit: bool,
         persist_context: BlockPersistContext,
-        signature_receipt: Option<SignatureVerificationReceipt>,
+        signature_preverification: Option<HeaderSignaturePreverification>,
     ) -> CoreResult<()> {
         let wall_start = std::time::Instant::now();
         let index = block.index();
@@ -496,11 +417,11 @@ where
         // the import path. Peer-relayed blocks do not get that shortcut: live
         // sync must use the same consensus-witness rule at height 1 and at
         // height 10 million.
-        let receipt_matches = signature_receipt
-            .as_ref()
-            .is_some_and(|receipt| self.optimistic_signature_receipt_matches(&block, receipt));
-        if !consensus_witness_verified && !receipt_matches {
-            self.verify_consensus_witness_against_store(block.as_ref())?;
+        if !consensus_witness_verified {
+            self.verify_consensus_witness_against_store(
+                block.as_ref(),
+                signature_preverification.as_ref(),
+            )?;
         }
 
         let after_verify = wall_start.elapsed();
@@ -580,43 +501,6 @@ where
 
         let _ = relay; // relay broadcast is handled by the network service
         Ok(())
-    }
-
-    fn optimistic_signature_receipt_matches(
-        &self,
-        block: &Block,
-        receipt: &SignatureVerificationReceipt,
-    ) -> bool {
-        let Some(snapshot) = self.system.store_snapshot() else {
-            return false;
-        };
-        let parent = self
-            .ledger
-            .get_block(block.header.prev_hash())
-            .map(|parent| parent.header)
-            .or_else(|| {
-                self.system
-                    .ledger_provider(snapshot.as_ref())
-                    .header_by_hash(block.header.prev_hash())
-                    .ok()
-                    .flatten()
-            });
-        let Some(parent) = parent else {
-            return false;
-        };
-        let parent = ParentHeaderContext {
-            hash: parent.hash(),
-            index: parent.index(),
-            timestamp: parent.timestamp(),
-            next_consensus: *parent.next_consensus(),
-        };
-        let settings = self.system.settings();
-        receipt.matches(
-            &block.header,
-            &parent,
-            settings.as_ref(),
-            &snapshot.version(),
-        )
     }
 
     async fn publish_persisted_inventory_block(

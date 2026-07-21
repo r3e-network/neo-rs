@@ -183,6 +183,14 @@ where
             return Err(CoreError::other("Invalid public key length"));
         }
 
+        // Opaque entries are created only after exact P-256 verification has
+        // accepted these key bytes. A hit can therefore skip a second point
+        // decode; every miss continues through the unchanged canonical crypto
+        // path below, including its fault-versus-false classification.
+        if let Some(outcome) = self.preverified_signature_outcome(message, public_key, signature) {
+            return Ok(outcome);
+        }
+
         match Secp256r1Crypto::verify(message, signature, public_key) {
             Ok(verified) => Ok(verified),
             Err(CryptoError::InvalidSignature { .. }) => Ok(false),

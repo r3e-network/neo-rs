@@ -49,6 +49,14 @@ pub struct NodeCli {
     #[arg(long, value_name = "PATH")]
     pub import_chain: Option<PathBuf>,
 
+    /// Run full protocol verification while importing `chain.acc`.
+    ///
+    /// Trusted archive replay skips verification by default, matching Neo C#.
+    /// This explicit mode is intended for audits and verified archive-replay
+    /// benchmark proxies; it does not measure P2P download or scheduling.
+    #[arg(long, requires = "import_chain")]
+    pub verify_import_chain: bool,
+
     /// Download and import the official NGD N3 fast-sync package before
     /// starting network sync. The package URL is resolved from the built-in
     /// official manifest URL and cached only after SHA-256 authenticity

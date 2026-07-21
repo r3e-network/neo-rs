@@ -131,8 +131,8 @@ where
 
     /// Enables the explicitly configured bounded header-witness verifier.
     ///
-    /// The pool only produces typed verification receipts. Canonical header
-    /// caching and block persistence remain on this service's ordered lane.
+    /// The pool only produces exact-input ECDSA caches. Canonical NeoVM header
+    /// verification and block persistence remain on this service's ordered lane.
     pub fn set_optimistic_signature_verification(
         &mut self,
         pool: Option<Arc<SignatureVerificationPool>>,

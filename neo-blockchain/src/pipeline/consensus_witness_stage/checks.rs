@@ -1,6 +1,9 @@
-use neo_execution::Helper;
+use std::sync::Arc;
+
+use neo_execution::{Helper, PreverifiedSignatureCache};
 use neo_payloads::Block;
 
+use crate::block_validation::BlockValidator;
 use crate::pipeline::stage_traits::{EngineError, EngineResult};
 
 use super::{CONSENSUS_WITNESS_MAX_GAS, ConsensusWitnessContext, NeoConsensusWitnessStage};
@@ -11,6 +14,19 @@ where
 {
     /// Synchronous verification entry point used by legacy service helpers.
     pub fn verify_block(&self, block: &Block) -> EngineResult<()> {
+        self.verify_block_with_signature_cache(block, None)
+    }
+
+    /// Verifies one block with optional exact ECDSA preverification outcomes.
+    ///
+    /// The cache is advisory: parent checks and the complete canonical NeoVM
+    /// witness script always execute. A cache miss uses ordinary secp256r1
+    /// verification inside the same helper.
+    pub fn verify_block_with_signature_cache(
+        &self,
+        block: &Block,
+        signature_cache: Option<Arc<PreverifiedSignatureCache>>,
+    ) -> EngineResult<()> {
         let parent = self
             .ctx
             .parent_header(block)
@@ -41,16 +57,32 @@ where
         }
 
         let settings = self.ctx.settings();
-        Helper::verify_witness_with_native_provider(
-            &block.header,
-            settings.as_ref(),
-            self.ctx.snapshot(),
-            &parent.next_consensus,
-            &block.header.witness,
-            CONSENSUS_WITNESS_MAX_GAS,
-            self.ctx.native_contract_provider(),
-        )
-        .map_err(|_| {
+        BlockValidator::validate_primary_index(block.primary_index(), settings.validators_count)
+            .map_err(|error| EngineError::validation_failed(block.index(), error.to_string()))?;
+        let verify_result = match signature_cache {
+            Some(signature_cache) => {
+                Helper::verify_witness_with_native_provider_and_signature_cache(
+                    &block.header,
+                    settings.as_ref(),
+                    self.ctx.snapshot(),
+                    &parent.next_consensus,
+                    &block.header.witness,
+                    CONSENSUS_WITNESS_MAX_GAS,
+                    self.ctx.native_contract_provider(),
+                    signature_cache,
+                )
+            }
+            None => Helper::verify_witness_with_native_provider(
+                &block.header,
+                settings.as_ref(),
+                self.ctx.snapshot(),
+                &parent.next_consensus,
+                &block.header.witness,
+                CONSENSUS_WITNESS_MAX_GAS,
+                self.ctx.native_contract_provider(),
+            ),
+        };
+        verify_result.map_err(|_| {
             EngineError::validation_failed(block.index(), "consensus witness verification failed")
         })?;
 

@@ -157,6 +157,7 @@ where
             native_return_null: false,
             vm_context_profile: None,
             execution_plan_cache: None,
+            preverified_signature_cache: None,
             execution_observations: None,
         };
 
@@ -267,6 +268,7 @@ where
             native_return_null: false,
             vm_context_profile: None,
             execution_plan_cache: None,
+            preverified_signature_cache: None,
             execution_observations: None,
         };
 
@@ -318,6 +320,7 @@ where
         self.native_arg_null_mask = 0;
         self.native_return_null = false;
         self.vm_context_profile = None;
+        self.preverified_signature_cache = None;
         self.execution_observations = None;
         self.nonce_data = Self::initialize_nonce_data(
             self.script_container.as_ref(),
@@ -332,6 +335,29 @@ where
         self.storage_price = 100_000u32;
         self.refresh_policy_settings();
         self.vm_engine.engine_mut().reset_execution_session();
+    }
+
+    /// Installs immutable advisory ECDSA outcomes for this script container.
+    ///
+    /// NeoVM still executes the complete verification script. Only an exact
+    /// sign-data/public-key/signature match can replace the underlying curve
+    /// operation, and [`Self::prepare_next_transaction`] clears the binding.
+    pub(crate) fn set_preverified_signature_cache(
+        &mut self,
+        cache: Arc<PreverifiedSignatureCache>,
+    ) {
+        self.preverified_signature_cache = Some(cache);
+    }
+
+    pub(crate) fn preverified_signature_outcome(
+        &self,
+        sign_data: &[u8],
+        public_key: &[u8],
+        signature: &[u8],
+    ) -> Option<bool> {
+        self.preverified_signature_cache
+            .as_ref()?
+            .lookup(sign_data, public_key, signature)
     }
 
     /// Binds this engine as the VM interop host for one callback-capable operation.

@@ -30,7 +30,7 @@ pub(in crate::node) struct OptimisticSignatureVerificationSection {
     /// Process-wide opt-in. The ordinary synchronous path remains default.
     #[serde(default)]
     enabled: bool,
-    /// Number of dedicated NeoVM verification workers.
+    /// Number of dedicated state-free ECDSA preverification workers.
     #[serde(default = "default_signature_workers")]
     workers: usize,
     /// Bounded queued jobs behind the workers.

@@ -6,6 +6,7 @@ use crate::contract::Contract;
 use crate::diagnostic::NoDiagnostic;
 use crate::native_contract_provider::NativeContractProvider;
 use crate::native_contract_provider::NoNativeContractProvider;
+use crate::verification::PreverifiedSignatureCache;
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
@@ -237,6 +238,67 @@ impl Helper {
         P: NativeContractProvider + 'static,
         B: CacheRead,
     {
+        Self::verify_witness_with_native_provider_and_optional_signature_cache(
+            verifiable,
+            settings,
+            snapshot,
+            hash,
+            witness,
+            max_gas,
+            native_contract_provider,
+            None,
+        )
+    }
+
+    /// Verifies one witness through the full NeoVM path with advisory ECDSA outcomes.
+    ///
+    /// The cache can replace only exact secp256r1 curve operations. Invocation
+    /// and verification scripts are still parsed, loaded, metered, and executed
+    /// by NeoVM, including all canonical fault and result-stack checks.
+    #[allow(clippy::too_many_arguments)]
+    pub fn verify_witness_with_native_provider_and_signature_cache<V, P, B>(
+        verifiable: &V,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache<B>,
+        hash: &UInt160,
+        witness: &Witness,
+        max_gas: i64,
+        native_contract_provider: Arc<P>,
+        signature_cache: Arc<PreverifiedSignatureCache>,
+    ) -> CoreResult<i64>
+    where
+        V: VerifiableExt,
+        P: NativeContractProvider + 'static,
+        B: CacheRead,
+    {
+        Self::verify_witness_with_native_provider_and_optional_signature_cache(
+            verifiable,
+            settings,
+            snapshot,
+            hash,
+            witness,
+            max_gas,
+            native_contract_provider,
+            Some(signature_cache),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn verify_witness_with_native_provider_and_optional_signature_cache<V, P, B>(
+        verifiable: &V,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache<B>,
+        hash: &UInt160,
+        witness: &Witness,
+        max_gas: i64,
+        native_contract_provider: Arc<P>,
+        signature_cache: Option<Arc<PreverifiedSignatureCache>>,
+    ) -> CoreResult<i64>
+    where
+        V: VerifiableExt,
+        P: NativeContractProvider + 'static,
+        B: CacheRead,
+    {
         // Validate invocation script (check for bad opcodes)
         if !Self::is_valid_script(&witness.invocation_script) {
             return Err(CoreError::invalid_operation(
@@ -335,6 +397,14 @@ impl Helper {
 
         // Load invocation script (provides signatures/parameters)
         engine.load_script(witness.invocation_script.clone(), CallFlags::NONE, None)?;
+
+        // Mark consumption only after every canonical pre-execution guard has
+        // passed. Prepared caches rejected by script/hash validation must not
+        // appear in header cache-use telemetry.
+        if let Some(signature_cache) = signature_cache {
+            signature_cache.record_canonical_use();
+            engine.set_preverified_signature_cache(signature_cache);
+        }
 
         // Execute verification
         engine.execute()?;

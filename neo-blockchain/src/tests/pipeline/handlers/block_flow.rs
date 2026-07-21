@@ -2736,6 +2736,57 @@ async fn peer_block_witness_verification_accepts_valid_and_rejects_tampered() {
 }
 
 #[tokio::test]
+async fn peer_block_rejects_out_of_range_primary_with_pool_off_and_on() {
+    for pool_enabled in [false, true] {
+        let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+        let public_key =
+            neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+        let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+        let mut settings = neo_config::ProtocolSettings::default();
+        settings.standby_committee = vec![point.clone()];
+        settings.validators_count = 1;
+        let network = settings.network;
+        let (mut service, _handle, _snapshot) = store_fixture_with(settings.clone());
+        service.initialize().await.expect("initialize");
+        if pool_enabled {
+            service.set_optimistic_signature_verification(Some(Arc::new(
+                crate::pipeline::signature_verification::SignatureVerificationPool::new(
+                    crate::pipeline::signature_verification::SignatureVerificationPoolConfig {
+                        workers: 1,
+                        queue_capacity: 1,
+                    },
+                )
+                .expect("pool"),
+            )));
+        }
+
+        let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+        let verification = neo_vm::script_builder::redeem_script::RedeemScript::
+            multi_sig_redeem_script_from_points(1, &[point]).expect("multisig script");
+        let mut header = Header::new();
+        header.set_index(1);
+        header.set_prev_hash(genesis.hash());
+        header.set_timestamp(genesis.header.timestamp() + 15_000);
+        header.set_primary_index(1);
+        header.set_next_consensus(*genesis.header.next_consensus());
+        header.witness = sign_header_for_test(&header, network, &private_key, &verification);
+
+        let error = service
+            .handle_block_inventory(Arc::new(Block::from_parts(header, vec![])), false, false)
+            .await
+            .expect_err("out-of-range primary index must be rejected before persistence");
+        assert!(
+            error
+                .to_string()
+                .to_ascii_lowercase()
+                .contains("primary index"),
+            "pool_enabled={pool_enabled}, unexpected error: {error}"
+        );
+        assert_eq!(service.ledger.current_height(), 0);
+    }
+}
+
+#[tokio::test]
 async fn optimistic_inventory_batch_verifies_next_header_while_persisting_current_block() {
     let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
     let public_key =
@@ -2872,10 +2923,8 @@ async fn optimistic_inventory_window_stops_at_an_invalid_deep_header() {
         metrics.submitted >= 3,
         "look-ahead should fill multiple tickets"
     );
-    assert!(
-        metrics.invalid >= 1,
-        "the deep invalid witness must reach a worker"
-    );
+    assert!(metrics.completed >= 2, "advisory jobs must complete");
+    assert_eq!(metrics.invalid, 0, "header workers do not authorize blocks");
 }
 
 #[tokio::test]

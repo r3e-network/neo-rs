@@ -8,8 +8,8 @@ use crate::command::HeaderValidationOutcome;
 use crate::ledger_provider::{BlockProvider, ChainTipProvider};
 use crate::pipeline::consensus_witness_stage::ParentHeaderContext;
 use crate::pipeline::signature_verification::{
-    SignatureVerificationPool, SignatureVerificationSubmitError, SignatureVerificationTicket,
-    drain_signature_ticket, verify_header_witness_with_native_provider,
+    HeaderSignaturePreverification, HeaderSignaturePreverificationTicket,
+    SignatureVerificationCancellation, SignatureVerificationPool, SignatureVerificationSubmitError,
 };
 use crate::service::{BlockchainService, MempoolLike};
 
@@ -48,9 +48,9 @@ where
 
         // Header validation has no canonical side effects until a header is
         // inserted into `HeaderCache`. When explicitly enabled, verify a
-        // bounded window of header witnesses in parallel and publish only the
-        // ordered, context-matched receipts. A missing snapshot/anchor keeps
-        // the legacy synchronous path below.
+        // bounded window of exact signature operations in parallel. Every
+        // header still crosses the ordered canonical NeoVM fence before it is
+        // cached. A missing snapshot/anchor keeps the synchronous path below.
         if let (Some(pool), Some(snap), Some(provider), Some(anchor)) = (
             self.optimistic_signature_verification.as_ref(),
             snapshot.as_ref(),
@@ -58,6 +58,7 @@ where
             prev.as_ref(),
         ) {
             let verification_start = Instant::now();
+            let metrics_before = pool.metrics_snapshot();
             let outcome = self.handle_headers_with_optimistic_pool(
                 headers,
                 Arc::clone(pool),
@@ -70,20 +71,28 @@ where
             let elapsed = verification_start.elapsed();
             if outcome.accepted > 0 {
                 let blocks_per_second = outcome.accepted as f64 / elapsed.as_secs_f64().max(1e-9);
-                let metrics = pool.metrics_snapshot();
+                let metrics_after = pool.metrics_snapshot();
                 tracing::info!(
                     target: "neo::performance",
                     mode = "optimistic_signature_header",
                     blocks = outcome.accepted,
                     elapsed_ms = elapsed.as_secs_f64() * 1_000.0,
                     blocks_per_second,
-                    signature_submitted = metrics.submitted,
-                    signature_valid = metrics.valid,
-                    signature_invalid = metrics.invalid,
-                    signature_worker_panics = metrics.worker_panics,
-                    signature_worker_unavailable = metrics.worker_unavailable,
-                    signature_queue_full = metrics.queue_full,
-                    signature_queue_closed = metrics.queue_closed,
+                    signature_submitted = metrics_after.submitted.saturating_sub(metrics_before.submitted),
+                    signature_completed = metrics_after.completed.saturating_sub(metrics_before.completed),
+                    signature_invalid = metrics_after.invalid.saturating_sub(metrics_before.invalid),
+                    signature_cancelled = metrics_after.cancelled.saturating_sub(metrics_before.cancelled),
+                    signature_worker_panics = metrics_after.worker_panics.saturating_sub(metrics_before.worker_panics),
+                    signature_worker_unavailable = metrics_after.worker_unavailable.saturating_sub(metrics_before.worker_unavailable),
+                    signature_queue_full = metrics_after.queue_full.saturating_sub(metrics_before.queue_full),
+                    signature_queue_closed = metrics_after.queue_closed.saturating_sub(metrics_before.queue_closed),
+                    header_standard_caches_prepared = metrics_after.header_standard_caches_prepared.saturating_sub(metrics_before.header_standard_caches_prepared),
+                    header_unsupported_witness_fallbacks = metrics_after.header_unsupported_witness_fallbacks.saturating_sub(metrics_before.header_unsupported_witness_fallbacks),
+                    header_preverified_ecdsa_operations = metrics_after.header_preverified_ecdsa_operations.saturating_sub(metrics_before.header_preverified_ecdsa_operations),
+                    header_canonical_cache_consumptions = metrics_after.header_canonical_cache_consumptions.saturating_sub(metrics_before.header_canonical_cache_consumptions),
+                    header_canonical_cache_lookups = metrics_after.header_canonical_cache_lookups.saturating_sub(metrics_before.header_canonical_cache_lookups),
+                    header_canonical_cache_hits = metrics_after.header_canonical_cache_hits.saturating_sub(metrics_before.header_canonical_cache_hits),
+                    header_canonical_cache_misses = metrics_after.header_canonical_cache_misses.saturating_sub(metrics_before.header_canonical_cache_misses),
                     "optimistic header verification batch completed"
                 );
             }
@@ -175,8 +184,12 @@ where
         anchor: Header,
         anchor_height: u32,
     ) -> HeaderValidationOutcome {
-        let mut pending: VecDeque<(Header, ParentHeaderContext, SignatureVerificationTicket)> =
-            VecDeque::new();
+        let mut pending: VecDeque<(
+            Header,
+            ParentHeaderContext,
+            HeaderSignaturePreverificationTicket,
+        )> = VecDeque::new();
+        let cancellation = SignatureVerificationCancellation::default();
         let mut virtual_prev = anchor.clone();
         let mut virtual_height = anchor_height;
         let mut frontier = Some(anchor);
@@ -223,7 +236,7 @@ where
 
             if pool_enabled {
                 while pending.len() >= pool.window() {
-                    let Some((verified, _receipt)) = drain_signature_ticket(
+                    let Some(verified) = self.drain_header_preverification_ticket(
                         &mut pending,
                         settings.as_ref(),
                         snapshot.as_ref(),
@@ -238,12 +251,10 @@ where
                     frontier = Some(verified);
                 }
 
-                match pool.try_submit_header_witness(
+                match pool.try_submit_header_witness_cancellable(
                     header.clone(),
-                    parent,
                     Arc::clone(&settings),
-                    Arc::clone(&snapshot),
-                    Arc::clone(&native_contract_provider),
+                    &cancellation,
                 ) {
                     Ok(ticket) => {
                         pending.push_back((header.clone(), parent, ticket));
@@ -255,7 +266,7 @@ where
                         // The caller-side window should prevent this in
                         // normal operation. Drain one completed ticket and
                         // retry once to keep backpressure lossless.
-                        let Some((verified, _receipt)) = drain_signature_ticket(
+                        let Some(verified) = self.drain_header_preverification_ticket(
                             &mut pending,
                             settings.as_ref(),
                             snapshot.as_ref(),
@@ -268,12 +279,10 @@ where
                         }
                         accepted += 1;
                         frontier = Some(verified);
-                        match pool.try_submit_header_witness(
+                        match pool.try_submit_header_witness_cancellable(
                             header.clone(),
-                            parent,
                             Arc::clone(&settings),
-                            Arc::clone(&snapshot),
-                            Arc::clone(&native_contract_provider),
+                            &cancellation,
                         ) {
                             Ok(ticket) => {
                                 pending.push_back((header.clone(), parent, ticket));
@@ -294,7 +303,7 @@ where
             // Pool shutdown/preparation failures fall back to the canonical
             // synchronous verifier. First drain older speculative work so the
             // parent context is an already accepted frontier.
-            while let Some((verified, _receipt)) = drain_signature_ticket(
+            while let Some(verified) = self.drain_header_preverification_ticket(
                 &mut pending,
                 settings.as_ref(),
                 snapshot.as_ref(),
@@ -315,18 +324,17 @@ where
                 timestamp: actual_parent.timestamp(),
                 next_consensus: *actual_parent.next_consensus(),
             };
-            let Ok(receipt) = verify_header_witness_with_native_provider(
+            if !self.verify_header_witness_with_preverification(
                 &header,
                 &parent,
                 settings.as_ref(),
                 snapshot.as_ref(),
                 Arc::clone(&native_contract_provider),
-            ) else {
+                None,
+            ) {
                 break;
-            };
-            if !receipt.matches(&header, &parent, settings.as_ref(), &snapshot.version())
-                || !self.header_cache.add(header.clone())
-            {
+            }
+            if !self.header_cache.add(header.clone()) {
                 break;
             }
             accepted += 1;
@@ -336,7 +344,7 @@ where
         }
 
         // Ordered publication fence for all remaining speculative headers.
-        while let Some((verified, _receipt)) = drain_signature_ticket(
+        while let Some(verified) = self.drain_header_preverification_ticket(
             &mut pending,
             settings.as_ref(),
             snapshot.as_ref(),
@@ -350,5 +358,82 @@ where
         }
 
         HeaderValidationOutcome::new(accepted, frontier)
+    }
+
+    fn drain_header_preverification_ticket(
+        &self,
+        pending: &mut VecDeque<(
+            Header,
+            ParentHeaderContext,
+            HeaderSignaturePreverificationTicket,
+        )>,
+        settings: &neo_config::ProtocolSettings,
+        snapshot: &neo_storage::DataCache<S::CacheBacking>,
+        native_contract_provider: Arc<S::NativeProvider>,
+    ) -> Option<Header> {
+        let (header, parent, ticket) = pending.pop_front()?;
+        let preverification = ticket.wait().ok().flatten();
+        self.verify_header_witness_with_preverification(
+            &header,
+            &parent,
+            settings,
+            snapshot,
+            native_contract_provider,
+            preverification.as_ref(),
+        )
+        .then_some(header)
+    }
+
+    fn verify_header_witness_with_preverification(
+        &self,
+        header: &Header,
+        parent: &ParentHeaderContext,
+        settings: &neo_config::ProtocolSettings,
+        snapshot: &neo_storage::DataCache<S::CacheBacking>,
+        native_contract_provider: Arc<S::NativeProvider>,
+        preverification: Option<&HeaderSignaturePreverification>,
+    ) -> bool {
+        if parent.index.checked_add(1) != Some(header.index())
+            || header.prev_hash() != &parent.hash
+            || header.timestamp() <= parent.timestamp
+            || i32::from(header.primary_index()) >= settings.validators_count
+        {
+            return false;
+        }
+
+        let signature_cache = preverification
+            .filter(|proof| proof.matches(header, settings))
+            .map(HeaderSignaturePreverification::signature_cache);
+        match signature_cache {
+            Some(signature_cache) => {
+                let cache_metrics_before = signature_cache.metrics_snapshot();
+                let result =
+                    neo_execution::Helper::verify_witness_with_native_provider_and_signature_cache(
+                        header,
+                        settings,
+                        snapshot,
+                        &parent.next_consensus,
+                        &header.witness,
+                        300_000_000,
+                        native_contract_provider,
+                        Arc::clone(&signature_cache),
+                    );
+                self.record_header_signature_cache_consumption(
+                    signature_cache.as_ref(),
+                    cache_metrics_before,
+                );
+                result.is_ok()
+            }
+            None => neo_execution::Helper::verify_witness_with_native_provider(
+                header,
+                settings,
+                snapshot,
+                &parent.next_consensus,
+                &header.witness,
+                300_000_000,
+                native_contract_provider,
+            )
+            .is_ok(),
+        }
     }
 }

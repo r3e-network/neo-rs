@@ -4,6 +4,7 @@ use neo_payloads::Block;
 use tracing::warn;
 
 use crate::block_processing::BatchPersistResources;
+use crate::pipeline::signature_verification::HeaderSignaturePreverification;
 use crate::service::{BlockchainService, MempoolLike};
 
 impl<S, M> BlockchainService<S, M>
@@ -23,6 +24,7 @@ where
         current_height: u32,
         trusted_replay: bool,
         batch_persist_resources: Option<&BatchPersistResources<S::NativeProvider, S::CacheBacking>>,
+        signature_preverification: Option<&HeaderSignaturePreverification>,
     ) -> bool {
         let verify_result = if let Some(resources) = batch_persist_resources {
             self.verify_import_block_with_pipeline(
@@ -32,6 +34,7 @@ where
                 Arc::clone(&resources.settings),
                 Arc::clone(&resources.snapshot),
                 resources.native_persist.provider(),
+                signature_preverification,
             )
         } else {
             let snapshot = match self.system.store_snapshot() {
@@ -62,6 +65,7 @@ where
                         return false;
                     }
                 },
+                signature_preverification,
             )
         };
 

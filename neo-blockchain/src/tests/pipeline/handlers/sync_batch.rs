@@ -248,6 +248,112 @@ fn signed_sync_batch() -> SignedSyncBatch {
 }
 
 #[tokio::test]
+async fn optimistic_verified_sync_prefetches_the_following_header() {
+    let batch = signed_sync_batch();
+    let mut fixture = SyncBatchFixture::new(
+        batch.settings,
+        crate::SyncBatchCommitPolicy::DeferredLive,
+        false,
+    )
+    .await;
+    let pool = Arc::new(
+        SignatureVerificationPool::new(SignatureVerificationPoolConfig {
+            workers: 1,
+            queue_capacity: 2,
+        })
+        .expect("signature pool"),
+    );
+    fixture
+        .service
+        .set_optimistic_signature_verification(Some(Arc::clone(&pool)));
+
+    let reply = fixture
+        .service
+        .handle_import(Import {
+            blocks: batch.blocks,
+            mode: ImportMode::Sync,
+        })
+        .await;
+
+    assert_eq!(reply.imported, 2);
+    assert_eq!(reply.error, None);
+    assert_eq!(fixture.service.ledger.current_height(), 2);
+    assert_eq!(fixture.probe.commit_calls.load(Ordering::SeqCst), 1);
+    let metrics = pool.metrics_snapshot();
+    assert_eq!(metrics.submitted, 1, "the first block stays synchronous");
+    assert_eq!(metrics.completed, 1);
+    assert_eq!(metrics.invalid, 0);
+    assert_eq!(metrics.header_standard_caches_prepared, 1);
+    assert_eq!(metrics.header_preverified_ecdsa_operations, 1);
+    assert_eq!(metrics.header_canonical_cache_consumptions, 1);
+    assert_eq!(metrics.header_canonical_cache_lookups, 1);
+    assert_eq!(metrics.header_canonical_cache_hits, 1);
+    assert_eq!(metrics.header_canonical_cache_misses, 0);
+}
+
+#[tokio::test]
+async fn optimistic_verified_sync_keeps_only_the_valid_prefix_on_invalid_witness() {
+    let mut batch = signed_sync_batch();
+    *batch.blocks[1]
+        .header
+        .witness
+        .invocation_script
+        .last_mut()
+        .expect("standard signature byte") ^= 1;
+    let mut fixture = SyncBatchFixture::new(
+        batch.settings,
+        crate::SyncBatchCommitPolicy::DeferredLive,
+        false,
+    )
+    .await;
+    let pool = Arc::new(
+        SignatureVerificationPool::new(SignatureVerificationPoolConfig {
+            workers: 1,
+            queue_capacity: 2,
+        })
+        .expect("signature pool"),
+    );
+    fixture
+        .service
+        .set_optimistic_signature_verification(Some(Arc::clone(&pool)));
+
+    let reply = fixture
+        .service
+        .handle_import(Import {
+            blocks: batch.blocks,
+            mode: ImportMode::Sync,
+        })
+        .await;
+
+    assert_eq!(reply.imported, 1);
+    assert!(
+        reply
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("block 2 failed canonical import verification"))
+    );
+    assert_eq!(fixture.service.ledger.current_height(), 1);
+    assert_eq!(fixture.probe.commit_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(fixture.probe.committed_heights.lock().as_slice(), &[1]);
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&fixture.snapshot)
+            .expect("ledger current index"),
+        1
+    );
+    let metrics = pool.metrics_snapshot();
+    assert_eq!(metrics.submitted, 1);
+    assert_eq!(metrics.completed, 1);
+    assert_eq!(metrics.invalid, 0);
+    assert_eq!(metrics.header_standard_caches_prepared, 1);
+    assert_eq!(metrics.header_preverified_ecdsa_operations, 1);
+    assert_eq!(metrics.header_canonical_cache_consumptions, 1);
+    assert_eq!(metrics.header_canonical_cache_lookups, 1);
+    assert_eq!(metrics.header_canonical_cache_hits, 1);
+    assert_eq!(metrics.header_canonical_cache_misses, 0);
+}
+
+#[tokio::test]
 async fn verified_sync_batch_commits_once_and_replays_live_side_effects_after_durability() {
     let batch = signed_sync_batch();
     let fixture = SyncBatchFixture::new(

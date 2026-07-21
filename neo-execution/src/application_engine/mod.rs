@@ -58,6 +58,7 @@ use neo_vm::{StackItem, VmError, VmResult};
 use crate::NotifyEventArgs;
 use crate::StorageContext;
 use crate::native_contract_provider::{NativeContractProvider, NoNativeContractProvider};
+use crate::verification::PreverifiedSignatureCache;
 use crate::{NativeContract, NativeContractsCache, NativeRegistry};
 use neo_payloads::WitnessCondition;
 use neo_primitives::TriggerType;
@@ -151,6 +152,8 @@ where
     vm_context_profile: Option<crate::execution_profile::ApplicationContextProfileCollector>,
     /// Bounded rebuildable plan cache, present only after explicit enablement.
     execution_plan_cache: Option<ApplicationExecutionPlanCache>,
+    /// Immutable exact ECDSA outcomes produced by an advisory verification worker.
+    preverified_signature_cache: Option<Arc<PreverifiedSignatureCache>>,
     /// Runner-owned live observation state, absent on every ordinary engine.
     execution_observations: Option<Arc<Mutex<ExecutionObservationState>>>,
 }

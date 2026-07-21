@@ -55,6 +55,7 @@ The daemon accepts a small, fixed set of flags; everything else lives in TOML.
 | `--check-storage` | Open the configured storage backend, confirm it is reachable/writable, and exit. |
 | `--check-all` | Run both preflight checks and exit. |
 | `--import-chain <PATH>` | Import a local `chain.acc` dump before live P2P sync. |
+| `--verify-import-chain` | Run full block/header verification for `--import-chain`; useful for audits and verified archive-replay A/B proxies, not a P2P sync measurement. |
 | `--fast-sync` | Download, MD5-check, cache, and import the built-in official fast-sync package before live P2P sync. |
 | `--fast-sync-cache <PATH>` | Override the fast-sync package cache directory. Requires `--fast-sync`. |
 | `--stop-at-height <HEIGHT>` | Stop gracefully after the persisted local ledger reaches the target height. |

@@ -27,7 +27,8 @@ Two important behaviors:
 
 - **Forward compatibility.** Every section and key is optional. Most unknown
   sections/keys are ignored, while safety-critical opt-in sections such as
-  `[execution.specialization_shadow]` reject unknown keys instead of silently
+  `[execution.specialization_shadow]` and
+  `[execution.optimistic_signature_verification]` reject unknown keys instead of silently
   accepting a misspelled control.
 - **Presets plus overrides.** `[network] network_type` selects a built-in
   protocol preset (committee, seeds, hardfork schedule). Individual keys in
@@ -38,7 +39,7 @@ Two important behaviors:
 
 These sections drive node behavior: `[network]`, `[storage]`, `[p2p]`, `[rpc]`,
 `[consensus]` (alias `[dbft]`), `[blockchain]`, `[mempool]`,
-`[execution.specialization_shadow]`,
+`[execution.optimistic_signature_verification]`, `[execution.specialization_shadow]`,
 `[state_service]`, `[indexer]`, `[application_logs]`, and
 `[tokens_tracker]`, `[telemetry.metrics]`, `[logging]`, and
 `[observability]`.
@@ -401,6 +402,30 @@ Transaction pool sizing.
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `max_transactions` | i32 | preset (`50000`) | Maximum transactions retained in the memory pool (`MemoryPoolMaxTransactions`). Aliases: `memory_pool_max_transactions`, `MemoryPoolMaxTransactions`. |
+
+### `[execution.optimistic_signature_verification]`
+
+Opt-in bounded preverification for standard header-witness signatures. Workers
+compute exact ECDSA outcomes without reading chain state or running NeoVM. The
+ordered import lane binds a result to the exact header hash, height, network,
+and complete witness, then still performs every parent/header check and runs
+the complete canonical witness script in NeoVM. A queue miss, unsupported
+script, stale result, worker failure, or cache miss falls back to ordinary
+synchronous verification. No worker result can advance the canonical tip,
+publish StateRoot, commit storage, or emit finalized events.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `enabled` | bool | `false` | Enable the bounded advisory cache path. Local ledger execution is required. |
+| `workers` | integer | `4` | Dedicated state-free ECDSA workers; accepted range `1..=64`. |
+| `queue_capacity` | integer | `32` | Maximum jobs waiting behind workers; accepted range `1..=4096`. The caller-side ordered window is `workers + queue_capacity`. |
+
+```toml
+[execution.optimistic_signature_verification]
+enabled = true
+workers = 4
+queue_capacity = 32
+```
 
 ### `[execution.specialization_shadow]`
 

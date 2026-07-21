@@ -2,11 +2,14 @@ use super::*;
 use crate::NoDiagnostic;
 use crate::native_contract_provider::NoNativeContractProvider;
 use neo_config::{Hardfork, ProtocolSettings};
-use neo_payloads::VerifiableContainer;
+use neo_crypto::Secp256r1Crypto;
+use neo_payloads::{VerifiableContainer, Witness};
 use neo_primitives::TriggerType;
 use neo_storage::DataCache;
 use neo_vm::OpCode;
 use neo_vm::StackItem;
+use neo_vm::script_builder::ScriptBuilder;
+use neo_vm::script_builder::redeem_script::RedeemScript;
 use std::sync::Arc;
 
 fn engine_with_gorgon(active: bool) -> ApplicationEngine {
@@ -53,6 +56,23 @@ fn load_test_context(engine: &mut ApplicationEngine) {
         .expect("load test script");
 }
 
+fn preverified_signature(
+    message: &[u8; 36],
+) -> (Arc<crate::PreverifiedSignatureCache>, Vec<u8>, [u8; 64]) {
+    let private_key = [17u8; 32];
+    let public_key = Secp256r1Crypto::derive_public_key(&private_key).expect("derive public key");
+    let signature = Secp256r1Crypto::sign(message, &private_key).expect("sign message");
+    let mut invocation = ScriptBuilder::new();
+    invocation.emit_push(&signature);
+    let witness = Witness::new_with_scripts(
+        invocation.to_array(),
+        RedeemScript::signature_redeem_script(&public_key),
+    );
+    let cache = crate::preverify_standard_witness_signatures(message, &witness)
+        .expect("preverify canonical signature witness");
+    (cache, public_key, signature)
+}
+
 #[test]
 fn wrong_length_signature_returns_false_before_gorgon() {
     let engine = engine_with_gorgon(false);
@@ -85,6 +105,65 @@ fn invalid_fixed_length_signature_returns_false() {
         engine.verify_signature(b"message", &public_key, &[0u8; 64]),
         Ok(false)
     );
+}
+
+#[test]
+fn cached_and_uncached_signature_checks_have_identical_results() {
+    let message = [0x61; 36];
+    let (cache, public_key, signature) = preverified_signature(&message);
+    let uncached = engine_with_gorgon(true);
+    let mut cached = engine_with_gorgon(true);
+    cached.set_preverified_signature_cache(Arc::clone(&cache));
+
+    assert_eq!(
+        cached.verify_signature(&message, &public_key, &signature),
+        uncached.verify_signature(&message, &public_key, &signature)
+    );
+
+    let mut invalid_signature = signature;
+    invalid_signature[0] ^= 1;
+    assert_eq!(
+        cached.verify_signature(&message, &public_key, &invalid_signature),
+        uncached.verify_signature(&message, &public_key, &invalid_signature)
+    );
+    assert_eq!(
+        cache.metrics_snapshot(),
+        crate::PreverifiedSignatureCacheMetricsSnapshot {
+            canonical_uses: 0,
+            lookups: 2,
+            hits: 1,
+            misses: 1,
+        }
+    );
+}
+
+#[test]
+fn cache_does_not_bypass_malformed_key_or_gorgon_length_guards() {
+    let message = [0x71; 36];
+    let (cache, _, signature) = preverified_signature(&message);
+    let mut engine = engine_with_gorgon(true);
+    engine.set_preverified_signature_cache(Arc::clone(&cache));
+
+    assert!(
+        engine
+            .verify_signature(&message, &[0x04; 33], &signature)
+            .is_err()
+    );
+    assert!(
+        engine
+            .verify_signature(&message, &valid_public_key(), &[0u8; 63])
+            .is_err()
+    );
+    assert_eq!(
+        engine.verify_signature(&message, &out_of_field_public_key(), &signature),
+        engine_with_gorgon(true)
+            .verify_signature(&message, &out_of_field_public_key(), &signature,),
+        "a cache miss must retain the canonical out-of-field false result"
+    );
+    let metrics = cache.metrics_snapshot();
+    assert_eq!(metrics.lookups, 2);
+    assert_eq!(metrics.hits, 0);
+    assert_eq!(metrics.misses, 2);
 }
 
 #[test]

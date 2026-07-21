@@ -9,14 +9,14 @@ use std::fmt;
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
-use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_execution::{PreverifiedSignatureCache, native_contract_provider::NativeContractProvider};
 use neo_payloads::Block;
 use neo_storage::{CacheRead, DataCache};
 
 use super::consensus_witness_stage::{
     ConsensusWitnessContext, NeoConsensusWitnessStage, SnapshotConsensusWitnessContext,
 };
-use super::stage_traits::{ConsensusWitnessStage, EngineResult, StageContext, ValidateStage};
+use super::stage_traits::{EngineResult, StageContext, ValidateStage};
 use super::validate_stage::{NeoValidateStage, SnapshotValidateContext};
 
 /// Concrete verified-import chain: validate, then verify consensus witness.
@@ -73,8 +73,22 @@ where
 
     /// Runs the verified-import chain for one block.
     pub fn verify(&self, ctx: &StageContext, block: &Block) -> EngineResult<()> {
+        self.verify_with_signature_cache(ctx, block, None)
+    }
+
+    /// Runs the complete verified-import chain with optional ECDSA preverification.
+    ///
+    /// Validation and canonical consensus-witness NeoVM execution always run.
+    /// The cache can replace only exact curve operations inside that execution.
+    pub fn verify_with_signature_cache(
+        &self,
+        ctx: &StageContext,
+        block: &Block,
+        signature_cache: Option<Arc<PreverifiedSignatureCache>>,
+    ) -> EngineResult<()> {
         self.validate.validate(ctx, block)?;
-        self.consensus_witness.verify_consensus_witness(ctx, block)
+        self.consensus_witness
+            .verify_block_with_signature_cache(block, signature_cache)
     }
 
     /// Creates and runs the verified-import chain for one block.
@@ -86,10 +100,33 @@ where
         snapshot: Arc<DataCache<B>>,
         native_contract_provider: Arc<P>,
     ) -> EngineResult<()> {
+        Self::verify_block_with_signature_cache(
+            block,
+            current_height,
+            trusted_replay,
+            settings,
+            snapshot,
+            native_contract_provider,
+            None,
+        )
+    }
+
+    /// Creates and runs the complete chain with optional ECDSA preverification.
+    #[allow(clippy::too_many_arguments)]
+    pub fn verify_block_with_signature_cache(
+        block: &Block,
+        current_height: u32,
+        trusted_replay: bool,
+        settings: Arc<ProtocolSettings>,
+        snapshot: Arc<DataCache<B>>,
+        native_contract_provider: Arc<P>,
+        signature_cache: Option<Arc<PreverifiedSignatureCache>>,
+    ) -> EngineResult<()> {
         let pipeline = Self::new(settings, snapshot, native_contract_provider);
-        pipeline.verify(
+        pipeline.verify_with_signature_cache(
             &StageContext::for_verified_import(current_height, trusted_replay),
             block,
+            signature_cache,
         )
     }
 }

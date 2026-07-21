@@ -1,10 +1,12 @@
+use std::sync::Arc;
 use std::time::Instant;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::block_processing::BlockCommitArtifacts;
 use crate::command::{ImportBlocksReply, ImportBlocksStats};
 use crate::import::Import;
 use crate::internal::ImportDisposition;
+use crate::pipeline::signature_verification::OrderedHeaderVerificationWindow;
 use crate::service::{BlockchainService, MempoolLike};
 
 mod empty_fast_forward;
@@ -22,6 +24,7 @@ where
 {
     /// Handle a [`BlockchainCommand::Import`] request.
     pub(crate) async fn handle_import(&self, import: Import) -> ImportBlocksReply {
+        let import_start = Instant::now();
         let mut imported = 0usize;
         let mut already_durable = 0usize;
         let mut stats = ImportBlocksStats::default();
@@ -32,6 +35,12 @@ where
         let trusted_replay = plan.is_trusted_replay();
         let persist_context = plan.persist_context();
         let defer_store_commit = plan.defers_store_commit();
+        let settings = self.system.settings();
+        let signature_metrics_before = self
+            .optimistic_signature_verification
+            .as_ref()
+            .map(|pool| pool.metrics_snapshot());
+        let mut signature_window = OrderedHeaderVerificationWindow::default();
         let mut deferred_committed_blocks = Vec::new();
         let mut import_error = None;
         let mut batch_persist_resources = None;
@@ -62,6 +71,9 @@ where
                 }
                 ImportDisposition::NextExpected => {}
             }
+            let current_signature = verify
+                .then(|| signature_window.take_current(block))
+                .flatten();
             let observer_requires_artifacts = plan.allows_replay_artifacts()
                 && self
                     .system
@@ -86,6 +98,13 @@ where
                 }
                 batch_persist_resources_loaded = true;
             }
+
+            if verify && let Some(pool) = self.optimistic_signature_verification.as_ref() {
+                signature_window.fill_after(position, &blocks, pool, Arc::clone(&settings));
+            }
+            let signature_preverification = current_signature
+                .and_then(|ticket| ticket.wait().ok())
+                .flatten();
 
             if trusted_replay
                 && !verify
@@ -121,8 +140,14 @@ where
                     current_height,
                     trusted_replay,
                     batch_persist_resources.as_ref(),
+                    signature_preverification.as_ref(),
                 )
             {
+                signature_window.disable();
+                import_error = Some(format!(
+                    "block {} failed canonical import verification",
+                    block.index()
+                ));
                 break;
             }
 
@@ -325,8 +350,84 @@ where
             }
         }
         if let Some(error) = import_error {
+            self.log_optimistic_signature_import(
+                import_start,
+                imported.saturating_sub(already_durable),
+                verify,
+                signature_metrics_before,
+                &signature_window,
+            );
             return ImportBlocksReply::failed_with_stats(imported, stats, error);
         }
+        self.log_optimistic_signature_import(
+            import_start,
+            imported.saturating_sub(already_durable),
+            verify,
+            signature_metrics_before,
+            &signature_window,
+        );
         ImportBlocksReply::ok_with_stats(imported, stats)
+    }
+
+    fn log_optimistic_signature_import(
+        &self,
+        started: Instant,
+        imported: usize,
+        verify: bool,
+        metrics_before: Option<
+            crate::pipeline::signature_verification::SignatureVerificationPoolMetricsSnapshot,
+        >,
+        window: &OrderedHeaderVerificationWindow,
+    ) {
+        if !verify || imported == 0 {
+            return;
+        }
+        let Some(pool) = self.optimistic_signature_verification.as_ref() else {
+            return;
+        };
+        let before = metrics_before.unwrap_or_default();
+        let after = pool.metrics_snapshot();
+        let elapsed = started.elapsed();
+        info!(
+            target: "neo::performance",
+            mode = "optimistic_signature_verified_import",
+            blocks = imported,
+            elapsed_ms = elapsed.as_secs_f64() * 1_000.0,
+            blocks_per_second = imported as f64 / elapsed.as_secs_f64().max(1e-9),
+            signature_submitted = after.submitted.saturating_sub(before.submitted),
+            signature_completed = after.completed.saturating_sub(before.completed),
+            signature_invalid = after.invalid.saturating_sub(before.invalid),
+            signature_cancelled = after.cancelled.saturating_sub(before.cancelled),
+            signature_worker_panics = after.worker_panics.saturating_sub(before.worker_panics),
+            signature_worker_unavailable = after
+                .worker_unavailable
+                .saturating_sub(before.worker_unavailable),
+            signature_queue_full = after.queue_full.saturating_sub(before.queue_full),
+            signature_queue_closed = after.queue_closed.saturating_sub(before.queue_closed),
+            header_standard_caches_prepared = after
+                .header_standard_caches_prepared
+                .saturating_sub(before.header_standard_caches_prepared),
+            header_unsupported_witness_fallbacks = after
+                .header_unsupported_witness_fallbacks
+                .saturating_sub(before.header_unsupported_witness_fallbacks),
+            header_preverified_ecdsa_operations = after
+                .header_preverified_ecdsa_operations
+                .saturating_sub(before.header_preverified_ecdsa_operations),
+            header_canonical_cache_consumptions = after
+                .header_canonical_cache_consumptions
+                .saturating_sub(before.header_canonical_cache_consumptions),
+            header_canonical_cache_lookups = after
+                .header_canonical_cache_lookups
+                .saturating_sub(before.header_canonical_cache_lookups),
+            header_canonical_cache_hits = after
+                .header_canonical_cache_hits
+                .saturating_sub(before.header_canonical_cache_hits),
+            header_canonical_cache_misses = after
+                .header_canonical_cache_misses
+                .saturating_sub(before.header_canonical_cache_misses),
+            signature_prefetched_headers = window.submitted(),
+            signature_max_pending = window.max_pending(),
+            "optimistic verified import completed"
+        );
     }
 }

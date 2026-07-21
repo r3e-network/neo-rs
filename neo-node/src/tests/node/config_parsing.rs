@@ -624,6 +624,22 @@ fn node_cli_accepts_preflight_flags() {
 }
 
 #[test]
+fn node_cli_verified_chain_import_is_explicit_and_requires_an_archive() {
+    let cli = NodeCli::try_parse_from([
+        "neo-node",
+        "--import-chain",
+        "chain.acc",
+        "--verify-import-chain",
+    ])
+    .expect("verified archive import flags parse");
+    assert_eq!(cli.import_chain, Some(PathBuf::from("chain.acc")));
+    assert!(cli.verify_import_chain);
+
+    NodeCli::try_parse_from(["neo-node", "--verify-import-chain"])
+        .expect_err("verification without an archive must fail closed");
+}
+
+#[test]
 fn node_cli_state_root_is_default_off_and_has_explicit_overrides() {
     let default = NodeCli::try_parse_from(["neo-node"]).expect("parse defaults");
     assert_eq!(default.stateroot_override(), None);

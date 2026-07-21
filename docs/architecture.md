@@ -388,14 +388,16 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   BlockchainHandle>` prevents an arbitrary verifier from forging that proof.
   When `[execution.optimistic_signature_verification]` is explicitly enabled,
   inventory batches submit a bounded look-ahead window of header witnesses to
-  the worker pool while the current blocks execute. A typed receipt is accepted
-  only after rechecking the exact header bytes, parent context, chain identity,
-  witness digest, and applicable cache revision at the canonical persistence
-  fence. Worker failure, queue shutdown, stale context, or a broken parent
-  chain discards later speculative tickets and falls back to the synchronous
-  verifier. The transaction signature helper remains an admission/audit API;
+  the worker pool while the current blocks execute. Workers compute only
+  exact-input ECDSA outcomes; they do not read state or run NeoVM. A cache is
+  installed only after rechecking the exact header hash, height, network, and
+  complete witness digest. The ordered canonical lane still checks the parent,
+  timestamp, primary index, and previous `NextConsensus`, then executes the
+  complete witness in NeoVM. Worker failure, queue shutdown, stale input, or a
+  broken parent chain discards later speculative tickets and falls back to the
+  synchronous verifier. The transaction signature helper remains an admission/audit API;
   canonical historical block import does not add a new transaction-signature
-  rejection rule without a protocol differential proof. No receipt can publish
+  rejection rule without a protocol differential proof. No cache can publish
   unverified state, events, or relay output. This hides only proven header
   witness latency and is not a rollback-based permission to commit an
   unverified block.
