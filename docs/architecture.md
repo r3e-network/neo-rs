@@ -386,6 +386,19 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   draining, durable persistence, events, and mempool maintenance remain
   mandatory. The checker type on `CheckedBlockBatch<Arc<Block>,
   BlockchainHandle>` prevents an arbitrary verifier from forging that proof.
+  When `[execution.optimistic_signature_verification]` is explicitly enabled,
+  inventory batches submit a bounded look-ahead window of header witnesses to
+  the worker pool while the current blocks execute. A typed receipt is accepted
+  only after rechecking the exact header bytes, parent context, chain identity,
+  witness digest, and applicable cache revision at the canonical persistence
+  fence. Worker failure, queue shutdown, stale context, or a broken parent
+  chain discards later speculative tickets and falls back to the synchronous
+  verifier. The transaction signature helper remains an admission/audit API;
+  canonical historical block import does not add a new transaction-signature
+  rejection rule without a protocol differential proof. No receipt can publish
+  unverified state, events, or relay output. This hides only proven header
+  witness latency and is not a rollback-based permission to commit an
+  unverified block.
   Consensus-produced blocks use `submit_consensus_block`, extensible payloads
   use `submit_inventory_extensible`, and startup genesis bootstrapping uses
   `initialize`. Node composition does not construct `BlockchainCommand` variants

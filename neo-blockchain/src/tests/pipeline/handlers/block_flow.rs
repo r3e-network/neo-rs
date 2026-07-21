@@ -2736,6 +2736,252 @@ async fn peer_block_witness_verification_accepts_valid_and_rejects_tampered() {
 }
 
 #[tokio::test]
+async fn optimistic_inventory_batch_verifies_next_header_while_persisting_current_block() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point.clone()];
+    settings.validators_count = 1;
+    let network = settings.network;
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            &[point],
+        )
+        .expect("multisig script");
+    let (mut service, _handle, _snapshot) = store_fixture_with(settings.clone());
+    service.initialize().await.expect("initialize");
+    service.set_optimistic_signature_verification(Some(Arc::new(
+        crate::pipeline::signature_verification::SignatureVerificationPool::new(
+            crate::pipeline::signature_verification::SignatureVerificationPoolConfig {
+                workers: 1,
+                queue_capacity: 2,
+            },
+        )
+        .expect("pool"),
+    )));
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
+
+    let sign = |header: &Header| {
+        let mut sign_data = Vec::with_capacity(36);
+        sign_data.extend_from_slice(&network.to_le_bytes());
+        sign_data.extend_from_slice(&header.hash().to_bytes());
+        let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+        let mut invocation = vec![0x0C, 64];
+        invocation.extend_from_slice(&signature);
+        neo_payloads::Witness::new_with_scripts(invocation, verification.clone())
+    };
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_primary_index(0);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    header1.witness = sign(&header1);
+    let block1 = Arc::new(Block::from_parts(header1, Vec::new()));
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1.hash());
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_primary_index(0);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+    header2.witness = sign(&header2);
+    let block2 = Arc::new(Block::from_parts(header2, Vec::new()));
+
+    let imported = service
+        .handle_block_inventory_batch(vec![block1, block2], false, false)
+        .await
+        .expect("optimistic batch import");
+    assert_eq!(imported, 2);
+    assert_eq!(service.ledger.current_height(), 2);
+}
+
+#[tokio::test]
+async fn optimistic_inventory_window_stops_at_an_invalid_deep_header() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point.clone()];
+    settings.validators_count = 1;
+    let network = settings.network;
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            &[point],
+        )
+        .expect("multisig script");
+    let (mut service, _handle, _snapshot) = store_fixture_with(settings.clone());
+    service.initialize().await.expect("initialize");
+    let pool = Arc::new(
+        crate::pipeline::signature_verification::SignatureVerificationPool::new(
+            crate::pipeline::signature_verification::SignatureVerificationPoolConfig {
+                workers: 2,
+                queue_capacity: 4,
+            },
+        )
+        .expect("pool"),
+    );
+    service.set_optimistic_signature_verification(Some(Arc::clone(&pool)));
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
+
+    let sign = |header: &Header| {
+        let mut sign_data = Vec::with_capacity(36);
+        sign_data.extend_from_slice(&network.to_le_bytes());
+        sign_data.extend_from_slice(&header.hash().to_bytes());
+        let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+        let mut invocation = vec![0x0C, 64];
+        invocation.extend_from_slice(&signature);
+        neo_payloads::Witness::new_with_scripts(invocation, verification.clone())
+    };
+
+    let mut blocks = Vec::with_capacity(4);
+    let mut previous_hash = genesis.hash();
+    let mut previous_timestamp = genesis.header.timestamp();
+    for index in 1..=4 {
+        let mut header = Header::new();
+        header.set_index(index);
+        header.set_prev_hash(previous_hash);
+        header.set_timestamp(previous_timestamp + 15_000);
+        header.set_primary_index(0);
+        header.set_next_consensus(*genesis.header.next_consensus());
+        header.witness = if index == 3 {
+            neo_payloads::Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH0.byte()])
+        } else {
+            sign(&header)
+        };
+        let block = Arc::new(Block::from_parts(header, Vec::new()));
+        previous_hash = block.hash();
+        previous_timestamp += 15_000;
+        blocks.push(block);
+    }
+
+    let imported = service
+        .handle_block_inventory_batch(blocks, false, false)
+        .await
+        .expect("optimistic batch import keeps the valid prefix");
+    assert_eq!(imported, 2);
+    assert_eq!(service.ledger.current_height(), 2);
+    let metrics = pool.metrics_snapshot();
+    assert!(
+        metrics.submitted >= 3,
+        "look-ahead should fill multiple tickets"
+    );
+    assert!(
+        metrics.invalid >= 1,
+        "the deep invalid witness must reach a worker"
+    );
+}
+
+#[tokio::test]
+async fn canonical_import_does_not_add_transaction_signature_gate() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point.clone()];
+    settings.validators_count = 1;
+    let network = settings.network;
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            &[point],
+        )
+        .expect("multisig script");
+
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let commit_attempts = Arc::new(AtomicUsize::new(0));
+    let commit_to_store_calls = Arc::new(AtomicUsize::new(0));
+    let abort_store_commit_calls = Arc::new(AtomicUsize::new(0));
+    let system = Arc::new(FailingSecondCommitContext {
+        snapshot: Arc::clone(&snapshot),
+        chain_spec: chain_spec_for_settings(&settings),
+        commit_attempts: Arc::clone(&commit_attempts),
+        commit_to_store_calls: Arc::clone(&commit_to_store_calls),
+        abort_store_commit_calls: Arc::clone(&abort_store_commit_calls),
+        fatal_on_rejection: false,
+    });
+    let (mut service, _handle) = BlockchainService::with_defaults(
+        system,
+        Arc::new(LedgerContext::default()),
+        Arc::new(HeaderCache::default()),
+        Arc::new(TestMempool),
+    );
+    service.initialize().await.expect("initialize");
+    commit_attempts.store(0, Ordering::SeqCst);
+    commit_to_store_calls.store(0, Ordering::SeqCst);
+
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
+    let transaction_verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&[2u8; 33]);
+    let transaction_account = neo_primitives::UInt160::from_script(&transaction_verification);
+    let mut transaction_invocation = vec![neo_vm::OpCode::PUSHDATA1.byte(), 64];
+    transaction_invocation.extend_from_slice(&[0u8; 64]);
+    let mut transaction = Transaction::new();
+    transaction.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
+    transaction.set_signers(vec![neo_payloads::Signer::new(
+        transaction_account,
+        neo_primitives::WitnessScope::NONE,
+    )]);
+    transaction.set_witnesses(vec![neo_payloads::Witness::new_with_scripts(
+        transaction_invocation,
+        transaction_verification,
+    )]);
+
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_primary_index(0);
+    header.set_next_consensus(*genesis.header.next_consensus());
+    let mut block = Block::from_parts(header, vec![transaction]);
+    block.try_rebuild_merkle_root().expect("merkle root");
+    block.header.witness =
+        sign_header_for_test(&block.header, network, &private_key, &verification);
+
+    service.set_optimistic_signature_verification(Some(Arc::new(
+        crate::pipeline::signature_verification::SignatureVerificationPool::new(
+            crate::pipeline::signature_verification::SignatureVerificationPoolConfig {
+                workers: 1,
+                queue_capacity: 1,
+            },
+        )
+        .expect("pool"),
+    )));
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block],
+            mode: ImportMode::Sync,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 1);
+    assert!(
+        imported.error.is_none(),
+        "canonical import must not add a transaction-signature gate: {imported:?}"
+    );
+    assert_eq!(service.ledger.current_height(), 1);
+    assert_eq!(abort_store_commit_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(commit_to_store_calls.load(Ordering::SeqCst), 1);
+    assert!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .is_ok(),
+        "canonical import should publish the block after header verification"
+    );
+}
+
+#[tokio::test]
 async fn peer_block_witness_verification_does_not_trust_catchup_peer_tip() {
     let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
     let public_key =
