@@ -30,6 +30,14 @@ name = "neo-pack-build"
 path = "src/bin/neo-pack-build.rs"
 
 [[bin]]
+name = "neo-pack-activate"
+path = "src/bin/neo-pack-activate.rs"
+
+[[bin]]
+name = "neo-pack-marker"
+path = "src/bin/neo-pack-marker.rs"
+
+[[bin]]
 name = "neo-mdbx-rebase"
 path = "src/bin/neo-mdbx-rebase.rs"
 
@@ -73,6 +81,7 @@ thiserror = { workspace = true }
 
 # Utilities
 chrono = { workspace = true }
+libc = "0.2"
 sysinfo = { workspace = true }
 rand = { workspace = true }
 url = { workspace = true }
