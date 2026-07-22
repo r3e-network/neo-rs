@@ -68,10 +68,10 @@ scrubs. The implementation also passed 274 `neo-blockchain` tests, the full
 `neo-execution` and `neo-node` suites, strict all-target Clippy, layer-boundary
 tests, strict OpenSpec validation, formatting, and `git diff --check`.
 
-Raw evidence is retained at:
-
-- `/tmp/neo-signature-cache-ab-20260721T120107Z-evidence`
-- `/tmp/neo-signature-cache-ab-20260721T121451Z-evidence`
+The raw campaign directories were temporary and were removed after their
+digests and aggregate results were recorded. The retained summary is
+`optimistic-signature-verification-20260721.json`; it contains the paired-run
+rates, final roots, marker identities, and binary/input hashes used above.
 
 ## Remaining bottleneck
 

@@ -1,0 +1,381 @@
+{
+  "schema_version": 3,
+  "status": "passed",
+  "backend": "append_frames_immutable_sorted_runs_v5",
+  "output": "/tmp/neo-statepacks-segment-ab/baseline-1.json",
+  "database": "/tmp/neo-statepacks-segment-ab/baseline-1-db",
+  "evidence_log": null,
+  "scale": "full",
+  "labels": {
+    "hardware": "intel-core-ultra-9-285k-8-vcpu",
+    "filesystem": "ext4-shared-vm-volume",
+    "durability": "append-sync-data-directory-fsync",
+    "read_cache_state": "warm-after-prefill"
+  },
+  "workload": {
+    "source": "neo-n3-mainnet-1877001-1887000",
+    "seed": 5640001189223798919,
+    "prefill_rows": 115140640,
+    "blocks": 10000,
+    "commits": 8,
+    "puts": 1007960,
+    "tombstones": 0,
+    "version_hits": 8595,
+    "value_size_counts": [
+      280486,
+      241348,
+      116787,
+      214297,
+      155028,
+      10,
+      2,
+      2
+    ],
+    "value_size_bytes": [
+      8998915,
+      21223494,
+      23067620,
+      93157068,
+      82587579,
+      20639,
+      15896,
+      44268
+    ]
+  },
+  "prefill": {
+    "name": "prefill",
+    "wall_ns": 250385290338,
+    "logical": {
+      "puts": 115140640,
+      "tombstones": 0,
+      "entries": 115140640,
+      "key_bytes": 3799641120,
+      "value_bytes": 26172180284,
+      "mutation_bytes": 29971821404,
+      "value_size_counts": [
+        32040297,
+        27569510,
+        13340737,
+        24479436,
+        17709061,
+        1142,
+        228,
+        229
+      ]
+    },
+    "before": {
+      "unix_time_ns": 1784698949181544267,
+      "process": {
+        "available": true,
+        "user_cpu_ticks": 0,
+        "system_cpu_ticks": 3,
+        "rss_bytes": 3047424,
+        "rss_high_water_bytes": 3047424,
+        "rss_anon_bytes": 237568,
+        "rss_file_bytes": 2809856,
+        "rss_shared_bytes": 0,
+        "io": {
+          "read_chars": 66220,
+          "write_chars": 384,
+          "read_syscalls": 393,
+          "write_syscalls": 5,
+          "read_bytes": 0,
+          "write_bytes": 4096,
+          "cancelled_write_bytes": 0
+        }
+      },
+      "files": {
+        "regular_files": 2,
+        "directories": 2,
+        "symlinks": 0,
+        "logical_bytes": 64,
+        "allocated_bytes": 4096
+      }
+    },
+    "after": {
+      "unix_time_ns": 1784699199566906964,
+      "process": {
+        "available": true,
+        "user_cpu_ticks": 21200,
+        "system_cpu_ticks": 3697,
+        "rss_bytes": 239288320,
+        "rss_high_water_bytes": 322473984,
+        "rss_anon_bytes": 61599744,
+        "rss_file_bytes": 177688576,
+        "rss_shared_bytes": 0,
+        "io": {
+          "read_chars": 53410710766,
+          "write_chars": 61553173276,
+          "read_syscalls": 590403,
+          "write_syscalls": 61702,
+          "read_bytes": 2650161152,
+          "write_bytes": 61588910080,
+          "cancelled_write_bytes": 0
+        }
+      },
+      "files": {
+        "regular_files": 7904,
+        "directories": 2,
+        "symlinks": 0,
+        "logical_bytes": 61553172876,
+        "allocated_bytes": 61574725632
+      }
+    },
+    "evidence_delta": {
+      "process": {
+        "user_cpu_ticks": 21200,
+        "system_cpu_ticks": 3694,
+        "cpu_seconds": 248.94,
+        "one_core_utilization_percent": 99.42277346402858,
+        "read_bytes": 2650161152,
+        "write_bytes": 61588905984,
+        "cancelled_write_bytes": 0,
+        "write_chars": 61553172892,
+        "write_syscalls": 61697
+      },
+      "files": {
+        "logical_bytes": 61553172812,
+        "allocated_bytes": 61574721536,
+        "regular_files": 7902
+      }
+    },
+    "sampled_rss": {
+      "peak_rss_bytes": 322936832,
+      "samples": 4996,
+      "interval_ms": 50
+    },
+    "process_physical_write_bytes": 61588905984,
+    "write_amplification_vs_values": 2.3532203016976587,
+    "write_amplification_vs_mutations": 2.054893666748609,
+    "append_write_ns": 6367349568,
+    "pack_sync_ns": 14972870166,
+    "index_build_ns": 6558460243,
+    "publication_overlap_ns": 15227720469,
+    "index_write_ns": 1677586645,
+    "index_sync_ns": 3515762524,
+    "directory_sync_ns": 692161938,
+    "frames": 3514,
+    "index_entries": 115140640
+  },
+  "campaign": {
+    "name": "campaign",
+    "wall_ns": 1264487501,
+    "logical": {
+      "puts": 1007960,
+      "tombstones": 0,
+      "entries": 1007960,
+      "key_bytes": 33262680,
+      "value_bytes": 229115479,
+      "mutation_bytes": 262378159,
+      "value_size_counts": [
+        280486,
+        241348,
+        116787,
+        214297,
+        155028,
+        10,
+        2,
+        2
+      ]
+    },
+    "before": {
+      "unix_time_ns": 1784699199577595067,
+      "process": {
+        "available": true,
+        "user_cpu_ticks": 21201,
+        "system_cpu_ticks": 3698,
+        "rss_bytes": 239419392,
+        "rss_high_water_bytes": 322473984,
+        "rss_anon_bytes": 61599744,
+        "rss_file_bytes": 177819648,
+        "rss_shared_bytes": 0,
+        "io": {
+          "read_chars": 53410714434,
+          "write_chars": 61553173360,
+          "read_syscalls": 590430,
+          "write_syscalls": 61711,
+          "read_bytes": 2650161152,
+          "write_bytes": 61588910080,
+          "cancelled_write_bytes": 0
+        }
+      },
+      "files": {
+        "regular_files": 7904,
+        "directories": 2,
+        "symlinks": 0,
+        "logical_bytes": 61553172876,
+        "allocated_bytes": 61574725632
+      }
+    },
+    "after": {
+      "unix_time_ns": 1784699200851452422,
+      "process": {
+        "available": true,
+        "user_cpu_ticks": 21306,
+        "system_cpu_ticks": 3724,
+        "rss_bytes": 363204608,
+        "rss_high_water_bytes": 421928960,
+        "rss_anon_bytes": 139210752,
+        "rss_file_bytes": 223993856,
+        "rss_shared_bytes": 0,
+        "io": {
+          "read_chars": 53744639414,
+          "write_chars": 61954685021,
+          "read_syscalls": 595139,
+          "write_syscalls": 61864,
+          "read_bytes": 2650177536,
+          "write_bytes": 61990486016,
+          "cancelled_write_bytes": 0
+        }
+      },
+      "files": {
+        "regular_files": 7922,
+        "directories": 2,
+        "symlinks": 0,
+        "logical_bytes": 61954684451,
+        "allocated_bytes": 61976268800
+      }
+    },
+    "evidence_delta": {
+      "process": {
+        "user_cpu_ticks": 105,
+        "system_cpu_ticks": 26,
+        "cpu_seconds": 1.31,
+        "one_core_utilization_percent": 103.59928421309085,
+        "read_bytes": 16384,
+        "write_bytes": 401575936,
+        "cancelled_write_bytes": 0,
+        "write_chars": 401511661,
+        "write_syscalls": 153
+      },
+      "files": {
+        "logical_bytes": 401511575,
+        "allocated_bytes": 401543168,
+        "regular_files": 18
+      }
+    },
+    "sampled_rss": {
+      "peak_rss_bytes": 404049920,
+      "samples": 27,
+      "interval_ms": 50
+    },
+    "process_physical_write_bytes": 401575936,
+    "write_amplification_vs_values": 1.7527228529155814,
+    "write_amplification_vs_mutations": 1.5305234914770478,
+    "append_write_ns": 54944235,
+    "pack_sync_ns": 97958427,
+    "index_build_ns": 64094709,
+    "publication_overlap_ns": 98427763,
+    "index_write_ns": 12586672,
+    "index_sync_ns": 25569903,
+    "directory_sync_ns": 1617038,
+    "frames": 8,
+    "index_entries": 1007960
+  },
+  "campaign_throughput": {
+    "blocks_per_second": 7908.342306342813,
+    "operations_per_second": 797129.2711101301,
+    "value_mib_per_second": 172.7985034574221,
+    "mutation_mib_per_second": 197.88515997696317
+  },
+  "reads": {
+    "percentile_method": "nearest_rank",
+    "point": {
+      "mode": "point",
+      "cache_state": "warm-after-prefill",
+      "rounds": 3,
+      "keys": 24576,
+      "hits": 12288,
+      "misses": 12288,
+      "value_bytes": 2792775,
+      "target_keys_per_call": 1,
+      "call_latency": {
+        "samples": 24576,
+        "min_ns": 36,
+        "mean_ns": 36819,
+        "p50_ns": 344,
+        "p95_ns": 10291,
+        "p99_ns": 458020,
+        "max_ns": 10323691
+      },
+      "normalized_per_key_latency": {
+        "samples": 24576,
+        "min_ns": 36,
+        "mean_ns": 36819,
+        "p50_ns": 344,
+        "p95_ns": 10291,
+        "p99_ns": 458020,
+        "max_ns": 10323691
+      }
+    },
+    "sorted_batch": {
+      "mode": "sorted_batch",
+      "cache_state": "warm-after-prefill",
+      "rounds": 3,
+      "keys": 24576,
+      "hits": 12288,
+      "misses": 12288,
+      "value_bytes": 2792775,
+      "target_keys_per_call": 4096,
+      "call_latency": {
+        "samples": 6,
+        "min_ns": 58129,
+        "mean_ns": 2124749,
+        "p50_ns": 58304,
+        "p95_ns": 5100844,
+        "p99_ns": 5100844,
+        "max_ns": 5100844
+      },
+      "normalized_per_key_latency": {
+        "samples": 6,
+        "min_ns": 14,
+        "mean_ns": 518,
+        "p50_ns": 14,
+        "p95_ns": 1245,
+        "p99_ns": 1245,
+        "max_ns": 1245
+      }
+    }
+  },
+  "compaction": {
+    "cycles": 438,
+    "runs_merged": 3942,
+    "runs_produced": 438,
+    "input_records": 325453047,
+    "output_records": 325453047,
+    "bytes_written": 21398621952,
+    "wall_ns": 118288345611,
+    "peak_live_runs": 28,
+    "live_runs_final": 18,
+    "gc_cycles": 1,
+    "gc_runs_deleted": 3942,
+    "gc_manifests_deleted": 3959,
+    "gc_bytes_reclaimed": 21411162144
+  },
+  "reopen": {
+    "open_ns": 32966419805,
+    "verified_keys": 16414,
+    "expected_digest": "f6ee371feaec91b4ff77d88c5e8186410e37a7c93f06438779a9e9f7b82d0d34",
+    "actual_digest": "f6ee371feaec91b4ff77d88c5e8186410e37a7c93f06438779a9e9f7b82d0d34",
+    "matched": true,
+    "frames_validated": 3522,
+    "runs_validated": 18,
+    "index_entries": 116148600
+  },
+  "layout": {
+    "pack_bytes": 32906744467,
+    "index_bytes": 7636774128,
+    "run_count": 18,
+    "decoded_index_memory_bytes": 29042352,
+    "max_index_memory_bytes": 1073741824
+  },
+  "prefill_sha256": "79a969fa4b596463d871272dc486e60426bd1ee9165da82937dcca283c717a53",
+  "campaign_sha256": "d2fcfbebf9c6909bc78dc9eef8937df3a5fc399113964119a0b03cba9efa7342",
+  "total_wall_ns": 286124615036,
+  "evidence_limitations": [
+    "prototype compaction of derived index runs is synchronous inside the append path; manifest generations gate visibility and snapshot leases pin generations, but the MDBX high-water commit marker and node shadow integration are not implemented",
+    "open fully re-hashes every frame and immutable index run selected by the committed manifest; this is correctness-first and can make startup expensive for a large history",
+    "process I/O includes report checkpoints when an evidence log is configured",
+    "resident index memory (filters, fences, and run metadata) is deliberately bounded; reaching the bound fails the campaign rather than allocating without limit"
+  ]
+}
