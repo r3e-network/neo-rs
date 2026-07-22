@@ -87,7 +87,7 @@ type MptOverlay = FxHashMap<Vec<u8>, Option<Vec<u8>>>;
 /// `version (1) + index (4, LE) + root_hash (32)`.
 const STATE_ROOT_UNSIGNED_LEN: usize = 1 + 4 + UINT256_SIZE;
 /// Prefix of exact serialized MPT node rows in the StateService namespace.
-pub const MPT_NODE_PREFIX: u8 = 0xf0;
+pub use neo_crypto::mpt_trie::MPT_NODE_PREFIX;
 /// Complete key length of a prefix plus UInt256 node hash row.
 pub const MPT_NODE_KEY_BYTES: usize = 1 + UINT256_SIZE;
 const DEFERRED_NODE_LOOKUP_MAX_KEYS: usize = 1024 * 1024;
