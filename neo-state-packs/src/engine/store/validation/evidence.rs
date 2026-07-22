@@ -134,7 +134,9 @@ impl PackStore {
     /// merge-walks every live run with newest-version semantics. Equality of
     /// their complete record digests binds keys, sequences, segment identities,
     /// absolute value offsets, and lengths without retaining either stream.
-    pub fn checkpoint_index_evidence(&self) -> Result<PackCheckpointIndexEvidence> {
+    pub fn checkpoint_evidence(&self) -> Result<PackCheckpointEvidence> {
+        let mut namespace_hasher = Sha256::new();
+        namespace_hasher.update(CHECKPOINT_NAMESPACE_DIGEST_DOMAIN);
         let mut frame_hasher = Sha256::new();
         let mut frame_records = 0u64;
         let mut frame_value_bytes = 0u64;
@@ -158,6 +160,10 @@ impl PackStore {
                 value_len: row.value_len,
                 tombstone: false,
             };
+            namespace_hasher.update((PACK_KEY_BYTES as u32).to_le_bytes());
+            namespace_hasher.update(row.key);
+            namespace_hasher.update((row.value.len() as u64).to_le_bytes());
+            namespace_hasher.update(row.value);
             frame_hasher.update(encode_record(&entry));
             frame_records = frame_records
                 .checked_add(1)
@@ -189,13 +195,19 @@ impl PackStore {
             winners.winner_records_sha256 == frame_records_sha256,
             "checkpoint materialized index records differ from committed frame rows"
         );
-        Ok(PackCheckpointIndexEvidence {
-            frame_records,
-            winner_records: winners.winner_records,
-            value_bytes: frame_value_bytes,
-            records_sha256: frame_records_sha256,
-            live_runs: winners.live_runs,
-            source_records: winners.source_records,
+        Ok(PackCheckpointEvidence {
+            namespace: CheckpointNamespaceEvidence {
+                scrub: frame_scrub,
+                sha256: namespace_hasher.finalize().into(),
+            },
+            index: PackCheckpointIndexEvidence {
+                frame_records,
+                winner_records: winners.winner_records,
+                value_bytes: frame_value_bytes,
+                records_sha256: frame_records_sha256,
+                live_runs: winners.live_runs,
+                source_records: winners.source_records,
+            },
         })
     }
 

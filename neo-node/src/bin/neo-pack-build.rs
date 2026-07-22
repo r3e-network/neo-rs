@@ -280,9 +280,9 @@ fn finalize_checkpoint(
     let gc = pack.gc().context("reclaim derived checkpoint files")?;
     let scrub_started = Instant::now();
     let checkpoint_evidence = pack
-        .scrub_checkpoint_namespace()
-        .context("scrub and hash the complete committed checkpoint payload")?;
-    let scrub = checkpoint_evidence.scrub;
+        .checkpoint_evidence()
+        .context("bind the complete checkpoint payload and materialized indexes")?;
+    let scrub = checkpoint_evidence.namespace.scrub;
     let scrub_elapsed_seconds = scrub_started.elapsed().as_secs_f64();
     ensure!(
         scrub.frames == frames
@@ -293,12 +293,10 @@ fn finalize_checkpoint(
         "checkpoint payload scrub does not match the frozen source geometry"
     );
     ensure!(
-        checkpoint_evidence.sha256 == namespace_sha256,
+        checkpoint_evidence.namespace.sha256 == namespace_sha256,
         "checkpoint pack namespace digest does not match the frozen source"
     );
-    let index_evidence = pack
-        .checkpoint_index_evidence()
-        .context("bind checkpoint materialized indexes to committed frame rows")?;
+    let index_evidence = checkpoint_evidence.index;
     ensure!(
         index_evidence.frame_records == rows
             && index_evidence.winner_records == rows

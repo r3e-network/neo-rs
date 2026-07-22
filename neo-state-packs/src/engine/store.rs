@@ -236,6 +236,15 @@ pub struct CheckpointNamespaceEvidence {
     pub sha256: [u8; 32],
 }
 
+/// One-pass payload identity plus exact materialized-index binding for a base checkpoint.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PackCheckpointEvidence {
+    /// Ordered put-only namespace identity rebuilt from authenticated frames.
+    pub namespace: CheckpointNamespaceEvidence,
+    /// Exact positioned-record equality between frames and index winners.
+    pub index: PackCheckpointIndexEvidence,
+}
+
 /// Runs decoded and validated while opening, before tail verification.
 #[derive(Default)]
 struct LoadedRuns {

@@ -75,12 +75,12 @@ pub use engine::{
     CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, CheckpointNamespaceEvidence, CompactionDebt,
     CompactionStats, GcStats, OpenValidation, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
     PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN,
-    PackCheckpointIndexEvidence, PackCommitHorizon, PackCompactionPlan, PackFrameBuilder,
-    PackFrameContext, PackFrameReceipt, PackIndexScrubStats, PackMaterializedViewEvidence,
-    PackMetrics, PackPosition, PackScrubStats, PackSegmentId, PackStore, PackStoreArtifact,
-    PackStoreConfig, PackStoreConfigError, PackStoreConfigField, PackStoreError,
-    PackStoreErrorSource, PackStoreLimit, PackStoreOperation, PackStoreOptions, PackStoreResult,
-    PreparedAppend, PreparedPackCompaction, ReadMetrics, SealedAppend, Snapshot,
+    PackCheckpointEvidence, PackCheckpointIndexEvidence, PackCommitHorizon, PackCompactionPlan,
+    PackFrameBuilder, PackFrameContext, PackFrameReceipt, PackIndexScrubStats,
+    PackMaterializedViewEvidence, PackMetrics, PackPosition, PackScrubStats, PackSegmentId,
+    PackStore, PackStoreArtifact, PackStoreConfig, PackStoreConfigError, PackStoreConfigField,
+    PackStoreError, PackStoreErrorSource, PackStoreLimit, PackStoreOperation, PackStoreOptions,
+    PackStoreResult, PreparedAppend, PreparedPackCompaction, ReadMetrics, SealedAppend, Snapshot,
 };
 
 /// Byte length of one pack key (the StateService `0xf0 || node_hash` node
