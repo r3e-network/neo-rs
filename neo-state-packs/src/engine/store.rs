@@ -2,7 +2,7 @@ use super::filter::{
     BLOOM_HASH_PROBES, BlockedBloomFilter, FILTER_FINGERPRINT_BITS, XorFilter, blocked_bloom_bytes,
     blocked_bloom_maybe_contains_hash, filter_capacity, key_hash, validate_blocked_bloom,
 };
-use super::manifest::{self, Manifest, ManifestEntry, run_file_name};
+use super::manifest::{self, Manifest, ManifestEntry, ManifestExtent, run_file_name};
 use super::merge::{
     INDEX_RECORD_LEN, IndexEntry, MergeEvidence, MergeSource, decode_record, merge_sorted_runs,
 };
@@ -150,6 +150,7 @@ struct IndexRun {
     fences: Vec<[u8; FENCE_KEY_BYTES]>,
     filter: RunFilter,
     records_sha256: [u8; 32],
+    structure_sha256: [u8; 32],
     memory_bytes: u64,
 }
 
@@ -370,6 +371,7 @@ struct ValidatedAppend {
     decoded_index_bytes: u64,
     next_epoch: u64,
     generation: u64,
+    extents: Vec<ManifestExtent>,
     manifest: Manifest,
 }
 
@@ -405,6 +407,8 @@ pub struct PackStore {
     next_epoch: u64,
     /// Current published manifest generation (0 before the first append).
     generation: u64,
+    /// Authenticated frame extents selected by the current manifest.
+    extents: Vec<ManifestExtent>,
     decoded_index_bytes: u64,
     config: PackStoreConfig,
     stats: CompactionStats,
@@ -464,8 +468,12 @@ fn manifest_entry_of(live: &LiveRun) -> ManifestEntry {
         level: live.level,
         min_epoch: live.min_epoch,
         max_epoch: live.max_epoch,
+        format_version: live.run.format_version,
         record_count: live.run.record_count,
+        records_offset: live.run.records_offset,
+        file_bytes: live.run.file_bytes,
         records_sha256: live.run.records_sha256,
+        structure_sha256: live.run.structure_sha256,
         file_name: run_file_name(live.level, live.min_epoch, live.max_epoch),
     }
 }
@@ -475,6 +483,7 @@ fn manifest_entry_of(live: &LiveRun) -> ManifestEntry {
 fn publish_rebuilt_manifest(
     root: &Path,
     manifests: &[(u64, PathBuf)],
+    extents: &[ManifestExtent],
     loaded: &LoadedRuns,
 ) -> Result<u64> {
     let generation = manifests
@@ -487,6 +496,7 @@ fn publish_rebuilt_manifest(
         root,
         &Manifest {
             generation,
+            extents: extents.to_vec(),
             entries,
         },
     )?;

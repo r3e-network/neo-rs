@@ -1,40 +1,65 @@
-//! Immutable manifest generations for the append-frame prototype.
+//! # neo-state-packs manifest generations
 //!
-//! A manifest is the commit authority for one generation of the derived
-//! index: it lists every live index run (level, epoch range, file name,
-//! record count, records checksum). Publication is atomic — write a `.tmp`
-//! file, sync, rename over the generation's final name, then sync the
-//! directory — so readers either see the complete previous generation or the
-//! complete next one, never a torn manifest. Superseded manifests stay on
-//! disk until explicit garbage collection, which is what lets pinned snapshot
-//! generations keep their run files readable.
+//! ## Boundary
 //!
-//! Manifest entries are validated to cover every epoch from zero to the
-//! generation's maximum exactly once, and each entry must name the canonical
-//! run file for its level and epoch range. Format v2 authenticates the header
-//! with SHA-256 in addition to the existing entry-section checksum and binds
-//! the embedded generation to the immutable manifest file name. The reader
-//! retains format-v1 compatibility for already-created shadow checkpoints.
+//! This module owns the durable commit description for the derived index. It
+//! authenticates the selected frame extents and every immutable run identity;
+//! recovery remains responsible for proving those identities against the
+//! bytes currently present in the pack and run directories.
+//!
+//! ## Contents
+//!
+//! - current-only manifest-v3 encoding and decoding;
+//! - the canonical frame-history chain used to bind a manifest to its pack;
+//! - atomic manifest publication and generation discovery.
 
 use crate::engine::failpoint;
-use crate::engine::store::{PackStoreArtifact, PackStoreError};
+use crate::engine::store::{
+    PACK_INDEX_FORMAT_VERSION, PACK_INDEX_RUN_FORMAT_VERSION, PackFrameReceipt, PackSegmentId,
+    PackStoreArtifact, PackStoreConfig, PackStoreError,
+};
 use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 const MANIFEST_MAGIC: &[u8; 8] = b"N3MANI01";
-const LEGACY_MANIFEST_FORMAT_VERSION: u32 = 1;
-/// Manifest format emitted by new publications; readers also accept v1.
-pub const PACK_MANIFEST_FORMAT_VERSION: u32 = 2;
-const SUPPORTED_MANIFEST_FORMAT_VERSIONS: &[u32] =
-    &[LEGACY_MANIFEST_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION];
-const LEGACY_MANIFEST_HEADER_LEN: usize = 64;
-const MANIFEST_HEADER_LEN: usize = 96;
-const MANIFEST_ENTRY_LEN: usize = 128;
+/// Manifest format emitted and accepted by the production reader.
+pub const PACK_MANIFEST_FORMAT_VERSION: u32 = 3;
+const SUPPORTED_MANIFEST_FORMAT_VERSIONS: &[u32] = &[PACK_MANIFEST_FORMAT_VERSION];
+const MANIFEST_HEADER_LEN: usize = 160;
+const MANIFEST_EXTENT_LEN: usize = 96;
+const MANIFEST_ENTRY_LEN: usize = 192;
+const HARD_MAX_MANIFEST_EXTENTS: usize = PackStoreConfig::HARD_MAX_RECENT_RUNS;
+const HARD_MAX_MANIFEST_ENTRIES: usize = PackStoreConfig::HARD_MAX_RECENT_RUNS;
 /// Fixed on-disk field for one run file name (NUL-padded).
 const MANIFEST_NAME_BYTES: usize = 56;
+
+const MANIFEST_HEADER_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/manifest-header/v3\0";
+const MANIFEST_EXTENTS_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/manifest-extents/v3\0";
+const MANIFEST_ENTRIES_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/manifest-entries/v3\0";
+const FRAME_CHAIN_SEED_DOMAIN: &[u8] = b"neo-state-packs/frame-chain-seed/v3\0";
+const FRAME_CHAIN_STEP_DOMAIN: &[u8] = b"neo-state-packs/frame-chain-step/v3\0";
+
+/// One authenticated contiguous extent of one immutable frame segment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ManifestExtent {
+    pub(crate) segment_id: PackSegmentId,
+    pub(crate) first_epoch: u64,
+    pub(crate) frame_count: u64,
+    pub(crate) frame_start: u64,
+    pub(crate) frame_end: u64,
+    pub(crate) frame_chain_sha256: [u8; 32],
+}
+
+impl ManifestExtent {
+    pub(crate) fn last_epoch(self) -> Result<u64> {
+        self.first_epoch
+            .checked_add(self.frame_count.saturating_sub(1))
+            .context("manifest extent epoch overflows")
+    }
+}
 
 /// One live index run referenced by a manifest generation.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,32 +67,71 @@ pub(crate) struct ManifestEntry {
     pub(crate) level: u32,
     pub(crate) min_epoch: u64,
     pub(crate) max_epoch: u64,
+    pub(crate) format_version: u32,
     pub(crate) record_count: u64,
+    pub(crate) records_offset: u64,
+    pub(crate) file_bytes: u64,
     pub(crate) records_sha256: [u8; 32],
+    pub(crate) structure_sha256: [u8; 32],
     pub(crate) file_name: String,
 }
 
 /// One immutable generation of the derived index.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Manifest {
     pub(crate) generation: u64,
+    pub(crate) extents: Vec<ManifestExtent>,
     pub(crate) entries: Vec<ManifestEntry>,
 }
 
 impl Manifest {
-    /// Highest committed epoch covered by this generation.
-    pub(crate) fn max_epoch(&self) -> u64 {
-        self.entries
-            .last()
-            .expect("manifest entries are non-empty")
-            .max_epoch
+    /// Number of frames selected by this generation.
+    pub(crate) fn frame_count(&self) -> Result<u64> {
+        self.extents.iter().try_fold(0u64, |total, extent| {
+            total
+                .checked_add(extent.frame_count)
+                .context("manifest frame count overflows")
+        })
     }
 
-    /// Validates the structural invariants every generation must keep:
-    /// non-empty, epoch ranges contiguous from zero, level-0 runs cover
-    /// exactly one epoch, and file names stay inside the runs directory.
+    /// Validates the structural invariants every generation must keep.
     fn validate(&self) -> Result<()> {
+        ensure!(!self.extents.is_empty(), "manifest has no segment extents");
         ensure!(!self.entries.is_empty(), "manifest has no entries");
+        ensure!(
+            self.extents.len() <= HARD_MAX_MANIFEST_EXTENTS,
+            "manifest extent count exceeds the format hard limit"
+        );
+        ensure!(
+            self.entries.len() <= HARD_MAX_MANIFEST_ENTRIES,
+            "manifest entry count exceeds the format hard limit"
+        );
+
+        let mut expected_epoch = 0u64;
+        let mut previous_segment: Option<PackSegmentId> = None;
+        for extent in &self.extents {
+            ensure!(extent.frame_count > 0, "manifest extent has no frames");
+            ensure!(
+                extent.frame_start < extent.frame_end,
+                "manifest extent is empty"
+            );
+            if let Some(previous) = previous_segment {
+                ensure!(
+                    previous.checked_next() == Some(extent.segment_id),
+                    "manifest segment extents are not consecutive"
+                );
+            }
+            ensure!(
+                extent.first_epoch == expected_epoch,
+                "manifest segment epochs are not contiguous"
+            );
+            expected_epoch = extent
+                .last_epoch()?
+                .checked_add(1)
+                .context("manifest extent epoch overflows")?;
+            previous_segment = Some(extent.segment_id);
+        }
+
         let mut expected_min = 0u64;
         for entry in &self.entries {
             ensure!(
@@ -83,6 +147,17 @@ impl Manifest {
                 "level-0 manifest entry spans more than one epoch"
             );
             ensure!(entry.record_count > 0, "manifest entry has no records");
+            ensure!(
+                matches!(
+                    entry.format_version,
+                    PACK_INDEX_FORMAT_VERSION | PACK_INDEX_RUN_FORMAT_VERSION
+                ),
+                "manifest entry names an unsupported run format"
+            );
+            ensure!(
+                entry.records_offset < entry.file_bytes,
+                "manifest entry has an invalid run extent"
+            );
             validate_file_name(&entry.file_name)?;
             ensure!(
                 entry.file_name == run_file_name(entry.level, entry.min_epoch, entry.max_epoch),
@@ -93,6 +168,10 @@ impl Manifest {
                 .checked_add(1)
                 .context("manifest epoch overflows")?;
         }
+        ensure!(
+            expected_min == expected_epoch,
+            "manifest runs do not cover the selected frame extents"
+        );
         Ok(())
     }
 }
@@ -106,8 +185,103 @@ pub(crate) fn run_file_name(level: u32, min_epoch: u64, max_epoch: u64) -> Strin
     }
 }
 
-/// File name charset guard: manifest-driven path joins must never escape
-/// the runs directory, even through a corrupt manifest.
+/// Extends the authenticated frame extent set with one next frame receipt.
+pub(crate) fn append_frame_extent(
+    extents: &mut Vec<ManifestExtent>,
+    receipt: PackFrameReceipt,
+) -> Result<()> {
+    ensure!(
+        receipt.frame_start < receipt.frame_end,
+        "frame receipt has an empty extent"
+    );
+    if let Some(last) = extents.last_mut()
+        && last.segment_id == receipt.segment_id
+    {
+        let expected_epoch = last
+            .first_epoch
+            .checked_add(last.frame_count)
+            .context("manifest frame epoch overflows")?;
+        ensure!(
+            receipt.epoch == expected_epoch,
+            "frame receipt is not next in its manifest extent"
+        );
+        ensure!(
+            receipt.frame_start == last.frame_end,
+            "frame receipt does not continue its manifest extent"
+        );
+        last.frame_count = last
+            .frame_count
+            .checked_add(1)
+            .context("manifest frame count overflows")?;
+        last.frame_end = receipt.frame_end;
+        last.frame_chain_sha256 = frame_chain_step(last.frame_chain_sha256, receipt);
+        return Ok(());
+    }
+
+    if let Some(last) = extents.last() {
+        ensure!(
+            last.segment_id.checked_next() == Some(receipt.segment_id),
+            "frame receipt segment is not next in its manifest extent set"
+        );
+        ensure!(
+            last.last_epoch()?.checked_add(1) == Some(receipt.epoch),
+            "frame receipt epoch is not next after the previous segment"
+        );
+    } else {
+        ensure!(
+            receipt.epoch == 0,
+            "first frame receipt does not start at epoch zero"
+        );
+    }
+    extents.push(ManifestExtent {
+        segment_id: receipt.segment_id,
+        first_epoch: receipt.epoch,
+        frame_count: 1,
+        frame_start: receipt.frame_start,
+        frame_end: receipt.frame_end,
+        frame_chain_sha256: frame_chain_step(
+            frame_chain_seed(receipt.segment_id, receipt.epoch),
+            receipt,
+        ),
+    });
+    Ok(())
+}
+
+/// Starts a domain-separated frame-history chain for one segment extent.
+pub(crate) fn frame_chain_seed(segment_id: PackSegmentId, first_epoch: u64) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(FRAME_CHAIN_SEED_DOMAIN);
+    hasher.update(segment_id.get().to_le_bytes());
+    hasher.update(first_epoch.to_le_bytes());
+    hasher.finalize().into()
+}
+
+/// Adds one canonical receipt to a frame-history chain.
+pub(crate) fn frame_chain_step(previous: [u8; 32], receipt: PackFrameReceipt) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(FRAME_CHAIN_STEP_DOMAIN);
+    hasher.update(previous);
+    encode_receipt(&mut hasher, receipt);
+    hasher.finalize().into()
+}
+
+fn encode_receipt(hasher: &mut Sha256, receipt: PackFrameReceipt) {
+    hasher.update(receipt.epoch.to_le_bytes());
+    hasher.update(receipt.segment_id.get().to_le_bytes());
+    hasher.update(receipt.frame_start.to_le_bytes());
+    hasher.update(receipt.frame_end.to_le_bytes());
+    hasher.update(receipt.context.block_start.to_le_bytes());
+    hasher.update(receipt.context.block_end.to_le_bytes());
+    hasher.update(receipt.context.previous_root);
+    hasher.update(receipt.context.resulting_root);
+    hasher.update(receipt.rows.to_le_bytes());
+    hasher.update(receipt.metadata_bytes.to_le_bytes());
+    hasher.update(receipt.value_bytes.to_le_bytes());
+    hasher.update(receipt.frame_sha256);
+}
+
+/// File name charset guard: manifest-driven path joins must never escape the
+/// runs directory, even through a corrupt manifest.
 fn validate_file_name(name: &str) -> Result<()> {
     ensure!(
         !name.is_empty() && name.len() <= MANIFEST_NAME_BYTES,
@@ -121,97 +295,153 @@ fn validate_file_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Encodes one manifest: a 96-byte v2 header followed by fixed 128-byte
-/// entries. The header carries both the SHA-256 of the entry section and a
-/// SHA-256 over all preceding header fields.
+/// Encodes one current-only manifest-v3 generation.
 pub(crate) fn encode_manifest(manifest: &Manifest) -> Result<Vec<u8>> {
     manifest.validate()?;
-    let mut entries = Vec::with_capacity(manifest.entries.len() * MANIFEST_ENTRY_LEN);
+
+    let extent_count =
+        u32::try_from(manifest.extents.len()).context("manifest extent count does not fit u32")?;
+    let entry_count =
+        u32::try_from(manifest.entries.len()).context("manifest entry count does not fit u32")?;
+    let extents_capacity = manifest
+        .extents
+        .len()
+        .checked_mul(MANIFEST_EXTENT_LEN)
+        .context("manifest extent encoding length overflows")?;
+    let entries_capacity = manifest
+        .entries
+        .len()
+        .checked_mul(MANIFEST_ENTRY_LEN)
+        .context("manifest entry encoding length overflows")?;
+    let mut extents = Vec::new();
+    extents
+        .try_reserve_exact(extents_capacity)
+        .context("reserve manifest extent encoding")?;
+    for extent in &manifest.extents {
+        extents.extend_from_slice(&extent.segment_id.get().to_le_bytes());
+        extents.extend_from_slice(&extent.first_epoch.to_le_bytes());
+        extents.extend_from_slice(&extent.frame_count.to_le_bytes());
+        extents.extend_from_slice(&extent.frame_start.to_le_bytes());
+        extents.extend_from_slice(&extent.frame_end.to_le_bytes());
+        extents.extend_from_slice(&extent.frame_chain_sha256);
+        extents.extend_from_slice(&[0u8; 24]);
+    }
+
+    let mut entries = Vec::new();
+    entries
+        .try_reserve_exact(entries_capacity)
+        .context("reserve manifest entry encoding")?;
     for entry in &manifest.entries {
         entries.extend_from_slice(&entry.level.to_le_bytes());
+        entries.extend_from_slice(&entry.format_version.to_le_bytes());
+        entries.extend_from_slice(&entry.min_epoch.to_le_bytes());
+        entries.extend_from_slice(&entry.max_epoch.to_le_bytes());
+        entries.extend_from_slice(&entry.record_count.to_le_bytes());
+        entries.extend_from_slice(&entry.records_offset.to_le_bytes());
+        entries.extend_from_slice(&entry.file_bytes.to_le_bytes());
+        entries.extend_from_slice(&entry.records_sha256);
+        entries.extend_from_slice(&entry.structure_sha256);
         entries.extend_from_slice(
             &u32::try_from(entry.file_name.len())
                 .context("manifest run file name does not fit u32")?
                 .to_le_bytes(),
         );
-        entries.extend_from_slice(&entry.min_epoch.to_le_bytes());
-        entries.extend_from_slice(&entry.max_epoch.to_le_bytes());
-        entries.extend_from_slice(&entry.record_count.to_le_bytes());
-        entries.extend_from_slice(&entry.records_sha256);
+        entries.extend_from_slice(&[0u8; 4]);
         let mut name = [0u8; MANIFEST_NAME_BYTES];
         name[..entry.file_name.len()].copy_from_slice(entry.file_name.as_bytes());
         entries.extend_from_slice(&name);
-        entries.extend_from_slice(&[0u8; 8]);
+        entries.extend_from_slice(&[0u8; 16]);
     }
     ensure!(
-        entries.len() == manifest.entries.len() * MANIFEST_ENTRY_LEN,
+        extents.len() == extents_capacity,
+        "manifest extent encoding length changed unexpectedly"
+    );
+    ensure!(
+        entries.len() == entries_capacity,
         "manifest entry encoding length changed unexpectedly"
     );
+
+    let output_len = MANIFEST_HEADER_LEN
+        .checked_add(extents.len())
+        .and_then(|length| length.checked_add(entries.len()))
+        .context("manifest encoding length overflows")?;
+
     let mut header = [0u8; MANIFEST_HEADER_LEN];
     header[0..8].copy_from_slice(MANIFEST_MAGIC);
     header[8..12].copy_from_slice(&PACK_MANIFEST_FORMAT_VERSION.to_le_bytes());
     header[12..16].copy_from_slice(&(MANIFEST_HEADER_LEN as u32).to_le_bytes());
     header[16..24].copy_from_slice(&manifest.generation.to_le_bytes());
-    header[24..28].copy_from_slice(
-        &u32::try_from(manifest.entries.len())
-            .context("manifest entry count does not fit u32")?
-            .to_le_bytes(),
-    );
-    header[32..64].copy_from_slice(&digest(&entries));
-    let header_checksum = digest(&header[..64]);
-    header[64..96].copy_from_slice(&header_checksum);
-    let mut output = Vec::with_capacity(MANIFEST_HEADER_LEN + entries.len());
+    header[24..28].copy_from_slice(&extent_count.to_le_bytes());
+    header[28..32].copy_from_slice(&entry_count.to_le_bytes());
+    header[32..40].copy_from_slice(&manifest.frame_count()?.to_le_bytes());
+    header[40..72].copy_from_slice(&section_digest(MANIFEST_EXTENTS_DIGEST_DOMAIN, &extents));
+    header[72..104].copy_from_slice(&section_digest(MANIFEST_ENTRIES_DIGEST_DOMAIN, &entries));
+    let header_digest = manifest_header_digest(&header);
+    header[104..136].copy_from_slice(&header_digest);
+
+    let mut output = Vec::new();
+    output
+        .try_reserve_exact(output_len)
+        .context("reserve manifest encoding")?;
     output.extend_from_slice(&header);
+    output.extend_from_slice(&extents);
     output.extend_from_slice(&entries);
     Ok(output)
 }
 
-/// Reads and fully validates one manifest file.
+/// Reads and fully validates one current-only manifest file.
 pub(crate) fn read_manifest(path: &Path) -> Result<Manifest> {
-    let bytes = fs::read(path).with_context(|| format!("read manifest {}", path.display()))?;
-    ensure!(
-        bytes.len() >= LEGACY_MANIFEST_HEADER_LEN,
-        "short manifest {}",
-        path.display()
-    );
-    let prefix = &bytes[..LEGACY_MANIFEST_HEADER_LEN];
+    let mut file = File::open(path).with_context(|| format!("open manifest {}", path.display()))?;
+    let file_len = file
+        .metadata()
+        .with_context(|| format!("stat manifest {}", path.display()))?
+        .len();
+    ensure!(file_len >= 16, "short manifest {}", path.display());
+
+    // Read only the fixed prefix before accepting any attacker-controlled
+    // count. This lets the current-only version/header checks fail without
+    // allocating for an untrusted body.
+    let mut prefix = [0u8; 16];
+    file.read_exact(&mut prefix)
+        .with_context(|| format!("read manifest prefix {}", path.display()))?;
     ensure!(
         &prefix[0..8] == MANIFEST_MAGIC,
         "invalid manifest magic in {}",
         path.display()
     );
-    let version = u32_at(prefix, 8)?;
-    let expected_header_len = match version {
-        LEGACY_MANIFEST_FORMAT_VERSION => LEGACY_MANIFEST_HEADER_LEN,
-        PACK_MANIFEST_FORMAT_VERSION => MANIFEST_HEADER_LEN,
-        _ => {
-            return Err(PackStoreError::UnsupportedVersion {
-                artifact: PackStoreArtifact::Manifest,
-                found: version,
-                supported: SUPPORTED_MANIFEST_FORMAT_VERSIONS,
-            }
-            .into());
+    let version = u32_at(&prefix, 8)?;
+    if version != PACK_MANIFEST_FORMAT_VERSION {
+        return Err(PackStoreError::UnsupportedVersion {
+            artifact: PackStoreArtifact::Manifest,
+            found: version,
+            supported: SUPPORTED_MANIFEST_FORMAT_VERSIONS,
         }
-    };
+        .into());
+    }
     ensure!(
-        u32_at(prefix, 12)? as usize == expected_header_len,
+        u32_at(&prefix, 12)? as usize == MANIFEST_HEADER_LEN,
         "invalid manifest header length"
     );
-    let header = bytes
-        .get(..expected_header_len)
-        .context("short manifest header")?;
     ensure!(
-        header[28..32].iter().all(|byte| *byte == 0),
+        file_len >= MANIFEST_HEADER_LEN as u64,
+        "short manifest header {}",
+        path.display()
+    );
+    let mut header = [0u8; MANIFEST_HEADER_LEN];
+    header[..prefix.len()].copy_from_slice(&prefix);
+    file.read_exact(&mut header[prefix.len()..])
+        .with_context(|| format!("read manifest header {}", path.display()))?;
+    ensure!(
+        header[136..].iter().all(|byte| *byte == 0),
         "manifest header reserved bytes are non-zero"
     );
-    if version == PACK_MANIFEST_FORMAT_VERSION {
-        ensure!(
-            digest(&header[..64]).as_slice() == &header[64..96],
-            "manifest header checksum mismatch in {}",
-            path.display()
-        );
-    }
-    let generation = u64_at(header, 16)?;
+    ensure!(
+        manifest_header_digest(&header).as_slice() == &header[104..136],
+        "manifest header checksum mismatch in {}",
+        path.display()
+    );
+
+    let generation = u64_at(&header, 16)?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -220,55 +450,135 @@ pub(crate) fn read_manifest(path: &Path) -> Result<Manifest> {
         parse_manifest_file_name(file_name) == Some(generation),
         "manifest file name does not match embedded generation"
     );
-    let entry_count = usize::try_from(u32_at(header, 24)?).context("manifest count overflows")?;
-    ensure!(entry_count > 0, "empty manifest {}", path.display());
-    let entries_bytes = bytes
-        .get(expected_header_len..)
-        .context("short manifest entries")?;
+    let extent_count =
+        usize::try_from(u32_at(&header, 24)?).context("manifest extent count overflows")?;
+    let entry_count = usize::try_from(u32_at(&header, 28)?).context("manifest count overflows")?;
+    ensure!(extent_count > 0, "manifest has no segment extents");
+    ensure!(entry_count > 0, "manifest has no entries");
     ensure!(
-        entries_bytes.len() == entry_count * MANIFEST_ENTRY_LEN,
+        extent_count <= HARD_MAX_MANIFEST_EXTENTS,
+        "manifest extent count exceeds the format hard limit"
+    );
+    ensure!(
+        entry_count <= HARD_MAX_MANIFEST_ENTRIES,
+        "manifest entry count exceeds the format hard limit"
+    );
+    let extents_len = extent_count
+        .checked_mul(MANIFEST_EXTENT_LEN)
+        .context("manifest extent length overflows")?;
+    let entries_len = entry_count
+        .checked_mul(MANIFEST_ENTRY_LEN)
+        .context("manifest entry length overflows")?;
+    let extents_start = MANIFEST_HEADER_LEN;
+    let entries_start = extents_start
+        .checked_add(extents_len)
+        .context("manifest entries offset overflows")?;
+    let expected_len = entries_start
+        .checked_add(entries_len)
+        .context("manifest length overflows")?;
+    ensure!(
+        file_len == u64::try_from(expected_len).context("manifest length does not fit u64")?,
         "manifest length mismatch in {}",
         path.display()
     );
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(expected_len)
+        .context("reserve manifest bytes")?;
+    bytes.extend_from_slice(&header);
+    bytes.resize(expected_len, 0);
+    file.read_exact(&mut bytes[MANIFEST_HEADER_LEN..])
+        .with_context(|| format!("read manifest body {}", path.display()))?;
+    let mut trailing = [0u8; 1];
     ensure!(
-        digest(entries_bytes).as_slice() == &header[32..64],
+        file.read(&mut trailing)
+            .with_context(|| format!("check manifest length {}", path.display()))?
+            == 0,
+        "manifest grew while reading {}",
+        path.display()
+    );
+    let extents_bytes = &bytes[extents_start..entries_start];
+    let entries_bytes = &bytes[entries_start..];
+    ensure!(
+        section_digest(MANIFEST_EXTENTS_DIGEST_DOMAIN, extents_bytes).as_slice() == &header[40..72],
+        "manifest extents checksum mismatch in {}",
+        path.display()
+    );
+    ensure!(
+        section_digest(MANIFEST_ENTRIES_DIGEST_DOMAIN, entries_bytes).as_slice()
+            == &header[72..104],
         "manifest entries checksum mismatch in {}",
         path.display()
     );
-    let mut entries = Vec::with_capacity(entry_count);
+
+    let mut extents = Vec::new();
+    extents
+        .try_reserve_exact(extent_count)
+        .context("reserve manifest extents")?;
+    for raw in extents_bytes.chunks_exact(MANIFEST_EXTENT_LEN) {
+        ensure!(
+            raw[72..].iter().all(|byte| *byte == 0),
+            "manifest extent reserved bytes are non-zero"
+        );
+        extents.push(ManifestExtent {
+            segment_id: PackSegmentId::new(u64_at(raw, 0)?),
+            first_epoch: u64_at(raw, 8)?,
+            frame_count: u64_at(raw, 16)?,
+            frame_start: u64_at(raw, 24)?,
+            frame_end: u64_at(raw, 32)?,
+            frame_chain_sha256: raw[40..72].try_into().expect("frame chain checksum"),
+        });
+    }
+
+    let mut entries = Vec::new();
+    entries
+        .try_reserve_exact(entry_count)
+        .context("reserve manifest entries")?;
     for raw in entries_bytes.chunks_exact(MANIFEST_ENTRY_LEN) {
-        let level = u32_at(raw, 0)?;
-        let name_len = usize::try_from(u32_at(raw, 4)?).context("manifest name overflows")?;
+        let name_len = usize::try_from(u32_at(raw, 112)?).context("manifest name overflows")?;
         ensure!(
             (1..=MANIFEST_NAME_BYTES).contains(&name_len),
             "invalid manifest run file name length"
         );
         ensure!(
-            raw[64 + name_len..64 + MANIFEST_NAME_BYTES]
+            raw[116..120].iter().all(|byte| *byte == 0) && raw[176..].iter().all(|byte| *byte == 0),
+            "manifest entry reserved bytes are non-zero"
+        );
+        ensure!(
+            raw[120 + name_len..120 + MANIFEST_NAME_BYTES]
                 .iter()
                 .all(|byte| *byte == 0),
             "manifest run file name is not NUL-padded"
         );
-        ensure!(
-            raw[120..128].iter().all(|byte| *byte == 0),
-            "manifest entry reserved bytes are non-zero"
-        );
-        let file_name = std::str::from_utf8(&raw[64..64 + name_len])
-            .context("manifest run file name is not UTF-8")?
-            .to_owned();
+        let name = std::str::from_utf8(&raw[120..120 + name_len])
+            .context("manifest run file name is not UTF-8")?;
+        let mut file_name = String::new();
+        file_name
+            .try_reserve_exact(name_len)
+            .context("reserve manifest run file name")?;
+        file_name.push_str(name);
         entries.push(ManifestEntry {
-            level,
+            level: u32_at(raw, 0)?,
+            format_version: u32_at(raw, 4)?,
             min_epoch: u64_at(raw, 8)?,
             max_epoch: u64_at(raw, 16)?,
             record_count: u64_at(raw, 24)?,
-            records_sha256: raw[32..64].try_into().expect("records checksum"),
+            records_offset: u64_at(raw, 32)?,
+            file_bytes: u64_at(raw, 40)?,
+            records_sha256: raw[48..80].try_into().expect("records checksum"),
+            structure_sha256: raw[80..112].try_into().expect("structure checksum"),
             file_name,
         });
     }
     let manifest = Manifest {
         generation,
+        extents,
         entries,
     };
+    ensure!(
+        manifest.frame_count()? == u64_at(&header, 32)?,
+        "manifest frame count does not match its extents"
+    );
     manifest.validate()?;
     Ok(manifest)
 }
@@ -343,8 +653,19 @@ fn parse_manifest_file_name(name: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
-fn digest(bytes: &[u8]) -> [u8; 32] {
-    Sha256::digest(bytes).into()
+fn section_digest(domain: &[u8], bytes: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(domain);
+    hasher.update(bytes);
+    hasher.finalize().into()
+}
+
+fn manifest_header_digest(header: &[u8; MANIFEST_HEADER_LEN]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(MANIFEST_HEADER_DIGEST_DOMAIN);
+    hasher.update(&header[..104]);
+    hasher.update(&header[136..]);
+    hasher.finalize().into()
 }
 
 fn u32_at(bytes: &[u8], offset: usize) -> Result<u32> {
@@ -372,13 +693,51 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    fn receipt(epoch: u64, end: u64) -> PackFrameReceipt {
+        PackFrameReceipt {
+            epoch,
+            segment_id: PackSegmentId::INITIAL,
+            frame_start: end - 10,
+            frame_end: end,
+            context: crate::engine::store::PackFrameContext::new(
+                epoch as u32,
+                epoch as u32,
+                [epoch as u8; 32],
+                [epoch as u8 + 1; 32],
+            ),
+            rows: 1,
+            metadata_bytes: 56,
+            value_bytes: 0,
+            frame_sha256: [epoch as u8 + 2; 32],
+        }
+    }
+
+    fn extent_set() -> Vec<ManifestExtent> {
+        let mut extents = Vec::new();
+        append_frame_extent(&mut extents, receipt(0, 74)).expect("first extent");
+        append_frame_extent(
+            &mut extents,
+            PackFrameReceipt {
+                frame_start: 74,
+                frame_end: 84,
+                ..receipt(1, 84)
+            },
+        )
+        .expect("second extent");
+        extents
+    }
+
     fn entry(level: u32, min_epoch: u64, max_epoch: u64, name: &str) -> ManifestEntry {
         ManifestEntry {
             level,
             min_epoch,
             max_epoch,
+            format_version: 4,
             record_count: 1,
+            records_offset: 192,
+            file_bytes: 242,
             records_sha256: [7u8; 32],
+            structure_sha256: [8u8; 32],
             file_name: name.to_owned(),
         }
     }
@@ -388,21 +747,21 @@ mod tests {
         let root = tempdir().expect("temporary manifest root");
         let manifest = Manifest {
             generation: 3,
+            extents: extent_set(),
             entries: vec![
                 entry(
                     1,
                     0,
-                    8,
-                    "run-l1-00000000000000000000-00000000000000000008.idx",
+                    0,
+                    "run-l1-00000000000000000000-00000000000000000000.idx",
                 ),
-                entry(0, 9, 9, "run-00000000000000000009.idx"),
+                entry(0, 1, 1, "run-00000000000000000001.idx"),
             ],
         };
         let path = publish_manifest(root.path(), &manifest).expect("publish manifest");
         let decoded = read_manifest(&path).expect("read published manifest");
-        assert_eq!(decoded.generation, 3);
-        assert_eq!(decoded.entries, manifest.entries);
-        assert_eq!(decoded.max_epoch(), 9);
+        assert_eq!(decoded, manifest);
+        assert_eq!(decoded.entries.last().expect("last entry").max_epoch, 1);
         assert_eq!(
             list_manifest_files(root.path()).expect("list manifests"),
             vec![(3, path.clone())]
@@ -417,11 +776,15 @@ mod tests {
     }
 
     #[test]
-    fn manifest_v2_binds_header_and_file_generation() {
+    fn manifest_v3_binds_header_and_file_generation() {
         let root = tempdir().expect("temporary manifest root");
         let manifest = Manifest {
             generation: 7,
-            entries: vec![entry(0, 0, 0, "run-00000000000000000000.idx")],
+            extents: extent_set(),
+            entries: vec![
+                entry(0, 0, 0, "run-00000000000000000000.idx"),
+                entry(0, 1, 1, "run-00000000000000000001.idx"),
+            ],
         };
         let path = publish_manifest(root.path(), &manifest).expect("publish manifest");
         let original = fs::read(&path).expect("read manifest bytes");
@@ -444,32 +807,171 @@ mod tests {
     }
 
     #[test]
-    fn legacy_v1_manifest_remains_readable() {
+    fn unknown_manifest_version_is_rejected() {
         let root = tempdir().expect("temporary manifest root");
         let manifest = Manifest {
-            generation: 11,
-            entries: vec![entry(0, 0, 0, "run-00000000000000000000.idx")],
+            generation: 9,
+            extents: extent_set(),
+            entries: vec![
+                entry(0, 0, 0, "run-00000000000000000000.idx"),
+                entry(0, 1, 1, "run-00000000000000000001.idx"),
+            ],
         };
-        let v2 = encode_manifest(&manifest).expect("encode v2 manifest");
-        let mut legacy = Vec::with_capacity(
-            LEGACY_MANIFEST_HEADER_LEN + v2.len().saturating_sub(MANIFEST_HEADER_LEN),
+        let path = publish_manifest(root.path(), &manifest).expect("publish manifest");
+        let mut bytes = fs::read(&path).expect("read manifest");
+        bytes[8..12].copy_from_slice(&99u32.to_le_bytes());
+        fs::write(&path, bytes).expect("write unknown version");
+        let error = read_manifest(&path).expect_err("unknown manifest version must fail");
+        assert!(
+            error
+                .downcast_ref::<PackStoreError>()
+                .is_some_and(|error| matches!(
+                    error,
+                    PackStoreError::UnsupportedVersion { found: 99, .. }
+                ))
         );
-        legacy.extend_from_slice(&v2[..LEGACY_MANIFEST_HEADER_LEN]);
-        legacy[8..12].copy_from_slice(&LEGACY_MANIFEST_FORMAT_VERSION.to_le_bytes());
-        legacy[12..16].copy_from_slice(&(LEGACY_MANIFEST_HEADER_LEN as u32).to_le_bytes());
-        legacy.extend_from_slice(&v2[MANIFEST_HEADER_LEN..]);
-        let path = root.path().join(manifest_file_name(manifest.generation));
-        fs::write(&path, legacy).expect("write legacy manifest");
+    }
 
-        let decoded = read_manifest(&path).expect("read legacy manifest");
-        assert_eq!(decoded.generation, manifest.generation);
-        assert_eq!(decoded.entries, manifest.entries);
+    #[test]
+    fn unknown_manifest_version_is_rejected_from_prefix_before_sparse_body_read() {
+        let root = tempdir().expect("temporary manifest root");
+        let path = root.path().join(manifest_file_name(12));
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .expect("create sparse manifest");
+        let mut prefix = [0u8; 16];
+        prefix[..8].copy_from_slice(MANIFEST_MAGIC);
+        prefix[8..12].copy_from_slice(&99u32.to_le_bytes());
+        prefix[12..16].copy_from_slice(&(MANIFEST_HEADER_LEN as u32).to_le_bytes());
+        file.write_all(&prefix).expect("write manifest prefix");
+        file.set_len(u64::from(u32::MAX) + 1)
+            .expect("extend sparse manifest");
+        drop(file);
+
+        let error = read_manifest(&path).expect_err("unknown manifest version must fail");
+        assert!(matches!(
+            error.downcast_ref::<PackStoreError>(),
+            Some(PackStoreError::UnsupportedVersion {
+                artifact: PackStoreArtifact::Manifest,
+                found: 99,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn current_manifest_counts_above_hard_limits_fail_before_body_read() {
+        let root = tempdir().expect("temporary manifest root");
+        let manifest = Manifest {
+            generation: 14,
+            extents: extent_set(),
+            entries: vec![
+                entry(0, 0, 0, "run-00000000000000000000.idx"),
+                entry(0, 1, 1, "run-00000000000000000001.idx"),
+            ],
+        };
+        let path = publish_manifest(root.path(), &manifest).expect("publish manifest");
+        let original = fs::read(&path).expect("read manifest");
+        let excessive =
+            u32::try_from(HARD_MAX_MANIFEST_ENTRIES + 1).expect("manifest hard limit fits u32");
+
+        for (count_offset, extents, entries, expected_error) in [
+            (
+                24,
+                usize::try_from(excessive).expect("extent count fits usize"),
+                manifest.entries.len(),
+                "manifest extent count exceeds the format hard limit",
+            ),
+            (
+                28,
+                manifest.extents.len(),
+                usize::try_from(excessive).expect("entry count fits usize"),
+                "manifest entry count exceeds the format hard limit",
+            ),
+        ] {
+            let mut header: [u8; MANIFEST_HEADER_LEN] = original[..MANIFEST_HEADER_LEN]
+                .try_into()
+                .expect("manifest header");
+            header[count_offset..count_offset + 4].copy_from_slice(&excessive.to_le_bytes());
+            let checksum = manifest_header_digest(&header);
+            header[104..136].copy_from_slice(&checksum);
+            fs::write(&path, header).expect("write oversized manifest header");
+            let sparse_len = MANIFEST_HEADER_LEN
+                .checked_add(
+                    extents
+                        .checked_mul(MANIFEST_EXTENT_LEN)
+                        .expect("sparse extent bytes"),
+                )
+                .and_then(|length| {
+                    entries
+                        .checked_mul(MANIFEST_ENTRY_LEN)
+                        .and_then(|bytes| length.checked_add(bytes))
+                })
+                .expect("sparse manifest length");
+            OpenOptions::new()
+                .write(true)
+                .open(&path)
+                .expect("open sparse manifest")
+                .set_len(u64::try_from(sparse_len).expect("sparse length fits u64"))
+                .expect("extend sparse manifest");
+
+            let error = read_manifest(&path).expect_err("oversized current manifest must fail");
+            assert!(error.to_string().contains(expected_error));
+        }
+    }
+
+    #[test]
+    fn manifest_reader_rejects_trailing_bytes() {
+        let root = tempdir().expect("temporary manifest root");
+        let manifest = Manifest {
+            generation: 13,
+            extents: extent_set(),
+            entries: vec![
+                entry(0, 0, 0, "run-00000000000000000000.idx"),
+                entry(0, 1, 1, "run-00000000000000000001.idx"),
+            ],
+        };
+        let path = publish_manifest(root.path(), &manifest).expect("publish manifest");
+        OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("open manifest for append")
+            .write_all(&[0])
+            .expect("append trailing byte");
+
+        let error = read_manifest(&path).expect_err("trailing manifest byte must fail");
+        assert!(error.to_string().contains("length mismatch"));
+    }
+
+    #[test]
+    fn frame_extent_rejects_empty_following_receipt_without_mutation() {
+        let mut extents = Vec::new();
+        append_frame_extent(&mut extents, receipt(0, 74)).expect("first extent");
+        let original = extents.clone();
+
+        for frame_end in [74, 73] {
+            let error = append_frame_extent(
+                &mut extents,
+                PackFrameReceipt {
+                    frame_start: 74,
+                    frame_end,
+                    ..receipt(1, 84)
+                },
+            )
+            .expect_err("empty or reversed next frame must fail");
+            assert!(error.to_string().contains("empty extent"));
+            assert_eq!(extents, original);
+        }
     }
 
     #[test]
     fn manifest_rejects_non_contiguous_epochs_and_bad_names() {
         let mut manifest = Manifest {
             generation: 1,
+            extents: extent_set(),
             entries: vec![
                 entry(0, 0, 0, "run-00000000000000000000.idx"),
                 entry(0, 2, 2, "run-00000000000000000002.idx"),
@@ -477,10 +979,8 @@ mod tests {
         };
         assert!(encode_manifest(&manifest).is_err());
         manifest.entries[1].min_epoch = 1;
-        manifest.entries[1].max_epoch = 2;
-        assert!(encode_manifest(&manifest).is_err());
-        manifest.entries[1].level = 1;
-        manifest.entries[1].file_name = run_file_name(1, 1, 2);
+        manifest.entries[1].max_epoch = 1;
+        manifest.entries[1].file_name = run_file_name(0, 1, 1);
         assert!(encode_manifest(&manifest).is_ok());
         manifest.entries[1].file_name = "run-alias.idx".to_owned();
         let error = encode_manifest(&manifest).expect_err("non-canonical run name must fail");

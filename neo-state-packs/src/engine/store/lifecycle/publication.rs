@@ -349,6 +349,10 @@ impl PackStore {
                 fences,
                 filter: RunFilter::Xor16(filter),
                 records_sha256,
+                structure_sha256: index_bytes
+                    [INDEX_STRUCTURE_SHA256_START..INDEX_STRUCTURE_SHA256_END]
+                    .try_into()
+                    .expect("structure checksum"),
                 memory_bytes: structured,
             }),
             level: 0,
@@ -602,7 +606,9 @@ impl PackStore {
             verified_run.epoch == prepared_run.epoch
                 && verified_run.record_count == prepared_run.record_count
                 && verified_run.records_sha256 == prepared_run.records_sha256
+                && verified_run.structure_sha256 == prepared_run.structure_sha256
                 && verified_run.file_bytes == prepared_run.file_bytes
+                && verified_run.records_offset == prepared_run.records_offset
                 && verified_run.min_key == prepared_run.min_key
                 && verified_run.max_key == prepared_run.max_key
                 && verified_run.memory_bytes == prepared_run.memory_bytes,
@@ -622,6 +628,8 @@ impl PackStore {
             max_prefix: activated_runs.last().expect("appended run").run.max_prefix,
         });
         let entries = activated_runs.iter().map(manifest_entry_of).collect();
+        let mut extents = self.extents.clone();
+        manifest::append_frame_extent(&mut extents, prepared.receipt)?;
         Ok(ValidatedAppend {
             receipt: prepared.receipt,
             stage_totals: prepared.stage_totals(),
@@ -632,8 +640,10 @@ impl PackStore {
             decoded_index_bytes: pending.decoded_index_bytes,
             next_epoch,
             generation,
+            extents: extents.clone(),
             manifest: Manifest {
                 generation,
+                extents,
                 entries,
             },
         })
@@ -658,6 +668,7 @@ impl PackStore {
         self.decoded_index_bytes = validated.decoded_index_bytes;
         self.next_epoch = validated.next_epoch;
         self.generation = validated.generation;
+        self.extents = validated.extents;
         self.last_frame_receipt = Some(validated.receipt);
         self.pending_append = None;
         self.note_peak();

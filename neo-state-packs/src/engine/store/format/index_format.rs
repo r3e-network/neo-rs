@@ -475,6 +475,9 @@ pub(super) fn read_index_run_with_options(
         fences,
         filter,
         records_sha256,
+        structure_sha256: header[INDEX_STRUCTURE_SHA256_START..INDEX_STRUCTURE_SHA256_END]
+            .try_into()
+            .expect("structure checksum"),
         memory_bytes,
     })
 }

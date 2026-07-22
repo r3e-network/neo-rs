@@ -1013,19 +1013,6 @@ fn committed_frame_scrub_counts_every_historical_row() {
     store
         .append_frame(TEST_FRAME_CONTEXT, &[put(first, b"new"), tombstone(second)])
         .expect("append second frame");
-    let generation_before = store
-        .snapshot()
-        .expect("snapshot before republish")
-        .generation();
-    store
-        .republish_manifest()
-        .expect("republish unchanged manifest");
-    let generation_after = store
-        .snapshot()
-        .expect("snapshot after republish")
-        .generation();
-    assert_eq!(generation_after, generation_before + 1);
-
     let scrub = store.scrub_committed_frames().expect("scrub frames");
     assert_eq!(scrub.frames, 2);
     assert_eq!(scrub.rows, 4);

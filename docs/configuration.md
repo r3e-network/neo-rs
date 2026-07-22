@@ -145,51 +145,16 @@ source generation. If a build stops after complete frames but before marker
 publication, rerun it with the same network magic, source generation, and
 `--rows-per-frame`: the builder validates the durable build identity, proves
 that every prior frame has the declared row geometry, then compares every
-stored prefix value with the frozen source before appending. A missing legacy
+stored prefix value with the frozen source before appending. A missing build
 identity or any mismatch aborts instead of silently adopting a partial pack.
 Before publishing a complete marker, the builder also sequentially re-hashes
 and decodes every committed frame payload. The report records scrubbed frames,
 rows, puts, tombstones, payload/value bytes, and scrub wall time.
 
-One compatibility operation is explicit and disabled by default:
-
-```text
-neo-pack-build --network-magic <u32-or-hex> --mdbx <frozen-store> \
-  --pack <legacy-complete-pack> --rows-per-frame <original-size> \
-  --adopt-legacy-complete-pack
-```
-
-This flag accepts only an uncapped, complete schema-v1 checkpoint produced by
-the earlier offline builder; it never adopts a partial pack. The builder
-requires the legacy height, displayed/internal root, row count, value bytes,
-frame count, frame geometry, pack length, and namespace digest to match the
-frozen MDBX source and reopened pack. It then compares every namespace value,
-recomputes the namespace digest, reads and hashes the physical tip payload, and
-checks any optional legacy tip fields. Only after all checks pass does it write
-`checkpoint-build.json` and atomically replace the old marker with schema v2,
-including current pack format versions and the verified tip identity. Any
-network magic in the legacy report is ignored; the required CLI value is the
-only magic written into the new identity and marker. Run adoption only after
-the legacy builder has exited and its complete marker is durable.
-
-A legacy build that stopped before publishing any marker requires a different,
-also disabled-by-default recovery mode:
-
-```text
-neo-pack-build --network-magic <u32-or-hex> --mdbx <frozen-store> \
-  --pack <legacy-partial-pack> --rows-per-frame <original-size> \
-  --max-index-memory-mb <explicit-bound> --adopt-legacy-partial-pack
-```
-
-Partial adoption requires both `checkpoint.json` and `checkpoint-build.json`
-to be absent, every visible frame to contain exactly the original row count,
-and an uncapped source scan. It compares the complete existing prefix with the
-frozen MDBX source, atomically republishes the unchanged run set in the current
-manifest format, then publishes the new build identity; no later frame may be
-appended before that durable identity exists. If adoption is interrupted
-after identity publication, rerun without the adoption flag. A short final
-frame, source drift, value mismatch, existing marker, or ambiguous identity
-fails closed.
+Pack manifests and authority tuples are current-only. Artifacts that embed pack
+manifest format v1/v2 are rejected and must be rebuilt from the authoritative
+MDBX/source data with the current `neo-pack-build`; the node does not expose an
+in-process legacy adoption path.
 
 The ordered MPT finalizer keeps batch reads serial by default. For a controlled
 catch-up profile, `NEO_MDBX_WRITE_INTENT_READ_THREADS` enables bounded parallel

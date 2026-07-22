@@ -273,7 +273,7 @@
         let error = assert_prepared_compaction_corruption_is_not_adopted(|path, prepared| {
             rewrite_prepared_filter_with_valid_structure_checksum(path, prepared);
         });
-        assert!(error.contains("index filter rejected a persisted key"));
+        assert!(error.contains("prepared compaction output no longer matches its validated build"));
     }
 
     #[test]
@@ -783,6 +783,196 @@
         assert_eq!(
             rebuilt.get(&target).expect("read post-rebuild append"),
             Some(b"v3".to_vec())
+        );
+    }
+
+    #[test]
+    fn manifest_and_run_from_another_same_height_history_fail_before_mutation() {
+        let source_root = tempdir().expect("temporary source pack");
+        let target_root = tempdir().expect("temporary target pack");
+        let source_key = key(41);
+        let target_key = key(42);
+
+        let mut source = PackStore::create(source_root.path(), store_config(1024 * 1024))
+            .expect("create source pack");
+        source
+            .append_frame(TEST_FRAME_CONTEXT, &[put(source_key, b"source")])
+            .expect("append source frame");
+        let source_receipt = source.last_frame_receipt().expect("source receipt");
+        drop(source);
+
+        let mut target = PackStore::create(target_root.path(), store_config(1024 * 1024))
+            .expect("create target pack");
+        target
+            .append_frame(TEST_FRAME_CONTEXT, &[put(target_key, b"target")])
+            .expect("append target frame");
+        let target_receipt = target.last_frame_receipt().expect("target receipt");
+        drop(target);
+        assert_eq!(source_receipt.frame_start, target_receipt.frame_start);
+        assert_eq!(source_receipt.frame_end, target_receipt.frame_end);
+        assert_eq!(source_receipt.rows, target_receipt.rows);
+        assert_eq!(source_receipt.metadata_bytes, target_receipt.metadata_bytes);
+        assert_eq!(source_receipt.value_bytes, target_receipt.value_bytes);
+        assert_ne!(source_receipt.frame_sha256, target_receipt.frame_sha256);
+
+        let source_manifest = manifest::list_manifest_files(source_root.path())
+            .expect("list source manifests")
+            .first()
+            .expect("source manifest")
+            .1
+            .clone();
+        let target_manifest = manifest::list_manifest_files(target_root.path())
+            .expect("list target manifests")
+            .first()
+            .expect("target manifest")
+            .1
+            .clone();
+        let canonical_manifest_bytes = fs::read(&target_manifest).expect("read target manifest");
+        let target_run_path = target_root
+            .path()
+            .join("runs")
+            .join(run_file_name(0, 0, 0));
+        let canonical_run_bytes = fs::read(&target_run_path).expect("read target run");
+        fs::copy(source_manifest, target_manifest).expect("copy foreign manifest");
+        fs::copy(
+            source_root.path().join("runs").join(run_file_name(0, 0, 0)),
+            &target_run_path,
+        )
+        .expect("copy foreign run");
+        let stale_temp = target_root.path().join("runs").join("run-recovery.idx.tmp");
+        fs::write(&stale_temp, b"preserve before fatal history mismatch")
+            .expect("plant stale recovery output");
+
+        let before = snapshot_store_files(target_root.path());
+        let error = match PackStore::open(target_root.path(), store_config(1024 * 1024)) {
+            Ok(_) => panic!("a foreign manifest/run history must be rejected"),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("does not bind the selected frame history"),
+            "unexpected error: {error:#}"
+        );
+        assert_eq!(
+            snapshot_store_files(target_root.path()),
+            before,
+            "standalone rejection must not mutate any store artifact"
+        );
+
+        let recovered = PackStore::open_at_commit_horizon(
+            target_root.path(),
+            store_config(1024 * 1024),
+            Some(PackCommitHorizon {
+                epoch: target_receipt.epoch,
+                segment_id: target_receipt.segment_id,
+                frame_end: target_receipt.frame_end,
+                context: target_receipt.context,
+                frame_sha256: target_receipt.frame_sha256,
+            }),
+        )
+        .expect("external horizon rebuilds a foreign derived generation");
+        assert_eq!(
+            recovered.get(&target_key).expect("read target value"),
+            Some(b"target".to_vec())
+        );
+        assert_eq!(recovered.get(&source_key).expect("read source key"), None);
+        assert_eq!(recovered.last_frame_receipt(), Some(target_receipt));
+        drop(recovered);
+        let rebuilt_manifest = manifest::list_manifest_files(target_root.path())
+            .expect("list rebuilt manifests")
+            .first()
+            .expect("rebuilt manifest")
+            .1
+            .clone();
+        assert_eq!(
+            fs::read(rebuilt_manifest).expect("read rebuilt manifest"),
+            canonical_manifest_bytes
+        );
+        assert_eq!(
+            fs::read(&target_run_path).expect("read rebuilt run"),
+            canonical_run_bytes
+        );
+        let reopened = PackStore::open(target_root.path(), store_config(1024 * 1024))
+            .expect("standalone reopen rebuilt generation");
+        assert_eq!(
+            reopened.get(&target_key).expect("re-read target value"),
+            Some(b"target".to_vec())
+        );
+        assert_eq!(reopened.get(&source_key).expect("re-read source key"), None);
+
+        // The two one-frame histories intentionally have different authenticated
+        // receipts even though their epoch horizon and run names are identical.
+        assert_ne!(source_receipt.frame_sha256, target_receipt.frame_sha256);
+    }
+
+    #[test]
+    fn unknown_manifest_version_fails_closed_without_mutation() {
+        let root = tempdir().expect("temporary append store");
+        let mut store =
+            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create pack store");
+        store
+            .append_frame(TEST_FRAME_CONTEXT, &[put(key(51), b"value")])
+            .expect("append frame");
+        let receipt = store.last_frame_receipt().expect("frame receipt");
+        drop(store);
+
+        let manifest_path = manifest::list_manifest_files(root.path())
+            .expect("list manifests")
+            .first()
+            .expect("manifest")
+            .1
+            .clone();
+        let mut bytes = fs::read(&manifest_path).expect("read manifest");
+        bytes[8..12].copy_from_slice(&0xfeed_beefu32.to_le_bytes());
+        fs::write(&manifest_path, &bytes).expect("write unknown manifest version");
+        fs::write(
+            root.path().join("runs/run-unknown-version.idx.tmp"),
+            b"must survive unsupported manifest rejection",
+        )
+        .expect("plant stale output");
+        let before = snapshot_store_files(root.path());
+
+        let standalone_error = match PackStore::open(root.path(), store_config(1024 * 1024)) {
+            Ok(_) => panic!("standalone open must reject an unknown manifest version"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            standalone_error,
+            PackStoreError::UnsupportedVersion {
+                artifact: PackStoreArtifact::Manifest,
+                found: 0xfeed_beef,
+                ..
+            }
+        ));
+        assert_eq!(snapshot_store_files(root.path()), before);
+
+        let external_error = match PackStore::open_at_commit_horizon(
+            root.path(),
+            store_config(1024 * 1024),
+            Some(PackCommitHorizon {
+                epoch: receipt.epoch,
+                segment_id: receipt.segment_id,
+                frame_end: receipt.frame_end,
+                context: receipt.context,
+                frame_sha256: receipt.frame_sha256,
+            }),
+        ) {
+            Ok(_) => panic!("external open must reject an unknown manifest version"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            external_error,
+            PackStoreError::UnsupportedVersion {
+                artifact: PackStoreArtifact::Manifest,
+                found: 0xfeed_beef,
+                ..
+            }
+        ));
+        assert_eq!(
+            snapshot_store_files(root.path()),
+            before,
+            "unknown-version rejection must not mutate any store artifact"
         );
     }
 

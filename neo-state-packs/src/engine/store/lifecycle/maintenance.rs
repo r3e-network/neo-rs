@@ -87,6 +87,7 @@ impl PackStore {
             .context("manifest generation overflows")?;
         let candidate_manifest = Manifest {
             generation,
+            extents: self.extents.clone(),
             entries: candidate_runs.iter().map(manifest_entry_of).collect(),
         };
         manifest::publish_manifest(&self.root, &candidate_manifest)?;
@@ -118,24 +119,6 @@ impl PackStore {
         );
         self.note_peak();
         Ok(())
-    }
-
-    /// Atomically republishes the unchanged live run set in the current
-    /// manifest format.
-    ///
-    /// Offline migration tooling uses this after fully validating a legacy
-    /// payload prefix and before publishing a new external identity. No frame,
-    /// index record, or read-visible value changes.
-    pub fn republish_manifest(&mut self) -> Result<()> {
-        ensure!(
-            self.pending_append.is_none(),
-            "cannot republish a manifest while an append awaits activation"
-        );
-        ensure!(
-            self.last_frame_receipt.is_some(),
-            "cannot republish a manifest for an empty pack"
-        );
-        self.publish_manifest()
     }
 
     /// Newest-committed-version point read.
@@ -206,27 +189,6 @@ impl PackStore {
             lookup_pack_map: self.lookup_pack_map.as_deref(),
             batch_value_workers: self.config.read_options().batch_value_workers,
         }
-    }
-
-    /// Publishes the current live run set as the next manifest generation.
-    /// The rename inside `manifest::publish_manifest` is the single atomic
-    /// publication point; a crash before it leaves the previous generation
-    /// live and orphans only unreferenced run files.
-    fn publish_manifest(&mut self) -> Result<()> {
-        let generation = self
-            .generation
-            .checked_add(1)
-            .context("manifest generation overflows")?;
-        let entries = self.runs.iter().map(manifest_entry_of).collect();
-        manifest::publish_manifest(
-            &self.root,
-            &Manifest {
-                generation,
-                entries,
-            },
-        )?;
-        self.generation = generation;
-        Ok(())
     }
 
     fn level_run_bound(&self, level: u32) -> usize {
@@ -378,6 +340,7 @@ impl PackStore {
                 && reopened.max_key == pending.run.max_key
                 && reopened.fences == pending.run.fences
                 && reopened.records_sha256 == pending.run.records_sha256
+                && reopened.structure_sha256 == pending.run.structure_sha256
                 && reopened.memory_bytes == pending.run.memory_bytes,
             "prepared compaction output no longer matches its validated build"
         );

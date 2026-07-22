@@ -49,6 +49,7 @@ impl PackStore {
             ranges: Vec::new(),
             next_epoch: 0,
             generation: 0,
+            extents: Vec::new(),
             decoded_index_bytes: 0,
             config,
             stats: CompactionStats::default(),
@@ -153,23 +154,34 @@ impl PackStore {
                 horizon.epoch
             );
         }
-        authenticate_committed_frame_prefix(&pack, &pack_path, &scan, expected_frames)?;
+        let authenticated_extents =
+            authenticate_committed_frame_prefix(&pack, &pack_path, &scan, expected_frames)?;
         let manifests = manifest::list_manifest_files(root)?;
-        let current_manifest = manifests
-            .first()
-            .and_then(|(_, path)| manifest::read_manifest(path).ok());
+        let current_manifest = match manifests.first() {
+            Some((_, path)) => match manifest::read_manifest(path) {
+                Ok(manifest) => Some(manifest),
+                Err(error) if is_unsupported_artifact_version(&error) => return Err(error),
+                Err(_) => None,
+            },
+            None => None,
+        };
         let manifest_frames = current_manifest
             .as_ref()
-            .and_then(|manifest| manifest.max_epoch().checked_add(1));
-        let manifest_runs_valid = current_manifest.as_ref().is_some_and(|manifest| {
-            Self::load_manifest_runs(
-                &root.join("runs"),
-                manifest,
-                max_index_memory_bytes,
-                options,
-            )
-            .is_ok()
-        });
+            .and_then(|manifest| manifest.frame_count().ok());
+        let manifest_binding_valid = current_manifest
+            .as_ref()
+            .is_some_and(|manifest| manifest.extents == authenticated_extents);
+        let manifest_runs_valid = manifest_frames == Some(expected_frames)
+            && manifest_binding_valid
+            && current_manifest.as_ref().is_some_and(|manifest| {
+                Self::load_manifest_runs(
+                    &root.join("runs"),
+                    manifest,
+                    max_index_memory_bytes,
+                    options,
+                )
+                .is_ok()
+            });
         let fast_open = if expected_frames == 0 {
             scan.frame_ends.is_empty()
                 && manifests.is_empty()
@@ -178,7 +190,7 @@ impl PackStore {
                     .next()
                     .is_none()
         } else {
-            manifest_frames == Some(expected_frames) && manifest_runs_valid
+            manifest_runs_valid
         };
         drop(pack);
 
@@ -208,7 +220,7 @@ impl PackStore {
                     manifests.is_empty(),
                     "marker recovery did not remove old manifests"
                 );
-                publish_rebuilt_manifest(root, &manifests, &loaded)?;
+                publish_rebuilt_manifest(root, &manifests, &authenticated_extents, &loaded)?;
             }
         }
 
@@ -255,6 +267,7 @@ impl PackStore {
         let manifests = manifest::list_manifest_files(root)?;
         let mut generation = 0u64;
         let mut rebuild = RebuildMetrics::default();
+        let mut extents = Vec::new();
         let loaded = match manifests.first() {
             Some((_, path)) => {
                 let current = manifest::read_manifest(path).with_context(|| {
@@ -263,22 +276,26 @@ impl PackStore {
                         path.display()
                     )
                 })?;
+                let committed_frames = current.frame_count()?;
                 ensure!(
-                    current.max_epoch() < frame_count,
+                    committed_frames <= frame_count,
                     "manifest generation {} commits {} frames but only {} validated in the pack",
                     current.generation,
-                    current.max_epoch() + 1,
+                    committed_frames,
                     frame_count
                 );
-                authenticate_committed_frame_prefix(
+                let authenticated_extents = authenticate_committed_frame_prefix(
                     &pack,
                     &pack_path,
                     &scan,
-                    current
-                        .max_epoch()
-                        .checked_add(1)
-                        .context("manifest committed-frame count overflows")?,
+                    committed_frames,
                 )?;
+                ensure!(
+                    authenticated_extents == current.extents,
+                    "manifest generation {} does not bind the selected frame history",
+                    current.generation
+                );
+                extents = current.extents.clone();
                 let loaded =
                     Self::load_manifest_runs(&runs_dir, &current, max_index_memory_bytes, options);
                 clear_stale_temp_files(root)?;
@@ -289,8 +306,8 @@ impl PackStore {
                         // Indexes are derived, but only the manifest's exact
                         // visible prefix may be rebuilt without an external
                         // canonical marker. Raw frames beyond it stay orphaned.
-                        let prefix = &scan.frame_ends[..=usize::try_from(current.max_epoch())
-                            .context("manifest epoch does not fit usize")?];
+                        let prefix = &scan.frame_ends[..usize::try_from(committed_frames)
+                            .context("manifest frame count does not fit usize")?];
                         let rebuild_started = Instant::now();
                         let loaded = Self::rebuild_runs_from_frames(
                             &pack,
@@ -308,7 +325,7 @@ impl PackStore {
                             index_entries: loaded.index_entries,
                             wall_ns: duration_ns(rebuild_started.elapsed()),
                         };
-                        generation = publish_rebuilt_manifest(root, &manifests, &loaded)?;
+                        generation = publish_rebuilt_manifest(root, &manifests, &extents, &loaded)?;
                         loaded
                     }
                 }
@@ -327,6 +344,7 @@ impl PackStore {
             pack_path,
             scan,
             generation,
+            extents,
             loaded,
             config,
             rebuild,
@@ -346,9 +364,17 @@ impl PackStore {
         for entry in &current.entries {
             let run = read_index_run_with_options(&runs_dir.join(&entry.file_name), options)?;
             ensure!(
-                run.epoch == entry.max_epoch
+                run.format_version == entry.format_version
+                    && run.epoch == entry.max_epoch
                     && run.record_count == entry.record_count
+                    && run.records_offset == entry.records_offset
+                    && run.file_bytes == entry.file_bytes
                     && run.records_sha256 == entry.records_sha256,
+                "manifest entry does not match run {}",
+                entry.file_name
+            );
+            ensure!(
+                run.structure_sha256 == entry.structure_sha256,
                 "manifest entry does not match run {}",
                 entry.file_name
             );
@@ -448,24 +474,43 @@ impl PackStore {
         pack_path: PathBuf,
         scan: FrameScan,
         generation: u64,
+        extents: Vec<ManifestExtent>,
         loaded: LoadedRuns,
         config: PackStoreConfig,
         rebuild: RebuildMetrics,
         writer_lease: File,
     ) -> Result<Self> {
         let options = config.read_options();
-        let last_frame_receipt = loaded
-            .runs
+        let committed_frames = extents.iter().try_fold(0u64, |total, extent| {
+            total
+                .checked_add(extent.frame_count)
+                .context("committed frame count overflows")
+        })?;
+        ensure!(
+            committed_frames <= scan.frame_ends.len() as u64,
+            "manifest commits more frames than the validated pack contains"
+        );
+        let committed_end = extents
             .last()
-            .map(|tail| read_frame_receipt(&pack, &scan, tail.max_epoch))
-            .transpose()?;
-        let committed_end = match loaded.runs.last() {
-            Some(tail) => {
-                scan.frame_ends[usize::try_from(tail.max_epoch)
-                    .context("committed epoch does not fit usize")?]
-            }
-            None => SEGMENT_HEADER_LEN as u64,
+            .map_or(SEGMENT_HEADER_LEN as u64, |extent| extent.frame_end);
+        let last_frame_receipt = if committed_frames == 0 {
+            None
+        } else {
+            Some(read_frame_receipt(&pack, &scan, committed_frames - 1)?)
         };
+        if let Some(tip) = extents.last() {
+            ensure!(
+                tip.segment_id == PackSegmentId::INITIAL,
+                "opened manifest names unavailable segment {}",
+                tip.segment_id
+            );
+            let tip_index = usize::try_from(committed_frames - 1)
+                .context("committed frame count does not fit usize")?;
+            ensure!(
+                scan.frame_ends[tip_index] == tip.frame_end,
+                "manifest tip extent does not match the validated frame chain"
+            );
+        }
         // A frame becomes visible only with its published manifest. Truncate
         // torn tail bytes and any frames whose publication was interrupted.
         if pack.metadata().context("stat append pack")?.len() != committed_end {
@@ -475,7 +520,6 @@ impl PackStore {
         }
         let pack_map = Mmap::map(&pack, committed_end, &pack_path)?;
         let lookup_pack_map = map_random_if_enabled(&pack, committed_end, &pack_path, options)?;
-        let committed_frames = loaded.runs.last().map_or(0, |tail| tail.max_epoch + 1);
         for epoch in 0..committed_frames {
             let index = usize::try_from(epoch).context("frame epoch does not fit usize")?;
             let frame_end = *scan
@@ -506,7 +550,7 @@ impl PackStore {
                 max_prefix: live.run.max_prefix,
             })
             .collect();
-        let frames = loaded.runs.last().map_or(0, |tail| tail.max_epoch + 1);
+        let frames = committed_frames;
         let run_count = u64::try_from(loaded.runs.len()).context("run count does not fit u64")?;
         let stats = CompactionStats {
             peak_live_runs: run_count,
@@ -525,6 +569,7 @@ impl PackStore {
             ranges,
             next_epoch: frames,
             generation,
+            extents,
             decoded_index_bytes: loaded.decoded_index_bytes,
             config,
             stats,
@@ -662,6 +707,12 @@ fn ensure_rebuild_memory_bound(estimated: u64, maximum: u64) -> Result<()> {
     Ok(())
 }
 
+fn is_unsupported_artifact_version(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<PackStoreError>()
+        .is_some_and(|error| matches!(error, PackStoreError::UnsupportedVersion { .. }))
+}
+
 /// Authenticates the complete marker- or manifest-selected frame prefix before
 /// recovery mutates any pack-store artifact. Validation hashes both variable
 /// sections, verifies the footer/full-frame digest, and parses every canonical
@@ -671,14 +722,14 @@ fn authenticate_committed_frame_prefix(
     pack_path: &Path,
     scan: &FrameScan,
     committed_frames: u64,
-) -> Result<()> {
+) -> Result<Vec<ManifestExtent>> {
     ensure!(
         committed_frames <= scan.frame_ends.len() as u64,
         "committed frame prefix requires {committed_frames} frames but only {} complete frames exist",
         scan.frame_ends.len()
     );
     if committed_frames == 0 {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let last_index = usize::try_from(committed_frames - 1)
         .context("committed frame count does not fit usize")?;
@@ -688,15 +739,17 @@ fn authenticate_committed_frame_prefix(
         .context("committed frame prefix is incomplete")?;
     let map = Mmap::map_sequential(pack, committed_end, pack_path)?;
     let mut frame_start = SEGMENT_HEADER_LEN as u64;
+    let mut extents = Vec::new();
     for epoch in 0..committed_frames {
         let index = usize::try_from(epoch).context("committed frame epoch does not fit usize")?;
         let frame_end = *scan
             .frame_ends
             .get(index)
             .with_context(|| format!("committed frame {epoch} is absent"))?;
-        verify_frame(&map, frame_start, frame_end, epoch)
+        let (receipt, _) = verify_frame(&map, frame_start, frame_end, epoch)
             .with_context(|| format!("authenticate committed frame {epoch}"))?;
+        manifest::append_frame_extent(&mut extents, receipt)?;
         frame_start = frame_end;
     }
-    Ok(())
+    Ok(extents)
 }
