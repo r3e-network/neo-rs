@@ -16,7 +16,7 @@
       parity vectors. **2 files**:
       - `neo-tokens-tracker/tests/tokens_tracker_nep17_csharp_parity.rs`
         (FAILS — see verification report).
-      - `neo-crypto/src/mpt_trie/tests.rs` (PASSES — C#-converted
+      - `neo-trie/src/tests/mpt_trie/diagnostics.rs` (PASSES — C#-converted
         unit tests + `test_genesis_state_root_matches_reference`).
 - [x] 1.4 Identify C# reference data shipped in-tree. **1 file**:
       - `neo_csharp/node/plugins/RpcServer/RpcServer.json`
@@ -182,17 +182,17 @@
 ## 6. Spot-check MPT / state root
 
 - [x] 6.1 MPT genesis state root matches the C# reference.
-      `neo-crypto/src/mpt_trie/tests.rs:1063-1101` —
+      `neo-trie/src/tests/mpt_trie/diagnostics.rs` —
       `test_genesis_state_root_matches_reference` — `PASS`
       (LE: `e881de01a3172b4988a8cd6194b82ab18eec47171f2931f6abee997e7b15a558`,
        BE: `0x58a5157b7e99eeabf631291f1747ec8eb12ab89461cda888492b17a301de81e8`).
 - [x] 6.2 `full_state=true` produces the same root as
       `full_state=false` for the genesis entries.
-      `neo-crypto/src/mpt_trie/tests.rs:1102+` —
+      `neo-trie/src/tests/mpt_trie/diagnostics.rs` —
       `test_genesis_state_root_with_full_state_true` — `PASS`.
 - [x] 6.3 Leaf / branch / extension node serialisation matches
       the C# byte format.
-      `neo-crypto/src/mpt_trie/tests.rs:807-920` — 3 tests — `PASS`.
+      `neo-trie/src/tests/mpt_trie/diagnostics.rs` — 3 tests — `PASS`.
 - [x] 6.4 `neo-state-service` is a WIP placeholder (see
       `neo-state-service/src/lib.rs:1-9`). State-root persistence,
       StateRootIngestStats, and the `state_service` payload

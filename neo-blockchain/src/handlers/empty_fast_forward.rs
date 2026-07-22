@@ -79,10 +79,11 @@ where
         let block_hash = Self::try_block_hash(block)?;
 
         let single = std::slice::from_ref(block);
+        let settings = resources.chain_spec.protocol_settings();
         let staged = match stage_empty_block_fast_forward(
             Arc::clone(&resources.snapshot),
             single,
-            resources.settings.as_ref(),
+            settings,
             persist_options,
             persist_context,
             &resources.native_persist,

@@ -2,8 +2,9 @@ use super::*;
 
 #[test]
 fn test_network_magic() {
-    assert_eq!(NetworkType::MainNet.magic(), 860833102);
-    assert_eq!(NetworkType::TestNet.magic(), 894710606);
+    assert_eq!(NetworkType::MainNet.canonical_magic(), Some(860833102));
+    assert_eq!(NetworkType::TestNet.canonical_magic(), Some(894710606));
+    assert_eq!(NetworkType::Private.canonical_magic(), None);
 }
 
 #[test]

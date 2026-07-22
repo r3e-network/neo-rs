@@ -16,30 +16,31 @@ flowchart LR
     B --> C{network_type?}
     C -->|"testnet"| D[Built-in TestNet preset]
     C -->|"mainnet"| E[Built-in MainNet preset]
-    C -->|none / unknown| F[Default MainNet preset]
-    D --> G[Apply overrides:<br/>magic, block_time,<br/>mempool, blockchain limits]
+    C -->|none| F[Default MainNet preset]
+    C -->|unknown / private| X[Startup error]
+    D --> G[Validate chain assertions;<br/>build operator service config]
     E --> G
     F --> G
-    G --> H[Runtime ProtocolSettings]
+    G --> H[Arc NeoChainSpec + runtime configs]
 ```
 
 Two important behaviors:
 
 - **Forward compatibility.** Every section and key is optional. Most unknown
   sections/keys are ignored, while safety-critical opt-in sections such as
-  `[execution.specialization_shadow]` and
-  `[execution.optimistic_signature_verification]` reject unknown keys instead of silently
+  `[execution.specialization_shadow]` reject unknown keys instead of silently
   accepting a misspelled control.
-- **Presets plus overrides.** `[network] network_type` selects a built-in
-  protocol preset (committee, seeds, hardfork schedule). Individual keys in
-  `[network]`, `[blockchain]`, and `[mempool]` then override fields of that
-  preset.
+- **Immutable built-in chains.** `[network] network_type` selects a validated
+  built-in chain specification (identity, genesis, committee, seeds, protocol
+  limits, and hardfork schedule). `[network]` and `[blockchain]` values are
+  optional assertions and are rejected when they differ from the selected
+  chain. `[mempool]` remains independent operator resource policy.
 
 ## Sections the daemon consumes
 
 These sections drive node behavior: `[network]`, `[storage]`, `[p2p]`, `[rpc]`,
 `[consensus]` (alias `[dbft]`), `[blockchain]`, `[mempool]`,
-`[execution.optimistic_signature_verification]`, `[execution.specialization_shadow]`,
+`[execution.specialization_shadow]`, `[execution.optimistic_signature_verification]`,
 `[state_service]`, `[indexer]`, `[application_logs]`, and
 `[tokens_tracker]`, `[telemetry.metrics]`, `[logging]`, and
 `[observability]`.
@@ -50,8 +51,8 @@ Selects which Neo network the node joins.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `network_type` | string | none | `"testnet"` or `"mainnet"` (case-insensitive). Selects the built-in protocol preset. An unknown value falls back to the MainNet preset with a warning. |
-| `network_magic` | u32 | from preset | Explicit network magic override. Wins over the preset. Accepts hex (e.g. `0x334F454E`). The `--network-magic` CLI flag overrides this. |
+| `network_type` | string | `"mainnet"` | `"testnet"` or `"mainnet"` (case-insensitive). Unknown values and incomplete private-network selections are rejected. |
+| `network_magic` | u32 | from spec | Optional assertion of the selected chain's magic. A different value, including from `--network-magic`, is rejected. |
 
 ### `[storage]`
 
@@ -131,24 +132,6 @@ is offline migration tooling, not a node mode. It streams a frozen StateService
 node namespace into bounded frames and publishes `checkpoint.json` only after
 stable height/root and pack reopen checks. The marker binds network magic,
 format versions, source digest/root, and the exact tip-frame checksum.
-For a one-time format migration whose legacy binary cannot open current packs,
-export the exact live namespace to the versioned neutral stream and run:
-
-```bash
-neo-pack-build --network-magic <u32-or-hex> \
-  --migration-stream <neutral-v1-file> \
-  --metadata-mdbx <canonical-store-dir> \
-  --pack <new-pack-dir>
-```
-
-The stream mode is not a trust shortcut. It requires read-only coordinated
-MDBX metadata and rejects a stream whose network, height, or internal root
-differs from that frozen StateService tip. It also requires strictly increasing
-unique 33-byte `0xf0` keys, exact values of at most 1 MiB, declared row/value/
-payload geometry, domain-separated namespace/payload/stream SHA-256, a complete
-trailer, and exact EOF. `--max-rows` is rejected because a partial stream cannot
-authenticate the complete namespace. This build publishes only the pack
-checkpoint; a separate explicit activation step owns the MDBX authority marker.
 Before the first frame, the builder also durably publishes
 `checkpoint-build.json`, binding the network magic, source height/root,
 source transport, `--rows-per-frame`, and all four pack format versions used by an interrupted
@@ -170,34 +153,33 @@ and decodes every committed frame payload, resolves the root node, and repeats
 the root-node check after reopen. The report records scrubbed frames,
 rows, puts, tombstones, payload/value bytes, and scrub wall time.
 
+For a one-time format migration whose legacy binary cannot open current packs,
+export the exact live namespace to the versioned neutral stream and run:
+
+```bash
+neo-pack-build --network-magic <u32-or-hex> \
+  --migration-stream <neutral-v1-file> \
+  --metadata-mdbx <canonical-store-dir> \
+  --pack <new-pack-dir>
+```
+
+The stream mode is not a trust shortcut. It requires read-only coordinated
+MDBX metadata and rejects a stream whose network, height, or internal root
+differs from that frozen StateService tip. It also requires strictly increasing
+unique 33-byte `0xf0` keys, exact values of at most 1 MiB, declared row/value/
+payload geometry, domain-separated namespace/payload/stream SHA-256, a complete
+trailer, and exact EOF. `--max-rows` is rejected because a partial stream cannot
+authenticate the complete namespace. This build publishes only the pack
+checkpoint; a separate explicit activation step owns the MDBX authority marker.
+
 Pack manifests and authority tuples are current-only. Artifacts that embed pack
 manifest format v1/v2 are rejected and must be rebuilt from the authoritative
 MDBX/source data with the current `neo-pack-build`; the node does not expose an
 in-process legacy adoption path.
 
-The ordered MPT finalizer keeps batch reads serial by default. For a controlled
-catch-up profile, `NEO_MDBX_WRITE_INTENT_READ_THREADS` enables bounded parallel
-readers only for the sparse lookup set immediately before an MPT write. It is
-clamped to 16 and falls back to `NEO_MDBX_BATCH_READ_THREADS` when unset; both
-environment variables default to one reader. Benchmark this setting on the
-actual storage host before enabling it permanently.
-
-`NEO_MDBX_SYNC_MODE` defaults to `durable`. A bounded replay or bootstrap job
-may set `no_meta_sync` or `safe_no_sync` to reduce commit latency; both modes
-preserve MDBX atomicity and database integrity but can lose the newest commits
-after a crash, so restart from the last steady checkpoint. `utterly_no_sync` is
-rejected and falls back to `durable`.
-
-`NEO_MDBX_CURSOR_WRITE_MODE` defaults to `search`, which performs one MDBX
-cursor lookup per overlay entry. A controlled catch-up A/B may set it to
-`merge_cursor` (or `merge`) to walk sorted overlays once and update exact rows
-with `CURRENT`; keep it opt-in until the target filesystem has matching
-state-root and restart evidence.
-
-The Cargo feature `neo-storage/mdbx-write-map` is an experimental backend
-variant for hardware-specific A/B testing. The shipped node uses `NoWriteMap`;
-enable the feature only after validating restart durability and state-root
-parity on the target filesystem.
+MDBX always opens writable node databases in durable `NoWriteMap` mode. Rejected
+catch-up experiments that weakened sync behavior or changed the mapping mode
+are not exposed as production configuration.
 
 Notes:
 
@@ -374,10 +356,10 @@ Protocol limits that override the selected preset.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `block_time` | u32 | preset (`15000`) | Target block interval in milliseconds (`MillisecondsPerBlock`). Aliases: `milliseconds_per_block`, `MillisecondsPerBlock`. |
-| `max_transactions_per_block` | u32 | preset (MainNet `200`, TestNet `5000`) | Maximum transactions per block. Alias: `MaxTransactionsPerBlock`. |
-| `max_valid_until_block_increment` | u32 | preset (`5760`) | Maximum `ValidUntilBlock` increment for transactions. Aliases: `max_valid_until_block_increment`, `MaxValidUntilBlockIncrement`. |
-| `max_traceable_blocks` | u32 | preset | Maximum traceable blocks exposed to contracts. Alias: `MaxTraceableBlocks`. |
+| `block_time` | u32 | spec (`15000`) | Optional assertion of `MillisecondsPerBlock`; a differing value is rejected. |
+| `max_transactions_per_block` | u32 | spec (MainNet `200`, TestNet `5000`) | Optional assertion of the consensus block limit; a differing value is rejected. |
+| `max_valid_until_block_increment` | u32 | spec (`5760`) | Optional assertion of the transaction-expiry rule; a differing value is rejected. |
+| `max_traceable_blocks` | u32 | spec | Optional assertion of the contract traceability rule; a differing value is rejected. |
 
 ### `[mempool]`
 
@@ -385,31 +367,7 @@ Transaction pool sizing.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `max_transactions` | i32 | preset (`50000`) | Maximum transactions retained in the memory pool (`MemoryPoolMaxTransactions`). Aliases: `memory_pool_max_transactions`, `MemoryPoolMaxTransactions`. |
-
-### `[execution.optimistic_signature_verification]`
-
-Opt-in bounded preverification for standard header-witness signatures. Workers
-compute exact ECDSA outcomes without reading chain state or running NeoVM. The
-ordered import lane binds a result to the exact header hash, height, network,
-and complete witness, then still performs every parent/header check and runs
-the complete canonical witness script in NeoVM. A queue miss, unsupported
-script, stale result, worker failure, or cache miss falls back to ordinary
-synchronous verification. No worker result can advance the canonical tip,
-publish StateRoot, commit storage, or emit finalized events.
-
-| Key | Type | Default | Meaning |
-|-----|------|---------|---------|
-| `enabled` | bool | `false` | Enable the bounded advisory cache path. Local ledger execution is required. |
-| `workers` | integer | `4` | Dedicated state-free ECDSA workers; accepted range `1..=64`. |
-| `queue_capacity` | integer | `32` | Maximum jobs waiting behind workers; accepted range `1..=4096`. The caller-side ordered window is `workers + queue_capacity`. |
-
-```toml
-[execution.optimistic_signature_verification]
-enabled = true
-workers = 4
-queue_capacity = 32
-```
+| `max_transactions` | positive integer | `50000` | Operator-owned maximum transactions retained by the live pool. Zero and negative values are rejected. Aliases: `memory_pool_max_transactions`, `MemoryPoolMaxTransactions`. |
 
 ### `[execution.specialization_shadow]`
 
@@ -445,6 +403,39 @@ process. The shared process control also retains global and candidate kill
 switches across block batches. Operational rollback is immediate on restart:
 set `enabled = false` or remove the section; no persisted-state migration or
 cache cleanup is required.
+
+### `[execution.optimistic_signature_verification]`
+
+This opt-in overlaps the existing block-header consensus-witness NeoVM check
+with execution of the preceding block in contiguous live-inventory and verified
+`Sync` import batches. It is deliberately not an “assume and publish” switch:
+workers read no chain state and return only immutable P-256 outcomes bound to
+the exact sign data, public key, signature, header, witness, and network. The ordered fence
+always runs the complete canonical NeoVM witness script, including parent
+`NextConsensus`, gas, faults, and result checks. A nonstandard script, cache
+miss, worker panic, shutdown, queue backpressure, or broken input chain falls
+back to ordinary curve verification. An invalid witness is rejected only by
+that canonical fence, which preserves the already verified prefix.
+
+The section is disabled by default and requires local ledger execution.
+The accepted StateRoot-enabled MainNet header-preverification A/B improved
+verified replay from 255.04 to 346.63 blocks/s (+35.91%) with identical final
+StateRoot and scrubbed pack receipt. See
+`reports/performance/optimistic-signature-verification-20260721.md`.
+This remains below the 2,000 blocks/s requirement.
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `enabled` | bool | `false` | Start the bounded header-witness signature worker pool. |
+| `workers` | usize | `4` | Dedicated verification workers; values above `64` are rejected. |
+| `queue_capacity` | usize | `32` | Maximum queued jobs behind workers; values above `4096` are rejected. |
+
+```toml
+[execution.optimistic_signature_verification]
+enabled = true
+workers = 4
+queue_capacity = 32
+```
 
 ### `[state_service]`
 

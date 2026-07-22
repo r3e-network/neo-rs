@@ -136,7 +136,7 @@ fn build_dynamic_call_script(
         sb.emit_pack();
     }
 
-    sb.emit_push_int(neo_manifest::CallFlags::ALL.bits() as i64);
+    sb.emit_push_int(neo_primitives::CallFlags::ALL.bits() as i64);
     sb.emit_push(operation.as_bytes());
     sb.emit_push(&script_hash.to_array());
     sb.emit_syscall("System.Contract.Call").expect("syscall");
@@ -163,7 +163,7 @@ fn build_transfer_script(
     sb.emit_push(&to.to_array());
     sb.emit_push(&from.to_array());
     sb.emit_push_int(4);
-    sb.emit_push_int(neo_manifest::CallFlags::ALL.bits() as i64);
+    sb.emit_push_int(neo_primitives::CallFlags::ALL.bits() as i64);
     sb.emit_push(b"transfer");
     sb.emit_push(&script_hash.to_array());
     sb.emit_syscall("System.Contract.Call").expect("syscall");

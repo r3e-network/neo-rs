@@ -18,6 +18,7 @@ use crate::command::NetworkCommand;
 use crate::error::{NetworkError, NetworkResult};
 use crate::event::NetworkEvent;
 use crate::peer_id::PeerId;
+use crate::peer_registry::PeerRegistry;
 
 /// A single connected-peer entry folded handle-side from the network
 /// service's peer lifecycle events.
@@ -64,9 +65,9 @@ pub struct ConnectedPeer {
 /// - [`LocalNodeInfo::port`]: the TCP listen port recorded when
 ///   [`NetworkHandle::start`] succeeded (`0` when the listener has not
 ///   been started through this handle family).
-/// - [`LocalNodeInfo::connected_peers`]: the connected peer set folded
-///   from the service's `PeerConnected` / `PeerDisconnected` broadcast
-///   events (C# `LocalNode.GetRemoteNodes`).
+/// - LocalNodeInfo::connected_peers: the connected peer set read from the
+///   live PeerRegistry when this is a service handle (C# LocalNode.GetRemoteNodes).
+///   Standalone channel handles used by tests retain an event-folded fallback.
 #[derive(Clone, Debug)]
 pub struct LocalNodeInfo {
     /// Random identity nonce of this node instance.
@@ -84,25 +85,20 @@ impl LocalNodeInfo {
         self.listen_port
     }
 
-    /// Number of currently connected peers, folded from the network
-    /// service's `PeerConnected` / `PeerDisconnected` broadcast events.
+    /// Number of currently connected peers.
     ///
-    /// The count is exact while the event broadcast channel keeps up;
-    /// if the channel lags (more unread events than its capacity), the
-    /// dropped events cannot be replayed and the count may drift until
-    /// the affected peers produce further connect/disconnect events.
+    /// Live service handles read the authoritative PeerRegistry; standalone
+    /// channel handles use their lifecycle-event fallback.
     pub fn connected_peers_count(&self) -> usize {
         self.connected_peers.len()
     }
 
-    /// The currently connected peers, folded from the network
-    /// service's `PeerConnected` / `PeerDisconnected` broadcast events,
-    /// in deterministic (peer-id) order.
+    /// The currently connected peers in deterministic (peer-id) order.
     ///
-    /// Entries carry the remote address only when it is known at the
-    /// handle seam — see [`ConnectedPeer::address`]. The same
-    /// lag-drift caveat as [`LocalNodeInfo::connected_peers_count`]
-    /// applies.
+    /// Entries carry the remote address only when it is known at the handle
+    /// seam — see [`ConnectedPeer::address`]. A live service handle cannot
+    /// drift when a lifecycle broadcast receiver lags because the registry
+    /// owns the snapshot.
     pub fn connected_peers(&self) -> &[ConnectedPeer] {
         &self.connected_peers
     }
@@ -116,6 +112,9 @@ struct LocalNodeState {
     user_agent: String,
     listen_addr: parking_lot::RwLock<Option<SocketAddr>>,
     peers: parking_lot::Mutex<PeerTracker>,
+    /// Authoritative registry when this handle belongs to a live service.
+    /// Test-only channel handles retain the event-folded fallback.
+    registry: Option<Arc<PeerRegistry>>,
 }
 
 /// Folds the service's peer lifecycle events into a connected-peer set.
@@ -171,7 +170,7 @@ impl PeerTracker {
 }
 
 impl LocalNodeState {
-    fn new(events: broadcast::Receiver<NetworkEvent>) -> Self {
+    fn new(events: broadcast::Receiver<NetworkEvent>, registry: Option<Arc<PeerRegistry>>) -> Self {
         // Derive the identity nonce from `RandomState`, which is seeded
         // from OS entropy per instance — no extra dependency needed.
         let nonce = std::collections::hash_map::RandomState::new()
@@ -185,12 +184,23 @@ impl LocalNodeState {
                 events,
                 connected: BTreeMap::new(),
             }),
+            registry,
         }
     }
 
     /// Drain any pending peer lifecycle events and return the current
     /// connected peer set.
     fn refresh_connected_peers(&self) -> Vec<ConnectedPeer> {
+        if let Some(registry) = &self.registry {
+            return registry
+                .connected_snapshot()
+                .into_iter()
+                .map(|peer| ConnectedPeer {
+                    peer_id: peer.peer_id.to_string(),
+                    address: Some(peer.address),
+                })
+                .collect();
+        }
         let mut tracker = self.peers.lock();
         tracker.fold_pending_events();
         tracker.snapshot()
@@ -207,6 +217,15 @@ impl LocalNodeState {
     /// already folded) cannot resurrect a phantom entry that no future
     /// event would ever remove.
     fn record_peer_address(&self, peer_id: &str, addr: SocketAddr) {
+        if let Some(registry) = &self.registry {
+            if let Some(raw) = peer_id
+                .strip_prefix("peer:")
+                .and_then(|value| value.parse::<u64>().ok())
+            {
+                registry.record_listener_addr(PeerId::from_raw(raw), addr);
+            }
+            return;
+        }
         let mut tracker = self.peers.lock();
         tracker.fold_pending_events();
         if let Some(slot) = tracker.connected.get_mut(peer_id) {
@@ -217,10 +236,10 @@ impl LocalNodeState {
 
 /// Cheap-to-clone handle to a running [`crate::LocalNodeService`].
 ///
-/// The handle is `Clone`, `Send`, and `Sync`. The two channels are
-/// the only state it owns: an `mpsc::Sender<NetworkCommand>` for
-/// user-facing requests and a `broadcast::Sender<NetworkEvent>` for
-/// receiving lifecycle / payload events.
+/// The handle is `Clone`, `Send`, and `Sync`. It owns the two transport
+/// channels plus a shared read-only reference to the live `PeerRegistry` when
+/// constructed by `LocalNodeService`; standalone channel handles retain only
+/// their lifecycle-event fallback state.
 #[derive(Clone)]
 pub struct NetworkHandle {
     /// Command channel sender.
@@ -269,10 +288,19 @@ impl NetworkHandle {
         cmd_tx: mpsc::Sender<NetworkCommand>,
         event_tx: broadcast::Sender<NetworkEvent>,
     ) -> Self {
+        Self::from_parts_with_registry(cmd_tx, event_tx, None)
+    }
+
+    /// Construct a handle bound to the service's authoritative peer registry.
+    pub(crate) fn from_parts_with_registry(
+        cmd_tx: mpsc::Sender<NetworkCommand>,
+        event_tx: broadcast::Sender<NetworkEvent>,
+        registry: Option<Arc<PeerRegistry>>,
+    ) -> Self {
         // Subscribe to the event stream *before* the service loop can
         // publish anything, so the handle-side peer tracker observes
         // every peer lifecycle event from the start.
-        let local = Arc::new(LocalNodeState::new(event_tx.subscribe()));
+        let local = Arc::new(LocalNodeState::new(event_tx.subscribe(), registry));
         Self {
             cmd_tx,
             event_tx,
@@ -304,13 +332,11 @@ impl NetworkHandle {
     /// event-stream id.
     ///
     /// The `PeerConnected` events carry the transport address, and the
-    /// per-peer service publishes the version-advertised listener
-    /// endpoint itself after the handshake, so this is an out-of-band
-    /// override for integrations that learn a better address through
-    /// some other channel. The call only updates an existing tracker
-    /// entry: if the peer's `PeerDisconnected` event has already been
-    /// published, the update is a no-op rather than resurrecting a
-    /// phantom entry.
+    /// per-peer service publishes the version-advertised listener endpoint
+    /// itself after the handshake. For a live service handle this updates the
+    /// corresponding registry entry; for a standalone channel handle it
+    /// updates an existing event-folded entry. Unknown or disconnected peers
+    /// are never resurrected.
     pub fn record_peer_address(&self, peer_id: impl AsRef<str>, addr: SocketAddr) {
         self.local.record_peer_address(peer_id.as_ref(), addr);
     }
@@ -464,7 +490,7 @@ impl NetworkHandle {
     /// freshly-accepted transactions and blocks.
     pub async fn broadcast_inv(
         &self,
-        inventory_type: crate::InventoryType,
+        inventory_type: neo_primitives::InventoryType,
         hashes: Vec<neo_primitives::UInt256>,
     ) -> NetworkResult<()> {
         self.cmd_tx

@@ -193,6 +193,27 @@ fn handles_snapshot_and_lookup() {
 }
 
 #[test]
+fn inbound_snapshot_hides_ephemeral_source_port_until_listener_upgrade() {
+    let registry = PeerRegistry::with_limits(10, 10);
+    let peer_id = PeerId::new();
+    let remote = addr("192.0.2.10:49152");
+    assert!(
+        registry.try_admit_with_direction(peer_id, remote, test_handle(peer_id, remote), true,)
+    );
+
+    assert_eq!(
+        registry.connected_snapshot(),
+        vec![ConnectedPeerSnapshot {
+            peer_id,
+            address: addr("192.0.2.10:0"),
+        }]
+    );
+    let listener = addr("192.0.2.10:20333");
+    registry.record_listener_addr(peer_id, listener);
+    assert_eq!(registry.connected_snapshot()[0].address, listener);
+}
+
+#[test]
 fn download_peers_are_ready_height_snapshots_for_full_nodes() {
     let registry = PeerRegistry::with_limits(100, 10);
     let (first, _) = admit(&registry, "10.0.0.1:1001");

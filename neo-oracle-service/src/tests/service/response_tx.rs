@@ -82,9 +82,9 @@ fn create_response_tx_matches_csharp_fee_math() {
         .build()
         .expect("tokio runtime");
     let _guard = runtime.enter();
-    let system = std::sync::Arc::new(
-        neo_system::Node::new(std::sync::Arc::clone(&settings), None, None).expect("neo system"),
-    );
+    let system = std::sync::Arc::new(neo_system::Node::for_test(
+        neo_test_fixtures::test_chain_spec(settings.as_ref().clone()),
+    ));
     let oracle_settings = OracleServiceSettings {
         network: settings.network,
         ..Default::default()
@@ -169,6 +169,23 @@ fn oracle_service_ledger_reads_use_provider_boundary() {
     assert!(!utils.contains("LedgerContract::new()"));
     assert!(provider.contains("trait OracleLedgerProvider"));
     assert!(provider.contains("ledger: LedgerContract"));
+}
+
+#[test]
+fn oracle_admission_cannot_forward_its_work_snapshot() {
+    let queue = include_str!("../../service/transactions/queue.rs");
+    let start = queue
+        .find(".submit_transaction(")
+        .expect("oracle transaction admission call exists");
+    let call = &queue[start..];
+    let end = call
+        .find(");")
+        .expect("oracle transaction admission call is complete");
+
+    assert!(
+        !call[..end].contains("snapshot"),
+        "oracle signing state must not escape into canonical transaction admission"
+    );
 }
 
 #[test]

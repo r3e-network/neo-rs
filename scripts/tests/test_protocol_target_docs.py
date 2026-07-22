@@ -418,21 +418,25 @@ class ProtocolTargetDocsTests(unittest.TestCase):
 
         self.assertNotIn("external sibling crate", architecture)
         self.assertNotIn("referenced by path", architecture)
-        self.assertIn("44 ADRs", architecture)
-        self.assertIn("44 ADRs", node_readme)
+        self.assertIn("45 ADRs", architecture)
+        self.assertIn("45 ADRs", node_readme)
         self.assertIn("8 ordered dependency layers", node_readme)
 
-    def test_adr_044_records_authority_semantics_and_evidence_limits(self):
+    def test_adr_log_records_authority_semantics_and_evidence_limits(self):
         text = (REPO_ROOT / "design.md").read_text(encoding="utf-8")
         headings = re.findall(r"^### ADR-(\d{3}):", text, re.MULTILINE)
         prose = normalized(text)
 
-        self.assertEqual(len(headings), 44)
+        self.assertEqual(len(headings), 45)
         self.assertEqual(
             sorted(headings),
-            [f"{number:03d}" for number in range(1, 45)],
+            [f"{number:03d}" for number in range(1, 46)],
         )
         self.assertIn("### ADR-044: Workspace NeoVM authority and canonical local execution", text)
+        self.assertIn(
+            "### ADR-045: Canonical ChainSpec capability and removal of dead runtime facades",
+            text,
+        )
         for marker in (
             "Reth and Polkadot/Substrate are architecture references only",
             "does not convert through `StackValue`",

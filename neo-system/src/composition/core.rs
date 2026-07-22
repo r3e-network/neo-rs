@@ -14,13 +14,13 @@ use neo_blockchain::{
     BlockchainHandle, BlockchainService, HeaderCache, LedgerContext, NativePersistResources,
     OptionalStaticLedgerProvider,
 };
-use neo_config::ProtocolSettings;
+use neo_config::NeoChainSpec;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_mempool::MemoryPool;
+use neo_mempool::{MemoryPool, TxPoolConfig};
 use neo_network::NetworkHandle;
 use neo_storage::persistence::{StoreCache, StoreDataCache, TransactionalStore};
 
-use crate::{BlockCommitHooks, Node, NodeBuilder, NodeResult, NodeSystemContext};
+use crate::{BlockCommitHooks, Node, NodeBuilder, NodeSystemContext};
 
 type CoreBlockchainService<P, S, H> = BlockchainService<NodeSystemContext<P, S, H>, MemoryPool<P>>;
 
@@ -35,7 +35,8 @@ where
     S: TransactionalStore,
     H: BlockCommitHooks<S>,
 {
-    settings: Arc<ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
+    tx_pool_config: TxPoolConfig,
     storage: Arc<S>,
     native_contract_provider: Arc<P>,
     native_persist_resources: Option<NativePersistResources<P>>,
@@ -54,14 +55,16 @@ where
 {
     /// Start core composition from its required concrete collaborators.
     pub fn new(
-        settings: Arc<ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
+        tx_pool_config: TxPoolConfig,
         storage: Arc<S>,
         native_contract_provider: Arc<P>,
         hooks: Arc<H>,
         persisted_height: u32,
     ) -> Self {
         Self {
-            settings,
+            chain_spec,
+            tx_pool_config,
             storage,
             native_contract_provider,
             native_persist_resources: None,
@@ -115,7 +118,8 @@ where
         let store_cache = StoreCache::new_from_store(Arc::clone(&self.storage), false);
         let snapshot = Arc::new(store_cache.data_cache().clone());
         let mempool = Arc::new(MemoryPool::new_with_native_contract_provider(
-            &self.settings,
+            Arc::clone(&self.chain_spec),
+            self.tx_pool_config,
             Arc::clone(&self.native_contract_provider),
         ));
         let header_cache = Arc::new(HeaderCache::default());
@@ -126,7 +130,7 @@ where
 
         let system_context = Arc::new(
             NodeSystemContext::new_with_ledger_provider_and_optional_native_persist_resources(
-                Arc::clone(&self.settings),
+                Arc::clone(&self.chain_spec),
                 Arc::clone(&snapshot),
                 store_cache,
                 Arc::clone(&self.native_contract_provider),
@@ -146,7 +150,7 @@ where
 
         NodeCoreLaunch {
             core: NodeCore {
-                settings: self.settings,
+                chain_spec: self.chain_spec,
                 storage: self.storage,
                 blockchain,
                 mempool,
@@ -217,7 +221,7 @@ where
     P: NativeContractProvider,
     S: TransactionalStore,
 {
-    settings: Arc<ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     storage: Arc<S>,
     blockchain: BlockchainHandle,
     mempool: Arc<MemoryPool<P>>,
@@ -260,17 +264,18 @@ where
     }
 
     /// Finish composition with the already-launched network handle.
-    pub fn into_node(self, network: NetworkHandle) -> NodeResult<Node<P, S>> {
-        NodeBuilder::default()
-            .with_settings(self.settings)
-            .with_storage(self.storage)
-            .with_blockchain(self.blockchain)
-            .with_network(network)
-            .with_mempool(self.mempool)
-            .with_header_cache(self.header_cache)
-            .with_native_contract_provider(self.native_contract_provider)
-            .with_cold_ledger_provider(self.cold_ledger_provider)
-            .build()
+    pub fn into_node(self, network: NetworkHandle) -> Node<P, S> {
+        NodeBuilder::new(
+            self.chain_spec,
+            self.storage,
+            self.blockchain,
+            network,
+            self.mempool,
+            self.header_cache,
+            self.native_contract_provider,
+        )
+        .with_cold_ledger_provider(self.cold_ledger_provider)
+        .build()
     }
 }
 

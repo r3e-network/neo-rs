@@ -61,11 +61,11 @@ fn faun_activation_and_manifest_standards() {
     // unconfigured ActiveIn hardfork, which keeps custom/private configs
     // that omit Faun genesis-active.
     let mut omitted = ProtocolSettings::default();
-    omitted.hardforks.remove(&Hardfork::HfFaun);
+    omitted.hardforks = omitted.hardforks.without_activation(Hardfork::HfFaun);
     assert!(c.is_active(&omitted, 0));
 
     let mut custom = ProtocolSettings::default();
-    custom.hardforks.insert(Hardfork::HfFaun, 10);
+    custom.hardforks = custom.hardforks.with_activation(Hardfork::HfFaun, 10);
     assert!(!c.is_active(&custom, 9));
     assert!(c.is_active(&custom, 10));
 

@@ -7,7 +7,7 @@ use crate::{
     ExecutionObservationJournal,
 };
 use neo_config::ProtocolSettings;
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::{TriggerType, UInt160, UInt256};
 use neo_storage::DataCache;
 use neo_vm::{CandidateId, CandidateVersion, OpCode, SpecializationMode};

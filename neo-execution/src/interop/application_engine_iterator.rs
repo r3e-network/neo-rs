@@ -3,7 +3,7 @@
 use crate::ApplicationExecutionEngine as ExecutionEngine;
 use crate::application_engine::ApplicationEngine;
 use crate::native_contract_provider::NativeContractProvider;
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_vm::{VmError, VmResult};
 
 fn map_iterator_error(service: &str, error: impl std::fmt::Display) -> VmError {

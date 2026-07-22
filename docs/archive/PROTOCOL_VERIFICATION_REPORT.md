@@ -152,7 +152,7 @@ Fresh evidence: `cargo test -p neo-native-contracts -- --nocapture` passed **221
 
 ### 4.1 MPT Insert / Delete
 **Status:** REAL, UNVERIFIED AGAINST C#
-- **Code:** `neo-crypto/src/mpt_trie/` (2,822 LoC: `trie.rs` 869, `node.rs` 490, `tests.rs` 1,187, `cache.rs` 172).
+- **Code:** `neo-trie/src/` (the exclusive Neo MPT implementation; historical line counts omitted because the tests are now split by concern).
 - **Tests:** 65 `mpt_trie::tests::mpt_tests::*` covering branch / extension / leaf / empty / cache / reference / delete / serialize / put.
 
 ### 4.2 State Root Calculation
@@ -321,7 +321,7 @@ Fresh evidence: `cargo test -p neo-native-contracts -- --nocapture` passed **221
 3. **Add a JSON-driven `RpcTestCases` harness** that consumes `neo_csharp/node/tests/Neo.Network.RPC.Tests/RpcTestCases.json` and asserts Rust responses match the C# responses.
 4. **Add a JSON-RPC node smoke test** that spawns `neo-node` in-process, hits `getblockcount`, and asserts a response with a temporary RocksDB path. The P2P restart/resume side now has a daemon-level smoke test.
 5. **Add network tests for `neo-network`** (LocalNode bind + accept; RemoteNode handshake with a fake peer emitting `Version`/`Verack`).
-6. **Add a C#-compatible MPT vector** to `neo-crypto/src/mpt_trie/tests.rs`.
+6. **Add a C#-compatible MPT vector** to `neo-trie/src/tests/mpt_trie/diagnostics.rs`.
 7. **Add BLS12-381 draft-04 test vectors** and **RFC 6979 / BIP-32 vectors** to `neo-crypto`.
 8. **Expand durable persistence smoke coverage**: the daemon now has a RocksDB restart/resume test that recovers the native Ledger tip and resumes P2P sync at `tip + 1`; remaining coverage should assert JSON-RPC height and native-contract storage after daemon-imported blocks.
 

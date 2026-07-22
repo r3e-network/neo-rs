@@ -101,7 +101,8 @@ pub type EngineResult<T> = std::result::Result<T, EngineError>;
 /// Unique identifier for a pipeline stage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StageId {
-    /// Block validation (size, timestamp, merkle root, witnesses).
+    /// Block validation (header linkage, timestamp progression, merkle root,
+    /// and witnesses).
     Validate,
     /// Consensus witness verification against the previous block's committee.
     ConsensusWitness,

@@ -5,13 +5,13 @@
 //! completion, network-fee adjustment, and relay result projection.
 
 use neo_crypto::{Crypto, ECCurve, ECPoint};
-use neo_execution::contract::Contract;
 use neo_execution::contract_parameters_context::ContractParametersContext;
 use neo_execution::helper::Helper as ContractHelper;
 use neo_io::Serializable;
 use neo_payloads::transaction::Transaction;
 use neo_primitives::UInt160;
 use neo_storage::persistence::{CacheRead, DataCache};
+use neo_vm::Contract;
 use neo_wallets::{Nep6Account, Nep6Wallet, Wallet as CoreWallet, WalletAccount};
 use serde_json::Value;
 use std::sync::Arc;
@@ -41,7 +41,6 @@ pub(in crate::server::rpc_server_wallet) fn sign_and_relay<B: CacheRead>(
 
     // Build contract parameter context and add signatures from available keys.
     let mut context = ContractParametersContext::new_with_type(
-        snapshot_arc.clone(),
         tx.clone(),
         server.system().settings().network,
         Some("Neo.Network.P2P.Payloads.Transaction".to_string()),
@@ -203,12 +202,11 @@ pub(in crate::server::rpc_server_wallet) fn sign_and_relay<B: CacheRead>(
         Ok(relay_result) => {
             rpc_relay::map_relay_result(relay_result)?;
             let settings = server.system().settings();
-            Ok(tx.to_json(&settings))
+            Ok(tx.to_json(settings.address_version))
         }
         Err(err) => {
             // Preverify failure: surface unsigned context.
             let mut context = ContractParametersContext::new_with_type(
-                snapshot_arc,
                 tx.clone(),
                 server.system().settings().network,
                 Some("Neo.Network.P2P.Payloads.Transaction".to_string()),

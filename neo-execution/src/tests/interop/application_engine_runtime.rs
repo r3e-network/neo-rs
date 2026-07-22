@@ -236,8 +236,8 @@ fn fault_clears_notifications_before_artifacts_are_exposed() {
 #[test]
 fn send_notification_enforces_echidna_cap_for_native_paths_like_csharp() {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.clear();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks = neo_config::HardforkSchedule::new();
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
 
     let mut engine =
         ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
@@ -274,8 +274,8 @@ fn send_notification_enforces_echidna_cap_for_native_paths_like_csharp() {
 #[test]
 fn get_notifications_deep_copies_domovoi_state_like_csharp() {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.clear();
-    settings.hardforks.insert(Hardfork::HfDomovoi, 0);
+    settings.hardforks = neo_config::HardforkSchedule::new();
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfDomovoi, 0);
 
     let mut engine =
         ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
@@ -374,7 +374,7 @@ fn notification_size_check_serializes_stack_items_directly() {
 #[test]
 fn get_notifications_reuses_pre_domovoi_immutable_state_like_csharp() {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.clear();
+    settings.hardforks = neo_config::HardforkSchedule::new();
 
     let mut engine =
         ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
@@ -482,7 +482,7 @@ fn runtime_check_witness_faults_on_invalid_public_key_like_csharp() {
 #[test]
 fn verification_trigger_without_persisting_block_uses_configured_hardforks_like_csharp() {
     let settings = ProtocolSettings::default();
-    assert!(settings.hardforks.contains_key(&Hardfork::HfAspidochelone));
+    assert!(settings.hardforks.is_defined(Hardfork::HfAspidochelone));
 
     let mut builder = ScriptBuilder::new();
     builder
@@ -693,9 +693,9 @@ fn post_gorgon_zero_shift_coerces_boolean_result_to_integer_like_neo_vm_v3101() 
         OpCode::RET.byte(),
     ];
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.clear();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
-    settings.hardforks.insert(Hardfork::HfGorgon, 0);
+    settings.hardforks = neo_config::HardforkSchedule::new();
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfGorgon, 0);
     let mut engine =
         ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
             TriggerType::Application,
@@ -730,8 +730,8 @@ fn pre_gorgon_zero_shift_preserves_boolean_like_csharp_v3101() {
         OpCode::RET.byte(),
     ];
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.clear();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks = neo_config::HardforkSchedule::new();
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
     let mut engine =
         ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
             TriggerType::Application,

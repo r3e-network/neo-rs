@@ -13,12 +13,12 @@
 //! - Test modules and fixtures: grouped coverage for the surrounding domain.
 
 use super::*;
-use neo_execution::Contract;
 use neo_payloads::{TransactionAttribute, VerifiableContainer};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
+use neo_vm::Contract;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackItem;
 use num_bigint::BigInt;

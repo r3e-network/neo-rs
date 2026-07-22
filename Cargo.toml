@@ -10,6 +10,8 @@ members = [
     "neo-config",
     # Cryptography: hashing, ECC, signatures, BLS12-381.
     "neo-crypto",
+    # Neo-compatible Merkle Patricia Trie nodes, proofs, and mutation cache.
+    "neo-trie",
     # Storage traits, `DataCache`, MDBX, and in-memory stores.
     "neo-storage",
     # Append-only compressed static files for immutable ledger records.
@@ -26,7 +28,7 @@ members = [
     "neo-error",
     # Compression, binary/JSON serializers, and VM-aware codecs.
     "neo-serialization",
-    # Contract ABI, NEF, call flags, method tokens, and validator attributes.
+    # Contract ABI, NEF, method tokens, and validator attributes.
     "neo-manifest",
 
     # === Protocol Layer ===
@@ -85,6 +87,7 @@ default-members = [
     "neo-primitives",
     "neo-config",
     "neo-crypto",
+    "neo-trie",
     "neo-storage",
     "neo-io",
     "neo-consensus",
@@ -130,7 +133,9 @@ allowed-same-layer-dependencies = [
     "neo-config -> neo-crypto",
     "neo-config -> neo-error",
     "neo-crypto -> neo-error",
-    "neo-crypto -> neo-io",
+    "neo-trie -> neo-crypto",
+    "neo-trie -> neo-error",
+    "neo-trie -> neo-io",
     "neo-error -> neo-io",
     "neo-manifest -> neo-crypto",
     "neo-manifest -> neo-error",
@@ -139,7 +144,6 @@ allowed-same-layer-dependencies = [
     "neo-manifest -> neo-vm",
     "neo-serialization -> neo-error",
     "neo-serialization -> neo-io",
-    "neo-serialization -> neo-storage",
     "neo-serialization -> neo-vm",
     "neo-storage -> neo-error",
     "neo-storage -> neo-io",
@@ -155,6 +159,7 @@ allowed-same-layer-dependencies = [
     "neo-mempool -> neo-native-contracts",
     "neo-native-contracts -> neo-execution",
     "neo-native-contracts -> neo-runtime",
+    "neo-state-service -> neo-runtime",
     # The off-chain Oracle worker consumes the node-service wallet lifecycle.
     "neo-oracle-service -> neo-wallets",
 ]
@@ -165,6 +170,7 @@ infrastructure = [
     "neo-io",
     "neo-error",
     "neo-crypto",
+    "neo-trie",
     "neo-storage",
     "neo-static-files",
     "neo-state-packs",
@@ -236,6 +242,7 @@ neo-primitives = { path = "neo-primitives", version = "0.10.0" }
 # Infrastructure layer
 neo-config = { path = "neo-config", version = "0.10.0" }
 neo-crypto = { path = "neo-crypto", version = "0.10.0" }
+neo-trie = { path = "neo-trie", version = "0.10.0" }
 neo-storage = { path = "neo-storage", version = "0.10.0" }
 neo-static-files = { path = "neo-static-files", version = "0.10.0" }
 neo-state-packs = { path = "neo-state-packs", version = "0.10.0" }

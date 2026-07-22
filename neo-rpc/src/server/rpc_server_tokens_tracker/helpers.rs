@@ -8,7 +8,7 @@ use crate::server::rpc_server::RpcServer;
 use neo_execution::application_engine::TEST_MODE_GAS;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::Serializable;
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::UInt160;
 use neo_storage::CacheRead;
 use neo_storage::persistence::providers::RuntimeStore;

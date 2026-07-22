@@ -33,14 +33,18 @@ where
             return Ok(());
         }
 
-        let settings = self.system.settings();
+        let chain_spec = self.system.chain_spec();
+        let settings = chain_spec.protocol_settings_arc();
         let genesis = Arc::new(
-            crate::native_persist::genesis_block(settings.as_ref())
+            crate::native_persist::genesis_block(chain_spec.as_ref())
                 .map_err(|error| format!("genesis block construction failed: {error}"))?,
         );
         let genesis_hash = genesis
             .try_hash()
             .map_err(|error| format!("genesis block hash failed: {error}"))?;
+        chain_spec
+            .validate_genesis_hash(genesis_hash)
+            .map_err(|error| format!("genesis identity validation failed: {error}"))?;
         let native_persist = self.system.native_persist_resources().ok_or_else(|| {
             "genesis native persistence requires native persistence resources from SystemContext"
                 .to_string()

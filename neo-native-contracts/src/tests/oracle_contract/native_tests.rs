@@ -420,7 +420,7 @@ fn manifest_standards_gain_nep30_at_faun() {
     assert!(unscheduled.manifest.supported_standards.is_empty());
 
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfFaun, 10);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfFaun, 10);
     let before = build_native_contract_state(&OracleContract, &settings, 9);
     assert!(before.manifest.supported_standards.is_empty());
     let after = build_native_contract_state(&OracleContract, &settings, 10);

@@ -1,7 +1,6 @@
+use crate::client::RpcClientError;
 use crate::client::native_hashes::policy_hash;
-use crate::{
-    ContractClient, RpcClient, RpcClientError, RpcObserver, RpcUtility, TracingRpcObserver,
-};
+use crate::{ContractClient, RpcClient, RpcObserver, RpcUtility, TracingRpcObserver};
 use neo_primitives::UInt160;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;

@@ -45,6 +45,8 @@ neo_csharp_vm/
 .claude/
 .cursor/
 .hive-mind/
+.planning/
+.workbuddy/
 .aider*
 .opencode/
 CLAUDE.local.md

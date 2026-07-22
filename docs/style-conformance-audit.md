@@ -158,9 +158,9 @@ High-signal clusters found during the first pass:
   root/domain, `json`, `stack`, `wire`, `validation`, and typed `fields`
   modules. The remaining manifest cleanup is to keep permission/trust policy
   readable at the domain layer.
-- `neo-manifest` protocol types still depend on VM/runtime projection details
-  (`neo_vm::Interoperable`, `neo_vm_rs::StackValue`). Core manifest models
-  should keep stack adapters out of top-level domain flow.
+- `neo-manifest` protocol types project through the workspace `neo-vm`
+  `StackItem` model directly. No parallel VM object graph or conversion bridge
+  remains; stack adapters should stay out of top-level manifest domain flow.
 - `neo-manifest/src/nef/nef_file.rs` now uses shared fallible NEF wire-writing
   helpers for checksum and byte serialization. The compatibility wrappers
   remain for existing callers, but the protocol writer no longer uses
@@ -170,8 +170,8 @@ High-signal clusters found during the first pass:
 - `neo-config/src/settings/protocol.rs` is now a typed settings facade. Built-in
   network presets live in `settings/protocol/presets.rs`, file/stream loading
   lives in `settings/protocol/load.rs`, JSON/raw config parsing lives in
-  `settings/protocol/parse.rs`, and hardfork sequence rules live in
-  `settings/protocol/validation.rs`.
+  `settings/protocol/parse.rs`, and the fixed deterministic schedule plus its
+  sequence validation live in `settings/hardfork.rs`.
 - `neo-network/src/remote_node/session.rs` owns per-peer P2P protocol state.
   Explicit block-range fetch completion now treats missing pending state as a
   logged session invariant breach instead of panicking the remote-node task.
@@ -334,7 +334,7 @@ High-signal clusters found during the first pass:
   table access, and invalid-opcode dispatch, `jump_table/variants.rs` owns
   default and hardfork-specific table construction, and `jump_table/shared.rs`
   owns C# stack-coercion helpers, execution-context guards, semantics-error
-  conversion, and StackValue result projection shared by opcode-family modules.
+  conversion, and `StackItem` result projection shared by opcode-family modules.
 - `neo-vm/src/execution_engine/mod.rs` keeps the VM state facade and module map.
   `execution_engine/host.rs` owns the unsafe raw-host-pointer bridge used for
   allocation-free interop callbacks, including the documented safety invariants
@@ -821,9 +821,10 @@ test-only unwrap/expect sites.
 `neo-primitives` doctests for storage values, `BigDecimal`, and straight hex
 decoding now use `Result`-returning examples with `?` instead of documenting
 fallible APIs through `unwrap`.
-`neo-oracle-service/build.rs` and
-`neo-system/examples/migrate_from_neosystem.rs` now propagate build/example
-errors through `Result` entrypoints instead of asserting with `expect`.
+`neo-oracle-service/build.rs` propagates build errors through a `Result`
+entrypoint instead of asserting with `expect`. The obsolete `neo-system`
+composition migration example was removed when composition moved to the
+current API.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

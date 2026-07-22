@@ -1,7 +1,6 @@
 use super::super::*;
 use crate::test_support::deploy_native as deploy_contract;
 use neo_config::ProtocolSettings;
-use neo_execution::Contract;
 use neo_execution::contract_state::ContractState;
 use neo_execution::native_contract::build_native_contract_state;
 use neo_manifest::{
@@ -20,6 +19,7 @@ use neo_primitives::{
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
+use neo_vm::Contract;
 use neo_vm::{ExecutionEngineLimits, OpCode, VmState};
 use neo_vm::{StackItem, script_builder::ScriptBuilder};
 use num_bigint::BigInt;

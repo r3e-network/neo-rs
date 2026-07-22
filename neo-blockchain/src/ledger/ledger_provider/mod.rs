@@ -18,6 +18,7 @@
 //!   native Ledger records miss.
 //! - `optional`: Static optional-provider composition for runtime config.
 
+mod admission;
 mod empty;
 mod hot_cold;
 mod optional;
@@ -25,6 +26,7 @@ mod static_file;
 mod storage;
 mod traits;
 
+pub use admission::TransactionAdmissionLedger;
 pub use empty::{EmptyLedgerProvider, EmptyLedgerProviderFactory};
 pub use hot_cold::{HotColdLedgerProvider, HotColdLedgerProviderFactory};
 pub use optional::OptionalLedgerProvider;

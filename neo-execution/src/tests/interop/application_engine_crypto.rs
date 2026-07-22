@@ -15,9 +15,9 @@ use std::sync::Arc;
 fn engine_with_gorgon(active: bool) -> ApplicationEngine {
     let mut settings = ProtocolSettings::default();
     if active {
-        settings.hardforks.insert(Hardfork::HfGorgon, 0);
+        settings.hardforks = settings.hardforks.with_activation(Hardfork::HfGorgon, 0);
     } else {
-        settings.hardforks.remove(&Hardfork::HfGorgon);
+        settings.hardforks = settings.hardforks.without_activation(Hardfork::HfGorgon);
     }
     ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
         TriggerType::Application,

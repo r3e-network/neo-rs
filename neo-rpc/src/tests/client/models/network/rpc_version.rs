@@ -1,5 +1,5 @@
-use super::super::test_fixtures::rpc_case_result;
 use super::*;
+use crate::types::test_fixtures::rpc_case_result;
 
 fn sample_protocol() -> RpcProtocol {
     let mut hardforks = BTreeMap::new();

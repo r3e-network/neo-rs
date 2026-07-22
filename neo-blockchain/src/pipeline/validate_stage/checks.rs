@@ -1,7 +1,6 @@
-use neo_config::ProtocolSettings;
 use neo_payloads::Block;
 
-use crate::pipeline::block_validation::{BlockValidationError, BlockValidator, MIN_TIMESTAMP_MS};
+use crate::pipeline::block_validation::{BlockValidationError, BlockValidator};
 use crate::pipeline::stage_traits::{EngineError, StageContext};
 
 use super::{NeoValidateStage, ValidateContext};
@@ -11,16 +10,8 @@ where
     C: ValidateContext,
 {
     /// Run all stateless checks (no external state needed).
-    pub(super) fn run_stateless_checks(
-        block: &Block,
-        settings: &ProtocolSettings,
-    ) -> Result<(), BlockValidationError> {
+    pub(super) fn run_stateless_checks(block: &Block) -> Result<(), BlockValidationError> {
         BlockValidator::validate_block_version(block.version())?;
-        BlockValidator::validate_block_size(block)?;
-        BlockValidator::validate_transaction_count_raw_with_limit(
-            block.transactions.len(),
-            settings.max_transactions_per_block as usize,
-        )?;
 
         let tx_hashes = block.transaction_hashes().map_err(|err| {
             BlockValidationError::HeaderValidationFailed {
@@ -49,22 +40,13 @@ where
         block: &Block,
         ctx: &StageContext,
     ) -> Result<(), BlockValidationError> {
-        // Primary index validation
-        BlockValidator::validate_primary_index(block.primary_index(), self.ctx.validators_count())?;
-
-        // Timestamp bounds
-        if !ctx.trusted_replay {
-            // Normal mode: check both minimum and future drift.
-            BlockValidator::validate_timestamp_bounds(block.timestamp())?;
-        } else {
-            // Trusted replay: only check the minimum (genesis) timestamp.
-            if block.timestamp() < MIN_TIMESTAMP_MS {
-                return Err(BlockValidationError::TimestampTooOld {
-                    timestamp: block.timestamp(),
-                    min: MIN_TIMESTAMP_MS,
-                });
-            }
-        }
+        // Primary index validation uses the same immutable chain specification
+        // as every other protocol rule consumed by this stage.
+        let chain_spec = self.ctx.chain_spec();
+        BlockValidator::validate_primary_index(
+            block.primary_index(),
+            chain_spec.protocol_settings().validators_count,
+        )?;
 
         // Timestamp progression (requires prev block)
         if let Some(prev_timestamp) = self.ctx.prev_block_timestamp(ctx.current_height) {

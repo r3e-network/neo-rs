@@ -12,8 +12,7 @@
 //!
 //! - `p2p_payloads`: P2P payload records and network inventory message types.
 //! - `execution`: Execution payload records and VM-result domain types.
-//! - `ledger`: Ledger caches, lookup context, and persisted record helpers used
-//!   by block import.
+//! - `ledger`: Block, header, and transaction-state wire/domain records.
 //! - `protocol`: Protocol enums, versioned records, and chain-level domain
 //!   constants.
 //! - `signing`: Witness, signer, and signature validation helpers.
@@ -76,7 +75,7 @@ pub mod witness_scope {
     pub use neo_primitives::{InvalidWitnessScopeError, WitnessScope};
 }
 
-pub use execution::{application_executed, event_handlers, log_event_args, notify_event_args};
+pub use execution::{application_executed, log_event_args, notify_event_args};
 pub use ledger::{
     block, header, headers_payload, merkle_block_payload, transaction_state, trimmed_block,
 };
@@ -85,17 +84,13 @@ pub use signing::{helper, signer, verifiable_container, verifiable_ext, witness,
 pub use transaction_attribute::{
     conflicts, high_priority_attribute, not_valid_before, notary_assisted, oracle_response,
 };
-pub use validation::{script_validation, verify_result};
+pub use validation::script_validation;
 
 // ── Public re-exports ─────────────────────────────────────────────────
 
 pub use application_executed::ApplicationExecuted;
 pub use block::Block;
 pub use conflicts::Conflicts;
-pub use event_handlers::{
-    CommittedHandler, CommittingHandler, FinalizedHandler, PluginEvent, WalletChangedHandler,
-    WitnessType,
-};
 pub use extensible_payload::ExtensiblePayload;
 pub use header::{Header as BlockHeader, Header};
 pub use headers_payload::HeadersPayload;
@@ -128,5 +123,4 @@ pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
 // Re-exports of the protocol enums.
 pub use neo_primitives::{InventoryType, OracleResponseCode, TransactionAttributeType};
-pub use verify_result::VerifyResult;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};

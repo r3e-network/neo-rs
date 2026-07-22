@@ -11,13 +11,14 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-description = "Canonical home for Neo P2P network host: reth-style LocalNode, RemoteNode, and TaskManager services"
+description = "Neo N3 P2P transport, wire protocol, peer sessions, downloads, and network services"
 
 [dependencies]
 # Lower foundation / infrastructure layers
 neo-primitives = { workspace = true }
 neo-error = { workspace = true }
 neo-config = { workspace = true }
+neo-crypto = { workspace = true }
 
 # Protocol types and binary wire helpers
 neo-io = { workspace = true }

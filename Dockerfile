@@ -114,8 +114,6 @@ ENV HOME=/home/neo
 EXPOSE 20332 20333
 # MainNet ports
 EXPOSE 10332 10333
-# Private network ports
-EXPOSE 30332 30333
 # Telemetry / health endpoints used by service-provider presets
 EXPOSE 9090 9091
 

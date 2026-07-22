@@ -108,7 +108,7 @@ where
             SyncBatchCommitPolicy::DeferredLive => (true, BlockPersistContext::sync_batch()),
             SyncBatchCommitPolicy::DeferredCatchUp => (true, BlockPersistContext::catch_up()),
         };
-        let settings = self.system.settings();
+        let settings = self.system.chain_spec().protocol_settings_arc();
         let mut imported = 0usize;
         let mut direct_imported = 0usize;
         let mut committed_blocks = Vec::new();
@@ -201,7 +201,6 @@ where
                 blocks_per_second = direct_imported as f64 / elapsed.as_secs_f64().max(1e-9),
                 signature_submitted = after.submitted.saturating_sub(before.submitted),
                 signature_completed = after.completed.saturating_sub(before.completed),
-                signature_invalid = after.invalid.saturating_sub(before.invalid),
                 signature_cancelled = after.cancelled.saturating_sub(before.cancelled),
                 signature_worker_panics = after.worker_panics.saturating_sub(before.worker_panics),
                 signature_worker_unavailable = after.worker_unavailable.saturating_sub(before.worker_unavailable),
@@ -526,7 +525,10 @@ where
         self.mempool.block_persisted(block.as_ref());
         self.reverify_mempool_after_persist(
             index,
-            self.system.settings().max_transactions_per_block as usize,
+            self.system
+                .chain_spec()
+                .protocol_settings()
+                .max_transactions_per_block as usize,
         );
 
         self.event_tx

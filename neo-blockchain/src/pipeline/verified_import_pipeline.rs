@@ -8,7 +8,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use neo_config::ProtocolSettings;
+use neo_config::NeoChainSpec;
 use neo_execution::{PreverifiedSignatureCache, native_contract_provider::NativeContractProvider};
 use neo_payloads::Block;
 use neo_storage::{CacheRead, DataCache};
@@ -53,16 +53,16 @@ where
     /// Creates a verified-import chain over one immutable snapshot.
     #[must_use]
     pub fn new(
-        settings: Arc<ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         snapshot: Arc<DataCache<B>>,
         native_contract_provider: Arc<P>,
     ) -> Self {
         let validate = NeoValidateStage::new(Arc::new(SnapshotValidateContext::new(
-            Arc::clone(&settings),
+            Arc::clone(&chain_spec),
             Arc::clone(&snapshot),
         )));
         let consensus_witness = NeoConsensusWitnessStage::new(Arc::new(
-            SnapshotConsensusWitnessContext::new(settings, snapshot, native_contract_provider),
+            SnapshotConsensusWitnessContext::new(chain_spec, snapshot, native_contract_provider),
         ));
 
         Self {
@@ -96,7 +96,7 @@ where
         block: &Block,
         current_height: u32,
         trusted_replay: bool,
-        settings: Arc<ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         snapshot: Arc<DataCache<B>>,
         native_contract_provider: Arc<P>,
     ) -> EngineResult<()> {
@@ -104,7 +104,7 @@ where
             block,
             current_height,
             trusted_replay,
-            settings,
+            chain_spec,
             snapshot,
             native_contract_provider,
             None,
@@ -117,12 +117,12 @@ where
         block: &Block,
         current_height: u32,
         trusted_replay: bool,
-        settings: Arc<ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         snapshot: Arc<DataCache<B>>,
         native_contract_provider: Arc<P>,
         signature_cache: Option<Arc<PreverifiedSignatureCache>>,
     ) -> EngineResult<()> {
-        let pipeline = Self::new(settings, snapshot, native_contract_provider);
+        let pipeline = Self::new(chain_spec, snapshot, native_contract_provider);
         pipeline.verify_with_signature_cache(
             &StageContext::for_verified_import(current_height, trusted_replay),
             block,

@@ -15,8 +15,6 @@
 //! - `env_flags`: execution environment flag records.
 //! - `execution_context_state`: execution context state records.
 //! - `helper`: shared helper functions.
-//! - `interoperable`: VM interoperability trait helpers.
-//! - `notify_event_args`: contract notification event records.
 
 /// `InteropInterface` wrapper for BLS12-381 curve points (CryptoLib).
 pub mod bls12381_interop;
@@ -25,5 +23,3 @@ pub mod diagnostic;
 pub mod env_flags;
 pub mod execution_context_state;
 pub mod helper;
-pub mod interoperable;
-pub mod notify_event_args;

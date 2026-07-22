@@ -5,27 +5,20 @@
 
 //! Minimal extension trait for [`neo_primitives::Verifiable`] containers.
 //!
-//! The full smart-contract-engine-based verification helpers
-//! (`script_hashes_for_verifying`, `verify_witnesses`) are defined in
-//! `neo-core` because they need `ApplicationEngine` and the native
-//! contracts. The payload layer only depends on the basic
-//! [`neo_primitives::Verifiable`] trait from `neo-primitives`.
-
-use neo_storage::{CacheRead, DataCache};
+//! This trait exposes only state-independent payload facts. Execution-backed
+//! witness verification belongs to `neo-execution`; node services such as
+//! state-root verification resolve state-dependent verifier hashes before
+//! constructing a verifiable wrapper.
 
 use crate::VerifiableContainer;
 
 /// Extension of [`neo_primitives::Verifiable`] for the payload layer.
 ///
-/// The full implementation is in `neo-core`; this trait exists so that
-/// payload types can be marked as "extensible verifiable" without
-/// pulling in the smart-contract engine.
+/// Payload types implement this without depending on storage or the
+/// application engine.
 pub trait VerifiableExt: neo_primitives::Verifiable {
     /// Returns the script hashes that should be verified for this container.
-    fn script_hashes_for_verifying<B: CacheRead>(
-        &self,
-        _snapshot: &DataCache<B>,
-    ) -> Vec<neo_primitives::UInt160> {
+    fn script_hashes_for_verifying(&self) -> Vec<neo_primitives::UInt160> {
         Vec::new()
     }
 
@@ -53,15 +46,5 @@ pub trait VerifiableExt: neo_primitives::Verifiable {
     /// through `GetScriptContainer`, `CurrentSigners`, and `CheckWitness`.
     fn to_verifiable_container(&self) -> Option<std::sync::Arc<VerifiableContainer>> {
         None
-    }
-
-    /// Verifies witnesses against the provided protocol settings and snapshot.
-    fn verify_witnesses<B: CacheRead>(
-        &self,
-        _settings: &neo_config::ProtocolSettings,
-        _snapshot: &DataCache<B>,
-        _max_gas: i64,
-    ) -> bool {
-        true
     }
 }

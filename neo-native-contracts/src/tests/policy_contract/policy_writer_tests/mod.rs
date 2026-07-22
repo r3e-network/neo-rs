@@ -34,7 +34,7 @@ use std::sync::Arc;
 /// ProtocolSettings with HF_Faun scheduled from genesis.
 fn faun_settings() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfFaun, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfFaun, 0);
     settings
 }
 

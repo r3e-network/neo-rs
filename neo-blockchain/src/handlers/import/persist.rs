@@ -105,7 +105,10 @@ where
             self.mempool.block_persisted(block.as_ref());
             self.reverify_mempool_after_persist(
                 index,
-                self.system.settings().max_transactions_per_block as usize,
+                self.system
+                    .chain_spec()
+                    .protocol_settings()
+                    .max_transactions_per_block as usize,
             );
             if !persist_context.is_trusted_replay() {
                 self.event_tx

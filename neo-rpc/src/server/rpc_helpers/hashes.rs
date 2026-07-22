@@ -29,7 +29,7 @@ pub fn parse_script_hash_or_address_with_error(
     address_version: u8,
     map_address_error: impl FnOnce(neo_error::CoreError) -> RpcException,
 ) -> Result<UInt160, RpcException> {
-    crate::client::parse_script_hash_or_address_inner(text, address_version)
+    crate::protocol::address::parse_script_hash_or_address(text, address_version)
         .map_err(map_address_error)
 }
 

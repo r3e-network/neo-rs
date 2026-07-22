@@ -4,15 +4,16 @@ use futures::SinkExt;
 use tracing::trace;
 
 use super::super::{BlockSource, InboundInventory, PeerFramed};
-use super::{CloseReason, PeerSession};
+use super::{CloseReason, PeerSession, transaction_matches_filter};
 use crate::MessageCommand;
 use crate::wire::Message;
+use neo_crypto::BloomFilter;
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::p2p_payloads::{
-    AddrPayload, GetBlockByIndexPayload, GetBlocksPayload, InvPayload, NetworkAddressWithTime,
-    NodeCapability, PingPayload,
+    AddrPayload, FilterAddPayload, FilterLoadPayload, GetBlockByIndexPayload, GetBlocksPayload,
+    InvPayload, NetworkAddressWithTime, NodeCapability, PingPayload,
 };
-use neo_payloads::{Block, ExtensiblePayload, HeadersPayload, Transaction};
+use neo_payloads::{Block, ExtensiblePayload, HeadersPayload, MerkleBlockPayload, Transaction};
 use neo_primitives::{InventoryType, UInt256};
 
 impl<B> PeerSession<B>
@@ -158,17 +159,7 @@ where
                         let Some(block) = source.block_by_index(index) else {
                             break;
                         };
-                        let served = Message::create(
-                            MessageCommand::Block,
-                            Some(&block),
-                            self.peer_allows_compression,
-                        )
-                        .map_err(|err| {
-                            CloseReason::Transport(format!("encode served block: {err}"))
-                        })?;
-                        framed.send(served).await.map_err(|err| {
-                            CloseReason::Transport(format!("send served block: {err}"))
-                        })?;
+                        self.send_block_response(framed, block).await?;
                     }
                 }
                 Ok(())
@@ -264,19 +255,7 @@ where
                         match payload.inventory_type {
                             InventoryType::Block => {
                                 if let Some(block) = source.block_by_hash(hash) {
-                                    let served = Message::create(
-                                        MessageCommand::Block,
-                                        Some(&block),
-                                        self.peer_allows_compression,
-                                    )
-                                    .map_err(|err| {
-                                        CloseReason::Transport(format!(
-                                            "encode getdata block: {err}"
-                                        ))
-                                    })?;
-                                    framed.send(served).await.map_err(|err| {
-                                        CloseReason::Transport(format!("send getdata block: {err}"))
-                                    })?;
+                                    self.send_block_response(framed, block).await?;
                                 } else {
                                     not_found.push(*hash);
                                 }
@@ -494,10 +473,66 @@ where
                 }
                 Ok(())
             }
+            // C# `OnFilterLoadMessageReceived`: install a bounded Bloom
+            // filter for this peer. Empty filters and zero hash functions
+            // are invalid BloomFilter constructor inputs and close the
+            // connection rather than silently changing filtering semantics.
+            MessageCommand::FilterLoad => {
+                let mut reader = MemoryReader::new(&message.payload_raw);
+                let payload = FilterLoadPayload::deserialize(&mut reader).map_err(|err| {
+                    CloseReason::ProtocolViolation(format!("invalid filterload payload: {err}"))
+                })?;
+                if reader.remaining() != 0 {
+                    return Err(CloseReason::ProtocolViolation(format!(
+                        "invalid filterload payload: trailing {} bytes after payload",
+                        reader.remaining()
+                    )));
+                }
+                let bit_size = payload.filter.len().checked_mul(8).ok_or_else(|| {
+                    CloseReason::ProtocolViolation("filterload bit size overflow".to_string())
+                })?;
+                let filter = BloomFilter::with_bits(
+                    bit_size,
+                    usize::from(payload.k),
+                    payload.tweak,
+                    &payload.filter,
+                )
+                .map_err(|err| {
+                    CloseReason::ProtocolViolation(format!(
+                        "invalid filterload bloom filter: {err}"
+                    ))
+                })?;
+                self.bloom_filter = Some(filter);
+                Ok(())
+            }
+            // C# `OnFilterAddMessageReceived`: add an element only when the
+            // peer has first installed a filter. FilterAddPayload's decoder
+            // enforces the 520-byte protocol limit.
+            MessageCommand::FilterAdd => {
+                let mut reader = MemoryReader::new(&message.payload_raw);
+                let payload = FilterAddPayload::deserialize(&mut reader).map_err(|err| {
+                    CloseReason::ProtocolViolation(format!("invalid filteradd payload: {err}"))
+                })?;
+                if reader.remaining() != 0 {
+                    return Err(CloseReason::ProtocolViolation(format!(
+                        "invalid filteradd payload: trailing {} bytes after payload",
+                        reader.remaining()
+                    )));
+                }
+                if let Some(filter) = self.bloom_filter.as_mut() {
+                    filter.add(&payload.data);
+                }
+                Ok(())
+            }
+            // C# `OnFilterClearMessageReceived`: remove the peer's active
+            // filter; subsequent block requests return full blocks.
+            MessageCommand::FilterClear => {
+                self.bloom_filter = None;
+                Ok(())
+            }
             other => {
                 // Genuine no-ops for this node profile. C# default arm:
-                // Alert/MerkleBlock/NotFound/Reject/FilterAdd/FilterClear/
-                // FilterLoad.
+                // Alert/MerkleBlock/NotFound/Reject.
                 trace!(
                     target: "neo_network",
                     peer_id = %self.peer_id,
@@ -508,5 +543,42 @@ where
                 Ok(())
             }
         }
+    }
+
+    /// Serve a block using the C# SPV response rule: a peer with an active
+    /// Bloom filter receives a `merkleblock`, while an unfiltered peer receives
+    /// the complete `block` payload.
+    async fn send_block_response(
+        &self,
+        framed: &mut PeerFramed,
+        mut block: Block,
+    ) -> Result<(), CloseReason> {
+        let message = if let Some(filter) = self.bloom_filter.as_ref() {
+            let filter_bits = block
+                .transactions
+                .iter()
+                .map(|tx| transaction_matches_filter(filter, tx))
+                .collect();
+            let payload =
+                MerkleBlockPayload::try_create(&mut block, filter_bits).map_err(|err| {
+                    CloseReason::Transport(format!("build merkle block payload: {err}"))
+                })?;
+            Message::create(
+                MessageCommand::MerkleBlock,
+                Some(&payload),
+                self.peer_allows_compression,
+            )
+        } else {
+            Message::create(
+                MessageCommand::Block,
+                Some(&block),
+                self.peer_allows_compression,
+            )
+        }
+        .map_err(|err| CloseReason::Transport(format!("encode block response: {err}")))?;
+        framed
+            .send(message)
+            .await
+            .map_err(|err| CloseReason::Transport(format!("send block response: {err}")))
     }
 }

@@ -20,4 +20,4 @@ pub mod peer_registry;
 
 pub use connection_timeouts::ConnectionTimeouts;
 pub use peer_id::PeerId;
-pub use peer_registry::PeerRegistry;
+pub use peer_registry::{ConnectedPeerSnapshot, PeerRegistry};

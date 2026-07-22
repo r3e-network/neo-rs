@@ -7,7 +7,7 @@ use neo_config::Hardfork;
 use neo_crypto::Crypto;
 use neo_crypto::{CryptoError, ECCurve, ECPoint, Secp256r1Crypto};
 use neo_error::{CoreError, CoreResult};
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_vm::VmResult;
 
 /// The price of CheckSig in GAS (1 << 15 = 32768 * 30 = 983040). Re-exported

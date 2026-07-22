@@ -1,5 +1,5 @@
-use super::super::test_fixtures::rpc_case_result;
 use super::*;
+use crate::types::test_fixtures::rpc_case_result;
 use neo_config::ProtocolSettings;
 use neo_serialization::json::{JArray, JToken};
 use neo_wallets::wallet_helper::WalletAddress as WalletHelper;

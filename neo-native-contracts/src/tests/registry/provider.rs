@@ -41,6 +41,24 @@ fn provider_resolves_cryptolib_by_hash() {
 }
 
 #[test]
+fn provider_reads_policy_attribute_fee_without_leaking_storage_keys() {
+    let provider = StandardNativeProvider::new();
+    let snapshot = DataCache::new(false);
+    let attribute_type = TransactionAttributeType::NotaryAssisted;
+    snapshot.add(
+        PolicyContract::attribute_fee_key(attribute_type.to_byte()),
+        neo_storage::StorageItem::from_bytes(BigInt::from(1_234_567i64).to_signed_bytes_le()),
+    );
+
+    assert_eq!(
+        provider
+            .attribute_fee(&snapshot, attribute_type)
+            .expect("typed Policy attribute fee"),
+        1_234_567
+    );
+}
+
+#[test]
 fn standard_persist_hook_capabilities_match_protocol_implementations() {
     let contracts = StandardNativeProvider::new().all_native_contracts();
     let on_persist = contracts

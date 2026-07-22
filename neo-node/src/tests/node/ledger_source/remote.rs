@@ -43,9 +43,9 @@ fn serialized_base64<T: Serializable>(payload: &T) -> String {
 }
 
 fn test_mempool() -> Arc<neo_mempool::MemoryPool> {
-    let settings = neo_config::ProtocolSettings::default();
     Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
-        &settings,
+        neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec"),
+        neo_mempool::TxPoolConfig::default(),
         Arc::new(neo_native_contracts::StandardNativeProvider::new()),
     ))
 }

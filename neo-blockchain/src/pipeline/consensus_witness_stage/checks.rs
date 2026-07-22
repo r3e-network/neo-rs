@@ -56,14 +56,15 @@ where
             ));
         }
 
-        let settings = self.ctx.settings();
+        let chain_spec = self.ctx.chain_spec();
+        let settings = chain_spec.protocol_settings();
         BlockValidator::validate_primary_index(block.primary_index(), settings.validators_count)
             .map_err(|error| EngineError::validation_failed(block.index(), error.to_string()))?;
         let verify_result = match signature_cache {
             Some(signature_cache) => {
                 Helper::verify_witness_with_native_provider_and_signature_cache(
                     &block.header,
-                    settings.as_ref(),
+                    settings,
                     self.ctx.snapshot(),
                     &parent.next_consensus,
                     &block.header.witness,
@@ -74,7 +75,7 @@ where
             }
             None => Helper::verify_witness_with_native_provider(
                 &block.header,
-                settings.as_ref(),
+                settings,
                 self.ctx.snapshot(),
                 &parent.next_consensus,
                 &block.header.witness,

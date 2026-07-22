@@ -9,6 +9,7 @@ use neo_payloads::Header;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
+use neo_test_fixtures::test_chain_spec;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::script_builder::ScriptBuilder;
 use num_bigint::BigInt;
@@ -49,6 +50,10 @@ fn standard_resources() -> StandardNativePersistResources {
     NativePersistResources::from_provider(Arc::new(
         neo_native_contracts::StandardNativeProvider::new(),
     ))
+}
+
+fn chain_spec_for_settings(settings: &ProtocolSettings) -> Arc<neo_config::NeoChainSpec> {
+    test_chain_spec(settings.clone())
 }
 
 fn shadow_resources(
@@ -229,7 +234,7 @@ fn policy_get_exec_fee_factor_script() -> Vec<u8> {
     let mut builder = ScriptBuilder::new();
     builder.emit_push_int(0);
     builder.emit_pack();
-    builder.emit_push_int(i64::from(neo_manifest::CallFlags::READ_STATES.bits()));
+    builder.emit_push_int(i64::from(neo_primitives::CallFlags::READ_STATES.bits()));
     builder.emit_push_string("getExecFeeFactor");
     builder.emit_push(&neo_native_contracts::PolicyContract::script_hash().to_array());
     builder
@@ -246,7 +251,7 @@ fn gas_transfer_script(from: &UInt160, to: &UInt160, amount: i64) -> Vec<u8> {
     builder.emit_push(&from.to_array());
     builder.emit_push_int(4);
     builder.emit_pack();
-    builder.emit_push_int(i64::from(neo_manifest::CallFlags::ALL.bits()));
+    builder.emit_push_int(i64::from(neo_primitives::CallFlags::ALL.bits()));
     builder.emit_push_string("transfer");
     builder.emit_push(&neo_native_contracts::GasToken::script_hash().to_array());
     builder
@@ -271,7 +276,7 @@ fn signed_test_tx(sender: UInt160, nonce: u32, script: Vec<u8>) -> neo_payloads:
 #[test]
 fn genesis_block_matches_csharp_create_genesis_block() {
     let settings = ProtocolSettings::default();
-    let block = genesis_block(&settings).expect("genesis block");
+    let block = genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block");
     assert_eq!(block.index(), 0);
     assert_eq!(block.header.version(), 0);
     assert_eq!(*block.header.prev_hash(), UInt256::zero());
@@ -302,11 +307,38 @@ fn genesis_block_matches_csharp_create_genesis_block() {
 }
 
 #[test]
+fn custom_chain_genesis_timestamp_and_nonce_are_authoritative() {
+    let settings = ProtocolSettings::default();
+    let mut genesis = neo_config::GenesisConfig::mainnet();
+    genesis.timestamp = 1_700_000_000_123;
+    genesis.nonce = 0x0123_4567_89ab_cdef;
+    let chain_spec =
+        neo_config::NeoChainSpec::private("custom-genesis-header", settings, genesis.clone(), None)
+            .expect("valid custom chain spec");
+
+    let block = genesis_block(&chain_spec).expect("custom genesis block");
+    let mainnet = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
+    let mainnet_hash = genesis_block(mainnet.as_ref())
+        .expect("MainNet genesis block")
+        .try_hash()
+        .expect("MainNet genesis hash");
+
+    assert_eq!(block.header.timestamp(), genesis.timestamp);
+    assert_eq!(block.header.nonce(), genesis.nonce);
+    assert_ne!(
+        block.try_hash().expect("custom genesis hash"),
+        mainnet_hash,
+        "custom genesis identity fields must affect the canonical header hash"
+    );
+}
+
+#[test]
 fn genesis_persist_seeds_native_state_and_mints() {
     let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
-    let block = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let block =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
 
     let outcome = persist_with_resources(Arc::clone(&snapshot), block, &settings, &resources)
         .expect("genesis persist");
@@ -515,7 +547,8 @@ fn non_refresh_block_mints_to_rotating_member_without_recompute() {
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
     // Persist genesis first so the committee cache + gas records exist.
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
         .expect("genesis persist");
 
@@ -572,7 +605,8 @@ fn chain_state_initialized_flips_after_genesis_persist() {
         "fresh store is uninitialized"
     );
 
-    let block = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let block =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     persist_with_resources(Arc::clone(&snapshot), block, &settings, &resources)
         .expect("genesis persist");
     assert!(
@@ -645,8 +679,8 @@ fn chain_state_initialized_uses_the_constant_time_committee_probe_first() {
 /// standby-validator multisig redeem script, and hash160.
 #[test]
 fn mainnet_genesis_hash_matches_csharp() {
-    let settings = ProtocolSettings::default();
-    let block = genesis_block(&settings).expect("genesis block");
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
+    let block = genesis_block(chain_spec.as_ref()).expect("genesis block");
     let hash = block.header.try_hash().expect("genesis hash");
     assert_eq!(
         hash.to_string(),
@@ -666,7 +700,8 @@ fn persist_executes_transactions_and_records_vm_states() {
     let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
         .expect("genesis persist");
 
@@ -758,7 +793,8 @@ fn persist_records_fault_when_nep17_receiver_callback_faults() {
     let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
         .expect("genesis persist");
 
@@ -807,7 +843,8 @@ fn bulk_sync_native_persist_skips_replay_artifacts_but_keeps_vm_state() {
     let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
         .expect("genesis persist");
 
@@ -886,7 +923,8 @@ fn reusable_native_persist_resources_fetch_contract_list_once_for_batch() {
         "resource construction should fetch the canonical contract list once"
     );
 
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     let staged = stage_block_natives_with_resources(
         Arc::clone(&snapshot),
         genesis,
@@ -932,7 +970,8 @@ fn reusable_native_persist_resources_keep_provider_consistent_across_blocks() {
     let snapshot = Arc::new(DataCache::new(false));
     let resources = NativePersistResources::from_provider(provider);
 
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     let staged = stage_block_natives_with_resources(
         Arc::clone(&snapshot),
         genesis,
@@ -986,7 +1025,8 @@ fn specialization_shadow_pipeline_preserves_ordinary_transaction_and_ledger_resu
         (&normal_snapshot, &normal_resources),
         (&shadow_snapshot, &shadow_resources),
     ] {
-        let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+        let genesis =
+            Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
         persist_with_resources(Arc::clone(snapshot), genesis, &settings, resources)
             .expect("genesis persist");
     }
@@ -1042,7 +1082,8 @@ fn strict_specialization_shadow_artifact_failure_aborts_block_publication() {
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
     let normal_resources = standard_resources();
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &normal_resources)
         .expect("genesis persist");
 
@@ -1120,12 +1161,13 @@ fn native_persist_exposes_explicit_resource_commit_path() {
 fn reusable_native_persist_resources_cross_echidna_activation_height() {
     let resources = standard_resources();
     let mut settings = ProtocolSettings::default();
-    settings
-        .hardforks
-        .insert(neo_config::Hardfork::HfEchidna, 1);
+    settings.hardforks = neo_config::HardforkSchedule::new()
+        .with_activation(neo_config::Hardfork::HfEchidna, 1)
+        .with_omitted_leading_at_genesis();
     let snapshot = Arc::new(DataCache::new(false));
 
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     let staged = stage_block_natives_with_resources(
         Arc::clone(&snapshot),
         genesis,
@@ -1187,7 +1229,8 @@ fn genesis_persist_writes_ledger_records() {
     let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     let genesis_hash = genesis.header.try_hash().unwrap();
     persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
         .expect("genesis persist");

@@ -37,8 +37,10 @@ mod utils;
 #[path = "../tests/service/mod.rs"]
 mod tests;
 
+use neo_config::{ChainSpecProvider, NeoChainSpec};
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
+use neo_mempool::{TransactionAdmissionOutcome, TransactionOrigin};
+use neo_runtime::{StoreProvider, TxAdmission};
 use neo_wallets::Nep6Wallet;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
@@ -75,15 +77,25 @@ use task::OracleTask;
 /// This is a static bound, not an object boundary: service code is still
 /// monomorphized over the concrete provider type that the composition root
 /// passes in.
-pub trait OracleRuntimeProvider: ConfigProvider + StoreProvider + TxAdmission {}
+pub trait OracleRuntimeProvider:
+    ChainSpecProvider<ChainSpec = NeoChainSpec>
+    + StoreProvider
+    + TxAdmission<Origin = TransactionOrigin, Outcome = TransactionAdmissionOutcome>
+{
+}
 
-impl<T> OracleRuntimeProvider for T where T: ConfigProvider + StoreProvider + TxAdmission {}
+impl<T> OracleRuntimeProvider for T where
+    T: ChainSpecProvider<ChainSpec = NeoChainSpec>
+        + StoreProvider
+        + TxAdmission<Origin = TransactionOrigin, Outcome = TransactionAdmissionOutcome>
+{
+}
 
 /// Oracle service runtime.
 ///
 /// `R` is the composed runtime provider (usually the node composition root or
 /// RPC `NodeContext`) and is kept concrete so oracle request processing does
-/// not erase storage/config/transaction-admission calls behind trait objects.
+/// not erase storage/chain-spec/transaction-admission calls behind trait objects.
 pub struct OracleService<R, P = neo_native_contracts::StandardNativeProvider>
 where
     R: OracleRuntimeProvider,

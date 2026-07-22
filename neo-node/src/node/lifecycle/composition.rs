@@ -7,7 +7,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use neo_config::ProtocolSettings;
+use neo_config::NeoChainSpec;
 use neo_storage::persistence::providers::RuntimeStore;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -112,7 +112,7 @@ impl neo_network::BlockSource for NodeLedgerBlockSource {
 /// Constructs the [`neo_system::Node`] with a live blockchain service
 /// and a spawned [`neo_network::LocalNodeService`].
 pub(in crate::node) async fn build_node(
-    settings: Arc<ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     config: &NodeConfig,
     storage_override: Option<&Path>,
     stop_at_height: Option<u32>,
@@ -120,6 +120,8 @@ pub(in crate::node) async fn build_node(
     startup_bulk_import: bool,
     observability: Option<observability::ObservabilityRuntime>,
 ) -> anyhow::Result<RunningNode> {
+    let settings = chain_spec.protocol_settings_arc();
+
     let persistent_storage_root = ledger_mode
         .uses_local_replay_services()
         .then(|| {
@@ -244,7 +246,8 @@ pub(in crate::node) async fn build_node(
             .configure_hot_ledger_pruning(Arc::clone(&store), settings.max_traceable_blocks);
     }
     let mut core_builder = neo_system::NodeCoreBuilder::new(
-        Arc::clone(&settings),
+        Arc::clone(&chain_spec),
+        config.mempool.tx_pool_config()?,
         Arc::clone(&store),
         Arc::clone(&native_contract_provider),
         Arc::clone(&daemon_hooks),
@@ -416,14 +419,11 @@ pub(in crate::node) async fn build_node(
     let channels_config = config.p2p.channels_config()?;
     let peer_registry = Arc::new(neo_network::PeerRegistry::from_config(&channels_config));
     let (net_service, network) = neo_network::LocalNodeService::with_config_and_registry(
-        Arc::clone(&settings),
+        Arc::clone(&chain_spec),
         channels_config,
         Arc::clone(&peer_registry),
     );
-    let node = Arc::new(
-        core.into_node(network.clone())
-            .map_err(|e| anyhow::anyhow!("node build failed: {e}"))?,
-    );
+    let node = Arc::new(core.into_node(network.clone()));
     let net_service = if ledger_mode.uses_local_replay_services() {
         net_service.with_inventory_sink(inv_tx)
     } else {

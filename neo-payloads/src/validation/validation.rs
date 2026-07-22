@@ -1,10 +1,8 @@
 //! Block validation constants re-exported for the payload layer.
 //!
-//! The full block-validation helpers (block-size, transaction-count, primary
-//! index, timestamp progression, merkle checks) live in `neo-core` because
-//! they need access to `DataCache` plus the native contracts. The constants
-//! below are pure values that the payload layer needs to do structural
-//! validation.
+//! Stateful block-validation helpers live in `neo-blockchain`, which can read
+//! the canonical snapshot and native-contract state. The constants below are
+//! pure values used for structural payload validation.
 
 /// Minimum valid timestamp (Neo genesis block timestamp: July 15, 2016)
 pub const MIN_TIMESTAMP_MS: u64 = 1468595301000;

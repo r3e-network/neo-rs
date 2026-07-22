@@ -37,11 +37,11 @@ mod tests {
         let pack_path = temporary.path().join("packs");
         let root = [0x55; 32];
         let mut root_key = [0u8; PACK_KEY_BYTES];
-        root_key[0] = STATE_NODE_PREFIX;
+        root_key[0] = MPT_NODE_PREFIX;
         root_key[1..].copy_from_slice(&root);
         let root_value = b"complete-root-node".to_vec();
         let mut auxiliary_key = [0u8; PACK_KEY_BYTES];
-        auxiliary_key[0] = STATE_NODE_PREFIX;
+        auxiliary_key[0] = MPT_NODE_PREFIX;
         auxiliary_key[1..].fill(0x44);
         let auxiliary_value = b"checkpoint-auxiliary-node".to_vec();
 
@@ -166,7 +166,7 @@ mod tests {
         let context = receipt.context;
         for tag in 1..=count {
             let mut key = [0u8; PACK_KEY_BYTES];
-            key[0] = STATE_NODE_PREFIX;
+            key[0] = MPT_NODE_PREFIX;
             key[1..].fill(tag);
             let prepared = pack
                 .prepare_frame(
@@ -516,7 +516,7 @@ mod tests {
     fn checkpoint_rejects_oversized_source_values_during_borrowed_scan() {
         let mut fixture = fixture();
         let mut oversized_key = [0x66; PACK_KEY_BYTES];
-        oversized_key[0] = STATE_NODE_PREFIX;
+        oversized_key[0] = MPT_NODE_PREFIX;
         fixture
             .state
             .put(

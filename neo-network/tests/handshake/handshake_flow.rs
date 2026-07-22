@@ -8,7 +8,7 @@ use super::*;
 async fn inbound_handshake_upgrades_address_and_eof_disconnects() {
     let (handle, mut events, port) = start_local_node(ChannelsConfig::default()).await;
     let local = handle.local_node_info();
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
 
     let mut fake = fake_dial(port).await;
 
@@ -77,7 +77,7 @@ async fn inbound_handshake_upgrades_address_and_eof_disconnects() {
 async fn outbound_dial_sends_version_and_completes_handshake() {
     let remote_listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let remote_addr = remote_listener.local_addr().expect("addr");
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
 
     let (handle, mut events, _port) = start_local_node(ChannelsConfig::default()).await;
     let local = handle.local_node_info();

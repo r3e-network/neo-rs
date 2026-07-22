@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+Define evidence and resource requirements for performance work after protocol
+correctness has been preserved.
+
+## Requirements
 
 ### Requirement: Block processing optimization
 The system SHALL process blocks with performance matching or exceeding C# implementation.

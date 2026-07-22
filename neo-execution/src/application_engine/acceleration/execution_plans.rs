@@ -141,7 +141,7 @@ where
         Hardfork::ALL
             .into_iter()
             .fold(HardforkTableIdentity::unconfigured(), |table, hardfork| {
-                let state = match self.protocol_settings.hardforks.get(&hardfork).copied() {
+                let state = match self.protocol_settings.hardforks.activation_height(hardfork) {
                     None => HardforkPlanState::Unconfigured,
                     Some(activation_height) if current_index >= activation_height => {
                         HardforkPlanState::Active { activation_height }

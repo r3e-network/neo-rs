@@ -57,7 +57,6 @@ use super::config::{AppendShadowSection, NodeConfig, network_scoped_path};
 pub(in crate::node) struct AppendShadow {
     state: Mutex<AppendShadowState>,
 }
-
 struct AppendShadowState {
     writer: Option<ShadowPackWriter>,
     canonical_tip: Option<StateTip>,

@@ -1,24 +1,27 @@
-use super::{StoreFactory, StoreProviderKind};
+use super::{StoreBackend, StoreFactory, provider_for};
 use crate::persistence::storage::StorageConfig;
 
 #[test]
 fn built_in_provider_names_are_registered() {
-    assert!(StoreFactory::get_store_provider("").is_none());
+    assert!(provider_for("").is_err());
     assert_eq!(
-        StoreFactory::get_store_provider("memory"),
-        Some(StoreProviderKind::Memory)
+        provider_for("memory").expect("memory backend"),
+        StoreBackend::Memory
     );
-    assert!(StoreFactory::get_store_provider("Memory").is_some());
+    assert_eq!(
+        provider_for("Memory").expect("case-insensitive memory backend"),
+        StoreBackend::Memory
+    );
     assert!(
-        StoreFactory::get_store_provider("RocksDBStore").is_none(),
+        provider_for("RocksDBStore").is_err(),
         "removed backends must not remain in the production provider contract"
     );
     assert_eq!(
-        StoreFactory::get_store_provider("mdbx"),
-        Some(StoreProviderKind::Mdbx)
+        provider_for("mdbx").expect("mdbx backend"),
+        StoreBackend::Mdbx
     );
     assert!(
-        StoreFactory::get_store_provider("MdbxStore").is_none(),
+        provider_for("MdbxStore").is_err(),
         "legacy concrete-type aliases are not part of the production provider contract"
     );
 }
@@ -91,10 +94,9 @@ fn mdbx_provider_name_creates_mdbx_store() {
 
 #[test]
 fn default_build_registers_mdbx_provider_for_production_storage() {
-    let provider = StoreFactory::get_store_provider("mdbx")
-        .expect("default neo-storage build must register MDBX");
+    let provider = provider_for("mdbx").expect("default neo-storage build must register MDBX");
 
-    assert_eq!(provider, StoreProviderKind::Mdbx);
+    assert_eq!(provider, StoreBackend::Mdbx);
 }
 
 #[test]

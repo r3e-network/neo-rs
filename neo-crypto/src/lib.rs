@@ -1,6 +1,6 @@
 //! # neo-crypto
 //!
-//! Cryptographic hashes, curves, signatures, filters, and MPT trie helpers.
+//! Cryptographic hashes, curves, signatures, and filters.
 //!
 //! ## Boundary
 //!
@@ -17,7 +17,6 @@
 //! - `formats`: Binary and textual conversion helpers for cryptographic data.
 //! - `hashes`: Hash functions and hash-domain helpers used by protocol code.
 //! - `keys`: wallet-facing key derivation, signing, and verification helpers.
-//! - `mpt_trie`: Merkle Patricia Trie nodes, cache logic, and trie operations.
 //! - `tests`: Module-local tests and regression coverage.
 
 pub mod curves;
@@ -27,7 +26,6 @@ pub mod filters;
 pub mod formats;
 pub mod hashes;
 pub mod keys;
-pub mod mpt_trie;
 
 pub use curves::{bls12381_point, ecc};
 pub use filters::bloom_filter;
@@ -44,11 +42,6 @@ pub use encoding::{base58, base64};
 pub use error::{CryptoError, CryptoResult};
 pub use hash::{Crypto, CtCompare, HashAlgorithm, Sha256Hasher};
 pub use merkle_tree::MerkleTree;
-pub use mpt_trie::{
-    Cache, MPT_NODE_PREFIX, MptCache, MptError, MptResult, MptStoreLookup, MptStoreSnapshot, Node,
-    NodeType, PersistedMptGraphLimits, PersistedMptGraphReport, Trie, TrieEntry,
-    validate_persisted_root_graph,
-};
 pub use named_curve_hash::NamedCurveHash;
 pub use signature::{
     ECC, ECDsa, Ed25519Crypto, NEOFS_ECDSA_SHA512_PREFIX, NEOFS_ECDSA_SHA512_SIGNATURE_LEN,

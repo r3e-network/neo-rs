@@ -6,7 +6,7 @@ use neo_storage::persistence::DataCache;
 use neo_wallets::Nep6Wallet;
 use std::sync::Arc;
 
-impl<R, P> neo_payloads::CommittingHandler for OracleService<R, P>
+impl<R, P> neo_runtime::CommittingHandler for OracleService<R, P>
 where
     R: OracleRuntimeProvider + 'static,
     P: NativeContractProvider + OracleContractReadProvider + 'static,
@@ -55,7 +55,7 @@ where
     }
 }
 
-impl<R, P> neo_payloads::WalletChangedHandler for OracleService<R, P>
+impl<R, P> neo_runtime::WalletChangedHandler for OracleService<R, P>
 where
     R: OracleRuntimeProvider + 'static,
     P: NativeContractProvider + OracleContractReadProvider + 'static,

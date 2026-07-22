@@ -42,7 +42,8 @@ pub use download::{
 pub use errors::{NetworkError, NetworkResult, error};
 pub use identity::{LocalIdentity, local_identity};
 pub use peers::{
-    ConnectionTimeouts, PeerId, PeerRegistry, connection_timeouts, peer_id, peer_registry,
+    ConnectedPeerSnapshot, ConnectionTimeouts, PeerId, PeerRegistry, connection_timeouts, peer_id,
+    peer_registry,
 };
 pub use service::{
     BlockSource, ConnectedPeer, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, InboundInventory,
@@ -55,17 +56,4 @@ pub use wire::{
     WireError, WireResult,
 };
 
-// -----------------------------------------------------------------------------
-// P2P protocol primitives re-export
-//
-// The former standalone P2P shim was folded into `neo-network` (it was almost
-// entirely a re-export layer over `neo-primitives`). Its types now live under
-// the `proto` submodule and are re-exported here at the crate root.
-// -----------------------------------------------------------------------------
-
-pub use proto::{
-    ChannelsConfig, ContainsTransactionType, InvalidWitnessScopeError, InventoryType,
-    MessageCommand, MessageFlags, NodeCapabilityType, OracleResponseCode, P2PError, P2PResult,
-    TransactionAttributeType, TransactionRemovalReason, VerifyResult, WitnessConditionType,
-    WitnessRuleAction, WitnessScope,
-};
+pub use proto::{ChannelsConfig, MessageCommand, MessageCommandParseError, MessageFlags};

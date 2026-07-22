@@ -17,11 +17,6 @@ pub struct PoolIndex {
 }
 
 impl PoolIndex {
-    /// Constructs an empty `PoolIndex`.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Constructs a `PoolIndex` with the given initial capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {

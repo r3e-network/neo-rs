@@ -1,10 +1,11 @@
 use super::super::ClientRpcError;
 use super::super::models::{
-    RpcContractState, RpcNep11Balances, RpcNep11Transfers, RpcNep17Balances, RpcNep17Transfers,
+    RpcNep11Balances, RpcNep11Transfers, RpcNep17Balances, RpcNep17Transfers,
 };
 use super::RpcClient;
 use super::helpers::token_as_object;
 use super::hooks::RpcObserver;
+use crate::types::RpcContractState;
 use neo_serialization::json::{JObject, JToken};
 
 impl<O> RpcClient<O>

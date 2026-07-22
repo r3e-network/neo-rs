@@ -298,15 +298,15 @@ sequenceDiagram
     participant Peers
 
     Client->>RPC: sendrawtransaction(base64 tx)
-    RPC->>BC: add_transaction(tx)
-    BC->>MP: try_add(tx, store snapshot, settings)
+    RPC->>BC: add_transaction(Local, tx)
+    BC->>MP: add_transaction(Local, tx, snapshot, Ledger provider)
     Note over MP: state-independent: size, strict script,<br/>standard sig/multisig fast path
     Note over MP: state-dependent: validity window, blocked accounts,<br/>conflicts, sender GAS balance, attribute + witness fees
     alt VerifyResult::Succeed
         MP-->>BC: admitted
         BC-->>RPC: { hash }
         RPC-->>Client: tx hash
-        BC->>Net: broadcast Inv(Transaction, hash)
+        RPC->>Net: BroadcastTransaction(tx)
         Net->>Peers: Inv → peers pull via GetData
     else rejected
         MP-->>BC: VerifyResult (Expired, PolicyFail, HasConflicts, ...)

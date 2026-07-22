@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::RpcPeers;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_peers_serves_empty_arrays_without_peers() {

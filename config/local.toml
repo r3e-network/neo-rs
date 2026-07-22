@@ -2,7 +2,8 @@
 # Minimal configuration for local development and testing
 
 [network]
-network_magic = 0x4C4F4341  # "LOCA" in hex
+network_type = "testnet"
+network_magic = 0x3554334E
 
 [storage]
 backend = "memory"
@@ -10,7 +11,7 @@ data_dir = "./data/local"
 read_only = false
 
 [p2p]
-port = 30333
+port = 20333
 max_connections = 10
 min_desired_connections = 1
 seed_nodes = []
@@ -19,7 +20,7 @@ broadcast_history_limit = 1000
 
 [rpc]
 enabled = true
-port = 30332
+port = 20332
 bind_address = "127.0.0.1"
 cors_enabled = true
 auth_enabled = false
@@ -83,8 +84,8 @@ max_file_size = "10MB"
 max_files = 3
 
 [blockchain]
-block_time = 1000  # 1 second for fast development
-max_transactions_per_block = 100
+block_time = 15000
+max_transactions_per_block = 5000
 
 [mempool]
 max_transactions = 1000

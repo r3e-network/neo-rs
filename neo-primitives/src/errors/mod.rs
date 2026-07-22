@@ -11,10 +11,5 @@
 //! ## Contents
 //!
 //! - `error`: Typed error definitions and conversions.
-//! - `network_error`: network error records.
-//! - `rpc_exception`: Exception-style RPC error wrappers used by handlers.
 
 pub mod error;
-pub mod network_error;
-/// JSON-RPC exception codes and helpers shared by RPC-facing crates.
-pub mod rpc_exception;

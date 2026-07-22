@@ -17,8 +17,9 @@ description = "Canonical home for the Neo state-service: state root, state root 
 neo-primitives = { workspace = true }
 neo-storage = { workspace = true }
 neo-payloads = { workspace = true }
+neo-runtime = { workspace = true }
 neo-crypto = { workspace = true }
-neo-error = { workspace = true }
+neo-trie = { workspace = true }
 neo-io = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }

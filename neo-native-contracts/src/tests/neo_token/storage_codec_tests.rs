@@ -1,9 +1,8 @@
 use super::*;
 use crate::neo_token::storage::candidate_signature_account;
 use crate::test_support::{sample_committee, seed_committee};
-use neo_execution::Contract;
 use neo_storage::{DataCacheReadObserver, SeekDirection, StorageKey};
-use neo_vm::Interoperable;
+use neo_vm::{Contract, Interoperable};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 

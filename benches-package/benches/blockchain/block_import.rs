@@ -8,11 +8,10 @@ use criterion::{BatchSize, Bencher, BenchmarkId, Criterion, criterion_group, cri
 use neo_blockchain::{
     BlockPersistContext, BlockchainHandle, ImportBlocksStats, SyncBatchCommitPolicy,
 };
-use neo_config::ProtocolSettings;
-use neo_manifest::CallFlags;
+use neo_config::NeoChainSpec;
 use neo_native_contracts::{GasToken, StandardNativeProvider};
 use neo_payloads::{Block, Signer, Transaction, Witness, header::Header};
-use neo_primitives::{UInt160, UInt256, WitnessScope};
+use neo_primitives::{CallFlags, UInt160, UInt256, WitnessScope};
 use neo_state_service::{
     StateRootApplyMetrics, StateStore, commit_handlers::StateServiceCommitHandlers,
 };
@@ -286,8 +285,9 @@ struct ChainCursor {
 }
 
 impl ChainCursor {
-    fn after_genesis(settings: &ProtocolSettings) -> Self {
-        let genesis = neo_blockchain::genesis_block(settings).expect("build benchmark genesis");
+    fn after_genesis(chain_spec: &NeoChainSpec) -> Self {
+        let settings = chain_spec.protocol_settings();
+        let genesis = neo_blockchain::genesis_block(chain_spec).expect("build benchmark genesis");
         Self {
             next_index: 1,
             next_nonce: 1,
@@ -493,10 +493,11 @@ where
     S: TransactionalStore,
     H: BlockCommitHooks<S> + 'static,
 {
-    let settings = Arc::new(ProtocolSettings::default());
+    let chain_spec = NeoChainSpec::mainnet().expect("build benchmark MainNet chain spec");
     let native_provider = Arc::new(StandardNativeProvider::new());
     let launch = NodeCoreBuilder::new(
-        Arc::clone(&settings),
+        Arc::clone(&chain_spec),
+        Default::default(),
         canonical_store,
         native_provider,
         hooks,
@@ -525,7 +526,7 @@ where
         )
         .expect("fund benchmark sender");
     let transfer_script = gas_transfer_script(&sender, &recipient);
-    let mut cursor = ChainCursor::after_genesis(settings.as_ref());
+    let mut cursor = ChainCursor::after_genesis(chain_spec.as_ref());
 
     let warmup = cursor.gas_transfer_blocks(1, transactions_per_block, &sender, &transfer_script);
     let (warmup_imported, _) = import_mode.import(&runtime, &blockchain, warmup);

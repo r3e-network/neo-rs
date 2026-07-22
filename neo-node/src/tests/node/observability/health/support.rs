@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
-use neo_config::ProtocolSettings;
 use neo_primitives::UInt256;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 
 use crate::node::services::NodeServiceHandles;
 
 pub(super) fn test_node() -> neo_system::Node {
-    neo_system::Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("node")
+    neo_system::Node::for_test(
+        neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec"),
+    )
 }
 
 pub(super) fn empty_services() -> Arc<NodeServiceHandles<MemoryStore>> {

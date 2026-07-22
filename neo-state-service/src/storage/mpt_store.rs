@@ -9,7 +9,7 @@
 //!
 //! - the MPT nodes, written by the [`Trie`] write-through cache under
 //!   `0xf0 || node_hash` (the prefix is applied inside
-//!   `neo_crypto::mpt_trie`, matching the C# `Cache` prefix);
+//!   `neo_trie`, matching the C# `Cache` prefix);
 //! - the per-block state-root records under `0x01 || index_be`
 //!   ([`Keys::state_root`]), serialized in the C# `StateRoot` wire
 //!   format (unsigned fields + a var-int witness count);
@@ -55,9 +55,6 @@
 use crate::Keys;
 use crate::metrics::{StateRootApplyCountKind, StateRootApplyMetrics, StateRootApplyStage};
 use crate::state_root::{CURRENT_VERSION, StateRoot};
-use neo_crypto::mpt_trie::{
-    MptError, MptMutationStats, MptResult, MptStoreSnapshot, Node, Trie, UnresolvedDeferredNode,
-};
 use neo_io::SerializableExtensions;
 use neo_primitives::{UINT256_SIZE, UInt256};
 use neo_storage::persistence::providers::memory_store::MemoryStore;
@@ -66,6 +63,9 @@ use neo_storage::persistence::{
     WriteStore,
 };
 use neo_storage::{StorageError, StorageResult};
+use neo_trie::{
+    MptError, MptMutationStats, MptResult, MptStoreSnapshot, Node, Trie, UnresolvedDeferredNode,
+};
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
@@ -87,7 +87,7 @@ type MptOverlay = FxHashMap<Vec<u8>, Option<Vec<u8>>>;
 /// `version (1) + index (4, LE) + root_hash (32)`.
 const STATE_ROOT_UNSIGNED_LEN: usize = 1 + 4 + UINT256_SIZE;
 /// Prefix of exact serialized MPT node rows in the StateService namespace.
-pub use neo_crypto::mpt_trie::MPT_NODE_PREFIX;
+pub use neo_trie::MPT_NODE_PREFIX;
 /// Complete key length of a prefix plus UInt256 node hash row.
 pub const MPT_NODE_KEY_BYTES: usize = 1 + UINT256_SIZE;
 const DEFERRED_NODE_LOOKUP_MAX_KEYS: usize = 1024 * 1024;

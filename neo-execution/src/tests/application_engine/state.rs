@@ -241,9 +241,9 @@ fn fee_whitelist_lookup_starts_at_mainnet_faun_height() {
 fn gorgon_selects_default_jump_table_like_csharp_v3101() {
     // C# `ApplicationEngine.Create`: `HF_Gorgon` enabled -> `DefaultJumpTable`.
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.clear();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
-    settings.hardforks.insert(Hardfork::HfGorgon, 0);
+    settings.hardforks = neo_config::HardforkSchedule::new();
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfGorgon, 0);
     let selected = ApplicationEngine::<NoNativeContractProvider>::select_jump_table(&settings, 0);
     let default = JumpTable::default();
 
@@ -262,8 +262,8 @@ fn echidna_without_gorgon_selects_not_gorgon_table_like_csharp_v3101() {
     // `NotGorgonJumpTable` = default with HASKEY/PICKITEM/SETITEM/REMOVE reverted
     // to their pre-neo-vm#543 handlers and SHL/SHR reverted to pre-neo-vm#567.
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.clear();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks = neo_config::HardforkSchedule::new();
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
     let selected = ApplicationEngine::<NoNativeContractProvider>::select_jump_table(&settings, 0);
     let default = JumpTable::default();
     let not_gorgon = JumpTable::not_gorgon();
@@ -304,9 +304,9 @@ fn echidna_without_gorgon_selects_not_gorgon_table_like_csharp_v3101() {
 #[test]
 fn before_echidna_selects_not_echidna_composed_from_not_gorgon() {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.clear();
-    settings.hardforks.insert(Hardfork::HfEchidna, 10);
-    settings.hardforks.insert(Hardfork::HfGorgon, 20);
+    settings.hardforks = neo_config::HardforkSchedule::new();
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 10);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfGorgon, 20);
     let selected = ApplicationEngine::<NoNativeContractProvider>::select_jump_table(&settings, 9);
     let not_echidna = JumpTable::not_echidna();
     let default = JumpTable::default();
@@ -336,9 +336,9 @@ fn before_echidna_selects_not_echidna_composed_from_not_gorgon() {
 #[test]
 fn jump_table_selection_uses_supplied_native_provider_current_index() {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.clear();
-    settings.hardforks.insert(Hardfork::HfEchidna, 1);
-    settings.hardforks.insert(Hardfork::HfGorgon, 10);
+    settings.hardforks = neo_config::HardforkSchedule::new();
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 1);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfGorgon, 10);
     let selected = ApplicationEngine::<NoNativeContractProvider>::select_jump_table(&settings, 10);
     let default = JumpTable::default();
 
@@ -723,7 +723,7 @@ fn interop_registry_matches_csharp_v3101_before_faun() {
 fn interop_registry_matches_csharp_v3101_from_faun() {
     let mut settings = ProtocolSettings::default();
     for hardfork in Hardfork::all() {
-        settings.hardforks.insert(hardfork, 0);
+        settings.hardforks = settings.hardforks.with_activation(hardfork, 0);
     }
 
     let engine = engine_with_settings(settings);

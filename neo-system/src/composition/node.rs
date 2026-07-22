@@ -12,39 +12,35 @@
 //! - the native contract provider owned for NeoVM host calls,
 //! - and the node-wide hot/cold Ledger provider factory.
 //!
-//! Construction goes through [`crate::NodeBuilder`], whose `build()`
-//! validates the required components (storage, the blockchain and
-//! network handles, the native provider) by null-checking each concrete
-//! field and returning a descriptive missing-service error when one is
-//! absent. There are no trait-object executor / consensus / engine
-//! fields to compose: those were removed in ADR-032 / ADR-033.
+//! Construction goes through [`crate::NodeCoreBuilder`] and the final
+//! [`crate::NodeBuilder`]. Every required capability is a constructor argument,
+//! so a partially configured node graph cannot be represented. There are no
+//! trait-object executor, consensus, or engine fields to compose; those were
+//! removed in ADR-032 / ADR-033.
 
 use std::sync::Arc;
 use std::time::Duration;
 
+use neo_blockchain::ledger_provider::TransactionAdmissionLedger;
 use neo_blockchain::{
     BlockchainHandle, HeaderCache, HotColdLedgerProviderFactory, LedgerProviderFactory,
-    OptionalStaticLedgerProvider, TransactionStateProvider, TxProvider,
+    OptionalStaticLedgerProvider,
 };
-use neo_config::ProtocolSettings;
+use neo_config::{ChainSpecProvider, NeoChainSpec};
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_mempool::MemoryPool;
+use neo_mempool::{MemoryPool, TransactionAdmissionOutcome, TransactionOrigin, TxPoolConfig};
 use neo_network::NetworkHandle;
-use neo_payloads::{Transaction, VerifyResult};
+use neo_payloads::Transaction;
 use neo_runtime::{
-    ConfigProvider, SharedStoreSyncStageCheckpointStore, SharedStoreVerifiedHeaderStore,
-    StoreProvider, TxAdmission,
+    SharedStoreSyncStageCheckpointStore, SharedStoreVerifiedHeaderStore, StoreProvider, TxAdmission,
 };
-use neo_storage::DataCache;
 use neo_storage::persistence::TransactionalStore;
 use neo_storage::persistence::providers::MemoryStore;
 use neo_storage::persistence::store_cache::StoreCache;
 
-use super::tx_admission_provider::{NativeTxAdmissionProvider, TxAdmissionNativeProvider};
 use crate::live_block_import_pipeline::LiveBlockImportPipeline;
 use crate::staged_sync_pipeline::StagedSyncPipeline;
 use crate::wallet_provider::WalletProvider;
-use neo_error::{CoreError, CoreResult};
 
 /// The composed Neo node runtime.
 ///
@@ -56,8 +52,8 @@ where
     P: NativeContractProvider,
     S: TransactionalStore,
 {
-    /// Protocol settings the node is running with.
-    pub(super) settings: Arc<ProtocolSettings>,
+    /// Immutable chain specification selected at startup.
+    pub(super) chain_spec: Arc<NeoChainSpec>,
 
     /// Shared storage backend.
     ///
@@ -92,9 +88,10 @@ where
     /// Live peer-inventory preflight sharing the staged-sync import queue.
     pub(super) live_block_import_pipeline: Arc<LiveBlockImportPipeline>,
 
-    /// Shared memory pool. The same instance the blockchain service /
-    /// transaction router admit into; RPC handlers read it for
-    /// `getrawmempool` / conflict checks.
+    /// Shared memory pool. Blockchain, RPC, P2P, and node-generated
+    /// transactions all enter this instance through its typed admission
+    /// operation; RPC reads the same pool for `getrawmempool` and conflict
+    /// projections.
     pub(super) mempool: Arc<MemoryPool<P>>,
 
     /// Shared header cache: headers that are ahead of the persisted
@@ -120,7 +117,7 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
-            .field("settings", &"<ProtocolSettings>")
+            .field("chain_spec", &self.chain_spec.identity())
             .field("storage", &"<Store>")
             .field("wallets", &self.wallets)
             .field("blockchain", &"BlockchainHandle")
@@ -149,17 +146,9 @@ where
     P: NativeContractProvider + 'static,
     S: TransactionalStore + 'static,
 {
-    /// Returns a fresh [`crate::NodeBuilder`].
-    pub fn builder() -> crate::NodeBuilder<P, S> {
-        crate::NodeBuilder::default()
-    }
-
-    /// Returns the protocol settings the node is running with.
-    ///
-    /// Convenience accessor for services that received the typed node handle
-    /// and need to inspect the network magic, hardfork schedule, etc.
-    pub fn settings(&self) -> Arc<ProtocolSettings> {
-        Arc::clone(&self.settings)
+    /// Returns the immutable chain specification selected at startup.
+    pub fn chain_spec(&self) -> Arc<NeoChainSpec> {
+        Arc::clone(&self.chain_spec)
     }
 
     /// Returns the blockchain service handle.
@@ -240,19 +229,23 @@ where
     /// height, from the protocol settings (C#
     /// `ProtocolSettings.MaxValidUntilBlockIncrement`).
     pub fn max_valid_until_block_increment(&self) -> u32 {
-        self.settings.max_valid_until_block_increment
+        self.chain_spec
+            .protocol_settings()
+            .max_valid_until_block_increment
     }
 
     /// Target time between blocks, from the protocol settings (C#
     /// `ProtocolSettings.MillisecondsPerBlock`).
     pub fn time_per_block(&self) -> Duration {
-        Duration::from_millis(u64::from(self.settings.milliseconds_per_block))
+        Duration::from_millis(u64::from(
+            self.chain_spec.protocol_settings().milliseconds_per_block,
+        ))
     }
 
     /// Maximum number of traceable blocks, from the protocol settings
     /// (C# `ProtocolSettings.MaxTraceableBlocks`).
     pub fn max_traceable_blocks(&self) -> u32 {
-        self.settings.max_traceable_blocks
+        self.chain_spec.protocol_settings().max_traceable_blocks
     }
 
     /// Returns the wallet provider.
@@ -260,134 +253,53 @@ where
         self.wallets.clone()
     }
 
-    /// Returns a handle to the transaction router used to enqueue
-    /// outbound transactions for broadcast / persistence.
-    ///
-    /// The handle admits into the node's shared `neo-mempool`
-    /// instance and best-effort relays accepted transactions through
-    /// `neo-network`.
-    pub fn tx_router_actor(&self) -> TxRouterHandle<P> {
-        TxRouterHandle::new(
-            Arc::clone(&self.mempool),
-            self.network.clone(),
-            Arc::clone(&self.settings),
-            self.ledger_provider_factory.clone(),
-        )
+    /// Submit a transaction through the node's canonical mempool boundary and
+    /// apply the propagation policy carried by its origin.
+    pub fn submit_transaction(
+        &self,
+        origin: TransactionOrigin,
+        transaction: Transaction,
+    ) -> TransactionAdmissionOutcome {
+        let store_cache = StoreCache::<S>::new_from_snapshot(self.storage.snapshot());
+        let snapshot = store_cache.data_cache();
+        let ledger =
+            TransactionAdmissionLedger::new(self.ledger_provider_factory.provider(snapshot));
+        let relay = origin.should_propagate().then(|| transaction.clone());
+        let outcome = self
+            .mempool
+            .add_transaction(origin, transaction, snapshot, &ledger);
+        if outcome.is_accepted() {
+            if let Some(transaction) = relay {
+                let _ = self.network.try_broadcast_transaction(transaction);
+            }
+        }
+        outcome
     }
 }
 
 impl Node<neo_native_contracts::StandardNativeProvider, MemoryStore> {
-    /// Construct a `Node` with the given protocol settings and an
-    /// in-memory storage backend. Used by tests and by the
-    /// orchestrator's headless mode (no P2P, no consensus, no
-    /// engine).
-    pub fn new(
-        settings: std::sync::Arc<ProtocolSettings>,
-        _blockchain: Option<()>,
-        _network: Option<()>,
-    ) -> Result<Self, crate::error::NodeError> {
+    /// Construct an in-memory node for test-only RPC/service fixtures.
+    pub fn for_test(chain_spec: std::sync::Arc<NeoChainSpec>) -> Self {
         let storage = Arc::new(MemoryStore::new());
         let native_contract_provider =
             Arc::new(neo_native_contracts::StandardNativeProvider::new());
+        let mempool = Arc::new(MemoryPool::new_with_native_contract_provider(
+            Arc::clone(&chain_spec),
+            TxPoolConfig::default(),
+            Arc::clone(&native_contract_provider),
+        ));
         let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
         let (network, _nrx, _etx) = neo_network::NetworkHandle::channel(8, 8);
-        crate::NodeBuilder::default()
-            .with_settings(settings)
-            .with_storage(storage)
-            .with_blockchain(blockchain)
-            .with_network(network)
-            .with_native_contract_provider(native_contract_provider)
-            .build()
-    }
-}
-
-/// Handle returned by [`Node::tx_router_actor`]. Wires outbound transactions
-/// (e.g. oracle responses) into the shared memory pool and broadcasts admitted
-/// ones to peers — the reth-style stand-in for C# `system.Blockchain.Tell(tx)`
-/// admit-then-relay.
-#[derive(Clone)]
-pub struct TxRouterHandle<P = neo_native_contracts::StandardNativeProvider>
-where
-    P: NativeContractProvider,
-{
-    mempool: Arc<MemoryPool<P>>,
-    network: NetworkHandle,
-    settings: Arc<ProtocolSettings>,
-    ledger_provider_factory: HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>,
-}
-
-impl<P> TxRouterHandle<P>
-where
-    P: NativeContractProvider + 'static,
-{
-    /// Construct a `TxRouterHandle` over the node's shared mempool + network.
-    pub fn new(
-        mempool: Arc<MemoryPool<P>>,
-        network: NetworkHandle,
-        settings: Arc<ProtocolSettings>,
-        ledger_provider_factory: HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>,
-    ) -> Self {
-        Self {
-            mempool,
+        crate::NodeBuilder::new(
+            chain_spec,
+            storage,
+            blockchain,
             network,
-            settings,
-            ledger_provider_factory,
-        }
-    }
-
-    /// Admit `tx` into the shared memory pool against `snapshot`, and — when
-    /// `relay` is set and admission succeeded — best-effort broadcast it to
-    /// peers. Synchronous and non-blocking, so it is safe to call from a plugin
-    /// holding a non-async lock. Returns `Ok(())` only when the mempool accepts
-    /// the transaction (`VerifyResult::Succeed`); any other verdict is surfaced
-    /// as `Err(verdict)` so the caller can log and retain the work.
-    pub fn try_enqueue_preverify<B: neo_storage::CacheRead>(
-        &self,
-        tx: Transaction,
-        relay: bool,
-        snapshot: &DataCache<B>,
-    ) -> CoreResult<()> {
-        let hash = tx
-            .try_hash()
-            .map_err(|_| CoreError::other(format!("{:?}", VerifyResult::Invalid)))?;
-        let ledger = self.ledger_provider_factory.provider(snapshot);
-        // Fail closed on a storage error: a transient lookup failure must NOT be
-        // treated as "not present" (which would admit and relay a possibly-
-        // duplicate transaction). Propagate the error so admission is blocked.
-        if ledger
-            .contains_transaction(&hash)
-            .map_err(|error| CoreError::other(format!("ledger contains_transaction: {error}")))?
-        {
-            return Err(CoreError::other(format!(
-                "{:?}",
-                VerifyResult::AlreadyExists
-            )));
-        }
-        let native = NativeTxAdmissionProvider::new(self.mempool.native_contract_provider());
-        let max_traceable_blocks = native
-            .max_traceable_blocks(snapshot, self.settings.as_ref())
-            .map_err(|error| CoreError::other(format!("MaxTraceableBlocks: {error}")))?;
-        let signers: Vec<_> = tx.signers().iter().map(|s| s.account).collect();
-        if ledger
-            .contains_conflict_hash(&hash, &signers, max_traceable_blocks)
-            .map_err(|error| CoreError::other(format!("ledger contains_conflict_hash: {error}")))?
-        {
-            return Err(CoreError::other(format!(
-                "{:?}",
-                VerifyResult::HasConflicts
-            )));
-        }
-        let result = self.mempool.try_add(tx.clone(), snapshot);
-        if result != VerifyResult::Succeed {
-            return Err(CoreError::other(format!("{result:?}")));
-        }
-        if relay {
-            // Best-effort relay; a dropped broadcast must not undo a successful
-            // admission — the tx is in the pool and will be announced via inv
-            // on the next gossip cycle.
-            let _ = self.network.try_broadcast_transaction(tx);
-        }
-        Ok(())
+            mempool,
+            Arc::new(HeaderCache::default()),
+            native_contract_provider,
+        )
+        .build()
     }
 }
 
@@ -407,17 +319,15 @@ where
     }
 }
 
-impl<P, S> ConfigProvider for Node<P, S>
+impl<P, S> ChainSpecProvider for Node<P, S>
 where
     P: NativeContractProvider + 'static,
     S: TransactionalStore + 'static,
 {
-    fn settings(&self) -> Arc<ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
+    type ChainSpec = NeoChainSpec;
 
-    fn max_valid_until_block_increment(&self) -> u32 {
-        self.settings.max_valid_until_block_increment
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        Arc::clone(&self.chain_spec)
     }
 }
 
@@ -426,15 +336,15 @@ where
     P: NativeContractProvider + 'static,
     S: TransactionalStore + 'static,
 {
-    fn try_enqueue_preverify<B: neo_storage::CacheRead>(
+    type Origin = TransactionOrigin;
+    type Outcome = TransactionAdmissionOutcome;
+
+    fn submit_transaction(
         &self,
-        tx: neo_payloads::Transaction,
-        relay: bool,
-        snapshot: &neo_storage::persistence::DataCache<B>,
-    ) -> Result<(), neo_runtime::ServiceError> {
-        self.tx_router_actor()
-            .try_enqueue_preverify(tx, relay, snapshot)
-            .map_err(|e| neo_runtime::ServiceError::Internal(e.to_string()))
+        origin: Self::Origin,
+        transaction: neo_payloads::Transaction,
+    ) -> Self::Outcome {
+        Node::submit_transaction(self, origin, transaction)
     }
 }
 

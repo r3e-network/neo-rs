@@ -2,7 +2,7 @@
 //!
 //! [`NodeContext`] is the service handle bundle that [`RpcServer`] stores
 //! instead of `Arc<neo_system::Node>`. It holds the same concrete handles
-//! (blockchain, network, mempool, storage, settings, …) but is defined in
+//! (blockchain, network, mempool, storage, chain specification, …) but is defined in
 //! `neo-rpc` itself, so the RPC crate no longer needs to depend on the
 //! composition root (`neo-system`).
 //!
@@ -18,23 +18,22 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use neo_blockchain::ledger_provider::TransactionAdmissionLedger;
 use neo_blockchain::{
     BlockchainHandle, HeaderCache, HotColdLedgerProvider, HotColdLedgerProviderFactory,
     LedgerProviderFactory, OptionalStaticLedgerProvider, StorageLedgerProvider,
-    TransactionStateProvider, TxProvider,
 };
-use neo_config::ProtocolSettings;
+use neo_config::{ChainSpecProvider, NeoChainSpec, ProtocolSettings};
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_mempool::MemoryPool;
+use neo_mempool::{MemoryPool, TransactionAdmissionOutcome, TransactionOrigin};
 use neo_network::NetworkHandle;
-use neo_payloads::{Transaction, VerifyResult};
-use neo_runtime::{ConfigProvider, ServiceError, StoreProvider, TxAdmission};
+use neo_payloads::Transaction;
+use neo_runtime::{StoreProvider, TxAdmission};
 use neo_storage::persistence::DataCache;
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
 
-use super::native_provider::NativeProviderAdapter;
 use super::rpc_services::RpcServices;
 
 /// Service handle bundle for the RPC server.
@@ -49,8 +48,8 @@ where
     P: NativeContractProvider,
     S: Store,
 {
-    /// Protocol settings the node is running with.
-    settings: Arc<ProtocolSettings>,
+    /// Immutable chain specification selected by the composition root.
+    chain_spec: Arc<NeoChainSpec>,
 
     /// Storage backend.
     storage: Arc<S>,
@@ -85,7 +84,7 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NodeContext")
-            .field("settings", &"<ProtocolSettings>")
+            .field("chain_spec", &self.chain_spec.identity())
             .field("storage", &"<Store>")
             .field("blockchain", &"BlockchainHandle")
             .field("network", &"NetworkHandle")
@@ -115,7 +114,7 @@ where
     /// from the core node. `NodeContext` deliberately does not depend on the
     /// concrete `neo_system::Node` layout.
     pub fn from_parts(
-        settings: Arc<ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         storage: Arc<S>,
         blockchain: BlockchainHandle,
         network: NetworkHandle,
@@ -126,7 +125,7 @@ where
         cold_ledger_provider: OptionalStaticLedgerProvider,
     ) -> Self {
         Self {
-            settings,
+            chain_spec,
             storage,
             blockchain,
             network,
@@ -140,7 +139,12 @@ where
 
     /// Returns the protocol settings.
     pub fn settings(&self) -> Arc<ProtocolSettings> {
-        Arc::clone(&self.settings)
+        self.chain_spec.protocol_settings_arc()
+    }
+
+    /// Returns the immutable chain specification selected at startup.
+    pub fn chain_spec(&self) -> Arc<NeoChainSpec> {
+        Arc::clone(&self.chain_spec)
     }
 
     /// Returns the blockchain service handle.
@@ -168,6 +172,28 @@ where
         Arc::clone(&self.mempool)
     }
 
+    /// Submit through the canonical mempool boundary and apply origin-based
+    /// propagation only after admission succeeds.
+    pub fn submit_transaction(
+        &self,
+        origin: TransactionOrigin,
+        transaction: Transaction,
+    ) -> TransactionAdmissionOutcome {
+        let store_cache = StoreCache::<S>::new_from_snapshot(self.storage.snapshot());
+        let snapshot = store_cache.data_cache();
+        let provider = TransactionAdmissionLedger::new(self.ledger_provider(snapshot));
+        let relay = origin.should_propagate().then(|| transaction.clone());
+        let outcome = self
+            .mempool
+            .add_transaction(origin, transaction, snapshot, &provider);
+        if outcome.is_accepted() {
+            if let Some(transaction) = relay {
+                let _ = self.network.try_broadcast_transaction(transaction);
+            }
+        }
+        outcome
+    }
+
     /// Returns the shared header cache.
     pub fn header_cache(&self) -> Arc<HeaderCache> {
         Arc::clone(&self.header_cache)
@@ -175,17 +201,21 @@ where
 
     /// Maximum increment of `valid_until_block` over the current height.
     pub fn max_valid_until_block_increment(&self) -> u32 {
-        self.settings.max_valid_until_block_increment
+        self.chain_spec
+            .protocol_settings()
+            .max_valid_until_block_increment
     }
 
     /// Target time between blocks.
     pub fn time_per_block(&self) -> Duration {
-        Duration::from_millis(u64::from(self.settings.milliseconds_per_block))
+        Duration::from_millis(u64::from(
+            self.chain_spec.protocol_settings().milliseconds_per_block,
+        ))
     }
 
     /// Maximum number of traceable blocks.
     pub fn max_traceable_blocks(&self) -> u32 {
-        self.settings.max_traceable_blocks
+        self.chain_spec.protocol_settings().max_traceable_blocks
     }
 
     /// Returns the typed RPC service bundle.
@@ -274,17 +304,15 @@ where
     }
 }
 
-impl<P, S> ConfigProvider for NodeContext<P, S>
+impl<P, S> ChainSpecProvider for NodeContext<P, S>
 where
     P: NativeContractProvider + 'static,
     S: Store + 'static,
 {
-    fn settings(&self) -> Arc<ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
+    type ChainSpec = NeoChainSpec;
 
-    fn max_valid_until_block_increment(&self) -> u32 {
-        self.settings.max_valid_until_block_increment
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        Arc::clone(&self.chain_spec)
     }
 }
 
@@ -293,49 +321,10 @@ where
     P: NativeContractProvider + 'static,
     S: Store + 'static,
 {
-    fn try_enqueue_preverify<B: neo_storage::CacheRead>(
-        &self,
-        tx: Transaction,
-        relay: bool,
-        snapshot: &DataCache<B>,
-    ) -> Result<(), ServiceError> {
-        let hash = tx
-            .try_hash()
-            .map_err(|_| ServiceError::internal(format!("{:?}", VerifyResult::Invalid)))?;
-        let ledger = self.ledger_provider(snapshot);
-        if ledger.contains_transaction(&hash).map_err(|error| {
-            ServiceError::internal(format!("ledger contains_transaction: {error}"))
-        })? {
-            return Err(ServiceError::internal(format!(
-                "{:?}",
-                VerifyResult::AlreadyExists
-            )));
-        }
+    type Origin = TransactionOrigin;
+    type Outcome = TransactionAdmissionOutcome;
 
-        let native = NativeProviderAdapter::new(Arc::clone(&self.native_contract_provider));
-        let max_traceable_blocks = native
-            .max_traceable_blocks(snapshot, self.settings.as_ref())
-            .map_err(|error| ServiceError::internal(format!("MaxTraceableBlocks: {error}")))?;
-        let signers: Vec<_> = tx.signers().iter().map(|signer| signer.account).collect();
-        if ledger
-            .contains_conflict_hash(&hash, &signers, max_traceable_blocks)
-            .map_err(|error| {
-                ServiceError::internal(format!("ledger contains_conflict_hash: {error}"))
-            })?
-        {
-            return Err(ServiceError::internal(format!(
-                "{:?}",
-                VerifyResult::HasConflicts
-            )));
-        }
-
-        let result = self.mempool.try_add(tx.clone(), snapshot);
-        if result != VerifyResult::Succeed {
-            return Err(ServiceError::internal(format!("{result:?}")));
-        }
-        if relay {
-            let _ = self.network.try_broadcast_transaction(tx);
-        }
-        Ok(())
+    fn submit_transaction(&self, origin: Self::Origin, transaction: Transaction) -> Self::Outcome {
+        NodeContext::submit_transaction(self, origin, transaction)
     }
 }

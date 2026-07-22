@@ -4,7 +4,7 @@
 //! bytecode layout for C# `ScriptBuilderExtensions.EmitDynamicCall`.
 
 use neo_error::{CoreError, CoreResult};
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::UInt160;
 use neo_vm::script_builder::ScriptBuilder;
 

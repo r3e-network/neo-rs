@@ -16,7 +16,6 @@
 //! - Bounded worker-pool configuration and fixed-cardinality metrics.
 //! - Exact-input header preverification tickets and cancellation.
 //! - Ordered look-ahead windows for header, inventory, and archive import.
-//! - Existing state-independent transaction verification receipts.
 
 #[cfg(test)]
 use std::collections::VecDeque;
@@ -26,14 +25,14 @@ use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
-use neo_config::{Hardfork, ProtocolSettings};
+use neo_config::ProtocolSettings;
 use neo_crypto::Crypto;
 use neo_execution::{
     PreverifiedSignatureCache, PreverifiedSignatureCacheMetricsSnapshot,
     preverify_standard_witness_signatures,
 };
 use neo_io::{BinaryWriter, Serializable};
-use neo_payloads::{Header, Transaction, Witness};
+use neo_payloads::{Header, Witness};
 use neo_primitives::UInt256;
 
 mod window;
@@ -116,9 +115,6 @@ pub enum SignatureVerificationPoolConfigError {
 /// Failure from a signature-verification job.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SignatureVerificationError {
-    /// A state-independent transaction signature check failed.
-    #[error("signature verification failed: {0}")]
-    InvalidWitness(String),
     /// The owning speculative batch was invalidated before this queued job
     /// began preverification work.
     #[error("signature preverification was cancelled before execution")]
@@ -197,8 +193,6 @@ pub struct SignatureVerificationPoolMetricsSnapshot {
     pub submitted: u64,
     /// Jobs that completed normally, including advisory fallback results.
     pub completed: u64,
-    /// State-independent transaction jobs rejected by signature verification.
-    pub invalid: u64,
     /// Queued jobs cancelled after their speculative batch was invalidated.
     pub cancelled: u64,
     /// Jobs terminated by a worker panic.
@@ -237,7 +231,6 @@ impl SignatureVerificationPoolMetricsSnapshot {
 struct SignatureVerificationPoolMetrics {
     submitted: AtomicU64,
     completed: AtomicU64,
-    invalid: AtomicU64,
     cancelled: AtomicU64,
     worker_panics: AtomicU64,
     worker_unavailable: AtomicU64,
@@ -258,9 +251,6 @@ impl SignatureVerificationPoolMetrics {
             Ok(_) => {
                 self.completed.fetch_add(1, Ordering::Relaxed);
             }
-            Err(SignatureVerificationError::InvalidWitness(_)) => {
-                self.invalid.fetch_add(1, Ordering::Relaxed);
-            }
             Err(SignatureVerificationError::Cancelled) => {
                 self.cancelled.fetch_add(1, Ordering::Relaxed);
             }
@@ -277,7 +267,6 @@ impl SignatureVerificationPoolMetrics {
         SignatureVerificationPoolMetricsSnapshot {
             submitted: self.submitted.load(Ordering::Relaxed),
             completed: self.completed.load(Ordering::Relaxed),
-            invalid: self.invalid.load(Ordering::Relaxed),
             cancelled: self.cancelled.load(Ordering::Relaxed),
             worker_panics: self.worker_panics.load(Ordering::Relaxed),
             worker_unavailable: self.worker_unavailable.load(Ordering::Relaxed),
@@ -333,40 +322,6 @@ impl<R> SignatureVerificationTicket<R> {
         }
     }
 }
-
-/// A receipt for a transaction whose complete signer witness set used only
-/// state-independent standard signature scripts.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TransactionSignatureVerificationReceipt {
-    transaction_hash: UInt256,
-    transaction_digest: UInt256,
-    network_magic: u32,
-    chain_spec_id: UInt256,
-}
-
-impl TransactionSignatureVerificationReceipt {
-    /// Transaction hash covered by this receipt.
-    #[must_use]
-    pub const fn transaction_hash(&self) -> UInt256 {
-        self.transaction_hash
-    }
-
-    /// Checks that the receipt still covers the exact transaction and chain
-    /// identity at the publication fence.
-    #[must_use]
-    pub fn matches(&self, transaction: &Transaction, settings: &ProtocolSettings) -> bool {
-        transaction.try_hash().ok().is_some_and(|hash| {
-            self.transaction_hash == hash
-                && transaction_digest(transaction) == Some(self.transaction_digest)
-                && self.network_magic == settings.network
-                && self.chain_spec_id == protocol_settings_identity_digest(settings)
-        })
-    }
-}
-
-/// Ticket returned for a transaction signature job.
-pub type TransactionSignatureVerificationTicket =
-    SignatureVerificationTicket<TransactionSignatureVerificationReceipt>;
 
 /// Exact-input advisory cache produced for one standard header witness.
 ///
@@ -701,43 +656,6 @@ impl SignatureVerificationPool {
         };
         self.try_submit_cancellable(cancellation.token(), job)
     }
-
-    /// Schedules state-independent standard transaction signature checks.
-    ///
-    /// Contract-account and witness-rule transactions are rejected before
-    /// queue admission because their verification depends on canonical state.
-    /// Callers must leave those transactions on the ordinary verifier path.
-    pub fn try_submit_transaction_state_independent(
-        &self,
-        transaction: Arc<Transaction>,
-        settings: Arc<ProtocolSettings>,
-    ) -> Result<TransactionSignatureVerificationTicket, SignatureVerificationSubmitError> {
-        if !neo_mempool::transaction_witnesses_are_state_independent(&transaction) {
-            return Err(SignatureVerificationSubmitError::InvalidInput(
-                "transaction witness requires state-dependent verification",
-            ));
-        }
-        let transaction_hash = transaction
-            .try_hash()
-            .map_err(|_| SignatureVerificationSubmitError::InvalidInput("transaction hash"))?;
-        let transaction_digest = transaction_digest(&transaction).ok_or(
-            SignatureVerificationSubmitError::InvalidInput("transaction encoding"),
-        )?;
-        self.try_submit(move || {
-            let result = neo_mempool::verify_state_independent(&transaction, &settings);
-            if result != neo_primitives::VerifyResult::Succeed {
-                return Err(invalid(format!(
-                    "transaction signature verification failed: {result:?}"
-                )));
-            }
-            Ok(TransactionSignatureVerificationReceipt {
-                transaction_hash,
-                transaction_digest,
-                network_magic: settings.network,
-                chain_spec_id: protocol_settings_identity_digest(&settings),
-            })
-        })
-    }
 }
 
 impl Drop for SignatureVerificationPool {
@@ -753,65 +671,17 @@ impl Drop for SignatureVerificationPool {
     }
 }
 
-fn invalid(reason: impl Into<String>) -> SignatureVerificationError {
-    SignatureVerificationError::InvalidWitness(reason.into())
-}
-
 fn witness_digest(witness: &Witness) -> Option<UInt256> {
     let mut writer = BinaryWriter::new();
     witness.serialize(&mut writer).ok()?;
     Some(UInt256::from(Crypto::sha256(&writer.into_bytes())))
 }
 
-fn transaction_digest(transaction: &Transaction) -> Option<UInt256> {
-    let mut writer = BinaryWriter::new();
-    transaction.serialize(&mut writer).ok()?;
-    Some(UInt256::from(Crypto::sha256(&writer.into_bytes())))
-}
-
-fn protocol_settings_identity_digest(settings: &ProtocolSettings) -> UInt256 {
-    let mut bytes = Vec::with_capacity(256);
-    bytes.extend_from_slice(&settings.network.to_le_bytes());
-    bytes.push(settings.address_version);
-    bytes.extend_from_slice(&settings.validators_count.to_le_bytes());
-    bytes.extend_from_slice(&settings.milliseconds_per_block.to_le_bytes());
-    bytes.extend_from_slice(&settings.max_valid_until_block_increment.to_le_bytes());
-    bytes.extend_from_slice(&settings.max_transactions_per_block.to_le_bytes());
-    bytes.extend_from_slice(&settings.max_block_size.to_le_bytes());
-    bytes.extend_from_slice(&settings.max_traceable_blocks.to_le_bytes());
-    bytes.extend_from_slice(&settings.initial_gas_distribution.to_le_bytes());
-    bytes.extend_from_slice(&(settings.standby_committee.len() as u32).to_le_bytes());
-    for key in &settings.standby_committee {
-        let key_bytes = key.as_bytes();
-        bytes.extend_from_slice(&(key_bytes.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(key_bytes);
-    }
-    for hardfork in Hardfork::ALL {
-        let defined = settings.is_hardfork_defined(hardfork);
-        bytes.push(defined as u8);
-        if defined {
-            let mut low = 0u32;
-            let mut high = u32::MAX;
-            while low < high {
-                let midpoint = low + (high - low) / 2;
-                if settings.is_hardfork_enabled(hardfork, midpoint) {
-                    high = midpoint;
-                } else {
-                    low = midpoint.saturating_add(1);
-                }
-            }
-            bytes.extend_from_slice(&low.to_le_bytes());
-        }
-    }
-    UInt256::from(Crypto::sha256(&bytes))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use neo_config::ProtocolSettings;
-    use neo_payloads::{Signer, Transaction, Witness};
-    use neo_primitives::{UInt160, WitnessScope};
+    use neo_payloads::Witness;
 
     fn test_header(witness: Witness) -> Header {
         Header::from_parts(
@@ -841,40 +711,6 @@ mod tests {
         invocation.extend_from_slice(&signature);
         header.witness = Witness::new_with_scripts(invocation, verification);
         header
-    }
-
-    fn standard_transaction_with_signature(signature: [u8; 64]) -> Transaction {
-        let verification =
-            neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
-                &[2u8; 33],
-            );
-        let mut invocation = vec![neo_vm::OpCode::PUSHDATA1.byte(), 64];
-        invocation.extend_from_slice(&signature);
-        let account = UInt160::from_script(&verification);
-        let mut transaction = Transaction::new();
-        transaction.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
-        transaction.set_signers(vec![Signer::new(account, WitnessScope::NONE)]);
-        transaction.set_witnesses(vec![Witness::new_with_scripts(invocation, verification)]);
-        transaction
-    }
-
-    fn valid_standard_transaction() -> Transaction {
-        let private = [7u8; 32];
-        let public = neo_crypto::Secp256r1Crypto::derive_public_key(&private).expect("public key");
-        let verification =
-            neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public);
-        let account = UInt160::from_script(&verification);
-        let mut transaction = Transaction::new();
-        transaction.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
-        transaction.set_signers(vec![Signer::new(account, WitnessScope::NONE)]);
-        let hash = transaction.try_hash().expect("transaction hash");
-        let mut sign_data = ProtocolSettings::default().network.to_le_bytes().to_vec();
-        sign_data.extend_from_slice(&hash.to_bytes());
-        let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private).expect("signature");
-        let mut invocation = vec![neo_vm::OpCode::PUSHDATA1.byte(), 64];
-        invocation.extend_from_slice(&signature);
-        transaction.set_witnesses(vec![Witness::new_with_scripts(invocation, verification)]);
-        transaction
     }
 
     fn assert_no_canonical_header_cache_consumption(
@@ -933,22 +769,12 @@ mod tests {
         })
         .expect("pool");
         let valid = pool.try_submit(|| Ok(7u8)).expect("valid ticket");
-        let invalid = pool
-            .try_submit(|| -> Result<u8, SignatureVerificationError> {
-                Err(SignatureVerificationError::InvalidWitness("invalid".into()))
-            })
-            .expect("invalid ticket");
         assert!(valid.wait().is_ok());
-        assert!(matches!(
-            invalid.wait(),
-            Err(SignatureVerificationError::InvalidWitness(_))
-        ));
 
         let metrics = pool.metrics_snapshot();
-        assert_eq!(metrics.submitted, 2);
-        assert_eq!(metrics.accepted(), 2);
+        assert_eq!(metrics.submitted, 1);
+        assert_eq!(metrics.accepted(), 1);
         assert_eq!(metrics.completed, 1);
-        assert_eq!(metrics.invalid, 1);
         assert_eq!(metrics.worker_panics, 0);
         assert_eq!(metrics.worker_unavailable, 0);
         assert_eq!(metrics.queue_full, 0);
@@ -1184,7 +1010,6 @@ mod tests {
         assert!(result.is_none());
         let metrics = pool.metrics_snapshot();
         assert_eq!(metrics.completed, 1);
-        assert_eq!(metrics.invalid, 0);
         assert_eq!(metrics.header_standard_caches_prepared, 0);
         assert_eq!(metrics.header_unsupported_witness_fallbacks, 1);
         assert_eq!(metrics.header_preverified_ecdsa_operations, 0);
@@ -1215,86 +1040,9 @@ mod tests {
         assert!(preverification.matches(&header, &settings));
         let metrics = pool.metrics_snapshot();
         assert_eq!(metrics.completed, 1);
-        assert_eq!(metrics.invalid, 0);
         assert_eq!(metrics.header_standard_caches_prepared, 1);
         assert_eq!(metrics.header_unsupported_witness_fallbacks, 0);
         assert_eq!(metrics.header_preverified_ecdsa_operations, 1);
         assert_no_canonical_header_cache_consumption(metrics);
-    }
-
-    #[test]
-    fn transaction_job_rejects_invalid_standard_signature() {
-        let pool = SignatureVerificationPool::new(SignatureVerificationPoolConfig {
-            workers: 1,
-            queue_capacity: 1,
-        })
-        .expect("pool");
-        let transaction = Arc::new(standard_transaction_with_signature([0u8; 64]));
-        let ticket = pool
-            .try_submit_transaction_state_independent(
-                Arc::clone(&transaction),
-                Arc::new(ProtocolSettings::default()),
-            )
-            .expect("ticket");
-        assert!(matches!(
-            ticket.wait(),
-            Err(SignatureVerificationError::InvalidWitness(reason))
-                if reason.contains("transaction signature verification failed")
-        ));
-        assert_no_canonical_header_cache_consumption(pool.metrics_snapshot());
-    }
-
-    #[test]
-    fn transaction_job_skips_state_dependent_witnesses() {
-        let pool = SignatureVerificationPool::new(SignatureVerificationPoolConfig {
-            workers: 1,
-            queue_capacity: 1,
-        })
-        .expect("pool");
-        let mut transaction = Transaction::new();
-        transaction.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
-        transaction.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
-        transaction.set_witnesses(vec![Witness::new_with_scripts(
-            Vec::new(),
-            vec![neo_vm::OpCode::PUSH1.byte()],
-        )]);
-        assert!(matches!(
-            pool.try_submit_transaction_state_independent(
-                Arc::new(transaction),
-                Arc::new(ProtocolSettings::default()),
-            ),
-            Err(SignatureVerificationSubmitError::InvalidInput(reason))
-                if reason.contains("state-dependent")
-        ));
-    }
-
-    #[test]
-    fn transaction_receipt_rejects_changed_witness_with_same_unsigned_hash() {
-        let settings = ProtocolSettings::default();
-        let transaction = valid_standard_transaction();
-        let receipt = TransactionSignatureVerificationReceipt {
-            transaction_hash: transaction.try_hash().expect("transaction hash"),
-            transaction_digest: transaction_digest(&transaction).expect("transaction digest"),
-            network_magic: settings.network,
-            chain_spec_id: protocol_settings_identity_digest(&settings),
-        };
-
-        let mut changed = transaction.clone();
-        changed.set_witnesses(vec![Witness::new_with_scripts(
-            {
-                let mut invocation = vec![neo_vm::OpCode::PUSHDATA1.byte(), 64];
-                invocation.extend_from_slice(&[1u8; 64]);
-                invocation
-            },
-            changed.witnesses()[0].verification_script().to_vec(),
-        )]);
-        assert_eq!(
-            transaction.try_hash().expect("transaction hash"),
-            changed.try_hash().expect("unsigned hash is unchanged")
-        );
-        assert!(!receipt.matches(&changed, &settings));
-        let mut wrong_network = settings.clone();
-        wrong_network.network = wrong_network.network.saturating_add(1);
-        assert!(!receipt.matches(&transaction, &wrong_network));
     }
 }

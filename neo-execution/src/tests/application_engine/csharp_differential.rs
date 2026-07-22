@@ -47,8 +47,8 @@ fn engine(settings: ProtocolSettings) -> ApplicationEngine {
 
 fn hardfork_settings(entries: &[(Hardfork, u32)]) -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.clear();
-    settings.hardforks.extend(entries.iter().copied());
+    settings.hardforks =
+        neo_config::HardforkSchedule::new().with_activations(entries.iter().copied());
     settings
 }
 

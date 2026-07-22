@@ -20,23 +20,12 @@ neo-crypto = { workspace = true }
 neo-error = { workspace = true }
 neo-io = { workspace = true }
 neo-vm = { workspace = true }
-neo-storage = { workspace = true }
 neo-serialization = { workspace = true }
-neo-manifest = { workspace = true }
-neo-config = { workspace = true }
-
-# Scripting
-
-# Async runtime
-tokio = { workspace = true, features = ["macros", "rt"] }
 
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
 base64 = { workspace = true }
-
-# Error handling
-thiserror = { workspace = true }
 
 # Logging
 tracing = { workspace = true }

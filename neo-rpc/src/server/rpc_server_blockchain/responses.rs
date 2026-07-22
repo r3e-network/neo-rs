@@ -4,11 +4,11 @@
 //! enrichment for blocks, headers, contracts, governance/native results,
 //! mempool entries, storage, and transactions.
 
-use crate::client::models::RpcContractState;
 use crate::server::ledger_queries;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
+use crate::types::RpcContractState;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_execution::contract_state::ContractState;
 use neo_io::Serializable;
@@ -31,7 +31,7 @@ pub(super) fn block_to_json(
     let transactions: Vec<Value> = block
         .transactions
         .iter()
-        .map(|tx| tx.to_json(&settings))
+        .map(|tx| tx.to_json(settings.address_version))
         .collect();
     json.insert("tx".to_string(), Value::Array(transactions));
     Value::Object(json)
@@ -132,7 +132,7 @@ fn header_fields_to_map(
     // only the contextual confirmations / nextblockhash on top.
     let system = server.system();
     let settings = system.settings();
-    let mut json = header.to_json(&settings);
+    let mut json = header.to_json(settings.address_version);
     let confirmations = current_index.saturating_sub(header.index()) + 1;
     json.insert("confirmations".to_string(), json!(confirmations));
     if let Some(hash) = next_hash {
@@ -196,7 +196,7 @@ pub(super) fn transaction_to_verbose_json(
 ) -> Result<Value, RpcException> {
     let system = server.system();
     let settings = system.settings();
-    let mut json = tx.to_json(&settings);
+    let mut json = tx.to_json(settings.address_version);
 
     if let (Value::Object(obj), Some(state)) = (&mut json, state) {
         append_ledger_transaction_context(server, obj, state)?;

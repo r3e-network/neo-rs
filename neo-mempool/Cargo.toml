@@ -11,7 +11,7 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-description = "Canonical home for the Neo transaction memory pool, PoolItem, transaction router, and per-block verification context"
+description = "Canonical home for Neo transaction admission, pool policy, indexes, and per-block verification context"
 
 [dependencies]
 neo-primitives = { workspace = true }
@@ -29,6 +29,7 @@ neo-vm = { workspace = true }
 neo-io = { workspace = true }
 num-bigint = { workspace = true }
 parking_lot = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 neo-serialization = { workspace = true }

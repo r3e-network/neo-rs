@@ -1,5 +1,5 @@
-use super::super::test_fixtures::rpc_case_request;
 use super::*;
+use crate::types::test_fixtures::rpc_case_request;
 use neo_serialization::json::JArray;
 
 #[test]

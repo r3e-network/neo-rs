@@ -1,7 +1,6 @@
 //! Block header.
 
 use crate::witness::Witness;
-use neo_config::ProtocolSettings;
 use neo_error::CoreResult;
 use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
@@ -232,10 +231,7 @@ impl Header {
     /// header wire-JSON shared by the RPC server and client; callers that serve
     /// `getblock`/`getblockheader` add the contextual `confirmations` and
     /// optional `nextblockhash` fields on top.
-    pub fn to_json(
-        &self,
-        settings: &ProtocolSettings,
-    ) -> serde_json::Map<String, serde_json::Value> {
+    pub fn to_json(&self, address_version: u8) -> serde_json::Map<String, serde_json::Value> {
         use serde_json::{Value, json};
         let hash = self.hash();
         let mut json = serde_json::Map::new();
@@ -261,7 +257,7 @@ impl Header {
             "nextconsensus".to_string(),
             Value::String(
                 self.next_consensus()
-                    .to_address_with_version(settings.address_version),
+                    .to_address_with_version(address_version),
             ),
         );
         json.insert(

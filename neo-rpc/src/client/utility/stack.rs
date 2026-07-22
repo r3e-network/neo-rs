@@ -6,9 +6,8 @@ use num_bigint::BigInt;
 use num_traits::Zero;
 use thiserror::Error;
 
-use super::parsing::{
-    fallible_object_array, parse_base64_token, parse_object_array_lossy, parse_u32_token,
-};
+use super::parsing::{fallible_object_array, parse_base64_token, parse_u32_token};
+use crate::types::json::parse_object_array_lossy;
 
 /// Error type for JSON-RPC stack-item parsing operations.
 ///

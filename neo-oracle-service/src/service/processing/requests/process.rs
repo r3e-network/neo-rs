@@ -45,6 +45,9 @@ where
         let response_pairs = native
             .oracle_requests_by_url(snapshot, &request.url)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
+        let chain_spec = self.runtime.chain_spec();
+        let protocol_settings = chain_spec.protocol_settings();
+        let network_magic = chain_spec.network_magic();
 
         let mut tasks = Vec::new();
         for (pending_id, pending_request) in response_pairs {
@@ -72,7 +75,7 @@ where
                 &pending_request,
                 &mut response,
                 &oracle_nodes,
-                &self.runtime.settings(),
+                protocol_settings,
                 false,
             )?;
 
@@ -86,7 +89,7 @@ where
                 &pending_request,
                 &mut backup_response,
                 &oracle_nodes,
-                &self.runtime.settings(),
+                protocol_settings,
                 true,
             )?;
 
@@ -118,9 +121,8 @@ where
                     continue;
                 }
 
-                let tx_sign = sign_transaction(&response_tx, &key, self.runtime.settings().network);
-                let backup_sign =
-                    sign_transaction(&backup_tx, &key, self.runtime.settings().network);
+                let tx_sign = sign_transaction(&response_tx, &key, network_magic);
+                let backup_sign = sign_transaction(&backup_tx, &key, network_magic);
 
                 self.add_response_tx_sign(
                     snapshot,

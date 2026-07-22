@@ -8,12 +8,12 @@
 //! # Design
 //!
 //! The stage is split into two layers:
-//! - **Stateless checks** — size, transaction count, merkle root, duplicate
-//!   transactions, witness scripts, block version. These delegate to
+//! - **Stateless checks** — merkle root, duplicate transactions, witness
+//!   scripts, and block version. These delegate to
 //!   `BlockValidator` associated functions and require no external state.
 //! - **Stateful checks** — timestamp progression, header chaining (prev hash +
-//!   height), primary index validation. These require protocol settings and
-//!   a store snapshot, injected via [`ValidateContext`].
+//!   height), and primary index validation. These require protocol settings
+//!   and a store snapshot, injected via [`ValidateContext`].
 //!
 //! # Wiring Status
 //!
@@ -27,9 +27,10 @@
 //!
 //! # Bulk-Sync Behavior
 //!
-//! When `StageContext.trusted_replay` is true, the stage skips timestamp drift
-//! checks (trusted local replay path). This matches `ImportMode::TrustedReplay`
-//! with `verify: false`; `ImportMode::Sync` always runs full validation.
+//! Verification follows Neo N3 `Block.Verify`/`Header.Verify` semantics. Block
+//! size, the configured maximum transaction count, and the local wall clock
+//! are production/relay policies rather than consensus validity rules and are
+//! not enforced here.
 
 use std::fmt;
 use std::sync::Arc;
@@ -60,8 +61,9 @@ where
     C: ValidateContext,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let validators_count = self.ctx.chain_spec().protocol_settings().validators_count;
         f.debug_struct("NeoValidateStage")
-            .field("validators_count", &self.ctx.validators_count())
+            .field("validators_count", &validators_count)
             .finish_non_exhaustive()
     }
 }
@@ -81,11 +83,8 @@ where
     C: ValidateContext,
 {
     fn validate(&self, ctx: &StageContext, block: &Block) -> EngineResult<()> {
-        let settings = self.ctx.settings();
-
         // Stateless checks always run.
-        Self::run_stateless_checks(block, &settings)
-            .map_err(|e| Self::map_validation_error(block, e))?;
+        Self::run_stateless_checks(block).map_err(|e| Self::map_validation_error(block, e))?;
 
         // Stateful checks.
         self.run_stateful_checks(block, ctx)

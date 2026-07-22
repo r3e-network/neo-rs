@@ -70,8 +70,7 @@ fn verify_is_true_only_with_the_committee_witness() {
     let settings = ProtocolSettings::default();
     let faun_height = settings
         .hardforks
-        .get(&Hardfork::HfFaun)
-        .copied()
+        .activation_height(Hardfork::HfFaun)
         .expect("default settings schedule Faun");
     deploy_native(
         &cache,

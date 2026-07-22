@@ -26,7 +26,7 @@ still release gates, not current claims.
 neo-rs is a from-scratch node implementation intended to speak Neo N3's wire
 protocol, execute its virtual machine, and maintain the same ledger and state
 as the canonical C# node. It is not yet promoted as a production replacement:
-the retained MainNet replay currently reaches height **3,377,022** with a root
+the retained MainNet replay evidence reaches height **3,377,022** with a root
 matching two public references, while full-history and later-hardfork evidence
 remain incomplete. It is organized as an 8-layer, multi-crate Rust workspace built on mature
 libraries (MDBX, jsonrpsee, the RustCrypto suite) with the protocol-defining
@@ -41,7 +41,7 @@ remaining release gates.
 
 | Area | Support |
 |------|---------|
-| **Networks** | MainNet, TestNet, and private nets (configurable) |
+| **Networks** | Validated built-in MainNet and TestNet chain specifications; daemon-loaded private specs are not yet supported |
 | **Consensus** | dBFT 2.0 (single-block finality, view changes) |
 | **Virtual machine** | NeoVM with full opcode + interop surface and gas metering |
 | **State** | Merkle-Patricia Trie state root, proofs (`getproof`/`getstate`) |
@@ -54,7 +54,7 @@ remaining release gates.
 
 ## Architecture at a glance
 
-The workspace is organized into **8 ordered layers, 28 production workspace members**
+The workspace is organized into **8 ordered layers, 29 production workspace members**
 (plus 3 development-only members). Dependencies flow downward or through
 an explicitly audited, one-way same-layer edge, so foundation crates know
 nothing of the services above them.
@@ -67,14 +67,14 @@ flowchart TD
     NODE["<b>Node Services</b><br/>neo-blockchain · neo-network · neo-wallets<br/>neo-indexer · neo-oracle-service"]
     DOM["<b>Domain Services</b><br/>neo-runtime · neo-execution · neo-native-contracts<br/>neo-state-service · neo-mempool"]
     PROTO["<b>Protocol</b><br/>neo-payloads · neo-consensus · neo-hsm"]
-    INF["<b>Infrastructure</b><br/>neo-io · neo-error · neo-crypto · neo-storage · neo-static-files<br/>neo-state-packs · neo-checkpoint · neo-config · neo-vm · neo-serialization · neo-manifest"]
+    INF["<b>Infrastructure</b><br/>neo-io · neo-error · neo-crypto · neo-trie · neo-storage · neo-static-files<br/>neo-state-packs · neo-checkpoint · neo-config · neo-vm · neo-serialization · neo-manifest"]
     FND["<b>Foundation</b><br/>neo-primitives"]
     APP --> PLUG --> COMP --> NODE --> DOM --> PROTO --> INF --> FND
 ```
 
-The architecture follows patterns from **reth** (provider traits, the sealed
-`NodeTypes` seam, pipeline stage abstraction,
-feature-gated RPC) and **Polkadot/Substrate** (bounded context layers,
+The architecture follows patterns from **reth** (immutable chain specs,
+provider capabilities, concrete composition builders, pipeline stage
+abstraction, feature-gated RPC) and **Polkadot/Substrate** (bounded context layers,
 per-domain error types, service trait composition). See [`design.md`](./design.md)
 for the full ADR log and the 4-phase evolution roadmap, and [docs/architecture.md](./docs/architecture.md)
 for the full crate reference. How a block, transaction, and consensus round
@@ -164,8 +164,8 @@ developers → *architecture → dataflow → protocol-compatibility → rpc-api
 
 ### Verifiable NeoFS checkpoints (deferred)
 
-The current engineering priority is exact Neo N3 v3.10.1 correctness, sustained
-MainNet continuation, and measured persistence and execution optimization.
+The current engineering priority is exact Neo N3 v3.10.1 correctness, clean
+crate ownership, and complete deterministic MainNet StateRoot replay.
 NeoFS checkpoint distribution is therefore not wired into node startup,
 storage, networking, or RPC.
 
@@ -189,7 +189,7 @@ promotion gates are tracked in
 ```
 neo-rs/
 ├── neo-primitives                          # L0 Foundation — primitive types
-├── neo-io, neo-error, neo-crypto,          # L1 Infrastructure
+├── neo-io, neo-error, neo-crypto, neo-trie, # L1 Infrastructure
 │   neo-storage, neo-static-files, neo-config,
 │   neo-state-packs, neo-checkpoint, neo-vm,
 │   neo-serialization, neo-manifest

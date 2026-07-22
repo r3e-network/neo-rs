@@ -386,11 +386,13 @@ async fn cancel_transaction_bumps_fee_for_mempool_conflict() {
     );
     let txid = conflict_tx.hash();
     let store_cache = server.system().store_cache();
-    let verify = server
-        .system()
-        .mempool()
-        .try_add(conflict_tx.clone(), store_cache.data_cache());
-    assert_eq!(verify, VerifyResult::Succeed);
+    let mempool = server.system().mempool();
+    let outcome = crate::server::test_support::admit_local_transaction(
+        &mempool,
+        &conflict_tx,
+        store_cache.data_cache(),
+    );
+    assert_eq!(outcome.verify_result(), VerifyResult::Succeed);
 
     let params = [
         Value::String(path.clone()),

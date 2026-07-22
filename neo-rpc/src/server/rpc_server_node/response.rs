@@ -12,6 +12,7 @@ use super::native_provider::VersionPolicyValues;
 pub(super) fn version_to_json(
     node: &LocalNodeInfo,
     protocol: &ProtocolSettings,
+    memory_pool_max_transactions: usize,
     rpc_settings: &RpcServerConfig,
     dynamic_policy_values: VersionPolicyValues,
 ) -> Value {
@@ -31,7 +32,7 @@ pub(super) fn version_to_json(
             "maxtraceableblocks": dynamic_policy_values.max_traceable_blocks,
             "maxvaliduntilblockincrement": dynamic_policy_values.max_valid_until_block_increment,
             "maxtransactionsperblock": protocol.max_transactions_per_block,
-            "memorypoolmaxtransactions": protocol.memory_pool_max_transactions,
+            "memorypoolmaxtransactions": memory_pool_max_transactions,
             "initialgasdistribution": protocol.initial_gas_distribution,
             "hardforks": hardforks_to_json(protocol),
             "standbycommittee": standby_committee_to_json(protocol),
@@ -44,7 +45,7 @@ fn hardforks_to_json(protocol: &ProtocolSettings) -> Vec<Value> {
     Hardfork::all()
         .iter()
         .filter_map(|fork| {
-            protocol.hardforks.get(fork).map(|height| {
+            protocol.hardforks.activation_height(*fork).map(|height| {
                 json!({
                     "name": format_hardfork(*fork),
                     "blockheight": height,

@@ -1,14 +1,12 @@
 use super::super::ClientRpcError;
-use super::super::models::{
-    RpcBlock, RpcBlockHeader, RpcContractState, RpcInvokeResult, RpcPeers, RpcRawMemPool,
-    RpcValidator, RpcVersion,
-};
+use super::super::models::{RpcBlock, RpcBlockHeader, RpcInvokeResult, RpcValidator, RpcVersion};
 use super::helpers::{
     parse_object_array_result, token_as_number, token_as_object, token_as_string,
 };
 use super::hooks::RpcObserver;
 use super::{MAX_JSON_NESTING, RpcClient};
 use crate::client::utility::cloned_token_array;
+use crate::types::{RpcContractState, RpcPeers, RpcRawMemPool};
 use base64::{Engine as _, engine::general_purpose};
 use neo_payloads::Signer;
 use neo_serialization::json::JToken;

@@ -10,24 +10,23 @@
 
 use std::sync::Arc;
 
-use neo_blockchain::{BlockchainService, MempoolLike, SystemContext};
-use neo_blockchain::{HeaderCache, LedgerContext};
-use neo_config::ProtocolSettings;
-use neo_mempool::MemoryPool;
+use neo_blockchain::ledger_provider::{StorageLedgerProvider, TransactionAdmissionLedger};
+use neo_blockchain::{BlockchainService, HeaderCache, LedgerContext, MempoolLike, SystemContext};
+use neo_config::{ChainSpecProvider, NeoChainSpec, ProtocolSettings};
+use neo_mempool::{MemoryPool, TransactionAdmissionOutcome, TransactionOrigin, TxPoolConfig};
 use neo_network::NetworkHandle;
 use neo_primitives::UInt160;
-use neo_primitives::verify_result::VerifyResult;
 use neo_storage::persistence::providers::{MemoryStore, RuntimeStore};
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::{StoreCache, StoreCacheBacking, TransactionalStore};
 use neo_storage::{StorageItem, StorageKey};
-use neo_system::Node;
+use neo_system::{Node, NodeBuilder};
 use num_bigint::BigInt;
 use parking_lot::Mutex;
 
 /// Minimal [`SystemContext`] for the fixture blockchain service.
 struct FixtureContext {
-    settings: Arc<ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     snapshot: Arc<neo_storage::persistence::StoreDataCache<MemoryStore>>,
     store_cache: Mutex<StoreCache<MemoryStore>>,
     native_contract_provider: Arc<neo_native_contracts::StandardNativeProvider>,
@@ -36,18 +35,22 @@ struct FixtureContext {
 impl std::fmt::Debug for FixtureContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FixtureContext")
-            .field("network", &self.settings.network)
+            .field("network", &self.chain_spec.network_magic())
             .finish_non_exhaustive()
+    }
+}
+
+impl ChainSpecProvider for FixtureContext {
+    type ChainSpec = NeoChainSpec;
+
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        Arc::clone(&self.chain_spec)
     }
 }
 
 impl SystemContext for FixtureContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = StoreCacheBacking<MemoryStore>;
-
-    fn settings(&self) -> Arc<ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
 
     fn current_height(&self) -> u32 {
         neo_native_contracts::LedgerContract::new()
@@ -77,14 +80,8 @@ impl SystemContext for FixtureContext {
 /// blockchain service's `add_transaction` admissions land in the same
 /// pool the RPC handlers read.
 ///
-/// Beyond pool admission, the adapter performs the C#
-/// `NeoSystem.ContainsTransaction` pre-checks of
-/// `Blockchain.OnNewTransaction` (v3.10.1): a hash already in the
-/// memory pool reports `AlreadyInPool`, a hash already persisted in
-/// the ledger reports `AlreadyExists`. The blockchain service hands
-/// `MempoolLike::try_add` the same store-backed snapshot used for block
-/// verification, while this adapter keeps the C# pre-check ordering
-/// local to the node's shared pool/store view.
+/// The adapter uses the same canonical admission API as production while
+/// selecting the fixture's store-backed Ledger provider.
 struct NodeMempoolAdapter {
     pool: Arc<MemoryPool>,
     store: Arc<MemoryStore>,
@@ -99,51 +96,39 @@ impl std::fmt::Debug for NodeMempoolAdapter {
 }
 
 impl MempoolLike for NodeMempoolAdapter {
-    fn try_add<B: neo_storage::CacheRead>(
+    fn add_transaction<B, L>(
         &self,
-        tx: &neo_payloads::Transaction,
+        origin: TransactionOrigin,
+        transaction: &neo_payloads::Transaction,
         _snapshot: &neo_storage::DataCache<B>,
-        _settings: &ProtocolSettings,
-    ) -> VerifyResult {
-        let hash = tx.hash();
-        // C# Blockchain.OnNewTransaction order: the mempool is consulted
-        // before the ledger, and both before pool admission.
-        if self.pool.contains(&hash) {
-            return VerifyResult::AlreadyInPool;
-        }
+        _ledger_provider: &L,
+    ) -> TransactionAdmissionOutcome
+    where
+        B: neo_storage::CacheRead,
+        L: neo_mempool::AdmissionLedgerProvider,
+    {
         let store = StoreCache::<MemoryStore>::new_from_store(Arc::clone(&self.store), true);
-        match neo_native_contracts::LedgerContract::new()
-            .contains_transaction(store.data_cache(), &hash)
-        {
-            Ok(true) => return VerifyResult::AlreadyExists,
-            Ok(false) => {}
-            Err(_) => return VerifyResult::Invalid,
-        }
-        self.pool.try_add(tx.clone(), store.data_cache())
-    }
-
-    fn try_add_cached<B: neo_storage::CacheRead>(
-        &self,
-        tx: &neo_payloads::Transaction,
-        _snapshot: &neo_storage::DataCache<B>,
-        _settings: &ProtocolSettings,
-        cached_state_independent: Option<VerifyResult>,
-    ) -> VerifyResult {
-        let hash = tx.hash();
-        if self.pool.contains(&hash) {
-            return VerifyResult::AlreadyInPool;
-        }
-        let store = StoreCache::<MemoryStore>::new_from_store(Arc::clone(&self.store), true);
-        match neo_native_contracts::LedgerContract::new()
-            .contains_transaction(store.data_cache(), &hash)
-        {
-            Ok(true) => return VerifyResult::AlreadyExists,
-            Ok(false) => {}
-            Err(_) => return VerifyResult::Invalid,
-        }
+        let provider =
+            TransactionAdmissionLedger::new(StorageLedgerProvider::new(store.data_cache()));
         self.pool
-            .try_add_cached(tx.clone(), store.data_cache(), cached_state_independent)
+            .add_transaction(origin, transaction.clone(), store.data_cache(), &provider)
     }
+}
+
+/// Admits a locally submitted transaction through the canonical typed pool
+/// boundary and a snapshot-bound Ledger provider.
+pub(crate) fn admit_local_transaction<B: neo_storage::CacheRead>(
+    pool: &MemoryPool,
+    transaction: &neo_payloads::Transaction,
+    snapshot: &neo_storage::DataCache<B>,
+) -> TransactionAdmissionOutcome {
+    let provider = TransactionAdmissionLedger::new(StorageLedgerProvider::new(snapshot));
+    pool.add_transaction(
+        TransactionOrigin::Local,
+        transaction.clone(),
+        snapshot,
+        &provider,
+    )
 }
 
 /// Builds an `Arc<NodeContext>` test system over an in-memory store.
@@ -157,12 +142,22 @@ pub(crate) fn test_system_with_services(
     settings: ProtocolSettings,
     services: crate::server::RpcServices<RuntimeStore>,
 ) -> Arc<crate::server::NodeContext> {
-    let settings = Arc::new(settings);
+    let (network, _cmd_rx, _event_tx) = NetworkHandle::channel(64, 64);
+    test_system_with_services_and_network(settings, services, network)
+}
+
+fn test_system_with_services_and_network(
+    settings: ProtocolSettings,
+    services: crate::server::RpcServices<RuntimeStore>,
+    network: NetworkHandle,
+) -> Arc<crate::server::NodeContext> {
+    let chain_spec = neo_test_fixtures::test_chain_spec(settings);
     let memory_store: Arc<MemoryStore> = Arc::new(MemoryStore::new());
     let storage: Arc<RuntimeStore> = Arc::new(RuntimeStore::Memory(memory_store.as_ref().clone()));
     let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
     let mempool = Arc::new(MemoryPool::new_with_native_contract_provider(
-        &settings,
+        Arc::clone(&chain_spec),
+        TxPoolConfig::default(),
         Arc::clone(&native_contract_provider),
     ));
     let header_cache = Arc::new(HeaderCache::default());
@@ -170,7 +165,7 @@ pub(crate) fn test_system_with_services(
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
     let system_ctx = Arc::new(FixtureContext {
-        settings: Arc::clone(&settings),
+        chain_spec: Arc::clone(&chain_spec),
         snapshot,
         store_cache: Mutex::new(store_cache),
         native_contract_provider: Arc::clone(&native_contract_provider),
@@ -189,23 +184,21 @@ pub(crate) fn test_system_with_services(
         runtime.spawn(service.run());
     }
 
-    let (network, _cmd_rx, _event_tx) = NetworkHandle::channel(64, 64);
-
-    let node = Node::builder()
-        .with_settings(settings)
-        .with_storage(storage)
-        .with_blockchain(blockchain)
-        .with_network(network)
-        .with_mempool(mempool)
-        .with_header_cache(header_cache)
-        .with_native_contract_provider(native_contract_provider)
-        .build()
-        .expect("test node composition should succeed");
+    let node = NodeBuilder::new(
+        chain_spec,
+        storage,
+        blockchain,
+        network,
+        mempool,
+        header_cache,
+        native_contract_provider,
+    )
+    .build();
     let node = Arc::new(node);
     seed_native_contract_records(&node);
     seed_genesis_state(&node);
     Arc::new(crate::server::NodeContext::from_parts(
-        node.settings(),
+        node.chain_spec(),
         node.storage(),
         node.blockchain(),
         node.network(),
@@ -215,6 +208,18 @@ pub(crate) fn test_system_with_services(
         node.native_contract_provider(),
         node.cold_ledger_provider(),
     ))
+}
+
+pub(crate) fn test_system_with_network_commands(
+    settings: ProtocolSettings,
+) -> (
+    Arc<crate::server::NodeContext>,
+    tokio::sync::mpsc::Receiver<neo_network::NetworkCommand>,
+) {
+    let (network, cmd_rx, _event_tx) = NetworkHandle::channel(64, 64);
+    let system =
+        test_system_with_services_and_network(settings, crate::server::RpcServices::new(), network);
+    (system, cmd_rx)
 }
 
 pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<crate::server::NodeContext> {
@@ -228,7 +233,7 @@ pub(crate) fn test_system_with_cold_ledger_provider(
     cold_ledger_provider: neo_blockchain::OptionalStaticLedgerProvider,
 ) -> Arc<crate::server::NodeContext> {
     Arc::new(crate::server::NodeContext::from_parts(
-        system.settings(),
+        system.chain_spec(),
         system.storage(),
         system.blockchain(),
         system.network(),
@@ -278,7 +283,7 @@ fn seed_native_contract_records<S>(node: &Node<neo_native_contracts::StandardNat
 where
     S: TransactionalStore + 'static,
 {
-    let settings = node.settings();
+    let settings = node.chain_spec().protocol_settings_arc();
     let mut store = node.store_cache();
     for contract in neo_native_contracts::standard_native_contracts() {
         let Some(state) = contract.contract_state(&settings, 0) else {
@@ -353,9 +358,9 @@ fn serialize_stack_item(item: &neo_vm::StackItem) -> Vec<u8> {
 /// `m = n - (n - 1) / 3` multi-signature contract over the validators.
 fn bft_address(validators: &[neo_crypto::ECPoint]) -> UInt160 {
     let m = validators.len() - (validators.len() - 1) / 3;
-    neo_execution::Helper::to_script_hash(&neo_execution::Contract::create(
+    neo_execution::Helper::to_script_hash(&neo_vm::Contract::create(
         vec![],
-        neo_execution::Contract::create_multi_sig_redeem_script(m, validators),
+        neo_vm::Contract::create_multi_sig_redeem_script(m, validators),
     ))
 }
 
@@ -393,7 +398,7 @@ where
     use neo_io::Serializable;
     use neo_vm::StackItem;
 
-    let settings = node.settings();
+    let settings = node.chain_spec().protocol_settings_arc();
     let mut store = node.store_cache();
 
     let signed_le = |value: i64| BigInt::from(value).to_signed_bytes_le();

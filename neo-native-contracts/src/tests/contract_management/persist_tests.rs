@@ -7,8 +7,12 @@ use neo_payloads::{Block, Header};
 use neo_primitives::TriggerType;
 
 fn settings_with(hardforks: &[(Hardfork, u32)]) -> ProtocolSettings {
+    let schedule = hardforks.iter().copied().fold(
+        neo_config::HardforkSchedule::new(),
+        |schedule, (hardfork, height)| schedule.with_activation(hardfork, height),
+    );
     ProtocolSettings {
-        hardforks: hardforks.iter().copied().collect::<HashMap<_, _>>(),
+        hardforks: schedule,
         ..ProtocolSettings::default()
     }
 }

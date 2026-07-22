@@ -11,14 +11,9 @@ use super::exporter::MetricsExporter;
 use super::http::serve_metrics_request;
 
 fn test_node() -> Arc<neo_system::Node> {
-    Arc::new(
-        neo_system::Node::new(
-            Arc::new(neo_config::ProtocolSettings::testnet()),
-            None,
-            None,
-        )
-        .expect("node"),
-    )
+    Arc::new(neo_system::Node::for_test(
+        neo_config::NeoChainSpec::testnet().expect("valid TestNet chain spec"),
+    ))
 }
 
 fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
@@ -26,10 +21,14 @@ fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
 }
 
 fn memory_pool(
-    settings: &neo_config::ProtocolSettings,
+    chain_spec: Arc<neo_config::NeoChainSpec>,
     native_contract_provider: Arc<neo_native_contracts::StandardNativeProvider>,
 ) -> neo_mempool::MemoryPool {
-    neo_mempool::MemoryPool::new_with_native_contract_provider(settings, native_contract_provider)
+    neo_mempool::MemoryPool::new_with_native_contract_provider(
+        chain_spec,
+        neo_mempool::TxPoolConfig::default(),
+        native_contract_provider,
+    )
 }
 
 fn mdbx_test_node(
@@ -49,7 +48,7 @@ fn mdbx_test_node(
     use neo_storage::persistence::storage::StorageConfig;
 
     let tmp = tempfile::TempDir::new().expect("tempdir");
-    let settings = Arc::new(neo_config::ProtocolSettings::testnet());
+    let chain_spec = neo_config::NeoChainSpec::testnet().expect("valid TestNet chain spec");
     let storage: Arc<neo_storage::mdbx::MdbxStore> = Arc::new(
         MdbxStoreProvider::new(StorageConfig {
             path: tmp.path().join("telemetry-mdbx"),
@@ -62,19 +61,20 @@ fn mdbx_test_node(
     let native_contract_provider = native_provider();
     let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
     let (network, _nrx, _etx) = NetworkHandle::channel(8, 8);
-    let node = neo_system::Node::builder()
-        .with_settings(Arc::clone(&settings))
-        .with_storage(storage)
-        .with_blockchain(blockchain)
-        .with_network(network)
-        .with_mempool(Arc::new(memory_pool(
-            &settings,
-            Arc::clone(&native_contract_provider),
-        )))
-        .with_header_cache(Arc::new(HeaderCache::default()))
-        .with_native_contract_provider(native_contract_provider)
-        .build()
-        .expect("node");
+    let mempool = Arc::new(memory_pool(
+        Arc::clone(&chain_spec),
+        Arc::clone(&native_contract_provider),
+    ));
+    let node = neo_system::NodeBuilder::new(
+        chain_spec,
+        storage,
+        blockchain,
+        network,
+        mempool,
+        Arc::new(HeaderCache::default()),
+        native_contract_provider,
+    )
+    .build();
     (Arc::new(node), tmp)
 }
 

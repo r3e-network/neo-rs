@@ -9,10 +9,10 @@
 //!
 //! ## Contents
 //!
-//! - [`lifecycle_lock`]: exclusive ownership of one local node data directory.
+//! - `process`: process-wide ownership and lifecycle primitives.
 
 #![doc(html_root_url = "https://docs.rs/neo-node/0.10.0")]
 
-pub mod lifecycle_lock;
+mod process;
 
-pub use lifecycle_lock::{NodeLifecycleLock, NodeLifecycleLockError};
+pub use process::{NodeLifecycleLock, NodeLifecycleLockError};

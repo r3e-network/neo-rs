@@ -1,6 +1,6 @@
 use super::hooks::{RpcClientHooks, RpcObserver, TracingRpcObserver};
 use super::{DEFAULT_HTTP_TIMEOUT, RpcClient};
-use crate::RpcClientError;
+use crate::client::RpcClientError;
 use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use reqwest::{Client, Url};

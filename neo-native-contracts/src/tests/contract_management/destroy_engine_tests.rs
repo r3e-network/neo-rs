@@ -183,7 +183,7 @@ fn destroy_removes_record_index_storage_and_blocks_hash() {
 /// so `destroy` runs the post-Gorgon block-*before*-erase path.
 fn settings_with_gorgon() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.clear();
+    settings.hardforks = neo_config::HardforkSchedule::new();
     for hf in [
         Hardfork::HfAspidochelone,
         Hardfork::HfBasilisk,
@@ -193,7 +193,7 @@ fn settings_with_gorgon() -> ProtocolSettings {
         Hardfork::HfFaun,
         Hardfork::HfGorgon,
     ] {
-        settings.hardforks.insert(hf, 0);
+        settings.hardforks = settings.hardforks.with_activation(hf, 0);
     }
     settings
 }
@@ -315,7 +315,7 @@ fn destroy_is_a_noop_for_a_non_contract_caller() {
 #[test]
 fn block_account_internal_faun_writes_timestamp_and_is_idempotent() {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfFaun, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfFaun, 0);
     let mut header = BlockHeader::default();
     header.set_index(1);
     header.set_timestamp(1_700_000_123_456);
@@ -373,7 +373,7 @@ fn block_account_internal_faun_runs_vote_transition_for_neo_holders() {
     // (here a no-op un-vote — the account votes for nobody), then the
     // blocked entry is written with the persisting block's timestamp.
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfFaun, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfFaun, 0);
     let mut header = BlockHeader::default();
     header.set_index(1);
     header.set_timestamp(1_700_000_000_000);

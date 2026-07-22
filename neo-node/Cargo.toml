@@ -53,7 +53,6 @@ neo-hsm = { workspace = true, optional = true }
 
 # Async channels
 futures = { workspace = true }
-zeroize = { workspace = true }
 
 # CLI and configuration
 clap = { workspace = true }
@@ -83,19 +82,16 @@ thiserror = { workspace = true }
 chrono = { workspace = true }
 libc = "0.2"
 sysinfo = { workspace = true }
-rand = { workspace = true }
 url = { workspace = true }
-num_cpus = { workspace = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }
 mimalloc = { version = "0.1", default-features = false }
 
 # The node workspace crates. (neo-tokens-tracker was merged into neo-rpc; its
 # tokens_tracker module is now at neo-rpc/src/plugins/tokens_tracker/.)
-neo-oracle-service = { workspace = true }
 neo-consensus = { workspace = true }
 neo-crypto = { workspace = true }
-neo-rpc = { workspace = true, features = ["server"] }
+neo-rpc = { workspace = true, features = ["client", "server"] }
 neo-indexer = { workspace = true }
 neo-config = { workspace = true }
 neo-execution = { workspace = true }
@@ -109,9 +105,9 @@ neo-state-packs = { workspace = true }
 neo-state-service = { workspace = true }
 neo-storage = { workspace = true }
 neo-static-files = { workspace = true }
+neo-trie = { workspace = true }
 neo-serialization = { workspace = true }
 neo-system = { workspace = true }
-neo-wallets = { workspace = true }
 neo-blockchain = { workspace = true }
 neo-manifest = { workspace = true }
 neo-vm = { workspace = true }
@@ -120,6 +116,7 @@ neo-mempool = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+neo-test-fixtures = { workspace = true }
 
 [[test]]
 name = "block_assembly_test"

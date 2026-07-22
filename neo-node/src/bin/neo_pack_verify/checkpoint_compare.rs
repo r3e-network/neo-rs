@@ -6,7 +6,7 @@ use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::{RawReadOnlyStore, Store};
 
 use super::{
-    AUTHORITY_LOOKUP_BATCH_VALUE_BYTES, AUTHORITY_LOOKUP_MAX_VALUE_BYTES, BATCH, STATE_NODE_PREFIX,
+    AUTHORITY_LOOKUP_BATCH_VALUE_BYTES, AUTHORITY_LOOKUP_MAX_VALUE_BYTES, BATCH, MPT_NODE_PREFIX,
     XorShift64,
 };
 
@@ -36,8 +36,8 @@ pub(super) fn compare_checkpoint_nodes(
     let mut total_value_bytes = 0u64;
     let sample_limit = u64::try_from(samples).expect("checkpoint sample limit fits u64");
     let maximum = (!full_scan).then_some(walk_cap);
-    state_store.visit_raw_entries_with_prefix(&[STATE_NODE_PREFIX], maximum, |key, value| {
-        if key.len() != PACK_KEY_BYTES || key.first() != Some(&STATE_NODE_PREFIX) {
+    state_store.visit_raw_entries_with_prefix(&[MPT_NODE_PREFIX], maximum, |key, value| {
+        if key.len() != PACK_KEY_BYTES || key.first() != Some(&MPT_NODE_PREFIX) {
             return Err(neo_storage::StorageError::invalid_operation(
                 "StateService node scan returned a malformed key",
             ));

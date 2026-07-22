@@ -1,16 +1,17 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
-use super::models::{RpcContractState, RpcNep17TokenInfo, RpcNep17Transfers};
+use super::models::{RpcNep17TokenInfo, RpcNep17Transfers};
+use crate::client::RpcClientError;
+use crate::types::RpcContractState;
 use crate::{
-    ContractClient, RpcClient, RpcClientError, RpcObserver, RpcUtility, TracingRpcObserver,
+    ContractClient, RpcClient, RpcObserver, RpcUtility, TracingRpcObserver,
     TransactionManagerFactory,
 };
 use neo_crypto::ECPoint;
-use neo_execution::Contract;
-use neo_manifest::CallFlags;
 use neo_payloads::{Signer, Transaction};
+use neo_primitives::CallFlags;
 use neo_primitives::{UInt160, WitnessScope};
-use neo_vm::OpCode;
 use neo_vm::script_builder::ScriptBuilder;
+use neo_vm::{Contract, OpCode};
 use neo_wallets::KeyPair;
 use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;

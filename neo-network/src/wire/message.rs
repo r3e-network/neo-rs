@@ -122,11 +122,16 @@ impl Message {
         // unknown/reserved bits are preserved and only the compressed bit has
         // current behavior.
         let flags = MessageFlags::from_byte(reader.read_u8()?);
-        let command = MessageCommand::from_byte(reader.read_u8()?)
-            .map_err(|e| WireError::InvalidMessage(format!("invalid command byte: {e}")))?;
+        let command = MessageCommand::from_byte(reader.read_u8()?);
         let payload_compressed = reader
             .read_var_bytes(PAYLOAD_MAX_SIZE)
             .map_err(|e| WireError::InvalidMessage(format!("invalid payload length: {e}")))?;
+        if reader.remaining() != 0 {
+            return Err(WireError::InvalidMessage(format!(
+                "trailing {} bytes after message frame",
+                reader.remaining()
+            )));
+        }
 
         let payload_raw = if payload_compressed.is_empty() {
             Vec::new()

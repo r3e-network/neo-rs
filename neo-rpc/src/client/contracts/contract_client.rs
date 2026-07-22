@@ -1,6 +1,7 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::RpcInvokeResult;
-use crate::{RpcClient, RpcClientError, RpcObserver, TracingRpcObserver};
+use crate::client::RpcClientError;
+use crate::{RpcClient, RpcObserver, TracingRpcObserver};
 use neo_manifest::ContractManifest;
 use neo_native_contracts::ContractManagement;
 use neo_payloads::{Signer, Transaction};

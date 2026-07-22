@@ -63,9 +63,6 @@ serde_json = { workspace = true, optional = true }
 # Error handling
 thiserror = { workspace = true }
 
-# Interior mutability + lock-free handles
-parking_lot = { workspace = true }
-
 # Observability
 tracing = { workspace = true }
 

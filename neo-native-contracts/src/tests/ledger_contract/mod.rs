@@ -14,14 +14,13 @@
 
 use super::wire::HashIndexState;
 use super::*;
-use neo_execution::Interoperable;
 use neo_io::{BinaryWriter, Serializable};
 use neo_payloads::Transaction;
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use neo_vm::{ExecutionEngineLimits, StackItem, VmState as VMState};
+use neo_vm::{ExecutionEngineLimits, Interoperable, StackItem, VmState as VMState};
 
 /// Structural equality for StackItem compound values.
 fn stack_item_struct_eq(a: &neo_vm::StackItem, b: &neo_vm::StackItem) -> bool {

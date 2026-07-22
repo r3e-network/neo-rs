@@ -309,16 +309,9 @@ impl PrefixOccupancyIndex {
             .map(|bytes| AtomicU64::new(u64::from_le_bytes(bytes.try_into().unwrap())))
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        let trust_startup = std::env::var("NEO_MDBX_PREFIX_INDEX_TRUST_STARTUP")
-            .ok()
-            .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
         Ok(Some(Self {
             baseline_transaction_id: header.snapshot_transaction_id,
-            covered_transaction_id: AtomicU64::new(if trust_startup {
-                u64::MAX
-            } else {
-                header.snapshot_transaction_id
-            }),
+            covered_transaction_id: AtomicU64::new(header.snapshot_transaction_id),
             spec: header.spec,
             words,
         }))

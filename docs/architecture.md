@@ -16,7 +16,7 @@ remote-ledger mode.
 
 ## Layered architecture
 
-The workspace is organized into **8 ordered layers, 28 production workspace members plus 3 development-only members**.
+The workspace is organized into **8 ordered layers, 29 production workspace members plus 3 development-only members**.
 Dependencies point downward, except for an explicit audited allow-list of
 one-way dependencies inside a layer. The canonical layer membership and
 same-layer edges live in `[workspace.metadata.architecture]` and are enforced
@@ -64,6 +64,7 @@ flowchart TD
         io[neo-io]
         error[neo-error]
         crypto[neo-crypto]
+        trie[neo-trie]
         storage[neo-storage]
         static[neo-static-files]
         packs[neo-state-packs]
@@ -103,14 +104,15 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-io | Infrastructure | Binary and variable-length integer reader/writer (mirrors `Neo.IO`). |
 | neo-error | Infrastructure | Authoritative `CoreError` / `CoreResult` error types for the workspace. |
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
+| neo-trie | Infrastructure | Neo C#-compatible MPT nodes, deterministic bytes, proofs, and backend-independent mutation cache. |
 | neo-storage | Infrastructure | General `Store`, canonical `TransactionalStore`, and cross-namespace `CoordinatedTransactionalStore` capabilities; child/parent `DataCache` overlays; C#-compatible raw key/value codecs; isolated node-maintenance metadata; the MDBX persistent provider; and the in-memory provider. |
 | neo-static-files | Infrastructure | Versioned genesis-first static records in bounded height-addressed segments with zstd compression, checksums, one derived MDBX versioned-offset index, payload-free frame-key lookup, final-segment suffix recovery, strict scrubbing, kernel writer ownership, and LRU frame caching. |
 | neo-state-packs | Infrastructure | Opt-in append-only, checksummed MPT node frames with immutable sorted indexes, marker-bound recovery, snapshot leases, and bounded maintenance. |
 | neo-checkpoint | Infrastructure | Canonical checkpoint manifests, hashes, signatures, and dependency-light verification types. |
-| neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
+| neo-config | Infrastructure | Immutable `NeoChainSpec`, validated genesis identity, deterministic hardfork schedules, and protocol configuration parsing. |
 | neo-vm | Infrastructure | Sole canonical NeoVM implementation: execution engine, contexts, opcodes, reference-counted stack items, faults, and script validation. |
-| neo-serialization | Infrastructure | Compression, binary and JSON stack-item codecs, JSONPath, in-memory storage providers. |
-| neo-manifest | Infrastructure | Contract ABI, NEF, `CallFlags`, `MethodToken`, validator attributes. |
+| neo-serialization | Infrastructure | Compression, binary and JSON stack-item codecs, and JSONPath. Storage providers remain exclusively in `neo-storage`. |
+| neo-manifest | Infrastructure | Contract ABI, NEF, `MethodToken`, and validator attributes. `CallFlags` remains a canonical primitive. |
 | neo-payloads | Protocol | `Block`, `Header`, `Transaction`, `Signer`, `WitnessRule`, attributes, and verification logic. |
 | neo-consensus | Protocol | dBFT 2.0 consensus engine and consensus payload handling. |
 | neo-hsm | Protocol | Optional HSM-backed consensus signing support. |
@@ -118,9 +120,9 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-execution | Domain service | `ApplicationEngine` and interop services (runtime, storage, contract, crypto syscalls). |
 | neo-native-contracts | Domain service | NEO, GAS, Policy, Oracle, Notary, StdLib, CryptoLib, RoleManagement, ContractManagement, Ledger, plus shared native infrastructure. |
 | neo-state-service | Domain service | MPT state root, state root cache, state store, immutable state-provider views, block-commit pipeline. |
-| neo-mempool | Domain service | Transaction memory pool, pool items, transaction router, per-block verification context. |
+| neo-mempool | Domain service | Exclusive transaction-admission owner: pool-owned `TxPoolConfig`, typed origins/outcomes, stateless validator, atomic state-dependent validation and insertion, pool indexes, and per-block revalidation context. |
 | neo-blockchain | Node service | Root-level `BlockchainHandle`/`BlockchainService` capabilities, `LedgerContext`, `HeaderCache`, provider-style ledger reads, and canonical block processing; command-loop internals stay private. |
-| neo-network | Node service | Root-level P2P handles, services, protocol values, and wire codecs; `LocalNode`, `RemoteNode`, task-manager, wire, and protocol module layouts stay private. |
+| neo-network | Node service | Root-level P2P handles and services, the network-owned `MessageCommand`, peer/session management, and canonical wire codecs; manager, registry, session, wire, and protocol module layouts stay private. |
 | neo-wallets | Node service | NEP-6 wallets, BIP-32/BIP-39 key derivation, keypairs, accounts, witness scripts. |
 | neo-indexer | Node service | Durable read-side block, transaction, signer-account, and notification projections, atomic batch commands, and the contiguous projection checkpoint consumed by the node's Index stage. |
 | neo-oracle-service | Node service | Off-chain Oracle request fulfilment over HTTPS and NeoFS, including retries, signing, and request lifecycle processing. |
@@ -129,7 +131,7 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-node | Application | The node daemon binary (TOML config, storage, P2P, RPC, consensus wiring). |
 | neo-gui | Application | Native desktop manager that talks to a running node over JSON-RPC. |
 
-The current workspace has 28 production workspace members plus 3 development-only members.
+The current workspace has 29 production workspace members plus 3 development-only members.
 The development-only members are not part of the running node:
 `neo-test-fixtures` (shared test builders), `tests` (cross-crate integration
 tests), and `benches-package` (Criterion benchmarks).
@@ -137,7 +139,7 @@ NeoVM semantics and the stateful execution engine both live in the workspace
 `neo-vm` crate, which is the sole canonical VM implementation. Consensus
 execution does not convert an object graph through a second VM representation.
 For the full ADR log and evolution roadmap, see
-[`design.md`](../design.md) (44 ADRs covering RPC decoupling,
+[`design.md`](../design.md) (45 ADRs covering RPC decoupling,
 engine integration,
 error unification, oracle decoupling, dead dependency cleanup, pipeline strategy,
 error type policy, MPT layering, and more).
@@ -156,7 +158,7 @@ small-crate candidates were checked against the dependency layers above:
 | `neo-runtime` into `neo-system` | Small shared service-trait crate used by `neo-system` and concrete service crates such as `neo-network`. | **Do not merge.** That would force lower service implementations to depend upward on the composition root just to name shared service traits and events. |
 | `neo-error` into another foundation crate | Small but central `CoreError` / `CoreResult` vocabulary. | **Do not merge.** It deliberately sits near the bottom of the graph so storage, crypto, execution, RPC, and node services share one error type without cycles. |
 | `neo-config` into `neo-node` or `neo-system` | TOML-backed protocol, network, storage, RPC, and service configuration shared across daemon startup and reusable node services. | **Do not merge.** It is operator-facing configuration vocabulary; merging upward would make lower services depend on process/composition concerns just to parse or validate settings. |
-| `neo-manifest` into `neo-execution` or `neo-native-contracts` | Contract ABI, NEF files, method tokens, call flags, and validator attributes shared by execution, RPC, wallets, and native-contract metadata. | **Do not merge.** Manifest/ABI data is protocol vocabulary, not execution ownership; merging it upward would make independent tools and RPC paths pull in execution or native-contract internals. |
+| `neo-manifest` into `neo-execution` or `neo-native-contracts` | Contract ABI, NEF files, method tokens, and validator attributes shared by execution, RPC, wallets, and native-contract metadata. | **Do not merge.** Manifest/ABI data is protocol vocabulary, not execution ownership; merging it upward would make independent tools and RPC paths pull in execution or native-contract internals. |
 | `neo-system` into `neo-node` | Embeddable composition root for typed core node handles and cross-service wiring used by the daemon and integration surfaces. | **Do not merge.** The daemon owns CLI/process policy and optional application services, while `neo-system` should remain reusable node assembly that tests and future service hosts can embed without pulling in the binary. |
 | `neo-indexer` into `neo-rpc` | Query-oriented service used by RPC, but owned by the node lifecycle and passed through the typed `RpcServices` bundle. | **Do not merge.** Keeping it as a node service allows RPC, daemon startup, and future REST/worker surfaces to share the same read model. |
 | `neo-hsm` into `neo-consensus` or `neo-node` | Optional validator signing backends for PKCS#11, Azure, and GCP HSM integrations. | **Do not merge.** HSM support is an operator/security boundary with heavyweight and feature-specific dependencies; consensus should remain about the protocol while signer providers stay replaceable. |
@@ -201,11 +203,54 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
 
 ## Key design decisions
 
-> The full ADR log lives in [`design.md`](../design.md) — 44 ADRs covering
+> The full ADR log lives in [`design.md`](../design.md) — 45 ADRs covering
 > RPC decoupling, engine integration, error unification, oracle decoupling,
 > dead dependency cleanup, pipeline strategy, error type policy, MPT layering,
 > doc management, runtime versioning, and native contract registry. The
 > reth/polkadot pattern comparison is also there.
+
+### Reth patterns adopted for Neo
+
+Reth is an architecture reference, not a source of Ethereum semantics. neo-rs
+adopts the ownership and composition patterns below while retaining Neo dBFT,
+NeoVM, native-contract, StateService, payload, and P2P rules.
+
+| Reth pattern | neo-rs owner | Neo adaptation |
+|--------------|--------------|----------------|
+| Immutable shared chain specification | `neo-config::NeoChainSpec` | One `Arc` binds network identity, genesis inputs, committee/validators, protocol limits, and an ordered fixed-size hardfork schedule. Built-in MainNet/TestNet fields are validated, not overridden into hybrid chains. |
+| Service-owned runtime policy | `neo-mempool::TxPoolConfig`, application config types | Operator resource limits stay outside chain identity. The live mempool owns its capacity and RPC reports that actual value. |
+| Provider/factory read boundaries | storage, Ledger, StateService, native-provider crates | Factories freeze a store/root/height and return concrete providers; callers do not reopen databases or inspect backend internals. |
+| Required node-builder components | `neo-system::NodeCoreBuilder` and `NodeBuilder` | Required capabilities are constructor arguments. Only genuinely optional wallet, cold-provider, and prebuilt-pipeline values remain optional. |
+| Concrete hot-path composition | execution, import, MPT, P2P | Generics, associated types, and closed enums are preferred over boxed trait objects and per-call boxed futures. |
+| Validator, pool core, and caller boundary | `neo-mempool`, `neo-runtime`, `neo-blockchain` | Pure state-independent checks run before the lock; `MemoryPool` exclusively owns the atomic stateful decision and indexes; typed origins/outcomes cross subsystem boundaries without duplicating policy. |
+| Typed RPC boundary | `neo-rpc` | RPC owns wire models and transport; handlers consume node capabilities and never become a second protocol or storage implementation. |
+| Primitive/crypto/trie separation | `neo-primitives`, `neo-crypto`, `neo-trie` | Small value types stay dependency-light, curve/hash implementations stay in crypto, and Neo's consensus-specific MPT bytes and proofs have one exclusive owner. |
+
+The dependency rule is stricter than naming: every capability has one owning
+crate, one canonical representation, and downstream read-only projections.
+Generic `utils`, duplicate constants, conversion object graphs, and compatibility
+facades are removed when a migration completes.
+
+`PeerRegistry` is the authoritative owner of live peer sessions and exposes a
+deterministic read-side snapshot. Service-bound `NetworkHandle` instances keep
+the same `Arc<PeerRegistry>`, and `LocalNodeInfo` reads that snapshot directly,
+so RPC and telemetry cannot drift when a lifecycle broadcast receiver lags. The
+small event-folded `PeerTracker` remains only for standalone channel handles
+used by unit tests and protocol fixtures; it is not a production source of
+truth.
+
+`neo-rpc` keeps outbound client transport and inbound server transport as
+independent Cargo features. Shared C#-compatible response records live in
+`neo_rpc::types`, and shared Neo address decoding lives in the internal
+protocol codec layer. A consumer that needs both roles, such as `neo-node`,
+enables both explicitly.
+
+- **Immutable chain specification.** `neo-node` selects one validated
+  `Arc<NeoChainSpec>` before opening runtime services. Unknown network names,
+  incomplete private networks, network-magic mismatches, and attempts to change
+  built-in consensus limits fail startup. The canonical genesis hash is checked
+  before storage is opened. `MemoryPool` retains the same `Arc`; it does not
+  clone a mutable settings root.
 
 - **Canonical NeoVM.** `neo-vm` owns the reference-counted object graph,
   mutability, execution contexts, opcodes, faults, and hardfork-aware behavior.
@@ -214,11 +259,11 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   semantic authority or pass complete shadow artifact and state parity before
   promotion; consensus execution never converts through a second stack-value
   graph. (ADR-012
-  documents the analogous MPT layering: `neo-crypto::mpt_trie` owns the data
+  documents the analogous MPT layering: `neo-trie` owns the data
   structure, `neo-state-service` owns the durable store.)
 
 - **Reth-style async services with command channels.** Long-lived components
-  (blockchain, network, consensus, mempool) run as `tokio` services that
+  (blockchain, network, consensus, and auxiliary node services) run as `tokio` services that
   communicate through typed command channels rather than shared locks or an
   actor framework. `neo-runtime` defines the service traits (`Service`,
   `NetworkService`, `BlockImport`, `ImportQueue`), the `Nep17MetadataReader`
@@ -226,7 +271,10 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   composition root that instantiates and connects concrete services. This gives
   clear ownership, backpressure, and testable boundaries between services.
   Async service traits return concrete futures; `async_trait` and its
-  per-call boxed future allocation are not used.
+  per-call boxed future allocation are not used. `MemoryPool` is a synchronized
+  domain component rather than an actor: one typed admission operation owns
+  validation and mutation, while service handles supply origin and canonical
+  provider views.
 
 - **Typed optional-service composition.** `neo-system::Node` owns only core
   typed handles. `neo-node::NodeServiceHandles<S>` owns daemon-only state,
@@ -283,7 +331,8 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   noisy at Criterion quick-run duration.
 
 - **Staged core and application lifecycle.** `neo-system::NodeCoreBuilder<P,
-  S, H>` constructs the provider-neutral store snapshot, mempool, header cache,
+  S, H>` requires `NeoChainSpec`, `TxPoolConfig`, storage, the native provider,
+  hooks, and persisted height, then constructs the provider-neutral store snapshot, mempool, header cache,
   ledger context, static `NodeSystemContext`, and blockchain command service.
   `NodeCoreLaunch` separates the owned `BlockchainTask` from shareable
   `NodeCore` capabilities; `NodeCore::into_node(network)` consumes that stage so
@@ -302,16 +351,22 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   only where typed channel constructors expose them; ordinary production
   callers use `BlockchainHandle` and `NetworkHandle` methods.
 
-- **Node composition traits.** `neo-runtime` defines the `NodeTypes` (sealed),
-  `StoreProvider`, `ConfigProvider`, and `TxAdmission` traits — the surviving
-  decoupling layer. `NodeTypes` is sealed (ADR-021) to lock the associated-type
-  surface. The provider traits (`StoreProvider`, `ConfigProvider`,
-  `TxAdmission`) are the active decoupling layer — `neo-rpc` and
-  `neo-oracle-service` depend on these traits rather than `neo_system::Node`.
-  The earlier type-state composition traits (`NodeComponents`, `FullNode`,
-  `FullNodeTypes`, `BlockchainProvider`) and the `EngineApi` consensus↔execution
-  trait were removed in ADR-032/ADR-033; `NodeBuilder` validates concrete
-  fields at `build()` rather than composing trait objects.
+- **Node composition capabilities.** `neo-config` owns the immutable
+  `ChainSpecProvider`; every composed node, RPC context, and P2P service keeps
+  the same `Arc<NeoChainSpec>`. `neo-runtime` exposes only the narrow
+  `StoreProvider` and `TxAdmission` traits for upper-layer dependency
+  inversion. The dead sealed `NodeTypes`/`ConfigProvider` surface was removed
+  because it had no production consumers and duplicated ChainSpec access.
+  `NodeBuilder::new` requires every core concrete component, so missing
+  services cannot survive to `build()` and no parallel default mempool/header
+  graph is manufactured.
+
+- **Protocol payload ownership.** `neo-payloads` owns Neo wire records,
+  canonical codecs, and payload-local projections. It does not own chain
+  configuration: address-bearing JSON codecs receive the explicit address
+  version byte, while composed services obtain that byte from their shared
+  `NeoChainSpec`. Stateful witness execution remains in `neo-execution` and
+  `neo-blockchain` rather than being represented by a default payload facade.
 
 - **Pipeline stage traits.** The pipeline stage traits (`ValidateStage`,
   `ConsensusWitnessStage`, `PipelineStage`) live in
@@ -387,20 +442,26 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   mandatory. The checker type on `CheckedBlockBatch<Arc<Block>,
   BlockchainHandle>` prevents an arbitrary verifier from forging that proof.
   When `[execution.optimistic_signature_verification]` is explicitly enabled,
-  inventory batches submit a bounded look-ahead window of header witnesses to
-  the worker pool while the current blocks execute. Workers compute only
-  exact-input ECDSA outcomes; they do not read state or run NeoVM. A cache is
-  installed only after rechecking the exact header hash, height, network, and
-  complete witness digest. The ordered canonical lane still checks the parent,
-  timestamp, primary index, and previous `NextConsensus`, then executes the
-  complete witness in NeoVM. Worker failure, queue shutdown, stale input, or a
-  broken parent chain discards later speculative tickets and falls back to the
-  synchronous verifier. The transaction signature helper remains an admission/audit API;
-  canonical historical block import does not add a new transaction-signature
-  rejection rule without a protocol differential proof. No cache can publish
-  unverified state, events, or relay output. This hides only proven header
-  witness latency and is not a rollback-based permission to commit an
-  unverified block.
+  inventory and verified `Sync` import batches submit a bounded look-ahead
+  window of standard header-signature operations to state-free workers while
+  the current blocks execute. A worker may return an immutable cache of exact
+  P-256 outcomes bound to the sign data, public key, signature, header, witness,
+  and network. Hardfork selection remains inside the canonical lane. The
+  ordered lane still performs parent linkage, timestamp,
+  `NextConsensus`, gas, faults, stack-result checks, and the complete NeoVM
+  witness script before publication; only exact `CheckSig`/`CheckMultisig`
+  curve operations may hit the cache. Unsupported scripts, cache misses, worker
+  failure, queue shutdown, or a broken parent chain use the ordinary canonical
+  path. No advisory cache can publish state, events, or relay output. This
+  overlaps only deterministic crypto work; it is not a rollback-based
+  permission to commit an unverified block.
+  Per-cache counters distinguish work prepared from exact outcomes actually
+  consumed by NeoVM. The accepted StateRoot-enabled MainNet
+  header-preverification A/B measured 255.04 blocks/s OFF and 346.63 blocks/s
+  ON (+35.91%), with 33,188/33,188 exact canonical hits, no misses, and
+  identical final StateRoot and scrubbed pack receipt. The feature remains explicitly gated
+  and the result remains below the 2,000 blocks/s requirement. See
+  `reports/performance/optimistic-signature-verification-20260721.md`.
   Consensus-produced blocks use `submit_consensus_block`, extensible payloads
   use `submit_inventory_extensible`, and startup genesis bootstrapping uses
   `initialize`. Node composition does not construct `BlockchainCommand` variants
@@ -536,8 +597,8 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   Batch resource setup builds `NativePersistResources` from that context
   provider and calls the explicit-resource staging/commit path instead of
   reading an ambient global provider. Every `NodeBuilder` composition supplies
-  its provider explicitly; the in-memory convenience constructor creates and
-  passes a local standard provider itself. Inside
+  its provider explicitly; the explicit `Node::for_test(chain_spec)` fixture
+  creates and passes a local standard provider itself. Inside
   `neo-native-contracts`, each contract declares one metadata binding table that
   pairs ABI descriptors with Rust handlers, and its `NativeContract` impl uses
   `native_contract_dispatch!` to derive both direct test dispatch and resolved
@@ -602,10 +663,10 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   key/value bytes.
 
 - **MPT layering.** The Merkle-Patricia Trie is split across two crates
-  (ADR-012): `neo-crypto::mpt_trie` owns the generic data structure (`Node`,
+  (ADR-012): `neo-trie` owns the generic data structure (`Node`,
   `Trie`, `MptCache`, `MptStoreSnapshot` trait) with no durable backend;
   `neo-state-service::storage::mpt_store` owns the durable store (`MptStore`,
-  `MptChange`, `MptReadSnapshot`) built on top of `neo-crypto::mpt_trie` and
+  `MptChange`, `MptReadSnapshot`) built on top of `neo-trie` and
   `neo-storage`. `neo-state-service::providers` adapts that mechanism into the
   application-facing state capability and owns proof verification;
   `neo-rpc` only parses/encodes the C# proof payload and maps provider errors.
@@ -681,14 +742,15 @@ then delegates startup import, live-service startup, and graceful shutdown to
 `RunningNode::run_requested_mode`. The network host (`neo-network`, L4) dials seeds and accepts
 peers; the blockchain service (`neo-blockchain`, L4) processes incoming blocks
 and headers through execution (`neo-execution`, L3) and the state-commit pipeline
-(`neo-state-service`, L3); the mempool (`neo-mempool`, L3) admits and routes
-transactions; consensus (`neo-consensus`, L2, when enabled) drives block
+(`neo-state-service`, L3); the mempool (`neo-mempool`, L3) validates and retains
+unconfirmed transactions through one typed admission boundary; consensus
+(`neo-consensus`, L2, when enabled) drives block
 production; and `neo-rpc` (L6) serves the JSON-RPC surface to clients. The
 concrete `BlockchainService` (L4) drives execution and block persistence; the
 pipeline stage traits it uses live in `neo-blockchain::pipeline::stage_traits`.
 
 For a step-by-step trace of how a block and a transaction move through these
 services — including the P2P sync path, execution, state-root commit, and RPC
-query path — see [dataflow.md](dataflow.md). For the 44 ADRs documenting the
+query path — see [dataflow.md](dataflow.md). For the 45 ADRs documenting the
 architecture and its evolution, see
 [design.md](../design.md).

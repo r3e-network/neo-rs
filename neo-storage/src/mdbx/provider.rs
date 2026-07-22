@@ -1,5 +1,5 @@
 use super::store::MdbxStore;
-use crate::persistence::{storage::StorageConfig, store_provider::StoreProvider};
+use crate::persistence::storage::StorageConfig;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -131,21 +131,5 @@ impl MdbxStoreProvider {
         self.build_store(path.as_ref())?
             .open_named_table(table)
             .map(Arc::new)
-    }
-}
-
-impl StoreProvider for MdbxStoreProvider {
-    type Store = MdbxStore;
-
-    fn name(&self) -> &str {
-        "mdbx"
-    }
-
-    fn get_store(&self, path: &Path) -> crate::StorageResult<Arc<MdbxStore>> {
-        self.build_store(path).map(Arc::new)
-    }
-
-    fn get_store_with_config(&self, config: StorageConfig) -> crate::StorageResult<Arc<MdbxStore>> {
-        Self::new(config).get_store(Path::new(""))
     }
 }

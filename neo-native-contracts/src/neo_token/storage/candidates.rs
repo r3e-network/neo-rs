@@ -1,10 +1,10 @@
 use super::*;
 use neo_error::CoreError;
-use neo_execution::Contract;
 use neo_runtime::sync_metrics::{
     self, NeoTokenCommitteeCandidateCount, NeoTokenCommitteeComputeStage,
 };
 use neo_serialization::BinarySerializer;
+use neo_vm::Contract;
 use std::{
     collections::{HashMap, HashSet},
     sync::{OnceLock, RwLock},

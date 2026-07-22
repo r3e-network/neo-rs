@@ -18,10 +18,11 @@ use super::*;
 #[test]
 fn consensus_reads_tip_header_and_transaction_from_configured_archive() {
     let settings = ProtocolSettings::default();
+    let chain_spec = neo_test_fixtures::test_chain_spec(settings.clone());
     let snapshot = Arc::new(DataCache::new(false));
     let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
     let resources = NativePersistResources::from_provider(Arc::clone(&native_contract_provider));
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis = Arc::new(genesis_block(chain_spec.as_ref()).expect("genesis block"));
     persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&genesis),

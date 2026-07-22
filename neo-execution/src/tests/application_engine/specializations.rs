@@ -554,8 +554,8 @@ fn exact_shadow_route_matches_at_every_mainnet_hardfork_boundary() {
     let settings = ProtocolSettings::default();
     let mut heights = settings
         .hardforks
-        .values()
-        .flat_map(|height| [height.saturating_sub(1), *height])
+        .activation_heights()
+        .flat_map(|height| [height.saturating_sub(1), height])
         .collect::<Vec<_>>();
     heights.push(0);
     heights.sort_unstable();

@@ -71,7 +71,7 @@ where
             // (its hooks run, it passes CallNative gating) but is never
             // deployed or hardfork-initialized.
             Some(hardfork) => {
-                settings.hardforks.get(&hardfork).copied().unwrap_or(0) <= block_height
+                settings.hardforks.activation_height(hardfork).unwrap_or(0) <= block_height
             }
             None => true,
         }
@@ -136,7 +136,7 @@ where
     ) -> (bool, Vec<Hardfork>) {
         let mut hits = Vec::new();
         for hardfork in self.used_hardforks() {
-            if let Some(&activation_height) = settings.hardforks.get(&hardfork) {
+            if let Some(activation_height) = settings.hardforks.activation_height(hardfork) {
                 if activation_height == index {
                     hits.push(hardfork);
                 }
@@ -550,7 +550,7 @@ impl NativeMethod {
     }
 
     /// Overrides the required call flags for this method.
-    pub fn with_required_call_flags(mut self, flags: neo_manifest::CallFlags) -> Self {
+    pub fn with_required_call_flags(mut self, flags: neo_primitives::CallFlags) -> Self {
         self.required_call_flags = flags.bits();
         self
     }

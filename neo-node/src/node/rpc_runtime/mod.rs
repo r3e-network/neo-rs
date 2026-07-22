@@ -40,7 +40,7 @@ pub(super) fn start_rpc_server(
     let bind_address = rpc_config.bind_address;
     let port = rpc_config.port;
     let node_ctx: Arc<NodeContext> = Arc::new(NodeContext::from_parts(
-        node.settings(),
+        node.chain_spec(),
         node.storage(),
         node.blockchain(),
         node.network(),

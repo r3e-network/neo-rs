@@ -1,0 +1,2037 @@
+{
+  "timestamp": "2026-07-14T09:41:35.048070",
+  "summary": {
+    "total": 405,
+    "passed": 405,
+    "failed": 0,
+    "errors": 0,
+    "pass_rate": "100.00%"
+  },
+  "results": [
+    {
+      "vector": "SHA256_hello",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_empty",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash256_hello",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_hello",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash160_hello",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_ff32_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_ff32_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH160_ff32_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH256_ff32_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_zero64_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_zero64_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH160_zero64_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH256_zero64_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_utf8_neo_rocket_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_utf8_neo_rocket_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH160_utf8_neo_rocket_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH256_utf8_neo_rocket_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_range32_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_range32_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH160_range32_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH256_range32_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_empty_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_empty_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash160_empty_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash256_empty_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_hello_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_hello_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash160_hello_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash256_hello_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_neo_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_neo_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash160_neo_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash256_neo_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_bytes_01020304_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_bytes_01020304_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash160_bytes_01020304_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash256_bytes_01020304_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_range_16_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_range_16_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash160_range_16_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Hash256_range_16_ext",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_onebyte_00_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_onebyte_00_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH160_onebyte_00_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH256_onebyte_00_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_onebyte_ff_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_onebyte_ff_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH160_onebyte_ff_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH256_onebyte_ff_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_a5x31_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_a5x31_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH160_a5x31_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH256_a5x31_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHA256_a5x33_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIPEMD160_a5x33_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH160_a5x33_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASH256_a5x33_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_sha256",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_ripemd160",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_murmur32",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "GAS_symbol",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "GAS_decimals",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_sha256_empty_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_sha256_ff00_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_sha256_text_neon3_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_ripemd160_empty_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_ripemd160_bin_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_murmur32_seed0_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_murmur32_seed256_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_murmur32_seed2147483647_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_itoa_zero_decimal_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_itoa_127_hex_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_itoa_128_hex_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_atoi_zero_decimal_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_atoi_hex_ff_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_atoi_hex_7f_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_atoi_hex_80_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_atoi_hex_0100_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_base64Encode_text_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_base64Encode_bin_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_memoryCompare_equal_bin_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_memoryCompare_greater_prefix_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_memoryCompare_binary_less_deep",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_sha256_hello",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_sha256_long",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_ripemd160_hello",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_murmur32_seed1",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_murmur32_seed42",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_itoa_negative_decimal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_atoi_hex",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_atoi_negative_decimal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_base64Encode_empty",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_base64Encode_raw_bytes",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_memoryCompare_greater",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_memoryCompare_prefix_less",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_itoa_255_hex_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_itoa_256_hex_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_itoa_neg255_decimal_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_atoi_hex_0ff_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_atoi_hex_8000_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_atoi_hex_7fff_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_base64Encode_empty_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_base64Encode_unicode_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_memoryCompare_empty_equal_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_memoryCompare_empty_less_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_memoryCompare_ff_greater_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_memoryCompare_text_prefix_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_sha256_unicode_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_ripemd160_unicode_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_murmur32_seed1_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CryptoLib_murmur32_seed42_matrix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEO_totalSupply",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEO_symbol",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEO_decimals",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Policy_getFeePerByte",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Policy_getExecFeeFactor",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "Policy_getStoragePrice",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_itoa_decimal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_itoa_hex",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_atoi_decimal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_base64Encode",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_memoryCompare_equal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "StdLib_memoryCompare_less",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_call_short",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_try_l_no_exception",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_memcpy_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_newarray_t_integer",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_abortmsg_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_jmpgt_l_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_packmap_size2",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_initslot_starg0_roundtrip",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_assertmsg_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_push1",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_add_small",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STATE_exec_concat_payload",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ADD_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ADD_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ADD_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SUB_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SUB_negative_result",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MUL_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MUL_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MUL_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "DIV_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "DIV_exact",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MOD_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MOD_exact",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEGATE_positive",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEGATE_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ABS_positive",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ABS_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "INC_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "DEC_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SIGN_positive",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SIGN_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SIGN_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "POW_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "POW_zero_exp",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SQRT_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SQRT_9",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MODMUL_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MODPOW_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "AND_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "AND_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "OR_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "OR_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "XOR_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "XOR_same",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "INVERT_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHL_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHL_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHR_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHR_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "EQUAL_integers_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "EQUAL_integers_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NOTEQUAL_integers_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NOTEQUAL_integers_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NOT_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NOT_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "BOOLAND_true_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "BOOLAND_true_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "BOOLAND_false_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "BOOLOR_true_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "BOOLOR_true_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "BOOLOR_false_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NZ_nonzero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NZ_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "LT_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "LT_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "LT_equal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "LE_less",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "LE_equal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "GT_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "GT_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "GE_greater",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "GE_equal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NUMEQUAL_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NUMEQUAL_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MIN_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MAX_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "WITHIN_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "WITHIN_false_low",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NUMNOTEQUAL_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NUMNOTEQUAL_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEWARRAY0_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEWSTRUCT0_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEWMAP_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PACK_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "UNPACK_array",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEWARRAY_sized",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SIZE_array",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SIZE_map",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PICKITEM_array",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PACKSTRUCT_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "APPEND_to_array",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASKEY_array_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASKEY_array_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMP_forward",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPIF_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPIF_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPIFNOT_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPIFNOT_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RET_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NOP_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CALL_short_subroutine",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CALL_L_subroutine",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CALLA_pointer_subroutine",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHA_bad_pointer_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMP_L_forward",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPIF_L_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPIF_L_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPIFNOT_L_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPIFNOT_L_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPEQ_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPEQ_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPEQ_L_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPNE_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPNE_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPNE_L_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPNE_L_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPGT_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPGT_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPGT_L_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPGT_L_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPGE_equal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPGE_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPGE_L_equal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPGE_L_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPLT_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPLT_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPLT_L_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPLT_L_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPLE_equal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPLE_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPLE_L_equal",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "JMPLE_L_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "TRY_no_exception",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "TRY_with_throw_catch",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "TRY_L_no_exception",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "TRY_finally_no_exception",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "TRY_ENDTRY_without_try_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ENDTRY_L_without_try_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ENDFINALLY_without_try_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ABORTMSG_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ASSERTMSG_false_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ASSERTMSG_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STACK_DROP_empty_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STACK_XDROP_empty_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STACK_PICK_out_of_range_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STACK_ROLL_out_of_range_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STACK_REVERSEN_negative_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ARITH_DIV_zero_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ARITH_MOD_zero_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "BITWISE_SHL_negative_shift_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "BITWISE_SHR_negative_shift_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SPLICE_NEWBUFFER_negative_size_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SPLICE_SUBSTR_negative_index_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SPLICE_SUBSTR_negative_length_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SPLICE_LEFT_negative_length_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SPLICE_RIGHT_negative_length_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "COMPOUND_PICKITEM_negative_index_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "COMPOUND_SETITEM_out_of_range_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "COMPOUND_CLEARITEMS_non_collection_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "COMPOUND_HASKEY_non_collection_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CONTROL_ABORT_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CONTROL_ASSERT_false_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CONTROL_THROW_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "INITSSLOT_STSFLD0_LDSFLD0",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "INITSSLOT_double_init_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "INITSLOT_ARG_roundtrip",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "INITSLOT_STARG0_roundtrip",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "INITSLOT_double_init_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "LDARG0_without_initslot_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STARG0_without_initslot_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "LDSFLD0_without_initsslot_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STSFLD0_without_initsslot_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEWARRAY_T_integer_pick0",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEWARRAY_T_boolean_pick0",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEWARRAY_T_invalid_type_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEWSTRUCT_size3",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEWSTRUCT_negative_size_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PACK_UNPACK_roundtrip",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PACKSTRUCT_size2",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PACK_size2",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PACK_negative_size_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MEMCPY_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MEMCPY_source_oob_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MEMCPY_dest_oob_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MEMCPY_negative_count_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MEMCPY_negative_source_index_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MEMCPY_negative_dest_index_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MEMCPY_non_buffer_dest_fault",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHT_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHF_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHNULL_isnull",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHDATA1_len3_size",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHDATA2_len3_size",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHDATA4_len3_size",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHDATA_cat",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHDATA_substr",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHDATA_left",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHDATA_right",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ADD_neg_neg",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ADD_large",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SUB_to_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SUB_neg_minus_pos",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MUL_neg_neg",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "DIV_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "DIV_negative_denominator",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MOD_negative_dividend",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MOD_negative_divisor",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "POW_zero_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "POW_one_large",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SQRT_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "MODPOW_zero_exp",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "INC_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "AND_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "OR_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "XOR_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHL_large_shift",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SHR_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "EQUAL_buffers_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NOTEQUAL_buffers_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NUMEQUAL_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NUMNOTEQUAL_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "WITHIN_upper_exclusive",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "WITHIN_lower_inclusive",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NZ_negative",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NOT_nonzero_int",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "BOOLAND_nonzero_zero",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SETITEM_array_index0",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SETITEM_array_index1",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SETITEM_map_pick",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "REMOVE_map_key",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CLEARITEMS_array",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CLEARITEMS_map",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "POPITEM_array",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "KEYS_map_size",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "VALUES_map_size",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "REVERSEITEMS_array_pick0",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "APPEND_twice",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASKEY_map_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "HASKEY_map_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PICKITEM_map",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PACKMAP_size2",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CAT_empty_prefix",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SUBSTR_zero_len",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "LEFT_full",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIGHT_full",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "INITSLOT_STLOC_LDLOC",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STLOC0_LDLOC0",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "STLOC1_LDLOC1",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "multiple_locals",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CAT_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "LEFT_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "RIGHT_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SUBSTR_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NEWBUFFER_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSH0",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSH1",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSH16",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PUSHM1",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "DUP_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "DROP_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "SWAP_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "OVER_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ROT_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "NIP_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "TUCK_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "DEPTH_empty",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "DEPTH_three",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CLEAR_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "REVERSE3_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "REVERSE4_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "PICK_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ROLL_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "XDROP_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "REVERSEN_basic",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ISNULL_true",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ISNULL_false",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ISTYPE_integer",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ISTYPE_boolean",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "ISTYPE_wrong",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CONVERT_to_boolean",
+      "match": true,
+      "differences": []
+    },
+    {
+      "vector": "CONVERT_to_integer",
+      "match": true,
+      "differences": []
+    }
+  ]
+}

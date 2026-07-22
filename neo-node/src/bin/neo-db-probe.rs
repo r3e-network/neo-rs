@@ -15,15 +15,15 @@ use neo_blockchain::{
     OptionalStaticLedgerProvider, StaticLedgerArchive, StaticLedgerArchiveFactory,
     StorageLedgerProvider, TransactionStateProvider,
 };
-use neo_config::ProtocolSettings;
+use neo_config::{NeoChainSpec, NetworkType};
 use neo_crypto::Crypto;
 use neo_execution::native::native_contract_provider::NativeContractProvider;
 use neo_execution::{ApplicationEngine, ContractState, Diagnostic};
 use neo_io::Serializable;
-use neo_manifest::CallFlags;
 use neo_native_contracts::{GasToken, LedgerContract, StandardNativeProvider};
 use neo_node::NodeLifecycleLock;
 use neo_payloads::{Block, Transaction, TransactionState, VerifiableContainer};
+use neo_primitives::CallFlags;
 use neo_primitives::{TriggerType, UInt160, UInt256};
 use neo_state_service::{MDBX_STATE_SERVICE_NAMESPACE, MptStore};
 use neo_static_files::StaticFileProvider;
@@ -35,6 +35,7 @@ use neo_storage::persistence::{
     TransactionalStore, WriteStore,
 };
 use neo_storage::{CacheRead, DataCache, StorageKey};
+use neo_trie::MPT_NODE_PREFIX;
 use neo_vm::{Instruction, StackItem, VmState as VMState};
 use num_bigint::BigInt;
 use parking_lot::Mutex;
@@ -94,6 +95,10 @@ struct Cli {
 
     #[arg(long, value_name = "BASE64")]
     replay_block_base64: Option<String>,
+
+    /// Built-in chain specification used for transaction replay.
+    #[arg(long, value_name = "NETWORK", default_value_t = NetworkType::MainNet)]
+    network: NetworkType,
 
     #[arg(long)]
     dump_contract_storage: bool,
@@ -375,8 +380,14 @@ fn main() -> Result<()> {
                 && cli.key_hex.is_none(),
             "--replay-tx cannot be combined with storage probe arguments"
         );
-        let output = replay_transaction(db, cli.static_files_dir.as_deref(), tx_hash)
-            .with_context(|| format!("replay transaction {tx_hash} from {}", db.display()))?;
+        let chain_spec = load_replay_chain_spec(cli.network)?;
+        let output = replay_transaction(
+            db,
+            cli.static_files_dir.as_deref(),
+            chain_spec.as_ref(),
+            tx_hash,
+        )
+        .with_context(|| format!("replay transaction {tx_hash} from {}", db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }
@@ -397,7 +408,8 @@ fn main() -> Result<()> {
         let block = cli.replay_block_base64.as_deref().ok_or_else(|| {
             anyhow!("--replay-block-base64 is required with --replay-raw-tx-base64")
         })?;
-        let output = replay_raw_transaction(db, raw_tx, block)
+        let chain_spec = load_replay_chain_spec(cli.network)?;
+        let output = replay_raw_transaction(db, chain_spec.as_ref(), raw_tx, block)
             .with_context(|| format!("replay raw transaction against {}", db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
@@ -709,7 +721,7 @@ fn build_mpt_prefix_index(
     let mdbx = store
         .as_mdbx()
         .ok_or_else(|| anyhow!("MPT prefix index requires MDBX storage"))?;
-    let report = mdbx.build_prefix_occupancy_index(output, &[0xf0], 33, prefix_bits)?;
+    let report = mdbx.build_prefix_occupancy_index(output, &[MPT_NODE_PREFIX], 33, prefix_bits)?;
     Ok(json!({
         "db": db_path,
         "state_service_db": state_service_db_path,
@@ -1176,9 +1188,15 @@ fn scrub_static_archive(directory: &Path) -> Result<Value> {
     }))
 }
 
+fn load_replay_chain_spec(network: NetworkType) -> Result<Arc<NeoChainSpec>> {
+    NeoChainSpec::from_network_type(network)
+        .with_context(|| format!("load built-in {network} chain specification for replay"))
+}
+
 fn replay_transaction(
     db_path: &Path,
     static_files_dir: Option<&Path>,
+    chain_spec: &NeoChainSpec,
     tx_hash: &str,
 ) -> Result<Value> {
     let tx_hash =
@@ -1216,6 +1234,7 @@ fn replay_transaction(
     execute_transaction_probe(
         db_path,
         snapshot,
+        chain_spec,
         block,
         transaction,
         Some(tx_state.state),
@@ -1226,6 +1245,7 @@ fn replay_transaction(
 
 fn replay_raw_transaction(
     db_path: &Path,
+    chain_spec: &NeoChainSpec,
     raw_tx_base64: &str,
     block_base64: &str,
 ) -> Result<Value> {
@@ -1255,6 +1275,7 @@ fn replay_raw_transaction(
     execute_transaction_probe(
         db_path,
         snapshot,
+        chain_spec,
         block,
         transaction,
         None,
@@ -1292,6 +1313,7 @@ fn decode_raw_block(block_base64: &str) -> Result<Block> {
 fn execute_transaction_probe<B: neo_storage::CacheRead>(
     db_path: &Path,
     snapshot: &DataCache<B>,
+    chain_spec: &NeoChainSpec,
     block: Arc<Block>,
     transaction: Transaction,
     stored_vm_state: Option<VMState>,
@@ -1310,7 +1332,7 @@ fn execute_transaction_probe<B: neo_storage::CacheRead>(
         Some(container),
         Arc::clone(&tx_cache),
         Some(Arc::clone(&block)),
-        ProtocolSettings::mainnet(),
+        chain_spec.protocol_settings_arc(),
         transaction.system_fee(),
         diagnostic,
         Arc::new(StandardNativeProvider::new()),

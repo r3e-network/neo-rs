@@ -3,7 +3,8 @@ use neo_payloads::header::Header;
 
 fn first_two_empty_blocks() -> (Block, Block) {
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -25,12 +26,13 @@ fn first_two_empty_blocks() -> (Block, Block) {
 
 struct FailingSecondCommitContext {
     snapshot: Arc<neo_storage::DataCache>,
-    settings: Arc<neo_config::ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     commit_attempts: Arc<AtomicUsize>,
     commit_to_store_calls: Arc<AtomicUsize>,
     abort_store_commit_calls: Arc<AtomicUsize>,
     fatal_on_rejection: bool,
 }
+impl_chain_spec_provider_for_field!(FailingSecondCommitContext);
 
 impl std::fmt::Debug for FailingSecondCommitContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -42,10 +44,6 @@ impl std::fmt::Debug for FailingSecondCommitContext {
 impl SystemContext for FailingSecondCommitContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
-
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
 
     fn current_height(&self) -> u32 {
         0
@@ -97,24 +95,27 @@ impl SystemContext for FailingSecondCommitContext {
 
 struct FailingBulkFlushContext {
     snapshot: Arc<neo_storage::DataCache>,
-    settings: Arc<neo_config::ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     flush_calls: Arc<AtomicUsize>,
     commit_to_store_calls: Arc<AtomicUsize>,
 }
+impl_chain_spec_provider_for_field!(FailingBulkFlushContext);
 
 struct FailingDurableCommitContext {
     snapshot: Arc<neo_storage::DataCache>,
-    settings: Arc<neo_config::ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     fail_commits: Arc<std::sync::atomic::AtomicBool>,
     commit_calls: Arc<AtomicUsize>,
     committed_heights: Arc<parking_lot::Mutex<Vec<u32>>>,
 }
+impl_chain_spec_provider_for_field!(FailingDurableCommitContext);
 
 struct FailingFinalizedDeliveryContext {
     snapshot: Arc<neo_storage::DataCache>,
-    settings: Arc<neo_config::ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     fail_delivery: Arc<std::sync::atomic::AtomicBool>,
 }
+impl_chain_spec_provider_for_field!(FailingFinalizedDeliveryContext);
 
 impl std::fmt::Debug for FailingFinalizedDeliveryContext {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -127,10 +128,6 @@ impl std::fmt::Debug for FailingFinalizedDeliveryContext {
 impl SystemContext for FailingFinalizedDeliveryContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
-
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
 
     fn current_height(&self) -> u32 {
         0
@@ -178,12 +175,13 @@ impl SystemContext for FailingFinalizedDeliveryContext {
 
 struct StopAfterDurableCommitContext {
     snapshot: Arc<neo_storage::DataCache>,
-    settings: Arc<neo_config::ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     arm_stop: Arc<std::sync::atomic::AtomicBool>,
     stop_requested: Arc<std::sync::atomic::AtomicBool>,
     commit_calls: Arc<AtomicUsize>,
     committed_heights: Arc<parking_lot::Mutex<Vec<u32>>>,
 }
+impl_chain_spec_provider_for_field!(StopAfterDurableCommitContext);
 
 impl std::fmt::Debug for StopAfterDurableCommitContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -195,10 +193,6 @@ impl std::fmt::Debug for StopAfterDurableCommitContext {
 impl SystemContext for StopAfterDurableCommitContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
-
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
 
     fn current_height(&self) -> u32 {
         0
@@ -258,10 +252,6 @@ impl SystemContext for FailingDurableCommitContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
 
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
-
     fn current_height(&self) -> u32 {
         0
     }
@@ -317,7 +307,7 @@ fn failing_durable_commit_fixture() -> (
     let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let system = Arc::new(FailingDurableCommitContext {
         snapshot: Arc::new(neo_storage::DataCache::new(false)),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         fail_commits: Arc::clone(&fail_commits),
         commit_calls: Arc::clone(&commit_calls),
         committed_heights: Arc::clone(&committed_heights),
@@ -340,10 +330,6 @@ impl std::fmt::Debug for FailingBulkFlushContext {
 impl SystemContext for FailingBulkFlushContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
-
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
 
     fn current_height(&self) -> u32 {
         0
@@ -378,11 +364,12 @@ impl SystemContext for FailingBulkFlushContext {
 
 struct StateServiceEmptyFastPathContext {
     snapshot: Arc<neo_storage::DataCache>,
-    settings: Arc<neo_config::ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     state_service: Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>,
     fast_path_checks: Arc<AtomicUsize>,
     committing_heights: Arc<parking_lot::Mutex<Vec<u32>>>,
 }
+impl_chain_spec_provider_for_field!(StateServiceEmptyFastPathContext);
 
 impl std::fmt::Debug for StateServiceEmptyFastPathContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -394,10 +381,6 @@ impl std::fmt::Debug for StateServiceEmptyFastPathContext {
 impl SystemContext for StateServiceEmptyFastPathContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
-
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
 
     fn current_height(&self) -> u32 {
         0
@@ -544,7 +527,8 @@ async fn state_service_failure_aborts_before_chain_tip_advances() {
     );
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut header = Header::new();
     header.set_index(1);
     header.set_prev_hash(genesis.hash());
@@ -585,7 +569,7 @@ async fn bulk_import_flush_failure_aborts_batch_before_durable_store_commit() {
     let commit_to_store_calls = Arc::new(AtomicUsize::new(0));
     let system = Arc::new(FailingBulkFlushContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         flush_calls: Arc::clone(&flush_calls),
         commit_to_store_calls: Arc::clone(&commit_to_store_calls),
     });
@@ -599,7 +583,8 @@ async fn bulk_import_flush_failure_aborts_batch_before_durable_store_commit() {
     commit_to_store_calls.store(0, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut header1 = Header::new();
     header1.set_index(1);
     header1.set_prev_hash(genesis.hash());
@@ -672,7 +657,8 @@ async fn live_commit_failure_does_not_publish_or_advance_the_in_memory_tip() {
     fail_commits.store(true, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut header = Header::new();
     header.set_index(1);
     header.set_prev_hash(genesis.hash());
@@ -702,7 +688,8 @@ async fn non_bulk_import_reply_surfaces_durable_commit_failure() {
     fail_commits.store(true, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut header = Header::new();
     header.set_index(1);
     header.set_prev_hash(genesis.hash());
@@ -732,7 +719,7 @@ async fn non_bulk_finalized_delivery_failure_reports_the_durable_prefix() {
     let fail_delivery = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let system = Arc::new(FailingFinalizedDeliveryContext {
         snapshot: Arc::new(neo_storage::DataCache::new(false)),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         fail_delivery: Arc::clone(&fail_delivery),
     });
     let (service, _handle) = BlockchainService::with_defaults(
@@ -770,7 +757,7 @@ async fn non_bulk_import_stops_after_durable_block_requests_writer_shutdown() {
     let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let system = Arc::new(StopAfterDurableCommitContext {
         snapshot: Arc::new(neo_storage::DataCache::new(false)),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         arm_stop: Arc::clone(&arm_stop),
         stop_requested: Arc::clone(&stop_requested),
         commit_calls: Arc::clone(&commit_calls),
@@ -816,7 +803,7 @@ async fn bulk_import_reports_shutdown_requested_after_successful_durable_fence()
     let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let system = Arc::new(StopAfterDurableCommitContext {
         snapshot: Arc::new(neo_storage::DataCache::new(false)),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         arm_stop: Arc::clone(&arm_stop),
         stop_requested: Arc::clone(&stop_requested),
         commit_calls: Arc::clone(&commit_calls),
@@ -865,7 +852,8 @@ async fn bulk_commit_failure_rewinds_staged_tip_and_suppresses_post_commit_hooks
     fail_commits.store(true, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut header1 = Header::new();
     header1.set_index(1);
     header1.set_prev_hash(genesis.hash());
@@ -910,7 +898,8 @@ async fn inventory_batch_commit_failure_rewinds_tip_before_publishing_blocks() {
     fail_commits.store(true, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut header = Header::new();
     header.set_index(1);
     header.set_prev_hash(genesis.hash());
@@ -938,7 +927,8 @@ async fn future_inventory_block_is_parked_then_drained_after_parent_persists() {
     service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -1019,7 +1009,8 @@ async fn inventory_block_batch_persists_consecutive_blocks_through_inventory_pat
     service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -1059,7 +1050,8 @@ async fn inventory_block_batch_continues_after_rejected_block_like_individual_co
     service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut bad_header = Header::new();
     bad_header.set_index(1);
@@ -1147,7 +1139,8 @@ async fn stop_height_allows_target_block_and_rejects_later_blocks() {
     service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -1223,7 +1216,8 @@ async fn import_verify_true_rejects_invalid_header_like_csharp() {
     service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header = Header::new();
     header.set_index(1);
@@ -1257,7 +1251,8 @@ async fn import_verify_true_rejects_invalid_transaction_merkle_root() {
     service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header = Header::new();
     header.set_index(1);
@@ -1296,7 +1291,8 @@ async fn bulk_import_uses_batch_block_before_parked_duplicate_height() {
     fund_test_signer_gas(&snapshot, 100_0000_0000);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -1367,7 +1363,8 @@ async fn import_verify_false_skips_header_verification_like_csharp() {
     service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header = Header::new();
     header.set_index(1);
@@ -1412,7 +1409,8 @@ async fn explicit_bulk_import_skips_replay_artifacts_but_normal_import_keeps_the
     normal_lengths.lock().clear();
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut normal_header = Header::new();
     normal_header.set_index(1);
     normal_header.set_prev_hash(genesis.hash());
@@ -1465,7 +1463,8 @@ async fn live_import_skips_replay_artifacts_when_composition_has_no_consumer() {
     lengths.lock().clear();
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut header = Header::new();
     header.set_index(1);
     header.set_prev_hash(genesis.hash());
@@ -1495,7 +1494,8 @@ async fn bulk_import_flushes_store_once_per_accepted_batch() {
     normal_commits.store(0, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut normal_header1 = Header::new();
     normal_header1.set_index(1);
@@ -1585,7 +1585,8 @@ async fn bulk_import_reuses_store_snapshot_for_accepted_batch() {
     commit_calls.store(0, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -1631,7 +1632,8 @@ async fn bulk_import_fast_forwards_empty_run_when_no_per_block_observers_are_act
     commit_calls.store(0, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -1701,7 +1703,8 @@ async fn bulk_import_fast_forwards_short_empty_bursts_around_transaction_blocks(
     committed_heights.lock().clear();
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut blocks = Vec::new();
     let mut prev_hash = genesis.hash();
     let mut timestamp = genesis.header.timestamp();
@@ -1812,7 +1815,8 @@ async fn bulk_import_fast_forward_chunks_empty_runs_beyond_one_internal_batch() 
     commit_calls.store(0, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let block_count = crate::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS + 2;
     let mut blocks = Vec::with_capacity(block_count);
     let mut prev_hash = genesis.hash();
@@ -1874,7 +1878,8 @@ async fn bulk_import_fast_forward_skips_observer_callbacks_when_fast_path_is_all
     committed_heights.lock().clear();
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -1914,7 +1919,8 @@ async fn bulk_import_falls_back_when_per_block_committing_observer_is_active() {
     lengths.lock().clear();
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -1960,7 +1966,7 @@ async fn bulk_import_uses_empty_fast_path_when_only_state_service_is_loaded() {
     let committing_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let system = Arc::new(StateServiceEmptyFastPathContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         state_service,
         fast_path_checks: Arc::clone(&fast_path_checks),
         committing_heights: Arc::clone(&committing_heights),
@@ -1975,7 +1981,8 @@ async fn bulk_import_uses_empty_fast_path_when_only_state_service_is_loaded() {
     committing_heights.lock().clear();
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -2096,7 +2103,8 @@ async fn bulk_import_verify_true_validates_against_prior_batch_block() {
     service.initialize().await.expect("initialize");
     snapshot_calls.store(0, Ordering::SeqCst);
     commit_calls.store(0, Ordering::SeqCst);
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -2149,7 +2157,7 @@ async fn bulk_import_keeps_accepted_prefix_when_second_block_committing_fails() 
     let abort_store_commit_calls = Arc::new(AtomicUsize::new(0));
     let system = Arc::new(FailingSecondCommitContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         commit_attempts: Arc::clone(&commit_attempts),
         commit_to_store_calls: Arc::clone(&commit_to_store_calls),
         abort_store_commit_calls: Arc::clone(&abort_store_commit_calls),
@@ -2165,7 +2173,8 @@ async fn bulk_import_keeps_accepted_prefix_when_second_block_committing_fails() 
     commit_to_store_calls.store(0, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -2226,7 +2235,7 @@ async fn fatal_bulk_precommit_failure_aborts_staged_prefix_without_finalizing() 
     let abort_store_commit_calls = Arc::new(AtomicUsize::new(0));
     let system = Arc::new(FailingSecondCommitContext {
         snapshot,
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         commit_attempts: Arc::clone(&commit_attempts),
         commit_to_store_calls: Arc::clone(&commit_to_store_calls),
         abort_store_commit_calls: Arc::clone(&abort_store_commit_calls),
@@ -2278,7 +2287,7 @@ async fn fatal_inventory_batch_failure_aborts_without_processing_later_blocks() 
     let abort_store_commit_calls = Arc::new(AtomicUsize::new(0));
     let system = Arc::new(FailingSecondCommitContext {
         snapshot,
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         commit_attempts: Arc::clone(&commit_attempts),
         commit_to_store_calls: Arc::clone(&commit_to_store_calls),
         abort_store_commit_calls: Arc::clone(&abort_store_commit_calls),
@@ -2331,7 +2340,7 @@ async fn inventory_batch_honors_per_block_observer_durability_policy() {
     let artifact_lengths = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: Some(Arc::clone(&artifact_lengths)),
@@ -2368,7 +2377,8 @@ async fn inventory_block_batch_flushes_store_once_for_contiguous_accepted_burst(
     commit_calls.store(0, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -2414,7 +2424,8 @@ async fn inventory_block_batch_counts_and_flushes_drained_parked_children() {
     commit_calls.store(0, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header1 = Header::new();
     header1.set_index(1);
@@ -2480,7 +2491,7 @@ async fn bulk_import_skips_per_block_mempool_maintenance() {
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let system = Arc::new(StoreContext {
         snapshot,
-        settings: Arc::new(settings.clone()),
+        chain_spec: test_chain_spec(settings.clone()),
         requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
@@ -2501,7 +2512,8 @@ async fn bulk_import_skips_per_block_mempool_maintenance() {
         BlockchainService::with_defaults(system, ledger, header_cache, mempool);
     service.initialize().await.expect("initialize");
 
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut header1 = Header::new();
     header1.set_index(1);
     header1.set_prev_hash(genesis.hash());
@@ -2545,7 +2557,8 @@ async fn import_blocks_handle_waits_until_batch_is_processed() {
     let service_task = tokio::spawn(service.run());
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header = Header::new();
     header.set_index(1);
@@ -2578,7 +2591,8 @@ async fn import_blocks_counts_duplicate_prefix_as_processed() {
     let service_task = tokio::spawn(service.run());
 
     let settings = neo_config::ProtocolSettings::default();
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header = Header::new();
     header.set_index(1);
@@ -2616,7 +2630,7 @@ async fn persisted_inventory_block_removes_cached_header_after_mempool_update() 
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(settings.clone()),
+        chain_spec: test_chain_spec(settings.clone()),
         requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
@@ -2636,7 +2650,8 @@ async fn persisted_inventory_block_removes_cached_header_after_mempool_update() 
         BlockchainService::with_defaults(system, ledger, Arc::clone(&header_cache), mempool);
 
     service.initialize().await.expect("initialize");
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header = Header::new();
     header.set_index(1);
@@ -2683,7 +2698,8 @@ async fn peer_block_witness_verification_accepts_valid_and_rejects_tampered() {
 
     let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
     service.initialize().await.expect("initialize");
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     // Block 1 over genesis (no transactions; merkle root stays zero).
     let mut header = Header::new();
@@ -2760,7 +2776,8 @@ async fn peer_block_rejects_out_of_range_primary_with_pool_off_and_on() {
             )));
         }
 
-        let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+        let genesis = crate::native_persist::genesis_block(&chain_spec_for_settings(&settings))
+            .expect("genesis");
         let verification = neo_vm::script_builder::redeem_script::RedeemScript::
             multi_sig_redeem_script_from_points(1, &[point]).expect("multisig script");
         let mut header = Header::new();
@@ -2813,7 +2830,8 @@ async fn optimistic_inventory_batch_verifies_next_header_while_persisting_curren
         )
         .expect("pool"),
     )));
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let sign = |header: &Header| {
         let mut sign_data = Vec::with_capacity(36);
@@ -2879,7 +2897,8 @@ async fn optimistic_inventory_window_stops_at_an_invalid_deep_header() {
         .expect("pool"),
     );
     service.set_optimistic_signature_verification(Some(Arc::clone(&pool)));
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let sign = |header: &Header| {
         let mut sign_data = Vec::with_capacity(36);
@@ -2923,8 +2942,10 @@ async fn optimistic_inventory_window_stops_at_an_invalid_deep_header() {
         metrics.submitted >= 3,
         "look-ahead should fill multiple tickets"
     );
-    assert!(metrics.completed >= 2, "advisory jobs must complete");
-    assert_eq!(metrics.invalid, 0, "header workers do not authorize blocks");
+    assert!(
+        metrics.completed >= 2,
+        "the deep invalid witness must complete advisory worker preparation"
+    );
 }
 
 #[tokio::test]
@@ -2950,7 +2971,7 @@ async fn canonical_import_does_not_add_transaction_signature_gate() {
     let abort_store_commit_calls = Arc::new(AtomicUsize::new(0));
     let system = Arc::new(FailingSecondCommitContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(settings.clone()),
+        chain_spec: chain_spec_for_settings(&settings),
         commit_attempts: Arc::clone(&commit_attempts),
         commit_to_store_calls: Arc::clone(&commit_to_store_calls),
         abort_store_commit_calls: Arc::clone(&abort_store_commit_calls),
@@ -2966,7 +2987,8 @@ async fn canonical_import_does_not_add_transaction_signature_gate() {
     commit_attempts.store(0, Ordering::SeqCst);
     commit_to_store_calls.store(0, Ordering::SeqCst);
 
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let transaction_verification =
         neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&[2u8; 33]);
     let transaction_account = neo_primitives::UInt160::from_script(&transaction_verification);
@@ -3040,7 +3062,8 @@ async fn peer_block_witness_verification_does_not_trust_catchup_peer_tip() {
 
     let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
     service.initialize().await.expect("initialize");
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     neo_runtime::sync_metrics::set_peer_live_tip(1_000_000);
 
@@ -3097,7 +3120,8 @@ async fn peer_block_must_match_cached_header_hash() {
 
     let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
     service.initialize().await.expect("initialize");
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let verification =
         neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
             1,
@@ -3168,7 +3192,8 @@ async fn handle_import_block_reports_rejection_and_verifies_witness() {
 
     let (service, handle, _snapshot) = store_fixture_with(settings.clone());
     service.initialize().await.expect("initialize");
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header = Header::new();
     header.set_index(1);
@@ -3253,7 +3278,7 @@ async fn handle_import_block_reports_durable_tip_after_finalized_delivery_failur
     let fail_delivery = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let system = Arc::new(FailingFinalizedDeliveryContext {
         snapshot: Arc::new(neo_storage::DataCache::new(false)),
-        settings: Arc::new(settings.clone()),
+        chain_spec: test_chain_spec(settings.clone()),
         fail_delivery: Arc::clone(&fail_delivery),
     });
     let ledger = Arc::new(LedgerContext::default());
@@ -3265,7 +3290,8 @@ async fn handle_import_block_reports_durable_tip_after_finalized_delivery_failur
     );
     service.initialize().await.expect("initialize");
 
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut header = Header::new();
     header.set_index(1);
     header.set_prev_hash(genesis.hash());
@@ -3320,7 +3346,8 @@ async fn handle_implements_runtime_block_import_contract() {
     service.initialize().await.expect("initialize");
     let runner = tokio::spawn(service.run());
 
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let mut header = Header::new();
     header.set_index(1);
     header.set_prev_hash(genesis.hash());

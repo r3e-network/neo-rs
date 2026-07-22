@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::RpcRawMemPool;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::Arc;
@@ -131,11 +132,13 @@ async fn get_raw_mem_pool_mixed_verified_and_unverified() {
     {
         let pool = &pool_arc;
         assert_eq!(
-            pool.try_add(tx1.clone(), store.data_cache()),
+            crate::server::test_support::admit_local_transaction(pool, &tx1, store.data_cache(),)
+                .verify_result(),
             VerifyResult::Succeed
         );
         assert_eq!(
-            pool.try_add(tx2.clone(), store.data_cache()),
+            crate::server::test_support::admit_local_transaction(pool, &tx2, store.data_cache(),)
+                .verify_result(),
             VerifyResult::Succeed
         );
 
@@ -146,7 +149,8 @@ async fn get_raw_mem_pool_mixed_verified_and_unverified() {
         assert_eq!(pool.unverified_count(), 2);
 
         assert_eq!(
-            pool.try_add(tx3.clone(), store.data_cache()),
+            crate::server::test_support::admit_local_transaction(pool, &tx3, store.data_cache(),)
+                .verify_result(),
             VerifyResult::Succeed
         );
         assert_eq!(pool.verified_count(), 1);

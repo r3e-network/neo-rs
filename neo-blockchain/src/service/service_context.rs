@@ -2,7 +2,7 @@
 //!
 //! The trait is the seam between the blockchain service and the
 //! rest of the node: it provides the service with access to the
-//! protocol settings, the current chain height, and the storage /
+//! immutable chain specification, the current chain height, and the storage /
 //! mempool / network backends it needs to validate and persist
 //! blocks.
 //!
@@ -16,7 +16,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use neo_config::ProtocolSettings;
+use neo_config::{ChainSpecProvider, NeoChainSpec};
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
 
@@ -48,15 +48,14 @@ pub enum SyncBatchCommitPolicy {
 /// blockchain service is the *only* owner of the canonical tip, so concurrent
 /// callers go through the service's command channel rather than through this
 /// trait directly.
-pub trait SystemContext: Send + Sync + std::fmt::Debug {
+pub trait SystemContext:
+    ChainSpecProvider<ChainSpec = NeoChainSpec> + Send + Sync + std::fmt::Debug
+{
     /// Native-contract provider captured by the composition root.
     type NativeProvider: NativeContractProvider + 'static;
 
     /// Concrete cache backing captured by the composition root.
     type CacheBacking: neo_storage::CacheRead;
-
-    /// Returns the effective protocol settings.
-    fn settings(&self) -> Arc<ProtocolSettings>;
 
     /// Returns the current canonical chain height.
     fn current_height(&self) -> u32;

@@ -1,7 +1,6 @@
 use super::{
     providers::{MemoryStoreProvider, RuntimeStore},
     storage::StorageConfig,
-    store_provider::StoreProvider,
 };
 use crate::error::{StorageError, StorageResult};
 use crate::mdbx::MdbxStoreProvider;
@@ -11,24 +10,16 @@ use std::sync::Arc;
 const MEMORY_PROVIDER: &str = "memory";
 const MDBX_PROVIDER: &str = "mdbx";
 
-/// Built-in storage providers supported by production node configuration.
+/// Built-in storage backends supported by production node configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StoreProviderKind {
+enum StoreBackend {
     /// Process-local in-memory store for tests and ephemeral nodes.
     Memory,
     /// MDBX-backed store used by production nodes.
     Mdbx,
 }
 
-impl StoreProviderKind {
-    /// Canonical configuration name for the provider.
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Memory => MEMORY_PROVIDER,
-            Self::Mdbx => MDBX_PROVIDER,
-        }
-    }
-
+impl StoreBackend {
     fn from_name(name: &str) -> Option<Self> {
         match provider_key(name).as_str() {
             MEMORY_PROVIDER => Some(Self::Memory),
@@ -42,26 +33,28 @@ impl StoreProviderKind {
         P: AsRef<Path>,
     {
         match self {
-            Self::Memory => runtime_store_from_provider(&MemoryStoreProvider::new(), path.as_ref()),
-            Self::Mdbx => runtime_store_from_provider(
-                &MdbxStoreProvider::new(StorageConfig::default()),
-                path.as_ref(),
-            ),
+            Self::Memory => MemoryStoreProvider::new()
+                .get_store(path.as_ref())
+                .map(|store| Arc::new(RuntimeStore::from(store.as_ref().clone()))),
+            Self::Mdbx => MdbxStoreProvider::new(StorageConfig::default())
+                .get_store(path.as_ref())
+                .map(|store| Arc::new(RuntimeStore::from(store.as_ref().clone()))),
         }
     }
 
     fn get_store_with_config(self, config: StorageConfig) -> StorageResult<Arc<RuntimeStore>> {
         match self {
-            Self::Memory => runtime_store_from_provider_config(&MemoryStoreProvider::new(), config),
-            Self::Mdbx => runtime_store_from_provider_config(
-                &MdbxStoreProvider::new(StorageConfig::default()),
-                config,
-            ),
+            Self::Memory => MemoryStoreProvider::new()
+                .get_store(&config.path)
+                .map(|store| Arc::new(RuntimeStore::from(store.as_ref().clone()))),
+            Self::Mdbx => MdbxStoreProvider::new(config)
+                .get_store(Path::new(""))
+                .map(|store| Arc::new(RuntimeStore::from(store.as_ref().clone()))),
         }
     }
 }
 
-/// Facade for creating stores from named built-in providers.
+/// Factory for creating stores from the closed set of built-in backends.
 ///
 /// This is the only production entry point for opening storage backends by
 /// name. The provider choice is a small static enum, not a plugin registry,
@@ -70,14 +63,6 @@ impl StoreProviderKind {
 pub struct StoreFactory;
 
 impl StoreFactory {
-    /// Get store provider by name.
-    pub fn get_store_provider(name: &str) -> Option<StoreProviderKind> {
-        if provider_key(name).is_empty() {
-            return None;
-        }
-        StoreProviderKind::from_name(name)
-    }
-
     /// Creates a store through an explicitly named provider.
     ///
     /// # Arguments
@@ -104,31 +89,6 @@ impl StoreFactory {
     }
 }
 
-fn runtime_store_from_provider<P>(provider: &P, path: &Path) -> StorageResult<Arc<RuntimeStore>>
-where
-    P: StoreProvider,
-    P::Store: Clone,
-    RuntimeStore: From<P::Store>,
-{
-    provider
-        .get_store(path)
-        .map(|store| Arc::new(RuntimeStore::from(store.as_ref().clone())))
-}
-
-fn runtime_store_from_provider_config<P>(
-    provider: &P,
-    config: StorageConfig,
-) -> StorageResult<Arc<RuntimeStore>>
-where
-    P: StoreProvider,
-    P::Store: Clone,
-    RuntimeStore: From<P::Store>,
-{
-    provider
-        .get_store_with_config(config)
-        .map(|store| Arc::new(RuntimeStore::from(store.as_ref().clone())))
-}
-
 fn empty_provider_error() -> StorageError {
     StorageError::invalid_operation(
         "empty storage provider is not supported; choose mdbx or memory explicitly",
@@ -139,12 +99,12 @@ fn provider_key(name: &str) -> String {
     name.trim().to_ascii_lowercase()
 }
 
-fn provider_for(storage_provider: &str) -> StorageResult<StoreProviderKind> {
+fn provider_for(storage_provider: &str) -> StorageResult<StoreBackend> {
     let key = provider_key(storage_provider);
     if key.is_empty() {
         return Err(empty_provider_error());
     }
-    StoreProviderKind::from_name(storage_provider)
+    StoreBackend::from_name(storage_provider)
         .ok_or_else(|| unknown_provider_error(storage_provider))
 }
 

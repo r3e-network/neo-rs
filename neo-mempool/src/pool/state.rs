@@ -8,12 +8,14 @@ use std::collections::{HashMap, HashSet};
 
 use num_bigint::BigInt;
 
-use crate::pool_index::PoolIndex;
+use crate::TransactionOrigin;
 use crate::pool_item::PoolItem;
 use crate::transaction_verification_context::TransactionVerificationContext;
 use neo_native_contracts::Notary;
 use neo_payloads::Transaction;
 use neo_primitives::{UInt160, UInt256};
+
+use super::pool_index::PoolIndex;
 
 /// C# v3.10.1 `MemoryPool.GetPayer` / `TransactionVerificationContext` payer
 /// tuple. Ordinary transactions reserve fees against `(Sender, None)`;
@@ -58,7 +60,6 @@ pub(super) struct MemoryPoolInner {
     /// C# `TransactionVerificationContext._oracleResponses`: pooled
     /// `OracleResponse` ids, rejecting duplicate responses.
     pub(super) oracle_responses: HashMap<u64, UInt256>,
-    pub(super) capacity: usize,
 }
 
 impl MemoryPoolInner {
@@ -70,7 +71,6 @@ impl MemoryPoolInner {
             verification_context: TransactionVerificationContext::new(),
             sender_fees: HashMap::new(),
             oracle_responses: HashMap::new(),
-            capacity,
         }
     }
 
@@ -198,6 +198,46 @@ impl MemoryPoolInner {
             });
         }
         Some(dropped)
+    }
+
+    /// Applies the single atomic mutation sequence for a validated transaction.
+    pub(super) fn insert_validated(
+        &mut self,
+        transaction: Transaction,
+        origin: TransactionOrigin,
+        hash: UInt256,
+        conflicts_to_remove: &[PoolItem],
+        capacity: usize,
+    ) -> bool {
+        self.verified
+            .insert(PoolItem::new(transaction.clone(), origin));
+        self.context_add(&transaction);
+
+        for conflict in conflicts_to_remove {
+            let conflict_hash = conflict.hash();
+            if let Some(item) = self.verified.remove(&conflict_hash) {
+                let dropped = (*item.transaction).clone();
+                self.context_remove(&dropped);
+                self.conflicts.retain(|_, set| {
+                    set.remove(&conflict_hash);
+                    !set.is_empty()
+                });
+            }
+        }
+        for target in conflict_target_hashes(&transaction) {
+            self.conflicts.entry(target).or_default().insert(hash);
+        }
+
+        let mut retained = true;
+        while self.verified.len() + self.unverified.len() > capacity {
+            let Some(dropped) = self.remove_lowest_fee() else {
+                break;
+            };
+            if dropped.hash() == hash {
+                retained = false;
+            }
+        }
+        retained
     }
 }
 

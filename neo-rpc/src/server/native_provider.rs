@@ -8,6 +8,7 @@
 use neo_config::ProtocolSettings;
 use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_primitives::TransactionAttributeType;
 use neo_storage::{CacheRead, DataCache};
 use std::sync::Arc;
 
@@ -56,6 +57,16 @@ where
     /// Returns Policy.FeePerByte through the provider capability surface.
     pub(crate) fn fee_per_byte<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32> {
         self.native_contract_provider.fee_per_byte(snapshot)
+    }
+
+    /// Returns the Policy fee for one transaction attribute type.
+    pub(crate) fn attribute_fee<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        attribute_type: TransactionAttributeType,
+    ) -> CoreResult<i64> {
+        self.native_contract_provider
+            .attribute_fee(snapshot, attribute_type)
     }
 
     /// Returns Policy.ExecFeeFactor through the provider capability surface.

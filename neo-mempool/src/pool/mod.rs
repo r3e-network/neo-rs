@@ -10,16 +10,18 @@
 //!
 //! ## Contents
 //!
+//! - `config`: immutable operator policy for the memory pool.
 //! - `memory_pool`: memory-pool state and mutation API.
 //! - `pool_index`: memory-pool priority indexes.
 //! - `pool_item`: memory-pool item records.
 //! - `state`: private queue/context state used by `memory_pool`.
 
+mod config;
 pub mod memory_pool;
-pub mod pool_index;
+mod pool_index;
 pub mod pool_item;
 mod state;
 
-pub use memory_pool::{MemoryPool, SharedMemoryPool};
-pub use pool_index::PoolIndex;
+pub use config::{DEFAULT_MAX_TRANSACTIONS, TxPoolConfig, TxPoolConfigError};
+pub use memory_pool::MemoryPool;
 pub use pool_item::PoolItem;

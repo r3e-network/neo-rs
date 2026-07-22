@@ -42,7 +42,7 @@ async fn block_fetch_timeout_is_absolute_and_clears_pending_assignment() {
     let (stream, remote_addr) = listener.accept().await.expect("accept");
 
     let identity = Arc::new(LocalIdentity::new(
-        ProtocolSettings::default().network,
+        network_magic(),
         7,
         "/neo-rs:test/".to_string(),
         true,
@@ -68,13 +68,7 @@ async fn block_fetch_timeout_is_absolute_and_clears_pending_assignment() {
     assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
     tokio::spawn(service.run());
 
-    complete_handshake(
-        &mut fake,
-        ProtocolSettings::default().network,
-        0xfa4e_0014,
-        20333,
-    )
-    .await;
+    complete_handshake(&mut fake, network_magic(), 0xfa4e_0014, 20333).await;
     await_download_peer_ready(&registry, peer_id).await;
 
     let first_fetch = tokio::spawn({
@@ -151,7 +145,7 @@ async fn malformed_header_fetch_response_is_rejected_and_clears_assignment() {
     let (stream, remote_addr) = listener.accept().await.expect("accept");
 
     let identity = Arc::new(LocalIdentity::new(
-        ProtocolSettings::default().network,
+        network_magic(),
         7,
         "/neo-rs:test/".to_string(),
         true,
@@ -172,13 +166,7 @@ async fn malformed_header_fetch_response_is_rejected_and_clears_assignment() {
     assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
     tokio::spawn(service.run());
 
-    complete_handshake(
-        &mut fake,
-        ProtocolSettings::default().network,
-        0xfa4e_0016,
-        20333,
-    )
-    .await;
+    complete_handshake(&mut fake, network_magic(), 0xfa4e_0016, 20333).await;
     await_download_peer_ready(&registry, peer_id).await;
 
     let fetch = tokio::spawn({
@@ -276,7 +264,7 @@ async fn block_fetch_before_verack_is_rejected_without_queuing_stale_request() {
     };
     let (stream, remote_addr) = listener.accept().await.expect("accept");
 
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     let identity = Arc::new(LocalIdentity::new(
         network,
         7,
@@ -375,7 +363,7 @@ async fn header_fetch_before_verack_is_rejected_without_queuing_stale_request() 
     };
     let (stream, remote_addr) = listener.accept().await.expect("accept");
 
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     let identity = Arc::new(LocalIdentity::new(
         network,
         7,
@@ -479,7 +467,7 @@ async fn header_fetch_timeout_is_absolute_and_clears_pending_assignment() {
     let (stream, remote_addr) = listener.accept().await.expect("accept");
 
     let identity = Arc::new(LocalIdentity::new(
-        ProtocolSettings::default().network,
+        network_magic(),
         7,
         "/neo-rs:test/".to_string(),
         true,
@@ -505,13 +493,7 @@ async fn header_fetch_timeout_is_absolute_and_clears_pending_assignment() {
     assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
     tokio::spawn(service.run());
 
-    complete_handshake(
-        &mut fake,
-        ProtocolSettings::default().network,
-        0xfa4e_0018,
-        20333,
-    )
-    .await;
+    complete_handshake(&mut fake, network_magic(), 0xfa4e_0018, 20333).await;
     await_download_peer_ready(&registry, peer_id).await;
 
     let first_fetch = tokio::spawn({
@@ -595,7 +577,7 @@ async fn peer_registry_fetcher_collects_assigned_peer_range() {
     let (stream, remote_addr) = listener.accept().await.expect("accept");
 
     let identity = Arc::new(LocalIdentity::new(
-        ProtocolSettings::default().network,
+        network_magic(),
         7,
         "/neo-rs:test/".to_string(),
         true,
@@ -616,13 +598,7 @@ async fn peer_registry_fetcher_collects_assigned_peer_range() {
     assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
     tokio::spawn(service.run());
 
-    complete_handshake(
-        &mut fake,
-        ProtocolSettings::default().network,
-        0xfa4e_0013,
-        20333,
-    )
-    .await;
+    complete_handshake(&mut fake, network_magic(), 0xfa4e_0013, 20333).await;
     await_download_peer_ready(&registry, peer_id).await;
 
     let fetch = tokio::spawn({
@@ -673,7 +649,7 @@ async fn seeded_local_height_is_advertised_without_unsolicited_sync() {
 
     let (handle, _events, port) =
         start_local_node_with_seeded_height(ChannelsConfig::default(), DURABLE_TIP).await;
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     let mut fake = fake_dial(port).await;
 
     let node_version = recv_frame(&mut fake).await.expect("node version");

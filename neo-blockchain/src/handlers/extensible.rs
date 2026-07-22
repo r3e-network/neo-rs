@@ -27,7 +27,8 @@ where
     ) -> CoreResult<()> {
         let hash = payload.hash();
         if let Some(snapshot) = self.system.store_snapshot() {
-            let settings = self.system.settings();
+            let chain_spec = self.system.chain_spec();
+            let settings = chain_spec.protocol_settings();
             let native_contract_provider = self.system.native_contract_provider().ok_or_else(|| {
                 CoreError::invalid_operation(
                     "store-backed extensible payload verification requires a native contract provider",
@@ -43,7 +44,7 @@ where
             Self::verify_extensible(
                 &payload,
                 height,
-                settings.as_ref(),
+                settings,
                 &snapshot,
                 native_contract_provider,
                 &extensible_native_provider,
@@ -129,7 +130,7 @@ where
         }
 
         // C# `this.VerifyWitnesses(settings, snapshot, 0_06000000L)`.
-        let hashes = payload.script_hashes_for_verifying(snapshot);
+        let hashes = payload.script_hashes_for_verifying();
         let witnesses = payload.witnesses();
         if hashes.len() != witnesses.len() {
             return Err(CoreError::other("witness count mismatch"));

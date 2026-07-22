@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
-use neo_execution::{ApplicationEngine, TriggerType};
-use neo_manifest::CallFlags;
+use neo_execution::ApplicationEngine;
 use neo_payloads::VerifiableContainer;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_payloads::witness::Witness;
+use neo_primitives::CallFlags;
 use neo_primitives::ContractParameterType;
+use neo_primitives::TriggerType;
 use rand::random;
 use serde_json::Value;
 

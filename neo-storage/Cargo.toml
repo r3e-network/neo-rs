@@ -13,13 +13,6 @@ categories.workspace = true
 readme.workspace = true
 description = "Storage traits and abstractions for Neo blockchain"
 
-[features]
-default = []
-# Experimental MDBX write-map backend for controlled catch-up benchmarks. The
-# default remains NoWriteMap until a full durability and restart A/B proves a
-# production benefit on the target filesystem.
-mdbx-write-map = []
-
 [dependencies]
 # Internal crates
 neo-primitives = { workspace = true }
@@ -45,11 +38,7 @@ xxhash-rust = { workspace = true }
 rand = { workspace = true }
 
 # Collections
-hashbrown = { workspace = true }
 rustc-hash = { workspace = true }
-
-# Caching
-lru = { workspace = true }
 
 # Logging
 tracing = { workspace = true }

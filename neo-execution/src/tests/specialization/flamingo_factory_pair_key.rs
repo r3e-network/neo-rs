@@ -18,7 +18,7 @@ fn mainnet_hardforks_at(settings: &ProtocolSettings, height: u32) -> HardforkTab
     Hardfork::ALL
         .into_iter()
         .fold(HardforkTableIdentity::unconfigured(), |table, hardfork| {
-            let state = match settings.hardforks.get(&hardfork).copied() {
+            let state = match settings.hardforks.activation_height(hardfork) {
                 None => HardforkPlanState::Unconfigured,
                 Some(activation_height) if height >= activation_height => {
                     HardforkPlanState::Active { activation_height }

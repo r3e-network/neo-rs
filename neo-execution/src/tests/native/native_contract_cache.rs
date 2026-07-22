@@ -76,7 +76,7 @@ fn resolved_method_preserves_contract_method_index() {
     };
     let entry = NativeContractsCacheEntry::from_contract::<NoNativeContractProvider, _>(&contract);
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 10);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 10);
 
     let before = entry
         .get_method("same", 1, &settings, 9)

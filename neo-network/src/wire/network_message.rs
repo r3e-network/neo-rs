@@ -66,11 +66,25 @@ impl NetworkMessage {
     /// `allow_compression` mirrors the C# `Message.ToArray(bool)` flag:
     /// when `false`, the payload is always emitted uncompressed even
     /// if the heuristics would normally trigger compression.
+    ///
+    /// The compression bit in [`Self::flags`] is derived from the bytes that
+    /// are actually emitted. Other flag bits are opaque protocol extensions
+    /// and are preserved when this value was built with [`Self::with_flags`].
     pub fn to_bytes(&self, allow_compression: bool) -> WireResult<Vec<u8>> {
         let payload_bytes = self.payload.serialize_payload()?;
         let enable_compression = allow_compression && self.payload.allows_compression();
-        let message =
+        let mut message =
             Message::from_payload_bytes(self.header.command, payload_bytes, enable_compression)?;
+
+        // `Message::from_payload_bytes` owns the compression threshold and
+        // whitelist. Preserve only unknown/reserved flag bits from a decoded
+        // or explicitly flagged envelope; copying COMPRESSED independently
+        // would advertise LZ4 for a raw payload when compression is disabled
+        // or when the payload did not meet the threshold.
+        let reserved_bits = self.flags.bits() & !MessageFlags::COMPRESSED.bits();
+        if reserved_bits != 0 {
+            message.flags = MessageFlags::from_byte(message.flags.bits() | reserved_bits);
+        }
         message.to_bytes()
     }
 

@@ -57,7 +57,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::ChannelsConfig;
-use neo_config::ProtocolSettings;
+use neo_config::NeoChainSpec;
 use neo_payloads::{Block, Transaction};
 use neo_runtime::{NetworkEvent as RuntimeNetworkEvent, NetworkService, Service, ServiceError};
 
@@ -91,8 +91,8 @@ pub struct LocalNodeService<B = NoBlockSource>
 where
     B: BlockSource,
 {
-    /// Protocol settings (network magic, …).
-    settings: Arc<ProtocolSettings>,
+    /// Immutable chain identity and protocol rules.
+    chain_spec: Arc<NeoChainSpec>,
     /// Channel configuration (connection caps, compression flag).
     config: ChannelsConfig,
     /// Identity advertised in outbound version payloads.
@@ -148,18 +148,18 @@ impl LocalNodeService<NoBlockSource> {
     /// Build a fresh `(service, handle)` pair with the default
     /// [`ChannelsConfig`] (C# defaults: 40 max connections, 3 per
     /// address, compression enabled).
-    pub fn new(settings: Arc<ProtocolSettings>) -> (Self, NetworkHandle) {
-        Self::with_config(settings, ChannelsConfig::default())
+    pub fn new(chain_spec: Arc<NeoChainSpec>) -> (Self, NetworkHandle) {
+        Self::with_config(chain_spec, ChannelsConfig::default())
     }
 
     /// Build a fresh `(service, handle)` pair with an explicit
     /// channel configuration.
     pub fn with_config(
-        settings: Arc<ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         config: ChannelsConfig,
     ) -> (Self, NetworkHandle) {
         let registry = Arc::new(PeerRegistry::from_config(&config));
-        Self::with_config_and_registry(settings, config, registry)
+        Self::with_config_and_registry(chain_spec, config, registry)
     }
 
     /// Build a fresh `(service, handle)` pair with an externally supplied peer
@@ -170,26 +170,30 @@ impl LocalNodeService<NoBlockSource> {
     /// match `config`; callers should normally create it with
     /// [`PeerRegistry::from_config`].
     pub fn with_config_and_registry(
-        settings: Arc<ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         config: ChannelsConfig,
         registry: Arc<PeerRegistry>,
     ) -> (Self, NetworkHandle) {
         let (cmd_tx, cmd_rx) = mpsc::channel(DEFAULT_COMMAND_CAPACITY);
         let (event_tx, _event_rx) = broadcast::channel(DEFAULT_EVENT_CAPACITY);
-        let handle = NetworkHandle::from_parts(cmd_tx, event_tx.clone());
+        let handle = NetworkHandle::from_parts_with_registry(
+            cmd_tx,
+            event_tx.clone(),
+            Some(Arc::clone(&registry)),
+        );
         // Source the identity nonce / user agent from the handle
         // family so the values served by `getversion` are the values
         // sent in version payloads (C#: both read `LocalNode.Nonce` /
         // `LocalNode.UserAgent`).
         let info = handle.local_node_info();
         let identity = Arc::new(LocalIdentity::new(
-            settings.network,
+            chain_spec.network_magic(),
             info.nonce,
             info.user_agent.clone(),
             config.enable_compression,
         ));
         let service = Self {
-            settings,
+            chain_spec,
             config,
             identity,
             cmd_rx,
@@ -235,7 +239,7 @@ where
         S: BlockSource + 'static,
     {
         LocalNodeService {
-            settings: self.settings,
+            chain_spec: self.chain_spec,
             config: self.config,
             identity: self.identity,
             cmd_rx: self.cmd_rx,
@@ -256,9 +260,9 @@ where
         &self.config
     }
 
-    /// Protocol settings in effect for this service.
-    pub fn settings(&self) -> &ProtocolSettings {
-        &self.settings
+    /// Immutable chain specification in effect for this service.
+    pub fn chain_spec(&self) -> Arc<NeoChainSpec> {
+        Arc::clone(&self.chain_spec)
     }
 
     /// Drive the service loop until the command channel is closed.
@@ -483,7 +487,10 @@ where
         // Admission control applies to dialed peers too: C# routes
         // outbound `Tcp.Connected` events through the same
         // `Peer.OnTcpConnected` cap checks as inbound ones.
-        if !self.registry.try_admit(peer_id, addr, handle) {
+        if !self
+            .registry
+            .try_admit_with_direction(peer_id, addr, handle, false)
+        {
             // Dropping the service closes the freshly dialed stream
             // (the C# path replies Tcp.Abort).
             return Err(NetworkError::Protocol(format!(
@@ -566,7 +573,7 @@ where
     /// items they lack via `GetData`.
     async fn handle_broadcast_inv(
         &self,
-        inventory_type: crate::InventoryType,
+        inventory_type: neo_primitives::InventoryType,
         hashes: Vec<neo_primitives::UInt256>,
     ) {
         if hashes.is_empty() {
@@ -714,7 +721,12 @@ async fn accept_loop<B>(
                         // connected set and never produces lifecycle
                         // events. Dropping the un-spawned service
                         // closes the stream.
-                        if !registry.try_admit(peer_id, remote_addr, handle) {
+                        if !registry.try_admit_with_direction(
+                            peer_id,
+                            remote_addr,
+                            handle,
+                            true,
+                        ) {
                             info!(
                                 target: "neo_network",
                                 %remote_addr,

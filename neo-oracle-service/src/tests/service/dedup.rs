@@ -10,11 +10,13 @@ fn oracle_service(enable_deduplication: bool) -> OracleService<neo_system::Node>
         .build()
         .expect("tokio runtime");
     let _guard = runtime.enter();
-    let settings = Arc::new(ProtocolSettings::testnet());
-    let system =
-        Arc::new(neo_system::Node::new(Arc::clone(&settings), None, None).expect("neo system"));
+    let settings = ProtocolSettings::testnet();
+    let network = settings.network;
+    let system = Arc::new(neo_system::Node::for_test(
+        neo_test_fixtures::test_chain_spec(settings),
+    ));
     let oracle_settings = OracleServiceSettings {
-        network: settings.network,
+        network,
         enable_deduplication,
         ..Default::default()
     };

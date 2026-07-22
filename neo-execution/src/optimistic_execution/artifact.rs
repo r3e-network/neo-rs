@@ -286,6 +286,13 @@ pub enum SpeculativeArtifactCaptureError {
     /// Context/native dependency conversion found an inconsistent trace.
     #[error("speculative host dependency capture failed: {0}")]
     HostDependency(#[from] HostDependencyCaptureError),
+    /// The execution touched a host surface without an exact optimistic
+    /// dependency validator and ordered publication sink.
+    #[error("optimistic execution requires sequential fallback for {kind}")]
+    UnsupportedHostBehavior {
+        /// Stable surface name used by the fallback and metrics path.
+        kind: &'static str,
+    },
     /// Point-read capture was unsupported or exceeded its bounds.
     #[error("speculative point dependency capture failed: {0}")]
     PointDependency(#[from] super::DependencyCaptureError),
@@ -442,6 +449,9 @@ impl OptimisticObservationBinding {
         *phase = ObservationBindingPhase::Sealed;
         let observations = self.observations.lock();
         let journal = observations.journal()?;
+        if let Some(kind) = journal.first_unsupported_optimistic_surface() {
+            return Err(SpeculativeArtifactCaptureError::UnsupportedHostBehavior { kind });
+        }
         Ok(OptimisticHostDependencies::from_journal(journal)?)
     }
 
@@ -718,6 +728,26 @@ where
             let identity = observations.begin_execution(runner.engine())?;
             ensure_pristine_engine(runner.engine(), &identity)?;
             runner.engine_mut().execute_allow_fault();
+            if !runner.engine().notifications().is_empty() {
+                return Err(SpeculativeArtifactCaptureError::UnsupportedHostBehavior {
+                    kind: "notifications",
+                });
+            }
+            if !runner.engine().logs().is_empty() {
+                return Err(SpeculativeArtifactCaptureError::UnsupportedHostBehavior {
+                    kind: "logs",
+                });
+            }
+            if runner.engine().storage_iterator_count() != 0 {
+                return Err(SpeculativeArtifactCaptureError::UnsupportedHostBehavior {
+                    kind: "storage iterators",
+                });
+            }
+            if runner.engine().pending_native_call_count() != 0 {
+                return Err(SpeculativeArtifactCaptureError::UnsupportedHostBehavior {
+                    kind: "pending native calls",
+                });
+            }
             // Disable the shared point observer before copying the dependency
             // set. `disable_read_observation` waits for in-flight callbacks, so
             // no retained cache handle can race an omitted read into the seal.
@@ -913,10 +943,11 @@ fn capture_storage_effects<B: CacheRead>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::NoDiagnostic;
     use crate::application_engine::{ApplicationEngine, TEST_MODE_GAS};
     use crate::native_contract_provider::NoNativeContractProvider;
-    use crate::{NoDiagnostic, TriggerType};
     use neo_config::ProtocolSettings;
+    use neo_primitives::TriggerType;
     use neo_storage::{DataCache, StorageItem, StorageKey};
 
     const PANIC_SYSCALL: &str = "Test.OptimisticCapturePanic";
@@ -1064,6 +1095,135 @@ mod tests {
             Err(SpeculativeArtifactCaptureError::BindingSealed)
         );
         assert!(artifact.engine.execution_observation_handle().is_none());
+    }
+
+    #[test]
+    fn unsupported_contract_call_falls_back_before_artifact_publication() {
+        let base = DataCache::new(false);
+        let prefix = super::super::PinnedBlockPrefix::capture(
+            super::super::BlockPrefixIdentity::new(neo_primitives::UInt256::default(), 1, 0),
+            &base,
+        );
+        let (overlay, point_capture) = prefix
+            .transaction_overlay_with_dependency_capture(
+                0,
+                super::super::DependencyCaptureLimits::default(),
+            )
+            .expect("overlay");
+        let mut engine = make_engine(overlay.snapshot_cache());
+        let binding = OptimisticObservationBinding::new(ExecutionArtifactLimits::default());
+        binding.bind(&mut engine).expect("binding");
+        binding.observations.lock().record(|journal| {
+            journal.record_call(
+                crate::host_access_audit::ContractCallAccess::new(
+                    crate::host_access_audit::ContractCallKind::Dynamic,
+                    neo_vm::ContractResolutionIdentity::new(
+                        neo_primitives::UInt160::zero(),
+                        1,
+                        0,
+                        0,
+                    ),
+                    0,
+                    "dynamic",
+                    neo_primitives::CallFlags::ALL,
+                    0,
+                    0,
+                ),
+                Vec::new(),
+                crate::execution_artifact::CallObservationOutcome::Returned(Vec::new()),
+            )
+        });
+        engine
+            .load_script(
+                vec![neo_vm::OpCode::RET.byte()],
+                neo_primitives::CallFlags::ALL,
+                None,
+            )
+            .expect("entry script");
+
+        let error = SpeculativeExecutionArtifact::execute_and_capture(
+            engine,
+            overlay,
+            point_capture,
+            &binding,
+        )
+        .err()
+        .expect("dynamic call must use sequential fallback");
+        assert_eq!(
+            error,
+            SpeculativeArtifactCaptureError::UnsupportedHostBehavior {
+                kind: "contract calls",
+            }
+        );
+        assert_eq!(
+            binding.record_native_cache(
+                crate::host_access_audit::NativeCacheAccess::new(
+                    neo_vm::NativeCacheDomain {
+                        contract_hash: neo_primitives::UInt160::zero(),
+                        contract_id: 1,
+                        native_version: 1,
+                        partition: 1,
+                    },
+                    crate::host_access_audit::ResolvedNativeCacheScope::WholeDomain,
+                    crate::host_access_audit::NativeCacheAccessKind::Read,
+                ),
+                None,
+                None,
+            ),
+            Err(SpeculativeArtifactCaptureError::BindingSealed)
+        );
+    }
+
+    #[test]
+    fn unsupported_range_observation_falls_back_before_artifact_publication() {
+        let base = DataCache::new(false);
+        let prefix = super::super::PinnedBlockPrefix::capture(
+            super::super::BlockPrefixIdentity::new(neo_primitives::UInt256::default(), 1, 0),
+            &base,
+        );
+        let (overlay, point_capture) = prefix
+            .transaction_overlay_with_dependency_capture(
+                0,
+                super::super::DependencyCaptureLimits::default(),
+            )
+            .expect("overlay");
+        let mut engine = make_engine(overlay.snapshot_cache());
+        let binding = OptimisticObservationBinding::new(ExecutionArtifactLimits::default());
+        binding.bind(&mut engine).expect("binding");
+        binding.observations.lock().record(|journal| {
+            journal.record_storage_range(
+                crate::host_access_audit::StorageRangeAccess::prefix(
+                    7,
+                    b"range".to_vec(),
+                    neo_vm::RangeDirection::Forward,
+                    neo_primitives::FindOptions::None,
+                    4,
+                ),
+                Vec::new(),
+            )
+        });
+        engine
+            .load_script(
+                vec![neo_vm::OpCode::RET.byte()],
+                neo_primitives::CallFlags::ALL,
+                None,
+            )
+            .expect("entry script");
+
+        let error = SpeculativeExecutionArtifact::execute_and_capture(
+            engine,
+            overlay,
+            point_capture,
+            &binding,
+        )
+        .err()
+        .expect("range reads must use sequential fallback");
+        assert_eq!(
+            error,
+            SpeculativeArtifactCaptureError::UnsupportedHostBehavior {
+                kind: "storage range reads",
+            }
+        );
     }
 
     #[test]

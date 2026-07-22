@@ -1,7 +1,7 @@
 //! ExecutionContextState - matches C# Neo.SmartContract.ExecutionContextState exactly
 
 use crate::contract_state::ContractState;
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::ContractParameterType;
 use neo_primitives::UInt160;
 use neo_storage::{CacheRead, DataCache, EmptyCacheBacking};

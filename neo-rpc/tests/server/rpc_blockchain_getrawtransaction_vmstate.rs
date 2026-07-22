@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 fn node_to_context(node: &neo_system::Node) -> neo_rpc::server::NodeContext {
     neo_rpc::server::NodeContext::from_parts(
-        node.settings(),
+        node.chain_spec(),
         Arc::new(RuntimeStore::Memory(node.storage().as_ref().clone())),
         node.blockchain(),
         node.network(),
@@ -34,12 +34,9 @@ fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_raw_transaction_verbose_omits_vmstate() {
-    let node = neo_system::Node::new(
-        std::sync::Arc::new(neo_config::ProtocolSettings::default()),
-        None,
-        None,
-    )
-    .expect("system to start");
+    let node = neo_system::Node::for_test(neo_test_fixtures::test_chain_spec(
+        neo_config::ProtocolSettings::default(),
+    ));
     let system: std::sync::Arc<neo_rpc::server::NodeContext> =
         std::sync::Arc::new(node_to_context(&node));
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());

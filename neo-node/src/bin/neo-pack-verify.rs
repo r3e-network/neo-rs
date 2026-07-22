@@ -28,6 +28,7 @@ use neo_state_service::read_current_local_root;
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::persistence::{RawReadOnlyStore, StoreFactory, TransactionalStore};
+use neo_trie::MPT_NODE_PREFIX;
 
 #[path = "neo_pack_verify/evidence.rs"]
 mod evidence;
@@ -39,7 +40,6 @@ use evidence::{
 mod checkpoint_compare;
 use checkpoint_compare::compare_checkpoint_nodes;
 
-const STATE_NODE_PREFIX: u8 = 0xf0;
 const BATCH: usize = 1_024;
 // Neo MPT nodes are well below this defensive verifier ceiling. Keep a wider
 // protocol-independent margin while rejecting corrupt multi-gigabyte index
@@ -295,7 +295,7 @@ fn main() -> Result<()> {
 
     // Single-pass reservoir sample over the full node-key range so no key
     // list is materialized.
-    let prefix = vec![STATE_NODE_PREFIX];
+    let prefix = vec![MPT_NODE_PREFIX];
     let mut rng = XorShift64(0x9E37_79B9_7F4A_7C15);
     let mut reservoir: Vec<[u8; 33]> = Vec::with_capacity(samples);
     let mut total_keys = 0u64;
@@ -743,7 +743,7 @@ fn verify_authority(
 
 fn ensure_authoritative_root(pack: &PackStore, root: [u8; 32]) -> Result<()> {
     let mut root_key = [0u8; PACK_KEY_BYTES];
-    root_key[0] = STATE_NODE_PREFIX;
+    root_key[0] = MPT_NODE_PREFIX;
     root_key[1..].copy_from_slice(&root);
     ensure!(
         pack.get_bounded(&root_key, AUTHORITY_LOOKUP_MAX_VALUE_BYTES as u64)

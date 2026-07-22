@@ -6,7 +6,6 @@
 //! a small mockable boundary for pipeline and service tests.
 
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_primitives::verify_result::VerifyResult;
 
 /// Minimal mempool facade used by the high-level service API.
 ///
@@ -16,28 +15,17 @@ use neo_primitives::verify_result::VerifyResult;
 /// attribute detection, and reverify queues stay in `neo-mempool` and are
 /// exposed to the service through [`crate::service_context::SystemContext`].
 pub trait MempoolLike: std::fmt::Debug + Send + Sync {
-    /// Try to add a transaction to the mempool. Returns the verify result.
-    fn try_add<B: neo_storage::CacheRead>(
+    /// Validate and atomically add a transaction to the mempool.
+    fn add_transaction<B, L>(
         &self,
+        origin: neo_mempool::TransactionOrigin,
         tx: &neo_payloads::Transaction,
         snapshot: &neo_storage::DataCache<B>,
-        settings: &neo_config::ProtocolSettings,
-    ) -> VerifyResult;
-
-    /// Try to add a transaction using a cached state-independent verification
-    /// result.
-    ///
-    /// When `cached_state_independent` is `Some(VerifyResult::Succeed)`, the
-    /// mempool skips redundant signature verification and only performs
-    /// state-dependent checks. Use this only when the caller already verified
-    /// the transaction signatures, for example via `TransactionRouter::preverify`.
-    fn try_add_cached<B: neo_storage::CacheRead>(
-        &self,
-        tx: &neo_payloads::Transaction,
-        snapshot: &neo_storage::DataCache<B>,
-        settings: &neo_config::ProtocolSettings,
-        cached_state_independent: Option<VerifyResult>,
-    ) -> VerifyResult;
+        ledger_provider: &L,
+    ) -> neo_mempool::TransactionAdmissionOutcome
+    where
+        B: neo_storage::CacheRead,
+        L: neo_mempool::AdmissionLedgerProvider;
 
     /// Update the pool after `block` is persisted.
     ///
@@ -67,27 +55,23 @@ impl<P> MempoolLike for neo_mempool::MemoryPool<P>
 where
     P: NativeContractProvider + 'static,
 {
-    fn try_add<B: neo_storage::CacheRead>(
+    fn add_transaction<B, L>(
         &self,
+        origin: neo_mempool::TransactionOrigin,
         tx: &neo_payloads::Transaction,
         snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-    ) -> VerifyResult {
-        neo_mempool::MemoryPool::try_add(self, tx.clone(), snapshot)
-    }
-
-    fn try_add_cached<B: neo_storage::CacheRead>(
-        &self,
-        tx: &neo_payloads::Transaction,
-        snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-        cached_state_independent: Option<VerifyResult>,
-    ) -> VerifyResult {
-        neo_mempool::MemoryPool::try_add_cached(
+        ledger_provider: &L,
+    ) -> neo_mempool::TransactionAdmissionOutcome
+    where
+        B: neo_storage::CacheRead,
+        L: neo_mempool::AdmissionLedgerProvider,
+    {
+        neo_mempool::MemoryPool::add_transaction(
             self,
+            origin,
             tx.clone(),
             snapshot,
-            cached_state_independent,
+            ledger_provider,
         )
     }
 

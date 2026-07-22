@@ -9,9 +9,9 @@
 use neo_config::Hardfork;
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::{ApplicationEngine, Contract};
+use neo_execution::ApplicationEngine;
 use neo_primitives::{FindOptions, UInt160};
-use neo_vm::StackItem;
+use neo_vm::{Contract, StackItem};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 

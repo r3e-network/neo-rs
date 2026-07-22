@@ -2,30 +2,37 @@
 
 ## Why
 
-The current `neo-actors` crate is an Akka-style actor framework directly ported from the C# Neo implementation. This was a mistake. Rust's idiomatic concurrency model is `async` + `tokio` + channels, not actors. The C# actor model creates a Cargo cycle. Reth and polkadot-sdk both use a service-based architecture.
+At change creation, `neo-actors` was an Akka-style actor framework directly
+ported from the C# Neo implementation. That architecture has since been
+removed. Rust's idiomatic concurrency model is `async` + Tokio tasks, typed
+channels, and explicit service ownership. Reth and polkadot-sdk both provide
+useful service-composition references.
 
-**We are re-architecting to use reth's pattern.**
+The current work continues that migration by adopting Reth's ownership,
+provider, immutable ChainSpec, static composition, RPC-boundary, pool, and
+storage patterns where they fit Neo, without importing Ethereum semantics or a
+second VM.
 
-## Reth architecture (study notes)
+## Reth architecture adapted for Neo
 
-| Reth trait | Neo equivalent | Purpose |
+| Reth pattern | Neo adaptation | Boundary |
 |---|---|---|
-| BlockExecutor | BlockExecutor | Execute a block |
-| BlockReader | BlockReader | Read block data from storage |
-| StateProviderFactory | StateProviderFactory | Get state at a block |
-| TransactionPool | MempoolService | Manage pending transactions |
-| NetworkManager | NetworkService | P2P networking |
-| Consensus | ConsensusService | dBFT consensus |
-| Engine | NeoEngine | Engine API |
+| Immutable `ChainSpec` | `neo_config::NeoChainSpec` | One validated network identity, genesis definition, protocol rule set, and hardfork schedule |
+| Provider and provider-factory capabilities | Ledger and StateService providers with associated concrete provider types | Freeze a view and expose narrow reads without leaking the backend |
+| Validator, pool core, and pool handle separation | Typed `neo-mempool` admission, private indexes, and explicit relay at the node boundary | Keep validation and mutation policy in one owner while networking remains separate |
+| Static node composition and required builders | `NodeCoreBuilder` and `NodeBuilder` | Make incomplete ownership graphs unrepresentable |
+| RPC API/types/server/client separation | Feature-independent RPC types and protocol codecs plus independent client/server features | Avoid client-owned shared models and server-to-client coupling |
+| Dedicated trie and persistence domains | `neo-trie`, `neo-state-service`, `neo-storage`, static ledger files, and state packs | Keep hashing, trie mechanics, state policy, database mechanics, and immutable history distinct |
+| Network manager plus cheap handle | `neo-network` services and `NetworkHandle` | Move peer/session truth into the manager and expose bounded commands plus owner-derived snapshots; broadcast events are notifications, not a second state store |
 
-## Service pattern
+Neo does not adopt Ethereum Engine API, forkchoice, account-state execution,
+devp2p, Ethereum transaction subpools, or an EVM-style type universe. Neo dBFT,
+NeoVM, native contracts, StateService, Neo wire payloads, and Neo C# v3.10.1
+behavior remain authoritative.
 
-```rust
-#[async_trait::async_trait]
-pub trait BlockExecutor: Send + Sync {
-    async fn execute(&self, block: &Block) -> Result<ExecutionOutcome>;
-}
-```
+Hot paths prefer concrete types, associated types, and generics. Dynamic trait
+objects are reserved for genuinely open runtime extension boundaries; service
+APIs do not use `async_trait` merely to resemble another node.
 
 ## What gets replaced
 
@@ -37,18 +44,18 @@ pub trait BlockExecutor: Send + Sync {
 | Mailbox dispatch | tokio::select! over channels |
 | Ask pattern | request/response via oneshot channel |
 
-## Migration plan
+## Migration status
 
-### Stage A: Define service traits in `neo-runtime`
-### Stage B: Rewrite `neo-blockchain` as a service
-### Stage C: Rewrite `neo-network` (LocalNode, RemoteNode, TaskManager) as services
-### Stage D: Rewrite `neo-system` (NeoSystem) as Node builder
-### Stage E: Update all consumers
-### Stage F: Remove `neo-actors`
+The actor-to-service migration is complete: runtime capabilities, blockchain
+and network services, node composition, consumer migration, and actor removal
+have one current implementation. This change now focuses on eliminating the
+remaining duplicate ownership paths and tightening static composition.
 
 ## Verification
 
-- cargo check --workspace - 0 errors
-- cargo test --workspace --lib - all tests pass
-- neo-actors directory does not exist
-- No actor macros, no ActorRef, no Actor trait
+- `cargo test --workspace --no-run --locked`
+- strict Clippy for every touched crate
+- focused protocol and parity tests
+- architecture ownership guards
+- strict OpenSpec validation
+- no `neo-actors`, actor macros, `ActorRef`, or actor compatibility facade

@@ -2,20 +2,20 @@
 
 use crate::NativeRegistry;
 use crate::application_engine::ApplicationEngine;
-use crate::contract::Contract;
 use crate::diagnostic::NoDiagnostic;
 use crate::native_contract_provider::NativeContractProvider;
 use crate::native_contract_provider::NoNativeContractProvider;
 use crate::verification::PreverifiedSignatureCache;
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_manifest::CallFlags;
 use neo_payloads::{VerifiableContainer, VerifiableExt, Witness};
+use neo_primitives::CallFlags;
 use neo_primitives::ContractBasicMethod;
 use neo_primitives::ContractParameterType;
 use neo_primitives::TriggerType;
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::{CacheRead, DataCache};
+use neo_vm::Contract;
 use neo_vm::OpCode;
 use neo_vm::VmState as VMState;
 use neo_vm::script_builder::ScriptBuilder;
@@ -179,11 +179,11 @@ impl Helper {
                 native_contract_provider.as_ref(),
             ) {
                 Ok(Some(hashes)) => hashes,
-                Ok(None) => verifiable.script_hashes_for_verifying(snapshot),
+                Ok(None) => verifiable.script_hashes_for_verifying(),
                 Err(_) => return false,
             }
         } else {
-            verifiable.script_hashes_for_verifying(snapshot)
+            verifiable.script_hashes_for_verifying()
         };
 
         // Get witnesses
@@ -455,10 +455,10 @@ where
     B: CacheRead,
 {
     if let Some(tx) = container.as_transaction() {
-        return Ok(Some(tx.script_hashes_for_verifying(snapshot)));
+        return Ok(Some(tx.script_hashes_for_verifying()));
     }
     if let Some(payload) = container.as_extensible_payload() {
-        return Ok(Some(payload.script_hashes_for_verifying(snapshot)));
+        return Ok(Some(payload.script_hashes_for_verifying()));
     }
     if let Some(header) = container.as_header() {
         return header_script_hashes_for_verifying(header, snapshot, native_contract_provider)

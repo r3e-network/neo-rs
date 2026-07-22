@@ -16,6 +16,8 @@
 //!
 //! - [`TestTransactionBuilder`]: fluent builder for Neo transactions with
 //!   sensible defaults (nonce, script, signer, witness).
+//! - [`test_chain_spec`]: deterministic complete chain specs for tests with
+//!   custom protocol settings.
 //! - [`try_make_ledger_block`]: constructs a `Block` at the given index, looking
 //!   up the previous hash via `LedgerContract`.
 //! - [`try_store_block`] / [`try_store_block_with_vmstate`]: writes block,
@@ -35,6 +37,46 @@ use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_storage::persistence::{Store, StoreCache};
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::VmState;
+use std::sync::Arc;
+
+/// Builds a deterministic private chain specification around test protocol
+/// settings.
+///
+/// This is the single cross-crate owner for tests that need custom hardfork or
+/// committee settings without reintroducing `ProtocolSettings` as a second
+/// runtime root.
+#[must_use]
+pub fn test_chain_spec(settings: neo_config::ProtocolSettings) -> Arc<neo_config::NeoChainSpec> {
+    let committee: Vec<String> = settings
+        .standby_committee
+        .iter()
+        .map(|key| neo_primitives::hex_util::encode_hex(key.as_bytes()))
+        .collect();
+    let validator_count = usize::try_from(settings.validators_count)
+        .expect("test validator count must be non-negative");
+    let validators = committee
+        .iter()
+        .take(validator_count)
+        .cloned()
+        .map(|public_key| neo_config::GenesisValidator {
+            public_key,
+            name: None,
+        })
+        .collect();
+    let genesis = neo_config::GenesisConfig {
+        timestamp: neo_config::GENESIS_TIMESTAMP_MS,
+        nonce: neo_config::GENESIS_NONCE,
+        validators,
+        committee,
+        distribution: Vec::new(),
+        contracts: Vec::new(),
+    };
+
+    Arc::new(
+        neo_config::NeoChainSpec::private("workspace-test", settings, genesis, None)
+            .expect("test settings must form a complete chain specification"),
+    )
+}
 
 /// Storage-key prefixes used by the `LedgerContract` (C# `Prefix_*` constants).
 mod prefix {

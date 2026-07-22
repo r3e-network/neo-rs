@@ -151,7 +151,7 @@ fn start_seed_dialing<P, S>(
 {
     if ledger_mode.uses_local_replay_services() {
         let seed_nodes = if config.p2p.seed_nodes.is_empty() {
-            node.settings().seed_list.clone()
+            node.chain_spec().protocol_settings().seed_list.clone()
         } else {
             config.p2p.seed_nodes.clone()
         };

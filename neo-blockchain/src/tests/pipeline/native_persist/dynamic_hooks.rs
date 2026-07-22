@@ -22,10 +22,13 @@ fn transaction_block(index: u32, transaction: neo_payloads::Transaction) -> Arc<
 #[test]
 fn notary_assisted_block_runs_notary_on_persist_gate() {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks = neo_config::HardforkSchedule::new()
+        .with_activation(Hardfork::HfEchidna, 0)
+        .with_omitted_leading_at_genesis();
     let snapshot = Arc::new(DataCache::new(false));
     let resources = standard_resources();
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
         .expect("persist genesis");
 
@@ -66,7 +69,8 @@ fn oracle_response_block_runs_oracle_post_persist_gate() {
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
     let resources = standard_resources();
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
         .expect("persist genesis");
 

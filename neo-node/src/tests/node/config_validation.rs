@@ -837,8 +837,9 @@ fn seed_coordinated_mdbx_state_height(path: &Path, bytes: Vec<u8>) {
 fn validate_storage_reopens_coordinated_mdbx_state_service_namespace() {
     let temp = tempfile::tempdir().expect("temp dir");
     let chain_path = temp.path().join("chain");
-    let settings = ProtocolSettings::default();
-    seed_store_tip("mdbx", &chain_path, &settings, 1).expect("seed MDBX chain tip");
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
+    let settings = chain_spec.protocol_settings();
+    seed_store_tip("mdbx", &chain_path, chain_spec.as_ref(), 1).expect("seed MDBX chain tip");
     seed_coordinated_mdbx_state_height(&chain_path, 1u32.to_le_bytes().to_vec());
 
     let mut config = NodeConfig::default();
@@ -857,8 +858,9 @@ fn validate_storage_reopens_coordinated_mdbx_state_service_namespace() {
 fn validate_storage_rejects_coordinated_mdbx_state_height_mismatch() {
     let temp = tempfile::tempdir().expect("temp dir");
     let chain_path = temp.path().join("chain");
-    let settings = ProtocolSettings::default();
-    seed_store_tip("mdbx", &chain_path, &settings, 1).expect("seed MDBX chain tip");
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
+    let settings = chain_spec.protocol_settings();
+    seed_store_tip("mdbx", &chain_path, chain_spec.as_ref(), 1).expect("seed MDBX chain tip");
     seed_coordinated_mdbx_state_height(&chain_path, 0u32.to_le_bytes().to_vec());
 
     let mut config = NodeConfig::default();
@@ -879,8 +881,9 @@ fn validate_storage_rejects_coordinated_mdbx_state_height_mismatch() {
 fn validate_storage_rejects_malformed_coordinated_mdbx_state_height() {
     let temp = tempfile::tempdir().expect("temp dir");
     let chain_path = temp.path().join("chain");
-    let settings = ProtocolSettings::default();
-    seed_store_tip("mdbx", &chain_path, &settings, 1).expect("seed MDBX chain tip");
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
+    let settings = chain_spec.protocol_settings();
+    seed_store_tip("mdbx", &chain_path, chain_spec.as_ref(), 1).expect("seed MDBX chain tip");
     seed_coordinated_mdbx_state_height(&chain_path, vec![0x01, 0x02, 0x03]);
 
     let mut config = NodeConfig::default();
@@ -898,8 +901,9 @@ fn validate_storage_rejects_malformed_coordinated_mdbx_state_height() {
 fn validate_storage_rejects_missing_coordinated_state_root_for_populated_chain() {
     let temp = tempfile::tempdir().expect("temp dir");
     let chain_path = temp.path().join("chain");
-    let settings = ProtocolSettings::default();
-    seed_mdbx_tip(&chain_path, &settings, 1).expect("seed chain tip");
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
+    let settings = chain_spec.protocol_settings();
+    seed_mdbx_tip(&chain_path, chain_spec.as_ref(), 1).expect("seed chain tip");
 
     let mut config = NodeConfig::default();
     config.storage.backend = Some("mdbx".to_string());

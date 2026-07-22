@@ -96,13 +96,9 @@ fn vm_profile_formatters_emit_stable_class_and_hot_opcode_summaries() {
 #[test]
 fn vm_hardfork_context_records_activation_schedule_and_state() {
     let mut settings = neo_config::ProtocolSettings::default();
-    settings.hardforks.clear();
-    settings
-        .hardforks
-        .insert(neo_config::hardfork::Hardfork::HfBasilisk, 10);
-    settings
-        .hardforks
-        .insert(neo_config::hardfork::Hardfork::HfGorgon, 20);
+    settings.hardforks = neo_config::HardforkSchedule::new()
+        .with_activation(neo_config::hardfork::Hardfork::HfBasilisk, 10)
+        .with_activation(neo_config::hardfork::Hardfork::HfGorgon, 20);
 
     assert_eq!(
         format_vm_hardfork_context(&settings, 15),

@@ -1,9 +1,9 @@
 use super::*;
-use neo_config::ProtocolSettings;
-use neo_execution::{ApplicationEngine, Contract};
+use neo_config::{HardforkSchedule, ProtocolSettings};
+use neo_execution::ApplicationEngine;
 use neo_payloads::{Block, BlockHeader};
 use neo_primitives::TriggerType;
-use std::collections::HashMap;
+use neo_vm::Contract;
 use std::sync::Arc;
 
 fn engine_for(
@@ -71,12 +71,14 @@ fn on_persist_refresh_recomputes_committee_and_emits_committee_changed() {
     // votes -> recompute elects [K2] and emits CommitteeChanged([K1],[K2]).
     let all = ProtocolSettings::default().standby_committee;
     let (k1, k2) = (all[0].clone(), all[1].clone());
-    let mut hardforks = HashMap::new();
-    hardforks.insert(Hardfork::HfCockatrice, 0u32);
     let settings = ProtocolSettings {
         standby_committee: vec![k1.clone()],
         validators_count: 1,
-        hardforks,
+        hardforks: HardforkSchedule::new().with_activations([
+            (Hardfork::HfAspidochelone, 0),
+            (Hardfork::HfBasilisk, 0),
+            (Hardfork::HfCockatrice, 0),
+        ]),
         ..ProtocolSettings::default()
     };
     let cache = DataCache::new(false);
@@ -136,7 +138,7 @@ fn on_persist_refresh_without_cockatrice_updates_committee_silently() {
     let settings = ProtocolSettings {
         standby_committee: vec![k1.clone()],
         validators_count: 1,
-        hardforks: HashMap::new(),
+        hardforks: HardforkSchedule::new(),
         ..ProtocolSettings::default()
     };
     let cache = DataCache::new(false);
@@ -306,12 +308,10 @@ fn post_persist_committee_and_voter_rewards_match_csharp_math() {
 fn post_persist_hf_gorgon_uses_candidate_vote_for_voter_rewards() {
     let all = ProtocolSettings::default().standby_committee;
     let member = all[0].clone();
-    let mut hardforks = HashMap::new();
-    hardforks.insert(Hardfork::HfGorgon, 0u32);
     let settings = ProtocolSettings {
         standby_committee: vec![member.clone()],
         validators_count: 1,
-        hardforks,
+        hardforks: HardforkSchedule::mainnet().map_activation_heights(|_, _| 0),
         ..ProtocolSettings::default()
     };
     let cache = DataCache::new(false);
@@ -339,12 +339,10 @@ fn post_persist_hf_gorgon_uses_candidate_vote_for_voter_rewards() {
 fn fast_forward_hf_gorgon_matches_normal_hooks_for_blocked_candidate_votes() {
     let all = ProtocolSettings::default().standby_committee;
     let member = all[0].clone();
-    let mut hardforks = HashMap::new();
-    hardforks.insert(Hardfork::HfGorgon, 0u32);
     let settings = ProtocolSettings {
         standby_committee: vec![member.clone()],
         validators_count: 1,
-        hardforks,
+        hardforks: HardforkSchedule::mainnet().map_activation_heights(|_, _| 0),
         ..ProtocolSettings::default()
     };
     let seed = |cache: &DataCache| {
@@ -559,7 +557,7 @@ fn manifest_standards_gain_nep27_at_echidna() {
     use neo_execution::native_contract::build_native_contract_state;
 
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 10);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 10);
     let before = build_native_contract_state(&NeoToken, &settings, 9);
     assert_eq!(before.manifest.supported_standards, ["NEP-17"]);
     let after = build_native_contract_state(&NeoToken, &settings, 10);

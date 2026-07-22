@@ -90,3 +90,16 @@ fn message_accepts_empty_payload_with_compressed_flag_like_csharp() {
     assert!(decoded.payload_compressed.is_empty());
     assert!(decoded.payload_raw.is_empty());
 }
+
+#[test]
+fn message_rejects_trailing_bytes_after_complete_frame() {
+    let message =
+        Message::from_payload_bytes(MessageCommand::Verack, Vec::new(), false).expect("create");
+    let mut bytes = message.to_bytes().expect("encode");
+    bytes.extend_from_slice(&[0x00, 0x01, 0x00]);
+
+    let error = Message::from_bytes(&bytes).expect_err("a complete frame must consume all bytes");
+    assert!(
+        matches!(error, WireError::InvalidMessage(detail) if detail.contains("trailing 3 bytes"))
+    );
+}

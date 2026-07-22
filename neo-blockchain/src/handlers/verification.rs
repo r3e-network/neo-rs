@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use neo_config::NeoChainSpec;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{PreverifiedSignatureCache, PreverifiedSignatureCacheMetricsSnapshot};
 use neo_payloads::block::Block;
@@ -31,7 +32,7 @@ where
         block: &Block,
         signature_preverification: Option<&HeaderSignaturePreverification>,
     ) -> CoreResult<()> {
-        let settings = self.system.settings();
+        let chain_spec = self.system.chain_spec();
         let snapshot = self.system.store_snapshot().ok_or_else(|| {
             CoreError::other(format!(
                 "block {}: store snapshot unavailable",
@@ -40,7 +41,7 @@ where
         })?;
         self.verify_consensus_witness_against_snapshot_with_native_provider(
             block,
-            settings,
+            chain_spec,
             snapshot,
             self.system.native_contract_provider().ok_or_else(|| {
                 CoreError::other(format!(
@@ -55,19 +56,19 @@ where
     fn verify_consensus_witness_against_snapshot_with_native_provider(
         &self,
         block: &Block,
-        settings: Arc<neo_config::ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         snapshot: Arc<neo_storage::DataCache<S::CacheBacking>>,
         native_contract_provider: Arc<S::NativeProvider>,
         signature_preverification: Option<&HeaderSignaturePreverification>,
     ) -> CoreResult<()> {
         let signature_cache = signature_preverification
-            .filter(|proof| proof.matches(&block.header, settings.as_ref()))
+            .filter(|proof| proof.matches(&block.header, chain_spec.protocol_settings()))
             .map(HeaderSignaturePreverification::signature_cache);
         let cache_metrics_before = signature_cache
             .as_ref()
             .map(|cache| cache.metrics_snapshot());
         let stage = NeoConsensusWitnessStage::new(Arc::new(SnapshotConsensusWitnessContext::new(
-            settings,
+            chain_spec,
             snapshot,
             native_contract_provider,
         )));
@@ -85,13 +86,13 @@ where
         block: &Block,
         current_height: u32,
         trusted_replay: bool,
-        settings: Arc<neo_config::ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         snapshot: Arc<neo_storage::DataCache<S::CacheBacking>>,
         native_contract_provider: Arc<S::NativeProvider>,
         signature_preverification: Option<&HeaderSignaturePreverification>,
     ) -> CoreResult<()> {
         let signature_cache = signature_preverification
-            .filter(|proof| proof.matches(&block.header, settings.as_ref()))
+            .filter(|proof| proof.matches(&block.header, chain_spec.protocol_settings()))
             .map(HeaderSignaturePreverification::signature_cache);
         let cache_metrics_before = signature_cache
             .as_ref()
@@ -100,7 +101,7 @@ where
             block,
             current_height,
             trusted_replay,
-            settings,
+            chain_spec,
             snapshot,
             native_contract_provider,
             signature_cache.as_ref().map(Arc::clone),

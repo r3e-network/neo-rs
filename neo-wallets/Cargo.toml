@@ -17,32 +17,25 @@ description = "Canonical home for the Neo wallet layer: keypair, BIP-32/BIP-39 h
 # Foundation layer
 neo-primitives = { workspace = true }
 neo-error = { workspace = true }
-neo-io = { workspace = true }
 neo-crypto = { workspace = true }
 neo-config = { workspace = true }
 neo-storage = { workspace = true }
 neo-payloads = { workspace = true }
 neo-runtime = { workspace = true }
 neo-native-contracts = { workspace = true }
-neo-manifest = { workspace = true }
 neo-vm = { workspace = true }
 
 # External
 bip39 = { workspace = true }
 zeroize = { workspace = true }
 aes = { workspace = true }
-cbc = { workspace = true }
-cipher = { workspace = true }
 scrypt = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-num-bigint = { workspace = true }
-num-traits = { workspace = true }
 parking_lot = { workspace = true }
 base64 = { workspace = true }
 subtle = { workspace = true }
 thiserror = { workspace = true }
-rand = { workspace = true }
 
 [dev-dependencies]
 neo-execution = { workspace = true }

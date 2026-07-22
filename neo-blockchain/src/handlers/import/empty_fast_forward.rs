@@ -31,11 +31,12 @@ where
         if !self.system.allows_empty_block_fast_forward() {
             return None;
         }
+        let settings = resources.chain_spec.protocol_settings();
         let run = Self::collect_empty_fast_forward_run(
             blocks,
             position,
             current_height,
-            resources.settings.as_ref(),
+            settings,
             &resources.native_persist,
         );
         if run.is_empty() {
@@ -46,7 +47,7 @@ where
         match stage_empty_block_fast_forward(
             Arc::clone(&resources.snapshot),
             &run,
-            resources.settings.as_ref(),
+            settings,
             crate::native_persist::NativePersistOptions {
                 capture_replay_artifacts: false,
             },

@@ -12,7 +12,11 @@ use neo_primitives::UInt256;
 use neo_storage::{CacheRead, DataCache};
 
 /// Ledger capabilities required by transaction admission.
-pub(super) trait AdmissionLedgerProvider {
+///
+/// Production composition supplies a routed hot/cold implementation. The
+/// snapshot parameter keeps this trait monomorphized while allowing the native
+/// hot provider used by focused tests to share the same contract.
+pub trait AdmissionLedgerProvider {
     /// Returns the persisted ledger height.
     fn current_index<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32>;
 
@@ -22,18 +26,28 @@ pub(super) trait AdmissionLedgerProvider {
         snapshot: &DataCache<B>,
         hash: &UInt256,
     ) -> CoreResult<bool>;
+
+    /// Returns whether the ledger contains a traceable conflict record for
+    /// `hash` intersecting one of `signers`.
+    fn contains_conflict_hash<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        hash: &UInt256,
+        signers: &[neo_primitives::UInt160],
+        max_traceable_blocks: u32,
+    ) -> CoreResult<bool>;
 }
 
 /// Native Ledger-contract backed provider for production admission.
 #[derive(Debug, Default, Clone, Copy)]
-pub(super) struct NativeAdmissionLedgerProvider {
+pub(crate) struct NativeAdmissionLedgerProvider {
     ledger: LedgerContract,
 }
 
 impl NativeAdmissionLedgerProvider {
     /// Creates a provider backed by the canonical native Ledger contract codec.
     #[must_use]
-    pub(super) const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             ledger: LedgerContract,
         }
@@ -51,5 +65,16 @@ impl AdmissionLedgerProvider for NativeAdmissionLedgerProvider {
         hash: &UInt256,
     ) -> CoreResult<bool> {
         self.ledger.contains_transaction(snapshot, hash)
+    }
+
+    fn contains_conflict_hash<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        hash: &UInt256,
+        signers: &[neo_primitives::UInt160],
+        max_traceable_blocks: u32,
+    ) -> CoreResult<bool> {
+        self.ledger
+            .contains_conflict_hash(snapshot, hash, signers, max_traceable_blocks)
     }
 }

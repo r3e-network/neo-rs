@@ -68,8 +68,8 @@ impl ContractManagement {
             && !engine
                 .protocol_settings()
                 .hardforks
-                .values()
-                .any(|height| *height == block_index)
+                .activation_heights()
+                .any(|height| height == block_index)
         {
             return Ok(());
         }

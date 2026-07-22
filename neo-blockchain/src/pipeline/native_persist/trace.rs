@@ -219,14 +219,17 @@ pub(crate) fn format_vm_hardfork_context(settings: &ProtocolSettings, block_heig
     Hardfork::ALL
         .iter()
         .filter_map(|hardfork| {
-            settings.hardforks.get(hardfork).map(|activation_height| {
-                let state = if block_height >= *activation_height {
-                    "active"
-                } else {
-                    "pending"
-                };
-                format!("{}@{}:{state}", hardfork.name(), activation_height)
-            })
+            settings
+                .hardforks
+                .activation_height(*hardfork)
+                .map(|activation_height| {
+                    let state = if block_height >= activation_height {
+                        "active"
+                    } else {
+                        "pending"
+                    };
+                    format!("{}@{}:{state}", hardfork.name(), activation_height)
+                })
         })
         .collect::<Vec<_>>()
         .join(",")

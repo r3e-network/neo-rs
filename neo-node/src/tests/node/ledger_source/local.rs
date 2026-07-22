@@ -7,6 +7,10 @@ use neo_storage::{StorageItem, StorageKey};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
+fn mainnet_chain_spec() -> Arc<neo_config::NeoChainSpec> {
+    neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec")
+}
+
 fn empty_child_block(parent: &Block, index: u32) -> Block {
     let mut header = Header::new();
     header.set_index(index);
@@ -26,17 +30,19 @@ fn local_source_with_block(
     Arc<neo_storage::DataCache>,
     CancellationToken,
 ) {
-    let settings = neo_config::ProtocolSettings::default();
+    let chain_spec = mainnet_chain_spec();
+    let settings = chain_spec.protocol_settings_arc();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let resources = neo_blockchain::NativePersistResources::from_provider(Arc::new(
         neo_native_contracts::StandardNativeProvider::new(),
     ));
 
-    let genesis = Arc::new(neo_blockchain::genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(neo_blockchain::genesis_block(chain_spec.as_ref()).expect("genesis block"));
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&genesis),
-        Arc::new(settings.clone()),
+        Arc::clone(&settings),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )
@@ -47,7 +53,7 @@ fn local_source_with_block(
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::new(block.clone()),
-        Arc::new(settings.clone()),
+        Arc::clone(&settings),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )
@@ -58,7 +64,8 @@ fn local_source_with_block(
         Arc::clone(&snapshot),
         Arc::new(neo_blockchain::LedgerContext::default()),
         Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
-            &settings,
+            chain_spec,
+            neo_mempool::TxPoolConfig::default(),
             Arc::new(neo_native_contracts::StandardNativeProvider::new()),
         )),
         None,
@@ -132,16 +139,18 @@ fn local_ledger_block_source_requests_restart_on_hot_provider_corruption() {
 fn local_ledger_block_source_requests_restart_on_static_archive_io_error() {
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
 
-    let settings = neo_config::ProtocolSettings::default();
+    let chain_spec = mainnet_chain_spec();
+    let settings = chain_spec.protocol_settings_arc();
     let populated = Arc::new(neo_storage::DataCache::new(false));
     let resources = neo_blockchain::NativePersistResources::from_provider(Arc::new(
         neo_native_contracts::StandardNativeProvider::new(),
     ));
-    let genesis = Arc::new(neo_blockchain::genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(neo_blockchain::genesis_block(chain_spec.as_ref()).expect("genesis block"));
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&populated),
         Arc::clone(&genesis),
-        Arc::new(settings.clone()),
+        Arc::clone(&settings),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )
@@ -150,7 +159,7 @@ fn local_ledger_block_source_requests_restart_on_static_archive_io_error() {
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&populated),
         Arc::new(child.clone()),
-        Arc::new(settings.clone()),
+        Arc::clone(&settings),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )
@@ -174,7 +183,8 @@ fn local_ledger_block_source_requests_restart_on_static_archive_io_error() {
         Arc::new(neo_storage::DataCache::new(false)),
         Arc::new(neo_blockchain::LedgerContext::default()),
         Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
-            &settings,
+            chain_spec,
+            neo_mempool::TxPoolConfig::default(),
             Arc::new(neo_native_contracts::StandardNativeProvider::new()),
         )),
         Some(archive.clone()),
@@ -202,16 +212,18 @@ fn local_ledger_block_source_requests_restart_on_static_archive_io_error() {
 fn local_ledger_block_source_falls_back_to_configured_static_files() {
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
 
-    let settings = neo_config::ProtocolSettings::default();
+    let chain_spec = mainnet_chain_spec();
+    let settings = chain_spec.protocol_settings_arc();
     let populated = Arc::new(neo_storage::DataCache::new(false));
     let resources = neo_blockchain::NativePersistResources::from_provider(Arc::new(
         neo_native_contracts::StandardNativeProvider::new(),
     ));
-    let genesis = Arc::new(neo_blockchain::genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(neo_blockchain::genesis_block(chain_spec.as_ref()).expect("genesis block"));
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&populated),
         Arc::clone(&genesis),
-        Arc::new(settings.clone()),
+        Arc::clone(&settings),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )
@@ -220,7 +232,7 @@ fn local_ledger_block_source_falls_back_to_configured_static_files() {
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&populated),
         Arc::new(child.clone()),
-        Arc::new(settings.clone()),
+        Arc::clone(&settings),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )
@@ -244,7 +256,8 @@ fn local_ledger_block_source_falls_back_to_configured_static_files() {
         Arc::new(neo_storage::DataCache::new(false)),
         Arc::new(neo_blockchain::LedgerContext::default()),
         Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
-            &settings,
+            chain_spec,
+            neo_mempool::TxPoolConfig::default(),
             Arc::new(neo_native_contracts::StandardNativeProvider::new()),
         )),
         Some(archive),

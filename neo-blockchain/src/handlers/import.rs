@@ -35,7 +35,7 @@ where
         let trusted_replay = plan.is_trusted_replay();
         let persist_context = plan.persist_context();
         let defer_store_commit = plan.defers_store_commit();
-        let settings = self.system.settings();
+        let settings = self.system.chain_spec().protocol_settings_arc();
         let signature_metrics_before = self
             .optimistic_signature_verification
             .as_ref()
@@ -396,7 +396,6 @@ where
             blocks_per_second = imported as f64 / elapsed.as_secs_f64().max(1e-9),
             signature_submitted = after.submitted.saturating_sub(before.submitted),
             signature_completed = after.completed.saturating_sub(before.completed),
-            signature_invalid = after.invalid.saturating_sub(before.invalid),
             signature_cancelled = after.cancelled.saturating_sub(before.cancelled),
             signature_worker_panics = after.worker_panics.saturating_sub(before.worker_panics),
             signature_worker_unavailable = after

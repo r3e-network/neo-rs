@@ -190,7 +190,9 @@ fn contract_initializer_clone_shares_the_host_entry_plan() {
 #[test]
 fn entry_contract_update_and_hardfork_identity_select_distinct_plans() {
     let mut settings = ProtocolSettings::mainnet();
-    settings.hardforks.insert(Hardfork::HfAspidochelone, 10);
+    settings.hardforks = settings
+        .hardforks
+        .with_activation(Hardfork::HfAspidochelone, 10);
     let mut engine = engine_with_settings(settings);
     engine.set_execution_plan_config(enabled_config());
 
@@ -230,9 +232,10 @@ fn entry_contract_update_and_hardfork_identity_select_distinct_plans() {
         1
     );
 
-    Arc::make_mut(&mut engine.protocol_settings)
+    let settings = Arc::make_mut(&mut engine.protocol_settings);
+    settings.hardforks = settings
         .hardforks
-        .insert(Hardfork::HfAspidochelone, 0);
+        .with_activation(Hardfork::HfAspidochelone, 0);
     let after_hardfork =
         engine.prepare_script_with_execution_plan(script, 0, Some(&updated_contract));
     let hardfork_key = after_hardfork

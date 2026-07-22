@@ -54,6 +54,9 @@ struct PeerEntry {
     /// Whether the peer completed version/verack processing and can accept
     /// coordinator-assigned data-plane requests.
     ready: bool,
+    /// Whether the connection was accepted locally. Inbound peers report an
+    /// unknown listener port until their version payload upgrades it.
+    inbound: bool,
 }
 
 /// Interior, lock-guarded state.
@@ -81,6 +84,16 @@ pub struct PeerRegistry {
     /// (C# `ChannelsConfig.MaxConnectionsPerAddress`, default 3).
     max_connections_per_address: usize,
     inner: parking_lot::Mutex<RegistryInner>,
+}
+
+/// Authoritative read-side snapshot of one live peer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConnectedPeerSnapshot {
+    /// Stable peer identifier.
+    pub peer_id: PeerId,
+    /// Advertised listener address when known, otherwise the transport endpoint
+    /// (or an address with port zero when an inbound listener is unknown).
+    pub address: SocketAddr,
 }
 
 impl PeerRegistry {
@@ -159,6 +172,17 @@ impl PeerRegistry {
         remote_addr: SocketAddr,
         handle: RemoteNodeHandle,
     ) -> bool {
+        self.try_admit_with_direction(peer_id, remote_addr, handle, false)
+    }
+
+    /// Admit a peer while recording whether its transport was inbound.
+    pub fn try_admit_with_direction(
+        &self,
+        peer_id: PeerId,
+        remote_addr: SocketAddr,
+        handle: RemoteNodeHandle,
+        inbound: bool,
+    ) -> bool {
         let mut inner = self.inner.lock();
         if inner.peers.len() >= self.max_connections {
             return false;
@@ -181,6 +205,7 @@ impl PeerRegistry {
                 listener_addr: None,
                 last_block_index: None,
                 ready: false,
+                inbound,
             },
         );
         true
@@ -385,6 +410,32 @@ impl PeerRegistry {
             .iter()
             .map(|(id, entry)| (*id, entry.handle.clone()))
             .collect()
+    }
+
+    /// Authoritative, deterministic snapshot of all connected peers.
+    ///
+    /// RPC and telemetry consumers should use this snapshot rather than
+    /// folding the lossy lifecycle broadcast. The registry owns connection
+    /// admission/removal, so the result cannot drift when a broadcast receiver
+    /// lags.
+    pub fn connected_snapshot(&self) -> Vec<ConnectedPeerSnapshot> {
+        let inner = self.inner.lock();
+        let mut peers: Vec<_> = inner
+            .peers
+            .iter()
+            .map(|(peer_id, entry)| ConnectedPeerSnapshot {
+                peer_id: *peer_id,
+                address: entry.listener_addr.unwrap_or_else(|| {
+                    if entry.inbound {
+                        SocketAddr::new(entry.remote_addr.ip(), 0)
+                    } else {
+                        entry.remote_addr
+                    }
+                }),
+            })
+            .collect();
+        peers.sort_unstable_by_key(|peer| peer.peer_id);
+        peers
     }
 
     /// Number of currently connected peers

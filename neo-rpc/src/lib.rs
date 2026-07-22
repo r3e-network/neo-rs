@@ -17,8 +17,9 @@
 //! - `application_logs`: Application-log models and retrieval helpers for RPC
 //!   consumers.
 //! - `plugins`: RPC plugin adapters and optional extension surfaces.
-//! - `error`: Typed error definitions and conversions.
 //! - `error_code`: JSON-RPC error-code records.
+//! - `types`: Transport-neutral RPC request and response records.
+//! - `protocol`: Shared Neo JSON-RPC protocol codecs.
 //! - `serialization`: serialization codecs and compatibility checks.
 //! - `server`: server records and behavior.
 //! - `client`: Client-side adapters for remote services and RPC access.
@@ -35,17 +36,20 @@ pub mod application_logs;
 #[cfg(feature = "server")]
 pub mod plugins;
 
-/// Error types for RPC operations.
-#[path = "errors/error.rs"]
-pub mod error;
-
 /// JSON-RPC error codes.
 #[path = "errors/error_code.rs"]
 pub mod error_code;
 
 #[cfg(any(feature = "client", feature = "server"))]
+mod protocol;
+
+#[cfg(any(feature = "client", feature = "server"))]
 #[path = "protocol/serialization.rs"]
 mod serialization;
+
+/// Transport-neutral RPC request and response records.
+#[cfg(any(feature = "client", feature = "server"))]
+pub mod types;
 
 /// RPC server implementation (requires `server` feature).
 #[cfg(feature = "server")]
@@ -59,11 +63,6 @@ pub mod client;
 // Public Re-exports
 // ============================================================================
 
-// Core error types — client-side error enum renamed to RpcClientError to
-// avoid collision with the server-side RpcError struct (JSON-RPC protocol
-// error, matching C# Neo.Plugins.RpcServer.RpcError).
-#[cfg(feature = "client")]
-pub use error::{RpcClientError, RpcClientResult};
 pub use error_code::RpcErrorCode;
 
 // Server exports (requires `server` feature)

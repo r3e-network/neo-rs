@@ -15,7 +15,7 @@ use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_execution::{ContractState, NativeContract};
 use neo_payloads::{TransactionState, TrimmedBlock};
-use neo_primitives::{UInt160, UInt256};
+use neo_primitives::{TransactionAttributeType, UInt160, UInt256};
 use neo_storage::{CacheRead, DataCache};
 use num_bigint::BigInt;
 
@@ -126,6 +126,14 @@ impl NativeContractProvider for StandardNativeProvider {
 
     fn fee_per_byte<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32> {
         PolicyContract::new().get_fee_per_byte_snapshot(snapshot)
+    }
+
+    fn attribute_fee<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        attribute_type: TransactionAttributeType,
+    ) -> CoreResult<i64> {
+        PolicyContract::new().attribute_fee(snapshot, attribute_type.to_byte(), true)
     }
 
     fn exec_fee_factor<B: CacheRead>(

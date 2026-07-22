@@ -28,8 +28,7 @@ jobs:
         toolchain: 1.89.0
         components: rustfmt
     # Check only this workspace's members. The locked `cargo metadata --no-deps`
-    # query excludes the separately released `neo-vm-rs` Git dependency and its
-    # independent rustfmt style.
+    # query keeps formatting scoped to the packages released from this workspace.
     - name: Format check (workspace members)
       run: |
         for pkg in $(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[].name'); do

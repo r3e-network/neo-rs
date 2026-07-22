@@ -21,7 +21,6 @@ use crate::{
     transaction_attribute::TransactionAttribute, witness::Witness,
 };
 use base64::{Engine as _, engine::general_purpose};
-use neo_config::ProtocolSettings;
 use neo_crypto::Crypto;
 use neo_error::CoreResult;
 use neo_io::serializable::helper::SerializeHelper;

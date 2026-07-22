@@ -184,13 +184,14 @@ impl<B: CacheRead> IsolatedTransactionOverlay<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::NoDiagnostic;
     use crate::application_engine::{ApplicationEngine, TEST_MODE_GAS};
     use crate::native_contract_provider::{NativeContractProvider, NoNativeContract};
     use crate::optimistic_execution::DependencyCaptureError;
-    use crate::{NoDiagnostic, TriggerType};
     use neo_config::ProtocolSettings;
     use neo_error::{CoreError, CoreResult};
     use neo_payloads::Block;
+    use neo_primitives::TriggerType;
     use neo_storage::{DataCacheError, SeekDirection, StorageItem, TrackState};
 
     fn identity(applied_transactions: usize) -> BlockPrefixIdentity {

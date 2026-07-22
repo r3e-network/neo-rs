@@ -1,75 +1,62 @@
 use super::*;
-use crate::NodeBuilder;
-
-#[test]
-fn builder_returns_node_builder() {
-    let _: NodeBuilder = Node::builder();
-}
-
 #[test]
 fn tx_admission_uses_ledger_provider_boundary() {
     let source = include_str!("../../composition/node.rs");
-    let provider = include_str!("../../composition/tx_admission_provider.rs");
     let start = source
-        .find("pub fn try_enqueue_preverify")
-        .expect("try_enqueue_preverify exists");
+        .find("pub fn submit_transaction")
+        .expect("submit_transaction exists");
     let body = &source[start..];
+    let signature = body
+        .split_once('{')
+        .map(|(signature, _)| signature)
+        .expect("submit_transaction has a body");
+
+    assert!(
+        !signature.contains("snapshot"),
+        "composition-root tx admission must not accept a caller-owned snapshot"
+    );
+    assert!(
+        body.contains("StoreCache::<S>::new_from_snapshot(self.storage.snapshot())"),
+        "composition-root tx admission must freeze canonical state at the admission boundary"
+    );
 
     assert!(
         body.contains("self.ledger_provider_factory.provider(snapshot)"),
         "composition-root tx admission must use the node-wide routed Ledger provider factory"
     );
     assert!(
-        !body.contains("StorageLedgerProviderFactory"),
-        "composition-root tx admission must not construct storage ledger providers directly"
+        body.contains("TransactionAdmissionLedger::new"),
+        "composition must adapt the routed provider to neo-mempool's canonical admission capability"
     );
     assert!(
-        body.contains("NativeTxAdmissionProvider::new(self.mempool.native_contract_provider())"),
-        "composition-root tx admission must adapt the mempool-captured native provider for policy reads"
+        body.contains(".add_transaction(origin, transaction, snapshot, &ledger)"),
+        "composition must call the one typed mempool mutation boundary"
     );
     assert!(
-        !body.contains("NativeTxAdmissionProviderFactory"),
-        "composition-root tx admission must not create a second production native provider factory"
-    );
-    assert!(
-        !body.contains("LedgerContract::new()"),
-        "composition-root tx admission must not construct native LedgerContract directly"
-    );
-    assert!(
-        !body.contains("PolicyContract::new()"),
-        "composition-root tx admission must not construct native PolicyContract directly"
+        body.contains("origin.should_propagate()"),
+        "network relay policy must be derived from the canonical transaction origin"
     );
     assert!(
         source.contains("HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>"),
         "the node must retain one statically dispatched configurable Ledger factory"
     );
-    assert!(
-        !provider.contains("TxAdmissionLedgerProvider"),
-        "the obsolete private Ledger wrapper should stay deleted"
-    );
-    assert!(provider.contains("trait TxAdmissionNativeProvider"));
-    assert!(
-        !provider.contains("trait TxAdmissionNativeProviderFactory"),
-        "tx admission native provider should adapt the node-composed NativeContractProvider instead of owning a private factory"
-    );
-    assert!(
-        !provider.contains("struct NativeTxAdmissionProviderFactory"),
-        "tx admission native provider should not own a second production native provider factory"
-    );
-    assert!(
-        !provider.contains("PolicyContract::new()"),
-        "tx admission native provider must resolve PolicyContract through the explicit native provider"
-    );
-    assert!(
-        provider.contains(".max_traceable_blocks(snapshot, settings)"),
-        "tx admission native provider should read MaxTraceableBlocks from the explicit NativeContractProvider capability"
-    );
+    for forbidden in [
+        "try_enqueue_preverify",
+        "TxRouterHandle",
+        "NativeTxAdmissionProvider",
+        "contains_transaction(&hash)",
+        "contains_conflict_hash(&hash",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "composition must not duplicate admission rule `{forbidden}`"
+        );
+    }
 }
 
 #[test]
-fn direct_constructor_uses_builder_defaults() {
-    let node = Node::new(Arc::new(ProtocolSettings::default()), None, None)
-        .expect("headless node should use explicit standard provider defaults");
+fn test_constructor_uses_explicit_standard_components() {
+    let node = Node::for_test(neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec"));
 
     assert!(node.mempool.total_count() == 0);
     assert_eq!(node.header_cache.count(), 0);

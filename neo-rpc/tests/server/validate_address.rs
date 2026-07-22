@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 fn node_to_context(node: &Node) -> NodeContext {
     NodeContext::from_parts(
-        node.settings(),
+        node.chain_spec(),
         Arc::new(RuntimeStore::Memory(node.storage().as_ref().clone())),
         node.blockchain(),
         node.network(),
@@ -32,7 +32,9 @@ fn is_valid(result: &Value) -> bool {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn validate_address_uses_wallet_base58_check() {
-    let node = Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("system");
+    let node = Node::for_test(neo_test_fixtures::test_chain_spec(
+        ProtocolSettings::default(),
+    ));
     let system: Arc<NodeContext> = Arc::new(node_to_context(&node));
     let server = RpcServer::new(system, RpcServerConfig::default());
 

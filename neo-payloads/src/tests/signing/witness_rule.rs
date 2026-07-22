@@ -1,7 +1,8 @@
-use super::helpers::{encode_hex, parse_group_bytes};
+use super::helpers::parse_group_bytes;
 use super::*;
 use neo_primitives::ADDRESS_SIZE;
 use neo_primitives::UInt160;
+use neo_primitives::hex_util::encode_hex;
 use neo_vm::Interoperable;
 use neo_vm::StackItem;
 

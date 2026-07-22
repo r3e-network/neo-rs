@@ -1,6 +1,6 @@
 //! # neo-manifest
 //!
-//! Contract manifest, NEF, ABI, permission, and call-flag domain types.
+//! Contract manifest, NEF, ABI, permission, and method-token domain types.
 //!
 //! ## Boundary
 //!
@@ -9,7 +9,6 @@
 //!
 //! ## Contents
 //!
-//! - `call_flags`: contract call-flag records.
 //! - `manifest`: Contract manifest, ABI, permission, and NEF-adjacent metadata
 //!   types.
 //! - `method_token`: NEF method-token records.
@@ -17,15 +16,12 @@
 
 #![doc(html_root_url = "https://docs.rs/neo-manifest/0.10.0")]
 
-#[path = "protocol/call_flags.rs"]
-pub mod call_flags;
 pub mod manifest;
 #[path = "nef/method_token.rs"]
 pub mod method_token;
 #[path = "nef/nef_file.rs"]
 pub mod nef_file;
 
-pub use call_flags::CallFlags;
 pub use manifest::{
     ContractAbi, ContractEventDescriptor, ContractGroup, ContractManifest,
     ContractMethodDescriptor, ContractParameterDefinition, ContractPermission,

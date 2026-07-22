@@ -10,7 +10,7 @@
 //! contract (in `neo-native-contracts`), so at first glance it looks like it
 //! belongs next to that contract. It cannot move there, however, because it is
 //! deeply coupled to the execution engine: it depends on [`crate::helper::Helper`],
-//! [`crate::interoperable::Interoperable`], and the VM [`neo_vm::StackItem`]
+//! [`neo_vm::Interoperable`], and the VM [`neo_vm::StackItem`]
 //! type for its (de)serialization
 //! to/from the on-chain `Struct` representation. `neo-native-contracts` depends
 //! on `neo-execution` (for the `NativeContract` trait and the engine), so
@@ -22,11 +22,11 @@
 //! layering mirrors that split.
 
 use crate::helper::Helper;
-use crate::interoperable::Interoperable;
 use neo_error::{CoreError, CoreResult};
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_manifest::{ContractManifest, NefFile};
 use neo_primitives::UInt160;
+use neo_vm::Interoperable;
 use neo_vm::{OpCode, StackItem};
 use num_traits::ToPrimitive;
 use serde_json::{Value, json};

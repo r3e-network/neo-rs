@@ -4,7 +4,6 @@ use neo_io::macros::ValidateLength;
 use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::DataCache;
 use serde::{Deserialize, Serialize};
 
 const MAX_CATEGORY_LENGTH: usize = 32;
@@ -182,10 +181,7 @@ impl Inventory for ExtensiblePayload {
 impl crate::VerifiableExt for ExtensiblePayload {
     /// C# `ExtensiblePayload.GetScriptHashesForVerifying`: the single hash to
     /// verify is the payload's `Sender`.
-    fn script_hashes_for_verifying<B: neo_storage::CacheRead>(
-        &self,
-        _snapshot: &DataCache<B>,
-    ) -> Vec<UInt160> {
+    fn script_hashes_for_verifying(&self) -> Vec<UInt160> {
         vec![self.sender]
     }
 

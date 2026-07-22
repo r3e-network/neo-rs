@@ -19,8 +19,10 @@ pub struct NodeCli {
     #[arg(long, short = 'c', default_value = DEFAULT_SETTINGS_PATH)]
     pub config: PathBuf,
 
-    /// Override the network magic advertised in the protocol settings
-    /// (must match the rest of the network).
+    /// Assert the selected built-in chain's network magic.
+    ///
+    /// The value is validated against the immutable chain specification; it
+    /// cannot override a chain's identity.
     #[arg(long)]
     pub network_magic: Option<u32>,
 
@@ -43,9 +45,9 @@ pub struct NodeCli {
 
     /// Import blocks from a chain.acc dump file before starting the node.
     /// The file is the C# Neo block-dump format (u32 count, then repeated
-    /// i32-size + serialized-Block). Blocks are imported with verify=false
-    /// (trusted source, like C# Neo's chain.acc import). After import, the
-    /// node starts normally and continues syncing from the network.
+    /// i32-size + serialized-Block). Blocks use trusted `verify=false` replay
+    /// by default, matching Neo C#; combine with `--verify-import-chain` for a
+    /// full audit. After import, the node continues syncing from the network.
     #[arg(long, value_name = "PATH")]
     pub import_chain: Option<PathBuf>,
 

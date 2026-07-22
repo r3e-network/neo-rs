@@ -22,8 +22,9 @@ pub(in crate::node) struct ExecutionSection {
     pub(in crate::node) optimistic_signature_verification: OptimisticSignatureVerificationSection,
 }
 
-/// `[execution.optimistic_signature_verification]`: overlap header witness
-/// verification with header import while retaining ordered publication.
+/// `[execution.optimistic_signature_verification]`: overlap header-witness
+/// signature verification with ordered import. Workers cache only exact P-256
+/// outcomes; canonical NeoVM verification and publication remain synchronous.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(in crate::node) struct OptimisticSignatureVerificationSection {

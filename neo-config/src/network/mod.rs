@@ -10,8 +10,11 @@
 //!
 //! ## Contents
 //!
+//! - `chain_spec`: validated immutable chain identity and protocol rules.
 //! - `genesis`: genesis block and committee configuration.
 //! - `network_type`: Neo network identifiers.
 
+pub mod chain_spec;
 pub mod genesis;
 pub mod network_type;
+pub(crate) mod public_key;

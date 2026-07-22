@@ -6,15 +6,13 @@
 
 use std::sync::Arc;
 
+use super::Transaction;
+use crate::{VerifiableContainer, VerifiableExt, Witness};
 use neo_io::BinaryWriter;
 use neo_primitives::{
     UInt160, Verifiable,
     error::{PrimitiveError, PrimitiveResult},
 };
-use neo_storage::{CacheRead, DataCache};
-
-use super::Transaction;
-use crate::{VerifiableContainer, VerifiableExt, Witness};
 
 // The transaction wire size is provided by the canonical `Serializable::size`
 // impl (see `serialization.rs`), which includes the version (1 byte), the
@@ -59,7 +57,7 @@ impl Verifiable for Transaction {
 }
 
 impl VerifiableExt for Transaction {
-    fn script_hashes_for_verifying<B: CacheRead>(&self, _snapshot: &DataCache<B>) -> Vec<UInt160> {
+    fn script_hashes_for_verifying(&self) -> Vec<UInt160> {
         self.signers().iter().map(|s| s.account).collect()
     }
 

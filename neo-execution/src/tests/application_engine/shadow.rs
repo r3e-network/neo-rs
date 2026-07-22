@@ -12,11 +12,11 @@ use crate::specialization::{
 };
 use neo_config::ProtocolSettings;
 use neo_manifest::{
-    CallFlags, ContractAbi, ContractManifest, ContractParameterDefinition, ContractPermission,
+    ContractAbi, ContractManifest, ContractParameterDefinition, ContractPermission,
     ManifestFeatures, NefFile, WildCardContainer,
 };
 use neo_payloads::Block;
-use neo_primitives::{ContractParameterType, TriggerType, UInt160};
+use neo_primitives::{CallFlags, ContractParameterType, TriggerType, UInt160};
 use neo_storage::{DataCache, StorageItem, StorageKey};
 use neo_vm::{HardforkTableIdentity, OpCode, Script, Slot, SpecializationMode, StackItem, VmState};
 use std::cell::{Cell, RefCell};

@@ -80,7 +80,10 @@ where
             if reverify_mempool {
                 self.reverify_mempool_after_persist(
                     height,
-                    self.system.settings().max_transactions_per_block as usize,
+                    self.system
+                        .chain_spec()
+                        .protocol_settings()
+                        .max_transactions_per_block as usize,
                 );
             }
         }

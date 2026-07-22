@@ -8,11 +8,11 @@
 //! balance, per-attribute verification + fees, fee-per-byte coverage, and
 //! engine-based witness verification for non-standard witnesses).
 //!
-//! In C# the state-independent half runs in `TransactionRouter` (the
-//! parallel preverifier) and the state-dependent half inside
-//! `MemoryPool.TryAdd`; the observable behavior of relayed transactions is
-//! the combination, which is what [`verify_transaction_with_native_provider`]
-//! produces for the single-threaded admission path here.
+//! Admission runs the state-independent half before taking the pool write lock
+//! and the state-dependent half while the pooled fee/conflict context is
+//! frozen. [`verify_transaction_with_native_provider`] remains the combined
+//! entry point for callers that need raw transaction verification without pool
+//! admission.
 //!
 //! Policy/GAS/Notary/Oracle/Role/Ledger state is read through provider-style
 //! seams so the admission path depends on capabilities, not concrete native
@@ -35,7 +35,6 @@ use std::sync::Arc;
 
 use super::ledger_provider::{AdmissionLedgerProvider, NativeAdmissionLedgerProvider};
 use super::native_provider::{AdmissionNativeProvider, NativeAdmissionProvider};
-
 const POLICY_CONTRACT_ID: i32 = -7;
 const POLICY_PREFIX_ATTRIBUTE_FEE: u8 = 20;
 const DEFAULT_ATTRIBUTE_FEE: i64 = 0;
@@ -97,35 +96,6 @@ where
     if result != VerifyResult::Succeed {
         return result;
     }
-    verify_state_dependent_with_native_provider(
-        tx,
-        snapshot,
-        settings,
-        pooled_sender_fee,
-        oracle_duplicate,
-        native_contract_provider,
-    )
-}
-
-/// Runs only [`verify_state_dependent_with_native_provider`], skipping
-/// [`verify_state_independent`]. Used when the state-independent
-/// result is already cached (e.g. from `TransactionRouter::preverify`
-/// → `PreverifyCompleted::cached_state_independent`), avoiding
-/// redundant ECDSA signature verification. C# achieves the same by caching
-/// `Transaction.VerificationResult` which `MemoryPool.TryAdd` reads before
-/// performing state-dependent checks only.
-pub fn verify_transaction_dependent_only_with_native_provider<B, P>(
-    tx: &Transaction,
-    snapshot: &DataCache<B>,
-    settings: &ProtocolSettings,
-    pooled_sender_fee: &BigInt,
-    oracle_duplicate: bool,
-    native_contract_provider: Arc<P>,
-) -> VerifyResult
-where
-    B: CacheRead,
-    P: NativeContractProvider + 'static,
-{
     verify_state_dependent_with_native_provider(
         tx,
         snapshot,
@@ -218,38 +188,6 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
     VerifyResult::Succeed
 }
 
-/// Returns whether every signer witness can be verified without ledger state.
-///
-/// Standard single-signature and multisignature witnesses only need the
-/// transaction sign-data and the embedded public keys. Contract-account and
-/// witness-rule scripts intentionally return `false`; those witnesses require
-/// the canonical state-dependent ApplicationEngine path and must not be
-/// admitted to the optimistic signature lane.
-#[must_use]
-pub fn transaction_witnesses_are_state_independent(tx: &Transaction) -> bool {
-    let signers = tx.signers();
-    let witnesses = tx.witnesses();
-    if signers.is_empty() || witnesses.len() != signers.len() {
-        return false;
-    }
-
-    signers.iter().zip(witnesses.iter()).all(|(_, witness)| {
-        let verification = witness.verification_script();
-        let invocation = witness.invocation_script();
-        (neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(verification)
-            && single_signature_invocation(invocation).is_some())
-            || (neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_contract(
-                verification,
-            )
-            .and_then(|(m, _)| {
-                neo_vm::script_builder::redeem_script::RedeemScript::parse_multi_sig_invocation(
-                    invocation, m,
-                )
-            })
-            .is_some())
-    })
-}
-
 /// C# `Transaction.VerifyStateDependent` (Transaction.cs:323) using an explicit
 /// native-contract provider for engine-based witness verification.
 pub fn verify_state_dependent_with_native_provider<B, P>(
@@ -274,6 +212,35 @@ where
         oracle_duplicate,
         native_contract_provider,
         &ledger_provider,
+        &admission_native_provider,
+    )
+}
+
+/// Runs state-dependent verification against the canonical ledger provider
+/// selected by node composition.
+pub(crate) fn verify_state_dependent_with_ledger_provider<B, P, L>(
+    tx: &Transaction,
+    snapshot: &DataCache<B>,
+    settings: &ProtocolSettings,
+    pooled_sender_fee: &BigInt,
+    oracle_duplicate: bool,
+    native_contract_provider: Arc<P>,
+    ledger_provider: &L,
+) -> VerifyResult
+where
+    B: CacheRead,
+    P: NativeContractProvider + 'static,
+    L: AdmissionLedgerProvider,
+{
+    let admission_native_provider = NativeAdmissionProvider::new(native_contract_provider.clone());
+    verify_state_dependent_with_providers(
+        tx,
+        snapshot,
+        settings,
+        pooled_sender_fee,
+        oracle_duplicate,
+        native_contract_provider,
+        ledger_provider,
         &admission_native_provider,
     )
 }
@@ -327,7 +294,7 @@ where
 
     // Sender GAS balance (C# TransactionVerificationContext.CheckTransaction;
     // `pooled_sender_fee` already carries the pooled-conflict fee rebate
-    // applied by `MemoryPool::try_add`'s CheckConflicts).
+    // applied by `MemoryPool::add_transaction`'s CheckConflicts).
     let balance = match fee_payer_balance(snapshot, tx, admission_native_provider) {
         Ok(Some(balance)) => balance,
         Ok(None) => return VerifyResult::Invalid,

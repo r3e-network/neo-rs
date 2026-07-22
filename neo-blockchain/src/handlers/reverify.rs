@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use neo_mempool::TransactionOrigin;
+
 use crate::inventory_payload::InventoryPayload;
 use crate::reverify::Reverify;
 use crate::service::{BlockchainService, MempoolLike};
@@ -24,7 +26,7 @@ where
                         .await;
                 }
                 InventoryPayload::Transaction(tx) => {
-                    let _ = self.on_new_transaction(&tx, None);
+                    let _ = self.add_transaction(TransactionOrigin::External, *tx).await;
                 }
                 InventoryPayload::Extensible(payload) => {
                     let _ = self.handle_extensible_inventory(*payload, false).await;

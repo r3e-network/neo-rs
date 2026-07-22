@@ -1,11 +1,11 @@
 use super::providers::{NativeOracleLedgerProvider, OracleLedgerProvider};
 use super::{FILTER_MAX_NEST, OracleServiceError};
 use neo_crypto::ECPoint;
-use neo_execution::Contract;
 use neo_payloads::Transaction;
 use neo_payloads::helper::get_sign_data_vec;
 use neo_serialization::json::JToken;
 use neo_storage::persistence::{CacheRead, DataCache};
+use neo_vm::Contract;
 use neo_wallets::{KeyPair, Wallet, WalletAccount};
 
 pub(super) fn sign_transaction(tx: &Transaction, key: &KeyPair, network: u32) -> Vec<u8> {

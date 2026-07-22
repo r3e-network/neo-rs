@@ -18,7 +18,7 @@
 //! - Immutable policy construction with bounded limits.
 //! - Fail-closed auditing and violation records.
 
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::{FindOptions, Hardfork, UInt160};
 use neo_storage::StorageKey;
 use neo_vm::{ContractResolutionIdentity, NativeCacheDomain, RangeDirection};

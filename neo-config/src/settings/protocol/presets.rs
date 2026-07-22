@@ -2,13 +2,11 @@
 //!
 //! These constructors mirror the C# `config.mainnet.json`,
 //! `config.testnet.json`, and `ProtocolSettings.Default` records. Keeping them
-//! out of the loader/parser module makes the protocol root a facade rather than
-//! a pile of embedded network data.
+//! out of the loader/parser module gives built-in chain data one visible owner.
 
-use crate::hardfork::HardforkManager;
+use crate::hardfork::HardforkSchedule;
 use neo_crypto::ECPoint;
 use neo_primitives::constants;
-use std::collections::HashMap;
 
 use super::{ProtocolConfigError, ProtocolSettings, parse::CommitteeParser};
 
@@ -77,19 +75,15 @@ impl ProtocolSettings {
             max_transactions_per_block: constants::MAX_TRANSACTIONS_PER_BLOCK as u32,
             max_block_size: constants::MAX_BLOCK_SIZE as u32,
             max_valid_until_block_increment: constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT,
-            memory_pool_max_transactions: 50_000,
             max_traceable_blocks: constants::MAX_TRACEABLE_BLOCKS,
             initial_gas_distribution: constants::INITIAL_GAS_DISTRIBUTION,
-            hardforks: Self::ensure_omitted_hardforks(HashMap::new()),
+            hardforks: HardforkSchedule::csharp_default(),
         }
     }
 
     /// Returns built-in ProtocolSettings for Neo MainNet.
     pub fn mainnet() -> Self {
-        match Self::try_mainnet() {
-            Ok(settings) => settings,
-            Err(_) => Self::mainnet_with_committee(Vec::new()),
-        }
+        Self::try_mainnet().expect("embedded MainNet committee keys must be valid")
     }
 
     /// Returns built-in ProtocolSettings for Neo MainNet, surfacing embedded
@@ -116,21 +110,15 @@ impl ProtocolSettings {
             max_transactions_per_block: 200,
             max_block_size: constants::MAX_BLOCK_SIZE as u32,
             max_valid_until_block_increment: constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT,
-            memory_pool_max_transactions: 50_000,
             max_traceable_blocks: constants::MAX_TRACEABLE_BLOCKS,
             initial_gas_distribution: constants::INITIAL_GAS_DISTRIBUTION,
-            hardforks: Self::ensure_omitted_hardforks(
-                HardforkManager::mainnet().get_hardforks().clone(),
-            ),
+            hardforks: HardforkSchedule::mainnet(),
         }
     }
 
     /// Returns built-in ProtocolSettings for Neo TestNet.
     pub fn testnet() -> Self {
-        match Self::try_testnet() {
-            Ok(settings) => settings,
-            Err(_) => Self::testnet_with_committee(Vec::new()),
-        }
+        Self::try_testnet().expect("embedded TestNet committee keys must be valid")
     }
 
     /// Returns built-in ProtocolSettings for Neo TestNet, surfacing embedded
@@ -157,31 +145,17 @@ impl ProtocolSettings {
             max_transactions_per_block: 5_000,
             max_block_size: constants::MAX_BLOCK_SIZE as u32,
             max_valid_until_block_increment: constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT,
-            memory_pool_max_transactions: 50_000,
             max_traceable_blocks: constants::MAX_TRACEABLE_BLOCKS,
             initial_gas_distribution: constants::INITIAL_GAS_DISTRIBUTION,
-            hardforks: Self::ensure_omitted_hardforks(
-                HardforkManager::testnet().get_hardforks().clone(),
-            ),
+            hardforks: HardforkSchedule::testnet(),
         }
     }
 
-    /// The workspace's operational default protocol settings.
+    /// The workspace's operational default protocol settings (Neo N3 MainNet).
     ///
-    /// This intentionally selects the Neo N3 MainNet preset for existing Rust
-    /// callers. Use [`Self::csharp_default`] when matching C#
+    /// Use [`Self::csharp_default`] only when matching C#
     /// `ProtocolSettings.Default` loader fallback semantics.
     pub fn default_settings() -> Self {
         Self::mainnet()
-    }
-
-    /// Returns ProtocolSettings for a private network using the given network
-    /// magic. Derived from the MainNet defaults with the magic overridden;
-    /// real private-net parameters are expected to come from a loaded config.
-    pub fn private(network_magic: u32) -> Self {
-        Self {
-            network: network_magic,
-            ..Self::mainnet()
-        }
     }
 }

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define deterministic, validated, and operator-safe node configuration behavior.
+
+## Requirements
 
 ### Requirement: Environment-based configuration
 The system SHALL support configuration via TOML files with environment variable overrides.

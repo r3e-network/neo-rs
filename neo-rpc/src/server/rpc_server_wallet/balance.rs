@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use neo_execution::application_engine::ApplicationEngine;
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::{BigDecimal, TriggerType, UInt160};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm::{OpCode, VmState as VMState};

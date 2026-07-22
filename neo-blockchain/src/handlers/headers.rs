@@ -33,7 +33,7 @@ where
     /// cached header, or the ledger tip when the cache is empty.
     pub(crate) fn handle_headers(&self, headers: Vec<Header>) -> HeaderValidationOutcome {
         let snapshot = self.system.store_snapshot();
-        let settings = self.system.settings();
+        let settings = self.system.chain_spec().protocol_settings_arc();
         let native_contract_provider = self.system.native_contract_provider();
 
         // C# verification anchor: HeaderCache.Last, else the ledger tip block.
@@ -86,7 +86,6 @@ where
                     blocks_per_second,
                     signature_submitted = metrics_after.submitted.saturating_sub(metrics_before.submitted),
                     signature_completed = metrics_after.completed.saturating_sub(metrics_before.completed),
-                    signature_invalid = metrics_after.invalid.saturating_sub(metrics_before.invalid),
                     signature_cancelled = metrics_after.cancelled.saturating_sub(metrics_before.cancelled),
                     signature_worker_panics = metrics_after.worker_panics.saturating_sub(metrics_before.worker_panics),
                     signature_worker_unavailable = metrics_after.worker_unavailable.saturating_sub(metrics_before.worker_unavailable),

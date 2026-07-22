@@ -25,7 +25,8 @@ async fn get_raw_transaction_from_mempool() {
     {
         let pool = &pool;
         assert_eq!(
-            pool.try_add(tx.clone(), store.data_cache()),
+            crate::server::test_support::admit_local_transaction(pool, &tx, store.data_cache(),)
+                .verify_result(),
             VerifyResult::Succeed
         );
     }

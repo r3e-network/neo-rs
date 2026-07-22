@@ -1,0 +1,32 @@
+[package]
+name = "neo-trie"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Neo N3 Merkle Patricia Trie nodes, proofs, and mutation cache"
+
+[dependencies]
+neo-crypto = { workspace = true }
+neo-error = { workspace = true }
+neo-io = { workspace = true }
+neo-primitives = { workspace = true }
+parking_lot = { workspace = true }
+rustc-hash = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+hex = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

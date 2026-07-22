@@ -23,8 +23,7 @@ async fn start_local_node_fast_discovery(
     config: ChannelsConfig,
     discovery_interval: Duration,
 ) -> (NetworkHandle, broadcast::Receiver<NetworkEvent>, u16) {
-    let settings = Arc::new(ProtocolSettings::default());
-    let (service, handle) = LocalNodeService::with_config(settings, config);
+    let (service, handle) = LocalNodeService::with_config(test_chain_spec(), config);
     let service = service.with_discovery_interval(discovery_interval);
     tokio::spawn(service.run());
     let events = handle.subscribe();
@@ -82,7 +81,7 @@ async fn below_min_desired_sends_getaddr_then_dials_addr_reply() {
     // Fake peer dials in and completes the handshake, advertising its own
     // listener port (non-zero) so it is a normal full-node peer.
     let mut fake = fake_dial(port).await;
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     complete_handshake(&mut fake, network, 0x1122_3344, 40333).await;
 
     // With one connection (< 2 desired) and an empty address book, the node
@@ -126,7 +125,7 @@ async fn unsolicited_addr_is_ignored() {
         start_local_node_fast_discovery(config, Duration::from_millis(100)).await;
 
     let mut fake = fake_dial(port).await;
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     complete_handshake(&mut fake, network, 0x5566_7788, 40334).await;
 
     // Push an unsolicited Addr. The node never sent GetAddr (it is at its

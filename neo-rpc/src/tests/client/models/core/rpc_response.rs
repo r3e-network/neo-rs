@@ -1,5 +1,5 @@
-use super::super::test_fixtures::rpc_case_response;
 use super::*;
+use crate::types::test_fixtures::rpc_case_response;
 use neo_serialization::json::JToken;
 
 #[test]

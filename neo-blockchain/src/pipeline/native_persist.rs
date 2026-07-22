@@ -165,8 +165,8 @@ where
     for contract in contracts {
         let activation_height = match contract.active_in() {
             None => 0,
-            Some(hardfork) => match settings.hardforks.get(&hardfork) {
-                Some(&height) => height,
+            Some(hardfork) => match settings.hardforks.activation_height(hardfork) {
+                Some(height) => height,
                 None => continue,
             },
         };

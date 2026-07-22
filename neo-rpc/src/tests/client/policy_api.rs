@@ -87,7 +87,7 @@ fn build_policy_script(operation: &str, args: &[serde_json::Value]) -> Vec<u8> {
         sb.emit_pack();
     }
 
-    sb.emit_push_int(neo_manifest::CallFlags::ALL.bits() as i64);
+    sb.emit_push_int(neo_primitives::CallFlags::ALL.bits() as i64);
     sb.emit_push(operation.as_bytes());
     sb.emit_push(&PolicyContract::new().hash().to_array());
     sb.emit_syscall("System.Contract.Call").expect("syscall");

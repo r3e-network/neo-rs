@@ -12,12 +12,10 @@
 //!
 //! - `display_hex`: hex display macro support.
 //! - `message_flags`: P2P message flag records.
-//! - `p2p_message_command`: P2P message-command macro support.
 //! - `protocol_enum`: protocol enum macro support.
 //! - `uint`: fixed-width integer macro support.
 
 mod display_hex;
 mod message_flags;
-mod p2p_message_command;
 mod protocol_enum;
 mod uint;

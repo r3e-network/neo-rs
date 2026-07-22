@@ -5,7 +5,7 @@
 //! generic helper code does not mix RPC parsing with script layout.
 
 use neo_execution::contract_parameter::{ContractParameter, ContractParameterValue};
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::UInt160;
 use neo_vm::OpCode;
 use neo_vm::script_builder::ScriptBuilder;

@@ -18,9 +18,8 @@
 //!   execution.
 //! - `store`: Core store trait (read + write + snapshot + backend capabilities).
 //! - `store_cache`: store-backed cache overlay.
-//! - `store_factory`: named provider registry and store factory facade.
+//! - `store_factory`: closed built-in backend selection and store construction.
 //! - `store_maintenance`: isolated node metadata and atomic maintenance batches.
-//! - `store_provider`: backend provider trait implemented by concrete stores.
 //! - `store_snapshot`: snapshot store trait.
 //! - `table`: Statically dispatched logical tables and byte codecs.
 //! - `transactional_store`: Mandatory atomic commits plus optional coordinated
@@ -46,15 +45,12 @@ pub mod storage;
 pub mod store;
 #[path = "cache/store_cache.rs"]
 pub mod store_cache;
-/// Registry-backed factory facade for named store providers.
+/// Closed factory for the built-in store backends.
 #[path = "traits/store_factory.rs"]
 pub mod store_factory;
 /// Atomic data and node-local metadata maintenance operations.
 #[path = "traits/store_maintenance.rs"]
 pub mod store_maintenance;
-/// Backend provider trait implemented by concrete store adapters.
-#[path = "traits/store_provider.rs"]
-pub mod store_provider;
 /// Mutable point-in-time store snapshots.
 #[path = "traits/store_snapshot.rs"]
 pub mod store_snapshot;
@@ -86,7 +82,6 @@ pub use store::{
 pub use store_cache::{StoreCache, StoreCacheBacking, StoreDataCache};
 pub use store_factory::StoreFactory;
 pub use store_maintenance::{StoreMaintenanceBatch, StoreValueGuard};
-pub use store_provider::StoreProvider;
 pub use store_snapshot::StoreSnapshot;
 pub use table::{
     BytesCodec, FixedBytesCodec, IntoTableBytes, StorageItemCodec, StorageKeyCodec, Table,

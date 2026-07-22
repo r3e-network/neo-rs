@@ -3,7 +3,7 @@ use super::*;
 use std::fmt;
 use std::sync::Arc;
 
-use neo_config::ProtocolSettings;
+use neo_config::{ChainSpecProvider, NeoChainSpec, ProtocolSettings};
 use neo_crypto::Secp256r1Crypto;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{PreverifiedSignatureCache, preverify_standard_witness_signatures};
@@ -17,7 +17,7 @@ use neo_vm::script_builder::redeem_script::RedeemScript;
 use crate::pipeline::stage_traits::{ConsensusWitnessStage, PipelineStage, StageContext, StageId};
 
 struct MockConsensusWitnessContext {
-    settings: Arc<ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     snapshot: DataCache,
     parent: Option<ParentHeaderContext>,
 }
@@ -25,7 +25,10 @@ struct MockConsensusWitnessContext {
 impl fmt::Debug for MockConsensusWitnessContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MockConsensusWitnessContext")
-            .field("validators_count", &self.settings.validators_count)
+            .field(
+                "validators_count",
+                &self.chain_spec.protocol_settings().validators_count,
+            )
             .field("parent", &self.parent)
             .finish_non_exhaustive()
     }
@@ -34,20 +37,24 @@ impl fmt::Debug for MockConsensusWitnessContext {
 impl MockConsensusWitnessContext {
     fn new(parent: Option<ParentHeaderContext>) -> Self {
         Self {
-            settings: Arc::new(ProtocolSettings::default()),
+            chain_spec: neo_test_fixtures::test_chain_spec(ProtocolSettings::default()),
             snapshot: DataCache::new(false),
             parent,
         }
     }
 }
 
+impl ChainSpecProvider for MockConsensusWitnessContext {
+    type ChainSpec = NeoChainSpec;
+
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        Arc::clone(&self.chain_spec)
+    }
+}
+
 impl ConsensusWitnessContext for MockConsensusWitnessContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
-
-    fn settings(&self) -> Arc<ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
 
     fn snapshot(&self) -> &DataCache {
         &self.snapshot

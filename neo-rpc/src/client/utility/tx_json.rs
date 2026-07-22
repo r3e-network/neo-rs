@@ -9,10 +9,11 @@ use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 
 use super::attributes::attribute_from_json;
 use super::parsing::{
-    jtoken_to_serde, object_array, oracle_response_code_to_str, parse_i64_token,
-    parse_optional_token_array_strict, parse_u32_token, token_array,
+    jtoken_to_serde, oracle_response_code_to_str, parse_i64_token,
+    parse_optional_token_array_strict, parse_u32_token,
 };
 use super::witness::{payload_witness_from_json, payload_witness_to_json, witness_to_json};
+use crate::types::json::{object_array, token_array};
 
 /// Converts a block to JSON representation.
 pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JObject {

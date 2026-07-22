@@ -11,7 +11,10 @@ fn proposal_resolution_caches_unverified_transactions_like_csharp_prepare_reques
 
     let tx = signed_zero_fee_tx(&settings, 0x32);
     let hash = tx.hash();
-    assert_eq!(pool.try_add(tx.clone(), &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, tx.clone(), &snapshot),
+        VerifyResult::Succeed
+    );
     pool.update_pool_for_block_persisted(&[]);
     assert!(pool.get_verified(&hash).is_none());
     assert!(pool.get(&hash).is_some());
@@ -70,11 +73,11 @@ fn proposal_resolution_reverifies_unverified_transactions_against_context() {
     let first_hash = first.hash();
     let second_hash = second.hash();
     assert_eq!(
-        pool.try_add(first.clone(), &snapshot),
+        admit_local_transaction(&pool, first.clone(), &snapshot),
         VerifyResult::Succeed
     );
     assert_eq!(
-        pool.try_add(second.clone(), &snapshot),
+        admit_local_transaction(&pool, second.clone(), &snapshot),
         VerifyResult::Succeed
     );
     pool.update_pool_for_block_persisted(&[]);
@@ -132,10 +135,16 @@ fn proposal_resolution_rejects_unverified_conflicts_against_proposal_hashes() {
     );
     let conflict_hash = conflict.hash();
 
-    assert_eq!(pool.try_add(conflict, &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, conflict, &snapshot),
+        VerifyResult::Succeed
+    );
     pool.update_pool_for_block_persisted(&[]);
     assert!(pool.get_verified(&conflict_hash).is_none());
-    assert_eq!(pool.try_add(target, &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, target, &snapshot),
+        VerifyResult::Succeed
+    );
     assert!(pool.get_verified(&target_hash).is_some());
 
     let mut cache: HashMap<UInt256, Arc<Transaction>> = HashMap::new();
@@ -169,7 +178,10 @@ fn proposal_resolution_rejects_unverified_when_context_conflicts_with_it() {
 
     let target = signed_zero_fee_tx(&settings, 0x54);
     let target_hash = target.hash();
-    assert_eq!(pool.try_add(target, &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, target, &snapshot),
+        VerifyResult::Succeed
+    );
     pool.update_pool_for_block_persisted(&[]);
     assert!(pool.get_verified(&target_hash).is_none());
 
@@ -187,7 +199,10 @@ fn proposal_resolution_rejects_unverified_when_context_conflicts_with_it() {
         )],
     );
     let conflict_hash = conflict.hash();
-    assert_eq!(pool.try_add(conflict, &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, conflict, &snapshot),
+        VerifyResult::Succeed
+    );
     assert!(pool.get_verified(&conflict_hash).is_some());
 
     let mut cache: HashMap<UInt256, Arc<Transaction>> = HashMap::new();
@@ -240,7 +255,10 @@ fn primary_proposal_selection_stops_before_dbft_max_block_system_fee() {
     let mut cache: HashMap<UInt256, Arc<Transaction>> = HashMap::new();
 
     let hashes = select_primary_proposal_transactions(
-        vec![PoolItem::new(first), PoolItem::new(second)],
+        vec![
+            PoolItem::new(first, neo_mempool::TransactionOrigin::Local),
+            PoolItem::new(second, neo_mempool::TransactionOrigin::Local),
+        ],
         2,
         &mut cache,
         &validators,
@@ -289,7 +307,10 @@ fn primary_proposal_skips_invalid_transactions_over_f() {
     let mut cache: HashMap<UInt256, Arc<Transaction>> = HashMap::new();
 
     let hashes = select_primary_proposal_transactions(
-        vec![PoolItem::new(keep), PoolItem::new(drop)],
+        vec![
+            PoolItem::new(keep, neo_mempool::TransactionOrigin::Local),
+            PoolItem::new(drop, neo_mempool::TransactionOrigin::Local),
+        ],
         2,
         &mut cache,
         &validators,
@@ -320,7 +341,10 @@ fn proposal_resolution_rejects_full_block_over_dbft_max_block_size() {
     let oversized_limit = expected_dbft_block_size_without_transactions(1, &validators)
         + <Transaction as Serializable>::size(&tx)
         - 1;
-    assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, tx, &snapshot),
+        VerifyResult::Succeed
+    );
     settings.max_block_size = oversized_limit as u32;
 
     let mut cache: HashMap<UInt256, Arc<Transaction>> = HashMap::new();
@@ -394,8 +418,14 @@ async fn proposal_resolution_requests_change_view_for_invalid_unverified_transac
     );
     let first_hash = first.hash();
     let second_hash = second.hash();
-    assert_eq!(pool.try_add(first, &snapshot), VerifyResult::Succeed);
-    assert_eq!(pool.try_add(second, &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, first, &snapshot),
+        VerifyResult::Succeed
+    );
+    assert_eq!(
+        admit_local_transaction(&pool, second, &snapshot),
+        VerifyResult::Succeed
+    );
     pool.update_pool_for_block_persisted(&[]);
     seed_gas_balance(&snapshot, &account, 1_500);
 
@@ -508,8 +538,14 @@ async fn proposal_resolution_requests_block_rejected_without_prepare_response_fo
     );
     let first_hash = first.hash();
     let second_hash = second.hash();
-    assert_eq!(pool.try_add(first, &snapshot), VerifyResult::Succeed);
-    assert_eq!(pool.try_add(second, &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, first, &snapshot),
+        VerifyResult::Succeed
+    );
+    assert_eq!(
+        admit_local_transaction(&pool, second, &snapshot),
+        VerifyResult::Succeed
+    );
 
     let (validators, consensus_keys) = consensus_test_validators(4);
     let (event_tx, event_rx) = mpsc::channel(16);
@@ -604,7 +640,10 @@ async fn primary_request_transactions_broadcasts_inv_of_proposal_hashes() {
 
     let tx = signed_zero_fee_tx(&settings, 0x42);
     let tx_hash = tx.hash();
-    assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, tx, &snapshot),
+        VerifyResult::Succeed
+    );
 
     let (validators, consensus_keys) = consensus_test_validators(4);
     let (event_tx, event_rx) = mpsc::channel(16);
@@ -658,7 +697,7 @@ async fn primary_request_transactions_broadcasts_inv_of_proposal_hashes() {
             hashes,
         } = command
         {
-            assert_eq!(inventory_type, neo_network::InventoryType::Transaction);
+            assert_eq!(inventory_type, neo_primitives::InventoryType::Transaction);
             inv_hashes = Some(hashes);
             break;
         }
@@ -730,7 +769,10 @@ async fn tx_feed_resumes_backup_and_caches_transaction() {
 
     // The transaction propagates and is admitted to the mempool (the backup
     // pulled it via GetData after the primary's Inv), then the driver feeds it.
-    assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, tx, &snapshot),
+        VerifyResult::Succeed
+    );
     driver.on_transaction_feed(tx_hash).await;
 
     // The round resumed: the transaction is now available, its body is cached
@@ -836,7 +878,7 @@ fn invalid_validator_set_sizes_as_rejected_proposal() {
     let mut cache: HashMap<UInt256, Arc<Transaction>> = HashMap::new();
 
     let selected = select_primary_proposal_transactions(
-        vec![PoolItem::new(tx)],
+        vec![PoolItem::new(tx, neo_mempool::TransactionOrigin::Local)],
         1,
         &mut cache,
         &validators,

@@ -2,16 +2,11 @@
 //!
 //! Tests for peer-to-peer networking protocol.
 //!
-//! These tests validate the public surface of the reth-style P2P host
-//! services in `neo_network` and the canonical wire-envelope enums
-//! (`MessageCommand`, `MessageFlags`) in `neo_network::proto`. The
-//! historical `Message::create(...)` constructor (which produced a
-//! per-message envelope with command + flags + payload) is part of the
-//! Stage 3 wire-envelope extraction — until then the tests focus on
-//! the enum round-trips.
+//! These tests validate the public network-owned command and flag surface.
+//! Shared verification outcomes remain owned by `neo-primitives`.
 
-use neo_network::VerifyResult;
 use neo_network::{MessageCommand, MessageFlags};
+use neo_primitives::VerifyResult;
 
 #[tokio::test]
 async fn message_command_byte_conversion_round_trips() {
@@ -34,13 +29,7 @@ async fn message_command_byte_conversion_round_trips() {
     for cmd in commands.iter() {
         let byte = cmd.to_byte();
         let restored = MessageCommand::from_byte(byte);
-        assert!(restored.is_ok(), "from_byte({}) failed", byte);
-        assert_eq!(
-            restored.unwrap(),
-            *cmd,
-            "Command {:?} did not round-trip",
-            cmd
-        );
+        assert_eq!(restored, *cmd, "Command {:?} did not round-trip", cmd);
     }
 }
 

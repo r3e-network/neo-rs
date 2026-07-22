@@ -1,5 +1,5 @@
 use super::*;
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::{FindOptions, Hardfork};
 use neo_vm::{ContractResolutionIdentity, NativeCacheDomain, RangeDirection};
 use std::mem::size_of;

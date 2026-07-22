@@ -20,7 +20,7 @@ use crate::host_access_audit::{ContractCallAccess, ContractCallKind, HostContext
 use crate::native_contract_provider::NoNativeContractProvider;
 use crate::{ApplicationEngine, ApplicationExecutionContext, ExecutionContextState};
 use neo_config::ProtocolSettings;
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::{Hardfork, TriggerType, UInt160};
 use neo_storage::{DataCache, EmptyCacheBacking, StorageItem, StorageKey};
 use neo_vm::stack_item::{Array, Map, Struct};
@@ -360,7 +360,9 @@ fn complete_engine_artifacts_compare_and_report_the_first_mismatch_component() {
 #[test]
 fn pre_aspidochelone_nonce_mutation_is_part_of_the_environment_artifact() {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.remove(&Hardfork::HfAspidochelone);
+    settings.hardforks = settings
+        .hardforks
+        .without_activation(Hardfork::HfAspidochelone);
     let mut engine =
         ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
             TriggerType::Application,

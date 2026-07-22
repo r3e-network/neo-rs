@@ -18,15 +18,15 @@
 
 use super::*;
 use neo_config::ProtocolSettings;
+use neo_execution::ApplicationEngine;
 use neo_execution::native_contract::build_native_contract_state;
-use neo_execution::{ApplicationEngine, Contract};
 use neo_payloads::VerifiableContainer;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
 use neo_primitives::{CallFlags, TriggerType, WitnessScope};
-use neo_vm::VmState;
 use neo_vm::script_builder::ScriptBuilder;
+use neo_vm::{Contract, VmState};
 use std::sync::Arc;
 
 use crate::test_support::deploy_native;

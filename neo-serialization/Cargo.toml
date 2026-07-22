@@ -11,25 +11,19 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-description = "Protocol types layer: Neo serialization (compression, binary/json stack-item codecs, in-memory storage providers). Depends on neo-vm for StackItem types."
+description = "Neo binary, JSON, compression, and stack-item codecs"
 
 [dependencies]
 hex = { workspace = true }
 # Foundation layer
-neo-primitives = { workspace = true }
 neo-error = { workspace = true }
-neo-storage = { workspace = true }
 neo-io = { workspace = true }
 neo-vm = { workspace = true }
 # External
 serde = { workspace = true }
 serde_json = { workspace = true }
 num-bigint = { workspace = true }
-num-traits = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
-parking_lot = { workspace = true }
-hashbrown = { workspace = true }
 indexmap = { workspace = true }
 zstd = { workspace = true }
 

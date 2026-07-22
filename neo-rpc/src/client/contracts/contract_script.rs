@@ -1,5 +1,5 @@
-use crate::RpcClientError;
-use neo_manifest::CallFlags;
+use crate::client::RpcClientError;
+use neo_primitives::CallFlags;
 use neo_primitives::UInt160;
 use neo_vm::OpCode;
 use neo_vm::script_builder::ScriptBuilder;

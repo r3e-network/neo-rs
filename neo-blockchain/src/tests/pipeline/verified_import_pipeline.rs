@@ -23,7 +23,7 @@ fn pipeline() -> VerifiedImportPipeline<
     neo_storage::EmptyCacheBacking,
 > {
     VerifiedImportPipeline::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_test_fixtures::test_chain_spec(ProtocolSettings::default()),
         Arc::new(DataCache::new(false)),
         native_provider(),
     )
@@ -35,7 +35,7 @@ fn verified_import_pipeline_accepts_concrete_native_provider() {
         neo_native_contracts::StandardNativeProvider,
         neo_storage::EmptyCacheBacking,
     > = VerifiedImportPipeline::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_test_fixtures::test_chain_spec(ProtocolSettings::default()),
         Arc::new(DataCache::new(false)),
         Arc::new(neo_native_contracts::StandardNativeProvider::new()),
     );
@@ -44,7 +44,7 @@ fn verified_import_pipeline_accepts_concrete_native_provider() {
         neo_native_contracts::StandardNativeProvider,
         neo_storage::EmptyCacheBacking,
     > = SnapshotConsensusWitnessContext::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_test_fixtures::test_chain_spec(ProtocolSettings::default()),
         Arc::new(DataCache::new(false)),
         Arc::new(neo_native_contracts::StandardNativeProvider::new()),
     );
@@ -65,6 +65,11 @@ fn verified_import_pipeline_requires_explicit_native_provider() {
         "verified import pipeline should pass the concrete provider type into the consensus-witness context"
     );
     assert!(context.contains("pub struct SnapshotConsensusWitnessContext<P, B>"));
+    assert!(context.contains("ChainSpecProvider<ChainSpec = NeoChainSpec>"));
+    assert!(
+        !context.contains("fn settings(&self)"),
+        "consensus-witness contexts must expose the canonical chain spec instead of a second settings root"
+    );
     assert!(
         context.contains("native_contract_provider: Arc<P>"),
         "snapshot consensus-witness context should store Arc<P>, not erase the provider internally"
@@ -175,7 +180,7 @@ fn verified_import_cache_path_still_runs_the_canonical_witness_vm_fence() {
     let snapshot = Arc::new(DataCache::new(false));
     let (block, signature_cache) = cached_aborting_block(snapshot.as_ref());
     let pipeline = VerifiedImportPipeline::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_test_fixtures::test_chain_spec(ProtocolSettings::default()),
         snapshot,
         native_provider(),
     );

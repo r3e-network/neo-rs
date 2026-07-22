@@ -41,7 +41,8 @@ async fn get_transaction_height_rejects_mempool_transaction() {
     {
         let pool = &pool;
         assert_eq!(
-            pool.try_add(tx.clone(), store.data_cache()),
+            crate::server::test_support::admit_local_transaction(pool, &tx, store.data_cache(),)
+                .verify_result(),
             VerifyResult::Succeed
         );
     }
@@ -245,7 +246,7 @@ async fn get_candidates_skips_blocked_and_unregistered() {
         .clone();
 
     let blocked_account =
-        neo_execution::Contract::create_signature_contract(candidate_blocked.clone()).script_hash();
+        neo_vm::Contract::create_signature_contract(candidate_blocked.clone()).script_hash();
     let mut store = system.store_cache();
     store_candidate_state(&mut store, &candidate_active, true, BigInt::from(7));
     store_candidate_state(&mut store, &candidate_blocked, true, BigInt::from(9));

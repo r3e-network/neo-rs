@@ -389,7 +389,9 @@ fn deploy_post_aspidochelone_requires_call_flags_all() {
     // States|AllowNotify (the method's minimum) must fault, while
     // CallFlags.All succeeds (C# refs #2653 / #2673).
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfAspidochelone, 0);
+    settings.hardforks = settings
+        .hardforks
+        .with_activation(Hardfork::HfAspidochelone, 0);
     let sender = UInt160::from_bytes(&SENDER).unwrap();
     let nef = minimal_nef();
     let manifest_bytes = manifest_json(&deployable_manifest("AspidoFixture"));

@@ -1,6 +1,6 @@
 use super::super::rpc_stack::RpcStack;
-use super::super::test_fixtures::rpc_case_result;
 use super::*;
+use crate::types::test_fixtures::rpc_case_result;
 use neo_serialization::json::{JArray, JToken};
 use neo_vm::VmState;
 

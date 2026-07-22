@@ -1,7 +1,6 @@
 use super::*;
 use crate::Diagnostic;
 use neo_error::CoreError;
-use std::collections::HashMap;
 
 /// Pins the vendored C# v3.10.1 `NativeContract.IsActive` predicate:
 /// a descriptor is active when its `ActiveIn` hardfork is absent or active
@@ -149,10 +148,8 @@ where
 }
 
 fn settings_with_echidna_at(height: u32) -> ProtocolSettings {
-    let mut hardforks = HashMap::new();
-    hardforks.insert(Hardfork::HfEchidna, height);
     ProtocolSettings {
-        hardforks,
+        hardforks: neo_config::HardforkSchedule::new().with_activation(Hardfork::HfEchidna, height),
         ..ProtocolSettings::mainnet()
     }
 }
@@ -186,7 +183,7 @@ fn events_filter_by_hardfork_and_sort_by_order() {
     // An unscheduled hardfork keeps the deprecated V0 active forever and
     // never activates V1 (C# IsActive semantics).
     let unscheduled = ProtocolSettings {
-        hardforks: HashMap::new(),
+        hardforks: neo_config::HardforkSchedule::new(),
         ..ProtocolSettings::mainnet()
     };
     let never = <MockNative as NativeContract<NoNativeContractProvider>>::events(

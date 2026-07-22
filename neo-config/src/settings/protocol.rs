@@ -1,19 +1,13 @@
-use crate::hardfork::Hardfork;
-#[cfg(test)]
-use crate::hardfork::HardforkManager;
+use crate::hardfork::{Hardfork, HardforkSchedule};
+use neo_crypto::Crypto;
 use neo_crypto::ECPoint;
+use neo_primitives::UInt256;
 #[cfg(test)]
 use neo_primitives::constants;
-use std::collections::HashMap;
 use std::time::Duration;
 use thiserror::Error;
 
 /// Error type returned by `ProtocolSettings::load*` and helpers.
-///
-/// Replaces the previous `Result<_, String>` returns. Covers the three
-/// failure modes: I/O (open/read/seek), JSON parsing, and hardfork
-/// validation. `From<String>` preserves backward compatibility for
-/// the `.map_err(|e| format!(...))?` patterns elsewhere in the file.
 #[derive(Debug, Error)]
 pub enum ProtocolConfigError {
     /// I/O failure opening / reading / seeking the config stream.
@@ -41,22 +35,6 @@ pub enum ProtocolConfigError {
         /// Why it failed.
         reason: String,
     },
-
-    /// Catch-all for legacy `format!()`-based messages.
-    #[error("{0}")]
-    Other(String),
-}
-
-impl From<String> for ProtocolConfigError {
-    fn from(message: String) -> Self {
-        Self::Other(message)
-    }
-}
-
-impl From<&str> for ProtocolConfigError {
-    fn from(message: &str) -> Self {
-        Self::Other(message.to_string())
-    }
 }
 
 neo_error::impl_error_from_struct!(neo_error::CoreError, ProtocolConfigError => Configuration);
@@ -64,10 +42,12 @@ neo_error::impl_error_from_struct!(neo_error::CoreError, ProtocolConfigError => 
 mod load;
 mod parse;
 mod presets;
-mod validation;
 
-/// Represents the protocol settings of the NEO system.
-/// Matches C# ProtocolSettings record exactly
+/// Consensus and chain-execution fields from Neo C# `ProtocolSettings`.
+///
+/// Operator-owned resource policy is deliberately excluded. For example,
+/// transaction-pool capacity is owned by `neo-mempool::TxPoolConfig` and cannot
+/// mutate chain identity.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProtocolSettings {
     /// The magic number of the NEO network.
@@ -106,17 +86,13 @@ pub struct ProtocolSettings {
     /// Matches C# MaxBlockSize property
     pub max_block_size: u32,
 
-    /// Indicates the maximum number of transactions that can be contained in the memory pool.
-    /// Matches C# MemoryPoolMaxTransactions property
-    pub memory_pool_max_transactions: i32,
-
     /// Indicates the maximum number of blocks that can be traced in the smart contract.
     /// Matches C# MaxTraceableBlocks property
     pub max_traceable_blocks: u32,
 
     /// Sets the block height from which a hardfork is activated.
     /// Matches C# Hardforks property
-    pub hardforks: HashMap<Hardfork, u32>,
+    pub hardforks: HardforkSchedule,
 
     /// Indicates the amount of gas to distribute during initialization.
     /// Matches C# InitialGasDistribution property
@@ -149,10 +125,7 @@ impl ProtocolSettings {
     /// Returns whether the provided hardfork is enabled at the given block height.
     /// Mirrors C# `ProtocolSettings.IsHardforkEnabled`.
     pub fn is_hardfork_enabled(&self, hardfork: Hardfork, block_height: u32) -> bool {
-        self.hardforks
-            .get(&hardfork)
-            .map(|&activation_height| block_height >= activation_height)
-            .unwrap_or(false)
+        self.hardforks.is_active(hardfork, block_height)
     }
 
     /// Returns whether the hardfork is configured (has an activation height defined),
@@ -160,7 +133,41 @@ impl ProtocolSettings {
     /// generation — methods from defined hardforks are included in the contract's
     /// NEF/ABI even before their activation height.
     pub fn is_hardfork_defined(&self, hardfork: Hardfork) -> bool {
-        self.hardforks.contains_key(&hardfork)
+        self.hardforks.is_defined(hardfork)
+    }
+
+    /// Stable digest of every consensus/execution setting represented here.
+    ///
+    /// This is used to bind asynchronous verification receipts to the exact
+    /// protocol schedule. Operator policy and chain metadata such as the
+    /// genesis name are intentionally outside this digest.
+    #[must_use]
+    pub fn identity_digest(&self) -> UInt256 {
+        let mut bytes = Vec::with_capacity(256);
+        bytes.extend_from_slice(&self.network.to_le_bytes());
+        bytes.push(self.address_version);
+        bytes.extend_from_slice(&self.validators_count.to_le_bytes());
+        bytes.extend_from_slice(&self.milliseconds_per_block.to_le_bytes());
+        bytes.extend_from_slice(&self.max_valid_until_block_increment.to_le_bytes());
+        bytes.extend_from_slice(&self.max_transactions_per_block.to_le_bytes());
+        bytes.extend_from_slice(&self.max_block_size.to_le_bytes());
+        bytes.extend_from_slice(&self.max_traceable_blocks.to_le_bytes());
+        bytes.extend_from_slice(&self.initial_gas_distribution.to_le_bytes());
+        bytes.extend_from_slice(&(self.standby_committee.len() as u32).to_le_bytes());
+        for key in &self.standby_committee {
+            let key_bytes = key.as_bytes();
+            bytes.extend_from_slice(&(key_bytes.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(key_bytes);
+        }
+        for hardfork in Hardfork::ALL {
+            if let Some(height) = self.hardforks.activation_height(hardfork) {
+                bytes.push(1);
+                bytes.extend_from_slice(&height.to_le_bytes());
+            } else {
+                bytes.push(0);
+            }
+        }
+        UInt256::from(Crypto::sha256(&bytes))
     }
 }
 

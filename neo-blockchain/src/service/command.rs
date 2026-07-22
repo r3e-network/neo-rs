@@ -15,11 +15,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use neo_mempool::TransactionOrigin;
 use neo_payloads::{Block, Transaction, extensible_payload::ExtensiblePayload, header::Header};
 use neo_runtime::CheckedBlockBatch;
 
-use crate::PreverifyCompleted;
-use crate::fill_memory_pool::FillMemoryPool;
 use crate::handle::BlockchainHandle;
 use crate::import::Import;
 use crate::relay_result::RelayResult;
@@ -179,8 +178,6 @@ pub enum BlockchainCommand {
         /// failure when one occurred.
         reply: tokio::sync::oneshot::Sender<ImportBlocksReply>,
     },
-    /// Request to fill the memory pool.
-    FillMemoryPool(FillMemoryPool),
     /// Notification that fill completed.
     FillCompleted,
     /// Request to reverify inventories.
@@ -215,8 +212,6 @@ pub enum BlockchainCommand {
         /// Whether to relay.
         relay: bool,
     },
-    /// Preverification completed.
-    PreverifyCompleted(PreverifyCompleted),
     /// Validate a header batch and report the accepted prefix/frontier.
     ValidateHeaders {
         /// Headers to validate and cache.
@@ -243,6 +238,8 @@ pub enum BlockchainCommand {
     AddTransaction {
         /// The transaction to add.
         transaction: Transaction,
+        /// Where the transaction entered the node.
+        origin: TransactionOrigin,
         /// Reply channel.
         reply: tokio::sync::oneshot::Sender<AddTransactionReply>,
     },

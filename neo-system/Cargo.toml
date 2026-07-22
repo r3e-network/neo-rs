@@ -15,7 +15,6 @@ description = "Neo node orchestrator (Node builder) — reth-style service compo
 
 [dependencies]
 # Lower layers wired by the composition root
-neo-error = { workspace = true }
 neo-primitives = { workspace = true }
 neo-storage = { workspace = true }
 neo-payloads = { workspace = true }
@@ -37,9 +36,6 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }
-
-[[example]]
-name = "migrate_from_neosystem"
 
 [lints]
 workspace = true

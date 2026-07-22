@@ -197,9 +197,9 @@ async fn get_version_hardforks_structure() {
 #[tokio::test(flavor = "multi_thread")]
 async fn get_version_includes_zero_height_hardforks() {
     let mut settings = ProtocolSettings::default();
-    for height in settings.hardforks.values_mut() {
-        *height = 0;
-    }
+    settings.hardforks = settings
+        .hardforks
+        .map_activation_heights(|_hardfork, _height| 0);
     let expected = settings.hardforks.len();
     let system = crate::server::test_support::test_system(settings);
     let server = RpcServer::new(system, RpcServerConfig::default());
@@ -230,9 +230,9 @@ async fn get_version_includes_zero_height_hardforks() {
 /// dynamic post-Echidna read path.
 fn echidna_at_zero_settings() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
-    for height in settings.hardforks.values_mut() {
-        *height = 0;
-    }
+    settings.hardforks = settings
+        .hardforks
+        .map_activation_heights(|_hardfork, _height| 0);
     settings
 }
 

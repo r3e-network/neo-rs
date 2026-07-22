@@ -76,12 +76,10 @@ neo-mempool = { workspace = true, optional = true }
 
 # Async runtime
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
-futures = { workspace = true, optional = true }
 
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_urlencoded = { version = "0.7", optional = true }
 
 # Error handling
 thiserror = { workspace = true }
@@ -124,12 +122,12 @@ subtle = { workspace = true, optional = true }
 mockito = { workspace = true }
 neo-system = { workspace = true }
 neo-test-fixtures = { workspace = true }
+neo-trie = { workspace = true }
 regex = "1.10"
 
 [features]
 default = []
 server = [
-    "client",  # Server uses client models for JSON serialization
     "dep:jsonrpsee",
     "dep:tower",
     # Shared client+server deps
@@ -141,7 +139,7 @@ server = [
     "dep:neo-vm",
     "dep:neo-wallets",
     "dep:neo-serialization",
-    # Client deps (inherited via client feature, but listed for clarity)
+    # Protocol and shared RPC model deps
     "dep:neo-config",
     "dep:neo-execution",
     "dep:neo-payloads",
@@ -157,7 +155,6 @@ server = [
     "dep:uuid",
     "dep:parking_lot",
     "dep:prometheus",
-    "dep:serde_urlencoded",
     "dep:base64",
     "dep:bytes",
     "dep:num-bigint",
@@ -168,7 +165,8 @@ server = [
     "dep:subtle",
     "dep:dashmap",
     "dep:governor",
-    "dep:futures",
+    # RPC-only node mode fetches canonical ledger data from a remote endpoint.
+    "dep:reqwest",
 ]
 client = [
     # Shared client+server deps

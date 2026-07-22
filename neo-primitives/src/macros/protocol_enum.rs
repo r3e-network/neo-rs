@@ -419,13 +419,12 @@ macro_rules! protocol_enum_repr {
 ///
 /// protocol_enum_with_unknown! {
 ///     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-///     pub MessageCommand {
+///     pub ExtensionCode {
 ///         unknown
 ///         /// Unknown command byte.
 ///         Unknown(u8) => "unknown";
 ///
-///         Version = 0x00 => "version",
-///         Transaction = 0x2b => "tx",
+///         Standard = 0x00 => "standard",
 ///     }
 /// }
 /// ```

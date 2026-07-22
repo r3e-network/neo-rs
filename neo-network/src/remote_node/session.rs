@@ -22,6 +22,7 @@ use crate::local_identity::LocalIdentity;
 use crate::peer_id::PeerId;
 use crate::peer_registry::PeerRegistry;
 use crate::wire::Message;
+use neo_crypto::BloomFilter;
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::p2p_payloads::{
     GetBlockByIndexPayload, NodeCapability, PingPayload, VersionPayload,
@@ -91,6 +92,12 @@ pub(super) struct PeerSession<B: BlockSource> {
     /// (C# `VersionPayload.AllowCompression`: no `DisableCompression`
     /// capability present).
     pub(super) peer_allows_compression: bool,
+    /// Optional per-peer Bloom filter used by Neo SPV clients.
+    ///
+    /// The filter is bounded by `FilterLoadPayload` limits and is owned by
+    /// this session, so it cannot leak across peers or retain state after the
+    /// connection closes.
+    pub(super) bloom_filter: Option<BloomFilter>,
     /// Outbound messages queued while the handshake is still in
     /// flight, flushed on `verack` (C# `RemoteNode` queues messages
     /// until `_verack` is set).
@@ -127,6 +134,19 @@ pub(super) struct PendingHeaderFetch {
     request: HeaderRequest,
     deadline: Instant,
     reply: oneshot::Sender<crate::NetworkResult<HeaderDownloadBatch>>,
+}
+
+/// C# `Neo.Cryptography.Helper.Test(BloomFilter, Transaction)` semantics:
+/// match either the transaction hash or one of its signer accounts.
+pub(super) fn transaction_matches_filter(
+    filter: &BloomFilter,
+    tx: &neo_payloads::Transaction,
+) -> bool {
+    filter.check(&tx.hash().to_bytes())
+        || tx
+            .signers()
+            .iter()
+            .any(|signer| filter.check(&signer.account.to_bytes()))
 }
 
 impl PendingRangeFetch {
@@ -761,11 +781,20 @@ where
                 Some(block),
                 self.peer_allows_compression,
             ),
-            InventoryItem::Transaction(tx) => Message::create(
-                MessageCommand::Transaction,
-                Some(tx),
-                self.peer_allows_compression,
-            ),
+            InventoryItem::Transaction(tx) => {
+                if self
+                    .bloom_filter
+                    .as_ref()
+                    .is_some_and(|filter| !transaction_matches_filter(filter, tx))
+                {
+                    return Ok(());
+                }
+                Message::create(
+                    MessageCommand::Transaction,
+                    Some(tx),
+                    self.peer_allows_compression,
+                )
+            }
         }
         .map_err(|err| CloseReason::Transport(format!("encode inventory: {err}")))?;
         self.send_or_queue(framed, message).await

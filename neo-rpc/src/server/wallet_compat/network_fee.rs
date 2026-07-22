@@ -8,9 +8,9 @@ use neo_execution::contract_state::ContractState;
 use neo_execution::helper::Helper as ContractHelper;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::serializable::helper::SerializeHelper;
-use neo_manifest::CallFlags;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::{HEADER_SIZE, VerifiableContainer};
+use neo_primitives::CallFlags;
 use neo_primitives::{ContractParameterType, TriggerType, UInt160};
 use neo_storage::persistence::{CacheRead, DataCache};
 use neo_vm::script_builder::ScriptBuilder;
@@ -120,7 +120,10 @@ where
     network_fee += size as i64 * fee_per_byte;
 
     for attribute in tx.attributes() {
-        network_fee += attribute.calculate_network_fee(snapshot, tx);
+        let base_fee = policy
+            .attribute_fee(snapshot, attribute.type_id())
+            .map_err(core_err)?;
+        network_fee += attribute.calculate_network_fee(base_fee, tx);
     }
 
     i64::try_from(network_fee)

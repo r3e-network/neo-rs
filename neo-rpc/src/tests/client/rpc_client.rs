@@ -1,8 +1,6 @@
 use super::*;
-use crate::client::models::{
-    RpcAccount, RpcContractState, RpcPlugin, RpcRawMemPool, RpcRequest, RpcTransferOut,
-    RpcValidator,
-};
+use crate::client::models::{RpcAccount, RpcPlugin, RpcRequest, RpcTransferOut, RpcValidator};
+use crate::types::{RpcContractState, RpcRawMemPool};
 use base64::{Engine as _, engine::general_purpose};
 // `hyper` was removed from these tests in the
 // `2026-06-13-comprehensive-refactoring` change (Phase C1) when the RPC server

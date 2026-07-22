@@ -81,7 +81,6 @@ pub use application_engine::{
 };
 pub use audited_application_host::{AuditedApplicationHost, AuditedHostError, AuditedHostResult};
 pub use bls12381_interop::{Bls12381Interop, Bls12381InteropExt};
-pub use contract::Contract;
 pub use contract_parameter::ContractParameter;
 pub use contract_parameters_context::ContractParametersContext;
 pub use contract_state::ContractState;
@@ -108,13 +107,10 @@ pub use host_access_audit::{
     LogAccess, NativeCacheAccess, NativeCacheAccessKind, NotificationAccess,
     ResolvedNativeCacheScope, ResolvedStorageRangeDomain, StorageRangeAccess, StorageWriteAccess,
 };
-pub use interoperable::Interoperable;
 pub use native::nep17_reader::Nep17MetadataReaderImpl;
 pub use native_contract::{NativeContract, NativeEvent, NativeMethod, is_active_for};
 pub use native_contract_cache::{NativeContractsCache, NativeContractsCacheEntry};
 pub use native_registry::NativeRegistry;
-pub use neo_primitives::TriggerType;
-pub use notify_event_args::NotifyEventArgs;
 pub use optimistic_execution::{
     BlockPrefixIdentity, DependencyCaptureError, DependencyCaptureLimits,
     HostDependencyCaptureError, HostDependencyValidation, IsolatedTransactionOverlay,
@@ -134,7 +130,7 @@ pub use verification::{
 };
 
 pub use contracts::{
-    contract, contract_parameter, contract_parameters_context, contract_state, deployed_contract,
+    contract_parameter, contract_parameters_context, contract_state, deployed_contract,
 };
 pub use interop::{
     application_engine_contract, application_engine_crypto, application_engine_helper,
@@ -145,8 +141,5 @@ pub use native::{
     hardfork_activable, native_contract, native_contract_cache, native_contract_provider,
     native_registry,
 };
-pub use runtime::{
-    bls12381_interop, diagnostic, env_flags, execution_context_state, helper, interoperable,
-    notify_event_args,
-};
+pub use runtime::{bls12381_interop, diagnostic, env_flags, execution_context_state, helper};
 pub use storage::{storage_context, storage_item_ext};

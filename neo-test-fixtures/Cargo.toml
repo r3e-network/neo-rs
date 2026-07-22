@@ -8,6 +8,7 @@ publish = false
 description = "Shared test fixtures (transactions, blocks, store helpers) for Neo workspace integration tests"
 
 [dependencies]
+neo-config = { workspace = true }
 neo-error = { workspace = true }
 neo-primitives = { workspace = true }
 neo-payloads = { workspace = true }

@@ -2,7 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::ledger_provider::{BlockProvider, StorageLedgerProvider};
-use neo_config::ProtocolSettings;
+use neo_config::{ChainSpecProvider, NeoChainSpec};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::Block;
@@ -23,15 +23,14 @@ pub struct ParentHeaderContext {
 }
 
 /// Narrow context required by [`super::NeoConsensusWitnessStage`].
-pub trait ConsensusWitnessContext: Send + Sync + fmt::Debug + 'static {
+pub trait ConsensusWitnessContext:
+    ChainSpecProvider<ChainSpec = NeoChainSpec> + Send + Sync + fmt::Debug + 'static
+{
     /// Native-contract provider type captured by this context.
     type NativeProvider: NativeContractProvider;
 
     /// Concrete cache backing captured by this context.
     type CacheBacking: CacheRead;
-
-    /// Returns the protocol settings used by witness verification.
-    fn settings(&self) -> Arc<ProtocolSettings>;
 
     /// Returns the snapshot used for contract lookups during verification.
     fn snapshot(&self) -> &DataCache<Self::CacheBacking>;
@@ -50,7 +49,7 @@ where
     P: NativeContractProvider,
     B: CacheRead,
 {
-    settings: Arc<ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     snapshot: Arc<DataCache<B>>,
     native_contract_provider: Arc<P>,
 }
@@ -62,7 +61,10 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SnapshotConsensusWitnessContext")
-            .field("validators_count", &self.settings.validators_count)
+            .field(
+                "validators_count",
+                &self.chain_spec.protocol_settings().validators_count,
+            )
             .field("native_contract_provider", &"NativeContractProvider")
             .finish_non_exhaustive()
     }
@@ -77,19 +79,15 @@ where
     /// provider.
     #[must_use]
     pub fn new(
-        settings: Arc<ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         snapshot: Arc<DataCache<B>>,
         native_contract_provider: Arc<P>,
     ) -> Self {
         Self {
-            settings,
+            chain_spec,
             snapshot,
             native_contract_provider,
         }
-    }
-
-    fn settings_arc(&self) -> Arc<ProtocolSettings> {
-        Arc::clone(&self.settings)
     }
 
     fn snapshot_ref(&self) -> &DataCache<B> {
@@ -110,6 +108,18 @@ where
     }
 }
 
+impl<P, B> ChainSpecProvider for SnapshotConsensusWitnessContext<P, B>
+where
+    P: NativeContractProvider,
+    B: CacheRead,
+{
+    type ChainSpec = NeoChainSpec;
+
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        Arc::clone(&self.chain_spec)
+    }
+}
+
 impl<P, B> ConsensusWitnessContext for SnapshotConsensusWitnessContext<P, B>
 where
     P: NativeContractProvider + 'static,
@@ -117,10 +127,6 @@ where
 {
     type NativeProvider = P;
     type CacheBacking = B;
-
-    fn settings(&self) -> Arc<ProtocolSettings> {
-        self.settings_arc()
-    }
 
     fn snapshot(&self) -> &DataCache<B> {
         self.snapshot_ref()

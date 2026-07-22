@@ -26,9 +26,7 @@ fn to_json_data_is_unsigned_and_hash_is_tx_hash() {
     // The unsigned serialization (no witnesses) is what C# writes into `data`.
     let unsigned = tx.hash_data();
 
-    let snapshot = Arc::new(DataCache::new(false));
     let context = ContractParametersContext::new_with_type(
-        snapshot,
         tx.clone(),
         860_833_102,
         Some("Neo.Network.P2P.Payloads.Transaction".to_string()),
@@ -71,9 +69,7 @@ fn to_json_data_is_unsigned_and_hash_is_tx_hash() {
 #[test]
 fn parse_transaction_context_reconstructs_unsigned_tx() {
     let tx = signed_transaction();
-    let snapshot = Arc::new(DataCache::new(false));
     let context = ContractParametersContext::new_with_type(
-        Arc::clone(&snapshot),
         tx.clone(),
         860_833_102,
         Some("Neo.Network.P2P.Payloads.Transaction".to_string()),
@@ -82,7 +78,7 @@ fn parse_transaction_context_reconstructs_unsigned_tx() {
     let json_text = serde_json::to_string(&context.to_json()).unwrap();
 
     let (_parsed_context, parsed_tx) =
-        ContractParametersContext::parse_transaction_context(&json_text, snapshot)
+        ContractParametersContext::parse_transaction_context(&json_text)
             .expect("witness-less context data must parse via deserialize_unsigned");
 
     // The reconstructed tx must match the original's identity (hash) and carry no witnesses.
@@ -102,9 +98,7 @@ fn parse_transaction_context_reconstructs_unsigned_tx() {
 #[test]
 fn parse_transaction_context_rejects_hash_mismatch() {
     let tx = signed_transaction();
-    let snapshot = Arc::new(DataCache::new(false));
     let context = ContractParametersContext::new_with_type(
-        Arc::clone(&snapshot),
         tx.clone(),
         860_833_102,
         Some("Neo.Network.P2P.Payloads.Transaction".to_string()),
@@ -115,7 +109,7 @@ fn parse_transaction_context_rejects_hash_mismatch() {
     json["hash"] = json!(UInt256::default().to_string());
     let json_text = serde_json::to_string(&json).unwrap();
 
-    let result = ContractParametersContext::parse_transaction_context(&json_text, snapshot);
+    let result = ContractParametersContext::parse_transaction_context(&json_text);
     let err = match result {
         Ok(_) => panic!("a hash that disagrees with `data` must be rejected (C# parity)"),
         Err(err) => err,
@@ -143,10 +137,8 @@ fn cross_parse_csharp_shaped_transaction_context() {
     });
     let json_text = serde_json::to_string(&json).unwrap();
 
-    let snapshot = Arc::new(DataCache::new(false));
-    let (_context, parsed_tx) =
-        ContractParametersContext::parse_transaction_context(&json_text, snapshot)
-            .expect("C#-shaped context must parse");
+    let (_context, parsed_tx) = ContractParametersContext::parse_transaction_context(&json_text)
+        .expect("C#-shaped context must parse");
 
     assert_eq!(parsed_tx.hash(), tx.hash());
     assert!(parsed_tx.witnesses().is_empty());

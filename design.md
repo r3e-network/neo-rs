@@ -1,7 +1,7 @@
 # neo-rs Architecture Design Document
 
-**Version**: 5.10
-**Date**: 2026-07-19
+**Version**: 5.11
+**Date**: 2026-07-20
 **Author**: Software Architect
 **Status**: Active
 
@@ -10,14 +10,14 @@
 ## Executive Summary
 
 This document captures the architecture decisions for the neo-rs Neo N3 Rust
-node implementation. It covers the current state (28 production crates plus 3
+node implementation. It covers the current state (29 production crates plus 3
 development-only crates, 8 ordered layers), the identified issues, and the ADRs
 that resolve them. The goal is a codebase
 that is professional, consistent, and ready for long-term evolution.
 
 **Architecture structure health score**: 9.5/10 (not a production-readiness score)
 
-The ADR log now spans ADR-001 through ADR-044. Beyond the early trait-design,
+The ADR log now spans ADR-001 through ADR-045. Beyond the early trait-design,
 duplication, and async/concurrency audits (ADR-016 through ADR-019), later ADRs
 cover store-surface reduction and trait sealing (ADR-020, ADR-021), dead-code
 excision (ADR-022, ADR-027, ADR-028, ADR-032), hex/KeyBuilder consolidation
@@ -33,19 +33,25 @@ ADR-041 makes atomic canonical and maintenance transactions a compile-time
 store capability and records `DataCache` as the node's transactional overlay.
 ADR-042 makes MDBX the sole persistent backend, ADR-043 rotates the finalized
 static archive by height, and ADR-044 makes the workspace `neo-vm` crate the
-sole canonical execution boundary for the Neo v3.10.1 baseline.
+sole canonical execution boundary for the Neo v3.10.1 baseline. ADR-045 then
+removes the unused sealed `NodeTypes`/`ConfigProvider` facade and makes the
+validated `ChainSpecProvider` the only chain-identity capability.
+
+Older ADRs remain an immutable decision history. When an older ADR names a
+surface that ADR-045 removes, its text is historical and the current-architecture
+sections below are authoritative.
 
 ---
 
 ## Current Architecture
 
-### Layer Hierarchy (28 production crates plus 3 development-only crates, 8 ordered layers)
+### Layer Hierarchy (29 production crates plus 3 development-only crates, 8 ordered layers)
 
 | Layer | Crates | Role |
 |-------|--------|------|
 | L0 Foundation | neo-primitives | Type primitives (UInt160, UInt256, etc.) |
 | L1a Core Infra | neo-io, neo-error | Binary I/O, unified CoreError type |
-| L1b Stateful Infra | neo-crypto, neo-storage, neo-static-files, neo-state-packs, neo-checkpoint, neo-vm, neo-serialization, neo-manifest | Crypto, storage, archives, node packs, checkpoints, VM, codecs, manifests |
+| L1b Stateful Infra | neo-crypto, neo-trie, neo-storage, neo-static-files, neo-state-packs, neo-checkpoint, neo-vm, neo-serialization, neo-manifest | Crypto, Neo MPT, storage, archives, node packs, checkpoints, VM, codecs, manifests |
 | L1c Cross-cutting | neo-config | Configuration |
 | L2 Protocol | neo-payloads, neo-consensus, neo-hsm | Block/tx types, dBFT, HSM signing |
 | L3 Domain Services | neo-runtime, neo-execution, neo-native-contracts, neo-state-service, neo-mempool | Service traits, VM execution, native contracts, state, mempool |
@@ -56,12 +62,13 @@ sole canonical execution boundary for the Neo v3.10.1 baseline.
 
 ### Key Patterns
 
-1. **Provider traits** (`neo-runtime`): `ConfigProvider`, `StoreProvider`,
-   `TxAdmission` — decouple service and adapter code from L5 (`BlockchainProvider` was removed in
-   ADR-032)
-2. **NodeTypes** (`neo-runtime`): the surviving sealed single-impl seam
-   (ADR-021). The `NodeComponents` / `FullNode` type-state composition was
-   removed in ADR-032; the builder validates concrete fields at `build()`
+1. **Immutable chain specification** (`neo-config`): `NeoChainSpec` and
+   `ChainSpecProvider` bind network identity, genesis, hardforks, and protocol
+   limits once at startup. Consumers share one `Arc` rather than reconstructing
+   mutable settings.
+2. **Narrow provider capabilities** (`neo-runtime`): `StoreProvider` and
+   `TxAdmission` decouple upper-layer services from L5. The unused sealed
+   `NodeTypes` and duplicate `ConfigProvider` surfaces were removed in ADR-045.
 3. **Canonical block import** (`neo-runtime` + `neo-blockchain`): typed
    `BlockImport`, bounded import queue, validation pipeline, and ordered persist
 4. **Unified error handling**: all library crates use `CoreError` with `From`
@@ -83,7 +90,7 @@ sole canonical execution boundary for the Neo v3.10.1 baseline.
 `Arc<neo_system::Node>` (L5), creating an upward dependency.
 
 **Fix**: Created the static `OracleRuntimeProvider` capability bound
-(`ConfigProvider + StoreProvider + TxAdmission`) in `neo-oracle-service` and
+(`ChainSpecProvider + StoreProvider + TxAdmission`) in `neo-oracle-service` and
 added `TxAdmission` to `neo-runtime`. `OracleService<R, P>` remains generic over
 its concrete runtime and native-contract providers; tests use `Node` via a dev
 dependency.
@@ -98,7 +105,8 @@ impls, preventing seamless `?` propagation.
 
 ### RpcError naming collision (FIXED)
 
-**Problem**: Two types named `RpcError` — client enum in `errors/error.rs`
+**Problem**: Two types named `RpcError` — client enum now owned in
+`client/errors/client.rs`
 and server struct in `server/rpc_error/mod.rs`.
 
 **Fix**: Renamed client enum to `RpcClientError`, result alias to
@@ -110,14 +118,15 @@ and server struct in `server/rpc_error/mod.rs`.
 
 ### ADR-001: reth-style RPC crate split
 
-**Status**: Partially Implemented (layer violation fixed; full 3-crate split deferred)
+**Status**: Implemented in one feature-isolated crate (physical split deferred)
 
 **Context**: `neo-rpc` (L6) had `neo-system` (L5) as a **required** dependency
 because `node_context.rs` contained `impl From<&neo_system::Node> for
 NodeContext`. This was a layer violation (L6 → L5 upward dependency). The
-feature-flag system (`server` / `client`) already separated server and client
-code paths, but the required `neo-system` dep meant even client-only builds
-pulled in the entire composition root.
+feature-flag system exposed `server` / `client`, but `server` still enabled the
+entire outbound client feature to reuse response models and address parsing.
+The required `neo-system` dep also meant client-only builds pulled in the
+entire composition root.
 
 **Decision (Implemented)**: Remove the `From<&neo_system::Node> for
 NodeContext` impl from `neo-rpc`. Add `NodeContext::from_parts()` constructor
@@ -126,13 +135,20 @@ public fields. Move `neo-system` from a required dependency to a
 dev-dependency (test fixtures only). This eliminates the L6 → L5 layer
 violation while keeping the single-crate structure.
 
+The server and client features now compile independently. Transport-neutral
+records live under `neo_rpc::types`, shared address decoding lives under the
+private `protocol` boundary, and client errors live only under
+`neo_rpc::client`. The node explicitly enables both features because it owns
+both an RPC server and a fast-sync reference client; the server feature no
+longer acquires the client accidentally.
+
 **Decision (Deferred)**: The full 3-crate split (`neo-rpc-api` / `neo-rpc` /
 `neo-rpc-client`) described below remains the long-term target for build-time
 optimization. It is deferred because:
 1. The critical layer violation is already fixed
-2. Feature flags already separate client/server code paths
-3. Solo developer — the 3-crate migration is high-effort, lower-urgency
-4. Client-only builds are already possible via `--no-default-features --features client`
+2. Feature flags and transport-neutral types now enforce the same ownership
+   boundary without extra workspace crates
+3. Client-only and server-only builds are both verified directly
 
 **Future 3-crate split target**:
 
@@ -148,8 +164,8 @@ neo-rpc-client (L6) — HTTP client implementation
 **Trade-offs**:
 - **Gained (now)**: No L6 → L5 layer violation. `neo-system` no longer in
   required deps. All 28 layer boundary tests and the full workspace suite pass.
-- **Gaining (future)**: Client-only builds compile in seconds. Clean
-  separation between API contracts and implementations.
+- **Gained (now)**: Client-only and server-only builds are independent, with
+  shared API records outside both transport modules.
 - **Giving up**: 3 crates instead of 1 (future). Slightly more workspace
   complexity (future).
 - **Reversibility**: High — the `from_parts()` constructor is mechanical to
@@ -314,9 +330,8 @@ misplaced dependencies:
 - `neo-oracle-service/Cargo.toml`: 2 deps removed
 - `neo-mempool/Cargo.toml`: 1 dep moved to `[dev-dependencies]`
 - `neo-rpc/Cargo.toml`: 12 deps made `optional = true`, feature lists updated
-- `neo-rpc/src/client/mod.rs`: `parse_script_hash_or_address_inner` import
-  gated behind `#[cfg(feature = "server")]` (only used by server module)
-- `neo-rpc/src/client/utility.rs`: Same import gated in re-export
+- `neo-rpc/src/protocol/address.rs`: one feature-neutral address/script-hash
+  decoder is shared by client and server without transport coupling
 
 ### ADR-007: Rename NeoEngine trait to EngineApi
 
@@ -437,10 +452,10 @@ This section documents which patterns are adopted, adapted, or deferred.
 
 | Pattern | reth location | neo-rs location | Status |
 |---------|---------------|-----------------|--------|
-| Provider traits | `reth-provider` | `neo-runtime` (StoreProvider, ConfigProvider, TxAdmission; `BlockchainProvider` deleted in ADR-032) | Adopted (BlockchainProvider removed) |
+| Provider traits | `reth-provider` | `neo-config::ChainSpecProvider` plus `neo-runtime` (`StoreProvider`, `TxAdmission`) | Adopted with a narrow Neo surface |
 | Typed storage tables/codecs | `reth-db-api::Table` | `neo-storage::persistence::{Table, TableProvider}` | Adapted over unchanged Neo bytes (ADR-040) |
 | Mandatory canonical DB capability | provider/database capability bounds | `neo-storage::TransactionalStore` + `neo-system` composition | Adopted (ADR-041) |
-| NodeTypes sealed seam | `reth-node-api` | `neo-runtime/src/node/types.rs` | Adopted (single-impl sealed seam) |
+| NodeTypes sealed seam | `reth-node-api` | Removed as unused speculative scaffolding | Deliberately not adopted |
 | NodeComponents / FullNode type-state | `reth-node-api` | (removed) | Removed (ADR-032) |
 | Engine API trait | `reth-engine` `Engine` | (removed) `EngineApi` | Removed/Superseded (ADR-033) |
 | Pipeline/import stages | `reth-stages` | `neo-runtime::sync_pipeline` + `neo-blockchain::pipeline` | Production-wired without the deleted scaffold crate (ADR-027, ADR-038) |
@@ -473,7 +488,7 @@ neo-rs diverges from reth in domain-specific ways:
 1. **NeoVM vs EVM**: neo-rs keeps all consensus VM semantics and the stateful host in the workspace `neo-vm` crate, whereas reth uses `revm`. Neo-specific reference counting, hardfork gates, and host syscalls remain one semantic authority instead of crossing an object-graph conversion boundary.
 2. **dBFT consensus vs PoS**: `neo-consensus` implements dBFT (delegated Byzantine Fault Tolerance) rather than Ethereum's Casper FFG. The consensus crate owns its own message types and protocol state.
 3. **Native contracts vs precompiles**: `neo-native-contracts` is a full crate with 11 native contracts (NEO, GAS, Policy, Oracle, etc.) vs reth's inline precompile handling. This reflects Neo's richer native contract system.
-4. **MPT for state roots**: Neo uses MPT for state root consensus (not for primary storage). `neo-crypto::mpt_trie` (data structure) + `neo-state-service` (durable store) form a two-layer system (ADR-012).
+4. **MPT for state roots**: Neo uses MPT for state root consensus (not for primary storage). `neo-trie` (data structure) + `neo-state-service` (durable store) form a two-layer system (ADR-012).
 
 ---
 
@@ -579,35 +594,44 @@ for seamless `?` propagation across crate boundaries (ADR-003).
 - `neo-serialization` is the only partial case (has `JsonError` for JSON,
   uses `CoreResult` for binary codecs) — accepted as-is
 
-### ADR-012: MPT layering documentation
+### ADR-012: Exclusive MPT ownership and layering
 
 **Status**: Accepted
 
-**Context**: The V3 audit investigated whether `neo-crypto::mpt_trie` and
+**Context**: The V3 audit investigated whether the MPT data structure and
 `neo-state-service::storage::mpt_store` are duplicate MPT implementations.
 Finding: they are **layered, not duplicated**.
 
-- `neo-crypto::mpt_trie` — generic MPT data structure (Node, NodeType,
+- `neo-trie` — Neo-compatible MPT data structure (Node, NodeType,
   Trie, MptCache, MptStoreSnapshot trait). No durable backend. Used by
   `neo-state-service` AND directly by `neo-rpc` (proof verification).
 - `neo-state-service::storage::mpt_store` — durable MPT store built ON TOP
-  of `neo-crypto::mpt_trie`. Adds `MptStore`, `MptChange`, `MptReadSnapshot`
+  of `neo-trie`. Adds `MptStore`, `MptChange`, `MptReadSnapshot`
   with snapshot/commit semantics over `neo-storage`.
 
-**Decision**: Document the layering as intentional. No code changes needed.
+**Decision**: Give MPT mechanics an exclusive `neo-trie` crate while retaining
+the existing bytes, hashes, proof shape, algorithms, and backend-independent API.
 
 **Trade-offs**:
-- **Gaining**: Clear ownership: `neo-crypto` owns the data structure,
+- **Gaining**: Clear ownership: `neo-trie` owns the data structure,
   `neo-state-service` owns the durable store. The data structure is
   reusable (already used by `neo-rpc` independently).
-- **Giving up**: Two crates touch MPT. This is correct layering, not a smell.
-- **Reversibility**: N/A — documentation only.
+- **Giving up**: One additional infrastructure crate and one explicit
+  `neo-trie -> neo-crypto` same-layer dependency are part of the workspace.
+- **Reversibility**: Medium. Reversal would require migrating every StateService,
+  RPC, node-tooling, and test call site and would recreate mixed crypto/trie
+  ownership.
 
 **Consequences**:
-- The MPT layering is documented in `design.md` and crate boundary docs
-- Future contributors should not "consolidate" the two — they serve
-  different abstraction levels
-- `neo-crypto::mpt_trie` must remain backend-agnostic (no `neo-storage` dep)
+- `neo-crypto` no longer contains or re-exports MPT types; it supplies Hash256
+  through a one-way dependency from `neo-trie`.
+- Workspace callers import `Node`, `Trie`, proof, cache, and snapshot types
+  directly from `neo-trie`; no compatibility facade remains.
+- `neo-state-service` remains the exclusive durable MPT and StateRoot policy
+  owner, while `neo-trie` remains backend-agnostic with no `neo-storage`
+  dependency.
+- C# byte vectors, MainNet root fixtures, and architecture guards protect the
+  ownership migration and consensus semantics.
 
 ### ADR-013: doc(html_root_url) version management
 
@@ -1278,7 +1302,7 @@ Validation is split into:
 | doc(html_root_url) versions | All 11 crates at 0.10.0 (ADR-013) |
 | Redundant inline lints | Removed (tokens_tracker module) |
 | reth/polkadot comparison | Living implementation matrix, including typed tables and staged/finalized delivery |
-| Evolution roadmap | Historical 4-phase refactor plus the full ADR log (ADR-001 through ADR-044) |
+| Evolution roadmap | Historical 4-phase refactor plus the full ADR log (ADR-001 through ADR-045) |
 | Debug trait bounds | Consistent across all service traits (ADR-019) |
 | HSM redeem script | Delegates to canonical neo-vm impl (ADR-016) |
 | Async/concurrency safety | Excellent — 0 Critical/Major issues (ADR audit) |
@@ -1305,8 +1329,8 @@ Validation is split into:
 
 **Status**: Accepted (implemented)
 
-**Context**: The deep audit (`.planning/codebase/deep-audit-2026-07-04.md` Theme D
-+ E) found ~250 lines of duplicated utility code scattered across 4-5 crates:
+**Context**: The July 2026 deep audit (themes D and E) found ~250 lines of
+duplicated utility code scattered across 4-5 crates:
 
 1. **Epoch-millisecond clock** — 3 copies of `now_millis()` / `current_timestamp()`
    in `neo-consensus`, `neo-node` (×2), each with `SystemTime::now().duration_since(
@@ -1466,8 +1490,8 @@ as a dependency (one-way, no cycle).
 
 **Status**: Accepted (implemented)
 
-**Context**: The deep audit (`.planning/codebase/deep-audit-2026-07-04.md` Theme F)
-found two async/blocking correctness issues:
+**Context**: The July 2026 deep audit (theme F) found two async/blocking
+correctness issues:
 
 1. **F1 — Sync `ConsensusSigner::sign` blocking the tokio worker** (Finding F1):
    `ConsensusSigner::sign` was `fn sign(&self, ...) -> ConsensusResult<Vec<u8>>`
@@ -1629,9 +1653,8 @@ Migrate 19 production files + 8 test files to use the new helpers.
 
 **Status**: Accepted (implemented)
 
-**Context**: The v6 deep audit (`.planning/codebase/deep-audit-2026-07-04.md`) found
-that the 26 prior ADRs codified a number of aspirational abstractions that never ran
-in production. Specifically:
+**Context**: The v6 deep audit found that the 26 prior ADRs codified a number
+of aspirational abstractions that never ran in production. Specifically:
 
 1. **`neo-static-files` crate (L1c)** — 613 LOC, 1 file. Workspace-wide grep for
    `use neo_static_files` returned exactly 1 hit: its own test file. The real
@@ -2578,3 +2601,49 @@ adapter nor component tests can substitute for retained Neo reference evidence.
   behavior.
 - Production-readiness documentation must distinguish implemented surfaces and
   component evidence from network, replay, state-parity, and fast-sync proof.
+
+### ADR-045: Canonical ChainSpec capability and removal of dead runtime facades
+
+**Status**: Accepted (implemented 2026-07-20)
+
+**Context**: The node had two overlapping configuration access paths. A sealed
+`neo-runtime::NodeTypes`/`NeoNodeTypes` pair had no production consumers, while
+`neo-runtime::ConfigProvider` exposed `ProtocolSettings` even after the node
+had adopted an immutable `NeoChainSpec`. P2P and RPC contexts also copied the
+settings `Arc`, making it possible for a future caller to assemble a hybrid
+identity. `neo-execution::Contract` was a second, unrelated facade that merely
+re-exported `neo-vm::Contract`.
+
+**Decision**:
+
+- `neo-config::NeoChainSpec` is the sole owner of validated chain identity,
+  deterministic genesis inputs, hardfork activation, and protocol limits.
+  `neo-config::ChainSpecProvider` is the only chain-identity capability.
+- `neo-runtime` exports only the narrow `StoreProvider` and `TxAdmission`
+  contracts. The unused sealed `NodeTypes`/`NeoNodeTypes` and duplicate
+  `ConfigProvider` are deleted rather than retained as compatibility shims.
+- `neo-system::Node`, `neo-rpc::NodeContext`, and `neo-network::LocalNodeService`
+  retain the same `Arc<NeoChainSpec>` and derive `ProtocolSettings` only at
+  APIs that explicitly require the lower-level record.
+- `neo-vm::Contract` is imported directly by execution, native-contract, RPC,
+  and Oracle callers; the `neo-execution::Contract` re-export and module are
+  deleted.
+- `neo-payloads` no longer depends on `neo-config`. Payload JSON codecs accept
+  the one wire input they need (`address_version`) instead of the complete
+  protocol settings object, and the unused witness-verification facade is
+  removed. Unused manifest, async-runtime, and error dependencies are deleted
+  from the crate at the same time.
+- Required composition inputs remain constructor arguments in
+  `NodeCoreBuilder`/`NodeBuilder`; no hidden default service graph is allowed.
+
+**Consequences**:
+
+- Chain identity has one ownership path from application startup through P2P,
+  block import, mempool, RPC, and Oracle services.
+- The runtime capability surface is smaller and statically reflects actual
+  consumers; no dead Reth-shaped abstraction remains in the public API.
+- Protocol payload records no longer import chain-configuration ownership just
+  to render an address, keeping the dependency graph pointed downward through
+  explicit primitive inputs.
+- This is an architecture/correctness refactor, not a measured execution
+  optimization. It does not establish the 2,000 blocks/s requirement.

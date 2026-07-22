@@ -12,7 +12,7 @@ substantial change. This file is the short operational contract.
 Apply these in order:
 
 1. Deterministic Neo N3 v3.10.1 protocol correctness.
-2. Exact execution, storage, StateRoot, serialization, and network parity.
+2. Exact execution, storage, state-root, serialization, and network parity.
 3. Clear ownership and crate boundaries.
 4. Measured performance and bounded resource use.
 5. Operator usability and documentation.
@@ -25,10 +25,11 @@ claim compatibility or performance from unit tests alone.
 The canonical layer model is declared in the root `Cargo.toml` under
 `workspace.metadata.architecture` and enforced by architecture tests.
 
-- Foundation: `neo-primitives` owns small domain values and protocol enums.
-- Infrastructure: `neo-config`, `neo-crypto`, `neo-io`, `neo-error`,
-  `neo-storage`, `neo-static-files`, `neo-state-packs`, `neo-checkpoint`,
-  `neo-vm`, `neo-serialization`, and `neo-manifest` own mechanical concerns.
+- Foundation: `neo-primitives` owns small domain value types.
+- Infrastructure: `neo-config`, `neo-crypto`, `neo-trie`, `neo-io`,
+  `neo-error`, `neo-storage`, `neo-static-files`, `neo-state-packs`,
+  `neo-checkpoint`, `neo-vm`, `neo-serialization`, and `neo-manifest` own
+  mechanical concerns.
 - Protocol: `neo-payloads`, `neo-consensus`, and `neo-hsm` own wire payloads,
   dBFT, and consensus signing.
 - Domain services: `neo-runtime`, `neo-execution`, `neo-native-contracts`,
@@ -40,8 +41,8 @@ The canonical layer model is declared in the root `Cargo.toml` under
   node without owning protocol policy.
 - RPC boundary: `neo-rpc` owns RPC models, transport, handlers, and RPC plugin
   adapters. Node-level plugin lifecycle and policy are composed in `neo-node`.
-- Applications: `neo-node` is the production CLI and daemon owner;
-  `neo-gui` and `neo-test-fixtures` are application/development consumers.
+- Application: `neo-node` owns CLI, configuration loading, process lifecycle,
+  service supervision, and operator-facing behavior.
 
 Dependencies point downward. Higher layers request typed capabilities; they do
 not reopen databases, inspect MPT internals, decode VM stacks, or bypass the
@@ -49,50 +50,48 @@ canonical block-import path.
 
 ## Reth-Derived Subsystem Shape
 
-Use this map when deciding where a new capability belongs. It describes the
-current composition shape; it is not a request to copy Ethereum semantics.
+Use this map when deciding where a new capability belongs. It is the current
+composition shape, not a request to copy Ethereum semantics:
 
-- **Types and cryptography.** `neo-primitives` owns protocol-neutral values and
-  small enums such as `UInt160`, `UInt256`, `InventoryType`, and witness scope
-  metadata. Full `Witness` and `WitnessRule` payload records belong to
-  `neo-payloads`. `neo-crypto` owns hashes, Merkle construction, curves, keys,
-  and signatures. Do not add a second hash, key, address, witness, or
-  stack-value representation to a service crate.
-- **Chain configuration.** `neo_config::ProtocolSettings` is the current typed
-  Neo C# protocol record; `NetworkType`, `GenesisConfig`, and the hardfork
-  types support network selection and construction. Long-lived services share
-  protocol settings and treat them as immutable after startup validation.
-  Runtime/operator limits remain in their owning service configuration.
+- **Types and cryptography.** `neo-primitives` owns protocol-neutral Neo value
+  types (`UInt160`, `UInt256`, inventory and witness records). `neo-crypto`
+  owns hashes, Merkle construction, curves, keys, and signatures. Payload
+  encoding stays in `neo-payloads`/`neo-serialization`; do not add a second
+  hash, key, address, or stack-value representation to a service crate.
+- **Chain specification.** `neo-config::NeoChainSpec` is immutable and shared
+  as `Arc`. `ChainSpecProvider` is the narrow read capability. Hardfork and
+  network decisions belong on the spec, while operator limits remain in
+  service config such as `TxPoolConfig`.
 - **Storage and providers.** `neo-storage` owns `Store`,
-  `TransactionalStore`, typed codecs, `StoreCache`, and durable commit fences.
-  `neo-blockchain` and `neo-state-service` own Ledger/State provider factories
-  that freeze a snapshot or root and return concrete read views. RPC and P2P
-  consume those views and never open a backend or inspect MPT nodes.
-- **Execution and engine.** `neo_execution::ApplicationEngine<P, D, B>` is
+  `TransactionalStore`, typed table codecs, `StoreCache`, and durable commit
+  fences. `neo-blockchain` and `neo-state-service` own Ledger/State provider
+  factories that freeze a height/root and return concrete read views. RPC and
+  P2P consume those views and never open a backend or inspect MPT nodes.
+- **Execution and engine.** `neo-execution::ApplicationEngine<P, D, B>` is
   composed from a native provider, diagnostic policy, and cache backing. The
   caller chooses concrete generic collaborators; `neo-vm` remains the only VM
-  implementation. A plan, specialization, or speculative artifact is an
+  implementation. A plan, specialization, or optimistic artifact is an
   opt-in accelerator around this engine, never a replacement semantic engine.
-- **Pool and import engine.** `neo_mempool::MemoryPool<P>` owns admission,
-  indexes, priority queues, revalidation, and removal decisions. Typed provider
-  capabilities and admission outcomes cross the boundary.
-  `neo_runtime::BlockImport` and `ImportQueue` own the generic import contract
-  and bounded preflight; `neo-blockchain` owns canonical execution and durable
-  publication.
-- **P2P.** `neo_network::PeerRegistry` owns connected peers and bounded
-  candidate endpoints. `NetworkHandle` is the command facade and currently
-  exposes handle-side liveness snapshots. The downloader owns bounded range
-  assignment and ordering; do not introduce another peer database.
+- **Pool and import engine.** `neo-mempool::MemoryPool<P>` owns admission,
+  indexes, priority queues, revalidation, and removal decisions. Typed
+  `TransactionOrigin`, provider capabilities, and admission outcomes cross
+  the boundary. `neo-runtime::BlockImport`/`ImportQueue` own the generic
+  import contract and bounded preflight; `neo-blockchain` owns the canonical
+  execution and durable publication implementation.
+- **P2P.** `neo-network::PeerRegistry` owns live peers and pending connection
+  state. `NetworkHandle` is a capability facade over commands and authoritative
+  snapshots. The headers/bodies downloader owns bounded range assignment and
+  ordering; broadcast events are notifications, not a second peer database.
 - **RPC and application.** `neo-rpc` owns wire models, codecs, client/server
   transport, and plugin method groups. `neo-node` owns daemon lifecycle and
-  composes `RpcServices` from node capabilities. RPC handlers must not become a
-  second ledger, mempool, or execution implementation.
+  composes `RpcServices` from immutable node capabilities. RPC handlers must
+  not become a second ledger, mempool, or execution implementation.
 
-For a new cross-layer feature, identify its owner, its smallest capability
-trait, and the immutable state it freezes. Add a generic only when composition
-selects the concrete collaborator or a test needs a second implementation. Do
-not introduce a trait-object service locator or a generic `utils` crate merely
-to share a helper.
+For a new cross-layer feature, first identify its owner, its smallest
+capability trait, and the immutable state it freezes. Add a generic only when
+the concrete collaborator is selected by composition or a test needs a second
+implementation; do not introduce a trait-object service locator or a generic
+`utils` crate merely to share a helper.
 
 ## Protocol Authority
 
@@ -103,11 +102,9 @@ to share a helper.
   contract behavior belongs in `neo-native-contracts`.
 - Preserve byte-for-byte Neo C# behavior for codecs, hashes, witnesses, NEF,
   manifests, native state, storage keys, MPT nodes, and network payloads.
-- `neo-network` owns `MessageCommand`, its service-level `NetworkError`, and
-  its low-level `P2PError`. Some protocol macros still consume the historical
-  `neo_primitives::NetworkError`; do not add another error vocabulary or
-  command representation. Consolidate owners only as an atomic caller migration
-  that deletes the obsolete type and facade.
+- `neo-network` owns `MessageCommand`, `MessageCommandParseError`, and
+  `NetworkError`; shared values such as `InventoryType` remain in
+  `neo-primitives` and must not be re-exported through network facades.
 - Consensus and execution code must not depend on nondeterministic iteration,
   floating point, wall-clock time, or unordered merge results.
 - MainNet replay, hardfork-boundary fixtures, persisted StateRoot equality, and
@@ -116,24 +113,23 @@ to share a helper.
   `--enable-stateroot` or `--stateroot true`. This operator default does not
   reduce the requirement that the enabled path be correct and fast.
 
-## Chain Configuration
+## Chain Specification
 
-`ProtocolSettings` is the current source of truth for Neo protocol settings. It
-owns network magic, address version, committee and validator configuration,
-hardfork activation, protocol limits, seed nodes, and initial GAS distribution.
-`GenesisConfig` owns genesis construction inputs.
+`NeoChainSpec` is the immutable source of truth for a Neo network. It owns or
+identifies network magic, address version, genesis, committee and validator
+configuration, hardfork schedule, protocol limits, and seed/bootstrap data.
 
-- Pass shared protocol settings from application configuration through
+- Pass a shared `Arc<NeoChainSpec>` from application configuration through
   composition to consumers that need chain rules.
-- Use `ProtocolSettings::is_hardfork_enabled` for activation decisions; do not
-  scatter activation heights or reconstruct settings inside services.
-- Keep runtime/operator settings separate from protocol chain identity.
-- Validate custom/private settings before node startup and do not mutate them
-  after services are composed.
-- If protocol settings are replaced by a richer chain-spec type, migrate all
-  callers in one logical change and delete superseded settings, adapters,
-  aliases, and compatibility branches. Compatibility code requires a named
-  external wire, database, RPC, or public API contract with proving tests.
+- Put fork activation queries and chain identity on the spec; do not scatter
+  magic numbers or reconstruct settings in services.
+- Keep runtime/operator settings separate from consensus chain identity.
+- Builders may assemble private/custom specs, but a built spec is immutable and
+  validated before node startup.
+- When migrating chain rules into `NeoChainSpec`, update all callers and delete
+  superseded settings types, adapters, aliases, and compatibility branches.
+  Compatibility code is justified only by a named external wire, database,
+  RPC, or public API contract with tests proving that requirement.
 
 Do not copy Ethereum fork-choice or execution semantics from Reth. Borrow its
 typed composition and provider patterns while retaining Neo dBFT, NeoVM,

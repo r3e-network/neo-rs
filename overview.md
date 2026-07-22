@@ -1,4 +1,10 @@
-# Deep Architecture Refactor — Complete (4/4 Phases)
+# Historical Architecture Refactor Snapshot (2026-07-05)
+
+> This file records the four-phase refactor as it stood on 2026-07-05. It is
+> not the current crate inventory: later work reintroduced `neo-static-files`
+> as the production append-only Ledger archive and continued the ChainSpec,
+> provider, storage, and execution architecture. Use `README.md`,
+> `docs/architecture.md`, and the latest ADRs in `design.md` for current state.
 
 **Commits**: b8afcc0 → a6d7a7a → 504e8ed → f71b431
 **ADRs**: ADR-027 through ADR-031 (5 new ADRs)
@@ -80,9 +86,10 @@ All 4 phases complete. Deleted 2 dead crates, 9 dead trait/impl items (6 dead tr
 
 - **ADR-032**: deleted the dead type-state scaffolding (`BlockchainProvider`,
   `NodeComponents`, `FullNode`, `FullNodeTypes`, `FullNodeComponentsExt`) from
-  neo-runtime, including the silent `Ok(None)` landmine. The live provider
-  traits (`StoreProvider`, `ConfigProvider`, `TxAdmission`) and
-  `NodeTypes`/`NeoNodeTypes` remain.
+  neo-runtime, including the silent `Ok(None)` landmine.
+- The current provider surface is deliberately smaller: `neo-config` owns the
+  immutable `ChainSpecProvider`, while `neo-runtime` exposes only the narrow
+  `StoreProvider` and `TxAdmission` capability traits.
 - Restored neo-hsm safety lints and removed dead `do_sign`.
 - De-flaked the observability metrics test.
 - **Deliberately skipped**: A7 (MempoolLike — documented test seam) and G4

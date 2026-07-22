@@ -1,11 +1,12 @@
 //! TOML configuration and storage bootstrap helpers for the node daemon.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Context;
-use neo_config::ProtocolSettings;
+use neo_config::{NeoChainSpec, NetworkType};
 use serde::Deserialize;
-use tracing::{info, warn};
+use tracing::info;
 
 mod execution;
 mod observability;
@@ -66,10 +67,10 @@ pub(super) struct NodeConfig {
 /// `[network]`: which Neo network the node joins.
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct NetworkSection {
-    /// `"TestNet"` / `"MainNet"` — selects the built-in protocol preset.
+    /// `"TestNet"` / `"MainNet"` - selects the immutable built-in chain spec.
     #[serde(default)]
     network_type: Option<String>,
-    /// Explicit network magic override (wins over the preset).
+    /// Optional assertion of the built-in spec's canonical network magic.
     #[serde(default)]
     network_magic: Option<u32>,
 }
@@ -166,7 +167,9 @@ impl StatePacksSection {
 /// coordinated commit also mirrors the MPT node entries (`0xf0 || node_hash`)
 /// into a `neo-state-packs` store at `path` and persists a pack high-water
 /// record into the MDBX maintenance table inside the same transaction.
-/// Shadow failures are logged and counted but never fail canonical commits.
+/// Shadow failures are logged and counted but never fail canonical commits;
+/// the same transaction records a degraded marker so restart cannot resume
+/// after a missing shadow window.
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct AppendShadowSection {
     /// Enable the shadow dual-write.
@@ -505,7 +508,7 @@ pub(super) struct ConsensusSection {
     pub(super) hsm: Option<crate::consensus::HsmKeyConfig>,
 }
 
-/// `[blockchain]`: protocol settings that affect validation / production.
+/// `[blockchain]`: assertions for the selected built-in chain specification.
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct BlockchainSection {
     /// Block interval in milliseconds (`ProtocolSettings.MillisecondsPerBlock`).
@@ -530,7 +533,7 @@ pub(super) struct BlockchainSection {
     max_traceable_blocks: Option<u32>,
 }
 
-/// `[mempool]`: transaction pool sizing.
+/// `[mempool]`: operator-controlled transaction-pool resource policy.
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct MempoolSection {
     /// Maximum number of transactions retained in the memory pool.
@@ -542,6 +545,19 @@ pub(super) struct MempoolSection {
     max_transactions: Option<i32>,
 }
 
+impl MempoolSection {
+    /// Builds the bounded runtime policy owned by `neo-mempool`.
+    pub(super) fn tx_pool_config(&self) -> anyhow::Result<neo_mempool::TxPoolConfig> {
+        let Some(max_transactions) = self.max_transactions else {
+            return Ok(neo_mempool::TxPoolConfig::default());
+        };
+        let max_transactions = usize::try_from(max_transactions)
+            .context("invalid [mempool].max_transactions: expected a positive integer")?;
+        neo_mempool::TxPoolConfig::new(max_transactions)
+            .context("invalid [mempool].max_transactions")
+    }
+}
+
 const fn default_true() -> bool {
     true
 }
@@ -550,19 +566,22 @@ const fn default_true() -> bool {
 /// `10333`); `0` (ephemeral) for unknown networks.
 pub(super) fn default_p2p_port(network: u32) -> u16 {
     match network {
-        0x3554_334E => 20333, // TestNet
-        0x334F_454E => 10333, // MainNet
+        neo_primitives::constants::TESTNET_MAGIC => 20333,
+        neo_primitives::constants::MAINNET_MAGIC => 10333,
         _ => 0,
     }
 }
 
-/// Loads the TOML node configuration and derives [`ProtocolSettings`]
-/// from the configured network type. A missing file yields the built-in
-/// defaults (MainNet preset).
+/// Loads the TOML node configuration and selects an immutable [`NeoChainSpec`].
+/// A missing file selects the built-in MainNet spec.
+///
+/// Built-in chain identity and protocol fields are assertions, not overrides.
+/// Private chains require a complete externally constructed spec and therefore
+/// cannot be assembled from this application configuration surface.
 pub(super) fn load_config(
-    path: &PathBuf,
+    path: &Path,
     magic_override: Option<u32>,
-) -> anyhow::Result<(ProtocolSettings, NodeConfig)> {
+) -> anyhow::Result<(Arc<NeoChainSpec>, NodeConfig)> {
     let config: NodeConfig = if path.exists() {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("reading node config {}", path.display()))?;
@@ -573,41 +592,81 @@ pub(super) fn load_config(
         NodeConfig::default()
     };
 
-    let mut settings = match config.network.network_type.as_deref() {
-        Some(t) if t.eq_ignore_ascii_case("testnet") => {
-            ProtocolSettings::try_testnet().context("loading built-in TestNet protocol settings")?
-        }
-        Some(t) if t.eq_ignore_ascii_case("mainnet") => {
-            ProtocolSettings::try_mainnet().context("loading built-in MainNet protocol settings")?
-        }
-        Some(other) => {
-            warn!(target: "neo", network_type = other, "unknown network_type; using default (MainNet) settings");
-            ProtocolSettings::try_mainnet()
-                .context("loading default built-in MainNet protocol settings")?
-        }
-        None => ProtocolSettings::try_mainnet()
-            .context("loading default built-in MainNet protocol settings")?,
-    };
-    if let Some(magic) = magic_override.or(config.network.network_magic) {
-        settings.network = magic;
+    let network_type =
+        config
+            .network
+            .network_type
+            .as_deref()
+            .map_or(Ok(NetworkType::MainNet), |value| {
+                value.parse::<NetworkType>().map_err(|error| {
+                    anyhow::anyhow!(
+                        "invalid [network].network_type: {error}; expected MainNet or TestNet"
+                    )
+                })
+            })?;
+    let chain_spec = NeoChainSpec::from_network_type(network_type)
+        .with_context(|| format!("loading built-in {network_type} chain specification"))?;
+    let settings = chain_spec.protocol_settings();
+
+    validate_network_magic(
+        "[network].network_magic",
+        config.network.network_magic,
+        chain_spec.network_magic(),
+    )?;
+    validate_network_magic(
+        "--network-magic",
+        magic_override,
+        chain_spec.network_magic(),
+    )?;
+    validate_builtin_value(
+        "[blockchain].block_time",
+        config.blockchain.block_time,
+        settings.milliseconds_per_block,
+    )?;
+    validate_builtin_value(
+        "[blockchain].max_transactions_per_block",
+        config.blockchain.max_transactions_per_block,
+        settings.max_transactions_per_block,
+    )?;
+    validate_builtin_value(
+        "[blockchain].max_valid_until_block_increment",
+        config.blockchain.max_valid_until_block_increment,
+        settings.max_valid_until_block_increment,
+    )?;
+    validate_builtin_value(
+        "[blockchain].max_traceable_blocks",
+        config.blockchain.max_traceable_blocks,
+        settings.max_traceable_blocks,
+    )?;
+    config.mempool.tx_pool_config()?;
+    Ok((chain_spec, config))
+}
+
+fn validate_network_magic(
+    source: &str,
+    configured: Option<u32>,
+    expected: u32,
+) -> anyhow::Result<()> {
+    if let Some(actual) = configured {
+        anyhow::ensure!(
+            actual == expected,
+            "{source} cannot override the selected built-in chain: expected 0x{expected:08X}, got 0x{actual:08X}"
+        );
     }
-    if let Some(block_time) = config.blockchain.block_time {
-        settings.milliseconds_per_block = block_time;
+    Ok(())
+}
+
+fn validate_builtin_value<T>(source: &str, configured: Option<T>, expected: T) -> anyhow::Result<()>
+where
+    T: Copy + std::fmt::Display + PartialEq,
+{
+    if let Some(actual) = configured {
+        anyhow::ensure!(
+            actual == expected,
+            "{source} cannot override the selected built-in chain: expected {expected}, got {actual}"
+        );
     }
-    if let Some(max_transactions) = config.blockchain.max_transactions_per_block {
-        settings.max_transactions_per_block = max_transactions;
-    }
-    if let Some(max_valid_until_block_increment) = config.blockchain.max_valid_until_block_increment
-    {
-        settings.max_valid_until_block_increment = max_valid_until_block_increment;
-    }
-    if let Some(max_traceable_blocks) = config.blockchain.max_traceable_blocks {
-        settings.max_traceable_blocks = max_traceable_blocks;
-    }
-    if let Some(max_transactions) = config.mempool.max_transactions {
-        settings.memory_pool_max_transactions = max_transactions;
-    }
-    Ok((settings, config))
+    Ok(())
 }
 
 pub(super) fn network_scoped_path(path: &Path, network: u32) -> PathBuf {

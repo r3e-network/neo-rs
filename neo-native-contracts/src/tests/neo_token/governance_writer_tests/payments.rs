@@ -65,7 +65,7 @@ fn seed_registration_payment_snapshot(
     let price = BigInt::from(DEFAULT_REGISTER_PRICE);
     let cache = DataCache::new(false);
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
     deploy_native(
         &cache,
         &build_native_contract_state(&NeoToken, &settings, 0),

@@ -2,6 +2,7 @@
 //! metadata (insertion timestamp, last-broadcast timestamp, etc.) used
 //! by the [`MemoryPool`](crate::MemoryPool) priority queue.
 
+use crate::TransactionOrigin;
 use neo_payloads::{Transaction, TransactionAttributeType};
 use std::cmp::Ordering;
 use std::fmt;
@@ -13,6 +14,8 @@ use std::time::SystemTime;
 pub struct PoolItem {
     /// The underlying transaction.
     pub transaction: Arc<Transaction>,
+    /// Submission origin retained across block-persist revalidation.
+    pub origin: TransactionOrigin,
     /// When the transaction entered the pool.
     pub timestamp: SystemTime,
     /// When the transaction was last broadcast to peers.
@@ -23,6 +26,7 @@ impl fmt::Debug for PoolItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PoolItem")
             .field("hash", &self.hash())
+            .field("origin", &self.origin)
             .field("timestamp", &self.timestamp)
             .field("last_broadcast_timestamp", &self.last_broadcast_timestamp)
             .finish()
@@ -33,19 +37,21 @@ impl PoolItem {
     /// Constructs a new `PoolItem` for the given transaction with the
     /// current system time as both the insertion and last-broadcast
     /// timestamp.
-    pub fn new(tx: Transaction) -> Self {
-        Self::with_timestamps(tx, SystemTime::now(), SystemTime::now())
+    pub fn new(tx: Transaction, origin: TransactionOrigin) -> Self {
+        Self::with_timestamps(tx, origin, SystemTime::now(), SystemTime::now())
     }
 
     /// Constructs a new `PoolItem` with explicit timestamps. Useful
     /// for tests and for replaying mempool state from disk.
     pub fn with_timestamps(
         tx: Transaction,
+        origin: TransactionOrigin,
         timestamp: SystemTime,
         last_broadcast_timestamp: SystemTime,
     ) -> Self {
         Self {
             transaction: Arc::new(tx),
+            origin,
             timestamp,
             last_broadcast_timestamp,
         }

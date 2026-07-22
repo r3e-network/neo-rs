@@ -1,8 +1,8 @@
 //! State-proof verification facade.
 
-use neo_crypto::mpt_trie::Trie;
 use neo_primitives::UInt256;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
+use neo_trie::Trie;
 
 use crate::MptReadSnapshot;
 

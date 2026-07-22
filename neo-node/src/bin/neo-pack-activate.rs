@@ -24,7 +24,6 @@ use std::os::unix::fs::OpenOptionsExt;
 
 use anyhow::{Context, Result, bail, ensure};
 use neo_crypto::Crypto;
-use neo_crypto::mpt_trie::{MPT_NODE_PREFIX, Node, PersistedMptGraphLimits};
 use neo_native_contracts::LedgerContract;
 use neo_node::NodeLifecycleLock;
 use neo_primitives::UInt256;
@@ -38,6 +37,7 @@ use neo_storage::persistence::{
     CoordinatedCommitMarker, RawReadOnlyStore, Store, StoreCache, StoreFactory, StoreValueGuard,
     TransactionalStore,
 };
+use neo_trie::{MPT_NODE_PREFIX, Node, PersistedMptGraphLimits};
 use serde::{Deserialize, Serialize};
 
 use neo_pack_common::{

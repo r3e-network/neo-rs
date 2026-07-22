@@ -1,9 +1,9 @@
 use super::parsing::{
-    insert_optional_string, object_array, optional_script_hash_or_address_lossy,
-    parse_object_array_lossy, required_address_script_hash, required_bigint_string,
-    required_script_hash_or_address, required_u16_number, required_u32_number, required_u64_number,
-    required_uint256,
+    insert_optional_string, optional_script_hash_or_address_lossy, required_address_script_hash,
+    required_bigint_string, required_script_hash_or_address, required_u16_number,
+    required_u32_number, required_u64_number, required_uint256,
 };
+use crate::types::json::{object_array, parse_object_array_lossy};
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::{UInt160, UInt256};

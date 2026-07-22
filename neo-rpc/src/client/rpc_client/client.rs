@@ -1,6 +1,6 @@
 use super::super::ClientRpcError;
 use super::super::models::{RpcPlugin, RpcRequest, RpcResponse};
-use crate::RpcClientError;
+use crate::client::RpcClientError;
 use neo_config::ProtocolSettings;
 use reqwest::{Client, Url};
 use std::sync::Arc;

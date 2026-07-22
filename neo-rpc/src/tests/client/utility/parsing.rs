@@ -1,4 +1,8 @@
 use super::*;
+use crate::types::json::{
+    object_array, parse_object_array_lossy, parse_optional_present_token_array_strict,
+    parse_string_array_lossy, parse_uint256_array_lossy,
+};
 use neo_config::ProtocolSettings;
 use neo_primitives::UInt160;
 use neo_serialization::json::{JArray, JObject};

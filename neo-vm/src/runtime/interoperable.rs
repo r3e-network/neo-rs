@@ -58,7 +58,3 @@ macro_rules! impl_interoperable_via_stack_item {
         }
     };
 }
-
-/// Re-export the VM [`crate::StackItem`] so callers can depend on this module
-/// without importing the stateful VM stack type directly.
-pub type SmartContractStackItem = crate::StackItem;

@@ -22,11 +22,11 @@ use crate::mpt_store::{
 };
 use crate::providers::MptStateProviderFactory;
 use crate::state_root::StateRoot;
-use neo_crypto::mpt_trie::{MptError, MptResult};
 use neo_primitives::UInt256;
 use neo_storage::persistence::Store;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::{DataCache, StorageResult, TrackState};
+use neo_trie::{MptError, MptResult};
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -228,7 +228,7 @@ where
     /// backend is enabled.
     ///
     /// Read-side consumers should prefer this capability boundary over opening
-    /// [`MptReadSnapshot`](crate::MptReadSnapshot) and [`Trie`](neo_crypto::mpt_trie::Trie)
+    /// [`MptReadSnapshot`](crate::MptReadSnapshot) and [`Trie`](neo_trie::Trie)
     /// values themselves. The factory centralizes pruning-mode gates and keeps
     /// each selected root tied to one frozen MPT generation.
     pub fn state_provider_factory(&self) -> Option<MptStateProviderFactory<S>> {

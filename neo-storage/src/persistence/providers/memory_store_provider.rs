@@ -1,6 +1,5 @@
 use super::memory_store::MemoryStore;
 use crate::error::StorageResult;
-use crate::persistence::store_provider::StoreProvider;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -24,15 +23,3 @@ impl MemoryStoreProvider {
 }
 
 neo_io::impl_default_via_new!(MemoryStoreProvider);
-
-impl StoreProvider for MemoryStoreProvider {
-    type Store = MemoryStore;
-
-    fn name(&self) -> &str {
-        "memory"
-    }
-
-    fn get_store(&self, _path: &Path) -> StorageResult<Arc<MemoryStore>> {
-        MemoryStoreProvider::get_store(self, Path::new(""))
-    }
-}

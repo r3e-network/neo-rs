@@ -66,6 +66,10 @@ where
     }
 }
 
+fn chain_spec_for_settings(settings: &ProtocolSettings) -> Arc<neo_config::NeoChainSpec> {
+    neo_test_fixtures::test_chain_spec(settings.clone())
+}
+
 fn daemon_context<P, L, T>(
     settings: Arc<ProtocolSettings>,
     snapshot: Arc<StoreDataCache<RuntimeStore>>,
@@ -83,6 +87,7 @@ where
     L: Store + 'static,
     T: Store + 'static,
 {
+    let chain_spec = chain_spec_for_settings(&settings);
     let shutdown = tokio_util::sync::CancellationToken::new();
     let (hooks, finalized_stream) = DaemonCommitHooks::<P, L, T>::compose(
         settings.network,
@@ -100,7 +105,7 @@ where
         None,
     );
     let core = NodeSystemContext::new(
-        settings,
+        chain_spec,
         snapshot,
         store_cache,
         native_contract_provider,
@@ -163,7 +168,8 @@ fn state_service_only_composition_skips_replay_artifact_copies() {
         native_provider(),
         None,
     );
-    let block = neo_blockchain::genesis_block(settings.as_ref()).expect("genesis block");
+    let block = neo_blockchain::genesis_block(&chain_spec_for_settings(settings.as_ref()))
+        .expect("genesis block");
 
     assert!(
         !context.requires_replay_artifacts(&block, neo_blockchain::BlockPersistContext::live())
@@ -192,7 +198,8 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
     );
     let provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
     let resources = NativePersistResources::from_provider(Arc::clone(&provider));
-    let block = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let block =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     let outcome = persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&block),
@@ -369,7 +376,8 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
     );
     let provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
     let resources = NativePersistResources::from_provider(provider);
-    let block = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let block =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     let outcome = persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&block),
@@ -783,7 +791,8 @@ track_during_catchup = true
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let settings = Arc::new(ProtocolSettings::default());
     let genesis = Arc::new(
-        neo_blockchain::genesis_block(settings.as_ref()).expect("construct coordinated genesis"),
+        neo_blockchain::genesis_block(&chain_spec_for_settings(settings.as_ref()))
+            .expect("construct coordinated genesis"),
     );
     let resources = neo_blockchain::NativePersistResources::from_provider(native_provider());
     neo_blockchain::persist_block_natives_with_resources(
@@ -818,7 +827,7 @@ track_during_catchup = true
         None,
     );
     let context = NodeSystemContext::new(
-        settings,
+        chain_spec_for_settings(&settings),
         Arc::clone(&snapshot),
         store_cache,
         native_provider(),
@@ -1369,8 +1378,8 @@ async fn build_node_rejects_missing_state_root_store_for_populated_chain() {
 
     let temp = tempfile::tempdir().expect("temp MDBX root");
     let storage_path = temp.path().join("chain");
-    let settings = Arc::new(ProtocolSettings::default());
-    seed_mdbx_tip(&storage_path, settings.as_ref(), DURABLE_TIP).expect("seed durable MDBX tip");
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
+    seed_mdbx_tip(&storage_path, chain_spec.as_ref(), DURABLE_TIP).expect("seed durable MDBX tip");
 
     let mut config: NodeConfig = toml::from_str(
         r#"
@@ -1382,7 +1391,7 @@ backend = "mdbx"
     config.state_service.enabled = true;
 
     let err = match build_node(
-        Arc::clone(&settings),
+        chain_spec,
         &config,
         Some(&storage_path),
         None,
@@ -1407,10 +1416,12 @@ backend = "mdbx"
 
 #[tokio::test]
 async fn build_node_retains_only_explicit_specialization_shadow_control() {
-    let settings = Arc::new(ProtocolSettings::default());
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
+    let ordinary_config: NodeConfig =
+        toml::from_str("[mempool]\nmax_transactions = 321\n").expect("parse pool policy");
     let ordinary = build_node(
-        Arc::clone(&settings),
-        &NodeConfig::default(),
+        Arc::clone(&chain_spec),
+        &ordinary_config,
         None,
         None,
         LedgerMode::Local,
@@ -1423,6 +1434,7 @@ async fn build_node_retains_only_explicit_specialization_shadow_control() {
         ordinary.specialization_control().is_none(),
         "default composition must not retain or allocate a specialization control"
     );
+    assert_eq!(ordinary.node().mempool().capacity(), 321);
     ordinary.abort_for_test().await;
 
     let config: NodeConfig = toml::from_str(
@@ -1438,7 +1450,7 @@ max_artifact_bytes = 1048576
     )
     .expect("parse shadow node config");
     let shadow = build_node(
-        settings,
+        chain_spec,
         &config,
         None,
         None,
@@ -1465,7 +1477,7 @@ max_artifact_bytes = 1048576
 #[tokio::test]
 async fn remote_ledger_node_build_does_not_register_local_replay_services() {
     let temp = tempfile::tempdir().expect("temp stores");
-    let settings = Arc::new(ProtocolSettings::default());
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
     let config: NodeConfig = toml::from_str(&format!(
         r#"
 [state_service]
@@ -1492,7 +1504,7 @@ db_path = "{}"
     .expect("parse service config");
 
     let running = build_node(
-        Arc::clone(&settings),
+        Arc::clone(&chain_spec),
         &config,
         Some(&temp.path().join("chain")),
         None,
@@ -1552,10 +1564,10 @@ async fn remote_ledger_node_advertises_upstream_height_when_available() {
     const REMOTE_BLOCK_COUNT: u32 = 42;
 
     let temp = tempfile::tempdir().expect("temp stores");
-    let settings = Arc::new(ProtocolSettings::default());
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
     let endpoint = serve_rpc_once("getblockcount", serde_json::json!(REMOTE_BLOCK_COUNT));
     let running = build_node(
-        Arc::clone(&settings),
+        chain_spec,
         &NodeConfig::default(),
         Some(&temp.path().join("chain")),
         None,
@@ -1637,7 +1649,8 @@ fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
     // Run the genesis native-persist pipeline into the shared snapshot, then
     // flush to the durable store — exactly handlers.rs::initialize().
     let settings = ProtocolSettings::default();
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis =
+        Arc::new(genesis_block(&chain_spec_for_settings(&settings)).expect("genesis block"));
     persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&genesis),
@@ -2017,13 +2030,24 @@ async fn build_node_restarts_from_durable_mdbx_tip_and_resumes_sync_cursor() {
     let mut protocol = ProtocolSettings::default();
     protocol.standby_committee = vec![public_key.clone()];
     protocol.validators_count = 1;
-    let settings = Arc::new(protocol);
-    seed_mdbx_tip(&storage_path, settings.as_ref(), DURABLE_TIP).expect("seed durable MDBX tip");
+    let validator_key = hex::encode(public_key.to_bytes());
+    let mut genesis = neo_config::GenesisConfig::mainnet();
+    genesis.committee = vec![validator_key.clone()];
+    genesis.validators = vec![neo_config::GenesisValidator {
+        public_key: validator_key,
+        name: Some("Restart Test Validator".to_string()),
+    }];
+    let chain_spec = Arc::new(
+        neo_config::NeoChainSpec::private("restart-test-private", protocol, genesis, None)
+            .expect("valid private restart chain spec"),
+    );
+    let settings = chain_spec.protocol_settings_arc();
+    seed_mdbx_tip(&storage_path, chain_spec.as_ref(), DURABLE_TIP).expect("seed durable MDBX tip");
 
     let mut config = NodeConfig::default();
     config.storage.backend = Some("mdbx".to_string());
     let running = build_node(
-        Arc::clone(&settings),
+        Arc::clone(&chain_spec),
         &config,
         Some(&storage_path),
         None,
@@ -2071,7 +2095,7 @@ async fn build_node_restarts_from_durable_mdbx_tip_and_resumes_sync_cursor() {
     assert_eq!(header_request.index_start, DURABLE_TIP + 1);
     assert_eq!(header_request.count, (PEER_HEIGHT - DURABLE_TIP) as i16);
 
-    let genesis = neo_blockchain::genesis_block(settings.as_ref()).expect("genesis");
+    let genesis = neo_blockchain::genesis_block(chain_spec.as_ref()).expect("genesis");
     let durable_parent = empty_child_block(&genesis, DURABLE_TIP);
     let block_two = signed_empty_child_block(
         &durable_parent,
@@ -2123,8 +2147,9 @@ async fn rpc_getblockcount_reads_restarted_durable_mdbx_tip() {
 
     let temp = tempfile::tempdir().expect("temp MDBX root");
     let storage_path = temp.path().join("chain");
-    let settings = Arc::new(ProtocolSettings::default());
-    seed_mdbx_tip(&storage_path, settings.as_ref(), DURABLE_TIP).expect("seed durable MDBX tip");
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
+    let settings = chain_spec.protocol_settings_arc();
+    seed_mdbx_tip(&storage_path, chain_spec.as_ref(), DURABLE_TIP).expect("seed durable MDBX tip");
 
     let rpc_port = unused_local_rpc_port();
     let mut config = NodeConfig::default();
@@ -2134,7 +2159,7 @@ async fn rpc_getblockcount_reads_restarted_durable_mdbx_tip() {
     config.rpc.bind_address = Some("127.0.0.1".to_string());
 
     let running = build_node(
-        Arc::clone(&settings),
+        chain_spec,
         &config,
         Some(&storage_path),
         None,

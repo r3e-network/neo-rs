@@ -17,13 +17,13 @@ use crate::metrics::{StateRootApplyCountKind, StateRootApplyStage};
 use crate::mpt_store::PreparedMptCommit;
 use crate::state_store::ProjectedMptBlock;
 use crate::state_store::StateStore;
-use neo_crypto::mpt_trie::MptResult;
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
-use neo_payloads::{CommittedHandler, CommittingHandler};
+use neo_runtime::{CommittedHandler, CommittingHandler};
 use neo_storage::persistence::Store;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::{DataCache, StorageResult};
+use neo_trie::MptResult;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -571,7 +571,7 @@ fn log_skipped_root(block_index: u32) -> bool {
     true
 }
 
-fn log_failed_root(block_index: u32, err: &neo_crypto::mpt_trie::MptError) -> bool {
+fn log_failed_root(block_index: u32, err: &neo_trie::MptError) -> bool {
     warn!(
         target: "neo.state_service",
         block_index,

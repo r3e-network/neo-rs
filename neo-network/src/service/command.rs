@@ -9,9 +9,8 @@
 
 use std::net::SocketAddr;
 
-use crate::InventoryType;
 use neo_payloads::{Block, ExtensiblePayload, Transaction};
-use neo_primitives::UInt256;
+use neo_primitives::{InventoryType, UInt256};
 use tokio::sync::oneshot;
 
 use crate::error::NetworkResult;

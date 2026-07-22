@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+Define the Neo N3 v3.10.1 parity evidence required from execution, state,
+serialization, networking, and consensus behavior.
+
+## Requirements
 
 ### Requirement: Protocol version compliance
 The system SHALL implement all Neo N3 v3.10.1 protocol features with byte-for-byte compatibility to the C# reference implementation.

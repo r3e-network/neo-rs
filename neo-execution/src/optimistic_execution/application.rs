@@ -610,17 +610,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::NoDiagnostic;
     use crate::application_engine::TEST_MODE_GAS;
     use crate::execution_artifact::{ContextObservationValue, ExecutionArtifactLimits};
     use crate::host_access_audit::{
         NativeCacheAccess, NativeCacheAccessKind, ResolvedNativeCacheScope,
     };
     use crate::native_contract_provider::NoNativeContractProvider;
-    use crate::{NoDiagnostic, TriggerType};
     use neo_config::ProtocolSettings;
+    use neo_primitives::TriggerType;
     use neo_primitives::{CallFlags, UInt160};
     use neo_storage::{EmptyCacheBacking, StorageItem};
     use neo_vm::{NativeCacheDomain, OpCode};
+    use proptest::prelude::*;
     use std::cell::RefCell;
     use std::sync::Arc;
 
@@ -1282,5 +1284,56 @@ mod tests {
                 SpeculativeIdentityComponent::EntryScript
             )
         );
+    }
+
+    proptest! {
+        #[test]
+        fn generated_storage_effects_publish_without_partial_state(
+            operations in prop::collection::vec(0u8..=1, 1..16),
+        ) {
+            const SLOTS: usize = 4;
+            let canonical = DataCache::new(false);
+            let mut expected = vec![Some(item(b"seed")); SLOTS];
+            for slot in 0..SLOTS {
+                canonical.add(key(&[slot as u8]), item(b"seed"));
+            }
+            canonical.commit();
+
+            let mut builder = artifact_builder(&canonical, 0, 0);
+            for (index, operation) in operations.iter().copied().enumerate() {
+                let slot = index % SLOTS;
+                let storage_key = key(&[slot as u8]);
+                if operation == 0 {
+                    let value = item(&[0xa5, index as u8]);
+                    builder.set_storage(storage_key, value.clone());
+                    expected[slot] = Some(value);
+                } else {
+                    builder.delete_storage(storage_key);
+                    expected[slot] = None;
+                }
+            }
+            let artifact = finish_engine(builder, OpCode::RET);
+            let canonical_script = storage_effect_script(&[OpCode::RET.byte()]);
+            let current = current_guard(
+                &artifact,
+                &canonical,
+                0,
+                TriggerType::Application,
+                &canonical_script,
+                |_, _| None,
+            );
+            let applied = match validate_and_apply_artifact(artifact, current) {
+                Ok(applied) => applied,
+                Err(rejected) => panic!(
+                    "generated storage artifact must apply: {:?}",
+                    rejected.reason()
+                ),
+            };
+
+            for (slot, expected) in expected.into_iter().enumerate() {
+                prop_assert_eq!(canonical.get(&key(&[slot as u8])), expected);
+            }
+            prop_assert_eq!(applied.engine().state(), VmState::HALT);
+        }
     }
 }

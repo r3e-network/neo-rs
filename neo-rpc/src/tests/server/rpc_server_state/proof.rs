@@ -1,7 +1,7 @@
 use super::*;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use neo_crypto::mpt_trie::Trie;
+use neo_trie::Trie;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn proof_handlers_report_unsupported_state() {

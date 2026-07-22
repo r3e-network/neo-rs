@@ -129,11 +129,12 @@ fn signed_empty_child_block(
 fn seed_store_tip(
     backend: &str,
     path: &Path,
-    settings: &ProtocolSettings,
+    chain_spec: &neo_config::NeoChainSpec,
     tip: u32,
 ) -> anyhow::Result<()> {
     use neo_storage::persistence::StoreCache;
 
+    let settings = chain_spec.protocol_settings();
     let mut config = NodeConfig::default();
     config.storage.backend = Some(backend.to_string());
     let store = open_store(&config, Some(path))?;
@@ -143,7 +144,7 @@ fn seed_store_tip(
         neo_native_contracts::StandardNativeProvider::new(),
     ));
 
-    let mut parent = Arc::new(neo_blockchain::genesis_block(settings)?);
+    let mut parent = Arc::new(neo_blockchain::genesis_block(chain_spec)?);
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&parent),
@@ -175,8 +176,12 @@ fn seed_store_tip(
     Ok(())
 }
 
-fn seed_mdbx_tip(path: &Path, settings: &ProtocolSettings, tip: u32) -> anyhow::Result<()> {
-    seed_store_tip("mdbx", path, settings, tip)
+fn seed_mdbx_tip(
+    path: &Path,
+    chain_spec: &neo_config::NeoChainSpec,
+    tip: u32,
+) -> anyhow::Result<()> {
+    seed_store_tip("mdbx", path, chain_spec, tip)
 }
 
 fn unused_local_rpc_port() -> u16 {

@@ -1,6 +1,8 @@
 use super::*;
 use crate::command::BlockchainCommand;
 use crate::handle::BlockchainHandle;
+use neo_config::{ChainSpecProvider, NeoChainSpec};
+use neo_mempool::{TransactionAdmissionError, TransactionAdmissionOutcome, TransactionOrigin};
 use neo_payloads::Header;
 use neo_primitives::verify_result::VerifyResult;
 use neo_runtime::ServiceError;
@@ -11,23 +13,25 @@ use std::sync::Arc;
 struct TestMempool;
 
 impl MempoolLike for TestMempool {
-    fn try_add<B: neo_storage::CacheRead>(
+    fn add_transaction<B, L>(
         &self,
-        _tx: &neo_payloads::Transaction,
+        origin: TransactionOrigin,
+        transaction: &neo_payloads::Transaction,
         _snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-    ) -> VerifyResult {
-        VerifyResult::Succeed
-    }
-
-    fn try_add_cached<B: neo_storage::CacheRead>(
-        &self,
-        _tx: &neo_payloads::Transaction,
-        _snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-        _cached_state_independent: Option<VerifyResult>,
-    ) -> VerifyResult {
-        VerifyResult::Succeed
+        _ledger_provider: &L,
+    ) -> TransactionAdmissionOutcome
+    where
+        B: neo_storage::CacheRead,
+        L: neo_mempool::AdmissionLedgerProvider,
+    {
+        match transaction.try_hash() {
+            Ok(hash) => TransactionAdmissionOutcome::Accepted { hash, origin },
+            Err(error) => TransactionAdmissionOutcome::Error {
+                hash: None,
+                origin,
+                error: TransactionAdmissionError::InvalidHash(error.to_string()),
+            },
+        }
     }
 }
 
@@ -35,13 +39,17 @@ impl MempoolLike for TestMempool {
 #[derive(Debug)]
 struct TestContext;
 
+impl ChainSpecProvider for TestContext {
+    type ChainSpec = NeoChainSpec;
+
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        neo_test_fixtures::test_chain_spec(neo_config::ProtocolSettings::default())
+    }
+}
+
 impl crate::service_context::SystemContext for TestContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
-
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::new(neo_config::ProtocolSettings::default())
-    }
 
     fn current_height(&self) -> u32 {
         0
@@ -51,13 +59,17 @@ impl crate::service_context::SystemContext for TestContext {
 #[derive(Debug)]
 struct StopAfterCommandContext;
 
+impl ChainSpecProvider for StopAfterCommandContext {
+    type ChainSpec = NeoChainSpec;
+
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        neo_test_fixtures::test_chain_spec(neo_config::ProtocolSettings::default())
+    }
+}
+
 impl crate::service_context::SystemContext for StopAfterCommandContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
-
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::new(neo_config::ProtocolSettings::default())
-    }
 
     fn current_height(&self) -> u32 {
         0
@@ -65,6 +77,55 @@ impl crate::service_context::SystemContext for StopAfterCommandContext {
 
     fn should_stop_blockchain_service(&self) -> bool {
         true
+    }
+}
+
+struct MismatchedGenesisContext {
+    chain_spec: Arc<NeoChainSpec>,
+    snapshot: Arc<neo_storage::DataCache>,
+    native_persist_requests: Arc<std::sync::atomic::AtomicUsize>,
+    commit_requests: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl std::fmt::Debug for MismatchedGenesisContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MismatchedGenesisContext")
+            .finish_non_exhaustive()
+    }
+}
+
+impl ChainSpecProvider for MismatchedGenesisContext {
+    type ChainSpec = NeoChainSpec;
+
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        Arc::clone(&self.chain_spec)
+    }
+}
+
+impl crate::service_context::SystemContext for MismatchedGenesisContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
+
+    fn current_height(&self) -> u32 {
+        0
+    }
+
+    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
+        Some(Arc::clone(&self.snapshot))
+    }
+
+    fn native_persist_resources(
+        &self,
+    ) -> Option<crate::native_persist::NativePersistResources<Self::NativeProvider>> {
+        self.native_persist_requests
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        None
+    }
+
+    fn commit_to_store(&self) -> Result<(), String> {
+        self.commit_requests
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
     }
 }
 
@@ -390,17 +451,22 @@ async fn handle_add_transaction_round_trips_service_reply() {
 
     let task = tokio::spawn(async move {
         handle
-            .add_transaction(transaction)
+            .add_transaction(TransactionOrigin::Local, transaction)
             .await
             .expect("add transaction reply")
     });
 
     match cmd_rx.recv().await.expect("add transaction command") {
-        BlockchainCommand::AddTransaction { transaction, reply } => {
+        BlockchainCommand::AddTransaction {
+            transaction,
+            origin,
+            reply,
+        } => {
             assert_eq!(
                 transaction.try_hash().expect("submitted transaction hash"),
                 expected_hash
             );
+            assert_eq!(origin, TransactionOrigin::Local);
             reply
                 .send(crate::command::AddTransactionReply {
                     result: VerifyResult::Succeed,
@@ -453,6 +519,51 @@ async fn handle_initialization_surfaces_durable_genesis_failure() {
         .expect_err("initialization error must reach the handle caller");
     assert_eq!(error.category(), "internal");
     assert!(error.to_string().contains("genesis commit failure"));
+}
+
+#[tokio::test]
+async fn embedded_service_rejects_mismatched_genesis_pin_before_persistence() {
+    let chain_spec = Arc::new(
+        NeoChainSpec::private(
+            "mismatched-genesis-test",
+            neo_config::ProtocolSettings::default(),
+            neo_config::GenesisConfig::mainnet(),
+            Some(neo_primitives::UInt256::zero()),
+        )
+        .expect("valid pinned private chain specification"),
+    );
+    let native_persist_requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let commit_requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let system = Arc::new(MismatchedGenesisContext {
+        chain_spec,
+        snapshot: Arc::new(neo_storage::DataCache::new(false)),
+        native_persist_requests: Arc::clone(&native_persist_requests),
+        commit_requests: Arc::clone(&commit_requests),
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    let (service, _handle) =
+        BlockchainService::with_defaults(system, Arc::clone(&ledger), header_cache, mempool);
+
+    let error = service
+        .initialize()
+        .await
+        .expect_err("mismatched genesis identity must fail closed");
+
+    assert!(error.contains("genesis identity validation failed"));
+    assert!(error.contains("genesis hash mismatch"));
+    assert_eq!(
+        native_persist_requests.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "native persistence resources must not be requested before the identity fence"
+    );
+    assert_eq!(
+        commit_requests.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "a mismatched genesis must never reach the durable commit fence"
+    );
+    assert_eq!(ledger.current_height(), 0);
 }
 
 #[test]

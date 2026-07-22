@@ -1,5 +1,5 @@
-use super::super::test_fixtures::rpc_case_result;
 use super::*;
+use crate::types::test_fixtures::rpc_case_result;
 use neo_config::ProtocolSettings;
 
 #[test]

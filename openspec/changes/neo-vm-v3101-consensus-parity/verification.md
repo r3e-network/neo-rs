@@ -229,10 +229,10 @@ The range contained 103,460 transactions and measured 180.93 overall and
 dominant cost. This is correctness-positive continuation evidence, not full
 MainNet-tip completion or a passing 1,500-block/s production speed proof.
 
-The latest artifacts are
-[`reports/performance/mainnet-continuation-1300000-1400000.md`](../../../reports/performance/mainnet-continuation-1300000-1400000.md)
-and
-[`reports/performance/mainnet-profile-1300000-1400000-node.log`](../../../reports/performance/mainnet-profile-1300000-1400000-node.log).
+The retained artifact is
+[`reports/performance/mainnet-continuation-1300000-1400000.md`](../../../reports/performance/mainnet-continuation-1300000-1400000.md).
+The large raw node log and replay database were intentionally removed after
+their bounded summary and root evidence were recorded.
 
 The next durable continuation reached height 1,500,000 with root
 `0x058f29d359ec64eb394d061f44c9ba3e4991b41795ce745aaa3d8d55c9ff26af`,
@@ -273,11 +273,13 @@ zero MPT failures and matching Ledger/StateService heights. The fresh
 16-reader run measured 182.30 overall and 904.42 transaction-bearing blocks/s,
 versus 155.14 and 744.28 with eight readers. A second fresh 16-reader run also
 matched the root but measured 172.64 overall and 686.49 transaction-bearing
-blocks/s, so reader-count variance is too high to justify a default change.
-The setting remains opt-in. A separate run with only
+blocks/s, so reader-count variance was too high to justify a default change.
+A separate run with only
 `NEO_MDBX_WRITE_INTENT_READ_THREADS=16` set (global parallelism unset) also
 matched the root with zero MPT failures and measured 1.600 s for deferred
-lookups, proving the narrower tuning surface without changing ordinary reads.
+lookups. Later high-height evidence showed worse normalized cost for parallel
+readers, so both environment switches were removed from production on
+2026-07-22.
 Full details and artifact hashes are in
 [`reports/performance/mdbx-reader-repeat-ab.md`](../../../reports/performance/mdbx-reader-repeat-ab.md).
 
@@ -289,7 +291,8 @@ sparse forward walks, and switches the remainder of a sparse overlay to the
 proven search writer. The first per-key bounded candidate was rejected after
 88.88 seconds of cursor work versus 3.23 seconds for search. The adaptive
 candidate preserved root/reopen parity but did not improve the sparse MainNet
-workload, so search remains the production default. Evidence is recorded in
+workload. The merge branch and environment switch were removed on 2026-07-22,
+leaving the independent-search writer as the only production path. Evidence is recorded in
 [`reports/performance/mdbx-cursor-merge-ab.md`](../../../reports/performance/mdbx-cursor-merge-ab.md).
 
 ### Continued Durable MainNet Replay Through Height 1,740,000 (2026-07-16)

@@ -7,7 +7,7 @@ use super::*;
 #[tokio::test]
 async fn self_connection_is_rejected_by_nonce() {
     let (handle, mut events, port) = start_local_node(ChannelsConfig::default()).await;
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     // Learn our own nonce the same way a looped-back connection would.
     let our_nonce = handle.local_node_info().nonce;
 
@@ -31,7 +31,7 @@ async fn self_connection_is_rejected_by_nonce() {
 #[tokio::test]
 async fn network_magic_mismatch_disconnects() {
     let (handle, mut events, port) = start_local_node(ChannelsConfig::default()).await;
-    let wrong_network = ProtocolSettings::default().network.wrapping_add(1);
+    let wrong_network = network_magic().wrapping_add(1);
 
     let mut fake = fake_dial(port).await;
     let _node_version = recv_frame(&mut fake).await.expect("node version");
@@ -72,7 +72,7 @@ async fn first_message_must_be_version() {
 #[tokio::test]
 async fn duplicate_connection_same_address_and_nonce_is_rejected() {
     let (handle, mut events, port) = start_local_node(ChannelsConfig::default()).await;
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     let shared_nonce = 0xfa4e_0004;
 
     // First connection completes the handshake (verack received

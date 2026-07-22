@@ -1,0 +1,53 @@
+[network]
+network_type = "MainNet"
+network_magic = 0x334F454E
+
+[storage]
+backend = "memory"
+data_dir = "/home/neo/git/neo-rs/reports/compat-v310/20260714T014127Z/mainnet/data"
+read_only = false
+
+[p2p]
+port = 40333
+max_connections = 20
+min_desired_connections = 2
+seed_nodes = [
+  "seed1.neo.org:10333",
+  "seed2.neo.org:10333",
+  "seed3.neo.org:10333"
+]
+enable_compression = false
+broadcast_history_limit = 10000
+
+[rpc]
+enabled = true
+port = 40332
+bind_address = "127.0.0.1"
+cors_enabled = true
+auth_enabled = false
+# Disable RPC rate limiting for this loopback validation harness. The consistency
+# run fires hundreds of invoke* calls in a burst; the default per-tier limiter
+# would reject the tail with "Too many requests" (-32001), turning legitimate
+# HALTs into ERRORs and corrupting the comparison. 0 = unlimited (loopback only).
+max_requests_per_second = 0
+max_gas_invoke = 50000000
+max_iterator_results = 100
+disabled_methods = []
+
+[consensus]
+enabled = false
+auto_start = false
+
+[logging]
+level = "warn"
+format = "pretty"
+file_path = "/home/neo/git/neo-rs/reports/compat-v310/20260714T014127Z/logs/neo-node-mainnet.log"
+max_file_size = "20MB"
+max_files = 2
+
+[blockchain]
+block_time = 15000
+max_transactions_per_block = 200
+
+[mempool]
+max_transactions = 50000

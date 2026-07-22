@@ -6,9 +6,10 @@
 
 use super::OracleContract;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::{ApplicationEngine, Contract};
+use neo_execution::ApplicationEngine;
 use neo_primitives::UInt160;
 use neo_storage::StorageItem;
+use neo_vm::Contract;
 use num_bigint::BigInt;
 
 impl OracleContract {

@@ -153,7 +153,7 @@ pub enum ShadowCommitOutcome {
     Degraded {
         /// Durable fail-closed marker for the incomplete shadow history.
         marker: ShadowCommitMarker,
-        /// Diagnostic text logged by the storage backend.
+        /// Bounded diagnostic text logged by the storage backend.
         error: String,
     },
 }

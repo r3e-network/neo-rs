@@ -7,7 +7,7 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use neo_blockchain::RelayResult;
-use neo_payloads::VerifyResult;
+use neo_primitives::VerifyResult;
 use serde_json::{Value, json};
 
 pub(in crate::server) fn map_relay_result(result: RelayResult) -> Result<Value, RpcException> {

@@ -17,5 +17,7 @@
 pub mod hardfork;
 pub mod protocol;
 
-pub use hardfork::{Hardfork, HardforkManager, HardforkParseError};
-pub use protocol::ProtocolSettings;
+pub use hardfork::{
+    ActiveHardforks, Hardfork, HardforkParseError, HardforkSchedule, HardforkScheduleError,
+};
+pub use protocol::{ProtocolConfigError, ProtocolSettings};

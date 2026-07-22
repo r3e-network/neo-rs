@@ -1,4 +1,5 @@
 use super::*;
+use crate::remote_node::RemoteNodeHandle;
 
 fn test_handle() -> (
     NetworkHandle,
@@ -255,6 +256,44 @@ fn connected_peers_snapshot_is_ordered_by_peer_id() {
         .map(|peer| peer.peer_id.as_str())
         .collect();
     assert_eq!(ids, vec!["peer:1", "peer:5", "peer:9"]);
+}
+
+#[test]
+fn live_handle_reads_authoritative_registry_without_lifecycle_events() {
+    let (cmd_tx, _cmd_rx) = mpsc::channel(8);
+    let (event_tx, _event_rx) = broadcast::channel(8);
+    let registry = Arc::new(PeerRegistry::with_limits(8, 8));
+    let peer_id = PeerId::from_raw(12);
+    let remote = addr("198.51.100.9:4000");
+    let (peer_cmd_tx, _peer_cmd_rx) = mpsc::channel(1);
+    assert!(registry.try_admit(
+        peer_id,
+        remote,
+        RemoteNodeHandle::from_parts(peer_cmd_tx, peer_id, remote),
+    ));
+    let listener = addr("198.51.100.9:20333");
+    registry.record_listener_addr(peer_id, listener);
+
+    let handle =
+        NetworkHandle::from_parts_with_registry(cmd_tx, event_tx, Some(Arc::clone(&registry)));
+    let info = handle.local_node_info();
+    assert_eq!(
+        info.connected_peers(),
+        &[ConnectedPeer {
+            peer_id: peer_id.to_string(),
+            address: Some(listener),
+        }]
+    );
+
+    let upgraded = addr("198.51.100.9:30333");
+    handle.record_peer_address(peer_id.to_string(), upgraded);
+    assert_eq!(
+        handle.local_node_info().connected_peers()[0].address,
+        Some(upgraded)
+    );
+
+    assert!(registry.remove(peer_id));
+    assert!(handle.local_node_info().connected_peers().is_empty());
 }
 
 #[tokio::test]

@@ -1,3 +1,5 @@
+//! # neo-node::neo_pack_common
+//!
 //! Shared composition helpers for offline authoritative state-pack tools.
 //!
 //! ## Boundary
@@ -12,12 +14,12 @@
 //!   pinned and value-bounded pack snapshot.
 
 use anyhow::{Context, Result};
-use neo_crypto::{
+use neo_primitives::UInt256;
+use neo_state_packs::{PACK_KEY_BYTES, PackStore, Snapshot};
+use neo_trie::{
     MPT_NODE_PREFIX, MptError, MptResult, MptStoreSnapshot, PersistedMptGraphLimits,
     PersistedMptGraphReport, validate_persisted_root_graph,
 };
-use neo_primitives::UInt256;
-use neo_state_packs::{PACK_KEY_BYTES, PackStore, Snapshot};
 
 pub(crate) const DEFAULT_MAX_ROOT_GRAPH_NODES: u64 = 64_000_000;
 pub(crate) const DEFAULT_MAX_ROOT_GRAPH_BYTES: u64 = 64 * 1024 * 1024 * 1024;

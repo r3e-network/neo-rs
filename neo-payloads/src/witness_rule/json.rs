@@ -1,7 +1,8 @@
-use super::helpers::{encode_hex, parse_group_bytes};
+use super::helpers::parse_group_bytes;
 use super::{WitnessCondition, WitnessRule, WitnessRuleAction};
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
+use neo_primitives::hex_util::encode_hex;
 use serde::de::Error as SerdeDeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Value, json};

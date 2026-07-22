@@ -148,6 +148,7 @@ mod tests {
     };
     use neo_primitives::UInt256;
     use neo_storage::DataCache;
+    use proptest::prelude::*;
     use std::collections::BTreeMap;
 
     fn key(suffix: &[u8]) -> StorageKey {
@@ -324,5 +325,42 @@ mod tests {
             result,
             Err(DependencyCaptureError::PointReadLimitExceeded { limit: 0 })
         );
+    }
+
+    proptest! {
+        #[test]
+        fn point_validation_matches_present_absent_state_model(
+            initially_present in any::<bool>(),
+            transition in 0u8..=3,
+        ) {
+            let dependency_key = key(b"model");
+            let before = item(b"before");
+            let after = item(b"after");
+            let present = initially_present.then(|| (dependency_key.clone(), before.clone()));
+            let dependencies = capture(
+                present.as_slice(),
+                std::slice::from_ref(&dependency_key),
+                DependencyCaptureLimits::default(),
+            ).expect("bounded model dependency");
+
+            let current = match (initially_present, transition) {
+                (true, 0 | 3) => Some(before.clone()),
+                (true, 1) => Some(after),
+                (true, 2) => None,
+                (false, 0 | 2 | 3) => None,
+                (false, 1) => Some(after),
+                _ => unreachable!("transition is bounded to four cases"),
+            };
+            let result = dependencies.revalidate_point_reads(|key| {
+                (key == &dependency_key).then(|| current.clone()).flatten()
+            });
+            let expected = if initially_present {
+                matches!(transition, 0 | 3)
+            } else {
+                !matches!(transition, 1)
+            };
+            prop_assert_eq!(result.is_valid(), expected);
+            prop_assert_eq!(result.checked_point_reads(), 1);
+        }
     }
 }

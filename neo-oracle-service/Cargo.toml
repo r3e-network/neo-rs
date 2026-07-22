@@ -13,6 +13,10 @@ categories.workspace = true
 readme.workspace = true
 description = "Oracle plugin for the Neo blockchain (HTTPS + NeoFS oracle request fulfilment)"
 
+[package.metadata.cargo-machete]
+# build.rs invokes both only when the neofs-grpc feature generates bindings.
+ignored = ["protoc-bin-vendored", "tonic-build"]
+
 [dependencies]
 neo-vm = { workspace = true }
 neo-storage = { workspace = true }
@@ -23,7 +27,6 @@ rand = { workspace = true }
 percent-encoding = { workspace = true }
 url = { workspace = true }
 futures = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 parking_lot = { workspace = true }
 tracing = { workspace = true }
@@ -41,12 +44,11 @@ neo-execution = { workspace = true }
 neo-io = { workspace = true }
 neo-serialization = { workspace = true }
 neo-native-contracts = { workspace = true }
+neo-mempool = { workspace = true }
 neo-payloads = { workspace = true }
 neo-primitives = { workspace = true }
 neo-runtime = { workspace = true }
 neo-wallets = { workspace = true }
-
-neo-manifest = { workspace = true }
 
 [build-dependencies]
 # Only used when the neofs-grpc feature is enabled (build.rs checks
@@ -56,9 +58,10 @@ protoc-bin-vendored = { workspace = true }
 
 [dev-dependencies]
 bs58 = { workspace = true }
-# Tests construct `Node::new(...)` directly; production code uses
-# the `ConfigProvider` + `StoreProvider` traits from `neo-runtime`.
+# Tests construct explicit complete chain specs; production code uses
+# `ChainSpecProvider` from `neo-config` plus the narrow runtime capabilities.
 neo-system = { workspace = true }
+neo-test-fixtures = { workspace = true }
 
 [features]
 default = []

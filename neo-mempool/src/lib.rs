@@ -1,6 +1,6 @@
 //! # neo-mempool
 //!
-//! Transaction memory-pool admission, indexing, events, and routing.
+//! Transaction memory-pool admission, indexing, events, and policy.
 //!
 //! ## Boundary
 //!
@@ -9,10 +9,8 @@
 //!
 //! ## Contents
 //!
-//! - `admission`: Mempool admission, preverification, and transaction routing
-//!   logic.
-//! - `events`: Mempool event records emitted to subscribers.
-//! - `pool`: Memory-pool indexes, items, and mutation helpers.
+//! - `admission`: Typed mempool admission and transaction verification.
+//! - `pool`: Runtime policy, memory-pool indexes, items, and mutation helpers.
 
 #![doc(html_root_url = "https://docs.rs/neo-mempool/0.10.0")]
 
@@ -20,12 +18,12 @@ mod admission;
 mod pool;
 
 pub use admission::{
-    PreverifyCompleted, TransactionRouter, TransactionVerificationContext, transaction_router,
-    transaction_verification_context, transaction_witnesses_are_state_independent, verification,
-    verify_state_dependent_with_native_provider, verify_state_independent,
-    verify_transaction_dependent_only_with_native_provider,
+    AdmissionLedgerProvider, TransactionAdmissionError, TransactionAdmissionOutcome,
+    TransactionOrigin, TransactionVerificationContext, transaction_verification_context,
+    verification, verify_state_dependent_with_native_provider, verify_state_independent,
     verify_transaction_with_native_provider,
 };
 pub use pool::{
-    MemoryPool, PoolIndex, PoolItem, SharedMemoryPool, memory_pool, pool_index, pool_item,
+    DEFAULT_MAX_TRANSACTIONS, MemoryPool, PoolItem, TxPoolConfig, TxPoolConfigError, memory_pool,
+    pool_item,
 };

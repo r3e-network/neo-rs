@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use neo_config::ProtocolSettings;
+use neo_config::NeoChainSpec;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
 use neo_storage::{CacheRead, DataCache};
@@ -51,7 +51,7 @@ where
     B: CacheRead,
 {
     pub(crate) snapshot: Arc<DataCache<B>>,
-    pub(crate) settings: Arc<ProtocolSettings>,
+    pub(crate) chain_spec: Arc<NeoChainSpec>,
     pub(crate) native_persist: crate::native_persist::NativePersistResources<P>,
 }
 
@@ -124,7 +124,7 @@ where
         })?;
         Ok(Some(BatchPersistResources {
             snapshot,
-            settings: self.system.settings(),
+            chain_spec: self.system.chain_spec(),
             native_persist,
         }))
     }
@@ -139,7 +139,7 @@ where
         match crate::native_persist::stage_block_natives_with_resources(
             Arc::clone(&resources.snapshot),
             Arc::clone(&block),
-            Arc::clone(&resources.settings),
+            resources.chain_spec.protocol_settings_arc(),
             options,
             &resources.native_persist,
         ) {

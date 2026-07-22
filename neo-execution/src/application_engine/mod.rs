@@ -44,18 +44,15 @@ use crate::helper::Helper;
 use crate::iterators::StorageIterator;
 use crate::iterators::iterator::StorageIterator as _;
 use neo_config::ProtocolSettings;
-use neo_manifest::CallFlags;
 use neo_manifest::ContractMethodDescriptor;
-use neo_payloads::{LogEventArgs, TransactionAttribute, VerifiableContainer};
-use neo_primitives::ContractParameterType;
-use neo_primitives::FindOptions;
+use neo_payloads::{LogEventArgs, NotifyEventArgs, TransactionAttribute, VerifiableContainer};
+use neo_primitives::{CallFlags, ContractParameterType, FindOptions};
 use neo_storage::SeekDirection;
 use neo_storage::{DataCache, EmptyCacheBacking};
 use neo_vm::{StackItem, VmError, VmResult};
 // ContractManagement is now accessed via the native contract provider
 // LedgerContract and PolicyContract are now accessed via the native contract provider
 
-use crate::NotifyEventArgs;
 use crate::StorageContext;
 use crate::native_contract_provider::{NativeContractProvider, NoNativeContractProvider};
 use crate::verification::PreverifiedSignatureCache;

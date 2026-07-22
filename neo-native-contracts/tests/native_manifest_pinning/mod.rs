@@ -17,9 +17,7 @@
 //! - `method_metadata`: native method metadata coverage.
 //! - `safe_flags`: safe-method flag coverage.
 
-use std::collections::HashMap;
-
-use neo_config::{Hardfork, ProtocolSettings};
+use neo_config::{Hardfork, HardforkSchedule, ProtocolSettings};
 use neo_execution::native_contract::{NativeContract, build_native_contract_state};
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::{
@@ -33,16 +31,16 @@ use neo_primitives::{CallFlags, ContractParameterType};
 /// gating boundary can be probed: Aspidochelone=10, Basilisk=20,
 /// Cockatrice=30, Domovoi=40, Echidna=50, Faun=60, Gorgon=70.
 fn test_settings() -> ProtocolSettings {
-    let mut hardforks = HashMap::new();
-    hardforks.insert(Hardfork::HfAspidochelone, 10);
-    hardforks.insert(Hardfork::HfBasilisk, 20);
-    hardforks.insert(Hardfork::HfCockatrice, 30);
-    hardforks.insert(Hardfork::HfDomovoi, 40);
-    hardforks.insert(Hardfork::HfEchidna, 50);
-    hardforks.insert(Hardfork::HfFaun, 60);
-    hardforks.insert(Hardfork::HfGorgon, 70);
     ProtocolSettings {
-        hardforks,
+        hardforks: HardforkSchedule::new().with_activations([
+            (Hardfork::HfAspidochelone, 10),
+            (Hardfork::HfBasilisk, 20),
+            (Hardfork::HfCockatrice, 30),
+            (Hardfork::HfDomovoi, 40),
+            (Hardfork::HfEchidna, 50),
+            (Hardfork::HfFaun, 60),
+            (Hardfork::HfGorgon, 70),
+        ]),
         ..ProtocolSettings::mainnet()
     }
 }

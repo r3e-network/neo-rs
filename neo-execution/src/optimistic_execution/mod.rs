@@ -19,6 +19,7 @@
 //! - Bounded present/absent pinned-prefix dependency capture.
 //! - Caller-owned, ordered point-read revalidation.
 //! - Exactly-once HALT storage application and FAULT storage discard.
+//! - Bounded dependency capture and caller-owned sequential fallback.
 
 // Ordered publication stays crate-internal until the scheduler owns an
 // exclusive canonical-prefix lane and differential promotion gates pass.

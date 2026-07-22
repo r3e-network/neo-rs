@@ -11,13 +11,11 @@
 //!
 //! ## Contents
 //!
-//! - `contract`: contract records and script-hash helpers.
 //! - `contract_parameter`: contract parameter value records.
 //! - `contract_parameters_context`: contract parameter signing context records.
 //! - `contract_state`: deployed contract state records.
 //! - `deployed_contract`: deployed contract wrapper records.
 
-pub mod contract;
 pub mod contract_parameter;
 pub mod contract_parameters_context;
 pub mod contract_state;

@@ -16,8 +16,17 @@
 //!
 //! ```ignore
 //! // In neo-system / neo-node composition:
-//! let provider = Arc::new(StandardNativeContractProvider::new(settings));
-//! let node = NodeBuilder::new().with_native_contract_provider(provider).build()?;
+//! let provider = Arc::new(StandardNativeProvider::new());
+//! let launch = NodeCoreBuilder::new(
+//!     chain_spec,
+//!     tx_pool_config,
+//!     storage,
+//!     Arc::clone(&provider),
+//!     hooks,
+//!     persisted_height,
+//! ).build();
+//! let (core, blockchain_task) = launch.into_parts();
+//! let node = core.into_node(network);
 //!
 //! // In tests or replay batches that need a temporary provider:
 //! let engine = ApplicationEngine::new_with_native_contract_provider(
@@ -43,7 +52,7 @@ use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::{TransactionState, TrimmedBlock};
-use neo_primitives::{UInt160, UInt256};
+use neo_primitives::{TransactionAttributeType, UInt160, UInt256};
 use neo_storage::{CacheRead, DataCache};
 use num_bigint::BigInt;
 
@@ -166,6 +175,18 @@ pub trait NativeContractProvider: Send + Sync + Sized + 'static {
         let _ = snapshot;
         Err(CoreError::invalid_operation(
             "native provider does not expose fee per byte",
+        ))
+    }
+
+    /// Returns the active Policy fee for a transaction attribute type.
+    fn attribute_fee<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        attribute_type: TransactionAttributeType,
+    ) -> CoreResult<i64> {
+        let _ = (snapshot, attribute_type);
+        Err(CoreError::invalid_operation(
+            "native provider does not expose transaction attribute fees",
         ))
     }
 

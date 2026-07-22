@@ -10,6 +10,8 @@
 //! ## Contents
 //!
 //! - `errors`: Typed errors and result aliases for this crate boundary.
+//! - `node`: Narrow storage and transaction-admission capabilities for
+//!   upper-layer services.
 //! - `service`: Service loops, handles, import queues, durable staged-sync
 //!   providers, lifecycle helpers, and command processing.
 //! - `support`: Protocol-neutral runtime measurement helpers.
@@ -27,20 +29,20 @@ mod support;
 // exported here so the docstring "use neo_runtime::NetworkService"
 // import path resolves.
 pub use errors::{ServiceError, ServiceResult, error};
-pub use node::{ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmission};
+pub use node::{StoreProvider, TxAdmission};
 pub use service::{
     BlockBatchImportOutcome, BlockCheckRejection, BlockImport, BlockImportOutcome,
     BlockImportQueue, BlockOrigin, BlockchainEvent, CheckedBlockBatch, CommitPolicy,
-    DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, ExecutionOutcome, ExecutionPayload,
-    HeaderStageWindow, ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore,
-    InMemoryVerifiedHeaderStore, MAX_VERIFIED_HEADER_WINDOW, Nep17Metadata, Nep17MetadataReader,
-    NetworkEvent, NetworkService, Service, SharedStoreSyncStageCheckpointStore,
-    SharedStoreVerifiedHeaderStore, StageProgress, StoreSyncStageCheckpointStore,
-    StoreVerifiedHeaderStore, SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome,
-    SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind, TxHash, ValidationResult,
-    VerifiedHeaderStore,
+    CommittedHandler, CommittingHandler, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
+    ExecutionOutcome, ExecutionPayload, FinalizedHandler, HeaderStageWindow, ImportQueue,
+    ImportedTip, InMemorySyncStageCheckpointStore, InMemoryVerifiedHeaderStore,
+    MAX_VERIFIED_HEADER_WINDOW, Nep17Metadata, Nep17MetadataReader, NetworkEvent, NetworkService,
+    Service, SharedStoreSyncStageCheckpointStore, SharedStoreVerifiedHeaderStore, StageProgress,
+    StoreSyncStageCheckpointStore, StoreVerifiedHeaderStore, SyncBlockBatch, SyncPipelineDriver,
+    SyncPipelineImportOutcome, SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind,
+    TxHash, ValidationResult, VerifiedHeaderStore, WalletChangedHandler,
 };
 pub use service::{
-    block_import, blockchain, nep17, outcome, services, sync_metrics, sync_pipeline,
+    block_import, blockchain, lifecycle, nep17, outcome, services, sync_metrics, sync_pipeline,
 };
 pub use support::time;

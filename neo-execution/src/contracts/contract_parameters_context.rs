@@ -1,6 +1,5 @@
 //! ContractParametersContext - matches C# Neo.SmartContract.ContractParametersContext exactly
 
-use crate::contract::Contract;
 use crate::contract_parameter::ContractParameter;
 use crate::contract_parameter::ContractParameterValue;
 use crate::helper::Helper as ContractHelper;
@@ -13,12 +12,11 @@ use neo_payloads::{transaction::Transaction, witness::Witness};
 use neo_primitives::ContractParameterType;
 use neo_primitives::hex_util;
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::{CacheRead, DataCache};
+use neo_vm::Contract;
 use neo_vm::OpCode;
 use neo_vm::script_builder::ScriptBuilder;
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Context item for managing signatures and parameters
 #[derive(Clone, Debug)]
@@ -177,22 +175,17 @@ pub struct ContractParametersContext {
 
 impl ContractParametersContext {
     /// Creates a new context
-    pub fn new<B: CacheRead>(
-        snapshot_cache: Arc<DataCache<B>>,
-        verifiable: impl VerifiableExt + Serializable + 'static,
-        network: u32,
-    ) -> Self {
-        Self::new_with_type(snapshot_cache, verifiable, network, None)
+    pub fn new(verifiable: impl VerifiableExt + Serializable + 'static, network: u32) -> Self {
+        Self::new_with_type(verifiable, network, None)
     }
 
     /// Creates a new context with an explicit type name (for parity with C# ToJson()).
-    pub fn new_with_type<B: CacheRead>(
-        snapshot_cache: Arc<DataCache<B>>,
+    pub fn new_with_type(
         verifiable: impl VerifiableExt + Serializable + 'static,
         network: u32,
         verifiable_type: Option<String>,
     ) -> Self {
-        let script_hashes = verifiable.script_hashes_for_verifying(snapshot_cache.as_ref());
+        let script_hashes = verifiable.script_hashes_for_verifying();
         let verifiable_type =
             verifiable_type.unwrap_or_else(|| "Neo.Network.P2P.Payloads.Verifiable".to_string());
         // C# serializes the UNSIGNED verifiable (no witnesses) into `data`
@@ -477,10 +470,9 @@ impl ContractParametersContext {
     }
 
     /// Creates from JSON
-    pub fn from_json<B: CacheRead>(
+    pub fn from_json(
         json: &serde_json::Value,
         verifiable: impl VerifiableExt + Serializable + 'static,
-        snapshot: Arc<DataCache<B>>,
     ) -> CoreResult<Self> {
         let obj = json
             .as_object()
@@ -488,7 +480,7 @@ impl ContractParametersContext {
 
         let network = obj.get("network").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
 
-        let mut context = Self::new(snapshot, verifiable, network);
+        let mut context = Self::new(verifiable, network);
 
         if let Some(items) = obj.get("items").and_then(|v| v.as_object()) {
             for (hash_str, item_json) in items {
@@ -504,10 +496,7 @@ impl ContractParametersContext {
     }
 
     /// Parses a transaction signing context from JSON, returning the hydrated context and transaction.
-    pub fn from_transaction_json<B: CacheRead>(
-        json: &serde_json::Value,
-        snapshot: Arc<DataCache<B>>,
-    ) -> CoreResult<(Self, Transaction)> {
+    pub fn from_transaction_json(json: &serde_json::Value) -> CoreResult<(Self, Transaction)> {
         let obj = json
             .as_object()
             .ok_or_else(|| CoreError::other("Expected object"))?;
@@ -551,18 +540,15 @@ impl ContractParametersContext {
             }
         }
 
-        let context = Self::from_json(json, transaction.clone(), snapshot)?;
+        let context = Self::from_json(json, transaction.clone())?;
         Ok((context, transaction))
     }
 
     /// Helper that parses from a JSON string payload.
-    pub fn parse_transaction_context<B: CacheRead>(
-        json_text: &str,
-        snapshot: Arc<DataCache<B>>,
-    ) -> CoreResult<(Self, Transaction)> {
+    pub fn parse_transaction_context(json_text: &str) -> CoreResult<(Self, Transaction)> {
         let value: serde_json::Value =
             serde_json::from_str(json_text).map_err(|err| CoreError::other(err.to_string()))?;
-        Self::from_transaction_json(&value, snapshot)
+        Self::from_transaction_json(&value)
     }
 
     fn hash_data(&self) -> &[u8] {

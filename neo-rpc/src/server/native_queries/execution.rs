@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::{TriggerType, UInt160};
 use neo_storage::persistence::{CacheRead, DataCache};
 use neo_vm::StackItem;

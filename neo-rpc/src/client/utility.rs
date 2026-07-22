@@ -6,8 +6,10 @@ mod tx_json;
 mod witness;
 mod witness_rule;
 
-// Rationale: these legacy public re-exports keep the client utility facade
-// stable while internal modules own the actual parsing implementations.
+pub(crate) use crate::types::json::{
+    object_array, object_array_from_iter, parse_number_or_string_token, parse_object_array_lossy,
+    parse_string_array_lossy, token_array,
+};
 #[allow(unused_imports)]
 pub use attributes::attribute_from_json;
 pub(crate) use nep::{
@@ -15,24 +17,19 @@ pub(crate) use nep::{
     insert_nep_transfer_fields, parse_balance_list, parse_nep_balance_fields,
     parse_nep_transfer_fields, parse_transfer_lists, transfer_lists_to_json,
 };
-pub use parsing::JsonParseError;
 pub use parsing::optional_string;
-#[cfg(feature = "server")]
-pub(crate) use parsing::parse_script_hash_or_address_inner;
 pub(crate) use parsing::{base64_string_token, optional_base64_field_lossy};
 // Rationale: these helpers are intentionally re-exported as the client JSON
 // compatibility toolkit; individual builds may not use every helper.
 #[allow(unused_imports)]
 pub use parsing::{
-    cloned_token_array, empty_array, insert_optional_string, jtoken_to_serde, object_array,
-    object_array_from_iter, optional_script_hash_or_address_lossy, optional_string_or_null,
-    parse_base64_token, parse_i64_token, parse_nonce_token, parse_number_or_string_token,
-    parse_object_array_lossy, parse_optional_present_token_array_strict,
-    parse_optional_string_array_strict, parse_optional_token_array_strict,
-    parse_oracle_response_code, parse_script_hash_or_address, parse_string_array_lossy,
-    parse_u32_token, parse_u64_token, parse_uint256_array_lossy, required_address_script_hash,
-    required_bigint_string, required_script_hash_or_address, required_string, required_u16_number,
-    required_u32_number, required_u64_number, required_uint256, token_array,
+    cloned_token_array, empty_array, insert_optional_string, jtoken_to_serde,
+    optional_script_hash_or_address_lossy, optional_string_or_null, parse_base64_token,
+    parse_i64_token, parse_nonce_token, parse_optional_string_array_strict,
+    parse_optional_token_array_strict, parse_oracle_response_code, parse_script_hash_or_address,
+    parse_u32_token, parse_u64_token, required_address_script_hash, required_bigint_string,
+    required_script_hash_or_address, required_string, required_u16_number, required_u32_number,
+    required_u64_number, required_uint256,
 };
 pub use stack::{stack_items_from_json_field, stack_items_to_json};
 // Rationale: witness JSON helpers remain part of the public compatibility
@@ -49,11 +46,11 @@ pub use witness_rule::rule_from_json;
 use neo_config::ProtocolSettings;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_error::{CoreError, CoreResult};
-use neo_execution::Contract;
 use neo_native_contracts::{NativeRegistry, StandardNativeProvider};
 use neo_payloads::{Block, BlockHeader, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256, strip_hex_prefix};
 use neo_serialization::json::{JObject, JToken};
+use neo_vm::Contract;
 use neo_wallets::KeyPair;
 use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;

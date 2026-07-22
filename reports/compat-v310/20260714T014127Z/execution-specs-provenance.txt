@@ -1,0 +1,5 @@
+repository=https://github.com/r3e-network/neo-execution-specs.git
+commit=a08ee064b6af90d063243b025f4bf9867b800b2f
+requirements_lock=/home/neo/git/neo-rs/scripts/neo-execution-specs-requirements.lock
+requirements_sha256=7bfe1a50875dbb97f23ed614bc3c6489a9ab6772e4cbc972b41bd93a6e397860
+python=Python 3.12.3

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use neo_blockchain::FinalizedBlock;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_payloads::FinalizedHandler;
+use neo_runtime::FinalizedHandler;
 use neo_storage::CacheRead;
 use neo_storage::persistence::store::Store;
 use neo_system::FinalizedBlockConsumer;

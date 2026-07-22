@@ -18,7 +18,6 @@ description = "Reth-style async service vocabulary for Neo (service traits, even
 neo-primitives = { workspace = true }
 neo-payloads = { workspace = true }
 neo-storage = { workspace = true }
-neo-config = { workspace = true }
 
 # External
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }

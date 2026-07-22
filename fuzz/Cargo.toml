@@ -13,7 +13,6 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 neo-io = { path = "../neo-io", version = "0.10.0" }
-neo-primitives = { path = "../neo-primitives", version = "0.10.0" }
 neo-network = { path = "../neo-network", version = "0.10.0" }
 neo-payloads = { path = "../neo-payloads", version = "0.10.0" }
 neo-vm = { path = "../neo-vm", version = "0.10.0" }

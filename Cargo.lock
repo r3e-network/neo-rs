@@ -383,15 +383,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "block-padding"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8894febbff9f758034a5b8e12d87918f56dfc64a8e1fe757d65e29041538d93"
-dependencies = [
- "generic-array",
-]
-
-[[package]]
 name = "blst"
 version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -430,15 +421,6 @@ name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
-
-[[package]]
-name = "cbc"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26b52a9543ae338f279b96b0b9fed9c8093744685043739079ce85cd58f289a6"
-dependencies = [
- "cipher",
-]
 
 [[package]]
 name = "cc"
@@ -1306,11 +1288,6 @@ name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
-dependencies = [
- "ahash",
- "allocator-api2",
- "serde",
-]
 
 [[package]]
 name = "hashbrown"
@@ -1700,7 +1677,6 @@ version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
 dependencies = [
- "block-padding",
  "generic-array",
 ]
 
@@ -2127,13 +2103,11 @@ dependencies = [
  "clap",
  "criterion",
  "hex",
- "libc",
  "neo-blockchain",
  "neo-config",
  "neo-crypto",
  "neo-execution",
  "neo-io",
- "neo-manifest",
  "neo-native-contracts",
  "neo-payloads",
  "neo-primitives",
@@ -2171,6 +2145,7 @@ dependencies = [
  "neo-state-service",
  "neo-static-files",
  "neo-storage",
+ "neo-test-fixtures",
  "neo-vm",
  "num-bigint",
  "parking_lot",
@@ -2197,11 +2172,9 @@ dependencies = [
  "neo-crypto",
  "neo-error",
  "neo-primitives",
- "parking_lot",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "toml",
 ]
 
 [[package]]
@@ -2241,16 +2214,13 @@ dependencies = [
  "k256",
  "murmur3",
  "neo-error",
- "neo-io",
  "neo-primitives",
  "num-bigint",
  "num-traits",
  "p256",
- "parking_lot",
  "proptest",
  "rand 0.8.6",
  "ripemd",
- "rustc-hash",
  "secp256k1",
  "serde",
  "serde_json",
@@ -2276,17 +2246,8 @@ name = "neo-execution"
 version = "0.10.0"
 dependencies = [
  "base64 0.22.1",
- "bip39",
- "bitflags 2.13.0",
- "bitvec",
- "blake2",
- "bs58",
- "chrono",
- "dashmap",
- "hashbrown 0.14.5",
  "hex",
  "indexmap 2.8.0",
- "lru",
  "neo-config",
  "neo-crypto",
  "neo-error",
@@ -2299,17 +2260,13 @@ dependencies = [
  "neo-storage",
  "neo-vm",
  "num-bigint",
- "num-integer",
  "num-traits",
  "parking_lot",
- "rand 0.8.6",
- "ripemd",
+ "proptest",
  "rustc-hash",
  "serde",
  "serde_json",
  "sha2",
- "sha3",
- "smallvec",
  "thiserror 2.0.18",
  "tracing",
 ]
@@ -2326,7 +2283,6 @@ dependencies = [
  "neo-primitives",
  "neo-vm",
  "p256",
- "parking_lot",
  "reqwest",
  "serde_json",
  "thiserror 2.0.18",
@@ -2357,16 +2313,9 @@ name = "neo-io"
 version = "0.10.0"
 dependencies = [
  "bytes",
- "futures",
- "hex",
  "lz4_flex",
  "neo-primitives",
- "parking_lot",
- "serde",
- "serde_json",
- "tempfile",
  "thiserror 2.0.18",
- "tokio",
 ]
 
 [[package]]
@@ -2380,11 +2329,9 @@ dependencies = [
  "neo-primitives",
  "neo-serialization",
  "neo-vm",
- "num-bigint",
  "num-traits",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -2405,6 +2352,7 @@ dependencies = [
  "neo-vm",
  "num-bigint",
  "parking_lot",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2436,6 +2384,7 @@ dependencies = [
  "bytes",
  "futures",
  "neo-config",
+ "neo-crypto",
  "neo-error",
  "neo-io",
  "neo-payloads",
@@ -2475,7 +2424,6 @@ dependencies = [
  "neo-mempool",
  "neo-native-contracts",
  "neo-network",
- "neo-oracle-service",
  "neo-payloads",
  "neo-primitives",
  "neo-rpc",
@@ -2486,14 +2434,13 @@ dependencies = [
  "neo-static-files",
  "neo-storage",
  "neo-system",
+ "neo-test-fixtures",
+ "neo-trie",
  "neo-vm",
- "neo-wallets",
  "num-bigint",
  "num-traits",
- "num_cpus",
  "parking_lot",
  "prometheus",
- "rand 0.8.6",
  "reqwest",
  "serde",
  "serde_json",
@@ -2507,7 +2454,6 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "url",
- "zeroize",
 ]
 
 [[package]]
@@ -2523,7 +2469,7 @@ dependencies = [
  "neo-error",
  "neo-execution",
  "neo-io",
- "neo-manifest",
+ "neo-mempool",
  "neo-native-contracts",
  "neo-payloads",
  "neo-primitives",
@@ -2531,6 +2477,7 @@ dependencies = [
  "neo-serialization",
  "neo-storage",
  "neo-system",
+ "neo-test-fixtures",
  "neo-vm",
  "neo-wallets",
  "parking_lot",
@@ -2539,7 +2486,6 @@ dependencies = [
  "protoc-bin-vendored",
  "rand 0.8.6",
  "reqwest",
- "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
@@ -2555,14 +2501,11 @@ version = "0.10.0"
 dependencies = [
  "base64 0.22.1",
  "bitvec",
- "neo-config",
  "neo-crypto",
  "neo-error",
  "neo-io",
- "neo-manifest",
  "neo-primitives",
  "neo-serialization",
- "neo-storage",
  "neo-vm",
  "num-bigint",
  "num-traits",
@@ -2570,8 +2513,6 @@ dependencies = [
  "rand 0.8.6",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
- "tokio",
  "tracing",
 ]
 
@@ -2603,7 +2544,6 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "dashmap",
- "futures",
  "governor",
  "hex",
  "jsonrpsee",
@@ -2628,6 +2568,7 @@ dependencies = [
  "neo-storage",
  "neo-system",
  "neo-test-fixtures",
+ "neo-trie",
  "neo-vm",
  "neo-wallets",
  "num-bigint",
@@ -2639,7 +2580,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "serde_urlencoded",
  "subtle",
  "thiserror 2.0.18",
  "tokio",
@@ -2653,7 +2593,6 @@ dependencies = [
 name = "neo-runtime"
 version = "0.10.0"
 dependencies = [
- "neo-config",
  "neo-payloads",
  "neo-primitives",
  "neo-storage",
@@ -2667,21 +2606,15 @@ dependencies = [
 name = "neo-serialization"
 version = "0.10.0"
 dependencies = [
- "hashbrown 0.14.5",
  "hex",
  "indexmap 2.8.0",
  "neo-error",
  "neo-io",
- "neo-primitives",
- "neo-storage",
  "neo-vm",
  "num-bigint",
- "num-traits",
- "parking_lot",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "tracing",
  "zstd",
 ]
 
@@ -2707,11 +2640,12 @@ dependencies = [
  "hex",
  "lru",
  "neo-crypto",
- "neo-error",
  "neo-io",
  "neo-payloads",
  "neo-primitives",
+ "neo-runtime",
  "neo-storage",
+ "neo-trie",
  "parking_lot",
  "rustc-hash",
  "serde",
@@ -2736,9 +2670,7 @@ dependencies = [
 name = "neo-storage"
 version = "0.10.0"
 dependencies = [
- "hashbrown 0.14.5",
  "libmdbx",
- "lru",
  "mdbx-sys",
  "neo-error",
  "neo-io",
@@ -2762,7 +2694,6 @@ version = "0.10.0"
 dependencies = [
  "neo-blockchain",
  "neo-config",
- "neo-error",
  "neo-execution",
  "neo-mempool",
  "neo-native-contracts",
@@ -2782,6 +2713,7 @@ dependencies = [
 name = "neo-test-fixtures"
 version = "0.10.0"
 dependencies = [
+ "neo-config",
  "neo-crypto",
  "neo-error",
  "neo-io",
@@ -2812,12 +2744,25 @@ dependencies = [
  "neo-storage",
  "neo-vm",
  "num-bigint",
- "serde_json",
- "tempfile",
  "tokio",
  "toml",
+]
+
+[[package]]
+name = "neo-trie"
+version = "0.10.0"
+dependencies = [
+ "hex",
+ "neo-crypto",
+ "neo-error",
+ "neo-io",
+ "neo-primitives",
+ "parking_lot",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -2847,24 +2792,17 @@ dependencies = [
  "aes",
  "base64 0.22.1",
  "bip39",
- "cbc",
- "cipher",
  "neo-config",
  "neo-crypto",
  "neo-error",
  "neo-execution",
- "neo-io",
- "neo-manifest",
  "neo-native-contracts",
  "neo-payloads",
  "neo-primitives",
  "neo-runtime",
  "neo-storage",
  "neo-vm",
- "num-bigint",
- "num-traits",
  "parking_lot",
- "rand 0.8.6",
  "scrypt",
  "serde",
  "serde_json",

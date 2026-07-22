@@ -1,58 +1,27 @@
 use super::*;
 
 #[tokio::test]
-async fn fill_memory_pool_admits_transactions_through_mempool() {
-    let (service, _handle) = fixture();
-    let tx1 = transaction_with_nonce(101);
-    let tx2 = transaction_with_nonce(102);
-    let hash1 = tx1.try_hash().expect("tx1 hash");
-    let hash2 = tx2.try_hash().expect("tx2 hash");
-
-    service
-        .handle_fill_memory_pool(FillMemoryPool {
-            transactions: vec![tx1, tx2],
-        })
-        .await;
-
-    assert!(service.ledger.get_transaction(&hash1).is_some());
-    assert!(service.ledger.get_transaction(&hash2).is_some());
-}
-
-#[tokio::test]
-async fn preverify_completed_uses_mempool_verdict_before_caching() {
-    let (rejecting, _handle) = fixture_with_mempool_result(VerifyResult::PolicyFail);
+async fn canonical_admission_maps_the_mempool_verdict() {
     let rejected = transaction_with_nonce(201);
-    let rejected_hash = rejected.try_hash().expect("rejected hash");
-    rejecting
-        .handle_preverify_completed(crate::PreverifyCompleted {
-            transaction: rejected,
-            relay: true,
-            result: VerifyResult::Succeed,
-            cached_state_independent: Some(VerifyResult::Succeed),
-        })
+    let (rejecting, _handle, _snapshot) = fixture_with_mempool_result(VerifyResult::PolicyFail);
+    let rejected_reply = rejecting
+        .add_transaction(TransactionOrigin::External, rejected)
         .await;
-    assert!(
-        rejecting.ledger.get_transaction(&rejected_hash).is_none(),
-        "state-dependent mempool rejection must not populate the ledger tx cache"
-    );
+    assert_eq!(rejected_reply.result, VerifyResult::PolicyFail);
 
-    let (accepting, _handle) = fixture_with_mempool_result(VerifyResult::Succeed);
     let accepted = transaction_with_nonce(202);
     let accepted_hash = accepted.try_hash().expect("accepted hash");
-    accepting
-        .handle_preverify_completed(crate::PreverifyCompleted {
-            transaction: accepted,
-            relay: true,
-            result: VerifyResult::Succeed,
-            cached_state_independent: Some(VerifyResult::Succeed),
-        })
+    let (accepting, _handle, _snapshot) = fixture_with_mempool_result(VerifyResult::Succeed);
+    let accepted_reply = accepting
+        .add_transaction(TransactionOrigin::Local, accepted)
         .await;
-    assert!(accepting.ledger.get_transaction(&accepted_hash).is_some());
+    assert_eq!(accepted_reply.result, VerifyResult::Succeed);
+    assert_eq!(accepted_reply.hash, accepted_hash);
 }
 
 #[tokio::test]
-async fn on_new_transaction_reports_already_exists_for_persisted_ledger_tx() {
-    let (service, _handle, snapshot) = store_fixture();
+async fn canonical_admission_reports_already_exists_for_persisted_ledger_tx() {
+    let (service, _handle, snapshot) = real_mempool_store_fixture();
     let mut tx = transaction_with_nonce(203);
     tx.set_signers(vec![neo_payloads::Signer::new(
         neo_primitives::UInt160::from_bytes(&[0x22; 20]).expect("signer"),
@@ -70,22 +39,17 @@ async fn on_new_transaction_reports_already_exists_for_persisted_ledger_tx() {
         neo_storage::StorageKey::new(neo_native_contracts::LedgerContract::ID, key),
         neo_storage::StorageItem::from_bytes(value),
     );
-    assert!(
-        neo_native_contracts::LedgerContract::new()
-            .contains_transaction(snapshot.as_ref(), &tx_hash)
-            .expect("ledger contains transaction check"),
-        "test fixture must seed a full Ledger transaction record"
-    );
 
-    assert_eq!(
-        service.on_new_transaction(&tx, None),
-        VerifyResult::AlreadyExists
-    );
+    let reply = service
+        .add_transaction(TransactionOrigin::External, tx)
+        .await;
+    assert_eq!(reply.result, VerifyResult::AlreadyExists);
+    assert_eq!(reply.hash, tx_hash);
 }
 
 #[tokio::test]
-async fn on_new_transaction_reports_has_conflicts_for_traceable_ledger_conflict() {
-    let (service, _handle, snapshot) = store_fixture();
+async fn canonical_admission_reports_traceable_ledger_conflict() {
+    let (service, _handle, snapshot) = real_mempool_store_fixture();
     seed_current_ledger(snapshot.as_ref(), 0);
     let signer = neo_primitives::UInt160::from_bytes(&[0x44; 20]).expect("signer");
     let mut tx = transaction_with_nonce(204);
@@ -97,12 +61,9 @@ async fn on_new_transaction_reports_has_conflicts_for_traceable_ledger_conflict(
     let tx_hash = tx.try_hash().expect("tx hash");
     seed_conflict_record(snapshot.as_ref(), &tx_hash, &signer, 0);
 
-    assert_eq!(
-        service.on_new_transaction(&tx, None),
-        VerifyResult::HasConflicts
-    );
-    assert!(
-        service.ledger.get_transaction(&tx_hash).is_none(),
-        "C# Blockchain.OnNewTransaction rejects traceable ledger conflicts before mempool admission"
-    );
+    let reply = service
+        .add_transaction(TransactionOrigin::External, tx)
+        .await;
+    assert_eq!(reply.result, VerifyResult::HasConflicts);
+    assert_eq!(reply.hash, tx_hash);
 }

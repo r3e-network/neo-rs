@@ -1,14 +1,12 @@
-use crate::client::native_hashes::gas_hash;
-use crate::{
-    Nep17Api, RpcClient, RpcClientError, RpcObserver, TracingRpcObserver, TransactionManagerFactory,
-};
+use crate::client::{RpcClientError, native_hashes::gas_hash};
+use crate::{Nep17Api, RpcClient, RpcObserver, TracingRpcObserver, TransactionManagerFactory};
 use neo_crypto::ECPoint;
-use neo_execution::{Contract, ContractParametersContext};
+use neo_execution::ContractParametersContext;
 use neo_payloads::{
     Signer, Transaction, TransactionAttribute, VerifiableExt, Witness, get_sign_data_vec,
 };
 use neo_primitives::UInt160;
-use neo_storage::persistence::DataCache;
+use neo_vm::Contract;
 use neo_wallets::KeyPair;
 use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;
@@ -46,12 +44,8 @@ where
     /// `TransactionManager` Constructor
     /// Matches C# constructor
     pub fn new(tx: Transaction, rpc_client: Arc<RpcClient<O>>) -> Self {
-        let snapshot = std::sync::Arc::new(neo_storage::persistence::DataCache::new(true));
-        let context = ContractParametersContext::new(
-            snapshot,
-            tx.clone(),
-            rpc_client.protocol_settings.network,
-        );
+        let context =
+            ContractParametersContext::new(tx.clone(), rpc_client.protocol_settings.network);
 
         Self {
             _rpc_client: rpc_client,
@@ -174,7 +168,7 @@ where
     /// Sign the transaction
     /// Matches C# `SignAsync`
     pub async fn sign(&mut self) -> Result<Transaction, RpcClientError> {
-        let script_hashes = self.tx.script_hashes_for_verifying(&DataCache::new(true));
+        let script_hashes = self.tx.script_hashes_for_verifying();
         let mut witnesses = Vec::with_capacity(script_hashes.len());
         for hash in &script_hashes {
             let verification_script = self.get_verification_script(hash);
@@ -234,7 +228,7 @@ where
 
     fn add_sign_item(&mut self, contract: Contract, key: KeyPair) -> Result<(), RpcClientError> {
         let hash = contract.script_hash();
-        let script_hashes = self.tx.script_hashes_for_verifying(&DataCache::new(true));
+        let script_hashes = self.tx.script_hashes_for_verifying();
         if !script_hashes.contains(&hash) {
             return Err(format!("Add SignItem error: Mismatch ScriptHash ({hash})").into());
         }

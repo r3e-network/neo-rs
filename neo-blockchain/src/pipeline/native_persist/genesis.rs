@@ -1,14 +1,10 @@
-use neo_config::ProtocolSettings;
+use neo_config::NeoChainSpec;
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::{Block, Header, Witness};
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::persistence::SeekDirection;
 use neo_storage::{DataCache, StorageKey};
 
-/// C# genesis timestamp: `2016-07-15T15:08:21Z` in Unix milliseconds.
-pub(super) const GENESIS_TIMESTAMP_MS: u64 = 1_468_595_301_000;
-/// C# genesis nonce -- the nonce of the Bitcoin genesis block.
-pub(super) const GENESIS_NONCE: u64 = 2_083_236_893;
 /// `LedgerContract` native id (a fixed protocol constant, C# id -4).
 /// Hardcoded because the blockchain crate reaches natives only through
 /// the type-erased provider seam; pinned against the real constant by
@@ -49,17 +45,23 @@ pub fn chain_state_initialized<B: neo_storage::CacheRead>(snapshot: &DataCache<B
 }
 
 /// C# `NeoSystem.CreateGenesisBlock(settings)`: index 0, zero
-/// previous/merkle hashes, the 2016-07-15T15:08:21Z timestamp, the
-/// Bitcoin-genesis nonce, primary index 0, `NextConsensus` set to the
-/// BFT address of the standby validators, and an empty-invocation
-/// `PUSH1` witness. The genesis block carries no transactions.
-pub fn genesis_block(settings: &ProtocolSettings) -> CoreResult<Block> {
+/// previous/merkle hashes, the chain specification's deterministic timestamp
+/// and nonce, primary index 0, `NextConsensus` set to the BFT address of the
+/// validated standby validators, and an empty-invocation `PUSH1` witness. The
+/// genesis block carries no transactions.
+///
+/// Requiring the complete [`NeoChainSpec`] keeps genesis identity authoritative:
+/// custom chains cannot accidentally combine their configured timestamp or
+/// nonce with validators reconstructed from an unrelated settings object.
+pub fn genesis_block(chain_spec: &NeoChainSpec) -> CoreResult<Block> {
+    let genesis = chain_spec.genesis();
+    let settings = chain_spec.protocol_settings();
     let mut header = Header::new();
     header.set_version(0);
     header.set_prev_hash(UInt256::zero());
     header.set_merkle_root(UInt256::zero());
-    header.set_timestamp(GENESIS_TIMESTAMP_MS);
-    header.set_nonce(GENESIS_NONCE);
+    header.set_timestamp(genesis.timestamp);
+    header.set_nonce(genesis.nonce);
     header.set_index(0);
     header.set_primary_index(0);
     header.set_next_consensus(bft_address(&settings.standby_validators())?);

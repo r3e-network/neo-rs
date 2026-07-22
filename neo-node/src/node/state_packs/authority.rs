@@ -1618,7 +1618,7 @@ mod tests {
             exact_oracle_node_entries(&fixture.oracle)
                 .iter()
                 .any(
-                    |(_, value)| neo_crypto::mpt_trie::Node::split_serialized_reference(value)
+                    |(_, value)| neo_trie::Node::split_serialized_reference(value)
                         .map(|(_, reference, _)| reference > 1)
                         .unwrap_or(false)
                 ),
@@ -1897,6 +1897,7 @@ mod tests {
             Some(vec![8])
         );
         drop(published);
+        drop(maintenance); // Joining fences batch-final GC before cleanup assertions.
         assert!(
             writer
                 .lock()
@@ -1937,7 +1938,6 @@ mod tests {
         assert_eq!(gc_cycles, 1, "the complete worker batch runs GC once");
         assert_eq!(manifest_files, 1, "worker leaves one live manifest");
         assert_eq!(run_files as u64, live_runs, "worker leaves only live runs");
-        drop(maintenance);
         drop(publication);
         drop(writer);
         let reopened =

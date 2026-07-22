@@ -819,7 +819,7 @@ fn native_call_uses_resolved_method_index_after_hardfork_selection() {
     });
 
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
     let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,

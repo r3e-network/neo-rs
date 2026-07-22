@@ -2,12 +2,12 @@
 
 use super::{MptNodeReadSnapshot, MptOverlay, is_mpt_node_key};
 
-use neo_crypto::mpt_trie::{
-    MptError, MptResult, MptStoreLookup, MptStoreSnapshot, Node, UnresolvedDeferredNode,
-};
 use neo_io::{MemoryReader, Serializable};
 use neo_primitives::UINT256_SIZE;
 use neo_storage::persistence::{RawReadOnlyStore, Store};
+use neo_trie::{
+    MptError, MptResult, MptStoreLookup, MptStoreSnapshot, Node, UnresolvedDeferredNode,
+};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

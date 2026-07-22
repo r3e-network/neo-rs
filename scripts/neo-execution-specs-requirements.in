@@ -1,0 +1,5 @@
+# Runtime dependencies declared by neo-execution-specs commit
+# a08ee064b6af90d063243b025f4bf9867b800b2f.
+cryptography>=41.0
+pycryptodome>=3.19
+regex>=2024.0

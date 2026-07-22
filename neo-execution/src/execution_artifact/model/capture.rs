@@ -176,11 +176,7 @@ fn capture_protocol(
         graph.retain_bytes(bytes.len())?;
         standby_committee.push(bytes);
     }
-    let mut hardforks = settings
-        .hardforks
-        .iter()
-        .map(|(hardfork, height)| (*hardfork, *height))
-        .collect::<Vec<_>>();
+    let mut hardforks = settings.hardforks.iter().collect::<Vec<_>>();
     hardforks.sort_unstable_by_key(|(hardfork, _)| hardfork.index());
     Ok(ProtocolEnvironmentArtifact {
         network: settings.network,

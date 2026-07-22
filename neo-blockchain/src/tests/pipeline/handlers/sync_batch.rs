@@ -48,11 +48,12 @@ impl SyncBatchProbe {
 
 struct VerifiedSyncBatchContext {
     snapshot: Arc<neo_storage::DataCache>,
-    settings: Arc<neo_config::ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     probe: SyncBatchProbe,
     fail_flush: bool,
     sync_batch_policy: crate::SyncBatchCommitPolicy,
 }
+impl_chain_spec_provider_for_field!(VerifiedSyncBatchContext);
 
 impl std::fmt::Debug for VerifiedSyncBatchContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -64,10 +65,6 @@ impl std::fmt::Debug for VerifiedSyncBatchContext {
 impl SystemContext for VerifiedSyncBatchContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
-
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
 
     fn current_height(&self) -> u32 {
         0
@@ -165,7 +162,7 @@ impl SyncBatchFixture {
         let probe = SyncBatchProbe::default();
         let system = Arc::new(VerifiedSyncBatchContext {
             snapshot: Arc::clone(&snapshot),
-            settings: Arc::new(settings),
+            chain_spec: test_chain_spec(settings),
             probe: probe.clone(),
             fail_flush,
             sync_batch_policy,
@@ -213,7 +210,8 @@ fn signed_sync_batch() -> SignedSyncBatch {
             &[point],
         )
         .expect("multisig script");
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
     let timestamps = [
         genesis.header.timestamp() + 15_000,
         genesis.header.timestamp() + 30_000,
@@ -282,7 +280,6 @@ async fn optimistic_verified_sync_prefetches_the_following_header() {
     let metrics = pool.metrics_snapshot();
     assert_eq!(metrics.submitted, 1, "the first block stays synchronous");
     assert_eq!(metrics.completed, 1);
-    assert_eq!(metrics.invalid, 0);
     assert_eq!(metrics.header_standard_caches_prepared, 1);
     assert_eq!(metrics.header_preverified_ecdsa_operations, 1);
     assert_eq!(metrics.header_canonical_cache_consumptions, 1);
@@ -344,7 +341,6 @@ async fn optimistic_verified_sync_keeps_only_the_valid_prefix_on_invalid_witness
     let metrics = pool.metrics_snapshot();
     assert_eq!(metrics.submitted, 1);
     assert_eq!(metrics.completed, 1);
-    assert_eq!(metrics.invalid, 0);
     assert_eq!(metrics.header_standard_caches_prepared, 1);
     assert_eq!(metrics.header_preverified_ecdsa_operations, 1);
     assert_eq!(metrics.header_canonical_cache_consumptions, 1);

@@ -1,0 +1,4 @@
+csharp_rpc=http://127.0.0.1:49332
+neogo_rpc=http://127.0.0.1:49333
+expected_network=860833102
+expected_msperblock=15000

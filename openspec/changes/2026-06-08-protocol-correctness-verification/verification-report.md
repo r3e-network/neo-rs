@@ -292,7 +292,7 @@ level; `neo-consensus` adds 1 ignored at the lib level.)
 
 - **Status**: 🟡 **PARTIAL**
 - **Evidence — MPT genesis state root matches C# exactly**:
-  `neo-crypto/src/mpt_trie/tests.rs:1063-1101` —
+  `neo-trie/src/tests/mpt_trie/diagnostics.rs` —
   `test_genesis_state_root_matches_reference` — PASS. The
   test feeds the 7-entry genesis trie that C# `MPTTrie.Tests`
   uses and asserts the resulting root hash equals
@@ -303,7 +303,7 @@ level; `neo-consensus` adds 1 ignored at the lib level.)
   `test_genesis_state_root_with_full_state_true` PASS.
 - **Evidence — leaf / extension / branch serialisation
   matches C# byte format**: 3 tests in
-  `neo-crypto/src/mpt_trie/tests.rs:807-920` PASS. They assert
+  `neo-trie/src/tests/mpt_trie/diagnostics.rs` PASS. They assert
   that `Node::new_leaf(vec![0x01, 0x02]).to_array_without_reference()`
   is `[0x02, 0x02, 0x01, 0x02]`
   (type byte + varint length + data), that
@@ -431,7 +431,7 @@ level; `neo-consensus` adds 1 ignored at the lib level.)
 
 | C# test source | Rust equivalent | Status |
 |---|---|---|
-| `Neo.Cryptography.MPTTrie.Tests` (C#) | `neo-crypto/src/mpt_trie/tests.rs` (1 187 lines) | ✅ VERIFIED — converted unit tests + the genesis-root test pass |
+| `Neo.Cryptography.MPTTrie.Tests` (C#) | `neo-trie/src/tests/mpt_trie/diagnostics.rs` | ✅ VERIFIED — converted unit tests + the genesis-root test pass |
 | `Neo.Network.RPC.Tests` (C#) — `RpcTestCases.json` (4 034 lines) | **no consumer** | ❌ NOT CONSUMED — the JSON is shipped in `neo_csharp/node/tests/Neo.Network.RPC.Tests/RpcTestCases.json` but no Rust test loads it |
 | `Neo.Plugins.RpcServer` config (C#) | `neo-rpc` server feature | ❌ NOT BUILDABLE — `cargo build -p neo-rpc --features server` fails with 132 errors |
 | NEP-17 tracker C# v3.9.1 parity | `neo-tokens-tracker/tests/tokens_tracker_nep17_csharp_parity.rs` | 🟡 PARTIAL — compiles and runs, but the `on_persist` call is commented out, so the assertion `sent.len() == 1` fails |
@@ -550,4 +550,3 @@ cargo test -p neo-crypto --lib \
     secp256k1_verify_accepts_high_s_like_csharp
 cargo test -p neo-primitives --lib call_flags_bit_values_match_csharp
 ```
-

@@ -21,7 +21,6 @@ neo-config = { workspace = true }
 neo-crypto = { workspace = true }
 neo-execution = { workspace = true }
 neo-io = { workspace = true }
-neo-manifest = { workspace = true }
 neo-native-contracts = { workspace = true }
 neo-primitives = { workspace = true }
 neo-runtime = { workspace = true }
@@ -33,7 +32,6 @@ neo-vm = { workspace = true }
 neo-payloads = { workspace = true }
 parity-db = "=0.5.5"
 hex = { workspace = true }
-libc = "0.2"
 num-bigint = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

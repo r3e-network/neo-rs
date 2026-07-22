@@ -25,7 +25,7 @@ use tokio::sync::broadcast;
 use tokio_util::codec::Framed;
 use tokio_util::sync::CancellationToken;
 
-use neo_config::ProtocolSettings;
+use neo_config::NeoChainSpec;
 use neo_network::MessageCommand;
 use neo_network::{
     BlockRangeAssignment, BlockRequest, ChannelsConfig, ConnectionTimeouts, InboundInventory,
@@ -43,6 +43,14 @@ use neo_primitives::{InventoryType, UInt256};
 const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 type FakeFramed = Framed<TcpStream, MessageCodec>;
+
+fn test_chain_spec() -> Arc<NeoChainSpec> {
+    NeoChainSpec::mainnet().expect("embedded MainNet chain specification")
+}
+
+fn network_magic() -> u32 {
+    test_chain_spec().network_magic()
+}
 
 async fn fake_dial(port: u16) -> FakeFramed {
     let stream = tokio::time::timeout(TEST_TIMEOUT, TcpStream::connect(("127.0.0.1", port)))
@@ -143,8 +151,7 @@ where
 async fn start_local_node(
     config: ChannelsConfig,
 ) -> (NetworkHandle, broadcast::Receiver<NetworkEvent>, u16) {
-    let settings = Arc::new(ProtocolSettings::default());
-    let (service, handle) = LocalNodeService::with_config(settings, config);
+    let (service, handle) = LocalNodeService::with_config(test_chain_spec(), config);
     tokio::spawn(service.run());
     let events = handle.subscribe();
     handle
@@ -160,8 +167,7 @@ async fn start_local_node_with_seeded_height(
     config: ChannelsConfig,
     height: u32,
 ) -> (NetworkHandle, broadcast::Receiver<NetworkEvent>, u16) {
-    let settings = Arc::new(ProtocolSettings::default());
-    let (service, handle) = LocalNodeService::with_config(settings, config);
+    let (service, handle) = LocalNodeService::with_config(test_chain_spec(), config);
     tokio::spawn(service.run());
     let events = handle.subscribe();
     handle

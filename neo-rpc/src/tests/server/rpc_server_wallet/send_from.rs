@@ -157,7 +157,7 @@ async fn send_from_returns_invalid_request_without_funds() {
 // 2-of-2 send-from could never complete and would fall back to a pending context.
 #[tokio::test(flavor = "multi_thread")]
 async fn send_from_multisig_collects_member_signatures() {
-    use neo_execution::contract::Contract;
+    use neo_vm::Contract;
     let settings = Arc::new(ProtocolSettings::default());
     let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system.clone(), authenticated_config());

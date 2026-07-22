@@ -5,20 +5,19 @@ use super::super::providers::{
 use super::super::{OracleRuntimeProvider, OracleService, OracleServiceError};
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
-use neo_execution::Contract;
-use neo_execution::TriggerType;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_execution::{ApplicationEngine, NoDiagnostic};
 use neo_io::serializable::helper::SerializeHelper;
-use neo_manifest::CallFlags;
 use neo_payloads::VerifiableExt;
 use neo_payloads::{
     HEADER_SIZE, OracleResponse, OracleResponseCode, Signer, Transaction, TransactionAttribute,
     VerifiableContainer, Witness, oracle_response::MAX_RESULT_SIZE,
 };
-use neo_primitives::ContractBasicMethod;
+use neo_primitives::CallFlags;
+use neo_primitives::{ContractBasicMethod, TriggerType};
 use neo_primitives::{UInt160, WitnessScope};
 use neo_storage::persistence::DataCache;
+use neo_vm::Contract;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -86,7 +85,7 @@ where
         .into_iter()
         .collect();
 
-        let hashes = tx.script_hashes_for_verifying(snapshot);
+        let hashes = tx.script_hashes_for_verifying();
         let mut witnesses = Vec::with_capacity(hashes.len());
         for hash in hashes.iter() {
             let witness = witness_map

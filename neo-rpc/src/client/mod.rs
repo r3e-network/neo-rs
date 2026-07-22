@@ -12,8 +12,7 @@
 //!
 //! - `contract_client`: contract RPC client facade.
 //! - `contract_script`: contract script invocation helpers.
-//! - `error`: Typed error definitions and conversions.
-//! - `models`: RPC request and response models.
+//! - `errors`: Client transport, protocol, and conversion errors.
 //! - `nep17_api`: NEP-17 RPC client helpers.
 //! - `policy_api`: policy RPC client helpers.
 //! - `rpc_client`: HTTP JSON-RPC client implementation.
@@ -29,8 +28,7 @@
 mod contract_client;
 #[path = "contracts/contract_script.rs"]
 mod contract_script;
-#[path = "errors/error.rs"]
-mod error;
+mod errors;
 pub mod models;
 mod native_hashes;
 #[path = "apis/nep17_api.rs"]
@@ -52,7 +50,7 @@ mod utility;
 mod wallet_api;
 
 pub use contract_client::ContractClient;
-pub use error::{ClientRpcError, RpcException};
+pub use errors::{ClientRpcError, RpcClientError, RpcClientResult};
 pub use nep17_api::Nep17Api;
 pub use policy_api::PolicyApi;
 pub use rpc_client::{
@@ -62,8 +60,6 @@ pub use state_api::StateApi;
 pub use transaction_manager::TransactionManager;
 pub use transaction_manager_factory::TransactionManagerFactory;
 pub use utility::RpcUtility;
-#[cfg(feature = "server")]
-pub(crate) use utility::parse_script_hash_or_address_inner;
 pub use wallet_api::WalletApi;
 
 // Re-export commonly used types

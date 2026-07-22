@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use neo_blockchain::{LedgerContext, OptionalStaticLedgerProvider, StaticLedgerArchiveFactory};
-use neo_config::ProtocolSettings;
 use neo_native_contracts::StandardNativeProvider;
 use neo_network::NetworkHandle;
 use neo_storage::persistence::providers::MemoryStore;
@@ -14,11 +13,12 @@ static ARCHIVE_ID: AtomicU64 = AtomicU64::new(0);
 
 #[test]
 fn core_builder_preserves_one_typed_component_graph() {
-    let settings = Arc::new(ProtocolSettings::default());
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec");
     let storage = Arc::new(MemoryStore::new());
     let provider = Arc::new(StandardNativeProvider::new());
     let launch = NodeCoreBuilder::new(
-        Arc::clone(&settings),
+        Arc::clone(&chain_spec),
+        neo_mempool::TxPoolConfig::default(),
         Arc::clone(&storage),
         Arc::clone(&provider),
         Arc::new(NoopBlockCommitHooks),
@@ -35,11 +35,9 @@ fn core_builder_preserves_one_typed_component_graph() {
     ));
 
     let (network, _commands, _events) = NetworkHandle::channel(8, 8);
-    let node = core
-        .into_node(network)
-        .expect("the staged core contains every required node component");
+    let node = core.into_node(network);
 
-    assert!(Arc::ptr_eq(&settings, &node.settings()));
+    assert!(Arc::ptr_eq(&chain_spec, &node.chain_spec()));
     assert!(Arc::ptr_eq(&storage, &node.storage()));
     assert!(Arc::ptr_eq(&provider, &node.native_contract_provider()));
     assert!(Arc::ptr_eq(
@@ -63,7 +61,8 @@ fn core_builder_preserves_the_configured_cold_ledger_provider() {
     drop(archive);
 
     let launch = NodeCoreBuilder::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec"),
+        neo_mempool::TxPoolConfig::default(),
         Arc::new(MemoryStore::new()),
         Arc::new(StandardNativeProvider::new()),
         Arc::new(NoopBlockCommitHooks),
@@ -73,7 +72,7 @@ fn core_builder_preserves_the_configured_cold_ledger_provider() {
     .build();
     let (core, blockchain_task) = launch.into_parts();
     let (network, _commands, _events) = NetworkHandle::channel(8, 8);
-    let node = core.into_node(network).expect("compose node");
+    let node = core.into_node(network);
 
     assert!(node.ledger_provider_factory().cold().is_enabled());
 
@@ -95,16 +94,14 @@ fn composed_node_does_not_own_the_application_shutdown_token() {
         !node.contains("cancellation_token("),
         "Node must not expose a second shutdown authority"
     );
-    assert!(
-        !builder.contains("CancellationToken::new()"),
-        "NodeBuilder must not manufacture an unused lifecycle token"
-    );
+    assert!(!builder.contains("CancellationToken::new()"));
 }
 
 #[tokio::test]
 async fn blockchain_task_runs_behind_the_named_launch_boundary() {
     let launch = NodeCoreBuilder::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec"),
+        neo_mempool::TxPoolConfig::default(),
         Arc::new(MemoryStore::new()),
         Arc::new(StandardNativeProvider::new()),
         Arc::new(NoopBlockCommitHooks),

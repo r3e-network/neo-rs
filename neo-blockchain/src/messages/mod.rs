@@ -11,7 +11,6 @@
 //! ## Contents
 //!
 //! - `fill_completed`: fill-completed service event payload.
-//! - `fill_memory_pool`: memory-pool fill command payload.
 //! - `import`: block import command payload.
 //! - `import_completed`: block import completion event payload.
 //! - `inventory_payload`: inventory relay payload.
@@ -19,7 +18,6 @@
 //! - `reverify`: transaction reverification command payload.
 
 pub mod fill_completed;
-pub mod fill_memory_pool;
 pub mod import;
 pub mod import_completed;
 pub mod inventory_payload;

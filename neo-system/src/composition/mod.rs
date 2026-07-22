@@ -13,8 +13,6 @@
 //! - `core`: provider-neutral core service construction and staged launch.
 //! - `node`: composed node runtime and capability accessors.
 //! - `sync`: header, body, import, and live-inventory workflows.
-//! - `tx_admission_provider`: Ledger/native read seams for transaction
-//!   admission routing.
 //! - `wallet_provider`: wallet provider adapter.
 
 pub mod builder;
@@ -23,7 +21,6 @@ pub mod finality;
 pub mod node;
 pub mod sync;
 pub mod system_context;
-mod tx_admission_provider;
 pub mod wallet_provider;
 
 pub use builder::NodeBuilder;

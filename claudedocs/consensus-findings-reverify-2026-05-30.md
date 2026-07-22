@@ -1,5 +1,10 @@
 # Neo Consensus-Parity Re-Verification (24 findings)
 
+> **Historical record.** Status labels and source paths below apply to the
+> reviewed May 2026 revision. The external VM path was removed; workspace
+> `neo-vm` is now the sole semantic authority. Do not treat old `OPEN` labels
+> as the current backlog.
+
 ## 1. Headline Counts
 
 | Status | Count | Indices |

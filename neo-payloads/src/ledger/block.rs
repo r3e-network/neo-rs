@@ -4,7 +4,6 @@ use crate::{
 use neo_error::CoreResult;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::DataCache;
 use serde::{Deserialize, Serialize};
 
 /// Represents a block.
@@ -141,7 +140,7 @@ impl Block {
     }
 
     /// Calculates the network fee for the block.
-    pub fn calculate_network_fee(&self, _snapshot: &DataCache) -> i64 {
+    pub fn calculate_network_fee(&self) -> i64 {
         // Sum of all transaction network fees
         self.transactions.iter().map(|tx| tx.network_fee()).sum()
     }
@@ -225,10 +224,7 @@ impl Inventory for Block {
 impl crate::VerifiableExt for Block {
     /// C# `Block.GetScriptHashesForVerifying`: the single hash to verify is
     /// `Header.NextConsensus` — the address of the committee that must sign the block.
-    fn script_hashes_for_verifying<B: neo_storage::CacheRead>(
-        &self,
-        _snapshot: &DataCache<B>,
-    ) -> Vec<UInt160> {
+    fn script_hashes_for_verifying(&self) -> Vec<UInt160> {
         vec![*self.header.next_consensus()]
     }
 

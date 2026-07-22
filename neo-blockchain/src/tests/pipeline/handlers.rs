@@ -1,6 +1,5 @@
 use super::*;
 use crate::command::BlockchainCommand;
-use crate::fill_memory_pool::FillMemoryPool;
 use crate::handle::BlockchainHandle;
 use crate::header_cache::HeaderCache;
 use crate::ledger_context::LedgerContext;
@@ -11,6 +10,8 @@ use crate::relay_result::RelayResult;
 use crate::service::MempoolLike;
 use crate::service_context::SystemContext;
 use crate::{Import, ImportMode};
+use neo_config::{ChainSpecProvider, NeoChainSpec};
+use neo_mempool::{TransactionAdmissionError, TransactionAdmissionOutcome, TransactionOrigin};
 use neo_payloads::Block;
 use neo_payloads::InventoryType;
 use neo_payloads::Transaction;
@@ -19,6 +20,7 @@ use neo_primitives::verify_result::VerifyResult;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
+use neo_test_fixtures::test_chain_spec;
 use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use std::sync::Arc;
@@ -29,6 +31,26 @@ type NativeProviderArc = Arc<neo_native_contracts::StandardNativeProvider>;
 
 fn standard_native_provider() -> NativeProviderArc {
     Arc::new(neo_native_contracts::StandardNativeProvider::new())
+}
+
+fn default_chain_spec() -> Arc<NeoChainSpec> {
+    test_chain_spec(neo_config::ProtocolSettings::default())
+}
+
+fn chain_spec_for_settings(settings: &neo_config::ProtocolSettings) -> Arc<NeoChainSpec> {
+    test_chain_spec(settings.clone())
+}
+
+macro_rules! impl_chain_spec_provider_for_field {
+    ($context:ty) => {
+        impl ChainSpecProvider for $context {
+            type ChainSpec = NeoChainSpec;
+
+            fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+                Arc::clone(&self.chain_spec)
+            }
+        }
+    };
 }
 
 fn sign_header_for_test(
@@ -48,13 +70,18 @@ fn sign_header_for_test(
 
 #[derive(Debug)]
 struct TestContext;
+impl ChainSpecProvider for TestContext {
+    type ChainSpec = NeoChainSpec;
+
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        default_chain_spec()
+    }
+}
+
 impl SystemContext for TestContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
 
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::new(neo_config::ProtocolSettings::default())
-    }
     fn current_height(&self) -> u32 {
         0
     }
@@ -62,24 +89,43 @@ impl SystemContext for TestContext {
 
 #[derive(Debug, Default)]
 struct TestMempool;
-impl MempoolLike for TestMempool {
-    fn try_add<B: neo_storage::CacheRead>(
-        &self,
-        _tx: &Transaction,
-        _snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-    ) -> VerifyResult {
-        VerifyResult::Succeed
-    }
 
-    fn try_add_cached<B: neo_storage::CacheRead>(
+fn admission_outcome(
+    origin: TransactionOrigin,
+    transaction: &Transaction,
+    result: VerifyResult,
+) -> TransactionAdmissionOutcome {
+    let hash = transaction.try_hash().ok();
+    if result == VerifyResult::Succeed {
+        return match hash {
+            Some(hash) => TransactionAdmissionOutcome::Accepted { hash, origin },
+            None => TransactionAdmissionOutcome::Error {
+                hash: None,
+                origin,
+                error: TransactionAdmissionError::InvalidHash("test transaction hash".into()),
+            },
+        };
+    }
+    TransactionAdmissionOutcome::Rejected {
+        hash,
+        origin,
+        result,
+    }
+}
+
+impl MempoolLike for TestMempool {
+    fn add_transaction<B, L>(
         &self,
-        _tx: &Transaction,
+        origin: TransactionOrigin,
+        transaction: &Transaction,
         _snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-        _cached_state_independent: Option<VerifyResult>,
-    ) -> VerifyResult {
-        VerifyResult::Succeed
+        _ledger_provider: &L,
+    ) -> TransactionAdmissionOutcome
+    where
+        B: neo_storage::CacheRead,
+        L: neo_mempool::AdmissionLedgerProvider,
+    {
+        admission_outcome(origin, transaction, VerifyResult::Succeed)
     }
 }
 
@@ -88,23 +134,18 @@ struct FixedResultMempool {
     result: VerifyResult,
 }
 impl MempoolLike for FixedResultMempool {
-    fn try_add<B: neo_storage::CacheRead>(
+    fn add_transaction<B, L>(
         &self,
-        _tx: &Transaction,
+        origin: TransactionOrigin,
+        transaction: &Transaction,
         _snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-    ) -> VerifyResult {
-        self.result
-    }
-
-    fn try_add_cached<B: neo_storage::CacheRead>(
-        &self,
-        _tx: &Transaction,
-        _snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-        _cached_state_independent: Option<VerifyResult>,
-    ) -> VerifyResult {
-        self.result
+        _ledger_provider: &L,
+    ) -> TransactionAdmissionOutcome
+    where
+        B: neo_storage::CacheRead,
+        L: neo_mempool::AdmissionLedgerProvider,
+    {
+        admission_outcome(origin, transaction, self.result)
     }
 }
 
@@ -115,23 +156,18 @@ struct RecordingMempool {
     block_persisted_calls: Option<Arc<AtomicUsize>>,
 }
 impl MempoolLike for RecordingMempool {
-    fn try_add<B: neo_storage::CacheRead>(
+    fn add_transaction<B, L>(
         &self,
-        _tx: &Transaction,
+        origin: TransactionOrigin,
+        transaction: &Transaction,
         _snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-    ) -> VerifyResult {
-        VerifyResult::Succeed
-    }
-
-    fn try_add_cached<B: neo_storage::CacheRead>(
-        &self,
-        _tx: &Transaction,
-        _snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-        _cached_state_independent: Option<VerifyResult>,
-    ) -> VerifyResult {
-        VerifyResult::Succeed
+        _ledger_provider: &L,
+    ) -> TransactionAdmissionOutcome
+    where
+        B: neo_storage::CacheRead,
+        L: neo_mempool::AdmissionLedgerProvider,
+    {
+        admission_outcome(origin, transaction, VerifyResult::Succeed)
     }
 
     fn has_unverified_transactions(&self) -> bool {
@@ -219,9 +255,9 @@ fn store_header_verification_uses_system_native_provider() {
         .find("fn verify_consensus_witness_against_store")
         .expect("store-backed header verifier exists");
     let verifier_end = source[verifier_start..]
-        .find("fn verify_consensus_witness_against_snapshot")
+        .find("fn verify_import_block_with_pipeline")
         .map(|offset| verifier_start + offset)
-        .expect("snapshot verifier follows store verifier");
+        .expect("import verifier follows store verifier");
     let verifier = &source[verifier_start..verifier_end];
 
     assert!(
@@ -229,8 +265,8 @@ fn store_header_verification_uses_system_native_provider() {
         "store-backed header verification must use the provider exposed by SystemContext"
     );
     assert!(
-        verifier.contains("verify_consensus_witness_against_snapshot_with_native_provider"),
-        "store-backed header verification must route through the explicit-provider consensus-witness stage"
+        verifier.contains("verify_block_with_signature_cache"),
+        "store-backed header verification must retain the canonical cache-aware witness stage"
     );
 }
 
@@ -328,74 +364,35 @@ fn extensible_verification_uses_system_native_provider() {
 }
 
 #[test]
-fn transaction_admission_uses_system_native_provider() {
+fn transaction_admission_delegates_to_the_mempool_owned_validator() {
     let source = include_str!("../../handlers/transactions.rs");
-    let conflict_start = source
-        .find("fn persisted_conflict_exists")
-        .expect("transaction conflict helper exists");
-    let conflict_end = source[conflict_start..]
-        .find("pub(crate) fn reverify_mempool_after_persist")
-        .map(|offset| conflict_start + offset)
-        .expect("mempool reverify helper follows conflict helper");
-    let conflict_helper = &source[conflict_start..conflict_end];
-
     assert!(
-        conflict_helper.contains("TransactionNativeProvider"),
-        "persisted conflict checks should depend on a native read capability"
+        source.contains("TransactionAdmissionLedger::new"),
+        "the service should adapt its routed ledger view at the mempool boundary"
     );
     assert!(
-        conflict_helper.contains("self.system.native_contract_provider()"),
-        "persisted conflict checks should use the provider exposed by SystemContext"
+        source.contains("self.system.ledger_provider(snapshot.as_ref())"),
+        "transaction admission should use the ledger provider selected by SystemContext"
     );
     assert!(
-        !conflict_helper.contains("NativeTransactionProviderFactory"),
-        "persisted conflict checks must not create a second production native provider factory"
+        source.contains("self.mempool") && source.contains(".add_transaction(origin"),
+        "the blockchain service should invoke the single mempool admission operation"
     );
     assert!(
-        conflict_helper.contains("NativeTransactionProvider::new(native_contract_provider)"),
-        "persisted conflict checks should adapt the explicit native provider"
+        !source.contains("contains_transaction") && !source.contains("contains_conflict_hash"),
+        "the blockchain service must not duplicate persisted transaction checks"
     );
     assert!(
-        !conflict_helper.contains("PolicyContract::new()"),
-        "transaction admission must not construct PolicyContract directly in the handler"
+        !source.contains("verify_state_independent")
+            && !source.contains("verify_state_dependent")
+            && !source.contains("PolicyContract::new()"),
+        "validation and native policy reads belong exclusively to neo-mempool"
     );
     assert!(
-        conflict_helper.contains("self.system.ledger_provider"),
-        "persisted conflict checks should use the provider selected by SystemContext"
-    );
-    assert!(
-        conflict_helper.contains("ledger_provider: &impl TransactionStateProvider"),
-        "the conflict helper should depend on its narrow Ledger capability"
-    );
-    assert!(
-        !source.contains("StorageLedgerProviderFactory"),
-        "transaction admission ledger checks should not bypass the hot/cold provider boundary"
-    );
-
-    let provider_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/handlers/providers/transaction.rs");
-    let provider = std::fs::read_to_string(&provider_path)
-        .unwrap_or_else(|error| panic!("{}: {error}", provider_path.display()));
-    assert!(provider.contains("trait TransactionNativeProvider"));
-    assert!(
-        provider.contains("struct NativeTransactionProvider<P>"),
-        "transaction provider adapter should preserve the caller's concrete provider type"
-    );
-    assert!(
-        provider.contains("native_contract_provider: Arc<P>"),
-        "transaction provider adapter should own Arc<P>, not erase to dyn internally"
-    );
-    assert!(
-        !provider.contains("trait TransactionNativeProviderFactory"),
-        "transaction admission should adapt the node-composed NativeContractProvider instead of owning a private factory"
-    );
-    assert!(
-        !provider.contains("PolicyContract::new()"),
-        "transaction admission provider must resolve PolicyContract through the explicit native provider"
-    );
-    assert!(
-        provider.contains(".max_traceable_blocks(snapshot, settings)"),
-        "transaction admission provider should read MaxTraceableBlocks from the explicit NativeContractProvider capability"
+        !std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/handlers/providers/transaction.rs")
+            .exists(),
+        "the obsolete blockchain-owned transaction policy adapter must stay deleted"
     );
 }
 
@@ -427,6 +424,211 @@ fn header_inventory_verification_uses_system_native_provider() {
         !handler.contains("LedgerContract::new()"),
         "header inventory handling must not construct native LedgerContract directly"
     );
+}
+
+#[test]
+fn initialize_uses_system_native_resources_for_genesis_persist() {
+    let source = include_str!("../../handlers/initialize.rs");
+    let start = source
+        .find("pub(crate) async fn initialize")
+        .expect("initialize handler exists");
+    let initialize = &source[start..];
+
+    assert!(
+        initialize.contains("self.system.native_persist_resources()"),
+        "genesis initialization must preserve resources composed by SystemContext"
+    );
+    assert!(
+        initialize.contains("stage_block_natives_with_resources"),
+        "genesis initialization must use the provider-aware native persistence entry point"
+    );
+}
+
+fn fixture() -> (
+    BlockchainService<TestContext, TestMempool>,
+    BlockchainHandle,
+) {
+    let system = Arc::new(TestContext);
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    BlockchainService::with_defaults(system, ledger, header_cache, mempool)
+}
+
+fn fixture_with_mempool_result(
+    result: VerifyResult,
+) -> (
+    BlockchainService<StoreContext, FixedResultMempool>,
+    BlockchainHandle,
+    Arc<neo_storage::DataCache>,
+) {
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let system = Arc::new(StoreContext {
+        snapshot: Arc::clone(&snapshot),
+        chain_spec: default_chain_spec(),
+        requires_replay_artifacts: true,
+        state_service: None,
+        committing_application_executed_lengths: None,
+        committed_heights: None,
+        store_snapshot_calls: None,
+        commit_to_store_calls: None,
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(FixedResultMempool { result });
+    let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+    (service, handle, snapshot)
+}
+
+/// [`SystemContext`] over a shared in-memory store snapshot, so the
+/// native persistence pipeline actually runs.
+struct StoreContext {
+    snapshot: Arc<neo_storage::DataCache>,
+    chain_spec: Arc<NeoChainSpec>,
+    requires_replay_artifacts: bool,
+    state_service: Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>>,
+    committing_application_executed_lengths: Option<Arc<parking_lot::Mutex<Vec<usize>>>>,
+    committed_heights: Option<Arc<parking_lot::Mutex<Vec<u32>>>>,
+    store_snapshot_calls: Option<Arc<AtomicUsize>>,
+    commit_to_store_calls: Option<Arc<AtomicUsize>>,
+}
+impl_chain_spec_provider_for_field!(StoreContext);
+
+impl std::fmt::Debug for StoreContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoreContext").finish_non_exhaustive()
+    }
+}
+impl SystemContext for StoreContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
+
+    fn current_height(&self) -> u32 {
+        0
+    }
+    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
+        if let Some(calls) = &self.store_snapshot_calls {
+            calls.fetch_add(1, Ordering::SeqCst);
+        }
+        Some(Arc::clone(&self.snapshot))
+    }
+    fn native_contract_provider(&self) -> Option<NativeProviderArc> {
+        Some(standard_native_provider())
+    }
+    fn requires_replay_artifacts(
+        &self,
+        _block: &Block,
+        _context: crate::BlockPersistContext,
+    ) -> bool {
+        self.requires_replay_artifacts
+    }
+    fn block_committing(
+        &self,
+        block: &Block,
+        snapshot: &neo_storage::DataCache,
+        _application_executed_list: &[neo_payloads::ApplicationExecuted],
+    ) -> bool {
+        if let Some(lengths) = &self.committing_application_executed_lengths {
+            lengths.lock().push(_application_executed_list.len());
+        }
+        match &self.state_service {
+            Some(handler) => handler.on_committing(block.index(), snapshot),
+            None => true,
+        }
+    }
+    fn commit_to_store(&self) -> Result<(), String> {
+        if let Some(calls) = &self.commit_to_store_calls {
+            calls.fetch_add(1, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+    fn sync_batch_commit_policy(
+        &self,
+        _start_height: u32,
+        _end_height: u32,
+    ) -> crate::SyncBatchCommitPolicy {
+        if self.state_service.is_none() && self.committing_application_executed_lengths.is_none() {
+            crate::SyncBatchCommitPolicy::DeferredLive
+        } else {
+            crate::SyncBatchCommitPolicy::PerBlock
+        }
+    }
+    async fn block_finalized(
+        &self,
+        finalized: crate::FinalizedBlock<Self::CacheBacking>,
+    ) -> Result<(), String> {
+        if let Some(heights) = &self.committed_heights {
+            heights.lock().push(finalized.block().index());
+        }
+        Ok(())
+    }
+    fn allows_empty_block_fast_forward(&self) -> bool {
+        self.state_service.is_none() && self.committing_application_executed_lengths.is_none()
+    }
+}
+
+fn store_fixture() -> (
+    BlockchainService<StoreContext, TestMempool>,
+    BlockchainHandle,
+    Arc<neo_storage::DataCache>,
+) {
+    store_fixture_with(neo_config::ProtocolSettings::default())
+}
+
+fn real_mempool_store_fixture() -> (
+    BlockchainService<
+        StoreContext,
+        neo_mempool::MemoryPool<neo_native_contracts::StandardNativeProvider>,
+    >,
+    BlockchainHandle,
+    Arc<neo_storage::DataCache>,
+) {
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let chain_spec = default_chain_spec();
+    let system = Arc::new(StoreContext {
+        snapshot: Arc::clone(&snapshot),
+        chain_spec: Arc::clone(&chain_spec),
+        requires_replay_artifacts: true,
+        state_service: None,
+        committing_application_executed_lengths: None,
+        committed_heights: None,
+        store_snapshot_calls: None,
+        commit_to_store_calls: None,
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
+        chain_spec,
+        neo_mempool::TxPoolConfig::default(),
+        standard_native_provider(),
+    ));
+    let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+    (service, handle, snapshot)
+}
+
+fn store_fixture_with(
+    settings: neo_config::ProtocolSettings,
+) -> (
+    BlockchainService<StoreContext, TestMempool>,
+    BlockchainHandle,
+    Arc<neo_storage::DataCache>,
+) {
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let system = Arc::new(StoreContext {
+        snapshot: Arc::clone(&snapshot),
+        chain_spec: test_chain_spec(settings),
+        requires_replay_artifacts: true,
+        state_service: None,
+        committing_application_executed_lengths: None,
+        committed_heights: None,
+        store_snapshot_calls: None,
+        commit_to_store_calls: None,
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+    (service, handle, snapshot)
 }
 
 #[test]
@@ -649,9 +851,6 @@ fn optimistic_header_fallback_discards_suffix_after_deep_invalid_ticket() {
         })
         .expect("pool"),
     );
-    // Header 4 first encounters pressure after headers 1-3 are queued. The
-    // retry also reports pressure, selecting the synchronous fallback while
-    // the invalid header 2 and valid header 3 remain pending.
     pool.force_queue_full_on_submit_attempts(&[4, 5]);
     service.set_optimistic_signature_verification(Some(Arc::clone(&pool)));
 
@@ -664,169 +863,6 @@ fn optimistic_header_fallback_discards_suffix_after_deep_invalid_ticket() {
     assert_eq!(service.header_cache.hash_at(3), None);
     assert_eq!(service.header_cache.hash_at(4), None);
     assert_eq!(pool.metrics_snapshot().queue_full, 2);
-}
-
-#[test]
-fn initialize_uses_system_native_resources_for_genesis_persist() {
-    let source = include_str!("../../handlers/initialize.rs");
-    let start = source
-        .find("pub(crate) async fn initialize")
-        .expect("initialize handler exists");
-    let initialize = &source[start..];
-
-    assert!(
-        initialize.contains("self.system.native_persist_resources()"),
-        "genesis initialization must preserve resources composed by SystemContext"
-    );
-    assert!(
-        initialize.contains("stage_block_natives_with_resources"),
-        "genesis initialization must use the provider-aware native persistence entry point"
-    );
-}
-
-fn fixture() -> (
-    BlockchainService<TestContext, TestMempool>,
-    BlockchainHandle,
-) {
-    let system = Arc::new(TestContext);
-    let ledger = Arc::new(LedgerContext::default());
-    let header_cache = Arc::new(HeaderCache::default());
-    let mempool = Arc::new(TestMempool);
-    BlockchainService::with_defaults(system, ledger, header_cache, mempool)
-}
-
-fn fixture_with_mempool_result(
-    result: VerifyResult,
-) -> (
-    BlockchainService<TestContext, FixedResultMempool>,
-    BlockchainHandle,
-) {
-    let system = Arc::new(TestContext);
-    let ledger = Arc::new(LedgerContext::default());
-    let header_cache = Arc::new(HeaderCache::default());
-    let mempool = Arc::new(FixedResultMempool { result });
-    BlockchainService::with_defaults(system, ledger, header_cache, mempool)
-}
-
-/// [`SystemContext`] over a shared in-memory store snapshot, so the
-/// native persistence pipeline actually runs.
-struct StoreContext {
-    snapshot: Arc<neo_storage::DataCache>,
-    settings: Arc<neo_config::ProtocolSettings>,
-    requires_replay_artifacts: bool,
-    state_service: Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>>,
-    committing_application_executed_lengths: Option<Arc<parking_lot::Mutex<Vec<usize>>>>,
-    committed_heights: Option<Arc<parking_lot::Mutex<Vec<u32>>>>,
-    store_snapshot_calls: Option<Arc<AtomicUsize>>,
-    commit_to_store_calls: Option<Arc<AtomicUsize>>,
-}
-impl std::fmt::Debug for StoreContext {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StoreContext").finish_non_exhaustive()
-    }
-}
-impl SystemContext for StoreContext {
-    type NativeProvider = neo_native_contracts::StandardNativeProvider;
-    type CacheBacking = neo_storage::EmptyCacheBacking;
-
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
-    fn current_height(&self) -> u32 {
-        0
-    }
-    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
-        if let Some(calls) = &self.store_snapshot_calls {
-            calls.fetch_add(1, Ordering::SeqCst);
-        }
-        Some(Arc::clone(&self.snapshot))
-    }
-    fn native_contract_provider(&self) -> Option<NativeProviderArc> {
-        Some(standard_native_provider())
-    }
-    fn requires_replay_artifacts(
-        &self,
-        _block: &Block,
-        _context: crate::BlockPersistContext,
-    ) -> bool {
-        self.requires_replay_artifacts
-    }
-    fn block_committing(
-        &self,
-        block: &Block,
-        snapshot: &neo_storage::DataCache,
-        _application_executed_list: &[neo_payloads::ApplicationExecuted],
-    ) -> bool {
-        if let Some(lengths) = &self.committing_application_executed_lengths {
-            lengths.lock().push(_application_executed_list.len());
-        }
-        match &self.state_service {
-            Some(handler) => handler.on_committing(block.index(), snapshot),
-            None => true,
-        }
-    }
-    fn commit_to_store(&self) -> Result<(), String> {
-        if let Some(calls) = &self.commit_to_store_calls {
-            calls.fetch_add(1, Ordering::SeqCst);
-        }
-        Ok(())
-    }
-    fn sync_batch_commit_policy(
-        &self,
-        _start_height: u32,
-        _end_height: u32,
-    ) -> crate::SyncBatchCommitPolicy {
-        if self.state_service.is_none() && self.committing_application_executed_lengths.is_none() {
-            crate::SyncBatchCommitPolicy::DeferredLive
-        } else {
-            crate::SyncBatchCommitPolicy::PerBlock
-        }
-    }
-    async fn block_finalized(
-        &self,
-        finalized: crate::FinalizedBlock<Self::CacheBacking>,
-    ) -> Result<(), String> {
-        if let Some(heights) = &self.committed_heights {
-            heights.lock().push(finalized.block().index());
-        }
-        Ok(())
-    }
-    fn allows_empty_block_fast_forward(&self) -> bool {
-        self.state_service.is_none() && self.committing_application_executed_lengths.is_none()
-    }
-}
-
-fn store_fixture() -> (
-    BlockchainService<StoreContext, TestMempool>,
-    BlockchainHandle,
-    Arc<neo_storage::DataCache>,
-) {
-    store_fixture_with(neo_config::ProtocolSettings::default())
-}
-
-fn store_fixture_with(
-    settings: neo_config::ProtocolSettings,
-) -> (
-    BlockchainService<StoreContext, TestMempool>,
-    BlockchainHandle,
-    Arc<neo_storage::DataCache>,
-) {
-    let snapshot = Arc::new(neo_storage::DataCache::new(false));
-    let system = Arc::new(StoreContext {
-        snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(settings),
-        requires_replay_artifacts: true,
-        state_service: None,
-        committing_application_executed_lengths: None,
-        committed_heights: None,
-        store_snapshot_calls: None,
-        commit_to_store_calls: None,
-    });
-    let ledger = Arc::new(LedgerContext::default());
-    let header_cache = Arc::new(HeaderCache::default());
-    let mempool = Arc::new(TestMempool);
-    let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
-    (service, handle, snapshot)
 }
 
 fn store_fixture_with_state_service() -> (
@@ -844,7 +880,7 @@ fn store_fixture_with_state_service() -> (
     );
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         requires_replay_artifacts: false,
         state_service: Some(state_service),
         committing_application_executed_lengths: None,
@@ -880,7 +916,7 @@ fn store_fixture_recording_application_executed_lengths_with_policy(
     let lengths = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         requires_replay_artifacts,
         state_service: None,
         committing_application_executed_lengths: Some(Arc::clone(&lengths)),
@@ -905,7 +941,7 @@ fn store_fixture_counting_commits() -> (
     let commit_calls = Arc::new(AtomicUsize::new(0));
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
@@ -930,7 +966,7 @@ fn store_fixture_recording_committed_heights() -> (
     let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
@@ -969,7 +1005,7 @@ fn store_fixture_counting_snapshot_commits_and_committed_heights() -> (
     let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
@@ -1005,7 +1041,7 @@ fn store_fixture_counting_snapshot_and_commits_with(
     let commit_calls = Arc::new(AtomicUsize::new(0));
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
-        settings: Arc::new(settings),
+        chain_spec: test_chain_spec(settings),
         requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
@@ -1144,14 +1180,12 @@ fn dispatch_command_variants_is_exhaustive() {
         match _cmd {
             BlockchainCommand::Import(_) => unreachable!(),
             BlockchainCommand::ImportBlocks { .. } => unreachable!(),
-            BlockchainCommand::FillMemoryPool(_) => unreachable!(),
             BlockchainCommand::FillCompleted => unreachable!(),
             BlockchainCommand::Reverify(_) => unreachable!(),
             BlockchainCommand::ConsensusBlock { .. } => unreachable!(),
             BlockchainCommand::CheckedInventoryBlocks { .. } => unreachable!(),
             BlockchainCommand::ImportBlock { .. } => unreachable!(),
             BlockchainCommand::InventoryExtensible { .. } => unreachable!(),
-            BlockchainCommand::PreverifyCompleted(_) => unreachable!(),
             BlockchainCommand::ValidateHeaders { .. } => unreachable!(),
             BlockchainCommand::Idle => unreachable!(),
             BlockchainCommand::DrainUnverified => unreachable!(),
@@ -1173,6 +1207,7 @@ fn dispatch_command_variants_is_exhaustive() {
     let (tx, _rx) = oneshot::channel();
     let _add_tx = BlockchainCommand::AddTransaction {
         transaction: neo_payloads::Transaction::new(),
+        origin: TransactionOrigin::Local,
         reply: tx,
     };
     let (ibtx, _ibrx) = oneshot::channel();
@@ -1223,7 +1258,7 @@ fn dispatch_command_variants_is_exhaustive() {
     // count above. Bump this when adding a new variant and
     // add a corresponding arm in both `exhaustive_dispatch` and
     // `BlockchainService::dispatch` in `service.rs`.
-    const EXPECTED_VARIANTS: usize = 21;
+    const EXPECTED_VARIANTS: usize = 18;
     assert!(seen.len() <= EXPECTED_VARIANTS);
 
     // Keep the helper symbol alive so the dispatch table is not
@@ -1239,7 +1274,7 @@ fn reverify_mempool_after_persist_skips_snapshot_when_no_unverified_transactions
     let reverify_calls = Arc::new(AtomicUsize::new(0));
     let system = Arc::new(StoreContext {
         snapshot,
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        chain_spec: default_chain_spec(),
         requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,

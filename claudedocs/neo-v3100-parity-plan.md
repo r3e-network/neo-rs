@@ -1,5 +1,9 @@
 # Neo v3.10.0 parity plan (Rust node)
 
+> **Completed historical record.** This preserves the C# hardfork analysis and
+> landed migration evidence. Neo N3 v3.10.1 parity and full MainNet replay are
+> tracked by `openspec/changes/neo-vm-v3101-consensus-parity`.
+
 Source: 8-agent gap analysis of C# `v3.9.1...v3.10.0` (39 commits) mapped to neo-rs.
 Baseline ref = `neo_csharp/` @ v3.9.1. Gorgon already in Rust `HF_Gorgon` enum (idx 6).
 

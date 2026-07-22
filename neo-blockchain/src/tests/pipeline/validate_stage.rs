@@ -2,7 +2,7 @@ use super::*;
 
 use std::sync::Arc;
 
-use neo_config::ProtocolSettings;
+use neo_config::{ChainSpecProvider, NeoChainSpec, ProtocolSettings};
 use neo_payloads::{Block, Header, Transaction, Witness};
 use neo_primitives::UInt256;
 use neo_runtime::BlockOrigin;
@@ -12,18 +12,16 @@ use crate::pipeline::stage_traits::{PipelineStage, StageContext, StageId};
 
 #[derive(Debug)]
 struct MockValidateContext {
-    settings: Arc<ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     prev_hash: Option<UInt256>,
     prev_timestamp: Option<u64>,
-    validators_count: i32,
 }
 
 impl MockValidateContext {
     fn new() -> Self {
-        let settings = Arc::new(ProtocolSettings::default());
+        let settings = ProtocolSettings::default();
         Self {
-            validators_count: settings.validators_count,
-            settings,
+            chain_spec: neo_test_fixtures::test_chain_spec(settings),
             prev_hash: None,
             prev_timestamp: None,
         }
@@ -36,27 +34,26 @@ impl MockValidateContext {
     }
 
     fn with_settings(mut self, settings: ProtocolSettings) -> Self {
-        self.validators_count = settings.validators_count;
-        self.settings = Arc::new(settings);
+        self.chain_spec = neo_test_fixtures::test_chain_spec(settings);
         self
     }
 }
 
-impl ValidateContext for MockValidateContext {
-    fn settings(&self) -> Arc<ProtocolSettings> {
-        self.settings.clone()
-    }
+impl ChainSpecProvider for MockValidateContext {
+    type ChainSpec = NeoChainSpec;
 
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        Arc::clone(&self.chain_spec)
+    }
+}
+
+impl ValidateContext for MockValidateContext {
     fn prev_block_hash(&self, _height: u32) -> Option<UInt256> {
         self.prev_hash
     }
 
     fn prev_block_timestamp(&self, _height: u32) -> Option<u64> {
         self.prev_timestamp
-    }
-
-    fn validators_count(&self) -> i32 {
-        self.validators_count
     }
 }
 
@@ -106,6 +103,7 @@ fn validate_stage_id_is_validate() {
 #[test]
 fn validate_stage_owns_concrete_context_type() {
     let source = include_str!("../../pipeline/validate_stage.rs");
+    let context = include_str!("../../pipeline/validate_stage/context.rs");
 
     assert!(
         source.contains(
@@ -120,6 +118,15 @@ fn validate_stage_owns_concrete_context_type() {
     assert!(
         !source.contains("ctx: Arc<dyn ValidateContext>"),
         "owned homogeneous validate context should not be erased to dyn"
+    );
+    assert!(context.contains("ChainSpecProvider<ChainSpec = NeoChainSpec>"));
+    assert!(
+        !context.contains("fn settings(&self)"),
+        "validation contexts must expose the canonical chain spec instead of a second settings root"
+    );
+    assert!(
+        !context.contains("fn validators_count(&self)"),
+        "validator count must be derived from the canonical chain spec"
     );
 }
 
@@ -160,19 +167,44 @@ fn validate_stage_rejects_previous_hash_mismatch() {
 }
 
 #[test]
-fn validate_stage_uses_protocol_transaction_limit() {
+fn validate_stage_reads_validator_count_from_chain_spec() {
+    let mut settings = ProtocolSettings::default();
+    settings.validators_count = 1;
+    let mut block = empty_block(1, UInt256::default(), MIN_TIMESTAMP_MS + 15_000);
+    block.header.set_primary_index(1);
+    let stage = stage(MockValidateContext::new().with_settings(settings));
+
+    let error = stage
+        .execute(&stage_context(0), &block)
+        .expect_err("primary index outside the chain spec validator set must fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("Primary index 1 exceeds maximum validator count 1")
+    );
+}
+
+#[test]
+fn validate_stage_does_not_enforce_production_transaction_limit() {
     let mut settings = ProtocolSettings::default();
     settings.max_transactions_per_block = 1;
     let block = block_with_transactions(1, 2);
     let stage = stage(MockValidateContext::new().with_settings(settings));
-    let err = stage
+    stage
         .execute(&stage_context(0), &block)
-        .expect_err("protocol tx limit must fail");
+        .expect("production transaction limit must not reject a verified block");
+}
 
-    assert!(
-        err.to_string()
-            .contains("Transaction count 2 exceeds maximum 1")
-    );
+#[test]
+fn validate_stage_does_not_use_local_wall_clock_policy() {
+    let previous = MIN_TIMESTAMP_MS;
+    let block = empty_block(1, UInt256::default(), u64::MAX);
+    let stage = stage(MockValidateContext::new().with_prev(UInt256::default(), previous));
+
+    stage
+        .execute(&stage_context(0), &block)
+        .expect("future-dated signed headers are not rejected by local wall clock");
 }
 
 #[test]

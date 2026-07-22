@@ -1,5 +1,5 @@
 use super::*;
-use neo_config::Hardfork;
+use neo_config::{Hardfork, HardforkSchedule};
 use neo_primitives::{CallFlags, ContractParameterType};
 use neo_storage::StorageItem;
 use neo_vm::StackItem;
@@ -80,10 +80,14 @@ fn native_contract_surface() {
     assert_eq!(is_contract.cpu_fee, 1 << 14);
     assert_eq!(is_contract.active_in, Some(Hardfork::HfEchidna));
 
-    let mut hardforks = std::collections::HashMap::new();
-    hardforks.insert(Hardfork::HfEchidna, 100);
     let settings = neo_config::ProtocolSettings {
-        hardforks,
+        hardforks: HardforkSchedule::new().with_activations([
+            (Hardfork::HfAspidochelone, 0),
+            (Hardfork::HfBasilisk, 0),
+            (Hardfork::HfCockatrice, 0),
+            (Hardfork::HfDomovoi, 0),
+            (Hardfork::HfEchidna, 100),
+        ]),
         ..neo_config::ProtocolSettings::csharp_default()
     };
     let pre_echidna_state =

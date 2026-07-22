@@ -1,11 +1,11 @@
 use super::*;
-use neo_crypto::mpt_trie::{MptStoreLookup, NodeType};
 use neo_io::Serializable;
 use neo_storage::persistence::{
     RawOverlayCursor, RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store,
     StoreSnapshot, WriteStore,
 };
 use neo_storage::types::{StorageItem, StorageKey};
+use neo_trie::{MPT_NODE_PREFIX, MptStoreLookup, NodeType};
 use parking_lot::Mutex as ParkingMutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -446,7 +446,7 @@ impl Store for FailingReadStore {
 
 #[test]
 fn mpt_read_snapshot_and_state_root_reads_fail_closed_on_backing_io_errors() {
-    use neo_crypto::mpt_trie::MptStoreSnapshot;
+    use neo_trie::MptStoreSnapshot;
 
     let failing = Arc::new(FailingReadSnapshot::default());
     let snapshot = MptReadSnapshot::<FailingReadStore> {
@@ -671,10 +671,6 @@ impl Store for RecordingRawOverlayStore {
     }
 }
 
-/// `0xf0`, the MPT-node key prefix used by `neo_crypto::mpt_trie`
-/// and the C# `Cache`.
-const NODE_PREFIX: u8 = 0xf0;
-
 fn storage_key(id: i32, suffix: &[u8]) -> Vec<u8> {
     let mut key = id.to_le_bytes().to_vec();
     key.extend_from_slice(suffix);
@@ -699,7 +695,7 @@ fn node_entry_count(store: &MptStore) -> usize {
         .kv
         .read()
         .keys()
-        .filter(|key| key.len() == 33 && key[0] == NODE_PREFIX)
+        .filter(|key| key.len() == 33 && key[0] == MPT_NODE_PREFIX)
         .count()
 }
 
@@ -830,7 +826,7 @@ fn backing_snapshot_mpt_reads_use_borrowed_key_lookup() {
 
 #[test]
 fn authoritative_node_snapshot_wins_over_stale_backing_and_keeps_metadata_separate() {
-    use neo_crypto::mpt_trie::MptStoreSnapshot;
+    use neo_trie::MptStoreSnapshot;
 
     let present_key = mpt_node_key(0x31);
     let absent_key = mpt_node_key(0x32);
@@ -884,7 +880,7 @@ fn authoritative_node_snapshot_wins_over_stale_backing_and_keeps_metadata_separa
 
 #[test]
 fn authoritative_node_snapshot_errors_and_batch_misses_never_fall_back() {
-    use neo_crypto::mpt_trie::MptStoreSnapshot;
+    use neo_trie::MptStoreSnapshot;
 
     let first = mpt_node_key(0x41);
     let second = mpt_node_key(0x42);
@@ -1331,7 +1327,7 @@ fn kv_layout_matches_csharp_key_scheme() {
     // MPT nodes live under 0xf0 || node hash.
     assert!(
         kv.keys()
-            .any(|key| key.len() == 33 && key[0] == NODE_PREFIX),
+            .any(|key| key.len() == 33 && key[0] == MPT_NODE_PREFIX),
         "trie nodes must be persisted under the 0xf0 prefix"
     );
 }
@@ -1656,7 +1652,7 @@ fn durable_full_state_repeated_leaf_payload_preserves_reference_count() {
     expected_leaf.reference = 3;
     let leaf_hash = expected_leaf.try_hash().expect("leaf hash");
     let mut node_key = Vec::with_capacity(1 + UINT256_SIZE);
-    node_key.push(NODE_PREFIX);
+    node_key.push(MPT_NODE_PREFIX);
     node_key.extend_from_slice(&leaf_hash.to_array());
 
     let durable_bytes = backing
@@ -1909,7 +1905,7 @@ fn full_state_batch_namespace_matches_eager_bytes() {
             nodes: &mut std::collections::BTreeMap<Vec<u8>, Vec<u8>>,
         ) {
             let mut key = Vec::with_capacity(1 + UINT256_SIZE);
-            key.push(NODE_PREFIX);
+            key.push(MPT_NODE_PREFIX);
             key.extend_from_slice(&hash.to_array());
             if nodes.contains_key(&key) {
                 return;
@@ -2976,7 +2972,7 @@ fn fused_cursor_resolution_matches_classic_deferred_finalization_bytes() {
     let saw_accumulated_reference = classic_entries.iter().any(|(key, value)| {
         key.len() == 1 + 32
             && key[0] == 0xF0
-            && neo_crypto::mpt_trie::Node::split_serialized_reference(value)
+            && neo_trie::Node::split_serialized_reference(value)
                 .map(|(_, reference, _)| reference > 1)
                 .unwrap_or(false)
     });

@@ -653,61 +653,6 @@ fn cursor_backed_raw_overlay_preserves_put_update_and_delete_semantics() {
 }
 
 #[test]
-fn merge_cursor_overlay_preserves_put_update_delete_and_missing_key_semantics() {
-    let tmp = TempDir::new().expect("tempdir");
-    let mut store = open_store(&tmp, "merge-cursor-overlay");
-    for (key, value) in [
-        (b"a".as_slice(), b"old-a".as_slice()),
-        (b"delete".as_slice(), b"old-delete".as_slice()),
-        (b"z".as_slice(), b"old-z".as_slice()),
-    ] {
-        store
-            .put(key.to_vec(), value.to_vec())
-            .expect("seed merge-cursor row");
-    }
-
-    store
-        .commit_raw_overlay_merge_for_test([
-            (b"a".as_slice(), Some(b"new-a".as_slice())),
-            (b"delete".as_slice(), None),
-            (b"missing".as_slice(), None),
-            (b"new".as_slice(), Some(b"new-value".as_slice())),
-            (b"z".as_slice(), Some(b"new-z".as_slice())),
-        ])
-        .expect("commit merge cursor overlay");
-
-    assert_eq!(store.try_get_bytes(b"a"), Some(b"new-a".to_vec()));
-    assert_eq!(store.try_get_bytes(b"delete"), None);
-    assert_eq!(store.try_get_bytes(b"missing"), None);
-    assert_eq!(store.try_get_bytes(b"new"), Some(b"new-value".to_vec()));
-    assert_eq!(store.try_get_bytes(b"z"), Some(b"new-z".to_vec()));
-}
-
-#[test]
-fn merge_cursor_overlay_handles_empty_and_end_of_table_inserts() {
-    let tmp = TempDir::new().expect("tempdir");
-    let empty = open_store(&tmp, "merge-cursor-empty");
-    empty
-        .commit_raw_overlay_merge_for_test([
-            (b"missing".as_slice(), None),
-            (b"inserted".as_slice(), Some(b"value".as_slice())),
-        ])
-        .expect("commit into empty merge-cursor table");
-    assert_eq!(empty.try_get_bytes(b"inserted"), Some(b"value".to_vec()));
-
-    let mut tail = open_store(&tmp, "merge-cursor-tail");
-    tail.put(b"last".to_vec(), b"old".to_vec())
-        .expect("seed merge-cursor tail row");
-    tail.commit_raw_overlay_merge_for_test([
-        (b"last".as_slice(), None),
-        (b"tail".as_slice(), Some(b"new".as_slice())),
-    ])
-    .expect("commit after deleting merge-cursor tail row");
-    assert_eq!(tail.try_get_bytes(b"last"), None);
-    assert_eq!(tail.try_get_bytes(b"tail"), Some(b"new".to_vec()));
-}
-
-#[test]
 fn raw_overlay_commit_metrics_cover_phases_entries_and_bytes() {
     let before = MdbxCommitMetrics::snapshot();
     let tmp = TempDir::new().expect("tempdir");

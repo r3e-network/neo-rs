@@ -36,9 +36,6 @@ where
                 let result = self.handle_import(import).await;
                 let _ = reply.send(result);
             }
-            BlockchainCommand::FillMemoryPool(fill) => {
-                self.handle_fill_memory_pool(fill).await;
-            }
             BlockchainCommand::FillCompleted => {}
             BlockchainCommand::Reverify(reverify) => {
                 self.handle_reverify(reverify).await;
@@ -68,9 +65,6 @@ where
             BlockchainCommand::InventoryExtensible { payload, relay } => {
                 let _ = self.handle_extensible_inventory(payload, relay).await;
             }
-            BlockchainCommand::PreverifyCompleted(preverify) => {
-                self.handle_preverify_completed(preverify).await;
-            }
             BlockchainCommand::ValidateHeaders { headers, reply } => {
                 let outcome = self.handle_headers(headers);
                 let _ = reply.send(outcome);
@@ -88,8 +82,12 @@ where
                 let _ = reply.send(self.initialize().await);
             }
             BlockchainCommand::Shutdown => {}
-            BlockchainCommand::AddTransaction { transaction, reply } => {
-                let _ = reply.send(self.add_transaction(transaction).await);
+            BlockchainCommand::AddTransaction {
+                transaction,
+                origin,
+                reply,
+            } => {
+                let _ = reply.send(self.add_transaction(origin, transaction).await);
             }
             BlockchainCommand::GetHeight { reply } => {
                 let _ = reply.send(self.ledger.current_height());

@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use neo_crypto::mpt_trie::Trie;
 use neo_primitives::UInt256;
 use neo_storage::persistence::Store;
+use neo_trie::Trie;
 
 use crate::{MptReadSnapshot, MptStore};
 

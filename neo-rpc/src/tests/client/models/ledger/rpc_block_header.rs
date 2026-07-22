@@ -1,5 +1,5 @@
-use super::super::test_fixtures::rpc_case_result;
 use super::*;
+use crate::types::test_fixtures::rpc_case_result;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use neo_serialization::json::{JArray, JToken};
 

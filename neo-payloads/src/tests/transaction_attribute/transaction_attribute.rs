@@ -1,9 +1,7 @@
 use super::*;
 use crate::Transaction;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_primitives::{TransactionAttributeType, UInt160, UInt256, WitnessScope};
-use neo_storage::{DataCache, StorageItem, StorageKey};
-use num_bigint::BigInt;
+use neo_primitives::{UInt160, UInt256, WitnessScope};
 
 fn sample_attributes() -> Vec<TransactionAttribute> {
     vec![
@@ -54,14 +52,6 @@ fn multiplicity_matches_attribute_type_table() {
 
 #[test]
 fn network_fee_uses_policy_attribute_fee_like_csharp() {
-    let snapshot = DataCache::new(false);
-    snapshot.add(
-        StorageKey::new(
-            -7,
-            vec![20, TransactionAttributeType::NotaryAssisted.to_byte()],
-        ),
-        StorageItem::from_bytes(BigInt::from(1_000_000i64).to_signed_bytes_le()),
-    );
     let mut tx = Transaction::new();
     tx.set_signers(vec![crate::Signer::new(
         UInt160::zero(),
@@ -70,7 +60,7 @@ fn network_fee_uses_policy_attribute_fee_like_csharp() {
     let attribute = TransactionAttribute::NotaryAssisted(NotaryAssisted::new(4));
 
     assert_eq!(
-        attribute.calculate_network_fee(&snapshot, &tx),
+        attribute.calculate_network_fee(1_000_000, &tx),
         5_000_000,
         "C# NotaryAssisted.CalculateNetworkFee returns (NKeys + 1) * Policy.GetAttributeFeeV1"
     );

@@ -1,9 +1,9 @@
 //! # Node Capabilities
 //!
-//! This module defines [`NodeTypes`] (protocol primitives) and the active
-//! provider-trait decoupling layer ([`StoreProvider`], [`ConfigProvider`],
-//! [`TxAdmission`]) that lets L6 crates depend on L3 traits instead of the
-//! concrete `neo_system::Node`.
+//! This module defines the active provider-trait decoupling layer
+//! ([`StoreProvider`] and [`TxAdmission`]) that lets upper-layer services
+//! depend on narrow runtime capabilities instead of the concrete
+//! `neo_system::Node`.
 //!
 //! ## Boundary
 //!
@@ -12,8 +12,8 @@
 //!
 //! ## Contents
 //!
-//! - `types`: node type bundle and provider capability traits.
+//! - `providers`: storage and transaction-admission capability traits.
 
-mod types;
+mod providers;
 
-pub use types::{ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmission};
+pub use providers::{StoreProvider, TxAdmission};

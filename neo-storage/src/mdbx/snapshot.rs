@@ -9,10 +9,7 @@ use crate::persistence::{
 };
 use libmdbx::{RO, Table, Transaction};
 use parking_lot::RwLock;
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, OnceLock},
-};
+use std::{collections::BTreeMap, sync::Arc};
 use tracing::{error, info};
 
 type WriteBatch = Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>;
@@ -22,7 +19,6 @@ type WriteBatch = Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>;
 /// Dense StateService finalization batches often sit in the 4k–12k key range
 /// during catch-up; a 16k floor left those hot batches serial on a single cursor.
 const PARALLEL_BATCH_READ_MIN_KEYS: usize = 4_096;
-const MAX_PARALLEL_BATCH_READERS: usize = 16;
 
 /// Mutable point-in-time snapshot over an MDBX store.
 pub struct MdbxSnapshot {
@@ -123,7 +119,7 @@ impl MdbxSnapshot {
     where
         K: AsRef<[u8]>,
     {
-        self.read_entries_with_parallelism(keys, batch_read_parallelism())
+        self.read_entries_with_parallelism(keys, 1)
     }
 
     fn read_entries_with_parallelism<K>(
@@ -330,36 +326,6 @@ impl MdbxSnapshot {
     }
 }
 
-fn batch_read_parallelism() -> usize {
-    static PARALLELISM: OnceLock<usize> = OnceLock::new();
-    *PARALLELISM.get_or_init(|| {
-        // Default remains serial: multi-run A/B on dense MainNet windows
-        // (NEO_MDBX_BATCH_READ_THREADS=4 vs 1) measured a ~5% dense-window
-        // regression on this host while preserving official roots. Parallelism
-        // stays opt-in for cold/high-height experiments.
-        std::env::var("NEO_MDBX_BATCH_READ_THREADS")
-            .ok()
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(1)
-            .clamp(1, MAX_PARALLEL_BATCH_READERS)
-    })
-}
-
-fn write_intent_batch_read_parallelism() -> usize {
-    static PARALLELISM: OnceLock<usize> = OnceLock::new();
-    *PARALLELISM.get_or_init(|| {
-        // Write-intent reads are the sparse, content-addressed lookup set used
-        // immediately before an MPT overlay commit. Keep this override
-        // separate from ordinary/pruning reads, whose parallel A/B regressed.
-        std::env::var("NEO_MDBX_WRITE_INTENT_READ_THREADS")
-            .ok()
-            .or_else(|| std::env::var("NEO_MDBX_BATCH_READ_THREADS").ok())
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(1)
-            .clamp(1, MAX_PARALLEL_BATCH_READERS)
-    })
-}
-
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MdbxSnapshot {
     type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
 
@@ -437,7 +403,7 @@ impl RawReadOnlyStore for MdbxSnapshot {
                     read_tx,
                     data_table,
                     &candidate_keys,
-                    batch_read_parallelism(),
+                    1,
                 )?;
                 if values.len() != candidate_indices.len() {
                     return Err(crate::StorageError::backend(
@@ -451,7 +417,7 @@ impl RawReadOnlyStore for MdbxSnapshot {
                 return Ok(results);
             }
         }
-        self.read_entries_sorted_authoritative(read_tx, data_table, keys, batch_read_parallelism())
+        self.read_entries_sorted_authoritative(read_tx, data_table, keys, 1)
     }
 
     fn try_get_many_bytes_sorted_for_write<K>(
@@ -470,12 +436,7 @@ impl RawReadOnlyStore for MdbxSnapshot {
         // traversed the same B-tree pages before the writer arrives. Using
         // the occupancy bitmap would save reads but makes the subsequent
         // cursor writes cold on large full-state batches.
-        self.read_entries_sorted_authoritative(
-            read_tx,
-            data_table,
-            keys,
-            write_intent_batch_read_parallelism(),
-        )
+        self.read_entries_sorted_authoritative(read_tx, data_table, keys, 1)
     }
 }
 

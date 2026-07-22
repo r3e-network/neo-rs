@@ -16,7 +16,6 @@ description = "Cryptographic utilities for Neo blockchain (hashing, ECC, signatu
 [dependencies]
 # Internal crates
 neo-primitives = { workspace = true }
-neo-io = { workspace = true }
 
 # Hashing
 sha2 = { workspace = true }
@@ -26,7 +25,6 @@ blake2 = { workspace = true }
 blake2b_simd = { workspace = true }
 blst = { workspace = true }
 murmur3 = { workspace = true }
-rustc-hash = { workspace = true }
 bitvec = { workspace = true }
 hmac = { workspace = true }
 num-bigint = { workspace = true }
@@ -54,7 +52,6 @@ thiserror = { workspace = true }
 # Constant-time operations and secure memory handling
 subtle = { workspace = true }
 zeroize = { workspace = true }
-parking_lot = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_payloads::{Block, Header, Transaction};
 use neo_storage::SeekDirection;
+use neo_test_fixtures::test_chain_spec;
 
 use crate::empty_block_fast_forward::EmptyBlockFastForwardRequest;
 use crate::native_persist::{NativePersistOptions, NativePersistResources};
@@ -316,7 +317,7 @@ fn planner_rejects_empty_blocks_with_non_zero_merkle_root() {
 fn planner_rejects_native_initialization_or_manifest_refresh_height() {
     let resources = standard_resources();
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 2);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 2);
     let blocks = vec![empty_block(1), empty_block(2)];
 
     let err = plan_empty_block_fast_forward(EmptyBlockFastForwardRequest {
@@ -438,7 +439,9 @@ fn fast_forward_empty_blocks_matches_normal_persist_store_dump_between_refreshes
 
     let normal = Arc::new(neo_storage::DataCache::new(false));
     let fast = Arc::new(neo_storage::DataCache::new(false));
-    let genesis = Arc::new(crate::native_persist::genesis_block(&settings).expect("genesis"));
+    let genesis = Arc::new(
+        crate::native_persist::genesis_block(&test_chain_spec(settings.clone())).expect("genesis"),
+    );
     let block1 = empty_child(&genesis, 1);
     let block2 = empty_child(&block1, 2);
     let block3 = empty_child(&block2, 3);
@@ -523,7 +526,9 @@ fn fast_forward_empty_blocks_matches_normal_persist_across_multiple_gas_changes(
 
     let normal = Arc::new(neo_storage::DataCache::new(false));
     let fast = Arc::new(neo_storage::DataCache::new(false));
-    let genesis = Arc::new(crate::native_persist::genesis_block(&settings).expect("genesis"));
+    let genesis = Arc::new(
+        crate::native_persist::genesis_block(&test_chain_spec(settings.clone())).expect("genesis"),
+    );
     persist_block_with_resources(
         Arc::clone(&normal),
         Arc::clone(&genesis),
@@ -593,7 +598,9 @@ fn fast_forward_empty_blocks_matches_normal_persist_across_committee_refresh() {
 
     let normal = Arc::new(neo_storage::DataCache::new(false));
     let fast = Arc::new(neo_storage::DataCache::new(false));
-    let genesis = Arc::new(crate::native_persist::genesis_block(&settings).expect("genesis"));
+    let genesis = Arc::new(
+        crate::native_persist::genesis_block(&test_chain_spec(settings.clone())).expect("genesis"),
+    );
     persist_block_with_resources(
         Arc::clone(&normal),
         Arc::clone(&genesis),
@@ -669,7 +676,9 @@ fn fast_forward_empty_blocks_matches_normal_persist_across_multiple_committee_re
 
     let normal = Arc::new(neo_storage::DataCache::new(false));
     let fast = Arc::new(neo_storage::DataCache::new(false));
-    let genesis = Arc::new(crate::native_persist::genesis_block(&settings).expect("genesis"));
+    let genesis = Arc::new(
+        crate::native_persist::genesis_block(&test_chain_spec(settings.clone())).expect("genesis"),
+    );
     persist_block_with_resources(
         Arc::clone(&normal),
         Arc::clone(&genesis),

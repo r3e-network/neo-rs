@@ -45,6 +45,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+neo-test-fixtures = { workspace = true }
 num-bigint = { workspace = true }
 tempfile = { workspace = true }
 

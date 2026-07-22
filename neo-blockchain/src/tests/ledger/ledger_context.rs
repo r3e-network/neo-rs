@@ -1,18 +1,4 @@
 use super::*;
-use neo_payloads::signer::Signer;
-use neo_payloads::witness::Witness;
-use neo_primitives::{UInt160, WitnessScope};
-
-fn make_signed_transaction() -> Transaction {
-    let mut tx = Transaction::new();
-    tx.set_valid_until_block(10);
-    tx.add_signer(Signer::new(
-        UInt160::default(),
-        WitnessScope::CALLED_BY_ENTRY,
-    ));
-    tx.add_witness(Witness::new());
-    tx
-}
 
 #[test]
 fn record_tip_tracks_highest_index() {
@@ -21,15 +7,6 @@ fn record_tip_tracks_highest_index() {
     ledger.record_tip(5);
     ledger.record_tip(12);
     assert_eq!(ledger.current_height(), 12);
-}
-
-#[test]
-fn insert_and_get_transaction() {
-    let ledger = LedgerContext::default();
-    let tx = make_signed_transaction();
-    let hash = tx.hash();
-    ledger.insert_transaction(tx).expect("insert");
-    assert!(ledger.get_transaction(&hash).is_some());
 }
 
 #[test]

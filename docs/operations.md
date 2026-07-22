@@ -49,7 +49,7 @@ The daemon accepts a small, fixed set of flags; everything else lives in TOML.
 | Flag | Purpose |
 |------|---------|
 | `--config`, `-c <PATH>` | Path to the TOML node configuration file. |
-| `--network-magic <U32>` | Override the network magic (must match the rest of the network). Wins over the config/preset. |
+| `--network-magic <U32>` | Assert the selected built-in chain's network magic; a mismatch is rejected. |
 | `--storage-path <PATH>` | Override the persistent data directory for the configured/default backend. |
 | `--check-config` | Validate configuration and exit without starting services. |
 | `--check-storage` | Open the configured storage backend, confirm it is reachable/writable, and exit. |
@@ -301,7 +301,7 @@ journalctl -u neo-node -f
 
 ### Docker
 
-A multi-stage `Dockerfile` builds the daemon (`cargo build --release -p neo-node`) onto a slim Debian runtime as a non-root `neo` user, and a `docker-compose.yml` is provided. The container exposes MainNet (`10332`/`10333`), TestNet (`20332`/`20333`), and private-net (`30332`/`30333`) ports and persists state under the `/data` volume.
+A multi-stage `Dockerfile` builds the daemon (`cargo build --release -p neo-node`) onto a slim Debian runtime as a non-root `neo` user, and a `docker-compose.yml` is provided. The Compose service publishes MainNet (`10332`/`10333`) and TestNet (`20332`/`20333`) ports and persists state under the `/data` volume. The daemon currently accepts only those validated built-in chain specifications.
 
 The canonical `neo-vm` implementation is a workspace crate, so Docker, CI, and
 local builds compile the same source and lockfile without a sibling VM checkout
@@ -366,7 +366,7 @@ docker inspect --format='{{.State.Health.Status}}' neo-node
 
 | Section | Key keys | Notes |
 |---------|----------|-------|
-| `[network]` | `network_magic`, `network_type` | Selects the chain. `--network-magic` overrides. |
+| `[network]` | `network_magic`, `network_type` | Selects an immutable built-in chain; magic values are assertions, not overrides. |
 | `[storage]` | `backend`, `data_dir`, `read_only`, `static_files_dir`, static-file compression/cache/segment/recovery limits | `backend = "mdbx"` is the production persistent backend; `memory` is ephemeral and also supports remote-ledger mode. Setting `static_files_dir` enables the precommit-durable compressed Ledger archive, bounded height-addressed segments, a global `ledger.static.index/` MDBX offset index, watermark-aware canonical reconciliation, a kernel-held single-writer lease, and the shared historical fallback used by blockchain, consensus, P2P, transaction-admission, wallet, and RPC reads. Archived hot rows older than the initial protocol `MaxTraceableBlocks` window are pruned automatically; `CurrentBlock` remains hot. |
 | `[p2p]` | `port`, `bind_address`, `seed_nodes`, `max_connections`, `min_desired_connections`, `max_connections_per_address` | `bind_address` defaults to `0.0.0.0`; `max_connections = -1` means unlimited (C# parity). |
 | `[rpc]` | `enabled`, `port`, `bind_address`, `rpc_user`, `rpc_pass`, `disabled_methods`, limits | The daemon wires these into `neo-rpc` at startup. Built-in Basic auth protects HTTP RPC when credentials are configured; use a proxy for TLS and network-level policy. |

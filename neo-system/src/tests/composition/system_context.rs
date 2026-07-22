@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use neo_blockchain::SystemContext;
-use neo_config::ProtocolSettings;
+use neo_config::ChainSpecProvider;
 use neo_execution::ExecutionArtifactLimits;
 use neo_execution::specialization::SpecializationControl;
 use neo_native_contracts::StandardNativeProvider;
@@ -50,12 +50,29 @@ where
 }
 
 #[test]
+fn context_exposes_the_canonical_chain_spec() {
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec");
+    let store = Arc::new(MemoryStore::new());
+    let store_cache = StoreCache::new_from_store(store, false);
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+    let context = NodeSystemContext::new(
+        Arc::clone(&chain_spec),
+        snapshot,
+        store_cache,
+        Arc::new(StandardNativeProvider::new()),
+        Arc::new(NoopBlockCommitHooks),
+    );
+
+    assert!(Arc::ptr_eq(&chain_spec, &context.chain_spec()));
+}
+
+#[test]
 fn commit_to_store_flushes_the_canonical_snapshot() {
     let store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let context = NodeSystemContext::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec"),
         Arc::clone(&snapshot),
         store_cache,
         Arc::new(StandardNativeProvider::new()),
@@ -85,7 +102,7 @@ fn context_exposes_the_composed_native_provider() {
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let provider = Arc::new(StandardNativeProvider::new());
     let context = NodeSystemContext::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec"),
         snapshot,
         store_cache,
         Arc::clone(&provider),
@@ -114,7 +131,7 @@ fn context_reuses_composed_specialization_control_across_resource_requests() {
     .with_specialization_shadow(control.clone(), artifact_limits);
     let provider = resources.provider();
     let context = NodeSystemContext::new_with_ledger_provider_and_optional_native_persist_resources(
-        Arc::new(ProtocolSettings::default()),
+        neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec"),
         snapshot,
         store_cache,
         provider,
@@ -150,14 +167,14 @@ fn context_reuses_composed_specialization_control_across_resource_requests() {
 
 #[test]
 fn replay_artifact_policy_is_owned_by_composed_commit_hooks() {
-    let settings = Arc::new(ProtocolSettings::default());
-    let block = neo_blockchain::genesis_block(settings.as_ref()).expect("genesis block");
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec");
+    let block = neo_blockchain::genesis_block(chain_spec.as_ref()).expect("genesis block");
 
     let observer_free_store = Arc::new(MemoryStore::new());
     let observer_free_cache = StoreCache::new_from_store(observer_free_store, false);
     let observer_free_snapshot = Arc::new(observer_free_cache.data_cache().clone());
     let observer_free = NodeSystemContext::new(
-        Arc::clone(&settings),
+        Arc::clone(&chain_spec),
         observer_free_snapshot,
         observer_free_cache,
         Arc::new(StandardNativeProvider::new()),
@@ -172,7 +189,7 @@ fn replay_artifact_policy_is_owned_by_composed_commit_hooks() {
     let conservative_cache = StoreCache::new_from_store(conservative_store, false);
     let conservative_snapshot = Arc::new(conservative_cache.data_cache().clone());
     let conservative = NodeSystemContext::new(
-        settings,
+        chain_spec,
         conservative_snapshot,
         conservative_cache,
         Arc::new(StandardNativeProvider::new()),
@@ -189,7 +206,7 @@ fn sync_batch_policy_is_owned_by_composed_commit_hooks() {
     let observer_free_cache = StoreCache::new_from_store(observer_free_store, false);
     let observer_free_snapshot = Arc::new(observer_free_cache.data_cache().clone());
     let observer_free = NodeSystemContext::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec"),
         observer_free_snapshot,
         observer_free_cache,
         Arc::new(StandardNativeProvider::new()),
@@ -204,7 +221,7 @@ fn sync_batch_policy_is_owned_by_composed_commit_hooks() {
     let conservative_cache = StoreCache::new_from_store(conservative_store, false);
     let conservative_snapshot = Arc::new(conservative_cache.data_cache().clone());
     let conservative = NodeSystemContext::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec"),
         conservative_snapshot,
         conservative_cache,
         Arc::new(StandardNativeProvider::new()),
@@ -223,7 +240,7 @@ fn durable_commit_outcome_is_reported_to_application_hooks() {
     let writable_snapshot = Arc::new(writable_cache.data_cache().clone());
     let success_hooks = Arc::new(RecordingCommitHooks::default());
     let writable_context = NodeSystemContext::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec"),
         writable_snapshot,
         writable_cache,
         Arc::new(StandardNativeProvider::new()),
@@ -242,7 +259,7 @@ fn durable_commit_outcome_is_reported_to_application_hooks() {
     let read_only_snapshot = Arc::new(read_only_cache.data_cache().clone());
     let failure_hooks = Arc::new(RecordingCommitHooks::default());
     let read_only_context = NodeSystemContext::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec"),
         read_only_snapshot,
         read_only_cache,
         Arc::new(StandardNativeProvider::new()),
@@ -265,7 +282,7 @@ fn observer_durability_failure_prevents_canonical_store_commit() {
     let key = StorageKey::new(-1, vec![0xFE]);
     snapshot.add(key.clone(), StorageItem::from_bytes(vec![0x01]));
     let context = NodeSystemContext::new(
-        Arc::new(ProtocolSettings::default()),
+        neo_config::NeoChainSpec::mainnet().expect("mainnet chain spec"),
         Arc::clone(&snapshot),
         store_cache,
         Arc::new(StandardNativeProvider::new()),

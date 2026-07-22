@@ -31,7 +31,7 @@ where
                 block,
                 current_height,
                 trusted_replay,
-                Arc::clone(&resources.settings),
+                Arc::clone(&resources.chain_spec),
                 Arc::clone(&resources.snapshot),
                 resources.native_persist.provider(),
                 signature_preverification,
@@ -52,7 +52,7 @@ where
                 block,
                 current_height,
                 trusted_replay,
-                self.system.settings(),
+                self.system.chain_spec(),
                 snapshot,
                 match self.system.native_contract_provider() {
                     Some(provider) => provider,

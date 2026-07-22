@@ -1,6 +1,7 @@
 use super::models::{RpcFoundStates, RpcStateRoot};
 use super::utility::base64_string_token;
-use crate::{RpcClient, RpcClientError, RpcObserver, TracingRpcObserver};
+use crate::client::RpcClientError;
+use crate::{RpcClient, RpcObserver, TracingRpcObserver};
 use base64::{Engine as _, engine::general_purpose};
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::json::JToken;

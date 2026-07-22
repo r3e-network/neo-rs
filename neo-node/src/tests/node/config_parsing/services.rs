@@ -86,8 +86,9 @@ fn shipped_node_configs_enable_durable_rpc_service_stack() {
 
     for relative in cases {
         let path = workspace.join(relative);
-        let (settings, config) =
+        let (chain_spec, config) =
             load_config(&path, None).unwrap_or_else(|err| panic!("load {}: {err}", path.display()));
+        let settings = chain_spec.protocol_settings();
         validate_config(&config, settings.network)
             .unwrap_or_else(|err| panic!("validate {}: {err}", path.display()));
 
@@ -130,17 +131,22 @@ fn shipped_node_configs_enable_durable_rpc_service_stack() {
 }
 
 #[test]
-fn shipped_local_config_preserves_its_private_network_identity() {
+fn shipped_local_config_selects_canonical_testnet_identity() {
     let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("neo-node has a workspace parent");
     let path = workspace.join("config/local.toml");
 
-    let (settings, config) = load_config(&path, None).expect("local config must load");
-    assert_eq!(settings.network, 0x4C4F_4341);
+    let (chain_spec, config) = load_config(&path, None).expect("local config must load");
+    let settings = chain_spec.protocol_settings();
+    assert_eq!(
+        chain_spec.identity().network_type(),
+        neo_config::NetworkType::TestNet
+    );
+    assert_eq!(settings.network, 0x3554_334E);
     validate_config(&config, settings.network)
-        .expect("local config must satisfy private-net rules");
-    assert_eq!(settings.milliseconds_per_block, 1_000);
+        .expect("local config must satisfy canonical TestNet rules");
+    assert_eq!(settings.milliseconds_per_block, 15_000);
     assert!(settings.max_transactions_per_block > 0);
 }
 
@@ -158,8 +164,9 @@ fn shipped_service_provider_configs_prepare_neofura_surface_with_explicit_stater
 
     for (relative, expected_network, expected_rpc_port, data_scope) in cases {
         let path = workspace.join(relative);
-        let (settings, config) =
+        let (chain_spec, config) =
             load_config(&path, None).unwrap_or_else(|err| panic!("load {}: {err}", path.display()));
+        let settings = chain_spec.protocol_settings();
         validate_config(&config, settings.network)
             .unwrap_or_else(|err| panic!("validate {}: {err}", path.display()));
 

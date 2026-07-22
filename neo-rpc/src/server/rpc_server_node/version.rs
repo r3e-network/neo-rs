@@ -19,8 +19,15 @@ impl RpcServerNode {
         Self::with_local_node(server, |node| {
             let system = server.system();
             let protocol = system.settings();
+            let memory_pool_max_transactions = system.mempool().capacity();
             let rpc_settings = server.settings();
-            version_to_json(node, &protocol, rpc_settings, dynamic_settings)
+            version_to_json(
+                node,
+                &protocol,
+                memory_pool_max_transactions,
+                rpc_settings,
+                dynamic_settings,
+            )
         })
     }
 }

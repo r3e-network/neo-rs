@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+Define typed failure handling and explicit degradation behavior at production
+service boundaries.
+
+## Requirements
 
 ### Requirement: Structured error types
 The system SHALL use typed errors with context propagation for all error conditions.

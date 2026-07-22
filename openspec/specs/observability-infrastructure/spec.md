@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+Define bounded operational telemetry for diagnosing node health and protocol
+processing without changing consensus behavior.
+
+## Requirements
 
 ### Requirement: Structured logging
 The system SHALL emit structured logs with trace IDs for request correlation.

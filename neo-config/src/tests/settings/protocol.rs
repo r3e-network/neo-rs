@@ -18,7 +18,6 @@ fn csharp_default_matches_neo_v3101_protocol_settings_default() {
         settings.max_valid_until_block_increment,
         constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT
     );
-    assert_eq!(settings.memory_pool_max_transactions, 50_000);
     assert_eq!(
         settings.max_traceable_blocks,
         constants::MAX_TRACEABLE_BLOCKS
@@ -28,8 +27,8 @@ fn csharp_default_matches_neo_v3101_protocol_settings_default() {
         constants::INITIAL_GAS_DISTRIBUTION
     );
 
-    for hardfork in HardforkManager::all() {
-        assert_eq!(settings.hardforks.get(&hardfork), Some(&0));
+    for hardfork in Hardfork::ALL {
+        assert_eq!(settings.hardforks.activation_height(hardfork), Some(0));
     }
 }
 
@@ -46,8 +45,27 @@ fn load_missing_protocol_fields_uses_csharp_default_not_mainnet() {
         constants::MAX_TRANSACTIONS_PER_BLOCK as u32
     );
     assert!(settings.seed_list.is_empty());
-    assert_eq!(settings.hardforks.len(), HardforkManager::all().len());
-    assert!(settings.hardforks.values().all(|height| *height == 0));
+    assert_eq!(settings.hardforks.len(), Hardfork::COUNT);
+    assert!(
+        settings
+            .hardforks
+            .activation_heights()
+            .all(|height| height == 0)
+    );
+}
+
+#[test]
+fn load_max_block_size_preserves_the_configured_consensus_limit() {
+    let json = br#"{
+        "ProtocolConfiguration": {
+            "MaxBlockSize": 1234567
+        }
+    }"#;
+    let mut stream = &json[..];
+
+    let settings = ProtocolSettings::load_from_stream(&mut stream).unwrap();
+
+    assert_eq!(settings.max_block_size, 1_234_567);
 }
 
 #[test]
@@ -56,11 +74,11 @@ fn load_empty_hardforks_object_matches_v3101_default_hardforks() {
     let mut stream = &json[..];
     let settings = ProtocolSettings::load_from_stream(&mut stream).unwrap();
 
-    assert_eq!(settings.hardforks.len(), HardforkManager::all().len());
-    for hardfork in HardforkManager::all() {
+    assert_eq!(settings.hardforks.len(), Hardfork::COUNT);
+    for hardfork in Hardfork::ALL {
         assert_eq!(
-            settings.hardforks.get(&hardfork),
-            Some(&0),
+            settings.hardforks.activation_height(hardfork),
+            Some(0),
             "{hardfork:?} should be enabled at genesis for an empty v3.10.1 Hardforks object"
         );
     }
@@ -203,16 +221,19 @@ fn mainnet_preset_matches_neo_n3_v3101_protocol_limits() {
 
     assert_eq!(settings.network, constants::MAINNET_MAGIC);
     assert_eq!(settings.max_transactions_per_block, 200);
-    assert_eq!(settings.hardforks.get(&Hardfork::HfFaun), Some(&8_800_000));
     assert_eq!(
-        settings.hardforks.get(&Hardfork::HfGorgon),
-        Some(&12_020_000)
+        settings.hardforks.activation_height(Hardfork::HfFaun),
+        Some(8_800_000)
+    );
+    assert_eq!(
+        settings.hardforks.activation_height(Hardfork::HfGorgon),
+        Some(12_020_000)
     );
     assert!(!settings.is_hardfork_enabled(Hardfork::HfGorgon, 12_019_999));
     assert!(settings.is_hardfork_enabled(Hardfork::HfGorgon, 12_020_000));
     // The official v3.10.1 MainNet schedule ends at Gorgon; Huyao is omitted
     // and therefore disabled in this operational preset.
-    assert!(!settings.hardforks.contains_key(&Hardfork::HfHuyao));
+    assert!(!settings.hardforks.is_defined(Hardfork::HfHuyao));
 }
 
 #[test]
@@ -221,14 +242,39 @@ fn testnet_preset_matches_neo_n3_v3101_protocol_limits() {
 
     assert_eq!(settings.network, constants::TESTNET_MAGIC);
     assert_eq!(settings.max_transactions_per_block, 5_000);
-    assert_eq!(settings.hardforks.get(&Hardfork::HfFaun), Some(&12_960_000));
     assert_eq!(
-        settings.hardforks.get(&Hardfork::HfGorgon),
-        Some(&17_960_000)
+        settings.hardforks.activation_height(Hardfork::HfFaun),
+        Some(12_960_000)
+    );
+    assert_eq!(
+        settings.hardforks.activation_height(Hardfork::HfGorgon),
+        Some(17_960_000)
     );
     assert!(!settings.is_hardfork_enabled(Hardfork::HfGorgon, 17_959_999));
     assert!(settings.is_hardfork_enabled(Hardfork::HfGorgon, 17_960_000));
     // The official v3.10.1 TestNet schedule ends at Gorgon; Huyao is omitted
     // and therefore disabled in this operational preset.
-    assert!(!settings.hardforks.contains_key(&Hardfork::HfHuyao));
+    assert!(!settings.hardforks.is_defined(Hardfork::HfHuyao));
+}
+
+#[test]
+fn protocol_settings_identity_digest_is_stable_and_sensitive_to_consensus_rules() {
+    let settings = ProtocolSettings::mainnet();
+    assert_eq!(
+        settings.identity_digest(),
+        settings.clone().identity_digest()
+    );
+
+    let mut changed = settings.clone();
+    changed.network = changed.network.saturating_add(1);
+    assert_ne!(settings.identity_digest(), changed.identity_digest());
+
+    let mut changed_schedule = settings.clone();
+    changed_schedule.hardforks = changed_schedule
+        .hardforks
+        .with_activation(Hardfork::HfFaun, 8_800_001);
+    assert_ne!(
+        settings.identity_digest(),
+        changed_schedule.identity_digest()
+    );
 }

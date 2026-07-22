@@ -1,0 +1,3729 @@
+{
+  "db": "data/neo-v3101-staged-replay/runs/isolated-920097",
+  "storage_provider": "mdbx-read-only",
+  "requested_script_hashes": [
+    "0x9637a36333e31a19b8fd1a9a96b4750922b4dadf",
+    "0x7f6510d0a27329848bda4c5bf1a699320e8bdfe8",
+    "0x1cbe21b5d7294f1008764eb1320ef7a763d4535b",
+    "0xadf854729a2a0cc86607b7bd7552ff6579edddf1",
+    "0x9f5c8abd7a23eb0d60717d220232823768805084",
+    "0x0993009a4e794f2e2071fb9489eef5aff390ea97",
+    "0xe238015000c15edaf56a7aded3283bffae34464e",
+    "0x9a113c6c6296eff2d269b35bcb4b90adcc08b8fb",
+    "0xc50908342cc47a3ed4153af5cd5708ab99fef5bb",
+    "0x95cef7a262eb7e62d2bf8eb591a1f2edb67c0e42"
+  ],
+  "scanned_contracts": 208,
+  "matched_contracts": 10,
+  "missing_script_hashes": [],
+  "matches": [
+    {
+      "raw_script_hash": "0x0993009a4e794f2e2071fb9489eef5aff390ea97",
+      "raw_script_bytes": 1281,
+      "contract_hash": "0xca2d20610d7982ebe0bed124ee7e9b2d580a6efc",
+      "contract_id": 27,
+      "contract_update_counter": 1,
+      "nef_checksum": 2962741568,
+      "compiler": "Neo.Compiler.CSharp 3.1.0",
+      "manifest_name": "FlamingoSwapFactory",
+      "supported_standards": [],
+      "script_base64": "DAEAi9shQFcAAXhK2ShQygAUs6skBxDbICIGeBCzqiICQErZKFDKABSzq0AQs0A0DkH4J+yMQEH4J+yMQFcBAAwKc3VwZXJBZG1pbjQgcGhK2CQDygAUlyYQaErYJAlKygAUKAM6IgNYIgJAVwABeEGb9mfOQZJd6DEiAkBBkl3oMUBBm/ZnzkDKQFcAAQwPSW52YWxpZCBBZGRyZXNzeDVn////NCsMCUZvcmJpZGRlbjSLQfgn7Iw0F3gMCnN1cGVyQWRtaW40JhHbICICQFcAAniqJhbCSnnPDAVGYXVsdEGVAW9hENsgOUA5QFcAAnl4QZv2Z85B5j8YhEBB5j8YhEBXAAMMEU5vIGF1dGhvcml6YXRpb24uNRX///80sXp5eDcAAEA3AABAVwACeAwRSWRlbnRpY2FsIEFkZHJlc3N4eZg0C3l4ND00JCICQFcAA3iqJhnCSnnPSnrPDAVGYXVsdEGVAW9hENsgOUBXAAF4QZv2Z85Bkl3oMSICQEGSXegxQFcAAngMAQCL2yF5DAEAi9shtSYJWXiLeYsiB1l5i3iLIgJAi0BXAgMMCUZvcmJpZGRlbjWD/v//Qfgn7Iw1DP///wwPSW52YWxpZCBBZGRyZXNzeDUs/v//JAcQ2yAiCHk1H/7//zXj/v//eAwRSWRlbnRpY2FsIEFkZHJlc3N4eZg1SP///3l4NXf///9waDVZ////cQwYRXhjaGFuZ2UgQWxyZWFkeSBFeGlzdGVkaQuXJgcR2yAiBmnKEJc1i/7//3poNCfCSnjPSnnPSnrPDA5DcmVhdGVFeGNoYW5nZUGVAW9hEdsgIgJAVwACeXhBm/ZnzkHmPxiEQEHmPxiEQFcEAQwJRm9yYmlkZGVuNab9//9B+CfsjDUv/v//eDcBAHAMDE5vdCBEZXBsb3llZGgLmDUU/v//EMQAFQwJZ2V0VG9rZW4weEFifVtScRDEABUMCWdldFRva2VuMXhBYn1bUnIMDVRva2VuIEludmFsaWRpC5gkBxDbICIFaguYNcf9//9qaTV3/v//c3hrNVv////CSmnPSmrPSnjPDA5DcmVhdGVFeGNoYW5nZUGVAW9hEdsgIgJANwEAQEFifVtSQFcCAgwPSW52YWxpZCBBZGRyZXNzeDWm/P//JAcQ2yAiCHk1mfz//zVd/f//DAlGb3JiaWRkZW41uvz//0H4J+yMNUP9//95eDXz/f//cGg11f3//3FpStgkA8oQtyYhaDQkwkp4z0p5zwwOUmVtb3ZlRXhjaGFuZ2VBlQFvYRHbICICQFcAAXjbKEGb9mfOQS9Yxe1AQS9Yxe1A2yhAVwcAWTRscBDEAHFoQZwI7ZwmW2hB81S/HXJqEc4LmCZLahHOc2oQzgAUjXRqEM4AFI51xUoLz0oLz0oLz0o0WkoQbNsoStgkCUrKABQoAzrQShFt2yhK2CQJSsoAFCgDOtBKEmvQdmluzyKhaSICQFcAARJ4QZv2Z85B3zC4miICQEHfMLiaQEGcCO2cQEHzVL8dQI1AjkBXAAFA2yhK2CQJSsoAFCgDOkDPQM9AVwACedsoeEGb9mfOQeY/GIRAVwACedsoeEGb9mfOQeY/GIRAVwACeXhBm/ZnzkHmPxiEQEHmPxiEQFcAAXhBm/ZnzkEvWMXtQFYCDBS930CY+HjJ+zPAP882gqYEPNU1hmAMAf/bMGFA",
+      "methods": [
+        {
+          "name": "verify",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 47,
+          "safe": false
+        },
+        {
+          "name": "getAdmin",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 61,
+          "safe": false
+        },
+        {
+          "name": "setAdmin",
+          "parameters": [
+            {
+              "name": "admin",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 139,
+          "safe": false
+        },
+        {
+          "name": "update",
+          "parameters": [
+            {
+              "name": "nefFile",
+              "type": "ByteArray"
+            },
+            {
+              "name": "manifest",
+              "type": "String"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 260,
+          "safe": false
+        },
+        {
+          "name": "getExchangePair",
+          "parameters": [
+            {
+              "name": "tokenA",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenB",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "ByteArray",
+          "offset": 300,
+          "safe": false
+        },
+        {
+          "name": "createExchangePair",
+          "parameters": [
+            {
+              "name": "tokenA",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenB",
+              "type": "Hash160"
+            },
+            {
+              "name": "exchangeContractHash",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 428,
+          "safe": false
+        },
+        {
+          "name": "registerExchangePair",
+          "parameters": [
+            {
+              "name": "exchangeContractHash",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 649,
+          "safe": false
+        },
+        {
+          "name": "removeExchangePair",
+          "parameters": [
+            {
+              "name": "tokenA",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenB",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 844,
+          "safe": false
+        },
+        {
+          "name": "getAllExchangePair",
+          "parameters": [],
+          "return_type": "Array",
+          "offset": 1002,
+          "safe": false
+        },
+        {
+          "name": "_initialize",
+          "parameters": [],
+          "return_type": "Void",
+          "offset": 1249,
+          "safe": false
+        }
+      ]
+    },
+    {
+      "raw_script_hash": "0x1cbe21b5d7294f1008764eb1320ef7a763d4535b",
+      "raw_script_bytes": 2284,
+      "contract_hash": "0x48c40d4666f93408be1bef038b6722404d9a4c2a",
+      "contract_id": 12,
+      "contract_update_counter": 1,
+      "nef_checksum": 938341239,
+      "compiler": "Neo.Compiler.CSharp 3.0.3",
+      "manifest_name": "BurgerNEO",
+      "supported_standards": [
+        "NEP-17"
+      ],
+      "script_base64": "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",
+      "methods": [
+        {
+          "name": "symbol",
+          "parameters": [],
+          "return_type": "String",
+          "offset": 2254,
+          "safe": false
+        },
+        {
+          "name": "decimals",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 2269,
+          "safe": false
+        },
+        {
+          "name": "totalSupply",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 40,
+          "safe": true
+        },
+        {
+          "name": "balanceOf",
+          "parameters": [
+            {
+              "name": "owner",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 85,
+          "safe": true
+        },
+        {
+          "name": "owner",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 840,
+          "safe": false
+        },
+        {
+          "name": "agent",
+          "parameters": [
+            {
+              "name": "i",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Hash160",
+          "offset": 867,
+          "safe": false
+        },
+        {
+          "name": "strategist",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 930,
+          "safe": false
+        },
+        {
+          "name": "candidate",
+          "parameters": [
+            {
+              "name": "target",
+              "type": "PublicKey"
+            }
+          ],
+          "return_type": "ByteArray",
+          "offset": 957,
+          "safe": false
+        },
+        {
+          "name": "reward",
+          "parameters": [
+            {
+              "name": "account",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 990,
+          "safe": false
+        },
+        {
+          "name": "rPS",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 1236,
+          "safe": false
+        },
+        {
+          "name": "onNEP17Payment",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 1260,
+          "safe": false
+        },
+        {
+          "name": "transfer",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "to",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 1794,
+          "safe": false
+        },
+        {
+          "name": "syncAccount",
+          "parameters": [
+            {
+              "name": "account",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 1039,
+          "safe": false
+        },
+        {
+          "name": "trigVote",
+          "parameters": [
+            {
+              "name": "i",
+              "type": "Integer"
+            },
+            {
+              "name": "target",
+              "type": "PublicKey"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 1828,
+          "safe": false
+        },
+        {
+          "name": "trigTransfer",
+          "parameters": [
+            {
+              "name": "i",
+              "type": "Integer"
+            },
+            {
+              "name": "j",
+              "type": "Integer"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 1900,
+          "safe": false
+        },
+        {
+          "name": "setOwner",
+          "parameters": [
+            {
+              "name": "owner",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 1947,
+          "safe": false
+        },
+        {
+          "name": "setAgent",
+          "parameters": [
+            {
+              "name": "i",
+              "type": "Integer"
+            },
+            {
+              "name": "agent",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 1984,
+          "safe": false
+        },
+        {
+          "name": "setStrategist",
+          "parameters": [
+            {
+              "name": "strategist",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 2047,
+          "safe": false
+        },
+        {
+          "name": "allowCandidate",
+          "parameters": [
+            {
+              "name": "target",
+              "type": "PublicKey"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 2078,
+          "safe": false
+        },
+        {
+          "name": "disallowCandidate",
+          "parameters": [
+            {
+              "name": "target",
+              "type": "PublicKey"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 2126,
+          "safe": false
+        },
+        {
+          "name": "update",
+          "parameters": [
+            {
+              "name": "nefFile",
+              "type": "ByteArray"
+            },
+            {
+              "name": "manifest",
+              "type": "String"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 2172,
+          "safe": false
+        },
+        {
+          "name": "pika",
+          "parameters": [
+            {
+              "name": "amount",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 2197,
+          "safe": false
+        },
+        {
+          "name": "_initialize",
+          "parameters": [],
+          "return_type": "Void",
+          "offset": 2228,
+          "safe": false
+        }
+      ]
+    },
+    {
+      "raw_script_hash": "0x7f6510d0a27329848bda4c5bf1a699320e8bdfe8",
+      "raw_script_bytes": 2595,
+      "contract_hash": "0xf0151f528127558851b39c2cd8aa47da7418ab28",
+      "contract_id": 26,
+      "contract_update_counter": 1,
+      "nef_checksum": 1332399383,
+      "compiler": "Neo.Compiler.CSharp 3.1.0",
+      "manifest_name": "FLM",
+      "supported_standards": [
+        "NEP-17"
+      ],
+      "script_base64": "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",
+      "methods": [
+        {
+          "name": "totalSupply",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 0,
+          "safe": true
+        },
+        {
+          "name": "balanceOf",
+          "parameters": [
+            {
+              "name": "usr",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 73,
+          "safe": true
+        },
+        {
+          "name": "transfer",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "to",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 293,
+          "safe": false
+        },
+        {
+          "name": "name",
+          "parameters": [],
+          "return_type": "String",
+          "offset": 1052,
+          "safe": true
+        },
+        {
+          "name": "symbol",
+          "parameters": [],
+          "return_type": "String",
+          "offset": 1063,
+          "safe": true
+        },
+        {
+          "name": "decimals",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 1069,
+          "safe": true
+        },
+        {
+          "name": "getOwner",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 1079,
+          "safe": true
+        },
+        {
+          "name": "setOwner",
+          "parameters": [
+            {
+              "name": "owner",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 1178,
+          "safe": false
+        },
+        {
+          "name": "isAuthor",
+          "parameters": [
+            {
+              "name": "usr",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 1349,
+          "safe": true
+        },
+        {
+          "name": "getAuthorCount",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 1412,
+          "safe": true
+        },
+        {
+          "name": "getAllAuthor",
+          "parameters": [],
+          "return_type": "Array",
+          "offset": 1482,
+          "safe": true
+        },
+        {
+          "name": "addAuthor",
+          "parameters": [
+            {
+              "name": "newAuthor",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 1578,
+          "safe": false
+        },
+        {
+          "name": "removeAuthor",
+          "parameters": [
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 1859,
+          "safe": false
+        },
+        {
+          "name": "mint",
+          "parameters": [
+            {
+              "name": "minter",
+              "type": "Hash160"
+            },
+            {
+              "name": "receiver",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 2144,
+          "safe": false
+        },
+        {
+          "name": "update",
+          "parameters": [
+            {
+              "name": "nefFile",
+              "type": "ByteArray"
+            },
+            {
+              "name": "manifest",
+              "type": "String"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 2439,
+          "safe": false
+        },
+        {
+          "name": "_initialize",
+          "parameters": [],
+          "return_type": "Void",
+          "offset": 2509,
+          "safe": false
+        }
+      ]
+    },
+    {
+      "raw_script_hash": "0x95cef7a262eb7e62d2bf8eb591a1f2edb67c0e42",
+      "raw_script_bytes": 11350,
+      "contract_hash": "0xd5cc8c8eee95bbdf2646fd7eb1c9a6a2bd8dce91",
+      "contract_id": 192,
+      "contract_update_counter": 4,
+      "nef_checksum": 4076535877,
+      "compiler": "Neo.Compiler.CSharp 3.3.0",
+      "manifest_name": "TTMArena",
+      "supported_standards": [],
+      "script_base64": "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",
+      "methods": [
+        {
+          "name": "adminStartBattle",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            },
+            {
+              "name": "battleNo",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 0,
+          "safe": false
+        },
+        {
+          "name": "adminFixRegistration",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            },
+            {
+              "name": "tokenId",
+              "type": "String"
+            },
+            {
+              "name": "owner",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 3868,
+          "safe": false
+        },
+        {
+          "name": "register",
+          "parameters": [
+            {
+              "name": "account",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            },
+            {
+              "name": "effortForRound1",
+              "type": "Integer"
+            },
+            {
+              "name": "effortForRound2",
+              "type": "Integer"
+            },
+            {
+              "name": "effortForRound3",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 4449,
+          "safe": false
+        },
+        {
+          "name": "leave",
+          "parameters": [
+            {
+              "name": "account",
+              "type": "Hash160"
+            },
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            },
+            {
+              "name": "tokenId",
+              "type": "String"
+            },
+            {
+              "name": "isWithdraw",
+              "type": "Boolean"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 5385,
+          "safe": false
+        },
+        {
+          "name": "withdraw",
+          "parameters": [
+            {
+              "name": "account",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenId",
+              "type": "String"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 5716,
+          "safe": false
+        },
+        {
+          "name": "subscribeStartBattle",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            },
+            {
+              "name": "subscriptionNo",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 5882,
+          "safe": false
+        },
+        {
+          "name": "getOwner",
+          "parameters": [],
+          "return_type": "Map",
+          "offset": 6535,
+          "safe": true
+        },
+        {
+          "name": "getRegisterFee",
+          "parameters": [],
+          "return_type": "Array",
+          "offset": 6582,
+          "safe": true
+        },
+        {
+          "name": "getArenaState",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "String",
+          "offset": 1302,
+          "safe": true
+        },
+        {
+          "name": "getAvailableSubscriptionNo",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 6622,
+          "safe": true
+        },
+        {
+          "name": "getPlayersByOwner",
+          "parameters": [
+            {
+              "name": "owner",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Array",
+          "offset": 6653,
+          "safe": true
+        },
+        {
+          "name": "getPlayersMap",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            },
+            {
+              "name": "currentPage",
+              "type": "Integer"
+            },
+            {
+              "name": "pageItemsLimit",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Map",
+          "offset": 6919,
+          "safe": true
+        },
+        {
+          "name": "getPlayerMap",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            },
+            {
+              "name": "tokenId",
+              "type": "String"
+            }
+          ],
+          "return_type": "Map",
+          "offset": 7873,
+          "safe": true
+        },
+        {
+          "name": "getPlayerCountInTournament",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 4223,
+          "safe": true
+        },
+        {
+          "name": "getTournamentHeight",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 1208,
+          "safe": true
+        },
+        {
+          "name": "getTournamentState",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Map",
+          "offset": 8092,
+          "safe": true
+        },
+        {
+          "name": "getHistoryPreview",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Array",
+          "offset": 8469,
+          "safe": true
+        },
+        {
+          "name": "getHistoryDetail",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Map",
+          "offset": 8675,
+          "safe": true
+        },
+        {
+          "name": "getHistoryDetailByRound",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            },
+            {
+              "name": "roundNo",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Map",
+          "offset": 8765,
+          "safe": true
+        },
+        {
+          "name": "getRemainingBreakBlock",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 8919,
+          "safe": true
+        },
+        {
+          "name": "getClaimableByOwner",
+          "parameters": [
+            {
+              "name": "address",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Array",
+          "offset": 8974,
+          "safe": true
+        },
+        {
+          "name": "getFusionHash",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 1883,
+          "safe": true
+        },
+        {
+          "name": "getTgasHash",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 6354,
+          "safe": true
+        },
+        {
+          "name": "getWattHash",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 6380,
+          "safe": true
+        },
+        {
+          "name": "getLithHash",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 6406,
+          "safe": true
+        },
+        {
+          "name": "getHistHash",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 6432,
+          "safe": true
+        },
+        {
+          "name": "getMagHash",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 6458,
+          "safe": true
+        },
+        {
+          "name": "onNEP11Payment",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "tokenId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "data",
+              "type": "Array"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 9265,
+          "safe": false
+        },
+        {
+          "name": "onNEP17Payment",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 9269,
+          "safe": false
+        },
+        {
+          "name": "newTournament",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 9273,
+          "safe": false
+        },
+        {
+          "name": "startTournament",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "tournamentNo",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 9605,
+          "safe": false
+        },
+        {
+          "name": "setRegisterFee",
+          "parameters": [
+            {
+              "name": "arena",
+              "type": "Integer"
+            },
+            {
+              "name": "feeAmount",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 10249,
+          "safe": false
+        },
+        {
+          "name": "setSubscriptionFee",
+          "parameters": [
+            {
+              "name": "feeAmount",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 10285,
+          "safe": false
+        },
+        {
+          "name": "setFusionHash",
+          "parameters": [
+            {
+              "name": "fusionHash",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 10314,
+          "safe": false
+        },
+        {
+          "name": "setResourcesTokenHash",
+          "parameters": [
+            {
+              "name": "tgasHash",
+              "type": "Hash160"
+            },
+            {
+              "name": "wattHash",
+              "type": "Hash160"
+            },
+            {
+              "name": "lithHash",
+              "type": "Hash160"
+            },
+            {
+              "name": "histHash",
+              "type": "Hash160"
+            },
+            {
+              "name": "magHash",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 10395,
+          "safe": false
+        },
+        {
+          "name": "addAdminWhiteList",
+          "parameters": [
+            {
+              "name": "contractHash",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 10703,
+          "safe": false
+        },
+        {
+          "name": "removeFromWhitelist",
+          "parameters": [
+            {
+              "name": "contractHash",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 10752,
+          "safe": false
+        },
+        {
+          "name": "withdrawFund",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 10789,
+          "safe": false
+        },
+        {
+          "name": "update",
+          "parameters": [
+            {
+              "name": "nefFile",
+              "type": "ByteArray"
+            },
+            {
+              "name": "manifest",
+              "type": "String"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 10924,
+          "safe": false
+        },
+        {
+          "name": "_deploy",
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Any"
+            },
+            {
+              "name": "update",
+              "type": "Boolean"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 10943,
+          "safe": false
+        },
+        {
+          "name": "deleteClaimableByOwner",
+          "parameters": [
+            {
+              "name": "address",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 11018,
+          "safe": false
+        },
+        {
+          "name": "_initialize",
+          "parameters": [],
+          "return_type": "Void",
+          "offset": 11109,
+          "safe": false
+        }
+      ]
+    },
+    {
+      "raw_script_hash": "0x9637a36333e31a19b8fd1a9a96b4750922b4dadf",
+      "raw_script_bytes": 2644,
+      "contract_hash": "0xf970f4ccecd765b63732b821775dc38c25d74f23",
+      "contract_id": 29,
+      "contract_update_counter": 6,
+      "nef_checksum": 802026593,
+      "compiler": "Neo.Compiler.CSharp 3.1.0",
+      "manifest_name": "FlamingoSwapRouter",
+      "supported_standards": [],
+      "script_base64": "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",
+      "methods": [
+        {
+          "name": "verify",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 60,
+          "safe": false
+        },
+        {
+          "name": "getAdmin",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 74,
+          "safe": false
+        },
+        {
+          "name": "setAdmin",
+          "parameters": [
+            {
+              "name": "admin",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 152,
+          "safe": false
+        },
+        {
+          "name": "addAmount",
+          "parameters": [
+            {
+              "name": "address",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 307,
+          "safe": false
+        },
+        {
+          "name": "removeAmount",
+          "parameters": [
+            {
+              "name": "address",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 400,
+          "safe": false
+        },
+        {
+          "name": "startUpdate",
+          "parameters": [
+            {
+              "name": "blockHeight",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 495,
+          "safe": false
+        },
+        {
+          "name": "update",
+          "parameters": [
+            {
+              "name": "nefFile",
+              "type": "ByteArray"
+            },
+            {
+              "name": "manifest",
+              "type": "String"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 732,
+          "safe": false
+        },
+        {
+          "name": "addLiquidity",
+          "parameters": [
+            {
+              "name": "sender",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenA",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenB",
+              "type": "Hash160"
+            },
+            {
+              "name": "amountADesired",
+              "type": "Integer"
+            },
+            {
+              "name": "amountBDesired",
+              "type": "Integer"
+            },
+            {
+              "name": "amountAMin",
+              "type": "Integer"
+            },
+            {
+              "name": "amountBMin",
+              "type": "Integer"
+            },
+            {
+              "name": "deadLine",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Array",
+          "offset": 775,
+          "safe": false
+        },
+        {
+          "name": "removeLiquidity",
+          "parameters": [
+            {
+              "name": "sender",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenA",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenB",
+              "type": "Hash160"
+            },
+            {
+              "name": "liquidity",
+              "type": "Integer"
+            },
+            {
+              "name": "amountAMin",
+              "type": "Integer"
+            },
+            {
+              "name": "amountBMin",
+              "type": "Integer"
+            },
+            {
+              "name": "deadLine",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Array",
+          "offset": 1499,
+          "safe": false
+        },
+        {
+          "name": "quote",
+          "parameters": [
+            {
+              "name": "amountA",
+              "type": "Integer"
+            },
+            {
+              "name": "reserveA",
+              "type": "Integer"
+            },
+            {
+              "name": "reserveB",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 1319,
+          "safe": false
+        },
+        {
+          "name": "getAmountOut",
+          "parameters": [
+            {
+              "name": "amountIn",
+              "type": "Integer"
+            },
+            {
+              "name": "reserveIn",
+              "type": "Integer"
+            },
+            {
+              "name": "reserveOut",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 1693,
+          "safe": false
+        },
+        {
+          "name": "getAmountIn",
+          "parameters": [
+            {
+              "name": "amountOut",
+              "type": "Integer"
+            },
+            {
+              "name": "reserveIn",
+              "type": "Integer"
+            },
+            {
+              "name": "reserveOut",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 1769,
+          "safe": false
+        },
+        {
+          "name": "getAmountsOut",
+          "parameters": [
+            {
+              "name": "amountIn",
+              "type": "Integer"
+            },
+            {
+              "name": "paths",
+              "type": "Array"
+            }
+          ],
+          "return_type": "Array",
+          "offset": 1846,
+          "safe": false
+        },
+        {
+          "name": "getAmountsIn",
+          "parameters": [
+            {
+              "name": "amountOut",
+              "type": "Integer"
+            },
+            {
+              "name": "paths",
+              "type": "Array"
+            }
+          ],
+          "return_type": "Array",
+          "offset": 1943,
+          "safe": false
+        },
+        {
+          "name": "getReserves",
+          "parameters": [
+            {
+              "name": "tokenA",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenB",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Array",
+          "offset": 1057,
+          "safe": false
+        },
+        {
+          "name": "swapTokenInForTokenOut",
+          "parameters": [
+            {
+              "name": "sender",
+              "type": "Hash160"
+            },
+            {
+              "name": "amountIn",
+              "type": "Integer"
+            },
+            {
+              "name": "amountOutMin",
+              "type": "Integer"
+            },
+            {
+              "name": "paths",
+              "type": "Array"
+            },
+            {
+              "name": "deadLine",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 2040,
+          "safe": false
+        },
+        {
+          "name": "swapTokenOutForTokenIn",
+          "parameters": [
+            {
+              "name": "sender",
+              "type": "Hash160"
+            },
+            {
+              "name": "amountOut",
+              "type": "Integer"
+            },
+            {
+              "name": "amountInMax",
+              "type": "Integer"
+            },
+            {
+              "name": "paths",
+              "type": "Array"
+            },
+            {
+              "name": "deadLine",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 2374,
+          "safe": false
+        },
+        {
+          "name": "getExchangePairWithAssert",
+          "parameters": [
+            {
+              "name": "tokenA",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenB",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Hash160",
+          "offset": 1124,
+          "safe": false
+        },
+        {
+          "name": "_initialize",
+          "parameters": [],
+          "return_type": "Void",
+          "offset": 2572,
+          "safe": false
+        }
+      ]
+    },
+    {
+      "raw_script_hash": "0x9a113c6c6296eff2d269b35bcb4b90adcc08b8fb",
+      "raw_script_bytes": 1191,
+      "contract_hash": "0xcd48b160c1bbc9d74997b803b9a7ad50a4bef020",
+      "contract_id": 21,
+      "contract_update_counter": 1,
+      "nef_checksum": 1786369527,
+      "compiler": "Neo.Compiler.CSharp 3.1.0",
+      "manifest_name": "Nep17Contract",
+      "supported_standards": [
+        "NEP-17"
+      ],
+      "script_base64": "DAVmVVNEVEAWQFcAAnkmBCITWFlaEk0RzlGLURDOQeY/GIRAEk0RzlGLURDOQeY/GIRANA5B+CfsjEBB+CfsjEBYWUsRzlCLUBDOQZJd6DFK2CQJSsoAFCgDOkBLEc5Qi1AQzkGSXegxQDTJQFcAAVhbeBJNEc5Ri1EQzkHmPxiEQBJNEc5Ri1EQzkHmPxiEQFcAAlx4eRJNEc5Ri1EQzkHmPxiEQBJNEc5Ri1EQzkHmPxiEQFcAAng0CHmeeDTTQFcAAVx4SxHOUItQEM5Bkl3oMUrYJgRFENshQErYJgRFENshQEsRzlCLUBDOQZJd6DFAVwABXHhLEc5Qi1AQzkEvWMXtQEsRzlCLUBDOQS9Yxe1AVwECeDSpcGh5lyYHeDTSIgtoeZ94NWj///9AWFtLEc5Qi1AQzkGSXegxStgmBEUQ2yFAVwAEDAVFcnJvcgsMHFRoZSBmcm9tIGFkZHJlc3MgaXMgaW52YWxpZC54ygAUlyQHENsgIgd5ygAUlzXuAAAADAVFcnJvcgsMLFRoZSBwYXJhbWV0ZXIgYW1vdW50IG11c3QgYmUgZ3JlYXRlciB0aGFuIDAuehC3NbAAAAAMBUVycm9yCwwRTm8gYXV0aG9yaXphdGlvbi54Qfgn7Iw1igAAAAwFRXJyb3ILDBVJbnN1ZmZpY2llbnQgYmFsYW5jZS54Nbf+//96uDReeHmXJgcR2yAiU3p4NfX+//96eTWP/v//wkp4z0p5z0p6zwwIVHJhbnNmZXJBlQFvYXk3AAALmCYfe3p4E8AfDA5vbk5FUDE3UGF5bWVudHlBYn1bUkUR2yAiAkBXAAR4qiYYwkp7z0p6zwwGTm90aWZ5QZUBb2F5OkDKQDcAAEBBYn1bUkBXAAIMBUVycm9yCwwhVGhlIHByb3h5SGFzaCBhZGRyZXNzIGlzIGludmFsaWQueErZKFDKABSzqzSeDAVFcnJvcgsMEU5vIGF1dGhvcml6YXRpb24uNUX9//81fP///wwFRXJyb3ILDCZJbml0U3VwcGx5IGNhbiBvbmx5IGJlIHNldCB1cCBvbmUgdGltZVhbSxHOUItQEM5Bkl3oMUrYJgRFENshEJc1Lv///3k1Jv3//3l4NUP9///CSgvPSnjPSnnPDAhUcmFuc2ZlckGVAW9hQErZKFDKABSzq0BXAAEMBUVycm9yCwwhVGhlIG5ldyBvd25lciBhZGRyZXNzIGlzIGludmFsaWQueErZKFDKABSzqzXA/v//DAVFcnJvcgsMEU5vIGF1dGhvcml6YXRpb24uNWT8//81m/7//1hZeBJNEc5Ri1EQzkHmPxiEEdsgIgJAVwACDAVFcnJvcgsMEU5vIGF1dGhvcml6YXRpb24uNSX8//81XP7//wt5eDcBAEA3AQBADAVFcnJvcgsMEU5vIGF1dGhvcml6YXRpb24uNfX7//81LP7//zcCAEA3AgBAVgcMFBTlhnNLtFfI+yMXfNVwD2A6lPGGYgwCc2vbMGMMAgEB2zBlDAIBAtswZgwFb3duZXLbMGFdQZv2Z84SwGReQZv2Z84SwGBA2zBAEsBAQZv2Z85A",
+      "methods": [
+        {
+          "name": "symbol",
+          "parameters": [],
+          "return_type": "String",
+          "offset": 0,
+          "safe": false
+        },
+        {
+          "name": "decimals",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 8,
+          "safe": false
+        },
+        {
+          "name": "_deploy",
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Any"
+            },
+            {
+              "name": "update",
+              "type": "Boolean"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 10,
+          "safe": false
+        },
+        {
+          "name": "getOwner",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 65,
+          "safe": false
+        },
+        {
+          "name": "verify",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 106,
+          "safe": false
+        },
+        {
+          "name": "balanceOf",
+          "parameters": [
+            {
+              "name": "address",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 193,
+          "safe": false
+        },
+        {
+          "name": "totalSupply",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 303,
+          "safe": false
+        },
+        {
+          "name": "transfer",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "to",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 327,
+          "safe": false
+        },
+        {
+          "name": "init",
+          "parameters": [
+            {
+              "name": "addr",
+              "type": "Hash160"
+            },
+            {
+              "name": "supply",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 665,
+          "safe": false
+        },
+        {
+          "name": "transferOwnership",
+          "parameters": [
+            {
+              "name": "newOwner",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 887,
+          "safe": false
+        },
+        {
+          "name": "update",
+          "parameters": [
+            {
+              "name": "nefFile",
+              "type": "ByteArray"
+            },
+            {
+              "name": "manifest",
+              "type": "String"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 1008,
+          "safe": false
+        },
+        {
+          "name": "destroy",
+          "parameters": [],
+          "return_type": "Void",
+          "offset": 1059,
+          "safe": false
+        },
+        {
+          "name": "_initialize",
+          "parameters": [],
+          "return_type": "Void",
+          "offset": 1104,
+          "safe": false
+        }
+      ]
+    },
+    {
+      "raw_script_hash": "0x9f5c8abd7a23eb0d60717d220232823768805084",
+      "raw_script_bytes": 4888,
+      "contract_hash": "0x4d5a85b0c83777df72cfb665a933970e4e20c0ec",
+      "contract_id": 34,
+      "contract_update_counter": 8,
+      "nef_checksum": 3640557773,
+      "compiler": "Neo.Compiler.CSharp 3.1.0",
+      "manifest_name": "FlamingoSwapPair",
+      "supported_standards": [
+        "NEP-17"
+      ],
+      "script_base64": "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znQMFkluc3VmZmljaWVudCBMaXF1aWRpdHl4a7UkBxDbICIFeWy1NSz2//8MCklOVkFMSURfVE96NXr5//+YJAcQ2yAiCXo1hfn//5gkBxDbICIFemmYNfz1//94ELcmEHt4emk1Tvn//zVP/f//eRC3JhB7eXppNVT5//81PP3//2k1MPn//zW3/f//dWk1Pfn//zWr/f//dm1reJ+3Jglta3ifnyIDEHcHbmx5n7cmCW5seZ+fIgMQdwgMEEludmFsaWQgQW1vdW50SW5vBxC3JgcR2yAiBm8IELc1dvX//20B6AOgbwcToJ93CW4B6AOgbwgToJ93CgwBS28Jbwqga2ygAkBCDwCguDVH9f//NYX3//93C28LC5gmam8HELcmMG8HFaABECehdwxvDBC3JiB7bwxvC2k1efj//zV6/P//aTVu+P//NfX8//9KdUVvCBC3JjBvCBWgARAnoXcMbwwQtyYge28MbwtpNV74//81Rvz//2k1U/j//zXB/P//SnZFam5tNdH8///CSmjPSm8Hz0pvCM9KeM9Kec9Kes8MB1N3YXBwZWRBlQFvYRA11vv//xHbICICQFcJAQwKUmUtZW50ZXJlZDVy+///EJc1gPT//xE1r/v//wwSSW52YWxpZCBUby1BZGRyZXNzeDWI8///NVv0//9BOVNuPHAMFE9ubHkgUm91dGVyIENhbiBCdXJuaDXn9f//NTT0//9B2/6odHE10ff//3JpNYL3//81Cfz//3NpNY/3//81/fv//3RpNb0AAAB1NRABAAB2bWugbqF3B21soG6hdwgMFkluc3VmZmljaWVudCBMUCBCdXJuZWRvBxC3JAcQ2yAiBm8IELc1yfP//21pNQMBAAALbwd4aTUY9///NRn7//8Lbwh4aTUi9///NQr7//9pNf72//81hfv//0pzRWk1Cff//zV3+///SnRFamxrNYf7///CSmjPSm3PSm8Hz0pvCM9KeM8MBkJ1cm5lZEGVAW9hEDWQ+v//bwhvBxLAIgJAVwABDA9JbnZhbGlkIEFjY291bnR4StkoUMoAFLOrNS/z//94NAUiAkBXAgFeQZv2Z84SwHhLEc5Qi1AQzkGSXegxcGhxaQuXJgUQIgtoStgmBEUQ2yEiAkA0A0BXAgBfB0Gb9mfOEsBfCEsRzlCLUBDOQZJd6DFwaHFpC5cmBRAiC2hK2CYERRDbISICQFcAAnl4NB95NHvCSnjPSgvPSnnPDAhUcmFuc2ZlckGVAW9hQFcBAng1c////3BoeZcmB3g0CyIIaHmfeDQrQFcAAV5Bm/ZnzhLAeEsRzlCLUBDOQS9Yxe1ASxHOUItQEM5BL1jF7UBXAAJeQZv2Z84SwHh5Ek0RzlGLURDOQeY/GIRAVwABNUj///94nzQDQFcAAV8HQZv2Z84SwF8IeBJNEc5Ri1EQzkHmPxiEQFcNAQwKUmUtZW50ZXJlZDXt+P//EJc1+/H//xE1Kvn//wwSSW52YWxpZCBUby1BZGRyZXNzeDUD8f//Ndbx//9BOVNuPHAMFE9ubHkgUm91dGVyIENhbiBNaW50aDVi8///Na/x//9B2/6odHE1TPX//3JqEM5zahHOdGk19fT//zV8+f//dWk1AvX//zVw+f//dm1rn3cHbmyfdwg1gP7//3cJbwkQlyYwbwdvCKCkAegDn0p3CkUB6AMMFAAAAAAAAAAAAAAAAAAAAAAAAAAANYIAAAAiJW8Hbwmga6F3C28IbwmgbKF3DG8Lbwy3JgZvDCIEbwtKdwpFDBZJbnN1ZmZpY2llbnQgTFAgTWludGVkbwoQtzX68P//bwp4NDRqbm019Pj//8JKaM9KbwfPSm8Iz0pvCs8MBk1pbnRlZEGVAW9hEDX/9///bwoiAkCkQFcAAnl4NB95NC7CSgvPSnjPSnnPDAhUcmFuc2ZlckGVAW9hQFcAAng1cv3//3meeDU2/v//QFcAATWU/f//eJ41T/7//0AMFAAAAAAAAAAAAAAAAAAAAAAAAAAAQDUJ9P//IgJAQZUBb2FAVwABeEGb9mfOQZJd6DEiAkBBkl3oMUBXAAJ52yh4QZv2Z85B5j8YhEDbKEBXAAJ5eEGb9mfOQeY/GIRAQeY/GIRAVwACedsoeEGb9mfOQeY/GIRAQeY/GIRAVwACeXhBm/ZnzkHmPxiEQEHmPxiEQFcAAnl4QZv2Z85B5j8YhEBXAAF4QZv2Z85BL1jF7UBBL1jF7UBXAAF42yhBm/ZnzkEvWMXtQBhAVwEEDBpJbnZhbGlkIEZyb20gb3IgVG8gQWRkcmVzc3hK2ShQygAUs6skBxDbICIMeUrZKFDKABSzqzVx7///DCxUaGUgcGFyYW1ldGVyIGFtb3VudCBNVVNUIGJlIGdyZWF0ZXIgdGhhbiAwLnoQtzU77///DBFObyBhdXRob3JpemF0aW9uLnhB+CfsjDUd7///Qdv+qHRweWiXJioMF05vdCBBbGxvd2VkIFRvIFRyYW5zZmVyQTlTbjw1nfD//zXq7v//DBVJbnN1ZmZpY2llbnQgYmFsYW5jZS54Nan7//96uDXG7v//eHmXJgcR2yAiU3p4NRr8//96eTUU/v//wkp4z0p5z0p6zwwIVHJhbnNmZXJBlQFvYXk3BQALmCYfe3p4E8AfDA5vbk5FUDE3UGF5bWVudHlBYn1bUkUR2yAiAkA3BQBAVwADQFYJDBS930CY+HjJ+zPAP882gqYEPNU1hmAMFLSROaFH9neE0xNnE261aUAxpXX7YgwUKkyaTUAiZ4sD7xu+CDT5ZkYNxEhhDBQoqxh02keq2Cycs1GIVSeBUh8V8GMDAACKXXhFYwFlDAdlbnRlcmVkZAwFYXNzZXRmDAhjb250cmFjdGcHDAt0b3RhbFN1cHBseWcIQA==",
+      "methods": [
+        {
+          "name": "symbol",
+          "parameters": [],
+          "return_type": "String",
+          "offset": 47,
+          "safe": false
+        },
+        {
+          "name": "verify",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 62,
+          "safe": false
+        },
+        {
+          "name": "getAdmin",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 76,
+          "safe": false
+        },
+        {
+          "name": "setAdmin",
+          "parameters": [
+            {
+              "name": "admin",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 154,
+          "safe": false
+        },
+        {
+          "name": "claimGASFrombNEO",
+          "parameters": [
+            {
+              "name": "receiveAddress",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 278,
+          "safe": false
+        },
+        {
+          "name": "getGASAdmin",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 369,
+          "safe": false
+        },
+        {
+          "name": "setGASAdmin",
+          "parameters": [
+            {
+              "name": "GASAdmin",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 426,
+          "safe": false
+        },
+        {
+          "name": "getWhiteListContract",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 508,
+          "safe": false
+        },
+        {
+          "name": "setWhiteListContract",
+          "parameters": [
+            {
+              "name": "whiteList",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 565,
+          "safe": false
+        },
+        {
+          "name": "checkIsRouter",
+          "parameters": [
+            {
+              "name": "callScript",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 653,
+          "safe": false
+        },
+        {
+          "name": "checkIsRouter",
+          "parameters": [
+            {
+              "name": "user",
+              "type": "Hash160"
+            },
+            {
+              "name": "b",
+              "type": "Boolean"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 727,
+          "safe": true
+        },
+        {
+          "name": "getFundAddress",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 802,
+          "safe": false
+        },
+        {
+          "name": "setFundAddress",
+          "parameters": [
+            {
+              "name": "address",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 856,
+          "safe": false
+        },
+        {
+          "name": "update",
+          "parameters": [
+            {
+              "name": "nefFile",
+              "type": "ByteArray"
+            },
+            {
+              "name": "manifest",
+              "type": "String"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 941,
+          "safe": false
+        },
+        {
+          "name": "_deploy",
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Any"
+            },
+            {
+              "name": "update",
+              "type": "Boolean"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 984,
+          "safe": false
+        },
+        {
+          "name": "getToken0",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 1137,
+          "safe": true
+        },
+        {
+          "name": "getToken1",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 1142,
+          "safe": true
+        },
+        {
+          "name": "getReserve0",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 1147,
+          "safe": true
+        },
+        {
+          "name": "getReserve1",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 1236,
+          "safe": true
+        },
+        {
+          "name": "getPriceCumulative",
+          "parameters": [],
+          "return_type": "Array",
+          "offset": 1248,
+          "safe": true
+        },
+        {
+          "name": "price0CumulativeLast",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 1332,
+          "safe": true
+        },
+        {
+          "name": "price1CumulativeLast",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 1339,
+          "safe": true
+        },
+        {
+          "name": "swap",
+          "parameters": [
+            {
+              "name": "amount0Out",
+              "type": "Integer"
+            },
+            {
+              "name": "amount1Out",
+              "type": "Integer"
+            },
+            {
+              "name": "toAddress",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 1346,
+          "safe": false
+        },
+        {
+          "name": "swap",
+          "parameters": [
+            {
+              "name": "amount0Out",
+              "type": "Integer"
+            },
+            {
+              "name": "amount1Out",
+              "type": "Integer"
+            },
+            {
+              "name": "toAddress",
+              "type": "Hash160"
+            },
+            {
+              "name": "data",
+              "type": "ByteArray"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 2505,
+          "safe": false
+        },
+        {
+          "name": "burn",
+          "parameters": [
+            {
+              "name": "toAddress",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Any",
+          "offset": 3145,
+          "safe": false
+        },
+        {
+          "name": "mint",
+          "parameters": [
+            {
+              "name": "toAddress",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 3790,
+          "safe": false
+        },
+        {
+          "name": "getReserves",
+          "parameters": [],
+          "return_type": "Any",
+          "offset": 4222,
+          "safe": false
+        },
+        {
+          "name": "decimals",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 4402,
+          "safe": false
+        },
+        {
+          "name": "totalSupply",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 3563,
+          "safe": false
+        },
+        {
+          "name": "balanceOf",
+          "parameters": [
+            {
+              "name": "account",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 3474,
+          "safe": false
+        },
+        {
+          "name": "transfer",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "to",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 4404,
+          "safe": false
+        },
+        {
+          "name": "onNEP17Payment",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 4734,
+          "safe": false
+        },
+        {
+          "name": "_initialize",
+          "parameters": [],
+          "return_type": "Void",
+          "offset": 4738,
+          "safe": false
+        }
+      ]
+    },
+    {
+      "raw_script_hash": "0xadf854729a2a0cc86607b7bd7552ff6579edddf1",
+      "raw_script_bytes": 17731,
+      "contract_hash": "0xcc638d55d99fc81295daccbaf722b84f179fb9c4",
+      "contract_id": 8,
+      "contract_update_counter": 13,
+      "nef_checksum": 3281764830,
+      "compiler": "Neo.Compiler.CSharp 3.3.0",
+      "manifest_name": "GhostMarket",
+      "supported_standards": [],
+      "script_base64": "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ciB0aGFuIGxhc3QgYmlki9soem24NY/S//8hIWoRznZqEs53B2oRzhCXJ1kAAAAhNQPk//9KdkU1++P//wIAXCYFnkoQLwoAAAAjHAAAAEoE//////////8AAAAAAAAAADMXAAAABP//////////AAAAAAAAAACRIUp3B0UhIzAAAAAhahLONazj//+fahjOAegDoLUnGAAAACE1mOP//2oYzgHoA6CeSncHRSEhIWoUzjWH4///dwhvCHpqNf/j//93CXs1ntj//5gnFQAAACFvCXp8NRDz//+eSncJRSEhbwl6nkp3CUULDB5CaWRUb2tlbiBORVAxNyB0cmFuc2ZlciBmYWlsZWQLbwk159L//3hqFM41iPL//zWJ0f//ahrONUDY//+YJz8AAAAhCwwcQmlkVG9rZW4gTkVQMTcgcmVmdW5kIGZhaWxlZAtqHM5qGs41n9L//2oUzjVB8v//NULR//8hIcVKC89KEM9KEM9KC89KC89KC89KEM9KEM9KEM9KEM9KC89KEM9KEM9vCWobznhqGc5qGM56ahbOahXOahTOahPObwduahDOHU01o+L//0pzRWs1jtf//0p5aDXZ4///RcJKec9KaxXOz0prE87PSmsUzs9KaxbOz0p6z0prEc7PSm8Hz0prGM7PSmsZzs9KaxvOzwwIT3JkZXJCaWRBlQFvYSEhahnOE5cneQEAACELDCR5b3UgY2FuIG5vdCBiaWQgb24geW91ciBvd24gYXVjdGlvbnN4ahDOmDVg0P//ahbOahfOn3cKahLOahHOn3cLNdjh//9qEc6fdwxvDG8KoG8LoXcNahbObw2fdw5vDmoXzrUnDgAAACFqF85Kdw5FISHFSgvPShDPShDPSgvPSgvPSgvPShDPShDPShDPShDPSgvPShDPShDPbw5qG854ahnOahjObw5qFs5qFc5qFM5qE85qEs5qEc5qEM4dTTV74f//SnNFazVm1v//SnloNbHi//9FfHtreXg1Tur//8JKec9KaxXOz0prE87PSmsUzs9KaxbOz0pvDs9KaxHOz0o1FuH//89KaxjOz0prGc7PSmsbzs8MCE9yZGVyQmlkQZUBb2HCSnnPSmsVzs9KaxPOz0prFM7PSmsWzs9Kbw7PSmsRzs9KNdDg///PSmsYzs9KaxnOz0prG87PDAtPcmRlckZpbGxl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znRsE854lycWAAAAIWwVzkpsFc5pUzVtAAAARSEhISPL////IXkRwBUMCHRva2Vuc09meDVfwf//dTVHAAAAdiFtNcPE//8nMgAAACFtNb3E//93B2lvBzUtAAAAqicUAAAAIW8HSm8HblM1GAAAAEUhISEjzP///yFuIwUAAABAyEDQQMtAVwYCITXLwf//EDVt0///cBpoNWTE//9xNVX7//9yIWk1XsT//ydcAAAAIWk1WMT//3NrEc50bBPOeJclDQAAABDbICMLAAAAIWwVznmXISUNAAAAENsgIwsAAAAhbBnOFJghJxcAAAAhaTUaxP//EM51am01+/r//yEhISOi////IWojBQAAAEBXAQMhCwwPQ29udHJhY3QgcGF1c2VkNV7G//+qNeS///8LDDFPbmx5IHRoZSBjb250cmFjdCBvd25lciBjYW4gd2l0aGRyYXcgbmVwMTEgdG9rZW5zNTTA//81pr///wsMHXRhcmdldCBpcyBub3QgYSB2YWxpZCBVSW50MTYwejW3wf//JQ0AAAAQ2yAjDQAAACF6Na3B//+qITVlv///CwwfY29udHJhY3QgaXMgbm90IGEgdmFsaWQgVUludDE2MHg1dMH//yUNAAAAENsgIw0AAAAheDVqwf//qiE1Ir///wsMJFRoZSBhcmd1bWVudCAidG9rZW5JZCIgY2FuJ3QgYmUgbnVsbHlwaAuXqjXwvv//CwwRVG9rZW4gaXMgaW4gb3JkZXJ5eDVM/v//NTQAAAAQlzXJvv//CwwWTkVQLTExIHdpdGhkcmF3IGZhaWxlZAt5eng1GNj//zWivv//QMpAVwUCIQsMD0NvbnRyYWN0IHBhdXNlZDX4xP//qjV+vv//CwwxT25seSB0aGUgY29udHJhY3Qgb3duZXIgY2FuIHdpdGhkcmF3IG5lcDExIHRva2VuczXOvv//NUC+//8LDB10YXJnZXQgaXMgbm90IGEgdmFsaWQgVUludDE2MHk1UcD//yUNAAAAENsgIw0AAAAheTVHwP//qiE1/73//wsMH2NvbnRyYWN0IGlzIG5vdCBhIHZhbGlkIFVJbnQxNjB4NQ7A//8lDQAAABDbICMNAAAAIXg1BMD//6ohNby9//81B7///3g16vv//3BoNUkAAABKccpyEHMjNQAAAGlrznQhCwwWTkVQLTExIHdpdGhkcmF3IGZhaWxlZAtseXg16db//zVzvf//IWucc2tqMc7///8hQMxAVwIBIQsMNk9ubHkgdGhlIGNvbnRyYWN0IG93bmVyIGNhbiB3aXRoZHJhdyBleGNlc3NpdmUgYmFsYW5jZTWrvf//NR29//8LDBx0b2tlbiBpcyBub3QgYSB2YWxpZCBVSW50MTYweDUvv///JQ0AAAAQ2yAjDQAAACF4NSW///+qITXdvP//eDU0+v//cDX5vf//cQsMMFdpdGhkcmF3RXhjZXNzaXZlQmFsYW5jZSBiYWxhbmNlIHRyYW5zZmVyIGZhaWxlZAtoaRPONeO9//94NYfd//81iLz//0BXAwIheScKAAAAI7gAAAAhNZq9//9wDA1HTV9QUk9QRVJUSUVTNaS+//81nL7//3EB9AEMD0dNX0JJRF9JTkNSRUFTRWk1ir7//wHIAAwGR01fRkVFaTV5vv//AfQBDBFHTV9NQVhfT1JJR0lOX0ZFRWk1Xb7//2gTzgwOR01fRkVFX0FERFJFU1NpNaDC//8B/wA3AABoE86L2yhyaBPOajUovv//NfXw//8QDApBVUNUSU9OX0lENRG+//81qs7//0BXAgEhDAlVUEdSQURFX1h4i9socGg18Lz//zXlvP//cWhplycPAAAAIRHbICMPAAAAISEQ2yAjBQAAAEBXAQEhDAlVUEdSQURFX1h4i9socGhoNbS9//81gfD//0BXAAIhCwwvT25seSB0aGUgY29udHJhY3Qgb3duZXIgY2FuIHVwZGF0ZSB0aGUgY29udHJhY3Q1tbv//zUnu///C3l4NQYAAABANwgAQA==",
+      "methods": [
+        {
+          "name": "vote",
+          "parameters": [
+            {
+              "name": "target",
+              "type": "PublicKey"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 0,
+          "safe": false
+        },
+        {
+          "name": "setCustomFee",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Hash160"
+            },
+            {
+              "name": "feeBps",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 430,
+          "safe": false
+        },
+        {
+          "name": "getCurrentContractFee",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 688,
+          "safe": true
+        },
+        {
+          "name": "getCustomFee",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "ByteArray",
+          "offset": 827,
+          "safe": true
+        },
+        {
+          "name": "getCustomFees",
+          "parameters": [],
+          "return_type": "Map",
+          "offset": 999,
+          "safe": true
+        },
+        {
+          "name": "setRoyaltiesForContract",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Hash160"
+            },
+            {
+              "name": "royalties",
+              "type": "Array"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 1115,
+          "safe": false
+        },
+        {
+          "name": "registerContract",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Hash160"
+            },
+            {
+              "name": "royaltyMethod",
+              "type": "String"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 1838,
+          "safe": false
+        },
+        {
+          "name": "unregisterContract",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 2254,
+          "safe": false
+        },
+        {
+          "name": "getRegisteredRoyaltyPerNft",
+          "parameters": [],
+          "return_type": "Map",
+          "offset": 2511,
+          "safe": true
+        },
+        {
+          "name": "getRegisteredRoyaltyPerContract",
+          "parameters": [],
+          "return_type": "Map",
+          "offset": 2604,
+          "safe": true
+        },
+        {
+          "name": "getCustomRoyalties",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenId",
+              "type": "ByteArray"
+            }
+          ],
+          "return_type": "Map",
+          "offset": 2796,
+          "safe": true
+        },
+        {
+          "name": "placeOffer",
+          "parameters": [
+            {
+              "name": "baseScriptHash",
+              "type": "Hash160"
+            },
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "quoteScriptHash",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "price",
+              "type": "Integer"
+            },
+            {
+              "name": "startDate",
+              "type": "Integer"
+            },
+            {
+              "name": "endDate",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "ByteArray",
+          "offset": 3397,
+          "safe": false
+        },
+        {
+          "name": "listToken",
+          "parameters": [
+            {
+              "name": "baseScriptHash",
+              "type": "Hash160"
+            },
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "quoteScriptHash",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "price",
+              "type": "Integer"
+            },
+            {
+              "name": "endPrice",
+              "type": "Integer"
+            },
+            {
+              "name": "startDate",
+              "type": "Integer"
+            },
+            {
+              "name": "endDate",
+              "type": "Integer"
+            },
+            {
+              "name": "extensionPeriod",
+              "type": "Integer"
+            },
+            {
+              "name": "auctionType",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "ByteArray",
+          "offset": 4955,
+          "safe": false
+        },
+        {
+          "name": "cancelSale",
+          "parameters": [
+            {
+              "name": "auctionId",
+              "type": "ByteArray"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 6633,
+          "safe": false
+        },
+        {
+          "name": "cancelOffer",
+          "parameters": [
+            {
+              "name": "auctionId",
+              "type": "ByteArray"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 8635,
+          "safe": false
+        },
+        {
+          "name": "editSale",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "auctionId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "price",
+              "type": "Integer"
+            },
+            {
+              "name": "endPrice",
+              "type": "Integer"
+            },
+            {
+              "name": "startDate",
+              "type": "Integer"
+            },
+            {
+              "name": "endDate",
+              "type": "Integer"
+            },
+            {
+              "name": "extensionPeriod",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 8843,
+          "safe": false
+        },
+        {
+          "name": "acceptOffer",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "auctionId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "tokenId",
+              "type": "ByteArray"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 9682,
+          "safe": false
+        },
+        {
+          "name": "acceptOffer",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "auctionId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "tokenId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "originAddress",
+              "type": "Hash160"
+            },
+            {
+              "name": "originFee",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 10508,
+          "safe": false
+        },
+        {
+          "name": "bidToken",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "auctionId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "price",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 10828,
+          "safe": false
+        },
+        {
+          "name": "bidToken",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "auctionId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "price",
+              "type": "Integer"
+            },
+            {
+              "name": "originAddress",
+              "type": "Hash160"
+            },
+            {
+              "name": "originFee",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 12853,
+          "safe": false
+        },
+        {
+          "name": "adminCancelSale",
+          "parameters": [
+            {
+              "name": "auctionId",
+              "type": "ByteArray"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 13167,
+          "safe": false
+        },
+        {
+          "name": "addOwner",
+          "parameters": [
+            {
+              "name": "newOwner",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 13518,
+          "safe": false
+        },
+        {
+          "name": "deleteOwner",
+          "parameters": [
+            {
+              "name": "newOwner",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 13687,
+          "safe": false
+        },
+        {
+          "name": "isOwner",
+          "parameters": [
+            {
+              "name": "newOwner",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 13855,
+          "safe": true
+        },
+        {
+          "name": "getOwners",
+          "parameters": [],
+          "return_type": "Array",
+          "offset": 13958,
+          "safe": true
+        },
+        {
+          "name": "isPaused",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 1740,
+          "safe": true
+        },
+        {
+          "name": "setPaused",
+          "parameters": [
+            {
+              "name": "paused",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 14046,
+          "safe": false
+        },
+        {
+          "name": "updateFee",
+          "parameters": [
+            {
+              "name": "tradeFee",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 14176,
+          "safe": false
+        },
+        {
+          "name": "updateMaxOriginFee",
+          "parameters": [
+            {
+              "name": "maxOriginFee",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 14347,
+          "safe": false
+        },
+        {
+          "name": "updateFeeAddress",
+          "parameters": [
+            {
+              "name": "address",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 14533,
+          "safe": false
+        },
+        {
+          "name": "updateMinBidIncrease",
+          "parameters": [
+            {
+              "name": "minBidIncrease",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 14711,
+          "safe": false
+        },
+        {
+          "name": "getAuction",
+          "parameters": [
+            {
+              "name": "auctionId",
+              "type": "ByteArray"
+            }
+          ],
+          "return_type": "Array",
+          "offset": 14897,
+          "safe": true
+        },
+        {
+          "name": "getAuctionIds",
+          "parameters": [
+            {
+              "name": "start",
+              "type": "Integer"
+            },
+            {
+              "name": "resultCount",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Array",
+          "offset": 14959,
+          "safe": true
+        },
+        {
+          "name": "getAuctions",
+          "parameters": [
+            {
+              "name": "start",
+              "type": "Integer"
+            },
+            {
+              "name": "resultCount",
+              "type": "Integer"
+            }
+          ],
+          "return_type": "Map",
+          "offset": 15168,
+          "safe": true
+        },
+        {
+          "name": "onNEP11Payment",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "tokenId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 15383,
+          "safe": true
+        },
+        {
+          "name": "onNEP17Payment",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 15576,
+          "safe": true
+        },
+        {
+          "name": "getExcessiveBalance",
+          "parameters": [
+            {
+              "name": "token",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 15797,
+          "safe": true
+        },
+        {
+          "name": "getAllTokensNotInOrders",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Hash160"
+            },
+            {
+              "name": "owner",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Map",
+          "offset": 16017,
+          "safe": true
+        },
+        {
+          "name": "withdrawNep11",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Hash160"
+            },
+            {
+              "name": "tokenId",
+              "type": "ByteArray"
+            },
+            {
+              "name": "target",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 16472,
+          "safe": false
+        },
+        {
+          "name": "withdrawAllNep11",
+          "parameters": [
+            {
+              "name": "contract",
+              "type": "Hash160"
+            },
+            {
+              "name": "target",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 16830,
+          "safe": false
+        },
+        {
+          "name": "withdrawExcessiveBalance",
+          "parameters": [
+            {
+              "name": "token",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 17145,
+          "safe": false
+        },
+        {
+          "name": "_deploy",
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Any"
+            },
+            {
+              "name": "update",
+              "type": "Boolean"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 17366,
+          "safe": false
+        },
+        {
+          "name": "getGMProp",
+          "parameters": [
+            {
+              "name": "prop",
+              "type": "String"
+            }
+          ],
+          "return_type": "ByteArray",
+          "offset": 956,
+          "safe": true
+        },
+        {
+          "name": "upgradeDone",
+          "parameters": [
+            {
+              "name": "upgradeMethod",
+              "type": "String"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 17561,
+          "safe": true
+        },
+        {
+          "name": "update",
+          "parameters": [
+            {
+              "name": "nefFile",
+              "type": "ByteArray"
+            },
+            {
+              "name": "manifest",
+              "type": "String"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 17654,
+          "safe": false
+        },
+        {
+          "name": "validateContractOwner",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 225,
+          "safe": true
+        }
+      ]
+    },
+    {
+      "raw_script_hash": "0xc50908342cc47a3ed4153af5cd5708ab99fef5bb",
+      "raw_script_bytes": 5773,
+      "contract_hash": "0xd1a9f78e1940f6322fef4df2340a963a9ec46f63",
+      "contract_id": 25,
+      "contract_update_counter": 2,
+      "nef_checksum": 1784473459,
+      "compiler": "Neo.Compiler.CSharp 3.1.0",
+      "manifest_name": "Staking",
+      "supported_standards": [],
+      "script_base64": "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",
+      "methods": [
+        {
+          "name": "onNEP17Payment",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 0,
+          "safe": false
+        },
+        {
+          "name": "getUintProfit",
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Any",
+          "offset": 1549,
+          "safe": true
+        },
+        {
+          "name": "refund",
+          "parameters": [
+            {
+              "name": "fromAddress",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "asset",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 1592,
+          "safe": false
+        },
+        {
+          "name": "claimFLM",
+          "parameters": [
+            {
+              "name": "fromAddress",
+              "type": "Hash160"
+            },
+            {
+              "name": "asset",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 2097,
+          "safe": false
+        },
+        {
+          "name": "checkFLM",
+          "parameters": [
+            {
+              "name": "fromAddress",
+              "type": "Hash160"
+            },
+            {
+              "name": "asset",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 2524,
+          "safe": false
+        },
+        {
+          "name": "getStakingAmount",
+          "parameters": [
+            {
+              "name": "fromAddress",
+              "type": "Hash160"
+            },
+            {
+              "name": "asset",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 2611,
+          "safe": true
+        },
+        {
+          "name": "setFLMAddress",
+          "parameters": [
+            {
+              "name": "flm",
+              "type": "Hash160"
+            },
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 2676,
+          "safe": false
+        },
+        {
+          "name": "getFLMAddress",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 3001,
+          "safe": true
+        },
+        {
+          "name": "getOwner",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 3009,
+          "safe": true
+        },
+        {
+          "name": "setOwner",
+          "parameters": [
+            {
+              "name": "owner",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 3111,
+          "safe": false
+        },
+        {
+          "name": "addAuthor",
+          "parameters": [
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 3268,
+          "safe": false
+        },
+        {
+          "name": "isAuthor",
+          "parameters": [
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 2846,
+          "safe": true
+        },
+        {
+          "name": "getAuthorCount",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 3426,
+          "safe": true
+        },
+        {
+          "name": "getAllAuthor",
+          "parameters": [],
+          "return_type": "Array",
+          "offset": 3497,
+          "safe": true
+        },
+        {
+          "name": "removeAuthor",
+          "parameters": [
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 3594,
+          "safe": false
+        },
+        {
+          "name": "isPaused",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 2363,
+          "safe": true
+        },
+        {
+          "name": "isStakingPaused",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 326,
+          "safe": true
+        },
+        {
+          "name": "isRefundPaused",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 1978,
+          "safe": true
+        },
+        {
+          "name": "pause",
+          "parameters": [
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 3799,
+          "safe": false
+        },
+        {
+          "name": "unPause",
+          "parameters": [
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 3944,
+          "safe": false
+        },
+        {
+          "name": "pauseStaking",
+          "parameters": [
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 4053,
+          "safe": false
+        },
+        {
+          "name": "unPauseStaking",
+          "parameters": [
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 4218,
+          "safe": false
+        },
+        {
+          "name": "pauseRefund",
+          "parameters": [
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 4341,
+          "safe": false
+        },
+        {
+          "name": "unPauseRefund",
+          "parameters": [
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 4504,
+          "safe": false
+        },
+        {
+          "name": "getCurrentTotalAmount",
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 1057,
+          "safe": true
+        },
+        {
+          "name": "setCurrentShareAmount",
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "adminAddress",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 4625,
+          "safe": false
+        },
+        {
+          "name": "getCurrentShareAmount",
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 1100,
+          "safe": true
+        },
+        {
+          "name": "upgradeStart",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 4787,
+          "safe": false
+        },
+        {
+          "name": "update",
+          "parameters": [
+            {
+              "name": "nefFile",
+              "type": "ByteArray"
+            },
+            {
+              "name": "manifest",
+              "type": "String"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 4954,
+          "safe": false
+        },
+        {
+          "name": "isInWhiteList",
+          "parameters": [
+            {
+              "name": "asset",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 422,
+          "safe": true
+        },
+        {
+          "name": "getAssetCount",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 5112,
+          "safe": true
+        },
+        {
+          "name": "getAllAsset",
+          "parameters": [],
+          "return_type": "Array",
+          "offset": 5164,
+          "safe": true
+        },
+        {
+          "name": "addAsset",
+          "parameters": [
+            {
+              "name": "asset",
+              "type": "Hash160"
+            },
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 5254,
+          "safe": false
+        },
+        {
+          "name": "removeAsset",
+          "parameters": [
+            {
+              "name": "asset",
+              "type": "Hash160"
+            },
+            {
+              "name": "author",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 5435,
+          "safe": false
+        },
+        {
+          "name": "_initialize",
+          "parameters": [],
+          "return_type": "Void",
+          "offset": 5624,
+          "safe": false
+        }
+      ]
+    },
+    {
+      "raw_script_hash": "0xe238015000c15edaf56a7aded3283bffae34464e",
+      "raw_script_bytes": 4889,
+      "contract_hash": "0x59aa80468a120fe79aa5601de07746275c9ed76a",
+      "contract_id": 35,
+      "contract_update_counter": 6,
+      "nef_checksum": 1001498827,
+      "compiler": "Neo.Compiler.CSharp 3.1.0",
+      "manifest_name": "FlamingoSwapPair",
+      "supported_standards": [
+        "NEP-17"
+      ],
+      "script_base64": "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Ec50DBZJbnN1ZmZpY2llbnQgTGlxdWlkaXR5eGu1JAcQ2yAiBXlstTUs9v//DApJTlZBTElEX1RPejV6+f//mCQHENsgIgl6NYX5//+YJAcQ2yAiBXppmDX89f//eBC3JhB7eHppNU75//81T/3//3kQtyYQe3l6aTVU+f//NTz9//9pNTD5//81t/3//3VpNT35//81q/3//3Zta3iftyYJbWt4n58iAxB3B25seZ+3JglubHmfnyIDEHcIDBBJbnZhbGlkIEFtb3VudElubwcQtyYHEdsgIgZvCBC3NXb1//9tAegDoG8HE6CfdwluAegDoG8IE6CfdwoMAUtvCW8KoGtsoAJAQg8AoLg1R/X//zWF9///dwtvCwuYJmpvBxC3JjBvBxWgARAnoXcMbwwQtyYge28MbwtpNXn4//81evz//2k1bvj//zX1/P//SnVFbwgQtyYwbwgVoAEQJ6F3DG8MELcmIHtvDG8LaTVe+P//NUb8//9pNVP4//81wfz//0p2RWpubTXR/P//wkpoz0pvB89KbwjPSnjPSnnPSnrPDAdTd2FwcGVkQZUBb2EQNdb7//8R2yAiAkBXCQEMClJlLWVudGVyZWQ1cvv//xCXNYD0//8RNa/7//8MEkludmFsaWQgVG8tQWRkcmVzc3g1h/P//zVb9P//QTlTbjxwDBRPbmx5IFJvdXRlciBDYW4gQnVybmg15/X//zU09P//Qdv+qHRxNdH3//9yaTWC9///NQn8//9zaTWP9///Nf37//90aTW9AAAAdTUQAQAAdm1roG6hdwdtbKBuoXcIDBZJbnN1ZmZpY2llbnQgTFAgQnVybmVkbwcQtyQHENsgIgZvCBC3Ncnz//9taTUDAQAAC28HeGk1GPf//zUZ+///C28IeGk1Ivf//zUK+///aTX+9v//NYX7//9Kc0VpNQn3//81d/v//0p0RWpsazWH+///wkpoz0ptz0pvB89KbwjPSnjPDAZCdXJuZWRBlQFvYRA1kPr//28IbwcSwCICQFcAAQwPSW52YWxpZCBBY2NvdW50eErZKFDKABSzqzUv8///eDQFIgJAVwIBXkGb9mfOEsB4SxHOUItQEM5Bkl3oMXBocWkLlyYFECILaErYJgRFENshIgJANANAVwIAXwdBm/ZnzhLAXwhLEc5Qi1AQzkGSXegxcGhxaQuXJgUQIgtoStgmBEUQ2yEiAkBXAAJ5eDQfeTR7wkp4z0oLz0p5zwwIVHJhbnNmZXJBlQFvYUBXAQJ4NXP///9waHmXJgd4NAsiCGh5n3g0K0BXAAFeQZv2Z84SwHhLEc5Qi1AQzkEvWMXtQEsRzlCLUBDOQS9Yxe1AVwACXkGb9mfOEsB4eRJNEc5Ri1EQzkHmPxiEQFcAATVI////eJ80A0BXAAFfB0Gb9mfOEsBfCHgSTRHOUYtREM5B5j8YhEBXDQEMClJlLWVudGVyZWQ17fj//xCXNfvx//8RNSr5//8MEkludmFsaWQgVG8tQWRkcmVzc3g1AvH//zXW8f//QTlTbjxwDBRPbmx5IFJvdXRlciBDYW4gTWludGg1YvP//zWv8f//Qdv+qHRxNUz1//9yahDOc2oRznRpNfX0//81fPn//3VpNQL1//81cPn//3Zta593B25sn3cINYD+//93CW8JEJcmMG8HbwigpAHoA59KdwpFAegDDBQAAAAAAAAAAAAAAAAAAAAAAAAAADWCAAAAIiVvB28JoGuhdwtvCG8JoGyhdwxvC28MtyYGbwwiBG8LSncKRQwWSW5zdWZmaWNpZW50IExQIE1pbnRlZG8KELc1+vD//28KeDQ0am5tNfT4///CSmjPSm8Hz0pvCM9KbwrPDAZNaW50ZWRBlQFvYRA1//f//28KIgJApEBXAAJ5eDQfeTQuwkoLz0p4z0p5zwwIVHJhbnNmZXJBlQFvYUBXAAJ4NXL9//95nng1Nv7//0BXAAE1lP3//3ieNU/+//9ADBQAAAAAAAAAAAAAAAAAAAAAAAAAAEA1CfT//yICQEGVAW9hQFcAAXhBm/ZnzkGSXegxIgJAQZJd6DFAVwACedsoeEGb9mfOQeY/GIRA2yhAVwACeXhBm/ZnzkHmPxiEQEHmPxiEQFcAAnnbKHhBm/ZnzkHmPxiEQEHmPxiEQFcAAnl4QZv2Z85B5j8YhEBB5j8YhEBXAAJ5eEGb9mfOQeY/GIRAVwABeEGb9mfOQS9Yxe1AQS9Yxe1AVwABeNsoQZv2Z85BL1jF7UAYQFcBBAwaSW52YWxpZCBGcm9tIG9yIFRvIEFkZHJlc3N4StkoUMoAFLOrJAcQ2yAiDHlK2ShQygAUs6s1ce///wwsVGhlIHBhcmFtZXRlciBhbW91bnQgTVVTVCBiZSBncmVhdGVyIHRoYW4gMC56ELc1O+///wwRTm8gYXV0aG9yaXphdGlvbi54Qfgn7Iw1He///0Hb/qh0cHlolyYqDBdOb3QgQWxsb3dlZCBUbyBUcmFuc2ZlckE5U248NZ3w//816u7//wwVSW5zdWZmaWNpZW50IGJhbGFuY2UueDWp+///erg1xu7//3h5lyYHEdsgIlN6eDUa/P//enk1FP7//8JKeM9Kec9Kes8MCFRyYW5zZmVyQZUBb2F5NwUAC5gmH3t6eBPAHwwOb25ORVAxN1BheW1lbnR5QWJ9W1JFEdsgIgJANwUAQFcAA0BWCQwUvd9AmPh4yfszwD/PNoKmBDzVNYZgDBS0kTmhR/Z3hNMTZxNutWlAMaV1+2IMFCirGHTaR6rYLJyzUYhVJ4FSHxXwYQwUIPC+pFCtp7kDuJdJ18m7wWCxSM1jAwAAil14RWMBZQwHZW50ZXJlZGQMBWFzc2V0ZgwIY29udHJhY3RnBwwLdG90YWxTdXBwbHlnCEA=",
+      "methods": [
+        {
+          "name": "symbol",
+          "parameters": [],
+          "return_type": "String",
+          "offset": 47,
+          "safe": false
+        },
+        {
+          "name": "verify",
+          "parameters": [],
+          "return_type": "Boolean",
+          "offset": 63,
+          "safe": false
+        },
+        {
+          "name": "getAdmin",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 77,
+          "safe": false
+        },
+        {
+          "name": "setAdmin",
+          "parameters": [
+            {
+              "name": "admin",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 155,
+          "safe": false
+        },
+        {
+          "name": "claimGASFrombNEO",
+          "parameters": [
+            {
+              "name": "receiveAddress",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 279,
+          "safe": false
+        },
+        {
+          "name": "getGASAdmin",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 370,
+          "safe": false
+        },
+        {
+          "name": "setGASAdmin",
+          "parameters": [
+            {
+              "name": "GASAdmin",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 427,
+          "safe": false
+        },
+        {
+          "name": "getWhiteListContract",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 509,
+          "safe": false
+        },
+        {
+          "name": "setWhiteListContract",
+          "parameters": [
+            {
+              "name": "whiteList",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 566,
+          "safe": false
+        },
+        {
+          "name": "checkIsRouter",
+          "parameters": [
+            {
+              "name": "callScript",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 654,
+          "safe": false
+        },
+        {
+          "name": "checkIsRouter",
+          "parameters": [
+            {
+              "name": "user",
+              "type": "Hash160"
+            },
+            {
+              "name": "b",
+              "type": "Boolean"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 728,
+          "safe": true
+        },
+        {
+          "name": "getFundAddress",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 803,
+          "safe": false
+        },
+        {
+          "name": "setFundAddress",
+          "parameters": [
+            {
+              "name": "address",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 857,
+          "safe": false
+        },
+        {
+          "name": "update",
+          "parameters": [
+            {
+              "name": "nefFile",
+              "type": "ByteArray"
+            },
+            {
+              "name": "manifest",
+              "type": "String"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 942,
+          "safe": false
+        },
+        {
+          "name": "_deploy",
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Any"
+            },
+            {
+              "name": "update",
+              "type": "Boolean"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 985,
+          "safe": false
+        },
+        {
+          "name": "getToken0",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 1138,
+          "safe": true
+        },
+        {
+          "name": "getToken1",
+          "parameters": [],
+          "return_type": "Hash160",
+          "offset": 1143,
+          "safe": true
+        },
+        {
+          "name": "getReserve0",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 1148,
+          "safe": true
+        },
+        {
+          "name": "getReserve1",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 1237,
+          "safe": true
+        },
+        {
+          "name": "getPriceCumulative",
+          "parameters": [],
+          "return_type": "Array",
+          "offset": 1249,
+          "safe": true
+        },
+        {
+          "name": "price0CumulativeLast",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 1333,
+          "safe": true
+        },
+        {
+          "name": "price1CumulativeLast",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 1340,
+          "safe": true
+        },
+        {
+          "name": "swap",
+          "parameters": [
+            {
+              "name": "amount0Out",
+              "type": "Integer"
+            },
+            {
+              "name": "amount1Out",
+              "type": "Integer"
+            },
+            {
+              "name": "toAddress",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 1347,
+          "safe": false
+        },
+        {
+          "name": "swap",
+          "parameters": [
+            {
+              "name": "amount0Out",
+              "type": "Integer"
+            },
+            {
+              "name": "amount1Out",
+              "type": "Integer"
+            },
+            {
+              "name": "toAddress",
+              "type": "Hash160"
+            },
+            {
+              "name": "data",
+              "type": "ByteArray"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 2506,
+          "safe": false
+        },
+        {
+          "name": "burn",
+          "parameters": [
+            {
+              "name": "toAddress",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Any",
+          "offset": 3146,
+          "safe": false
+        },
+        {
+          "name": "mint",
+          "parameters": [
+            {
+              "name": "toAddress",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 3791,
+          "safe": false
+        },
+        {
+          "name": "getReserves",
+          "parameters": [],
+          "return_type": "Any",
+          "offset": 4223,
+          "safe": false
+        },
+        {
+          "name": "decimals",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 4403,
+          "safe": false
+        },
+        {
+          "name": "totalSupply",
+          "parameters": [],
+          "return_type": "Integer",
+          "offset": 3564,
+          "safe": false
+        },
+        {
+          "name": "balanceOf",
+          "parameters": [
+            {
+              "name": "account",
+              "type": "Hash160"
+            }
+          ],
+          "return_type": "Integer",
+          "offset": 3475,
+          "safe": false
+        },
+        {
+          "name": "transfer",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "to",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Boolean",
+          "offset": 4405,
+          "safe": false
+        },
+        {
+          "name": "onNEP17Payment",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "Hash160"
+            },
+            {
+              "name": "amount",
+              "type": "Integer"
+            },
+            {
+              "name": "data",
+              "type": "Any"
+            }
+          ],
+          "return_type": "Void",
+          "offset": 4735,
+          "safe": false
+        },
+        {
+          "name": "_initialize",
+          "parameters": [],
+          "return_type": "Void",
+          "offset": 4739,
+          "safe": false
+        }
+      ]
+    }
+  ]
+}

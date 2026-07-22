@@ -189,7 +189,8 @@ impl ApplicationContextProfileCollector {
 mod tests {
     use super::*;
     use crate::{ContractState, ExecutionContextState};
-    use neo_manifest::{CallFlags, ContractManifest, NefFile};
+    use neo_manifest::{ContractManifest, NefFile};
+    use neo_primitives::CallFlags;
     use neo_vm::{ExecutionContext, OpCode, ReferenceCounter, Script};
     use std::sync::Arc;
 

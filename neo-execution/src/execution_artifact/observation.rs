@@ -372,6 +372,25 @@ impl ExecutionObservationJournal {
         &self.contexts
     }
 
+    /// Returns the first host surface that is not yet safe to publish through
+    /// the optimistic transaction lane.
+    ///
+    /// These observations are still retained for the complete differential
+    /// artifact. The optimistic path is deliberately stricter: until the
+    /// scheduler has an exact dependency validator and ordered effect sink for
+    /// a surface, the transaction must fall back to ordinary NeoVM execution.
+    pub(crate) fn first_unsupported_optimistic_surface(&self) -> Option<&'static str> {
+        [
+            (!self.storage_ranges.is_empty(), "storage range reads"),
+            (!self.calls.is_empty(), "contract calls"),
+            (!self.witnesses.is_empty(), "witness checks"),
+            (!self.fee_charges.is_empty(), "fee charges"),
+            (!self.diagnostics.is_empty(), "diagnostic callbacks"),
+        ]
+        .into_iter()
+        .find_map(|(present, kind)| present.then_some(kind))
+    }
+
     /// Records one exact present or absent point read.
     pub fn record_storage_read(
         &mut self,

@@ -5,12 +5,12 @@ use super::super::providers::{
 use super::super::utils::{ledger_height, ledger_height_with_provider, verify_oracle_signature};
 use super::super::{OracleRuntimeProvider, OracleService, OracleServiceError, OracleTask};
 use neo_crypto::ECPoint;
-use neo_execution::Contract;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::Transaction;
 use neo_payloads::VerifiableExt;
 use neo_payloads::helper::get_sign_data_vec;
 use neo_storage::persistence::DataCache;
+use neo_vm::Contract;
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 use tracing::{debug, warn};
@@ -42,6 +42,7 @@ where
     ) -> Result<(), OracleServiceError> {
         let ledger = NativeOracleLedgerProvider::new();
         let native = self.native_provider();
+        let network_magic = self.runtime.chain_spec().network_magic();
 
         // Validate queue size to prevent memory exhaustion
         {
@@ -99,7 +100,7 @@ where
             }
 
             task.tx = Some(tx.clone());
-            let data = get_sign_data_vec(&tx, self.runtime.settings().network)
+            let data = get_sign_data_vec(&tx, network_magic)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
             task.signs
                 .retain(|key, value| verify_oracle_signature(key, &data, value));
@@ -107,7 +108,7 @@ where
 
         if let Some(tx) = backup_tx {
             task.backup_tx = Some(tx.clone());
-            let data = get_sign_data_vec(&tx, self.runtime.settings().network)
+            let data = get_sign_data_vec(&tx, network_magic)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
             task.backup_signs
                 .retain(|key, value| verify_oracle_signature(key, &data, value));
@@ -129,9 +130,9 @@ where
             OracleServiceError::Processing("oracle backup transaction missing".to_string())
         })?;
 
-        let tx_data = get_sign_data_vec(tx, self.runtime.settings().network)
+        let tx_data = get_sign_data_vec(tx, network_magic)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
-        let backup_data = get_sign_data_vec(backup_tx, self.runtime.settings().network)
+        let backup_data = get_sign_data_vec(backup_tx, network_magic)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
 
         if verify_oracle_signature(&oracle_pub, &tx_data, &sign) {
@@ -197,7 +198,7 @@ where
         }
         let invocation_script = builder.to_array();
 
-        let hashes = tx.script_hashes_for_verifying(snapshot);
+        let hashes = tx.script_hashes_for_verifying();
         let idx = if hashes.first() == Some(&contract.script_hash()) {
             0
         } else {
@@ -211,8 +212,11 @@ where
         }
         tx_mut.set_witnesses(witnesses);
 
-        if let Err(error) = self.runtime.try_enqueue_preverify(tx_mut, true, snapshot) {
-            warn!(target: "neo::oracle", %error, "failed to relay oracle response tx");
+        let outcome = self
+            .runtime
+            .submit_transaction(neo_mempool::TransactionOrigin::Local, tx_mut);
+        if !outcome.is_accepted() {
+            warn!(target: "neo::oracle", ?outcome, "failed to relay oracle response tx");
             return false;
         }
 

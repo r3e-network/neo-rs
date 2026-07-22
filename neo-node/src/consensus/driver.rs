@@ -410,7 +410,7 @@ where
                 if !hashes.is_empty() {
                     if let Err(err) = self
                         .network
-                        .broadcast_inv(neo_network::InventoryType::Transaction, hashes.clone())
+                        .broadcast_inv(neo_primitives::InventoryType::Transaction, hashes.clone())
                         .await
                     {
                         warn!(target: "neo", %err, "consensus proposal Inv(TX) broadcast failed");

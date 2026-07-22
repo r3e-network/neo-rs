@@ -60,10 +60,13 @@ pub(super) async fn handle_inbound_inventory_item(
             // Admit the peer's transaction to the mempool; the C# `Transaction.Verify`
             // pipeline runs inside the blockchain service. On a fresh accept (Succeed),
             // re-announce it to peers via `Inv` so it propagates.
-            if let Ok(reply) = blockchain.add_transaction((*tx).clone()).await {
+            if let Ok(reply) = blockchain
+                .add_transaction(neo_mempool::TransactionOrigin::External, (*tx).clone())
+                .await
+            {
                 if reply.result.is_success() {
                     let _ = relay
-                        .broadcast_inv(neo_network::InventoryType::Transaction, vec![reply.hash])
+                        .broadcast_inv(neo_primitives::InventoryType::Transaction, vec![reply.hash])
                         .await;
                     // C# `ConsensusService.OnTransaction`: a freshly-accepted
                     // transaction is fed to the consensus state machine so a

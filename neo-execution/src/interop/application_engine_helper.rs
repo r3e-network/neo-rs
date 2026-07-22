@@ -1,10 +1,10 @@
 //! ApplicationEngine.Helper - matches C# Neo.SmartContract.ApplicationEngine helper methods exactly
 
-use crate::NotifyEventArgs;
 use crate::application_engine::{ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE};
 use neo_config::hardfork::Hardfork;
 use neo_crypto::{Crypto, ECCurve, ECPoint};
 use neo_error::{CoreError, CoreResult};
+use neo_payloads::NotifyEventArgs;
 use neo_primitives::TriggerType;
 use neo_primitives::UInt160;
 use neo_serialization::BinarySerializer;
@@ -212,7 +212,7 @@ where
     }
 
     /// Helper to emit notify event
-    pub fn emit_notify_event(&mut self, event: crate::NotifyEventArgs) {
+    pub fn emit_notify_event(&mut self, event: NotifyEventArgs) {
         self.push_notification(event);
     }
 

@@ -9,21 +9,29 @@
 //!   verification has not yet been performed (or failed and is
 //!   scheduled for re-verification).
 //!
-//! Both queues are bounded by the configured `capacity` (typically
-//! `ProtocolSettings::memory_pool_max_transactions`). When the
-//! pool is full, the lowest-priority item is evicted to make room
-//! for a higher-priority one.
+//! Both queues are bounded by [`TxPoolConfig`]. Pool resource policy is kept
+//! separate from immutable chain rules, so operators can tune memory use
+//! without creating a different chain specification. When the pool is full,
+//! the lowest-priority item is evicted to make room for a higher-priority one.
 
-use crate::pool_item::PoolItem;
-use crate::transaction_verification_context::TransactionVerificationContext;
-use neo_config::ProtocolSettings;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use parking_lot::RwLock;
+
+use neo_config::NeoChainSpec;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::Transaction;
 use neo_primitives::{TransactionRemovalReason, UInt160, UInt256, VerifyResult};
 use neo_storage::{CacheRead, DataCache};
-use parking_lot::RwLock;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+
+use crate::admission::{TransactionValidationOutcome, validate_state_independent};
+use crate::pool_item::PoolItem;
+use crate::transaction_verification_context::TransactionVerificationContext;
+use crate::{
+    AdmissionLedgerProvider, TransactionAdmissionError, TransactionAdmissionOutcome,
+    TransactionOrigin, TxPoolConfig,
+};
 
 use super::state::{
     FeePayer, MemoryPoolInner, conflict_rebate, conflict_target_hashes, oracle_response_id,
@@ -38,9 +46,10 @@ pub struct MemoryPool<P = neo_native_contracts::StandardNativeProvider>
 where
     P: NativeContractProvider,
 {
-    /// Protocol settings used by transaction verification (network
-    /// magic for signature checks, hardfork schedule, expiry window).
-    settings: ProtocolSettings,
+    /// Immutable chain rules used by transaction verification.
+    chain_spec: Arc<NeoChainSpec>,
+    /// Immutable operator resource policy for this pool instance.
+    config: TxPoolConfig,
     /// Native contracts used by engine-based witness verification during
     /// admission and unverified-transaction promotion.
     native_contract_provider: Arc<P>,
@@ -57,12 +66,14 @@ where
     /// RPC, and consensus so engine-backed witness verification cannot observe
     /// process-global provider replacement.
     pub fn new_with_native_contract_provider(
-        settings: &ProtocolSettings,
+        chain_spec: Arc<NeoChainSpec>,
+        config: TxPoolConfig,
         native_contract_provider: Arc<P>,
     ) -> Self {
-        let capacity = settings.memory_pool_max_transactions as usize;
+        let capacity = config.max_transactions();
         Self {
-            settings: settings.clone(),
+            chain_spec,
+            config,
             native_contract_provider,
             inner: RwLock::new(MemoryPoolInner::with_capacity(capacity)),
         }
@@ -75,7 +86,13 @@ where
 
     /// Returns the configured maximum pool capacity.
     pub fn capacity(&self) -> usize {
-        self.inner.read().capacity
+        self.config.max_transactions()
+    }
+
+    /// Returns the immutable runtime policy captured by this memory pool.
+    #[must_use]
+    pub const fn config(&self) -> &TxPoolConfig {
+        &self.config
     }
 
     /// Returns the number of verified transactions currently in the pool.
@@ -353,7 +370,7 @@ where
                 let result = crate::verification::verify_transaction_with_native_provider(
                     &tx,
                     snapshot,
-                    &self.settings,
+                    self.chain_spec.protocol_settings(),
                     &effective_pooled_fee,
                     oracle_duplicate,
                     Arc::clone(&self.native_contract_provider),
@@ -408,241 +425,163 @@ where
         more_unverified
     }
 
-    /// Attempts to admit a fresh transaction into the pool. Returns
-    /// the [`VerifyResult`] describing the outcome.
-    ///
-    /// Mirrors C# `MemoryPool.TryAdd`: containment first, then the
-    /// full transaction verification ([`crate::verification`] — in C#
-    /// the state-independent half runs in the `TransactionRouter`
-    /// preverifier and the state-dependent half inside `TryAdd`; the
-    /// combined behavior is identical for the single-threaded
-    /// admission path), then admission into the **verified** queue
-    /// with capacity eviction and verification-context bookkeeping
-    /// (fee-payer reservations, pooled oracle-response ids).
-    ///
-    /// Pooled-conflict handling matches C# `CheckConflicts`: a transaction is
-    /// rejected (`HasConflicts`) when a conflicting pooled transaction out-fees
-    /// it or names a conflictee it shares no signer with; otherwise the
-    /// conflicting pooled transactions are evicted on admission, the
-    /// conflict-fee rebate is applied to the fee-payer balance check, and the
-    /// transaction's own `Conflicts` attributes are tracked for future
-    /// admissions. On-chain conflict records are checked separately via the
-    /// `Conflicts` attribute verification.
-    pub fn try_add<B: CacheRead>(
+    /// Validates and atomically admits a transaction through the one production
+    /// mempool boundary.
+    pub fn add_transaction<B, L>(
         &self,
+        origin: TransactionOrigin,
         transaction: Transaction,
         snapshot: &DataCache<B>,
-    ) -> VerifyResult {
-        let hash = transaction.hash();
-
-        // C# TryAdd holds the write lock across the containment check, the
-        // fee-payer-context read, verification, and admission, so two
-        // concurrent submissions cannot both verify against the same pooled
-        // fee-payer state (MemoryPool.cs:353-369). Verification is serialized
-        // under the lock exactly like C#'s `_txRwLock.EnterWriteLock()`.
-        let (removed_transactions, new_tx_evicted) = {
-            let mut guard = self.inner.write();
-            if guard.verified.contains(&hash) || guard.unverified.contains(&hash) {
-                return VerifyResult::AlreadyInPool;
-            }
-
-            // C# CheckConflicts (MemoryPool.cs:330): a transaction that loses the
-            // conflict-fee comparison or names a conflictee it shares no signer
-            // with is rejected; otherwise the returned pooled txs are evicted
-            // once `tx` is admitted.
-            let conflicts_to_remove = match guard.check_conflicts(&transaction) {
-                Some(list) => list,
-                None => return VerifyResult::HasConflicts,
-            };
-
-            let tx_payer = FeePayer::from_transaction(&transaction);
-            let pooled_sender_fee = tx_payer
-                .and_then(|payer| guard.sender_fees.get(&payer).cloned())
-                .unwrap_or_default();
-            // Conflict-fee rebate (C# VerifyStateDependent receives conflictsList):
-            // the conflicting txs with this payer tuple will be evicted, so
-            // their fees no longer count against the payer's pooled-fee
-            // allowance.
-            let rebate = conflict_rebate(&conflicts_to_remove, tx_payer);
-            let effective_pooled_fee = &pooled_sender_fee - &rebate;
-            let oracle_duplicate = oracle_response_id(&transaction)
-                .is_some_and(|id| guard.oracle_responses.contains_key(&id));
-
-            // Full C# Transaction.Verify against the provided snapshot.
-            let result = crate::verification::verify_transaction_with_native_provider(
-                &transaction,
-                snapshot,
-                &self.settings,
-                &effective_pooled_fee,
-                oracle_duplicate,
-                Arc::clone(&self.native_contract_provider),
-            );
-            if result != VerifyResult::Succeed {
-                return result;
-            }
-
-            // C# order: add the tx, evict the conflicting pooled txs, record the
-            // tx's own Conflicts attributes, then RemoveOverCapacity.
-            guard.verified.insert(PoolItem::new(transaction.clone()));
-            guard.context_add(&transaction);
-
-            let mut removed_transactions = Vec::new();
-            for conflict in &conflicts_to_remove {
-                let chash = conflict.hash();
-                if let Some(removed) = guard.verified.remove(&chash) {
-                    let dropped = (*removed.transaction).clone();
-                    guard.context_remove(&dropped);
-                    // Drop the evicted tx from every Conflicts tracking set.
-                    guard.conflicts.retain(|_, set| {
-                        set.remove(&chash);
-                        !set.is_empty()
-                    });
-                    removed_transactions.push(dropped);
-                }
-            }
-            // Track this tx's declared conflicts: target hash -> {tx hash}.
-            for target in conflict_target_hashes(&transaction) {
-                guard.conflicts.entry(target).or_default().insert(hash);
-            }
-
-            // C# RemoveOverCapacity loops over the TOTAL count (verified +
-            // unverified), evicting the global lowest-fee item each pass
-            // (preferring the unverified queue on a tie) until total <= Capacity.
-            // The evicted item may be the just-added transaction => OutOfMemory
-            // for the caller. The previous gate only counted the verified queue,
-            // so block-persist survivors dumped into the unverified queue could
-            // push total occupancy to ~2x the configured capacity.
-            let mut new_tx_evicted = false;
-            while guard.verified.len() + guard.unverified.len() > guard.capacity {
-                let Some(dropped) = guard.remove_lowest_fee() else {
-                    break;
+        ledger_provider: &L,
+    ) -> TransactionAdmissionOutcome
+    where
+        B: CacheRead,
+        L: AdmissionLedgerProvider,
+    {
+        let validation =
+            validate_state_independent(transaction, origin, self.chain_spec.protocol_settings());
+        let validated = match validation {
+            TransactionValidationOutcome::Valid(validated) => validated,
+            TransactionValidationOutcome::Rejected {
+                transaction,
+                origin,
+                result,
+            } => {
+                return TransactionAdmissionOutcome::Rejected {
+                    hash: transaction.try_hash().ok(),
+                    origin,
+                    result,
                 };
-                if dropped.hash() == hash {
-                    new_tx_evicted = true;
-                }
-                removed_transactions.push(dropped);
             }
-            (removed_transactions, new_tx_evicted)
+        };
+        let (transaction, origin) = validated.into_parts();
+        let hash = match transaction.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                return TransactionAdmissionOutcome::Error {
+                    hash: None,
+                    origin,
+                    error: TransactionAdmissionError::InvalidHash(error.to_string()),
+                };
+            }
         };
 
-        drop(removed_transactions);
-        if new_tx_evicted {
-            return VerifyResult::OutOfMemory;
-        }
-        VerifyResult::Succeed
-    }
-
-    /// Attempts to admit a transaction using a cached state-independent
-    /// verification result.
-    ///
-    /// C# `MemoryPool.TryAdd` reads `Transaction.VerificationResult` (cached
-    /// by `Blockchain.AskForTransaction`) and skips redundant re-verification.
-    /// This method provides the same optimization: callers that have already
-    /// performed `verify_state_independent` pass the cached outcome here and
-    /// the method only runs the state-dependent checks (`verify_state_dependent`).
-    ///
-    /// When `cached_state_independent` is `Some(VerifyResult::Succeed)` the
-    /// state-independent checks (size, script parse, ECDSA fast-paths) are
-    /// skipped. Any other cached value causes an early rejection. When `None`
-    /// is passed, the full `verify_transaction` (state-independent +
-    /// state-dependent) is performed — identical to [`Self::try_add`].
-    pub fn try_add_cached<B: CacheRead>(
-        &self,
-        transaction: Transaction,
-        snapshot: &DataCache<B>,
-        cached_state_independent: Option<VerifyResult>,
-    ) -> VerifyResult {
-        let hash = transaction.hash();
-
-        let (removed_transactions, new_tx_evicted) = {
-            let mut guard = self.inner.write();
-            if guard.verified.contains(&hash) || guard.unverified.contains(&hash) {
-                return VerifyResult::AlreadyInPool;
-            }
-
-            let conflicts_to_remove = match guard.check_conflicts(&transaction) {
-                Some(list) => list,
-                None => return VerifyResult::HasConflicts,
-            };
-
-            let tx_payer = FeePayer::from_transaction(&transaction);
-            let pooled_sender_fee = tx_payer
-                .and_then(|payer| guard.sender_fees.get(&payer).cloned())
-                .unwrap_or_default();
-            let rebate = conflict_rebate(&conflicts_to_remove, tx_payer);
-            let effective_pooled_fee = &pooled_sender_fee - &rebate;
-            let oracle_duplicate = oracle_response_id(&transaction)
-                .is_some_and(|id| guard.oracle_responses.contains_key(&id));
-
-            // M7: skip redundant state-independent verification when a
-            // cached result is available (cached -> never repeats ECDSA).
-            let result = match cached_state_independent {
-                // Preverified: state-independent already passed — only
-                // run state-dependent checks.
-                Some(VerifyResult::Succeed) => {
-                    crate::verification::verify_transaction_dependent_only_with_native_provider(
-                        &transaction,
-                        snapshot,
-                        &self.settings,
-                        &effective_pooled_fee,
-                        oracle_duplicate,
-                        Arc::clone(&self.native_contract_provider),
-                    )
-                }
-                // Preverified but failed: reject immediately.
-                Some(fail) => fail,
-                // No cache: run full verification (same as try_add).
-                None => crate::verification::verify_transaction_with_native_provider(
-                    &transaction,
-                    snapshot,
-                    &self.settings,
-                    &effective_pooled_fee,
-                    oracle_duplicate,
-                    Arc::clone(&self.native_contract_provider),
-                ),
-            };
-            if result != VerifyResult::Succeed {
-                return result;
-            }
-
-            guard.verified.insert(PoolItem::new(transaction.clone()));
-            guard.context_add(&transaction);
-
-            let mut removed_transactions = Vec::new();
-            for conflict in &conflicts_to_remove {
-                let chash = conflict.hash();
-                if let Some(removed) = guard.verified.remove(&chash) {
-                    let dropped = (*removed.transaction).clone();
-                    guard.context_remove(&dropped);
-                    guard.conflicts.retain(|_, set| {
-                        set.remove(&chash);
-                        !set.is_empty()
-                    });
-                    removed_transactions.push(dropped);
-                }
-            }
-            for target in conflict_target_hashes(&transaction) {
-                guard.conflicts.entry(target).or_default().insert(hash);
-            }
-
-            let mut new_tx_evicted = false;
-            while guard.verified.len() + guard.unverified.len() > guard.capacity {
-                let Some(dropped) = guard.remove_lowest_fee() else {
-                    break;
+        match ledger_provider.contains_transaction(snapshot, &hash) {
+            Ok(true) => {
+                return TransactionAdmissionOutcome::Rejected {
+                    hash: Some(hash),
+                    origin,
+                    result: VerifyResult::AlreadyExists,
                 };
-                if dropped.hash() == hash {
-                    new_tx_evicted = true;
-                }
-                removed_transactions.push(dropped);
             }
-            (removed_transactions, new_tx_evicted)
-        };
-
-        drop(removed_transactions);
-        if new_tx_evicted {
-            return VerifyResult::OutOfMemory;
+            Ok(false) => {}
+            Err(error) => {
+                return TransactionAdmissionOutcome::Error {
+                    hash: Some(hash),
+                    origin,
+                    error: TransactionAdmissionError::provider("contains_transaction", error),
+                };
+            }
         }
-        VerifyResult::Succeed
+
+        let max_traceable_blocks = match self
+            .native_contract_provider
+            .max_traceable_blocks(snapshot, self.chain_spec.protocol_settings())
+        {
+            Ok(value) => value,
+            Err(error) => {
+                return TransactionAdmissionOutcome::Error {
+                    hash: Some(hash),
+                    origin,
+                    error: TransactionAdmissionError::provider("max_traceable_blocks", error),
+                };
+            }
+        };
+        let signers: Vec<UInt160> = transaction
+            .signers()
+            .iter()
+            .map(|signer| signer.account)
+            .collect();
+        match ledger_provider.contains_conflict_hash(
+            snapshot,
+            &hash,
+            &signers,
+            max_traceable_blocks,
+        ) {
+            Ok(true) => {
+                return TransactionAdmissionOutcome::Rejected {
+                    hash: Some(hash),
+                    origin,
+                    result: VerifyResult::HasConflicts,
+                };
+            }
+            Ok(false) => {}
+            Err(error) => {
+                return TransactionAdmissionOutcome::Error {
+                    hash: Some(hash),
+                    origin,
+                    error: TransactionAdmissionError::provider("contains_conflict_hash", error),
+                };
+            }
+        }
+
+        let mut guard = self.inner.write();
+        if guard.verified.contains(&hash) || guard.unverified.contains(&hash) {
+            return TransactionAdmissionOutcome::Rejected {
+                hash: Some(hash),
+                origin,
+                result: VerifyResult::AlreadyInPool,
+            };
+        }
+
+        let Some(conflicts_to_remove) = guard.check_conflicts(&transaction) else {
+            return TransactionAdmissionOutcome::Rejected {
+                hash: Some(hash),
+                origin,
+                result: VerifyResult::HasConflicts,
+            };
+        };
+        let tx_payer = FeePayer::from_transaction(&transaction);
+        let pooled_sender_fee = tx_payer
+            .and_then(|payer| guard.sender_fees.get(&payer).cloned())
+            .unwrap_or_default();
+        let rebate = conflict_rebate(&conflicts_to_remove, tx_payer);
+        let effective_pooled_fee = &pooled_sender_fee - &rebate;
+        let oracle_duplicate = oracle_response_id(&transaction)
+            .is_some_and(|id| guard.oracle_responses.contains_key(&id));
+        let result = crate::verification::verify_state_dependent_with_ledger_provider(
+            &transaction,
+            snapshot,
+            self.chain_spec.protocol_settings(),
+            &effective_pooled_fee,
+            oracle_duplicate,
+            Arc::clone(&self.native_contract_provider),
+            ledger_provider,
+        );
+        if result != VerifyResult::Succeed {
+            return TransactionAdmissionOutcome::Rejected {
+                hash: Some(hash),
+                origin,
+                result,
+            };
+        }
+
+        let retained = guard.insert_validated(
+            transaction,
+            origin,
+            hash,
+            &conflicts_to_remove,
+            self.config.max_transactions(),
+        );
+        if retained {
+            TransactionAdmissionOutcome::Accepted { hash, origin }
+        } else {
+            TransactionAdmissionOutcome::Rejected {
+                hash: Some(hash),
+                origin,
+                result: VerifyResult::OutOfMemory,
+            }
+        }
     }
 
     /// Removes the transaction with the given hash from the pool.
@@ -683,16 +622,12 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let guard = self.inner.read();
         f.debug_struct("MemoryPool")
-            .field("capacity", &guard.capacity)
+            .field("config", &self.config)
             .field("verified", &guard.verified.len())
             .field("unverified", &guard.unverified.len())
             .finish()
     }
 }
-
-/// Shared handle alias for the `Arc<MemoryPool>` pattern used by
-/// services that need to share the pool across tasks.
-pub type SharedMemoryPool<P = neo_native_contracts::StandardNativeProvider> = Arc<MemoryPool<P>>;
 
 #[cfg(test)]
 fn reset_block_persisted_tx_scan_count() {

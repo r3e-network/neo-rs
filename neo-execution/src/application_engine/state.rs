@@ -699,7 +699,7 @@ where
         // C# `ApplicationEngine.IsHardforkEnabled`: with no persisting block
         // (notably verification engines), a configured hardfork is considered active.
         if self.persisting_block.is_none() {
-            return self.protocol_settings.hardforks.contains_key(&hardfork);
+            return self.protocol_settings.hardforks.is_defined(hardfork);
         }
 
         self.protocol_settings

@@ -1,13 +1,68 @@
 //! Genesis block configuration
 
-use crate::{ConfigError, ConfigResult};
+use super::public_key::parse_public_key;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+/// C# `NeoSystem.CreateGenesisBlock` timestamp.
+pub const GENESIS_TIMESTAMP_MS: u64 = 1_468_595_301_000;
+
+/// C# `NeoSystem.CreateGenesisBlock` nonce.
+pub const GENESIS_NONCE: u64 = 2_083_236_893;
+
+/// Invalid deterministic genesis configuration.
+#[derive(Debug, Error)]
+pub enum GenesisConfigError {
+    /// Genesis must define at least one validator.
+    #[error("at least one validator is required")]
+    EmptyValidators,
+
+    /// Genesis must define the committee that owns validator selection.
+    #[error("at least one committee member is required")]
+    EmptyCommittee,
+
+    /// A validator key is malformed.
+    #[error("invalid validator public key at index {index}: {reason}")]
+    InvalidValidatorKey {
+        /// Validator position.
+        index: usize,
+        /// Parse failure.
+        reason: String,
+    },
+
+    /// A committee key is malformed.
+    #[error("invalid committee public key at index {index}: {reason}")]
+    InvalidCommitteeKey {
+        /// Committee position.
+        index: usize,
+        /// Parse failure.
+        reason: String,
+    },
+
+    /// A committee cannot contain the same key more than once.
+    #[error("duplicate committee public key at index {index}")]
+    DuplicateCommitteeKey {
+        /// Duplicate position.
+        index: usize,
+    },
+
+    /// Every validator must be a member of the configured committee.
+    #[error("validator public key at index {index} is not a committee member")]
+    ValidatorNotInCommittee {
+        /// Validator position.
+        index: usize,
+    },
+}
 
 /// Genesis block configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GenesisConfig {
     /// Genesis block timestamp (Unix timestamp in milliseconds)
     pub timestamp: u64,
+
+    /// Genesis block nonce (the Bitcoin genesis nonce used by Neo N3).
+    #[serde(default = "default_genesis_nonce")]
+    pub nonce: u64,
 
     /// Initial validators for consensus
     pub validators: Vec<GenesisValidator>,
@@ -24,7 +79,7 @@ pub struct GenesisConfig {
 }
 
 /// Genesis validator configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GenesisValidator {
     /// Validator public key (hex encoded, compressed `ECPoint`)
     pub public_key: String,
@@ -35,7 +90,7 @@ pub struct GenesisValidator {
 }
 
 /// Initial token distribution
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenDistribution {
     /// Token type (NEO or GAS)
     pub token: TokenType,
@@ -58,7 +113,7 @@ pub enum TokenType {
 }
 
 /// Genesis contract deployment
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GenesisContract {
     /// Contract name
     pub name: String,
@@ -73,19 +128,14 @@ pub struct GenesisContract {
     pub manifest: String,
 }
 
-impl Default for GenesisConfig {
-    fn default() -> Self {
-        Self::mainnet()
-    }
-}
-
 impl GenesisConfig {
     /// `MainNet` genesis configuration
     #[must_use]
     pub fn mainnet() -> Self {
         Self {
-            // Neo N3 MainNet genesis timestamp: 2021-03-20T15:00:00Z
-            timestamp: 1616245200000,
+            // Neo N3 genesis timestamp: 2016-07-15T15:08:21Z.
+            timestamp: GENESIS_TIMESTAMP_MS,
+            nonce: GENESIS_NONCE,
             validators: vec![
                 GenesisValidator {
                     public_key:
@@ -162,7 +212,8 @@ impl GenesisConfig {
     #[must_use]
     pub fn testnet() -> Self {
         Self {
-            timestamp: 1616245200000,
+            timestamp: GENESIS_TIMESTAMP_MS,
+            nonce: GENESIS_NONCE,
             validators: vec![
                 GenesisValidator {
                     public_key:
@@ -235,13 +286,16 @@ impl GenesisConfig {
         }
     }
 
-    /// Create a private network genesis with single validator
+    /// Creates a deterministic private-network genesis with one validator.
+    ///
+    /// Callers must persist and distribute the explicit timestamp and nonce;
+    /// consulting the local clock here would let identical private-chain
+    /// configs produce different genesis hashes on different nodes.
     #[must_use]
-    pub fn private(validator_pubkey: &str) -> Self {
+    pub fn private(validator_pubkey: &str, timestamp: u64, nonce: u64) -> Self {
         Self {
-            // A pre-1970 system clock is the only failure mode here; fall back to 0
-            // rather than panicking inside a public constructor.
-            timestamp: neo_primitives::time::now_millis(),
+            timestamp,
+            nonce,
             validators: vec![GenesisValidator {
                 public_key: validator_pubkey.to_string(),
                 name: Some("Local Validator".to_string()),
@@ -252,25 +306,47 @@ impl GenesisConfig {
         }
     }
 
-    /// Validate the genesis configuration
-    pub fn validate(&self) -> ConfigResult<()> {
+    /// Validates deterministic genesis membership and key encoding.
+    pub fn validate(&self) -> Result<(), GenesisConfigError> {
         if self.validators.is_empty() {
-            return Err(ConfigError::GenesisError(
-                "At least one validator is required".to_string(),
-            ));
+            return Err(GenesisConfigError::EmptyValidators);
+        }
+        if self.committee.is_empty() {
+            return Err(GenesisConfigError::EmptyCommittee);
         }
 
-        for validator in &self.validators {
-            if validator.public_key.len() != 66 {
-                return Err(ConfigError::GenesisError(format!(
-                    "Invalid validator public key length: {}",
-                    validator.public_key
-                )));
+        let mut committee = Vec::with_capacity(self.committee.len());
+        for (index, encoded) in self.committee.iter().enumerate() {
+            let key = parse_public_key(encoded).map_err(|error| {
+                GenesisConfigError::InvalidCommitteeKey {
+                    index,
+                    reason: error.to_string(),
+                }
+            })?;
+            if committee.contains(&key) {
+                return Err(GenesisConfigError::DuplicateCommitteeKey { index });
+            }
+            committee.push(key);
+        }
+
+        for (index, validator) in self.validators.iter().enumerate() {
+            let key = parse_public_key(&validator.public_key).map_err(|error| {
+                GenesisConfigError::InvalidValidatorKey {
+                    index,
+                    reason: error.to_string(),
+                }
+            })?;
+            if !committee.contains(&key) {
+                return Err(GenesisConfigError::ValidatorNotInCommittee { index });
             }
         }
 
         Ok(())
     }
+}
+
+const fn default_genesis_nonce() -> u64 {
+    GENESIS_NONCE
 }
 
 #[cfg(test)]

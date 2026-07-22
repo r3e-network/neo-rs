@@ -8,6 +8,7 @@
 use neo_config::ProtocolSettings;
 use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_primitives::TransactionAttributeType;
 use neo_storage::{CacheRead, DataCache};
 use std::sync::Arc;
 
@@ -25,6 +26,13 @@ pub(super) trait WalletCompatNativeProvider {
 
     /// Returns the active `FeePerByte`.
     fn fee_per_byte<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32>;
+
+    /// Returns the Policy fee for one transaction attribute type.
+    fn attribute_fee<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        attribute_type: TransactionAttributeType,
+    ) -> CoreResult<i64>;
 }
 
 /// Adapter from the node-composed native-contract provider to wallet
@@ -66,5 +74,13 @@ where
 
     fn fee_per_byte<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32> {
         self.adapter.fee_per_byte(snapshot)
+    }
+
+    fn attribute_fee<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        attribute_type: TransactionAttributeType,
+    ) -> CoreResult<i64> {
+        self.adapter.attribute_fee(snapshot, attribute_type)
     }
 }

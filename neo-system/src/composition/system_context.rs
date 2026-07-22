@@ -1,6 +1,7 @@
 //! Core blockchain system context and application commit-hook boundary.
 //!
-//! `NodeSystemContext` owns provider-neutral node mechanics: protocol settings,
+//! `NodeSystemContext` owns provider-neutral node mechanics: the immutable
+//! chain specification,
 //! the canonical store snapshot, durable commits, and the native-contract
 //! provider. Application-specific StateService and indexing policy is supplied
 //! through the statically dispatched `BlockCommitHooks` collaborator.
@@ -15,7 +16,7 @@ use neo_blockchain::{
     LedgerProvider, LedgerProviderFactory, NativePersistResources, OptionalStaticLedgerProvider,
     SyncBatchCommitPolicy, SystemContext,
 };
-use neo_config::ProtocolSettings;
+use neo_config::{ChainSpecProvider, NeoChainSpec};
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
 use neo_storage::StorageResult;
@@ -227,7 +228,7 @@ where
     S: TransactionalStore,
     H: BlockCommitHooks<S>,
 {
-    settings: Arc<ProtocolSettings>,
+    chain_spec: Arc<NeoChainSpec>,
     snapshot: Arc<StoreDataCache<S>>,
     store_cache: Mutex<StoreCache<S>>,
     native_contract_provider: Arc<P>,
@@ -245,14 +246,14 @@ where
 {
     /// Compose a blockchain context over one canonical store cache.
     pub fn new(
-        settings: Arc<ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         snapshot: Arc<StoreDataCache<S>>,
         store_cache: StoreCache<S>,
         native_contract_provider: Arc<P>,
         hooks: Arc<H>,
     ) -> Self {
         Self::new_with_ledger_provider(
-            settings,
+            chain_spec,
             snapshot,
             store_cache,
             native_contract_provider,
@@ -264,7 +265,7 @@ where
     /// Compose a blockchain context with an application-selected cold Ledger
     /// fallback.
     pub fn new_with_ledger_provider(
-        settings: Arc<ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         snapshot: Arc<StoreDataCache<S>>,
         store_cache: StoreCache<S>,
         native_contract_provider: Arc<P>,
@@ -272,7 +273,7 @@ where
         hooks: Arc<H>,
     ) -> Self {
         Self::new_with_ledger_provider_and_optional_native_persist_resources(
-            settings,
+            chain_spec,
             snapshot,
             store_cache,
             native_contract_provider,
@@ -284,7 +285,7 @@ where
 
     /// Compose a blockchain context with optional application-selected persistence resources.
     pub(crate) fn new_with_ledger_provider_and_optional_native_persist_resources(
-        settings: Arc<ProtocolSettings>,
+        chain_spec: Arc<NeoChainSpec>,
         snapshot: Arc<StoreDataCache<S>>,
         store_cache: StoreCache<S>,
         native_contract_provider: Arc<P>,
@@ -296,7 +297,7 @@ where
             Arc::ptr_eq(&native_contract_provider, &resources.provider())
         }));
         Self {
-            settings,
+            chain_spec,
             snapshot,
             store_cache: Mutex::new(store_cache),
             native_contract_provider,
@@ -327,9 +328,22 @@ where
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("NodeSystemContext")
-            .field("network", &self.settings.network)
+            .field("network", &self.chain_spec.network_magic())
             .field("hooks", &self.hooks)
             .finish_non_exhaustive()
+    }
+}
+
+impl<P, S, H> ChainSpecProvider for NodeSystemContext<P, S, H>
+where
+    P: NativeContractProvider + 'static,
+    S: TransactionalStore + 'static,
+    H: BlockCommitHooks<S> + 'static,
+{
+    type ChainSpec = NeoChainSpec;
+
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        Arc::clone(&self.chain_spec)
     }
 }
 
@@ -341,10 +355,6 @@ where
 {
     type NativeProvider = P;
     type CacheBacking = StoreCacheBacking<S>;
-
-    fn settings(&self) -> Arc<ProtocolSettings> {
-        Arc::clone(&self.settings)
-    }
 
     fn current_height(&self) -> u32 {
         self.ledger_provider_factory

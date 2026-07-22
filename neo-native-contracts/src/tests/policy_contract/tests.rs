@@ -168,7 +168,7 @@ fn exec_fee_factor_reads_default_and_round_trips_through_storage() {
 fn snapshot_exec_fee_factor_divides_post_faun_pico_storage() {
     let cache = DataCache::new(false);
     let mut settings = neo_config::ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfFaun, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfFaun, 0);
 
     seed_policy_setting_key(
         &cache,
@@ -188,7 +188,7 @@ fn snapshot_exec_fee_factor_divides_post_faun_pico_storage() {
 fn snapshot_max_valid_until_ignores_policy_storage_before_echidna() {
     let cache = DataCache::new(false);
     let mut settings = neo_config::ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 100);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 100);
     seed_policy_setting_key(
         &cache,
         PolicyContract::max_valid_until_block_increment_key(),
@@ -211,7 +211,7 @@ fn snapshot_milliseconds_per_block_reads_policy_value_after_echidna() {
     // frozen ProtocolSettings default. The consensus driver reads this each round.
     let cache = DataCache::new(false);
     let mut settings = neo_config::ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
     // Committee changed the block time to a value that differs from the default.
     let committee_value: i64 = 7_000;
     assert_ne!(committee_value as u32, settings.milliseconds_per_block);
@@ -237,7 +237,7 @@ fn snapshot_milliseconds_per_block_ignores_policy_storage_before_echidna() {
     // ignores any Policy storage value, matching C# `GetTimePerBlock`.
     let cache = DataCache::new(false);
     let mut settings = neo_config::ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 100);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 100);
     seed_policy_setting_key(&cache, PolicyContract::milliseconds_per_block_key(), 7_000);
     seed_current_block(&cache, 0);
 
@@ -256,7 +256,7 @@ fn snapshot_milliseconds_per_block_falls_back_when_key_missing_after_echidna() {
     // (or the ledger has no current block) → ProtocolSettings default.
     let cache = DataCache::new(false);
     let mut settings = neo_config::ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
     seed_current_block(&cache, 5);
     // Intentionally no milliseconds_per_block_key written.
 
@@ -494,7 +494,7 @@ fn echidna_policy_settings_require_initialized_storage() {
     let cache = DataCache::new(false);
     seed_current_block(&cache, 0);
     let mut settings = neo_config::ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
     let engine = ApplicationEngine::new_with_native_contract_provider(
         neo_primitives::TriggerType::Application,
         None,

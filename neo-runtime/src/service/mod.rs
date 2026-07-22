@@ -13,6 +13,7 @@
 //!
 //! - `block_import`: Shared block-import trait and outcome records.
 //! - `blockchain`: Blockchain-domain primitive records used across crates.
+//! - `lifecycle`: Shared node-service lifecycle capability contracts.
 //! - `nep17`: Shared NEP-17 metadata capability contract.
 //! - `outcome`: Runtime outcome records shared across services.
 //! - `services`: Auxiliary service startup and handles used by the daemon.
@@ -24,6 +25,7 @@
 
 pub mod block_import;
 pub mod blockchain;
+pub mod lifecycle;
 pub mod nep17;
 pub mod outcome;
 pub mod services;
@@ -35,6 +37,7 @@ pub use block_import::{
     BlockImportQueue, BlockOrigin, CheckedBlockBatch, ImportQueue, ImportedTip,
 };
 pub use blockchain::{BlockchainEvent, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY};
+pub use lifecycle::{CommittedHandler, CommittingHandler, FinalizedHandler, WalletChangedHandler};
 pub use nep17::{Nep17Metadata, Nep17MetadataReader};
 pub use outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationResult};
 pub use services::{NetworkService, Service, TxHash};

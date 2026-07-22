@@ -16,8 +16,10 @@ use super::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use neo_blockchain::ledger_provider::TransactionAdmissionLedger;
 use neo_blockchain::{
     BlockchainHandle, HotColdLedgerProviderFactory, OptionalStaticLedgerProvider,
+    StorageLedgerProvider,
 };
 use neo_config::ProtocolSettings;
 use neo_consensus::{
@@ -27,7 +29,7 @@ use neo_consensus::{
 };
 use neo_crypto::{ECPoint, signature::Secp256r1Crypto};
 use neo_io::Serializable;
-use neo_mempool::{MemoryPool, PoolItem};
+use neo_mempool::{MemoryPool, PoolItem, TransactionOrigin};
 use neo_native_contracts::LedgerContract;
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Signer, Transaction, TransactionAttribute, Witness};
@@ -46,10 +48,22 @@ mod archive_provider;
 mod proposal;
 
 fn memory_pool(settings: &ProtocolSettings) -> MemoryPool {
+    let chain_spec = neo_test_fixtures::test_chain_spec(settings.clone());
     MemoryPool::new_with_native_contract_provider(
-        settings,
+        chain_spec,
+        neo_mempool::TxPoolConfig::default(),
         Arc::new(neo_native_contracts::StandardNativeProvider::new()),
     )
+}
+
+fn admit_local_transaction(
+    pool: &MemoryPool,
+    transaction: Transaction,
+    snapshot: &DataCache,
+) -> VerifyResult {
+    let ledger = TransactionAdmissionLedger::new(StorageLedgerProvider::new(snapshot));
+    pool.add_transaction(TransactionOrigin::Local, transaction, snapshot, &ledger)
+        .verify_result()
 }
 
 fn test_ledger_provider_factory() -> HotColdLedgerProviderFactory<OptionalStaticLedgerProvider> {
@@ -247,7 +261,10 @@ fn prepare_request_ledger_guard_rejects_available_transaction_with_onchain_confl
     let tx = signed_zero_fee_tx(&settings, 0x41);
     let hash = tx.hash();
     let signer = tx.signers().first().expect("signer").account;
-    assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, tx, &snapshot),
+        VerifyResult::Succeed
+    );
     seed_current_block(&snapshot, 100);
     seed_traceable_conflict(&snapshot, &hash, &signer, 95);
 
@@ -263,9 +280,9 @@ fn prepare_request_ledger_guard_rejects_available_transaction_with_onchain_confl
 #[test]
 fn prepare_request_ledger_guard_uses_dynamic_max_traceable_blocks() {
     let mut settings = ProtocolSettings::default();
-    settings
-        .hardforks
-        .insert(neo_config::Hardfork::HfEchidna, 0);
+    settings.hardforks = neo_config::HardforkSchedule::new()
+        .with_activation(neo_config::Hardfork::HfEchidna, 0)
+        .with_omitted_leading_at_genesis();
     let snapshot = DataCache::new(false);
     let pool = memory_pool(&settings);
     seed_current_block(&snapshot, 0);
@@ -275,7 +292,10 @@ fn prepare_request_ledger_guard_uses_dynamic_max_traceable_blocks() {
     let tx = signed_zero_fee_tx(&settings, 0x42);
     let hash = tx.hash();
     let signer = tx.signers().first().expect("signer").account;
-    assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
+    assert_eq!(
+        admit_local_transaction(&pool, tx, &snapshot),
+        VerifyResult::Succeed
+    );
     seed_current_block(&snapshot, 100);
     set_policy_u32(&snapshot, 23, 3);
     seed_traceable_conflict(&snapshot, &hash, &signer, 95);
@@ -324,9 +344,9 @@ fn effective_block_time_after_configure_round(
 #[test]
 fn configure_round_picks_up_policy_milliseconds_per_block_after_echidna() {
     let mut settings = ProtocolSettings::default();
-    settings
-        .hardforks
-        .insert(neo_config::Hardfork::HfEchidna, 0);
+    settings.hardforks = neo_config::HardforkSchedule::new()
+        .with_activation(neo_config::Hardfork::HfEchidna, 0)
+        .with_omitted_leading_at_genesis();
     let snapshot = DataCache::new(false);
     seed_current_block(&snapshot, 10);
     // Committee lowered the block time to 5s, differing from the 15s default.
@@ -347,9 +367,9 @@ fn configure_round_picks_up_policy_milliseconds_per_block_after_echidna() {
 fn configure_round_uses_settings_default_before_echidna() {
     let mut settings = ProtocolSettings::default();
     // Echidna not active until far in the future.
-    settings
-        .hardforks
-        .insert(neo_config::Hardfork::HfEchidna, 1_000_000);
+    settings.hardforks = neo_config::HardforkSchedule::new()
+        .with_activation(neo_config::Hardfork::HfEchidna, 1_000_000)
+        .with_omitted_leading_at_genesis();
     let snapshot = DataCache::new(false);
     seed_current_block(&snapshot, 10);
     // A stray Policy value must be ignored pre-Echidna.

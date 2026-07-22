@@ -1,10 +1,7 @@
-use neo_config::ProtocolSettings;
-use neo_payloads::{
-    ApplicationExecuted, Block, CommittedHandler, CommittingHandler, Header, NotifyEventArgs,
-    Signer, Transaction,
-};
+use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
 use neo_primitives::{TriggerType, UInt160, UInt256, WitnessScope};
 use neo_rpc::application_logs::ApplicationLogsSettings;
+use neo_runtime::{CommittedHandler, CommittingHandler};
 use neo_storage::persistence::StoreCache;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_vm::StackItem;
@@ -87,14 +84,13 @@ mod stage;
 
 #[test]
 fn application_logs_supply_notifications_to_the_index_stage() {
-    let settings = Arc::new(ProtocolSettings::default());
-    let _node = neo_system::Node::new(Arc::clone(&settings), None, None).expect("node");
+    let chain_spec = neo_config::NeoChainSpec::mainnet().expect("valid MainNet chain spec");
     let chain_store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let mut logs_settings = ApplicationLogsSettings::default();
     logs_settings.enabled = true;
-    logs_settings.network = settings.network;
+    logs_settings.network = chain_spec.network_magic();
     let logs = ApplicationLogsService::new(logs_settings, Arc::new(MemoryStore::new()));
 
     let signer = UInt160::from_bytes(&[7; UInt160::LENGTH]).expect("signer");
@@ -132,8 +128,13 @@ fn application_logs_supply_notifications_to_the_index_stage() {
             ],
         ));
 
-    logs.blockchain_committing_handler(settings.network, &block, snapshot.as_ref(), &[executed]);
-    logs.blockchain_committed_handler(settings.network, &block);
+    logs.blockchain_committing_handler(
+        chain_spec.network_magic(),
+        &block,
+        snapshot.as_ref(),
+        &[executed],
+    );
+    logs.blockchain_committed_handler(chain_spec.network_magic(), &block);
 
     let records =
         application_log_notification_records(&logs, &block).expect("recover notifications");

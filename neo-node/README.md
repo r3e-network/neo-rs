@@ -21,11 +21,11 @@ cargo build -p neo-node --release
 ## Usage
 
 ```bash
-# Start with default configuration (mainnet)
-neo-node --config neo_mainnet_node.toml
+# Start with the default configuration (TestNet)
+neo-node
 
-# Start with testnet configuration
-neo-node --config neo_testnet_node.toml
+# Start with MainNet configuration
+neo-node --config neo_mainnet_node.toml
 
 # Override storage path
 neo-node --config neo_mainnet_node.toml --storage-path ./data/chain
@@ -33,13 +33,14 @@ neo-node --config neo_mainnet_node.toml --storage-path ./data/chain
 # Validate configuration and storage without starting P2P/RPC
 neo-node --config neo_mainnet_node.toml --check-all
 
-# Override network magic for a private network
-neo-node --config custom.toml --network-magic 123456
+# Assert the selected built-in chain's network magic
+neo-node --config neo_mainnet_node.toml --network-magic 860833102
 ```
 
 Notes:
 - Storage backend, P2P, RPC, and consensus settings live in TOML.
 - `--storage-path` uses the configured persistent backend, defaulting to MDBX in production builds, and overrides `[storage].data_dir` / `[storage].path`.
+- Built-in MainNet and TestNet identity fields are assertions. Private/custom chains require an explicit validated `NeoChainSpec` from an embedding application.
 - When dBFT is enabled, the validator key comes from the `[consensus]` configuration.
 
 ## Command-line Options
@@ -48,7 +49,7 @@ Notes:
 |--------|-------------|--------|
 | `-c, --config <PATH>` | Path to TOML configuration file | `neo_testnet_node.toml` |
 | `--storage-path <PATH>` | Override storage path for the configured/default persistent backend | (from config) |
-| `--network-magic <N>` | Override network magic | (from config) |
+| `--network-magic <N>` | Assert the selected chain's network magic | (not set) |
 | `--check-config` | Validate configuration and exit | false |
 | `--check-storage` | Validate storage can be opened and exit | false |
 | `--check-all` | Run all preflight checks and exit | false |
@@ -59,7 +60,7 @@ See `neo_mainnet_node.toml` for a full configuration example. Key sections:
 
 ```toml
 [network]
-network_type = "mainnet"  # or "testnet", "privatenet"
+network_type = "mainnet"  # or "testnet"
 
 [p2p]
 port = 10333
@@ -141,7 +142,7 @@ The node follows 8 ordered dependency layers and concrete static composition,
 using selected **reth** provider/storage patterns and **Polkadot/Substrate**
 bounded-context ideas as architecture references. The earlier type-state
 `NodeComponents` and `EngineApi` scaffolds were removed. See `../design.md` for
-the 44 ADRs and architecture evolution record.
+the 45 ADRs and architecture evolution record.
 
 ## License
 

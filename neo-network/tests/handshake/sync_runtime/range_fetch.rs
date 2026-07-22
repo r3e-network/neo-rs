@@ -12,7 +12,7 @@ async fn remote_node_handle_fetches_explicit_block_range_as_batch() {
     };
     let (stream, remote_addr) = listener.accept().await.expect("accept");
     let identity = Arc::new(LocalIdentity::new(
-        ProtocolSettings::default().network,
+        network_magic(),
         7,
         "/neo-rs:test/".to_string(),
         true,
@@ -35,13 +35,7 @@ async fn remote_node_handle_fetches_explicit_block_range_as_batch() {
     assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
     tokio::spawn(service.run());
 
-    complete_handshake(
-        &mut fake,
-        ProtocolSettings::default().network,
-        0xfa4e_0012,
-        20333,
-    )
-    .await;
+    complete_handshake(&mut fake, network_magic(), 0xfa4e_0012, 20333).await;
     await_download_peer_ready(&registry, peer_id).await;
     let fetch = tokio::spawn({
         let handle = handle.clone();
@@ -146,7 +140,7 @@ async fn remote_node_handle_fetches_explicit_header_range_as_batch() {
     };
     let (stream, remote_addr) = listener.accept().await.expect("accept");
     let identity = Arc::new(LocalIdentity::new(
-        ProtocolSettings::default().network,
+        network_magic(),
         7,
         "/neo-rs:test/".to_string(),
         true,
@@ -169,13 +163,7 @@ async fn remote_node_handle_fetches_explicit_header_range_as_batch() {
     assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
     tokio::spawn(service.run());
 
-    complete_handshake(
-        &mut fake,
-        ProtocolSettings::default().network,
-        0xfa4e_0013,
-        20333,
-    )
-    .await;
+    complete_handshake(&mut fake, network_magic(), 0xfa4e_0013, 20333).await;
     await_download_peer_ready(&registry, peer_id).await;
     let fetch = tokio::spawn({
         let handle = handle.clone();

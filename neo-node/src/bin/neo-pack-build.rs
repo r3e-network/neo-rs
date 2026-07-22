@@ -25,7 +25,6 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail, ensure};
 use neo_crypto::Sha256Hasher;
-use neo_crypto::mpt_trie::Node;
 use neo_node::NodeLifecycleLock;
 use neo_primitives::UInt256;
 use neo_state_packs::checkpoint::{
@@ -45,9 +44,9 @@ use neo_storage::persistence::StoreFactory;
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::{StorageError, StorageResult};
+use neo_trie::{MPT_NODE_PREFIX, Node};
 use serde::{Deserialize, Serialize};
 
-const STATE_NODE_PREFIX: u8 = 0xf0;
 const DEFAULT_ROWS_PER_FRAME: usize = 1_000_000;
 const DEFAULT_MAX_INDEX_MEMORY_MB: u64 = 512;
 const BUILD_IDENTITY_SCHEMA_VERSION: u32 = 3;
@@ -227,7 +226,7 @@ fn main() -> Result<()> {
     let migration_evidence = match migration_reader.as_mut() {
         None => {
             let visited = state_store.visit_raw_entries_with_prefix(
-                &[STATE_NODE_PREFIX],
+                &[MPT_NODE_PREFIX],
                 arguments.max_rows,
                 |key, value| accumulator.push_storage_row(key, value),
             )?;
@@ -482,7 +481,7 @@ impl<'a> RowAccumulator<'a> {
 
     fn push_storage_row(&mut self, key: &[u8], value: &[u8]) -> StorageResult<()> {
         ensure_storage(
-            key.len() == 33 && key.first() == Some(&STATE_NODE_PREFIX),
+            key.len() == 33 && key.first() == Some(&MPT_NODE_PREFIX),
             "StateService node scan returned a malformed key",
         )?;
         let key: [u8; 33] = key.try_into().expect("validated 33-byte key");
@@ -494,7 +493,7 @@ impl<'a> RowAccumulator<'a> {
 
     fn push(&mut self, key: [u8; 33], value: &[u8]) -> Result<()> {
         ensure!(
-            key[0] == STATE_NODE_PREFIX,
+            key[0] == MPT_NODE_PREFIX,
             "checkpoint row is outside the exact StateService node namespace"
         );
         let expected_hash = UInt256::from_bytes(&key[1..])
@@ -885,7 +884,7 @@ fn ensure_storage(condition: bool, message: &str) -> StorageResult<()> {
 
 fn validate_root_node(pack: &PackStore, source_tip: SourceTip) -> Result<()> {
     let mut root_key = [0u8; 33];
-    root_key[0] = STATE_NODE_PREFIX;
+    root_key[0] = MPT_NODE_PREFIX;
     root_key[1..].copy_from_slice(&source_tip.root_internal);
     ensure!(
         pack.get(&root_key)
@@ -1084,9 +1083,9 @@ mod tests {
         let temporary = tempdir().expect("temporary checkpoint parent");
         let pack_path = temporary.path().join("pack");
         let mut first_key = [1u8; 33];
-        first_key[0] = STATE_NODE_PREFIX;
+        first_key[0] = MPT_NODE_PREFIX;
         let mut second_key = [2u8; 33];
-        second_key[0] = STATE_NODE_PREFIX;
+        second_key[0] = MPT_NODE_PREFIX;
         let original = vec![
             PackOperation {
                 key: first_key,
@@ -1137,7 +1136,7 @@ mod tests {
             .expect("create partial pack")
             .pack;
         let mut key = [1u8; 33];
-        key[0] = STATE_NODE_PREFIX;
+        key[0] = MPT_NODE_PREFIX;
         store
             .append_frame(
                 checkpoint_frame_context(source_tip),
@@ -1210,7 +1209,7 @@ mod tests {
         .expect("create partial migration pack")
         .pack;
         let mut key = [1u8; 33];
-        key[0] = STATE_NODE_PREFIX;
+        key[0] = MPT_NODE_PREFIX;
         store
             .append_frame(
                 checkpoint_frame_context(source_tip),
@@ -1319,7 +1318,7 @@ mod tests {
             .pack;
         for suffix in [1u8, 2] {
             let mut key = [suffix; 33];
-            key[0] = STATE_NODE_PREFIX;
+            key[0] = MPT_NODE_PREFIX;
             store
                 .append_frame(
                     checkpoint_frame_context(source_tip),
@@ -1505,12 +1504,12 @@ mod tests {
         let mut accumulator =
             RowAccumulator::new(&arguments, source_tip, opened).expect("create row accumulator");
         let mut root_key = [0u8; 33];
-        root_key[0] = STATE_NODE_PREFIX;
+        root_key[0] = MPT_NODE_PREFIX;
         root_key[1..].copy_from_slice(&source_tip.root_internal);
         let later_node = Node::new_leaf(b"later-node".to_vec());
         let later_hash = later_node.try_hash().expect("hash later node").to_array();
         let mut later_key = [0u8; 33];
-        later_key[0] = STATE_NODE_PREFIX;
+        later_key[0] = MPT_NODE_PREFIX;
         later_key[1..].copy_from_slice(&later_hash);
         accumulator
             .push(
@@ -1554,7 +1553,7 @@ mod tests {
         let mut accumulator =
             RowAccumulator::new(&arguments, source_tip, opened).expect("create row accumulator");
         let mut key = [0u8; 33];
-        key[0] = STATE_NODE_PREFIX;
+        key[0] = MPT_NODE_PREFIX;
         key[1..].copy_from_slice(&source_tip.root_internal);
 
         let error = accumulator

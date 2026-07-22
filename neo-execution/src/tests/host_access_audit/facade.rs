@@ -6,7 +6,7 @@ use crate::host_access_audit::{
 };
 use crate::native_contract_provider::NoNativeContractProvider;
 use neo_config::ProtocolSettings;
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::{FindOptions, TriggerType};
 use neo_storage::{DataCache, StorageItem};
 use neo_vm::{ContractResolutionIdentity, OpCode, RangeDirection, StackItem};

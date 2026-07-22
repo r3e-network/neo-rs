@@ -59,8 +59,8 @@ pub(super) fn seeded_snapshot() -> Arc<DataCache> {
 
 pub(super) fn faun_from_genesis_settings() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
-    settings.hardforks.insert(Hardfork::HfFaun, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfFaun, 0);
     settings
 }
 

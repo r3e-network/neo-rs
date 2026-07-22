@@ -7,7 +7,7 @@ use crate::native_contract_provider::NativeContractProvider;
 use crate::storage_context::StorageContext;
 use neo_config::hardfork::Hardfork;
 use neo_error::{CoreError, CoreResult};
-use neo_manifest::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::FindOptions;
 use neo_vm::error::VmError;
 use neo_vm::{StackItem, VmResult};

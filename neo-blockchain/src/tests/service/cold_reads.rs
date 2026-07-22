@@ -2,9 +2,11 @@
 
 use std::sync::Arc;
 
+use neo_config::{ChainSpecProvider, NeoChainSpec};
 use neo_error::CoreResult;
+use neo_mempool::{TransactionAdmissionError, TransactionAdmissionOutcome, TransactionOrigin};
 use neo_payloads::{Block, Header, Transaction, TransactionState};
-use neo_primitives::{UInt160, UInt256, VerifyResult};
+use neo_primitives::{UInt160, UInt256};
 
 use super::*;
 use crate::ledger_provider::{
@@ -16,23 +18,25 @@ use crate::ledger_provider::{
 struct TestMempool;
 
 impl MempoolLike for TestMempool {
-    fn try_add<B: neo_storage::CacheRead>(
+    fn add_transaction<B, L>(
         &self,
-        _tx: &Transaction,
+        origin: TransactionOrigin,
+        transaction: &Transaction,
         _snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-    ) -> VerifyResult {
-        VerifyResult::Succeed
-    }
-
-    fn try_add_cached<B: neo_storage::CacheRead>(
-        &self,
-        _tx: &Transaction,
-        _snapshot: &neo_storage::DataCache<B>,
-        _settings: &neo_config::ProtocolSettings,
-        _cached_state_independent: Option<VerifyResult>,
-    ) -> VerifyResult {
-        VerifyResult::Succeed
+        _ledger_provider: &L,
+    ) -> TransactionAdmissionOutcome
+    where
+        B: neo_storage::CacheRead,
+        L: neo_mempool::AdmissionLedgerProvider,
+    {
+        match transaction.try_hash() {
+            Ok(hash) => TransactionAdmissionOutcome::Accepted { hash, origin },
+            Err(error) => TransactionAdmissionOutcome::Error {
+                hash: None,
+                origin,
+                error: TransactionAdmissionError::InvalidHash(error.to_string()),
+            },
+        }
     }
 }
 
@@ -77,8 +81,17 @@ impl TransactionStateProvider for ColdBlockProvider {
 }
 
 struct ColdReadContext {
+    chain_spec: Arc<NeoChainSpec>,
     snapshot: Arc<neo_storage::DataCache>,
     cold: ColdBlockProvider,
+}
+
+impl ChainSpecProvider for ColdReadContext {
+    type ChainSpec = NeoChainSpec;
+
+    fn chain_spec(&self) -> Arc<Self::ChainSpec> {
+        Arc::clone(&self.chain_spec)
+    }
 }
 
 impl std::fmt::Debug for ColdReadContext {
@@ -93,10 +106,6 @@ impl std::fmt::Debug for ColdReadContext {
 impl crate::service_context::SystemContext for ColdReadContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
     type CacheBacking = neo_storage::EmptyCacheBacking;
-
-    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
-        Arc::new(neo_config::ProtocolSettings::default())
-    }
 
     fn current_height(&self) -> u32 {
         self.cold.block.index()
@@ -121,6 +130,7 @@ async fn command_loop_uses_system_context_cold_provider_after_hot_cache_eviction
     let block = Block::from_parts(header, Vec::new());
     let hash = block.hash();
     let system = Arc::new(ColdReadContext {
+        chain_spec: neo_test_fixtures::test_chain_spec(neo_config::ProtocolSettings::default()),
         snapshot: Arc::new(neo_storage::DataCache::new(false)),
         cold: ColdBlockProvider {
             block: block.clone(),

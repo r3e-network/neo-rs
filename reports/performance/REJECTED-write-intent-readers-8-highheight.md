@@ -31,8 +31,8 @@ at 1,967,022 matched seed1
 
 ## Decision
 
-Default remains serial (`NEO_MDBX_WRITE_INTENT_READ_THREADS=1`). Parallel
-write-intent reads stay opt-in for small/resident-table regimes only. The
+Production remains serial. The rejected parallel-reader environment switches
+were removed on 2026-07-22. The
 deferred-lookup cost must be removed structurally (fusing reference
 resolution into the commit cursor, eliminating the second B-tree sweep), not
 hidden with read parallelism.

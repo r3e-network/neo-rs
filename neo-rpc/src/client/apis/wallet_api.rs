@@ -1,11 +1,14 @@
 use super::models::RpcTransaction;
-use crate::client::native_hashes::{gas_hash, neo_hash};
-use crate::{Nep17Api, RpcClient, RpcClientError, RpcObserver, RpcUtility, TracingRpcObserver};
+use crate::client::{
+    RpcClientError,
+    native_hashes::{gas_hash, neo_hash},
+};
+use crate::{Nep17Api, RpcClient, RpcObserver, RpcUtility, TracingRpcObserver};
 use neo_crypto::ECPoint;
-use neo_execution::Contract;
 use neo_payloads::Transaction;
 use neo_primitives::BigDecimal;
 use neo_primitives::UInt160;
+use neo_vm::Contract;
 use neo_wallets::KeyPair;
 use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;

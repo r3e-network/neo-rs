@@ -1,4 +1,5 @@
-use crate::{RpcClient, RpcClientError, RpcObserver, TracingRpcObserver, TransactionManager};
+use crate::client::RpcClientError;
+use crate::{RpcClient, RpcObserver, TracingRpcObserver, TransactionManager};
 use neo_payloads::{Signer, Transaction, TransactionAttribute};
 use rand::Rng;
 use std::sync::Arc;

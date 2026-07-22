@@ -7,13 +7,6 @@ pub const ECPOINT_COMPRESSED_SIZE: usize = 33;
 /// Size of an uncompressed ECPoint in bytes.
 pub const ECPOINT_UNCOMPRESSED_SIZE: usize = 65;
 
-/// Encodes bytes as a lowercase hex string.
-///
-/// Delegates to `neo_primitives::hex_util::encode_hex` (ADR-024).
-pub fn encode_hex(bytes: &[u8]) -> String {
-    hex_util::encode_hex(bytes)
-}
-
 fn decode_hex(value: &str) -> CoreResult<Vec<u8>> {
     hex_util::decode_hex(value).map_err(|e| CoreError::other(format!("Invalid hex string: {e}")))
 }

@@ -1,5 +1,9 @@
 # Interop-Parity Re-Verification Summary (15 findings)
 
+> **Historical record.** Status labels and source paths below apply to the
+> reviewed May 2026 revision. Current ownership and remaining work are defined
+> by `AGENTS.md`, `docs/`, and `openspec/`.
+
 ## 1. Counts
 
 | Status | Count | Indices |

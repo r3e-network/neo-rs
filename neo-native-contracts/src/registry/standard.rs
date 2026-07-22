@@ -346,8 +346,8 @@ where
                 block.index() == 0
                     || settings
                         .hardforks
-                        .values()
-                        .any(|height| *height == block.index())
+                        .activation_heights()
+                        .any(|height| height == block.index())
             }
             Self::Notary(_) => block.transactions.iter().any(|transaction| {
                 transaction

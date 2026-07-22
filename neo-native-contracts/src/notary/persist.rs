@@ -6,9 +6,10 @@
 use super::Notary;
 use crate::{LedgerContract, Role, RoleManagement};
 use neo_error::{CoreError, CoreResult};
-use neo_execution::{ApplicationEngine, Contract};
+use neo_execution::ApplicationEngine;
 use neo_payloads::TransactionAttribute;
 use neo_primitives::{TransactionAttributeType, UInt160};
+use neo_vm::Contract;
 use num_bigint::BigInt;
 
 impl Notary {

@@ -5,16 +5,17 @@
 //! executed `ApplicationEngine`. Keeping that workflow here leaves the session
 //! root focused on retained state and iterator lifecycle methods.
 
+use neo_config::{ChainSpecProvider, NeoChainSpec};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
-use neo_manifest::CallFlags;
 use neo_payloads::VerifiableContainer;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_payloads::witness::Witness;
+use neo_primitives::CallFlags;
 use neo_primitives::TriggerType;
-use neo_runtime::{ConfigProvider, StoreProvider};
+use neo_runtime::StoreProvider;
 use neo_storage::persistence::{Store, StoreCacheBacking};
 use parking_lot::Mutex;
 use rand::random;
@@ -39,7 +40,7 @@ impl<T: Store> SessionRecord<StoreCacheBacking<T>> {
     #[allow(clippy::too_many_arguments)]
     pub fn new<S, C>(
         store_provider: Arc<S>,
-        config_provider: Arc<C>,
+        chain_spec_provider: Arc<C>,
         native_contract_provider: Arc<neo_native_contracts::StandardNativeProvider>,
         script: Vec<u8>,
         signers: Option<Vec<Signer>>,
@@ -49,24 +50,25 @@ impl<T: Store> SessionRecord<StoreCacheBacking<T>> {
     ) -> CoreResult<Self>
     where
         S: StoreProvider<Store = T> + ?Sized,
-        C: ConfigProvider + ?Sized,
+        C: ChainSpecProvider<ChainSpec = NeoChainSpec> + ?Sized,
     {
         let store_cache = store_provider.store_cache();
         let snapshot_cache = Arc::new(store_cache.data_cache().clone());
 
-        let settings = config_provider.settings();
+        let chain_spec = chain_spec_provider.chain_spec();
+        let settings = chain_spec.protocol_settings();
 
         // C# `NeoSystemExtensions.GetMaxValidUntilBlockIncrement(snapshot,
         // settings)`: before HF_Echidna the static protocol setting, from
         // HF_Echidna onward the Policy storage value (falling back to the
         // setting when the key is not yet initialized). The static
-        // `ConfigProvider::max_valid_until_block_increment()` is only correct
-        // pre-Echidna, so read the Policy-aware value from the snapshot.
+        // The chain-spec value is only correct pre-Echidna, so read the
+        // Policy-aware value from the snapshot.
         let session_native_provider =
             NativeSessionProvider::new(Arc::clone(&native_contract_provider));
         let max_valid_until_block_increment = session_native_provider
-            .max_valid_until_block_increment(store_cache.data_cache(), settings.as_ref())
-            .unwrap_or_else(|_| config_provider.max_valid_until_block_increment());
+            .max_valid_until_block_increment(store_cache.data_cache(), settings)
+            .unwrap_or(settings.max_valid_until_block_increment);
 
         let tx_container = signers.as_ref().map(|signer_list| {
             let mut tx = Transaction::new();
@@ -94,19 +96,16 @@ impl<T: Store> SessionRecord<StoreCacheBacking<T>> {
         // reads see `height` instead of the `height + 1` a real persisting block
         // would give. Build the same dummy block so stateless invoke *results*
         // (GetTime, currentindex) match C# field-for-field.
-        let persisting_block = create_dummy_block(
-            store_cache.data_cache(),
-            settings.as_ref(),
-            &session_native_provider,
-        )
-        .map(Arc::new);
+        let persisting_block =
+            create_dummy_block(store_cache.data_cache(), settings, &session_native_provider)
+                .map(Arc::new);
 
         let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Application,
             tx_container,
             Arc::clone(&snapshot_cache),
             persisting_block,
-            settings.as_ref().clone(),
+            settings.clone(),
             gas_limit,
             diagnostic.clone(),
             native_contract_provider,

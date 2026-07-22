@@ -42,10 +42,11 @@ enabled = false
     let path = dir.join(format!("neo_node_cfg_test_{}.toml", std::process::id()));
     std::fs::write(&path, toml).expect("write temp config");
 
-    let (settings, config) = load_config(&path, None).expect("load config");
+    let (chain_spec, config) = load_config(&path, None).expect("load config");
     std::fs::remove_file(&path).ok();
+    let settings = chain_spec.protocol_settings();
 
-    // TestNet preset derived from network_type, magic applied.
+    // TestNet spec selected from network_type; the matching magic is an assertion.
     assert_eq!(settings.network, 0x3554_334E);
     assert!(
         !settings.standby_committee.is_empty(),
@@ -72,39 +73,86 @@ enabled = false
     assert!(!config.telemetry.metrics.enabled);
 }
 
-/// Node TOML protocol knobs must affect the `ProtocolSettings` used by the
-/// daemon; otherwise shipped `[blockchain]` / `[mempool]` sections look
-/// meaningful while the node silently runs different consensus limits.
+/// Built-in chain settings are immutable. A config cannot silently create a
+/// hybrid network by changing one protocol field.
 #[test]
-fn load_config_applies_blockchain_and_mempool_protocol_overrides() {
-    let toml = r#"
-[network]
-network_type = "TestNet"
-
-[blockchain]
-block_time = 1000
-max_transactions_per_block = 123
-max_valid_until_block_increment = 456
-max_traceable_blocks = 789
-
-[mempool]
-max_transactions = 321
-"#;
+fn load_config_rejects_builtin_chain_setting_overrides() {
+    let cases = [
+        (
+            "[blockchain]\nblock_time = 1000\n",
+            "[blockchain].block_time",
+        ),
+        (
+            "[blockchain]\nmax_transactions_per_block = 123\n",
+            "[blockchain].max_transactions_per_block",
+        ),
+        (
+            "[blockchain]\nmax_valid_until_block_increment = 456\n",
+            "[blockchain].max_valid_until_block_increment",
+        ),
+        (
+            "[blockchain]\nmax_traceable_blocks = 789\n",
+            "[blockchain].max_traceable_blocks",
+        ),
+    ];
     let dir = std::env::temp_dir();
-    let path = dir.join(format!(
-        "neo_node_protocol_overrides_{}.toml",
-        std::process::id()
-    ));
-    std::fs::write(&path, toml).expect("write temp config");
+    for (index, (section, expected_field)) in cases.into_iter().enumerate() {
+        let path = dir.join(format!(
+            "neo_node_protocol_override_{}_{}.toml",
+            std::process::id(),
+            index
+        ));
+        let toml = format!("[network]\nnetwork_type = \"TestNet\"\n\n{section}");
+        std::fs::write(&path, toml).expect("write temp config");
 
-    let (settings, _) = load_config(&path, None).expect("load config");
-    std::fs::remove_file(&path).ok();
+        let error = load_config(&path, None).expect_err("hybrid chain must be rejected");
+        std::fs::remove_file(&path).ok();
 
-    assert_eq!(settings.milliseconds_per_block, 1_000);
-    assert_eq!(settings.max_transactions_per_block, 123);
-    assert_eq!(settings.max_valid_until_block_increment, 456);
-    assert_eq!(settings.max_traceable_blocks, 789);
-    assert_eq!(settings.memory_pool_max_transactions, 321);
+        assert!(
+            error.to_string().contains(expected_field),
+            "unexpected error for {expected_field}: {error}"
+        );
+    }
+}
+
+#[test]
+fn mempool_capacity_is_validated_operator_policy() {
+    assert_eq!(
+        NodeConfig::default()
+            .mempool
+            .tx_pool_config()
+            .expect("default pool policy")
+            .max_transactions(),
+        neo_mempool::DEFAULT_MAX_TRANSACTIONS
+    );
+
+    let configured: NodeConfig =
+        toml::from_str("[mempool]\nmax_transactions = 321\n").expect("parse mempool policy");
+    assert_eq!(
+        configured
+            .mempool
+            .tx_pool_config()
+            .expect("positive capacity")
+            .max_transactions(),
+        321
+    );
+
+    for value in [-1, 0] {
+        let config: NodeConfig =
+            toml::from_str(&format!("[mempool]\nmax_transactions = {value}\n"))
+                .expect("parse invalid capacity for semantic validation");
+        let error = config
+            .mempool
+            .tx_pool_config()
+            .expect_err("non-positive pool capacity must fail");
+        assert!(
+            format!("{error:#}").contains("[mempool].max_transactions"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    toml::from_str::<NodeConfig>("[mempool]\nmax_transactions = 2147483648\n")
+        .expect_err("capacity outside the configuration integer range must fail parsing");
 }
 
 /// Accept current operational aliases outside primary storage. The storage
@@ -566,18 +614,51 @@ fn shipped_mdbx_configs_pin_geometry_defaults() {
 #[test]
 fn load_config_missing_file_uses_defaults() {
     let path = PathBuf::from("/nonexistent/neo-node/definitely-missing.toml");
-    let (settings, config) = load_config(&path, None).expect("defaults");
-    assert_eq!(settings.network, ProtocolSettings::default().network);
+    let (chain_spec, config) = load_config(&path, None).expect("defaults");
+    assert_eq!(
+        chain_spec.identity().network_type(),
+        neo_config::NetworkType::MainNet
+    );
+    assert_eq!(chain_spec.network_magic(), 0x334F_454E);
     assert!(config.p2p.seed_nodes.is_empty());
     assert!(!config.rpc.enabled);
 }
 
-/// The `--network-magic` CLI override wins over the preset / config.
+/// CLI network magic may assert the selected chain, but cannot mutate it.
 #[test]
-fn load_config_magic_override_wins() {
+fn load_config_rejects_mismatched_magic_override() {
     let path = PathBuf::from("/nonexistent/neo-node/missing.toml");
-    let (settings, _) = load_config(&path, Some(0x1234_5678)).expect("override");
-    assert_eq!(settings.network, 0x1234_5678);
+    let error = load_config(&path, Some(0x1234_5678)).expect_err("rejects hybrid chain");
+    assert!(error.to_string().contains("--network-magic"), "{error}");
+
+    let (chain_spec, _) =
+        load_config(&path, Some(0x334F_454E)).expect("matching assertion is accepted");
+    assert_eq!(chain_spec.network_magic(), 0x334F_454E);
+}
+
+#[test]
+fn load_config_rejects_unknown_and_incomplete_private_networks() {
+    let dir = tempfile::tempdir().expect("temp config root");
+    let cases = [
+        ("unknown", "invalid [network].network_type"),
+        (
+            "private",
+            "private networks require an explicit NeoChainSpec",
+        ),
+    ];
+
+    for (network_type, expected) in cases {
+        let path = dir.path().join(format!("{network_type}.toml"));
+        std::fs::write(
+            &path,
+            format!("[network]\nnetwork_type = \"{network_type}\"\n"),
+        )
+        .expect("write config");
+
+        let error = load_config(&path, None).expect_err("network must fail closed");
+        let message = format!("{error:#}");
+        assert!(message.contains(expected), "{message}");
+    }
 }
 
 /// Unknown / extra `[storage]` keys do not break parsing.

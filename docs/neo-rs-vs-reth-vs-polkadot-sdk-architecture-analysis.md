@@ -96,17 +96,20 @@ Operational persisted-tip reads (startup, config validation, chain.acc
 resume, and daemon context) share that routed factory shape. Observability
 ledger-height reads (health/readiness/metrics) use the same boundary for
 local-ledger mode while remote-ledger mode reports the upstream RPC height.
-Composition-root transaction admission also uses the routed factory shape for
-persisted-transaction and conflict checks before it adapts the mempool-captured
-native-contract provider for Policy reads. Consensus orchestration uses the
+Composition-root transaction admission freezes the routed Ledger provider and
+passes it to the single `MemoryPool::add_transaction` operation. The pool owns
+persisted-transaction, traceable-conflict, payer, Oracle, Policy, validation,
+and mutation decisions, using its captured native-contract provider rather
+than making callers reproduce those checks. Consensus orchestration uses the
 same shape for tip context, on-chain transaction checks, and traceable-conflict
 checks before adapting the node-composed native-contract provider for NEO and
 Policy reads.
 Blockchain ingress validation also uses the routed factory shape for header
 anchor reads and extensible-payload height checks before applying witness and
 native-provider validation.
-Blockchain transaction admission uses the same shape for persisted transaction
-and conflict checks before calling into mempool policy.
+Blockchain transaction admission only acquires the canonical snapshot, adapts
+the routed Ledger view, and delegates the typed origin/transaction to mempool;
+it does not keep a second transaction cache or pre-validation path.
 Offline `neo-db-probe` replay accepts `--static-files-dir` and composes the
 same `OptionalStaticLedgerProvider` through `HotColdLedgerProviderFactory` for
 transaction-state and block reconstruction. Before exposing cold reads it runs
@@ -610,7 +613,16 @@ registers the shared registry. `ChannelBlockDownloader` remains available for
 tests and composition roots. Node startup runs the headers-first staged-sync
 driver as the only owner of P2P range sync. The earlier
 uncomposed network task manager and per-peer compatibility request loop were
-deleted.
+deleted. `neo-network` exclusively owns `MessageCommand`, its parse error, the
+numeric serde mapping, and unknown-byte preservation; shared inventory and
+verification values remain in `neo-primitives`.
+
+`PeerRegistry` is the authoritative owner of the live peer map and exposes a
+deterministic snapshot. Service-bound `NetworkHandle` instances retain the same
+registry handle, so RPC and telemetry read current peer state directly instead
+of reconstructing a lossy replica from broadcast events. The event-folded
+`PeerTracker` remains only for standalone channel fixtures and is not a
+production source of truth.
 
 ### Reth innovations
 
@@ -664,8 +676,9 @@ Native Rust NeoVM — no WASM. `ApplicationEngine` with per-tx child caches.
 `neo-system::NodeBuilder` now makes the provider an explicit composition-root
 dependency. The daemon constructs the standard provider once before genesis
 initialization and passes the same `Arc` into every provider-aware subsystem and
-into `NodeBuilder`; headless/test construction still falls back to the builder's
-local standard provider default. `ApplicationEngine<P, D, B>` now owns a
+into `NodeBuilder`; the explicit `Node::for_test(chain_spec)` fixture constructs
+and passes its own standard provider without relying on builder defaults.
+`ApplicationEngine<P, D, B>` now owns a
 mandatory `Arc<P>` and uses that stable handle for direct native
 calls, policy reads, dynamic-call policy gates, contract-management lookups made
 from contract loading, committee-witness checks, storage-context resolution,
@@ -829,6 +842,126 @@ records: `TransactionState`, native-contract storage, MPT nodes, and Ledger
 rows must retain C# bytes. A future derive is valid only for explicitly
 versioned node-local tables or as a generated implementation that reproduces an
 already established Neo codec byte-for-byte.
+
+---
+
+## 8. Transaction Pool
+
+### Reth pattern
+
+Reth keeps transaction admission outside the pool's ordering data structure:
+the validator decides whether a transaction can enter, while the pool owns
+subpool indexes, replacement rules, ordering, memory limits, and block-update
+transitions. Network and RPC paths submit through the same pool boundary and do
+not maintain independent transaction caches.
+
+### neo-rs adaptation
+
+`neo-mempool::MemoryPool<P>` is the sole owner of Neo admission and pool state.
+It captures the immutable `Arc<NeoChainSpec>`, the composed native-contract
+provider, and operator-owned `TxPoolConfig`. Its verified/unverified indexes,
+fee-payer accounting, conflict attributes, Oracle responses, revalidation, and
+post-persist removal logic stay inside `neo-mempool`.
+
+`neo-blockchain::MempoolLike` is deliberately a small consumer-side capability
+for command-loop tests and composition. It is not a second pool API: the
+production implementation forwards to `MemoryPool`, and network/RPC/consensus
+callers use the composition-owned pool or a narrow ledger source. This is the
+same provider-versus-component split used by Reth, adapted to Neo's
+state-dependent witness rules.
+
+```rust
+pub trait MempoolLike: Debug + Send + Sync {
+    fn add_transaction<B, L>(
+        &self,
+        origin: TransactionOrigin,
+        tx: &Transaction,
+        snapshot: &DataCache<B>,
+        ledger: &L,
+    ) -> TransactionAdmissionOutcome;
+}
+```
+
+The pool is intentionally not an actor and the network does not own a pool
+replica. A single typed admission call holds the stateful lock, so a future
+sharded or asynchronous pool can be introduced behind the same node-service
+composition without moving Neo verification policy into transport code.
+
+---
+
+## 9. Engine And Execution
+
+### Reth pattern
+
+Reth separates engine/API validation, chain orchestration, provider reads, and
+the canonical execution/persistence lane. Worker work is speculative or
+in-memory; durable publication is ordered and owned by one engine component.
+Its generic node types select concrete primitives, chain spec, storage, and
+payload types at composition time.
+
+### neo-rs adaptation
+
+`neo-execution::ApplicationEngine<P, D, B>` selects the native provider,
+diagnostic policy, and cache backing as concrete generic collaborators while
+`neo-vm` remains the only semantic VM. `neo-blockchain` owns the canonical
+Neo block import and durable commit; `neo-state-service` owns state-root
+mutation; `neo-system` supplies both through required builder inputs.
+
+Reth's EVM engine traits are not a license to replace NeoVM or cache stateful
+transaction output. Any future speculative execution layer must remain outside
+the semantic engine, record complete point and range observations, validate
+against the ordered canonical prefix, and retry sequentially on conflict. No
+such scheduler is part of the production import path today.
+
+---
+
+## 10. RPC And Application Composition
+
+### Reth pattern
+
+Reth's RPC crates consume provider capabilities and node handles; transport,
+wire models, and method groups are separate from the node builder. RPC does not
+open a database, own the transaction pool, or construct a second execution
+engine. Optional services are composed explicitly rather than discovered from
+an `Any`/`TypeId` registry.
+
+### neo-rs adaptation
+
+`neo-rpc` owns JSON-RPC wire models, transports, dispatch, and plugin method
+groups. `NodeContext<P, S>` is constructed by `neo-system`/`neo-node` through
+`from_parts`, so `neo-rpc` has no production dependency on the composition
+root. `RpcServices<S>` stores named, statically typed optional services; a
+state store, indexer, application-log store, or token tracker with the wrong
+backend type cannot be registered accidentally.
+
+Handlers consume `ChainSpecProvider`, Ledger/State provider factories,
+`StoreProvider`, `TxAdmission`, and `NetworkHandle`. They never reopen MDBX,
+construct native contracts directly, or duplicate mempool and block-import
+policy. Client-only and server-only Cargo features remain independent; the
+daemon enables both explicitly when it needs both roles.
+
+---
+
+## 11. Primitives, Chain Spec, And Cryptography
+
+Reth's `NodeTypes`/`NodePrimitives` split is useful because it gives every
+component one source for primitive types and associated storage/payload types.
+neo-rs deliberately keeps the smaller equivalent ownership model rather than
+adding an unused facade:
+
+| Concern | Canonical neo-rs owner | Rule |
+|---------|------------------------|------|
+| `UInt160`, `UInt256`, inventory/witness value records | `neo-primitives` | No service crate defines another hash/address/value representation. |
+| SHA/RIPEMD, Merkle roots, ECC, signatures, BLS | `neo-crypto` | Crypto algorithms and key/signature parsing stay below protocol services. |
+| Block/transaction/witness wire records | `neo-payloads` | Payload encoding uses the canonical Neo serializer and never imports node configuration just to render an address. |
+| Network identity, genesis, hardforks, protocol limits | `neo-config::NeoChainSpec` | One validated immutable `Arc` flows through composition; operator limits stay in service config. |
+| NEF, manifest, method tokens, ABI | `neo-manifest` | Contract metadata is not reimplemented in execution, RPC, or wallets. |
+| NeoVM stack/context/opcodes/faults | `neo-vm` | There is one semantic authority; no `StackValue` conversion graph or alternate VM crate. |
+
+The result is Reth-like static composition without Ethereum-specific semantic
+traits. A new generic is justified only when a composition root selects a real
+alternative implementation or a test needs a second provider; a generic
+utility crate or trait-object service locator is not an architecture goal.
 
 ---
 

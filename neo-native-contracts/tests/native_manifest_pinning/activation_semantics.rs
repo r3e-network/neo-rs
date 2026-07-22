@@ -110,8 +110,8 @@ fn csharp_activation_schedules_drive_runtime_activation_and_manifest_refresh() {
 #[test]
 fn omitted_active_in_hardfork_matches_csharp_is_active_asymmetry() {
     let mut settings = test_settings();
-    settings.hardforks.remove(&Hardfork::HfEchidna);
-    settings.hardforks.remove(&Hardfork::HfFaun);
+    settings.hardforks = settings.hardforks.without_activation(Hardfork::HfEchidna);
+    settings.hardforks = settings.hardforks.without_activation(Hardfork::HfFaun);
 
     fn assert_genesis_active_without_config<C>(contract: &C, settings: &ProtocolSettings)
     where

@@ -8,7 +8,8 @@ use crate::server::rpc_relay::ledger_provider::{
 use crate::server::rpc_relay::runtime::block_on_service;
 use crate::server::rpc_server::RpcServer;
 use neo_blockchain::RelayResult;
-use neo_payloads::{Block, InventoryType, VerifyResult};
+use neo_payloads::{Block, InventoryType};
+use neo_primitives::VerifyResult;
 use neo_runtime::{BlockImport, BlockImportOutcome, BlockOrigin};
 
 /// Relays a block through the blockchain service's import path and

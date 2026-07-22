@@ -7,7 +7,7 @@ same strict-shadow config, adjacent 10k-block MainNet windows.
 ## Mechanism
 
 Deferred full-state journals are exported unresolved
-(`MptCache::summarize_deferred_journal`, `neo-crypto/src/mpt_trie/cache.rs`)
+(`MptCache::summarize_deferred_journal`, `neo-trie/src/mpt/cache/operations.rs`)
 and carried by `PreparedMptCommit` to the coordinated MDBX commit, which
 resolves each node's persisted reference count at the RW cursor
 (`commit_raw_overlay_at_cursor`, `neo-state-service/src/storage/mpt_store.rs`)

@@ -434,6 +434,37 @@ fn cli_accepts_static_archive_for_historical_transaction_replay() {
         cli.static_files_dir.as_deref(),
         Some(std::path::Path::new("data/static"))
     );
+    assert_eq!(cli.network, NetworkType::MainNet);
+}
+
+#[test]
+fn cli_selects_testnet_chain_spec_for_transaction_replay() {
+    let cli = Cli::try_parse_from([
+        "neo-db-probe",
+        "--db",
+        "data/testnet",
+        "--network",
+        "testnet",
+        "--replay-tx",
+        "0xc68d5cad0e02197dd66623373751b84b2cadf742e79aaf836b53c6999a8d264d",
+    ])
+    .expect("parse TestNet replay");
+
+    let chain_spec = load_replay_chain_spec(cli.network).expect("load TestNet chain spec");
+
+    assert_eq!(chain_spec.identity().network_type(), NetworkType::TestNet);
+    assert_eq!(
+        chain_spec.protocol_settings().network,
+        neo_primitives::constants::TESTNET_MAGIC
+    );
+}
+
+#[test]
+fn replay_rejects_private_network_without_complete_chain_spec() {
+    let error = load_replay_chain_spec(NetworkType::Private)
+        .expect_err("private replay requires a complete chain spec");
+
+    assert!(error.to_string().contains("private"));
 }
 
 #[test]

@@ -1,8 +1,9 @@
-use super::verify_state_root_with_native_provider;
+use super::{VerifiableStateRoot, verify_state_root_with_native_provider};
 use neo_config::ProtocolSettings;
 use neo_native_contracts::StandardNativeProvider;
+use neo_payloads::VerifiableExt;
 use neo_payloads::Witness;
-use neo_primitives::UInt256;
+use neo_primitives::{UInt160, UInt256};
 use neo_state_service::StateRoot;
 use neo_storage::DataCache;
 use std::sync::Arc;
@@ -41,6 +42,22 @@ fn signed_root_without_designated_state_validators_does_not_verify() {
         &snapshot,
         standard_native_provider()
     ));
+}
+
+#[test]
+fn state_root_wrapper_preserves_the_pre_resolved_verifier() {
+    let verifier = UInt160::from([0x5au8; 20]);
+    let root = StateRoot::new_current(7, UInt256::from([0x45u8; 32]));
+
+    assert_eq!(
+        VerifiableStateRoot::new(root.clone(), Some(verifier)).script_hashes_for_verifying(),
+        vec![verifier]
+    );
+    assert!(
+        VerifiableStateRoot::new(root, None)
+            .script_hashes_for_verifying()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -121,19 +138,6 @@ fn state_root_validator_reads_use_generic_provider_seam() {
         "state-root verification should read StateValidator designations from the explicit NativeContractProvider capability"
     );
 
-    let impl_start = source
-        .find("VerifiableExt for VerifiableStateRoot")
-        .expect("state-root VerifiableExt impl exists");
-    let impl_source = &source[impl_start..];
-    assert!(
-        !impl_source.contains("RoleManagement::new()"),
-        "state-root VerifiableExt must not construct native RoleManagement directly"
-    );
-    assert!(
-        impl_source.contains(".state_validators("),
-        "state-root VerifiableExt should read validators through the provider seam"
-    );
-
     let verifier_start = source
         .find("pub fn verify_state_root_with_native_provider")
         .expect("provider-aware state-root verifier exists");
@@ -141,5 +145,13 @@ fn state_root_validator_reads_use_generic_provider_seam() {
     assert!(
         verifier.contains("StateRootNativeProviderAdapter"),
         "state-root verifier should adapt the explicit native-contract provider into the state-root read capability"
+    );
+    assert!(
+        verifier.contains("native.state_validators(snapshot, state_root.index())"),
+        "state-root verifier must resolve validators from the canonical snapshot before building the storage-independent wrapper"
+    );
+    assert!(
+        verifier.contains("RedeemScript::bft_address(&validators)"),
+        "state-root verifier must preserve the C# StateValidators BFT-address rule"
     );
 }

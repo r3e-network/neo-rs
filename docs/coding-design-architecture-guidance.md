@@ -143,8 +143,8 @@ commodity math or data structures, prefer maintained crates such as RustCrypto,
 adapter that names the Neo contract being protected. Do not replace a local
 consensus primitive merely because a generic crate has the same algorithm name.
 
-Use this matrix when reviewing `neo-crypto`, `neo-io`, storage, wallet, and
-network code:
+Use this matrix when reviewing `neo-crypto`, `neo-trie`, `neo-io`, storage,
+wallet, and network code:
 
 | Area | Upstream crate should own | Local neo-rs code should own |
 | --- | --- | --- |

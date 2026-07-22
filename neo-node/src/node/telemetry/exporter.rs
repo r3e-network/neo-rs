@@ -155,7 +155,7 @@ where
         registry.register(Box::new(indexer_blocks_behind.clone()))?;
         registry.register(Box::new(indexer_synced.clone()))?;
 
-        let network_label = format!("0x{:08X}", node.settings().network);
+        let network_label = format!("0x{:08X}", node.chain_spec().network_magic());
         info.with_label_values(&[env!("CARGO_PKG_VERSION"), network_label.as_str()])
             .set(1);
 

@@ -2,9 +2,9 @@ use super::*;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use neo_config::ProtocolSettings;
-use neo_crypto::mpt_trie::MptStoreSnapshot;
 use neo_state_service::{StateRoot, StateStore};
 use neo_storage::persistence::providers::RuntimeStore;
+use neo_trie::MptStoreSnapshot;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -57,16 +57,16 @@ struct MemoryMptStore {
 }
 
 impl MptStoreSnapshot for MemoryMptStore {
-    fn try_get(&self, key: &[u8]) -> neo_crypto::mpt_trie::MptResult<Option<Vec<u8>>> {
+    fn try_get(&self, key: &[u8]) -> neo_trie::MptResult<Option<Vec<u8>>> {
         Ok(self.data.lock().get(key).cloned())
     }
 
-    fn put(&self, key: Vec<u8>, value: Vec<u8>) -> neo_crypto::mpt_trie::MptResult<()> {
+    fn put(&self, key: Vec<u8>, value: Vec<u8>) -> neo_trie::MptResult<()> {
         self.data.lock().insert(key, value);
         Ok(())
     }
 
-    fn delete(&self, key: Vec<u8>) -> neo_crypto::mpt_trie::MptResult<()> {
+    fn delete(&self, key: Vec<u8>) -> neo_trie::MptResult<()> {
         self.data.lock().remove(&key);
         Ok(())
     }

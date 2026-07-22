@@ -14,7 +14,7 @@ async fn silent_peer_is_disconnected_after_handshake_timeout() {
     let (stream, remote_addr) = listener.accept().await.expect("accept");
 
     let identity = Arc::new(LocalIdentity::new(
-        ProtocolSettings::default().network,
+        network_magic(),
         7,
         "/neo-rs:test/".to_string(),
         true,
@@ -58,7 +58,7 @@ async fn silent_peer_is_disconnected_after_handshake_timeout() {
 #[tokio::test]
 async fn ping_is_answered_with_pong_carrying_local_height() {
     let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     let mut fake = fake_dial(port).await;
     complete_handshake(&mut fake, network, 0xfa4e_0002, 20333).await;
 
@@ -87,9 +87,9 @@ async fn ping_is_answered_with_pong_carrying_local_height() {
 /// coordinator range owns them.
 #[tokio::test]
 async fn relayed_block_is_forwarded_to_the_inventory_sink() {
-    let settings = Arc::new(ProtocolSettings::default());
     let (inv_tx, mut inv_rx) = tokio::sync::mpsc::channel::<InboundInventory>(16);
-    let (service, handle) = LocalNodeService::with_config(settings, ChannelsConfig::default());
+    let (service, handle) =
+        LocalNodeService::with_config(test_chain_spec(), ChannelsConfig::default());
     let service = service.with_inventory_sink(inv_tx);
     tokio::spawn(service.run());
     handle
@@ -98,13 +98,7 @@ async fn relayed_block_is_forwarded_to_the_inventory_sink() {
         .expect("start");
 
     let mut fake = fake_dial(handle.local_node_info().port()).await;
-    complete_handshake(
-        &mut fake,
-        ProtocolSettings::default().network,
-        0xfa4e_0003,
-        20333,
-    )
-    .await;
+    complete_handshake(&mut fake, network_magic(), 0xfa4e_0003, 20333).await;
     let block = neo_payloads::Block::new();
     fake.send(Message::create(MessageCommand::Block, Some(&block), false).expect("block"))
         .await
@@ -123,7 +117,7 @@ async fn relayed_block_is_forwarded_to_the_inventory_sink() {
 #[tokio::test]
 async fn ready_peer_does_not_issue_unsolicited_block_requests() {
     let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     let mut fake = fake_dial(port).await;
     let _node_version = recv_frame(&mut fake).await.expect("node version");
     let payload = VersionPayload::create(

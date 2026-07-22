@@ -12,7 +12,7 @@ use neo_blockchain::{
     NativePersistOptions, NativePersistResources, genesis_block,
     persist_block_natives_with_resources,
 };
-use neo_config::ProtocolSettings;
+use neo_config::NeoChainSpec;
 use neo_native_contracts::LedgerContract;
 use neo_payloads::{Block, Header, Witness};
 use neo_storage::persistence::{StoreCache, providers::MemoryStore};
@@ -32,17 +32,18 @@ async fn native_ledger_records_survive_store_cache_reopen() {
     let resources = NativePersistResources::from_provider(Arc::new(
         neo_native_contracts::StandardNativeProvider::new(),
     ));
-    let settings = ProtocolSettings::default();
+    let chain_spec = NeoChainSpec::mainnet().expect("valid MainNet chain spec");
+    let settings = chain_spec.protocol_settings_arc();
     let store = Arc::new(MemoryStore::new());
     let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(writer.data_cache().clone());
 
-    let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let genesis = Arc::new(genesis_block(chain_spec.as_ref()).expect("genesis block"));
     let genesis_hash = genesis.try_hash().expect("genesis hash");
     persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&genesis),
-        Arc::new(settings.clone()),
+        Arc::clone(&settings),
         NativePersistOptions::default(),
         &resources,
     )
@@ -53,7 +54,7 @@ async fn native_ledger_records_survive_store_cache_reopen() {
     persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&block_one),
-        Arc::new(settings.clone()),
+        Arc::clone(&settings),
         NativePersistOptions::default(),
         &resources,
     )

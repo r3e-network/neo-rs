@@ -62,7 +62,8 @@ async fn send_raw_transaction_rejects_invalid_transaction_bytes() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_raw_transaction_accepts_valid_transaction() {
     let settings = ProtocolSettings::default();
-    let system = crate::server::test_support::test_system(settings.clone());
+    let (system, mut network_commands) =
+        crate::server::test_support::test_system_with_network_commands(settings.clone());
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();
     let handler = find_handler(&handlers, "sendrawtransaction");
@@ -85,6 +86,16 @@ async fn send_raw_transaction_accepts_valid_transaction() {
         tokio::task::block_in_place(|| (handler.callback())(&server, &params)).expect("send raw");
     let hash = result.get("hash").and_then(Value::as_str).expect("hash");
     assert_eq!(hash, tx.hash().to_string());
+    match network_commands
+        .recv()
+        .await
+        .expect("network relay command")
+    {
+        neo_network::NetworkCommand::BroadcastTransaction { transaction } => {
+            assert_eq!(transaction.hash(), tx.hash());
+        }
+        command => panic!("expected transaction broadcast, got {command:?}"),
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -321,8 +332,9 @@ async fn send_raw_transaction_reports_already_in_pool() {
 
     let tx = build_signed_transaction(&settings, &keypair, 12, 0);
     let mempool = system.mempool();
-    let result = mempool.try_add(tx.clone(), store.data_cache());
-    assert_eq!(result, VerifyResult::Succeed);
+    let result =
+        crate::server::test_support::admit_local_transaction(&mempool, &tx, store.data_cache());
+    assert_eq!(result.verify_result(), VerifyResult::Succeed);
 
     let payload = BASE64_STANDARD.encode(tx.to_bytes());
     let params = [Value::String(payload)];

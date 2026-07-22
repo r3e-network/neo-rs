@@ -18,7 +18,7 @@ use std::time::Duration;
 
 fn node_to_context(node: &Node) -> neo_rpc::server::NodeContext {
     neo_rpc::server::NodeContext::from_parts(
-        node.settings(),
+        node.chain_spec(),
         Arc::new(RuntimeStore::Memory(node.storage().as_ref().clone())),
         node.blockchain(),
         node.network(),
@@ -46,8 +46,9 @@ const JSONRPSEE_SMOKE_METHODS: &[&str] = &[
 ];
 
 fn build_server_with_handlers() -> Arc<RwLock<RpcServer>> {
-    let node =
-        Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("system to start");
+    let node = Node::for_test(neo_test_fixtures::test_chain_spec(
+        ProtocolSettings::default(),
+    ));
     let system: Arc<neo_rpc::server::NodeContext> = Arc::new(node_to_context(&node));
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(RpcServerBlockchain::register_handlers());
@@ -58,8 +59,9 @@ fn build_server_with_handlers() -> Arc<RwLock<RpcServer>> {
 }
 
 fn build_server_with_config(config: RpcServerConfig) -> RpcServer {
-    let node =
-        Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("system to start");
+    let node = Node::for_test(neo_test_fixtures::test_chain_spec(
+        ProtocolSettings::default(),
+    ));
     let system: Arc<neo_rpc::server::NodeContext> = Arc::new(node_to_context(&node));
     RpcServer::new(system, config)
 }
@@ -179,8 +181,9 @@ async fn module_registers_public_methods_from_server_registry() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn module_registers_dynamic_public_methods_without_descriptor_api_breaks() {
-    let node =
-        Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("system to start");
+    let node = Node::for_test(neo_test_fixtures::test_chain_spec(
+        ProtocolSettings::default(),
+    ));
     let system: Arc<neo_rpc::server::NodeContext> = Arc::new(node_to_context(&node));
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     let dynamic_method = ["custom", "method"].join("");
@@ -591,8 +594,9 @@ async fn unregistered_method_is_rejected_by_jsonrpsee_before_neo_dispatch() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn handler_error_preserves_neo_message_and_data() {
-    let node =
-        Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("system to start");
+    let node = Node::for_test(neo_test_fixtures::test_chain_spec(
+        ProtocolSettings::default(),
+    ));
     let system: Arc<neo_rpc::server::NodeContext> = Arc::new(node_to_context(&node));
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(vec![RpcHandler::new(

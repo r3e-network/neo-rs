@@ -109,23 +109,21 @@ where
 }
 
 /// Owned wrapper making a [`StateRoot`] verifiable through the engine machinery.
-/// Owning the root keeps witness verification independent of caller lifetimes;
-/// `StateRoot` is small and clones cheaply.
-struct VerifiableStateRoot<P> {
+///
+/// The state-dependent validator lookup is resolved before construction so the
+/// payload-level [`VerifiableExt`] contract remains storage independent.
+struct VerifiableStateRoot {
     root: StateRoot,
-    native: P,
+    verifier: Option<UInt160>,
 }
 
-impl<P> VerifiableStateRoot<P> {
-    fn new(root: StateRoot, native: P) -> Self {
-        Self { root, native }
+impl VerifiableStateRoot {
+    fn new(root: StateRoot, verifier: Option<UInt160>) -> Self {
+        Self { root, verifier }
     }
 }
 
-impl<P> Verifiable for VerifiableStateRoot<P>
-where
-    P: StateRootNativeProvider + 'static,
-{
+impl Verifiable for VerifiableStateRoot {
     fn verify(&self) -> bool {
         // State-independent validity: nothing beyond the witness check, which is
         // state-dependent and handled by verify_witnesses.
@@ -141,20 +139,9 @@ where
     }
 }
 
-impl<P> VerifiableExt for VerifiableStateRoot<P>
-where
-    P: StateRootNativeProvider + 'static,
-{
-    fn script_hashes_for_verifying<B: neo_storage::CacheRead>(
-        &self,
-        snapshot: &DataCache<B>,
-    ) -> Vec<UInt160> {
-        // C# GetScriptHashesForVerifying: the BFT address of the StateValidators
-        // designated at this root's index. No designation -> no verifiable hash.
-        let validators = self.native.state_validators(snapshot, self.root.index());
-        RedeemScript::bft_address(&validators)
-            .map(|hash| vec![hash])
-            .unwrap_or_default()
+impl VerifiableExt for VerifiableStateRoot {
+    fn script_hashes_for_verifying(&self) -> Vec<UInt160> {
+        self.verifier.iter().copied().collect()
     }
 
     fn witnesses(&self) -> Vec<&Witness> {
@@ -181,7 +168,12 @@ where
         return false;
     }
     let native = StateRootNativeProviderAdapter::new(native_contract_provider.clone());
-    let verifiable = VerifiableStateRoot::new(state_root.clone(), native);
+    // C# GetScriptHashesForVerifying: resolve the BFT address of the
+    // StateValidators designated at this root's index against the supplied
+    // canonical snapshot. No designation means no verifiable hash.
+    let validators = native.state_validators(snapshot, state_root.index());
+    let verifier = RedeemScript::bft_address(&validators);
+    let verifiable = VerifiableStateRoot::new(state_root.clone(), verifier);
     Helper::verify_witnesses_with_native_provider(
         &verifiable,
         settings,

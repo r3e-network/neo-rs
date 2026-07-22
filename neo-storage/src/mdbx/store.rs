@@ -23,10 +23,7 @@ use crate::persistence::{
     write_store::WriteStore,
 };
 use crate::{StorageError, StorageItem, StorageKey, StorageResult};
-#[cfg(not(feature = "mdbx-write-map"))]
 use libmdbx::NoWriteMap;
-#[cfg(feature = "mdbx-write-map")]
-use libmdbx::WriteMap;
 use libmdbx::{
     Cursor, Database, DatabaseOptions, Error as MdbxError, Mode, RO, RW, ReadWriteOptions,
     SyncMode, Table, TableFlags, Transaction, TransactionKind, WriteFlags,
@@ -44,17 +41,6 @@ use tracing::{error, info, warn};
 
 type RawEntry = (Vec<u8>, Vec<u8>);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CursorWriteMode {
-    /// Perform an independent MDBX tree lookup for each overlay entry.
-    Search,
-    /// Walk the table cursor in key order and use `CURRENT` for exact rows.
-    Merge,
-}
-
-#[cfg(feature = "mdbx-write-map")]
-pub(super) type MdbxDatabaseKind = WriteMap;
-#[cfg(not(feature = "mdbx-write-map"))]
 pub(super) type MdbxDatabaseKind = NoWriteMap;
 
 struct BorrowedRawOverlay<'a>(Vec<(&'a [u8], Option<&'a [u8]>)>);
@@ -73,13 +59,9 @@ impl RawOverlaySource for BorrowedRawOverlay<'_> {
 pub(super) const MAINTENANCE_TABLE: &str = "neo_node_metadata";
 pub(super) const ENVIRONMENT_ID_KEY: &[u8] = b"\0neo.storage.environment-id.v1";
 const PREFIX_OCCUPANCY_PATH_ENV: &str = "NEO_MDBX_PREFIX_INDEX_PATH";
-const CURSOR_WRITE_MODE_ENV: &str = "NEO_MDBX_CURSOR_WRITE_MODE";
-const COALESCE_ENV: &str = "NEO_MDBX_COALESCE";
-const NO_MEMINIT_ENV: &str = "NEO_MDBX_NO_MEMINIT";
 const MAX_TABLES: u64 = 8;
 const CURSOR_WRITE_EXACT_PREFIX: u64 = 64;
 const CURSOR_WRITE_SAMPLE_INTERVAL: u64 = 256;
-const MAX_MERGE_FORWARD_STEPS_PER_KEY: usize = 64;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 enum DataTable {
@@ -192,17 +174,12 @@ impl MdbxStore {
                     Mode::ReadOnly
                 } else {
                     Mode::ReadWrite(ReadWriteOptions {
-                        sync_mode: configured_sync_mode(),
+                        sync_mode: SyncMode::Durable,
                         max_size: Some(max_size),
                         growth_step: Some(growth_step),
                         ..Default::default()
                     })
                 },
-                // Environment-level flags are opt-in experiments. Keep the
-                // reference MDBX configuration unchanged unless an operator
-                // explicitly requests an A/B run.
-                coalesce: configured_flag(COALESCE_ENV),
-                no_meminit: configured_flag(NO_MEMINIT_ENV),
                 ..Default::default()
             },
         )
@@ -578,17 +555,6 @@ impl MdbxStore {
     where
         I: IntoIterator<Item = (&'a [u8], Option<&'a [u8]>)>,
     {
-        self.commit_raw_overlay_with_mode(overlay, configured_cursor_write_mode())
-    }
-
-    fn commit_raw_overlay_with_mode<'a, I>(
-        &self,
-        overlay: I,
-        cursor_write_mode: CursorWriteMode,
-    ) -> StorageResult<()>
-    where
-        I: IntoIterator<Item = (&'a [u8], Option<&'a [u8]>)>,
-    {
         let mut recorder = MdbxCommitRecorder::start();
         let sort_started = Instant::now();
         let mut entries = overlay.into_iter().collect::<Vec<_>>();
@@ -615,7 +581,6 @@ impl MdbxStore {
             &mut source,
             &mut recorder,
             self.prefix_occupancy.as_deref(),
-            cursor_write_mode,
         )?;
 
         if has_entries {
@@ -627,14 +592,6 @@ impl MdbxStore {
         }
         recorder.finish_success();
         Ok(())
-    }
-
-    #[cfg(test)]
-    pub(super) fn commit_raw_overlay_merge_for_test<'a, I>(&self, overlay: I) -> StorageResult<()>
-    where
-        I: IntoIterator<Item = (&'a [u8], Option<&'a [u8]>)>,
-    {
-        self.commit_raw_overlay_with_mode(overlay, CursorWriteMode::Merge)
     }
 
     /// Atomically commits overlays belonging to two isolated views.
@@ -814,14 +771,12 @@ impl MdbxStore {
         })?;
         let transaction_id = tx.id();
         recorder.add_count(MdbxCommitCountKind::Tables, 1);
-        let cursor_write_mode = configured_cursor_write_mode();
         apply_overlay(
             &tx,
             &primary_table,
             primary,
             &mut recorder,
             self.prefix_occupancy.as_deref(),
-            cursor_write_mode,
         )?;
 
         let secondary_table = timed_result(&mut recorder, MdbxCommitStage::TableOpen, || {
@@ -838,7 +793,6 @@ impl MdbxStore {
                 secondary,
                 &mut recorder,
                 secondary_store.prefix_occupancy.as_deref(),
-                cursor_write_mode,
             )?;
             let maintenance = timed_result(&mut recorder, MdbxCommitStage::TableOpen, || {
                 tx.create_table(Some(MAINTENANCE_TABLE), TableFlags::empty())
@@ -858,7 +812,6 @@ impl MdbxStore {
                 &mut tee,
                 &mut recorder,
                 secondary_store.prefix_occupancy.as_deref(),
-                cursor_write_mode,
             )?;
             match hook(std::mem::take(&mut captured)) {
                 ShadowCommitOutcome::Prepared(marker) => {
@@ -895,7 +848,6 @@ impl MdbxStore {
                 secondary,
                 &mut recorder,
                 secondary_store.prefix_occupancy.as_deref(),
-                cursor_write_mode,
             )?;
         }
         timed_result(&mut recorder, MdbxCommitStage::Commit, || {
@@ -941,7 +893,6 @@ impl MdbxStore {
             overlay,
             &mut recorder,
             self.prefix_occupancy.as_deref(),
-            configured_cursor_write_mode(),
         )?;
 
         if has_entries {
@@ -956,157 +907,14 @@ impl MdbxStore {
     }
 }
 
-/// Resolve the optional catch-up sync policy without changing the durable
-/// production default. MDBX's no-meta and safe-no-sync modes preserve database
-/// integrity but may lose the most recent committed transactions after a
-/// crash; callers should use them only for replay/bootstrap jobs that can
-/// replay from the last steady checkpoint.
-fn configured_sync_mode() -> SyncMode {
-    let raw = std::env::var("NEO_MDBX_SYNC_MODE").unwrap_or_else(|_| "durable".to_owned());
-    let mode = match parse_sync_mode(&raw) {
-        Some(mode) => mode,
-        None if raw
-            .trim()
-            .to_ascii_lowercase()
-            .replace(['-', '_'], "")
-            .starts_with("utterly") =>
-        {
-            warn!(
-                target: "neo",
-                requested_mode = %raw,
-                "ignoring unsafe MDBX utterly-no-sync request; use durable, no-meta-sync, or safe-no-sync"
-            );
-            SyncMode::Durable
-        }
-        None => {
-            warn!(
-                target: "neo",
-                requested_mode = %raw,
-                "unknown NEO_MDBX_SYNC_MODE; using durable MDBX commits"
-            );
-            SyncMode::Durable
-        }
-    };
-    if !matches!(mode, SyncMode::Durable) {
-        warn!(
-            target: "neo",
-            mode = ?mode,
-            "MDBX non-durable catch-up sync mode enabled; replay from a steady checkpoint after a crash"
-        );
-    }
-    mode
-}
-
-fn configured_flag(name: &str) -> bool {
-    std::env::var(name).is_ok_and(|raw| parse_flag(&raw))
-}
-
-fn parse_flag(raw: &str) -> bool {
-    matches!(
-        raw.trim().to_ascii_lowercase().as_str(),
-        "1" | "true" | "yes" | "on"
-    )
-}
-
-fn parse_sync_mode(raw: &str) -> Option<SyncMode> {
-    let normalized = raw.trim().to_ascii_lowercase().replace(['-', '_'], "");
-    match normalized.as_str() {
-        "durable" | "default" => Some(SyncMode::Durable),
-        "nometa" | "nometasync" => Some(SyncMode::NoMetaSync),
-        "safenosync" => Some(SyncMode::SafeNoSync),
-        "utterly" | "utterlynosync" => None,
-        _ => None,
-    }
-}
-
-/// Resolve the cursor writer policy. The merge path is intentionally opt-in
-/// until a target-host A/B has established both a throughput benefit and exact
-/// root/reopen parity. Any unknown value keeps the established search path.
-fn configured_cursor_write_mode() -> CursorWriteMode {
-    let raw = std::env::var(CURSOR_WRITE_MODE_ENV).unwrap_or_default();
-    match parse_cursor_write_mode(&raw) {
-        Some(mode) => mode,
-        None if !raw.trim().is_empty() => {
-            warn!(
-                target: "neo",
-                requested_mode = %raw,
-                "unknown NEO_MDBX_CURSOR_WRITE_MODE; using independent MDBX cursor writes"
-            );
-            CursorWriteMode::Search
-        }
-        None => CursorWriteMode::Search,
-    }
-}
-
-fn parse_cursor_write_mode(raw: &str) -> Option<CursorWriteMode> {
-    let normalized = raw.trim().to_ascii_lowercase().replace(['-', '_'], "");
-    match normalized.as_str() {
-        "search" | "default" => Some(CursorWriteMode::Search),
-        "merge" | "mergecursor" | "cursormerge" => Some(CursorWriteMode::Merge),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod sync_mode_tests {
-    use super::{
-        CursorWriteMode, MdbxOverlayCursor, configured_flag, parse_cursor_write_mode, parse_flag,
-        parse_sync_mode, proc_io_counter, proc_stat_faults, process_resource_snapshot,
-    };
+    use super::{MdbxOverlayCursor, proc_io_counter, proc_stat_faults, process_resource_snapshot};
     use crate::mdbx::MdbxStoreProvider;
     use crate::persistence::storage::StorageConfig;
     use crate::persistence::{RawOverlayCursor, RawReadOnlyStore};
-    use libmdbx::{SyncMode, TableFlags};
+    use libmdbx::TableFlags;
     use tempfile::tempdir;
-
-    #[test]
-    fn parses_supported_sync_modes_without_weakening_durable_default() {
-        assert!(matches!(
-            parse_sync_mode("durable"),
-            Some(SyncMode::Durable)
-        ));
-        assert!(matches!(
-            parse_sync_mode("no-meta-sync"),
-            Some(SyncMode::NoMetaSync)
-        ));
-        assert!(matches!(
-            parse_sync_mode(" SAFE_NO_SYNC "),
-            Some(SyncMode::SafeNoSync)
-        ));
-    }
-
-    #[test]
-    fn rejects_unsafe_and_unknown_sync_modes() {
-        assert!(parse_sync_mode("utterly_no_sync").is_none());
-        assert!(parse_sync_mode("not-a-mode").is_none());
-    }
-
-    #[test]
-    fn environment_flags_are_opt_in() {
-        assert!(!configured_flag("NEO_MDBX_TEST_FLAG_THAT_IS_NOT_SET"));
-        for value in ["1", "true", "YES", " on "] {
-            assert!(parse_flag(value), "{value:?} should enable the flag");
-        }
-        for value in ["0", "false", "off", "unknown"] {
-            assert!(
-                !parse_flag(value),
-                "{value:?} should leave the flag disabled"
-            );
-        }
-    }
-
-    #[test]
-    fn parses_cursor_write_modes_without_changing_the_default() {
-        assert_eq!(
-            parse_cursor_write_mode("search"),
-            Some(CursorWriteMode::Search)
-        );
-        assert_eq!(
-            parse_cursor_write_mode("merge-cursor"),
-            Some(CursorWriteMode::Merge)
-        );
-        assert!(parse_cursor_write_mode("unknown").is_none());
-    }
 
     #[test]
     fn cursor_resolution_counts_absent_and_existing_rows_in_one_transaction() {
@@ -1729,7 +1537,6 @@ fn apply_overlay<O>(
     overlay: &mut O,
     recorder: &mut MdbxCommitRecorder,
     prefix_occupancy: Option<&PrefixOccupancyIndex>,
-    cursor_write_mode: CursorWriteMode,
 ) -> StorageResult<bool>
 where
     O: RawOverlaySource + ?Sized,
@@ -1750,8 +1557,6 @@ where
     let mut cursor_write_weighted_entries = 0u64;
     let mut pending_cursor_write_sample_ns = None;
     let mut next_sampled_entry = CURSOR_WRITE_EXACT_PREFIX + 1;
-    let mut merge_cursor_state = MergeCursorState::default();
-    let mut effective_cursor_write_mode = cursor_write_mode;
     let visit_started = Instant::now();
     {
         let mut sink = |key: &[u8], value: Option<&[u8]>| {
@@ -1780,17 +1585,7 @@ where
                     next_sampled_entry.saturating_add(CURSOR_WRITE_SAMPLE_INTERVAL);
             }
             let write_started = (exact_measurement || sampled_measurement).then(Instant::now);
-            apply_result = match effective_cursor_write_mode {
-                CursorWriteMode::Search => apply_overlay_entry(tx, table, &mut cursor, key, value),
-                CursorWriteMode::Merge => {
-                    apply_overlay_entry_merge(&mut cursor, &mut merge_cursor_state, key, value)
-                }
-            };
-            if matches!(effective_cursor_write_mode, CursorWriteMode::Merge)
-                && merge_cursor_state.fallback_to_search
-            {
-                effective_cursor_write_mode = CursorWriteMode::Search;
-            }
+            apply_result = apply_overlay_entry(tx, table, &mut cursor, key, value);
             if let Some(write_started) = write_started {
                 let elapsed_ns = write_started.elapsed().as_nanos();
                 if exact_measurement {
@@ -2069,110 +1864,6 @@ impl RawOverlayCursor for MdbxOverlayCursor<'_, '_> {
                 Ok(None)
             }
         }
-    }
-}
-
-#[derive(Default)]
-struct MergeCursorState {
-    /// The key currently selected by the cursor, if the table is not exhausted.
-    current_key: Option<Vec<u8>>,
-    /// Lower bound from which a failed seek or end-of-table proves no row exists.
-    exhausted_from: Option<Vec<u8>>,
-    initialized: bool,
-    fallback_to_search: bool,
-}
-
-/// Applies one ordered overlay entry using a single forward cursor walk.
-///
-/// Exact rows are already selected when the overlay reaches them, so `CURRENT`
-/// avoids another B-tree descent. Inserts still use `UPSERT`, which is the
-/// correct MDBX operation for a key absent from the cursor's current position.
-/// If a source violates the ordering contract, the helper seeks backward and
-/// remains semantically equivalent to the independent-search implementation.
-fn apply_overlay_entry_merge(
-    cursor: &mut Cursor<'_, RW>,
-    state: &mut MergeCursorState,
-    key: &[u8],
-    value: Option<&[u8]>,
-) -> StorageResult<()> {
-    let seek_backward = state
-        .current_key
-        .as_deref()
-        .is_some_and(|current| current > key)
-        || state.current_key.is_none()
-            && state
-                .exhausted_from
-                .as_deref()
-                .is_some_and(|exhausted_from| key < exhausted_from);
-    if !state.initialized || seek_backward {
-        state.current_key = cursor
-            .set_range::<Vec<u8>, ()>(key)
-            .map_err(mdbx_error)?
-            .map(|(key, _)| key);
-        state.initialized = true;
-        state.exhausted_from = state.current_key.is_none().then(|| key.to_vec());
-    }
-
-    let mut forward_steps = 0usize;
-    while state
-        .current_key
-        .as_deref()
-        .is_some_and(|current| current < key)
-    {
-        forward_steps += 1;
-        if forward_steps > MAX_MERGE_FORWARD_STEPS_PER_KEY {
-            // Content-addressed overlays are often sparse relative to the
-            // backing table. Bound the speculative walk so sparse batches do
-            // not scan the entire MDBX tree for every overlay key.
-            state.current_key = cursor
-                .set_range::<Vec<u8>, ()>(key)
-                .map_err(mdbx_error)?
-                .map(|(key, _)| key);
-            state.exhausted_from = state.current_key.is_none().then(|| key.to_vec());
-            state.fallback_to_search = true;
-            break;
-        }
-        let previous_key = state.current_key.take().expect("cursor key checked above");
-        state.current_key = cursor
-            .next::<Vec<u8>, ()>()
-            .map_err(mdbx_error)?
-            .map(|(key, _)| key);
-        if state.current_key.is_none() {
-            state.exhausted_from = Some(previous_key);
-        } else {
-            state.exhausted_from = None;
-        }
-    }
-
-    if state.current_key.as_deref() == Some(key) {
-        match value {
-            Some(value) => cursor
-                .put(key, value, WriteFlags::CURRENT)
-                .map_err(mdbx_error),
-            None => {
-                cursor.del(WriteFlags::CURRENT).map_err(mdbx_error)?;
-                match cursor.get_current::<Vec<u8>, ()>().map_err(mdbx_error)? {
-                    Some((next_key, _)) => {
-                        state.current_key = Some(next_key);
-                        state.exhausted_from = None;
-                    }
-                    None => {
-                        state.current_key = None;
-                        state.exhausted_from = Some(key.to_vec());
-                    }
-                }
-                Ok(())
-            }
-        }
-    } else if let Some(value) = value {
-        cursor
-            .put(key, value, WriteFlags::UPSERT)
-            .map_err(mdbx_error)?;
-        state.current_key = Some(key.to_vec());
-        state.exhausted_from = None;
-        Ok(())
-    } else {
-        Ok(())
     }
 }
 

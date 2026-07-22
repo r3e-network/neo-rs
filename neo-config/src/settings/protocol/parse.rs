@@ -11,7 +11,8 @@ use neo_crypto::ECPoint;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::hardfork::Hardfork;
+use crate::hardfork::{Hardfork, HardforkSchedule};
+use crate::network::public_key::parse_public_key;
 
 use super::{ProtocolConfigError, ProtocolSettings};
 
@@ -53,11 +54,11 @@ impl ProtocolSettings {
         if let Some(max_tx) = raw.max_transactions_per_block {
             settings.max_transactions_per_block = max_tx;
         }
+        if let Some(max_block_size) = raw.max_block_size {
+            settings.max_block_size = max_block_size;
+        }
         if let Some(max_valid) = raw.max_valid_until_block_increment {
             settings.max_valid_until_block_increment = max_valid;
-        }
-        if let Some(max_mempool) = raw.memory_pool_max_transactions {
-            settings.memory_pool_max_transactions = max_mempool;
         }
         if let Some(max_traceable) = raw.max_traceable_blocks {
             settings.max_traceable_blocks = max_traceable;
@@ -71,16 +72,19 @@ impl ProtocolSettings {
         }
 
         if let Some(hardforks) = raw.hardforks {
-            let mut parsed = HashMap::new();
+            let mut parsed = HardforkSchedule::new();
             for (name, height) in hardforks {
                 let hardfork = Hardfork::from_str(&name).map_err(|err| {
                     ProtocolConfigError::InvalidHardforkName(format!("{name}: {err}"))
                 })?;
-                parsed.insert(hardfork, height);
+                parsed = parsed.with_activation(hardfork, height);
             }
 
-            settings.hardforks = Self::ensure_omitted_hardforks(parsed);
-            Self::validate_hardfork_sequence(&settings.hardforks)?;
+            settings.hardforks = parsed.with_omitted_leading_at_genesis();
+            settings
+                .hardforks
+                .validate()
+                .map_err(|error| ProtocolConfigError::InvalidHardforkSequence(error.to_string()))?;
         }
 
         Ok(settings)
@@ -99,20 +103,10 @@ impl CommitteeParser {
     fn parse_committee(entries: Vec<String>) -> Result<Vec<ECPoint>, ProtocolConfigError> {
         let mut committee = Vec::with_capacity(entries.len());
         for entry in entries {
-            let trimmed = neo_primitives::strip_hex_prefix(entry.trim());
-            if trimmed.is_empty() {
-                continue;
-            }
-            let bytes = neo_primitives::hex_util::decode_hex(trimmed).map_err(|err| {
+            let point = parse_public_key(&entry).map_err(|error| {
                 ProtocolConfigError::InvalidCommitteeEntry {
                     entry: entry.clone(),
-                    reason: format!("invalid hex: {err}"),
-                }
-            })?;
-            let point = ECPoint::from_bytes(&bytes).map_err(|e| {
-                ProtocolConfigError::InvalidCommitteeEntry {
-                    entry: entry.clone(),
-                    reason: e.to_string(),
+                    reason: error.to_string(),
                 }
             })?;
             committee.push(point);
@@ -141,7 +135,7 @@ struct ProtocolConfiguration {
     #[serde(default)]
     max_transactions_per_block: Option<u32>,
     #[serde(default)]
-    memory_pool_max_transactions: Option<i32>,
+    max_block_size: Option<u32>,
     #[serde(default)]
     max_traceable_blocks: Option<u32>,
     #[serde(default)]

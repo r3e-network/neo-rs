@@ -6,14 +6,14 @@ use neo_config::ProtocolSettings;
 /// height 0 need it enabled (mirrors C# `TestProtocolSettings`).
 fn echidna_settings() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
-    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfEchidna, 0);
     settings
 }
 use crate::test_support::deploy_native;
 use crate::{LedgerContract, Role, RoleManagement};
 use neo_crypto::Secp256r1Crypto;
 use neo_execution::native_contract::build_native_contract_state;
-use neo_execution::{ApplicationEngine, Contract, NativeContract};
+use neo_execution::{ApplicationEngine, NativeContract};
 use neo_payloads::{
     Block, Header, NotaryAssisted, Signer, Transaction, TransactionAttribute, VerifiableContainer,
     Witness, get_sign_data,
@@ -24,8 +24,8 @@ use neo_primitives::{
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use neo_vm::StackItem;
 use neo_vm::script_builder::ScriptBuilder;
+use neo_vm::{Contract, StackItem};
 use neo_vm::{ExecutionEngineLimits, OpCode, VmState};
 use num_bigint::BigInt;
 use std::sync::Arc;
@@ -325,7 +325,7 @@ fn manifest_standards_gain_nep30_at_faun() {
     assert_eq!(echidna_only.manifest.supported_standards, ["NEP-27"]);
 
     let mut settings = echidna_settings();
-    settings.hardforks.insert(Hardfork::HfFaun, 10);
+    settings.hardforks = settings.hardforks.with_activation(Hardfork::HfFaun, 10);
     let before = build_native_contract_state(&Notary, &settings, 9);
     assert_eq!(before.manifest.supported_standards, ["NEP-27"]);
     let after = build_native_contract_state(&Notary, &settings, 10);

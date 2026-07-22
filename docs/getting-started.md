@@ -180,7 +180,7 @@ the node syncs. Replace `10332` with `20332` for TestNet.
 | `./target/release/neo-node --config <FILE>` | Run the node with a TOML config. |
 | `--config / -c <FILE>` | Path to the TOML config (default `neo_testnet_node.toml`). |
 | `--storage-path <DIR>` | Override the persistent data directory for the configured/default backend. |
-| `--network-magic <U32>` | Override the protocol network magic. |
+| `--network-magic <U32>` | Assert the selected built-in chain's network magic; a mismatch is rejected. |
 | `--check-config` | Validate config and exit. |
 | `--check-storage` | Validate storage access and exit. |
 | `--check-all` | Run both preflight checks and exit. |

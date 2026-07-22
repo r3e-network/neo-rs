@@ -151,7 +151,8 @@ async fn headers_verify_against_the_anchor_next_consensus() {
 
     let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
     service.initialize().await.expect("initialize");
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut header = Header::new();
     header.set_index(1);
@@ -218,7 +219,8 @@ async fn canonical_duplicate_keeps_header_validation_prefix_exact() {
 
     let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
     service.initialize().await.expect("initialize");
-    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let genesis =
+        crate::native_persist::genesis_block(&chain_spec_for_settings(&settings)).expect("genesis");
 
     let mut child = Header::new();
     child.set_index(1);

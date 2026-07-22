@@ -1,10 +1,9 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_config::ProtocolSettings;
-use neo_execution::contract::Contract;
 use neo_execution::helper::Helper as ContractHelper;
 use neo_execution::iterators::{IteratorInterop, StorageIterator};
-use neo_execution::{ApplicationEngine, ContractState, TriggerType};
+use neo_execution::{ApplicationEngine, ContractState};
 use neo_manifest::NefFile;
 use neo_manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
@@ -14,10 +13,12 @@ use neo_payloads::VerifiableContainer;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
+use neo_primitives::TriggerType;
 use neo_primitives::{CallFlags, ContractParameterType, FindOptions};
 use neo_primitives::{UInt160, WitnessScope};
 use neo_serialization::BinarySerializer;
 use neo_storage::{StorageItem, StorageKey};
+use neo_vm::Contract;
 use neo_wallets::wallet_helper::WalletAddress as address_helper;
 use neo_wallets::{KeyPair, Nep6Wallet, Wallet, WalletAccount};
 

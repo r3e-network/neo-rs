@@ -6,7 +6,7 @@ use super::*;
 
 impl Transaction {
     /// Converts the transaction to a JSON object.
-    pub fn to_json(&self, settings: &ProtocolSettings) -> serde_json::Value {
+    pub fn to_json(&self, address_version: u8) -> serde_json::Value {
         let mut json = serde_json::Map::new();
 
         json.insert(
@@ -22,7 +22,7 @@ impl Transaction {
 
         let sender_value = self
             .sender()
-            .map(|account| account.to_address_with_version(settings.address_version));
+            .map(|account| account.to_address_with_version(address_version));
         json.insert(
             "sender".to_string(),
             sender_value

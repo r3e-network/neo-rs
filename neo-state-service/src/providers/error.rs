@@ -3,8 +3,8 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
-use neo_crypto::mpt_trie::MptError;
 use neo_primitives::UInt256;
+use neo_trie::MptError;
 
 /// Result returned by state-provider factories and views.
 pub type StateProviderResult<T> = Result<T, StateProviderError>;

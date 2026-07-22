@@ -3,14 +3,17 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use neo_config::ProtocolSettings;
+use neo_config::{NeoChainSpec, NetworkType};
 use neo_network::{LocalNodeService, NetworkCommand, PeerRegistry};
 use neo_runtime::NetworkService;
 
+fn test_chain_spec() -> Arc<NeoChainSpec> {
+    NeoChainSpec::mainnet().expect("embedded MainNet chain specification")
+}
+
 #[tokio::test]
 async fn local_node_handle_constructs_and_shuts_down() {
-    let settings = Arc::new(ProtocolSettings::default());
-    let (service, handle) = LocalNodeService::new(settings);
+    let (service, handle) = LocalNodeService::new(test_chain_spec());
     let task = tokio::spawn(service.run());
     handle.shutdown().await.expect("shutdown");
     drop(handle);
@@ -19,8 +22,11 @@ async fn local_node_handle_constructs_and_shuts_down() {
 
 #[tokio::test]
 async fn local_node_service_concrete_handle_works() {
-    let settings = Arc::new(ProtocolSettings::default());
-    let (service, _handle) = LocalNodeService::new(settings);
+    let chain_spec = test_chain_spec();
+    let (service, _handle) = LocalNodeService::new(Arc::clone(&chain_spec));
+    let provided = service.chain_spec();
+    assert!(Arc::ptr_eq(&provided, &chain_spec));
+    assert_eq!(provided.identity().network_type(), NetworkType::MainNet);
     let service = Arc::new(service);
     assert_eq!(service.peer_count().await, 0);
     let mut rx = service.subscribe_events();
@@ -29,8 +35,7 @@ async fn local_node_service_concrete_handle_works() {
 
 #[tokio::test]
 async fn local_node_command_loop_dispatches_start() {
-    let settings = Arc::new(ProtocolSettings::default());
-    let (mut service, _handle) = LocalNodeService::new(settings);
+    let (mut service, _handle) = LocalNodeService::new(test_chain_spec());
     let start_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
@@ -49,11 +54,13 @@ async fn local_node_command_loop_dispatches_start() {
 
 #[tokio::test]
 async fn local_node_service_uses_supplied_peer_registry() {
-    let settings = Arc::new(ProtocolSettings::default());
     let config = neo_network::ChannelsConfig::default();
     let registry = Arc::new(PeerRegistry::from_config(&config));
-    let (service, handle) =
-        LocalNodeService::with_config_and_registry(settings, config, Arc::clone(&registry));
+    let (service, handle) = LocalNodeService::with_config_and_registry(
+        test_chain_spec(),
+        config,
+        Arc::clone(&registry),
+    );
     let task = tokio::spawn(service.run());
 
     handle
@@ -97,8 +104,7 @@ async fn next_peer_connected(
 
 #[tokio::test]
 async fn accept_loop_reports_inbound_peer_with_remote_address() {
-    let settings = Arc::new(ProtocolSettings::default());
-    let (service, handle) = LocalNodeService::new(settings);
+    let (service, handle) = LocalNodeService::new(test_chain_spec());
     let task = tokio::spawn(service.run());
 
     // Subscribe before the inbound connection so the event cannot be
@@ -152,8 +158,7 @@ async fn connect_peer_reports_outbound_peer_with_dialed_address() {
     let remote_addr = remote_listener.local_addr().expect("remote addr");
     let accept_task = tokio::spawn(async move { remote_listener.accept().await });
 
-    let settings = Arc::new(ProtocolSettings::default());
-    let (service, handle) = LocalNodeService::new(settings);
+    let (service, handle) = LocalNodeService::new(test_chain_spec());
     let task = tokio::spawn(service.run());
     let mut events = handle.subscribe();
 
@@ -184,8 +189,7 @@ async fn connect_peer_reports_outbound_peer_with_dialed_address() {
 
 #[tokio::test]
 async fn network_handle_drop_closes_command_loop() {
-    let settings = Arc::new(ProtocolSettings::default());
-    let (service, handle) = LocalNodeService::new(settings);
+    let (service, handle) = LocalNodeService::new(test_chain_spec());
     let task = tokio::spawn(service.run());
     drop(handle);
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), task).await;

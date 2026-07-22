@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+Define the repository-level test evidence required before neo-rs can claim
+production readiness or Neo N3 protocol parity.
+
+## Requirements
 
 ### Requirement: Unit test coverage
 The system SHALL maintain minimum 80% unit test coverage across all modules.

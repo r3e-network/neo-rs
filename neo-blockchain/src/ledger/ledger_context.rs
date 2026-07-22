@@ -10,9 +10,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use lru::LruCache;
 use neo_error::CoreResult;
-use neo_payloads::{
-    block::Block, extensible_payload::ExtensiblePayload, header::Header, transaction::Transaction,
-};
+use neo_payloads::{block::Block, extensible_payload::ExtensiblePayload, header::Header};
 use neo_primitives::UInt256;
 use parking_lot::{Mutex, RwLock};
 
@@ -25,7 +23,7 @@ use parking_lot::{Mutex, RwLock};
 pub const DEFAULT_BLOCK_CACHE_CAPACITY: usize = 1024;
 
 /// Centralised cache that tracks recently seen ledger data (blocks,
-/// headers, transactions, extensible payloads) for fast access by
+/// headers and extensible payloads) for fast access by
 /// networking components. Matches the responsibilities of the C#
 /// `LedgerContext`.
 pub struct LedgerContext {
@@ -45,7 +43,6 @@ pub struct LedgerContext {
     /// allocation they already pass through native persistence and hooks.
     blocks_by_hash: Mutex<LruCache<UInt256, Arc<Block>>>,
     extensibles_by_hash: RwLock<HashMap<UInt256, ExtensiblePayload>>,
-    transactions_by_hash: RwLock<HashMap<UInt256, Transaction>>,
 }
 
 impl Default for LedgerContext {
@@ -66,7 +63,6 @@ impl LedgerContext {
             headers_by_index: Mutex::new(LruCache::new(cap)),
             blocks_by_hash: Mutex::new(LruCache::new(cap)),
             extensibles_by_hash: RwLock::new(HashMap::new()),
-            transactions_by_hash: RwLock::new(HashMap::new()),
         }
     }
 
@@ -94,24 +90,6 @@ impl LedgerContext {
         self.hashes_by_index.write().truncate(index as usize + 1);
         self.headers_by_index.lock().clear();
         self.blocks_by_hash.lock().clear();
-    }
-
-    /// Inserts a transaction into the mempool cache and returns its
-    /// hash.
-    pub fn insert_transaction(&self, transaction: Transaction) -> CoreResult<UInt256> {
-        let hash = transaction.try_hash()?;
-        self.transactions_by_hash.write().insert(hash, transaction);
-        Ok(hash)
-    }
-
-    /// Removes a transaction from the mempool cache if present.
-    pub fn remove_transaction(&self, hash: &UInt256) -> Option<Transaction> {
-        self.transactions_by_hash.write().remove(hash)
-    }
-
-    /// Attempts to fetch a transaction from the mempool cache.
-    pub fn get_transaction(&self, hash: &UInt256) -> Option<Transaction> {
-        self.transactions_by_hash.read().get(hash).cloned()
     }
 
     /// Records a block and its header for quick access by hash or
@@ -240,12 +218,6 @@ impl LedgerContext {
         }
 
         collected
-    }
-
-    /// Returns all transaction hashes currently tracked by the
-    /// mempool cache.
-    pub fn mempool_transaction_hashes(&self) -> Vec<UInt256> {
-        self.transactions_by_hash.read().keys().cloned().collect()
     }
 }
 

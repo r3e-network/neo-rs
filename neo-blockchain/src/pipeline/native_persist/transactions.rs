@@ -12,8 +12,8 @@ use neo_execution::specialization::{
     SpecializationRouteDecision,
 };
 use neo_execution::{ApplicationEngine, NativeContractsCache, NoDiagnostic};
-use neo_manifest::CallFlags;
 use neo_payloads::{Block, VerifiableContainer};
+use neo_primitives::CallFlags;
 use neo_primitives::TriggerType;
 use neo_storage::{CacheRead, DataCache};
 use neo_vm::VmState as VMState;

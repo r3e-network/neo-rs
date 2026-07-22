@@ -14,6 +14,7 @@
 //! - The restricted `AuditedApplicationHost` facade.
 //! - Policy checks for context, storage, fees, events, and contract calls.
 
+use crate::StorageContext;
 use crate::application_engine::{ApplicationEngine, FEE_FACTOR};
 use crate::diagnostic::Diagnostic;
 use crate::execution_artifact::ContextObservationValue;
@@ -23,10 +24,9 @@ use crate::host_access_audit::{
 };
 use crate::iterators::StorageIterator;
 use crate::native_contract_provider::NativeContractProvider;
-use crate::{NotifyEventArgs, StorageContext};
 use neo_error::CoreError;
-use neo_manifest::CallFlags;
-use neo_payloads::VerifiableContainer;
+use neo_payloads::{NotifyEventArgs, VerifiableContainer};
+use neo_primitives::CallFlags;
 use neo_primitives::{Hardfork, TriggerType, UInt160};
 use neo_storage::{CacheRead, SeekDirection, StorageKey};
 use neo_vm::StackItem;

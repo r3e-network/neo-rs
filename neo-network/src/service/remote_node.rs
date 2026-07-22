@@ -635,6 +635,7 @@ where
             listener_port: 0,
             peer_is_full_node: false,
             peer_allows_compression: false,
+            bloom_filter: None,
             pending_outbound: Vec::new(),
             get_addr_sent: false,
             inbound_tx,

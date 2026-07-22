@@ -1,6 +1,6 @@
 use super::*;
 use neo_config::ProtocolSettings;
-use neo_execution::Contract;
+use neo_vm::Contract;
 
 /// `n` distinct valid secp256r1 points (the mainnet standby committee).
 fn points(n: usize) -> Vec<ECPoint> {

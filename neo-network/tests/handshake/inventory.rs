@@ -3,9 +3,9 @@ use super::*;
 
 #[tokio::test]
 async fn relayed_extensible_is_forwarded_to_the_inventory_sink() {
-    let settings = Arc::new(ProtocolSettings::default());
     let (inv_tx, mut inv_rx) = tokio::sync::mpsc::channel::<InboundInventory>(16);
-    let (service, handle) = LocalNodeService::with_config(settings, ChannelsConfig::default());
+    let (service, handle) =
+        LocalNodeService::with_config(test_chain_spec(), ChannelsConfig::default());
     let service = service.with_inventory_sink(inv_tx);
     tokio::spawn(service.run());
     handle
@@ -14,7 +14,7 @@ async fn relayed_extensible_is_forwarded_to_the_inventory_sink() {
         .expect("start");
     let port = handle.local_node_info().port();
 
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     let mut fake = fake_dial(port).await;
     complete_handshake(&mut fake, network, 0xfa4e_0009, 20333).await;
 
@@ -47,7 +47,7 @@ async fn relayed_extensible_is_forwarded_to_the_inventory_sink() {
 #[tokio::test]
 async fn broadcast_extensible_reaches_connected_peers() {
     let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     let mut fake = fake_dial(port).await;
     complete_handshake(&mut fake, network, 0xfa4e_000a, 20333).await;
     await_info(&handle, |info| info.connected_peers_count() == 1).await;
@@ -145,8 +145,8 @@ impl neo_network::BlockSource for MempoolStubSource {
 /// with `Inv` announcements of every verified mempool transaction.
 #[tokio::test]
 async fn node_answers_mempool_request_with_inv() {
-    let settings = Arc::new(ProtocolSettings::default());
-    let (service, handle) = LocalNodeService::with_config(settings, ChannelsConfig::default());
+    let (service, handle) =
+        LocalNodeService::with_config(test_chain_spec(), ChannelsConfig::default());
     let mempool_hash = UInt256::from_bytes(&[0x42u8; 32]).expect("hash");
     let service = service.with_block_source(Arc::new(MempoolStubSource(mempool_hash)));
     tokio::spawn(service.run());
@@ -155,7 +155,7 @@ async fn node_answers_mempool_request_with_inv() {
         .await
         .expect("start");
     let port = handle.local_node_info().port();
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     let mut fake = fake_dial(port).await;
     complete_handshake(&mut fake, network, 0xfa4e_000a, 20333).await;
 
@@ -186,7 +186,7 @@ async fn node_answers_mempool_request_with_inv() {
 #[tokio::test]
 async fn broadcast_inv_reaches_connected_peers() {
     let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
-    let network = ProtocolSettings::default().network;
+    let network = network_magic();
     let mut fake = fake_dial(port).await;
     complete_handshake(&mut fake, network, 0xfa4e_000b, 20333).await;
     await_info(&handle, |info| info.connected_peers_count() == 1).await;
