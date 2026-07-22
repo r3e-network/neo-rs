@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "date": "2026-07-22",
+  "status": "accepted_format_foundation_not_performance_optimization",
+  "code_commit": "aaa463796f2c688786e1e3db6feef6cc511f77a9",
+  "workload": {
+    "source": "neo-n3-mainnet-1877001-1887000",
+    "seed": 5640001189223798919,
+    "prefill_rows": 1048576,
+    "campaign_operations": 131072,
+    "represented_blocks": 1300,
+    "durable_commits": 8
+  },
+  "baseline": {
+    "source_commit": "2af9dda040c60eba36f538079af24d2eb0871c02",
+    "binary_sha256": "0c10116f20fe023d7fe8b79823ad6dbfd19e5fb46d222b462c10bb626807ae07",
+    "report_sha256": "df6d30b9f4267c4df8a1ee73c73809076f72a74f5d2fdbefd49a167bec85616b",
+    "blocks_per_second": 5998.766247589165,
+    "campaign_wall_ns": 216711228,
+    "physical_write_bytes": 55984128,
+    "index_build_ns": 6546806,
+    "compaction_wall_ns": 348426016,
+    "compaction_bytes_written": 57656064,
+    "index_bytes": 61111488,
+    "decoded_index_memory_bytes": 458560,
+    "point_mean_ns_per_key": 239,
+    "sorted_mean_ns_per_key": 184,
+    "reopen_ns": 192053971
+  },
+  "candidate": {
+    "source_commit": "aaa463796f2c688786e1e3db6feef6cc511f77a9",
+    "binary_sha256": "659eaea904982f7f4bddcd9d3e8c0810372c44fc9111295ec733320fc46307f4",
+    "report_sha256": "6c2ced71e04f8760a064684225d25b19e2c2d207f5ccbf272e01bef135ca21c9",
+    "blocks_per_second": 5831.0408895103965,
+    "campaign_wall_ns": 222944758,
+    "physical_write_bytes": 60932096,
+    "index_build_ns": 7274601,
+    "compaction_wall_ns": 377199024,
+    "compaction_bytes_written": 73253632,
+    "index_bytes": 77563392,
+    "decoded_index_memory_bytes": 297216,
+    "point_mean_ns_per_key": 319,
+    "sorted_mean_ns_per_key": 198,
+    "reopen_ns": 195734284
+  },
+  "delta_percent": {
+    "blocks_per_second": -2.7960,
+    "campaign_wall_ns": 2.8764,
+    "physical_write_bytes": 8.8382,
+    "index_build_ns": 11.1168,
+    "compaction_wall_ns": 8.2580,
+    "compaction_bytes_written": 27.0528,
+    "index_bytes": 26.9211,
+    "decoded_index_memory_bytes": -35.1849,
+    "point_mean_ns_per_key": 33.4728,
+    "sorted_mean_ns_per_key": 7.6087,
+    "reopen_ns": 1.9163
+  },
+  "digests": {
+    "prefill_sha256": "7d59a88eed8158dbf6a2f12eb16193fa92e036c20cd3dfe18ab9d8e13a6537ba",
+    "campaign_sha256": "320749535a057994ede6bf31b0f97846c3cc5d1d8a800aceec0b2d396f07eac1",
+    "reopen_sha256": "73c932fc04bb1e68dadf20dce6ec302edb0cdd4b2dc661fccaef063eaf728a44",
+    "matched": true
+  },
+  "node_state_root_enabled": {
+    "blocks_per_second": null,
+    "status": "not_established",
+    "binary_sha256": "631ef285e524c9b61903abb49c6c161e80ca5d760f795bbca55ef94283d7bb9d",
+    "source_height": 3447022,
+    "target_height": 3452022,
+    "reason": "authoritative state-pack marker exists; current-format pack is unavailable and MDBX MPT fallback is stale"
+  },
+  "separate_optimistic_header_signature_result": {
+    "state_root_enabled": true,
+    "baseline_blocks_per_second": 255.04,
+    "candidate_blocks_per_second": 346.63,
+    "delta_percent": 35.91
+  }
+}
