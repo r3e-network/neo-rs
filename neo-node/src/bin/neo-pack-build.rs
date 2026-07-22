@@ -25,6 +25,8 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail, ensure};
 use neo_crypto::Sha256Hasher;
+use neo_crypto::mpt_trie::Node;
+use neo_primitives::UInt256;
 use neo_state_packs::checkpoint::{
     PACK_CHECKPOINT_SCHEMA_VERSION, PACK_CHECKPOINT_SOURCE_NAMESPACE,
     PackCheckpoint as CheckpointReport,
@@ -464,6 +466,10 @@ impl<'a> RowAccumulator<'a> {
             key[0] == STATE_NODE_PREFIX,
             "checkpoint row is outside the exact StateService node namespace"
         );
+        let expected_hash = UInt256::from_bytes(&key[1..])
+            .context("decode checkpoint MPT node hash from its storage key")?;
+        Node::validate_persisted(value, expected_hash)
+            .context("validate checkpoint MPT node row")?;
         let value_len =
             u64::try_from(value.len()).context("checkpoint value length overflows u64")?;
         if !self.operations.is_empty()
@@ -953,6 +959,7 @@ fn sync_directory(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_io::SerializableExtensions;
     use tempfile::tempdir;
 
     fn test_arguments(pack_path: PathBuf, rows_per_frame: usize) -> Arguments {
@@ -1332,9 +1339,11 @@ mod tests {
     fn shared_accumulator_builds_scrubs_and_reopens_root_reachable_checkpoint() {
         let temporary = tempdir().expect("temporary checkpoint parent");
         let arguments = test_arguments(temporary.path().join("pack"), 1);
+        let root_node = Node::new_leaf(b"root-node".to_vec());
+        let root_internal = root_node.try_hash().expect("hash root node").to_array();
         let source_tip = SourceTip {
             height: 123,
-            root_internal: [0x55; 32],
+            root_internal,
         };
         let opened = open_test_pack(&arguments, source_tip).expect("create checkpoint");
         let mut accumulator =
@@ -1342,10 +1351,23 @@ mod tests {
         let mut root_key = [0u8; 33];
         root_key[0] = STATE_NODE_PREFIX;
         root_key[1..].copy_from_slice(&source_tip.root_internal);
-        let mut later_key = [0x66; 33];
+        let later_node = Node::new_leaf(b"later-node".to_vec());
+        let later_hash = later_node.try_hash().expect("hash later node").to_array();
+        let mut later_key = [0u8; 33];
         later_key[0] = STATE_NODE_PREFIX;
-        accumulator.push(root_key, b"root-node").expect("root row");
-        accumulator.push(later_key, b"later").expect("later row");
+        later_key[1..].copy_from_slice(&later_hash);
+        accumulator
+            .push(
+                root_key,
+                &root_node.to_array().expect("serialize root node"),
+            )
+            .expect("root row");
+        accumulator
+            .push(
+                later_key,
+                &later_node.to_array().expect("serialize later node"),
+            )
+            .expect("later row");
         let accumulated = accumulator.finish().expect("finish rows");
         assert_eq!((accumulated.rows, accumulated.frames), (2, 2));
         let scrub = accumulated
@@ -1362,5 +1384,33 @@ mod tests {
         )
         .expect("reopen current checkpoint");
         validate_root_node(&reopened, source_tip).expect("reopened root reachable");
+    }
+
+    #[test]
+    fn accumulator_rejects_invalid_mpt_rows_before_accounting() {
+        let temporary = tempdir().expect("temporary checkpoint parent");
+        let arguments = test_arguments(temporary.path().join("pack"), 1);
+        let source_tip = SourceTip {
+            height: 123,
+            root_internal: [0x55; 32],
+        };
+        let opened = open_test_pack(&arguments, source_tip).expect("create checkpoint");
+        let mut accumulator =
+            RowAccumulator::new(&arguments, source_tip, opened).expect("create row accumulator");
+        let mut key = [0u8; 33];
+        key[0] = STATE_NODE_PREFIX;
+        key[1..].copy_from_slice(&source_tip.root_internal);
+
+        let error = accumulator
+            .push(key, b"not-a-persisted-mpt-node")
+            .expect_err("malformed MPT rows must fail before entering the pack");
+        assert!(
+            error
+                .to_string()
+                .contains("validate checkpoint MPT node row")
+        );
+        assert_eq!(accumulator.rows, 0);
+        assert_eq!(accumulator.value_bytes, 0);
+        assert!(accumulator.operations.is_empty());
     }
 }
