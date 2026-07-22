@@ -13,6 +13,12 @@ use crate::pipeline::signature_verification::{
 };
 use crate::service::{BlockchainService, MempoolLike};
 
+enum HeaderTicketDrain {
+    Empty,
+    Verified(Header),
+    Rejected,
+}
+
 impl<S, M> BlockchainService<S, M>
 where
     S: crate::service_context::SystemContext,
@@ -236,12 +242,15 @@ where
 
             if pool_enabled {
                 while pending.len() >= pool.window() {
-                    let Some(verified) = self.drain_header_preverification_ticket(
-                        &mut pending,
-                        settings.as_ref(),
-                        snapshot.as_ref(),
-                        Arc::clone(&native_contract_provider),
-                    ) else {
+                    let HeaderTicketDrain::Verified(verified) = self
+                        .drain_header_preverification_ticket(
+                            &mut pending,
+                            &cancellation,
+                            settings.as_ref(),
+                            snapshot.as_ref(),
+                            Arc::clone(&native_contract_provider),
+                        )
+                    else {
                         return HeaderValidationOutcome::new(accepted, frontier);
                     };
                     if !self.header_cache.add(verified.clone()) {
@@ -273,12 +282,15 @@ where
                         if pending.is_empty() {
                             pool_enabled = false;
                         } else {
-                            let Some(verified) = self.drain_header_preverification_ticket(
-                                &mut pending,
-                                settings.as_ref(),
-                                snapshot.as_ref(),
-                                Arc::clone(&native_contract_provider),
-                            ) else {
+                            let HeaderTicketDrain::Verified(verified) = self
+                                .drain_header_preverification_ticket(
+                                    &mut pending,
+                                    &cancellation,
+                                    settings.as_ref(),
+                                    snapshot.as_ref(),
+                                    Arc::clone(&native_contract_provider),
+                                )
+                            else {
                                 return HeaderValidationOutcome::new(accepted, frontier);
                             };
                             if !self.header_cache.add(verified.clone()) {
@@ -311,17 +323,26 @@ where
             // Pool shutdown/preparation failures fall back to the canonical
             // synchronous verifier. First drain older speculative work so the
             // parent context is an already accepted frontier.
-            while let Some(verified) = self.drain_header_preverification_ticket(
-                &mut pending,
-                settings.as_ref(),
-                snapshot.as_ref(),
-                Arc::clone(&native_contract_provider),
-            ) {
-                if !self.header_cache.add(verified.clone()) {
-                    return HeaderValidationOutcome::new(accepted, frontier);
+            loop {
+                match self.drain_header_preverification_ticket(
+                    &mut pending,
+                    &cancellation,
+                    settings.as_ref(),
+                    snapshot.as_ref(),
+                    Arc::clone(&native_contract_provider),
+                ) {
+                    HeaderTicketDrain::Empty => break,
+                    HeaderTicketDrain::Rejected => {
+                        return HeaderValidationOutcome::new(accepted, frontier);
+                    }
+                    HeaderTicketDrain::Verified(verified) => {
+                        if !self.header_cache.add(verified.clone()) {
+                            return HeaderValidationOutcome::new(accepted, frontier);
+                        }
+                        accepted += 1;
+                        frontier = Some(verified);
+                    }
                 }
-                accepted += 1;
-                frontier = Some(verified);
             }
             let Some(actual_parent) = frontier.as_ref() else {
                 break;
@@ -352,17 +373,26 @@ where
         }
 
         // Ordered publication fence for all remaining speculative headers.
-        while let Some(verified) = self.drain_header_preverification_ticket(
-            &mut pending,
-            settings.as_ref(),
-            snapshot.as_ref(),
-            Arc::clone(&native_contract_provider),
-        ) {
-            if !self.header_cache.add(verified.clone()) {
-                break;
+        loop {
+            match self.drain_header_preverification_ticket(
+                &mut pending,
+                &cancellation,
+                settings.as_ref(),
+                snapshot.as_ref(),
+                Arc::clone(&native_contract_provider),
+            ) {
+                HeaderTicketDrain::Empty => break,
+                HeaderTicketDrain::Rejected => {
+                    return HeaderValidationOutcome::new(accepted, frontier);
+                }
+                HeaderTicketDrain::Verified(verified) => {
+                    if !self.header_cache.add(verified.clone()) {
+                        break;
+                    }
+                    accepted += 1;
+                    frontier = Some(verified);
+                }
             }
-            accepted += 1;
-            frontier = Some(verified);
         }
 
         HeaderValidationOutcome::new(accepted, frontier)
@@ -375,21 +405,29 @@ where
             ParentHeaderContext,
             HeaderSignaturePreverificationTicket,
         )>,
+        cancellation: &SignatureVerificationCancellation,
         settings: &neo_config::ProtocolSettings,
         snapshot: &neo_storage::DataCache<S::CacheBacking>,
         native_contract_provider: Arc<S::NativeProvider>,
-    ) -> Option<Header> {
-        let (header, parent, ticket) = pending.pop_front()?;
+    ) -> HeaderTicketDrain {
+        let Some((header, parent, ticket)) = pending.pop_front() else {
+            return HeaderTicketDrain::Empty;
+        };
         let preverification = ticket.wait().ok().flatten();
-        self.verify_header_witness_with_preverification(
+        if self.verify_header_witness_with_preverification(
             &header,
             &parent,
             settings,
             snapshot,
             native_contract_provider,
             preverification.as_ref(),
-        )
-        .then_some(header)
+        ) {
+            HeaderTicketDrain::Verified(header)
+        } else {
+            cancellation.cancel();
+            pending.clear();
+            HeaderTicketDrain::Rejected
+        }
     }
 
     fn verify_header_witness_with_preverification(

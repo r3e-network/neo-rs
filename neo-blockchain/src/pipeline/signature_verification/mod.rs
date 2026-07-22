@@ -18,6 +18,8 @@
 //! - Ordered look-ahead windows for header, inventory, and archive import.
 //! - Existing state-independent transaction verification receipts.
 
+#[cfg(test)]
+use std::collections::VecDeque;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
@@ -438,6 +440,10 @@ pub struct SignatureVerificationPool {
     workers: Mutex<Vec<JoinHandle<()>>>,
     config: SignatureVerificationPoolConfig,
     metrics: Arc<SignatureVerificationPoolMetrics>,
+    #[cfg(test)]
+    submit_attempts: AtomicU64,
+    #[cfg(test)]
+    forced_queue_full_attempts: Mutex<VecDeque<u64>>,
 }
 
 impl std::fmt::Debug for SignatureVerificationPool {
@@ -490,6 +496,10 @@ impl SignatureVerificationPool {
             workers: Mutex::new(workers),
             config,
             metrics: Arc::new(SignatureVerificationPoolMetrics::default()),
+            #[cfg(test)]
+            submit_attempts: AtomicU64::new(0),
+            #[cfg(test)]
+            forced_queue_full_attempts: Mutex::new(VecDeque::new()),
         })
     }
 
@@ -545,6 +555,12 @@ impl SignatureVerificationPool {
         R: Send + 'static,
         F: FnOnce() -> Result<R, SignatureVerificationError> + Send + 'static,
     {
+        #[cfg(test)]
+        if self.should_force_queue_full() {
+            self.metrics.queue_full.fetch_add(1, Ordering::Relaxed);
+            return Err(SignatureVerificationSubmitError::QueueFull);
+        }
+
         let (result_tx, result_rx) = mpsc::sync_channel(1);
         let metrics = Arc::clone(&self.metrics);
         let wrapped: Job = Box::new(move || {
@@ -588,6 +604,32 @@ impl SignatureVerificationPool {
         F: FnOnce() -> Result<R, SignatureVerificationError> + Send + 'static,
     {
         self.try_submit(job)
+    }
+
+    /// Forces selected one-based submission attempts to report queue pressure.
+    #[cfg(test)]
+    pub(crate) fn force_queue_full_on_submit_attempts(&self, attempts: &[u64]) {
+        self.submit_attempts.store(0, Ordering::Relaxed);
+        let mut forced = self
+            .forced_queue_full_attempts
+            .lock()
+            .expect("forced queue-full schedule lock");
+        forced.clear();
+        forced.extend(attempts.iter().copied());
+    }
+
+    #[cfg(test)]
+    fn should_force_queue_full(&self) -> bool {
+        let attempt = self.submit_attempts.fetch_add(1, Ordering::Relaxed) + 1;
+        let mut forced = self
+            .forced_queue_full_attempts
+            .lock()
+            .expect("forced queue-full schedule lock");
+        if forced.front().copied() != Some(attempt) {
+            return false;
+        }
+        forced.pop_front();
+        true
     }
 
     fn try_submit_cancellable<R, F>(

@@ -605,6 +605,68 @@ fn optimistic_header_queue_contention_keeps_canonical_invalid_prefix() {
 }
 
 #[test]
+fn optimistic_header_fallback_discards_suffix_after_deep_invalid_ticket() {
+    let settings = neo_config::ProtocolSettings::default();
+    let (mut service, _handle, _snapshot) = store_fixture_with(settings.clone());
+    let private_key = [9u8; 32];
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("derive public key");
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public_key);
+    let next_consensus = UInt160::from_script(&verification);
+
+    let mut anchor = Header::new();
+    anchor.set_index(0);
+    anchor.set_timestamp(10);
+    anchor.set_next_consensus(next_consensus);
+    assert!(service.header_cache.add(anchor.clone()));
+
+    let mut headers = Vec::with_capacity(4);
+    let mut previous = anchor;
+    for index in 1..=4 {
+        let mut header = Header::new();
+        header.set_index(index);
+        header.set_prev_hash(previous.hash());
+        header.set_timestamp(10 + u64::from(index) * 10);
+        header.set_next_consensus(next_consensus);
+        header.witness =
+            sign_header_for_test(&header, settings.network, &private_key, &verification);
+        if index == 2 {
+            *header
+                .witness
+                .invocation_script
+                .last_mut()
+                .expect("signature byte") ^= 1;
+        }
+        previous = header.clone();
+        headers.push(header);
+    }
+
+    let pool = Arc::new(
+        SignatureVerificationPool::new(SignatureVerificationPoolConfig {
+            workers: 2,
+            queue_capacity: 8,
+        })
+        .expect("pool"),
+    );
+    // Header 4 first encounters pressure after headers 1-3 are queued. The
+    // retry also reports pressure, selecting the synchronous fallback while
+    // the invalid header 2 and valid header 3 remain pending.
+    pool.force_queue_full_on_submit_attempts(&[4, 5]);
+    service.set_optimistic_signature_verification(Some(Arc::clone(&pool)));
+
+    let expected_first_hash = headers[0].hash();
+    let outcome = service.handle_headers(headers);
+
+    assert_eq!(outcome.accepted, 1);
+    assert_eq!(service.header_cache.hash_at(1), Some(expected_first_hash));
+    assert_eq!(service.header_cache.hash_at(2), None);
+    assert_eq!(service.header_cache.hash_at(3), None);
+    assert_eq!(service.header_cache.hash_at(4), None);
+    assert_eq!(pool.metrics_snapshot().queue_full, 2);
+}
+
+#[test]
 fn initialize_uses_system_native_resources_for_genesis_persist() {
     let source = include_str!("../../handlers/initialize.rs");
     let start = source
