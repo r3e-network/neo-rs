@@ -221,6 +221,7 @@ fn run_pack_maintenance(
         if state.0.lock().deferred.is_some() {
             continue;
         }
+        let mut adopted = false;
         loop {
             let plan = {
                 let writer = writer.lock();
@@ -267,8 +268,16 @@ fn run_pack_maintenance(
                 // Lock ordering matches canonical commit: writer, publication.
                 publication.write().snapshot = snapshot;
             }
+            adopted = true;
             note_maintenance_progress(state);
             thread::yield_now();
+        }
+        if adopted {
+            let mut writer = writer.lock();
+            writer
+                .as_mut()
+                .context("authoritative pack writer is unavailable")?
+                .gc()?;
         }
         note_maintenance_progress(state);
     }
@@ -1956,6 +1965,37 @@ mod tests {
                 .cycles
                 > 0
         );
+        let (live_runs, gc_cycles) = {
+            let writer = writer.lock();
+            let store = writer.as_ref().expect("healthy writer");
+            (
+                store.layout().expect("read compacted layout").2,
+                store.compaction_stats().gc_cycles,
+            )
+        };
+        let manifest_files = fs::read_dir(&pack_path)
+            .expect("read pack directory")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.starts_with("manifest-") && name.ends_with(".man"))
+            })
+            .count();
+        let run_files = fs::read_dir(pack_path.join("runs"))
+            .expect("read run directory")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "idx")
+            })
+            .count();
+        assert_eq!(gc_cycles, 1, "the complete worker batch runs GC once");
+        assert_eq!(manifest_files, 1, "worker leaves one live manifest");
+        assert_eq!(run_files as u64, live_runs, "worker leaves only live runs");
         drop(maintenance);
         drop(publication);
         drop(writer);

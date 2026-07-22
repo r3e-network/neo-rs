@@ -180,9 +180,8 @@ impl PackStore {
         let mut puts = 0u64;
         let mut tombstones = 0u64;
         let mut value_bytes = 0u64;
-        let pack_bytes = snapshot.pack_map.as_slice().len();
         let merged = merge_sorted_runs(&sources, |ordinal, entry, _| {
-            validate_entry_payload_range(entry, pack_bytes)?;
+            validate_entry_payload_range(entry, &snapshot.segments)?;
             sampler.observe(ordinal, *entry);
             miss_probes.observe(&entry.key);
             if entry.tombstone {
@@ -293,13 +292,7 @@ impl PackStore {
             });
             Ok(())
         })?;
-        let expected_states = resolve_expected_sample_states(
-            &self.pack,
-            &self.pack_path,
-            receipt.frame_end,
-            entries,
-            indices,
-        )?;
+        let expected_states = resolve_expected_sample_states(&self.segments, entries, indices)?;
 
         let mut hasher = evidence_hasher(FRAME_REFERENCE_DIGEST_DOMAIN, receipt);
         hasher.update(
@@ -690,41 +683,30 @@ fn expected_value<'a>(snapshot: &'a Snapshot, entry: &IndexEntry) -> Result<Opti
     if entry.tombstone {
         return Ok(None);
     }
-    let start = usize::try_from(entry.value_offset).context("sample value offset overflows")?;
-    let length = usize::try_from(entry.value_len).context("sample value length overflows")?;
-    let end = start
-        .checked_add(length)
-        .context("sample value range overflows")?;
-    let pack_map = snapshot
-        .lookup_pack_map
-        .as_deref()
-        .unwrap_or(&snapshot.pack_map);
-    Ok(Some(pack_map.as_slice().get(start..end).context(
-        "sample winner value lies outside the committed pack",
+    Ok(Some(snapshot.segments.committed_slice(
+        PackPosition::new(entry.segment_id, entry.value_offset),
+        entry.value_len,
     )?))
 }
 
-fn validate_entry_payload_range(entry: &IndexEntry, pack_bytes: usize) -> Result<()> {
+fn validate_entry_payload_range(entry: &IndexEntry, segments: &SegmentSet) -> Result<()> {
     if entry.tombstone {
-        ensure!(entry.value_len == 0, "tombstone winner carries a value");
+        ensure!(
+            entry.segment_id == PackSegmentId::INITIAL
+                && entry.value_offset == 0
+                && entry.value_len == 0,
+            "tombstone winner carries a non-canonical value location"
+        );
         return Ok(());
     }
-    let start = usize::try_from(entry.value_offset).context("winner value offset overflows")?;
-    let length = usize::try_from(entry.value_len).context("winner value length overflows")?;
-    let end = start
-        .checked_add(length)
-        .context("winner value range overflows")?;
-    ensure!(
-        end <= pack_bytes,
-        "winner value lies outside committed pack"
-    );
-    Ok(())
+    segments.validate_range(
+        PackPosition::new(entry.segment_id, entry.value_offset),
+        entry.value_len,
+    )
 }
 
 fn resolve_expected_sample_states(
-    pack: &File,
-    pack_path: &Path,
-    committed_bytes: u64,
+    segments: &SegmentSet,
     entries: &[IndexEntry],
     indices: &[usize],
 ) -> Result<Vec<SampleValueState>> {
@@ -735,32 +717,29 @@ fn resolve_expected_sample_states(
         if entry.tombstone {
             states[position] = Some(SampleValueState::Absent);
         } else {
-            scheduled.push((entry.value_offset, position, entry));
+            scheduled.push((entry.segment_id, entry.value_offset, position, entry));
         }
     }
-    scheduled.sort_unstable_by_key(|&(offset, position, _)| (offset, position));
+    scheduled
+        .sort_unstable_by_key(|&(segment_id, offset, position, _)| (segment_id, offset, position));
 
     if !scheduled.is_empty() {
-        // The canonical snapshot mmap may also serve live point readers. Use a
-        // dedicated random-advised mapping so sparse verification neither
-        // triggers whole-pack readahead nor evicts pages from that shared view.
-        let map = Mmap::map_random(pack, committed_bytes, pack_path)?;
-        let map_bytes = map.as_slice().len();
+        let random_segments = segments.dedicated_random_view()?;
         let mut batch_entries = 0usize;
         let mut batch_value_bytes = 0u64;
-        for (_, position, entry) in scheduled {
-            states[position] = Some(sample_state_from_entry_bounded(&map, &entry)?);
+        for (_, _, position, entry) in scheduled {
+            states[position] = Some(sample_state_from_entry_bounded(&random_segments, &entry)?);
             batch_entries += 1;
             batch_value_bytes = batch_value_bytes.saturating_add(u64::from(entry.value_len));
             if batch_entries >= LOOKUP_BATCH_MAX_ENTRIES
                 || batch_value_bytes >= LOOKUP_BATCH_MAX_VALUE_BYTES
             {
-                let _ = map.advise_dontneed(0, map_bytes)?;
+                random_segments.reclaim_all_pages()?;
                 batch_entries = 0;
                 batch_value_bytes = 0;
             }
         }
-        let _ = map.advise_dontneed(0, map_bytes)?;
+        random_segments.reclaim_all_pages()?;
     }
 
     states
@@ -772,33 +751,20 @@ fn resolve_expected_sample_states(
         .collect()
 }
 
-fn sample_state_from_entry_bounded(map: &Mmap, entry: &IndexEntry) -> Result<SampleValueState> {
+fn sample_state_from_entry_bounded(
+    segments: &SegmentSet,
+    entry: &IndexEntry,
+) -> Result<SampleValueState> {
     if entry.tombstone {
         return Ok(SampleValueState::Absent);
     }
-    let start = usize::try_from(entry.value_offset).context("frame sample offset overflows")?;
-    let length = usize::try_from(entry.value_len).context("frame sample length overflows")?;
-    let end = start
-        .checked_add(length)
-        .context("frame sample range overflows")?;
-    let value = map
-        .as_slice()
-        .get(start..end)
-        .context("frame sample winner lies outside committed pack")?;
+    let value = segments.lookup_slice(
+        PackPosition::new(entry.segment_id, entry.value_offset),
+        entry.value_len,
+    )?;
     let mut hasher = Sha256::new();
-    let mut release_start = start;
-    for (chunk_index, chunk) in value
-        .chunks(FRAME_REFERENCE_VALUE_HASH_CHUNK_BYTES)
-        .enumerate()
-    {
+    for chunk in value.chunks(FRAME_REFERENCE_VALUE_HASH_CHUNK_BYTES) {
         hasher.update(chunk);
-        let consumed = (chunk_index + 1)
-            .checked_mul(FRAME_REFERENCE_VALUE_HASH_CHUNK_BYTES)
-            .map_or(length, |bytes| bytes.min(length));
-        let consumed_end = start
-            .checked_add(consumed)
-            .context("frame sample release range overflows")?;
-        release_start = map.advise_dontneed(release_start, consumed_end)?;
     }
     Ok(SampleValueState::Present {
         length: u64::from(entry.value_len),

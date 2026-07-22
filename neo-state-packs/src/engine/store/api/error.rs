@@ -115,6 +115,8 @@ pub enum PackStoreLimit {
     FramePayloadBytes,
     /// Bytes in one append segment.
     SegmentBytes,
+    /// Immutable append segments referenced by one manifest generation.
+    Segments,
     /// Resident decoded-index bytes.
     IndexMemoryBytes,
     /// Unpublished append bytes.
@@ -137,6 +139,7 @@ impl fmt::Display for PackStoreLimit {
             Self::FrameRows => "frame rows",
             Self::FramePayloadBytes => "frame payload bytes",
             Self::SegmentBytes => "segment bytes",
+            Self::Segments => "segments",
             Self::IndexMemoryBytes => "decoded index memory bytes",
             Self::PendingBytes => "pending append bytes",
             Self::RecentRuns => "recent index runs",

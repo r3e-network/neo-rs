@@ -5,7 +5,7 @@
 //! header authenticates both sections independently; the footer binds the
 //! header digest to the epoch and exact complete-frame length.
 
-use super::segment::{SEGMENT_HEADER_LEN, segment_path};
+use super::segment::SEGMENT_HEADER_LEN;
 use super::*;
 
 pub(super) const FRAME_METADATA_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/frame-v2/metadata\0";
@@ -456,24 +456,75 @@ fn validate_payload_bounds(rows: u64, metadata_bytes: u64, value_bytes: u64) -> 
 
 /// Validated complete-frame end offsets. Bytes beyond the last end are an
 /// uncommitted torn or orphan suffix handled by recovery.
+#[cfg(test)]
 pub(super) struct FrameScan {
     pub(super) frame_ends: Vec<u64>,
 }
 
-/// Performs a bounded structural scan without hashing the large sections.
+/// Optional authenticated-prefix contract for a streaming structural walk.
 ///
-/// Torn or malformed tails stop the scan. A numeric `N3PACKxx` version that
-/// this binary does not support is propagated as a typed failure so an older
-/// binary cannot silently truncate a newer store.
-pub(super) fn scan_frames(pack: &File) -> Result<FrameScan> {
+/// The walker invokes its callback only for this many leading complete frames,
+/// but continues classifying the suffix so an unknown version cannot hide
+/// behind an already selected prefix.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct FrameWalkSelection {
+    pub(super) frame_count: u64,
+    pub(super) frame_end: u64,
+}
+
+/// Fixed-size result of a streaming structural frame walk.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct FrameWalkSummary {
+    pub(super) complete_count: u64,
+    pub(super) last_end: u64,
+}
+
+#[cfg(test)]
+fn scan_frames(pack: &File) -> Result<FrameScan> {
+    scan_frames_from_epoch(pack, 0)
+}
+
+/// Performs a bounded structural scan for a segment whose first frame has the
+/// supplied global epoch.
+#[cfg(test)]
+pub(super) fn scan_frames_from_epoch(pack: &File, first_epoch: u64) -> Result<FrameScan> {
+    let mut frame_ends = Vec::new();
+    walk_frames_from_epoch(pack, first_epoch, None, &mut |_, _, frame_end, _| {
+        frame_ends.push(frame_end);
+        Ok(())
+    })?;
+    Ok(FrameScan { frame_ends })
+}
+
+/// Structurally walks complete frames with fixed header/footer buffers.
+///
+/// Ordinary malformed or torn suffixes stop the walk and return the complete
+/// prefix. Unknown numeric frame versions fail closed. When `selection` is
+/// present, its exact frame count and end offset are required; the callback is
+/// limited to that selected prefix while suffix classification continues.
+pub(super) fn walk_frames_from_epoch(
+    pack: &File,
+    first_epoch: u64,
+    selection: Option<FrameWalkSelection>,
+    mut visit: impl FnMut(u64, u64, u64, FrameHeader) -> Result<()>,
+) -> Result<FrameWalkSummary> {
     let file_len = pack.metadata().context("stat append pack")?.len();
     ensure!(
         file_len >= SEGMENT_HEADER_LEN as u64,
         "append pack is shorter than its segment header"
     );
-    let mut frame_ends = Vec::new();
+    if let Some(selection) = selection
+        && selection.frame_count == 0
+    {
+        ensure!(
+            selection.frame_end == SEGMENT_HEADER_LEN as u64,
+            "empty selected frame prefix does not end after the segment header"
+        );
+    }
+    let mut complete_count = 0u64;
+    let mut last_end = SEGMENT_HEADER_LEN as u64;
     let mut offset = SEGMENT_HEADER_LEN as u64;
-    let mut expected_epoch = 0u64;
+    let mut expected_epoch = first_epoch;
     while offset < file_len {
         let mut header_bytes = [0u8; FRAME_HEADER_LEN];
         let header_bytes_read = read_available(pack, offset, &mut header_bytes)?;
@@ -511,13 +562,41 @@ pub(super) fn scan_frames(pack: &File) -> Result<FrameScan> {
             Err(error) if is_unsupported_version(&error) => return Err(error),
             Err(_) => break,
         }
-        frame_ends.push(frame_end);
+        let next_count = complete_count
+            .checked_add(1)
+            .context("complete frame count overflows")?;
+        if let Some(selection) = selection {
+            if next_count == selection.frame_count {
+                ensure!(
+                    frame_end == selection.frame_end,
+                    "selected frame prefix ends at {frame_end} and does not match frame end {}",
+                    selection.frame_end
+                );
+            }
+            if next_count <= selection.frame_count {
+                visit(expected_epoch, offset, frame_end, header)?;
+            }
+        } else {
+            visit(expected_epoch, offset, frame_end, header)?;
+        }
+        complete_count = next_count;
+        last_end = frame_end;
         offset = frame_end;
         expected_epoch = expected_epoch
             .checked_add(1)
             .context("frame epoch overflows")?;
     }
-    Ok(FrameScan { frame_ends })
+    if let Some(selection) = selection {
+        ensure!(
+            complete_count >= selection.frame_count,
+            "selected frame prefix requires {} complete frames but only {complete_count} exist",
+            selection.frame_count
+        );
+    }
+    Ok(FrameWalkSummary {
+        complete_count,
+        last_end,
+    })
 }
 
 fn is_unsupported_version(error: &anyhow::Error) -> bool {
@@ -541,24 +620,6 @@ fn read_available(file: &File, offset: u64, bytes: &mut [u8]) -> Result<usize> {
         filled += read;
     }
     Ok(filled)
-}
-
-pub(super) fn read_frame_receipt(
-    pack: &File,
-    scan: &FrameScan,
-    epoch: u64,
-) -> Result<PackFrameReceipt> {
-    let index = usize::try_from(epoch).context("frame epoch does not fit usize")?;
-    let frame_end = *scan
-        .frame_ends
-        .get(index)
-        .with_context(|| format!("frame {epoch} is not present in the append pack"))?;
-    let frame_start = if index == 0 {
-        SEGMENT_HEADER_LEN as u64
-    } else {
-        scan.frame_ends[index - 1]
-    };
-    read_frame_receipt_at(pack, PackSegmentId::INITIAL, epoch, frame_start, frame_end)
 }
 
 /// Re-authenticates a complete frame using bounded streaming section hashes.
@@ -662,79 +723,6 @@ fn receipt_from_header(
     }
 }
 
-/// Discards derived visibility state and truncates the payload stream to the
-/// canonical marker. This runs only during startup, before snapshots or the
-/// single writer exist, so no manifest lease can observe the reset.
-pub(super) fn reset_derived_state_to_frame_prefix(
-    root: &Path,
-    scan: &FrameScan,
-    expected_frames: u64,
-) -> Result<()> {
-    let expected = usize::try_from(expected_frames).context("frame count does not fit usize")?;
-    let committed_end = if expected == 0 {
-        SEGMENT_HEADER_LEN as u64
-    } else {
-        *scan
-            .frame_ends
-            .get(expected - 1)
-            .context("committed frame prefix is incomplete")?
-    };
-    let pack_path = segment_path(root, PackSegmentId::INITIAL);
-    let pack = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&pack_path)
-        .with_context(|| format!("open append pack {} for recovery", pack_path.display()))?;
-    if pack
-        .metadata()
-        .context("stat append pack for recovery")?
-        .len()
-        != committed_end
-    {
-        pack.set_len(committed_end)
-            .context("truncate append pack to canonical marker")?;
-        pack.sync_data()
-            .context("sync marker-truncated append pack")?;
-    }
-    drop(pack);
-
-    let runs_dir = root.join("runs");
-    for entry in fs::read_dir(&runs_dir)
-        .with_context(|| format!("read index-run directory {}", runs_dir.display()))?
-    {
-        let entry = entry.context("read index-run recovery entry")?;
-        let path = entry.path();
-        let remove = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| {
-                manifest::is_run_file_name(name) || manifest::is_run_temp_file_name(name)
-            });
-        if remove {
-            fs::remove_file(&path)
-                .with_context(|| format!("remove derived index run {}", path.display()))?;
-        }
-    }
-    for entry in fs::read_dir(root)
-        .with_context(|| format!("read pack root {} for recovery", root.display()))?
-    {
-        let entry = entry.context("read pack recovery entry")?;
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if manifest::parse_manifest_file_name(name).is_some()
-            || manifest::is_manifest_temp_file_name(name)
-        {
-            fs::remove_file(&path)
-                .with_context(|| format!("remove derived manifest {}", path.display()))?;
-        }
-    }
-    sync_directory(&runs_dir)?;
-    sync_directory(root)?;
-    Ok(())
-}
-
 /// Fully verifies a committed frame and returns its authenticated receipt and
 /// decoded row statistics.
 pub(super) fn verify_frame(
@@ -809,9 +797,19 @@ pub(super) fn validate_complete_frame(
     ))
 }
 
-/// Decodes canonical metadata into absolute index entries without reading
-/// any values.
-pub(super) fn decode_frame_metadata(
+/// Decodes canonical metadata into index entries positioned in one segment.
+#[cfg(test)]
+fn decode_frame_metadata(
+    frame_start: u64,
+    metadata: &[u8],
+    value_bytes: u64,
+) -> Result<Vec<IndexEntry>> {
+    decode_frame_metadata_in_segment(PackSegmentId::INITIAL, frame_start, metadata, value_bytes)
+}
+
+/// Decodes canonical metadata into index entries positioned in one segment.
+pub(super) fn decode_frame_metadata_in_segment(
+    segment_id: PackSegmentId,
     frame_start: u64,
     metadata: &[u8],
     value_bytes: u64,
@@ -845,7 +843,11 @@ pub(super) fn decode_frame_metadata(
             entries.push(IndexEntry {
                 key: *key,
                 sequence,
-                segment_id: PackSegmentId::INITIAL,
+                segment_id: if tombstone {
+                    PackSegmentId::INITIAL
+                } else {
+                    segment_id
+                },
                 value_offset,
                 value_len,
                 tombstone,
@@ -1213,6 +1215,21 @@ mod tests {
         Ok((header, metadata, values, footer))
     }
 
+    fn golden_frame_at_epoch(epoch: u64) -> Result<Vec<u8>> {
+        let (mut header, metadata, values, _) = golden_parts()?;
+        header[16..24].copy_from_slice(&epoch.to_le_bytes());
+        let frame_bytes =
+            (FRAME_HEADER_LEN + metadata.len() + values.len() + FRAME_FOOTER_LEN) as u64;
+        let footer = encode_frame_footer(epoch, frame_bytes, frame_digest(&header))?;
+        Ok([
+            header.as_slice(),
+            metadata.as_slice(),
+            values.as_slice(),
+            footer.as_slice(),
+        ]
+        .concat())
+    }
+
     fn hex(bytes: &[u8]) -> String {
         const DIGITS: &[u8; 16] = b"0123456789abcdef";
         let mut encoded = String::with_capacity(bytes.len() * 2);
@@ -1257,6 +1274,174 @@ mod tests {
         assert_eq!(entries[0].value_len, 0);
         assert!(entries[1].tombstone);
         assert_eq!(entries[1].value_offset, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn later_segment_scan_accepts_nonzero_first_epoch() -> Result<()> {
+        let (header, metadata, values, footer) = golden_parts()?;
+        let frame = [
+            header.as_slice(),
+            metadata.as_slice(),
+            values.as_slice(),
+            footer.as_slice(),
+        ]
+        .concat();
+        let pack = tempfile::tempfile().context("create temporary segment")?;
+        pack.write_all_at(&[0; SEGMENT_HEADER_LEN], 0)
+            .context("write temporary segment header")?;
+        pack.write_all_at(&frame, SEGMENT_HEADER_LEN as u64)
+            .context("write temporary segment frame")?;
+
+        let scan = scan_frames_from_epoch(&pack, 7)?;
+        assert_eq!(
+            scan.frame_ends,
+            vec![SEGMENT_HEADER_LEN as u64 + frame.len() as u64]
+        );
+        assert!(scan_frames(&pack)?.frame_ends.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn streaming_walker_limits_callbacks_to_the_selected_prefix() -> Result<()> {
+        let first = golden_frame_at_epoch(7)?;
+        let second = golden_frame_at_epoch(8)?;
+        let first_end = SEGMENT_HEADER_LEN as u64 + first.len() as u64;
+        let last_end = first_end + second.len() as u64;
+        let pack = tempfile::tempfile().context("create streaming-walk segment")?;
+        pack.write_all_at(&[0; SEGMENT_HEADER_LEN], 0)
+            .context("write streaming-walk segment header")?;
+        pack.write_all_at(&first, SEGMENT_HEADER_LEN as u64)
+            .context("write first streaming-walk frame")?;
+        pack.write_all_at(&second, first_end)
+            .context("write second streaming-walk frame")?;
+        pack.write_all_at(b"ordinary torn suffix", last_end)
+            .context("write ordinary torn suffix")?;
+
+        let mut visited = Vec::new();
+        let summary = walk_frames_from_epoch(
+            &pack,
+            7,
+            Some(FrameWalkSelection {
+                frame_count: 1,
+                frame_end: first_end,
+            }),
+            |epoch, frame_start, frame_end, header| {
+                visited.push((epoch, frame_start, frame_end, header.epoch));
+                Ok(())
+            },
+        )?;
+
+        assert_eq!(visited, vec![(7, SEGMENT_HEADER_LEN as u64, first_end, 7)]);
+        assert_eq!(
+            summary,
+            FrameWalkSummary {
+                complete_count: 2,
+                last_end,
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn streaming_walker_enforces_the_selected_count_and_end() -> Result<()> {
+        let frame = golden_frame_at_epoch(7)?;
+        let frame_end = SEGMENT_HEADER_LEN as u64 + frame.len() as u64;
+        let pack = tempfile::tempfile().context("create selected-contract segment")?;
+        pack.write_all_at(&[0; SEGMENT_HEADER_LEN], 0)
+            .context("write selected-contract segment header")?;
+        pack.write_all_at(&frame, SEGMENT_HEADER_LEN as u64)
+            .context("write selected-contract frame")?;
+
+        let wrong_end = walk_frames_from_epoch(
+            &pack,
+            7,
+            Some(FrameWalkSelection {
+                frame_count: 1,
+                frame_end: frame_end + 1,
+            }),
+            |_, _, _, _| Ok(()),
+        )
+        .expect_err("selected end mismatch must fail");
+        assert!(wrong_end.to_string().contains("selected frame prefix ends"));
+
+        let missing = walk_frames_from_epoch(
+            &pack,
+            7,
+            Some(FrameWalkSelection {
+                frame_count: 2,
+                frame_end,
+            }),
+            |_, _, _, _| Ok(()),
+        )
+        .expect_err("incomplete selected count must fail");
+        assert!(missing.to_string().contains("requires 2 complete frames"));
+        Ok(())
+    }
+
+    #[test]
+    fn streaming_walker_rejects_unknown_version_after_the_selected_prefix() -> Result<()> {
+        let frame = golden_frame_at_epoch(7)?;
+        let frame_end = SEGMENT_HEADER_LEN as u64 + frame.len() as u64;
+        let pack = tempfile::tempfile().context("create unknown-suffix segment")?;
+        pack.write_all_at(&[0; SEGMENT_HEADER_LEN], 0)
+            .context("write unknown-suffix segment header")?;
+        pack.write_all_at(&frame, SEGMENT_HEADER_LEN as u64)
+            .context("write selected frame")?;
+        pack.write_all_at(b"N3PACK03", frame_end)
+            .context("write unknown numeric suffix")?;
+        let mut visits = 0u64;
+
+        let error = walk_frames_from_epoch(
+            &pack,
+            7,
+            Some(FrameWalkSelection {
+                frame_count: 1,
+                frame_end,
+            }),
+            |_, _, _, _| {
+                visits += 1;
+                Ok(())
+            },
+        )
+        .expect_err("unknown suffix version must fail closed");
+
+        assert_eq!(visits, 1);
+        assert!(matches!(
+            error.downcast_ref::<PackStoreError>(),
+            Some(PackStoreError::UnsupportedVersion {
+                artifact: PackStoreArtifact::Frame,
+                found: 3,
+                ..
+            })
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn rebuilt_index_locations_preserve_segment_identity() -> Result<()> {
+        let (_, metadata, values, _) = golden_parts()?;
+        let segment_id = PackSegmentId::new(9);
+        let entries = decode_frame_metadata_in_segment(
+            segment_id,
+            SEGMENT_HEADER_LEN as u64,
+            &metadata,
+            values.len() as u64,
+        )?;
+
+        assert!(
+            entries
+                .iter()
+                .filter(|entry| !entry.tombstone)
+                .all(|entry| entry.segment_id == segment_id)
+        );
+        let tombstone = entries
+            .iter()
+            .find(|entry| entry.tombstone)
+            .context("golden frame tombstone")?;
+        assert_eq!(tombstone.segment_id, PackSegmentId::INITIAL);
+        assert_eq!(tombstone.value_offset, 0);
+        assert_eq!(tombstone.value_len, 0);
         Ok(())
     }
 

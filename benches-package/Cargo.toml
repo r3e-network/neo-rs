@@ -80,6 +80,11 @@ path = "benches/storage/storage_commit.rs"
 harness = false
 
 [[bench]]
+name = "segment_set_publication"
+path = "benches/storage/segment_set_publication.rs"
+harness = false
+
+[[bench]]
 name = "vm_execution"
 path = "benches/vm/vm_execution.rs"
 harness = false

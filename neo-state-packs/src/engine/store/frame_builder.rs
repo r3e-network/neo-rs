@@ -17,6 +17,7 @@ pub struct PackFrameBuilder {
     metadata_bytes: u64,
     max_frame_payload_bytes: u64,
     max_pending_bytes: u64,
+    max_segment_bytes: u64,
     values: Vec<u8>,
     rows: Vec<PendingFrameRow>,
 }
@@ -37,6 +38,7 @@ impl PackFrameBuilder {
         value_bytes: Option<u64>,
         max_frame_payload_bytes: u64,
         max_pending_bytes: u64,
+        max_segment_bytes: u64,
     ) -> Result<Self> {
         validate_frame_context(context)?;
         ensure!(expected_rows > 0, "frame must contain at least one row");
@@ -62,6 +64,7 @@ impl PackFrameBuilder {
             u64::try_from(initial_capacity).context("frame value size overflows u64")?,
             max_frame_payload_bytes,
             max_pending_bytes,
+            max_segment_bytes,
         )?;
 
         let mut values = Vec::new();
@@ -79,6 +82,7 @@ impl PackFrameBuilder {
             metadata_bytes,
             max_frame_payload_bytes,
             max_pending_bytes,
+            max_segment_bytes,
             values,
             rows,
         })
@@ -137,6 +141,7 @@ impl PackFrameBuilder {
             u64::try_from(next_value_len).context("frame value size overflows u64")?,
             self.max_frame_payload_bytes,
             self.max_pending_bytes,
+            self.max_segment_bytes,
         )?;
         if self.expected_value_bytes.is_none()
             && self.values.capacity() - self.values.len() < value.len()
@@ -223,6 +228,7 @@ fn ensure_builder_layout_limits(
     value_bytes: u64,
     max_frame_payload_bytes: u64,
     max_pending_bytes: u64,
+    max_segment_bytes: u64,
 ) -> Result<()> {
     let payload_bytes = metadata_bytes
         .checked_add(value_bytes)
@@ -244,6 +250,17 @@ fn ensure_builder_layout_limits(
             limit: PackStoreLimit::PendingBytes,
             actual: frame_bytes,
             maximum: max_pending_bytes,
+        }
+        .into());
+    }
+    let segment_bytes = PACK_SEGMENT_HEADER_LEN
+        .checked_add(frame_bytes)
+        .context("encoded segment length overflows")?;
+    if segment_bytes > max_segment_bytes {
+        return Err(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::SegmentBytes,
+            actual: segment_bytes,
+            maximum: max_segment_bytes,
         }
         .into());
     }

@@ -19,7 +19,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::time::Duration;
 
-const WRITER_LEASE_FILE: &str = "writer.lock";
+pub(super) const WRITER_LEASE_FILE: &str = "writer.lock";
 const WRITER_LEASE_RETRY_ATTEMPTS: usize = 10;
 const WRITER_LEASE_RETRY_DELAY: Duration = Duration::from_millis(5);
 

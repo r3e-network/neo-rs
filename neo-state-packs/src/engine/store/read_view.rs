@@ -52,8 +52,7 @@ pub(super) fn preflight_pack_value_pool(workers: usize) -> Result<()> {
 pub(super) struct ReadView<'a> {
     pub(super) runs: &'a [LiveRun],
     pub(super) ranges: &'a [RunRange],
-    pub(super) pack_map: &'a Mmap,
-    pub(super) lookup_pack_map: Option<&'a Mmap>,
+    pub(super) segments: &'a SegmentSet,
     pub(super) batch_value_workers: usize,
 }
 
@@ -126,7 +125,9 @@ impl ReadView<'_> {
         // offsets. Reordering derived locations still reduces seeks and makes
         // duplicate locations adjacent, but hits remain sparse across the
         // complete pack and use the random-advised payload mapping.
-        values.sort_unstable_by_key(|(_, entry)| (entry.value_offset, entry.value_len));
+        values.sort_unstable_by_key(|(_, entry)| {
+            (entry.segment_id, entry.value_offset, entry.value_len)
+        });
         let workers = self.batch_value_workers;
         if workers > 1 && values.len() >= parallel_threshold(workers) {
             // The index lookup above is deliberately single-threaded so each
@@ -152,11 +153,13 @@ impl ReadView<'_> {
                 }
             }
         } else {
-            let mut previous: Option<(u64, u32, Vec<u8>)> = None;
+            let mut previous: Option<(PackSegmentId, u64, u32, Vec<u8>)> = None;
             for (output_index, entry) in values {
                 let value = match previous.as_ref() {
-                    Some((offset, length, value))
-                        if *offset == entry.value_offset && *length == entry.value_len =>
+                    Some((segment_id, offset, length, value))
+                        if *segment_id == entry.segment_id
+                            && *offset == entry.value_offset
+                            && *length == entry.value_len =>
                     {
                         value.clone()
                     }
@@ -164,7 +167,12 @@ impl ReadView<'_> {
                         let value = self
                             .entry_value(entry)?
                             .expect("non-tombstone index entry has a value");
-                        previous = Some((entry.value_offset, entry.value_len, value.clone()));
+                        previous = Some((
+                            entry.segment_id,
+                            entry.value_offset,
+                            entry.value_len,
+                            value.clone(),
+                        ));
                         value
                     }
                 };
@@ -175,12 +183,14 @@ impl ReadView<'_> {
     }
 
     fn read_value_chunk(&self, values: &[(usize, IndexEntry)]) -> Result<Vec<(usize, Vec<u8>)>> {
-        let mut previous: Option<(u64, u32, Vec<u8>)> = None;
+        let mut previous: Option<(PackSegmentId, u64, u32, Vec<u8>)> = None;
         let mut output = Vec::with_capacity(values.len());
         for (output_index, entry) in values {
             let value = match previous.as_ref() {
-                Some((offset, length, value))
-                    if *offset == entry.value_offset && *length == entry.value_len =>
+                Some((segment_id, offset, length, value))
+                    if *segment_id == entry.segment_id
+                        && *offset == entry.value_offset
+                        && *length == entry.value_len =>
                 {
                     value.clone()
                 }
@@ -188,7 +198,12 @@ impl ReadView<'_> {
                     let value = self
                         .entry_value(*entry)?
                         .context("non-tombstone index entry has no value")?;
-                    previous = Some((entry.value_offset, entry.value_len, value.clone()));
+                    previous = Some((
+                        entry.segment_id,
+                        entry.value_offset,
+                        entry.value_len,
+                        value.clone(),
+                    ));
                     value
                 }
             };
@@ -254,23 +269,14 @@ impl ReadView<'_> {
         if entry.tombstone {
             return Ok(None);
         }
-        ensure!(
-            entry.segment_id == PackSegmentId::INITIAL,
-            "index entry names unavailable segment {}",
-            entry.segment_id
-        );
-        let offset =
-            usize::try_from(entry.value_offset).context("value offset does not fit usize")?;
-        let length = usize::try_from(entry.value_len).context("value length does not fit usize")?;
-        let end = offset
-            .checked_add(length)
-            .context("value end offset overflows")?;
-        let pack_map = self.lookup_pack_map.unwrap_or(self.pack_map);
-        let value = pack_map
-            .as_slice()
-            .get(offset..end)
-            .context("indexed value outside the append pack")?;
-        Ok(Some(value.to_vec()))
+        Ok(Some(
+            self.segments
+                .lookup_slice(
+                    PackPosition::new(entry.segment_id, entry.value_offset),
+                    entry.value_len,
+                )?
+                .to_vec(),
+        ))
     }
 }
 
@@ -285,6 +291,7 @@ fn duplicate_safe_ranges(values: &[(usize, IndexEntry)], workers: usize) -> Vec<
     while start < values.len() {
         let mut end = start.saturating_add(chunk_size).min(values.len());
         while end < values.len()
+            && values[end - 1].1.segment_id == values[end].1.segment_id
             && values[end - 1].1.value_offset == values[end].1.value_offset
             && values[end - 1].1.value_len == values[end].1.value_len
         {
@@ -304,8 +311,7 @@ pub struct Snapshot {
     pub(super) generation: u64,
     pub(super) runs: Vec<LiveRun>,
     pub(super) ranges: Vec<RunRange>,
-    pub(super) pack_map: Arc<Mmap>,
-    pub(super) lookup_pack_map: Option<Arc<Mmap>>,
+    pub(super) segments: Arc<SegmentSet>,
     pub(super) batch_value_workers: usize,
     pub(super) read_counters: Arc<ReadCounters>,
     pub(super) leases: Arc<Mutex<BTreeMap<u64, usize>>>,
@@ -371,29 +377,23 @@ impl Snapshot {
         ReadView {
             runs: &self.runs,
             ranges: &self.ranges,
-            pack_map: &self.pack_map,
-            lookup_pack_map: self.lookup_pack_map.as_deref(),
+            segments: &self.segments,
             batch_value_workers: self.batch_value_workers,
         }
     }
 
     pub(super) fn reclaim_random_lookup_pages(&self) -> Result<()> {
-        reclaim_random_lookup_pages(&self.runs, self.lookup_pack_map.as_deref())
+        reclaim_random_lookup_pages(&self.runs, &self.segments)
     }
 }
 
-pub(super) fn reclaim_random_lookup_pages(
-    runs: &[LiveRun],
-    lookup_pack_map: Option<&Mmap>,
-) -> Result<()> {
+pub(super) fn reclaim_random_lookup_pages(runs: &[LiveRun], segments: &SegmentSet) -> Result<()> {
     for live in runs {
         if let Some(map) = live.run.lookup_map.as_ref() {
             let _ = map.advise_dontneed(0, map.as_slice().len())?;
         }
     }
-    if let Some(map) = lookup_pack_map {
-        let _ = map.advise_dontneed(0, map.as_slice().len())?;
-    }
+    segments.reclaim_random_lookup_pages()?;
     Ok(())
 }
 

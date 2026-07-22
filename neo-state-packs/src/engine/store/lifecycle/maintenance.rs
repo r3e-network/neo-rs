@@ -17,8 +17,13 @@ impl PackStore {
             self.pending_append.is_none(),
             "cannot maintain index runs while an append awaits activation"
         );
+        let mut adopted = false;
         while let Some(plan) = self.plan_compaction()? {
             self.adopt_compaction(plan.build()?)?;
+            adopted = true;
+        }
+        if adopted {
+            self.gc()?;
         }
         Ok(())
     }
@@ -178,15 +183,14 @@ impl PackStore {
     /// Offline bounded-memory tools call this between batches; stores using
     /// default mappings perform no work.
     pub fn reclaim_random_lookup_pages(&self) -> Result<()> {
-        read_view::reclaim_random_lookup_pages(&self.runs, self.lookup_pack_map.as_deref())
+        read_view::reclaim_random_lookup_pages(&self.runs, &self.segments)
     }
 
     fn view(&self) -> ReadView<'_> {
         ReadView {
             runs: &self.runs,
             ranges: &self.ranges,
-            pack_map: &self.pack_map,
-            lookup_pack_map: self.lookup_pack_map.as_deref(),
+            segments: &self.segments,
             batch_value_workers: self.config.read_options().batch_value_workers,
         }
     }
@@ -261,13 +265,7 @@ impl PackStore {
     /// references and pack mapping, and the lease blocks reclamation of the
     /// generation's run files until the snapshot is dropped.
     pub fn snapshot(&self) -> Result<Snapshot> {
-        self.pin_snapshot_parts(
-            self.generation,
-            &self.runs,
-            &self.ranges,
-            &self.pack_map,
-            self.lookup_pack_map.as_ref(),
-        )
+        self.pin_snapshot_parts(self.generation, &self.runs, &self.ranges, &self.segments)
     }
 
     pub(super) fn preview_compaction_snapshot(
@@ -284,8 +282,7 @@ impl PackStore {
             generation,
             &candidate_runs,
             &candidate_ranges,
-            &self.pack_map,
-            self.lookup_pack_map.as_ref(),
+            &self.segments,
         )
     }
 
@@ -350,7 +347,7 @@ impl PackStore {
             min_epoch: pending.min_epoch,
             max_epoch: pending.max_epoch,
         };
-        scrub_live_index_run(&live, &self.runs_dir, self.committed_pack_bytes())
+        scrub_live_index_run(&live, &self.runs_dir, &self.segments)
             .context("scrub prepared compaction output before manifest publication")
     }
 
@@ -361,8 +358,7 @@ impl PackStore {
         generation: u64,
         runs: &[LiveRun],
         ranges: &[RunRange],
-        pack_map: &Arc<Mmap>,
-        lookup_pack_map: Option<&Arc<Mmap>>,
+        segments: &Arc<SegmentSet>,
     ) -> Result<Snapshot> {
         {
             let mut leases = self
@@ -375,8 +371,7 @@ impl PackStore {
             generation,
             runs: runs.to_vec(),
             ranges: ranges.to_vec(),
-            pack_map: Arc::clone(pack_map),
-            lookup_pack_map: lookup_pack_map.map(Arc::clone),
+            segments: Arc::clone(segments),
             batch_value_workers: self.config.read_options().batch_value_workers,
             read_counters: Arc::clone(&self.read_counters),
             leases: Arc::clone(&self.leases),
@@ -393,30 +388,81 @@ impl PackStore {
             self.pending_append.is_none(),
             "cannot reclaim files while an append awaits activation"
         );
-        let mut protected_generations: Vec<u64> = {
+        let mut protected_generations: BTreeSet<u64> = {
             let leases = self
                 .leases
                 .lock()
                 .map_err(|error| anyhow::anyhow!("snapshot lease book is poisoned: {error}"))?;
             leases.keys().copied().collect()
         };
-        if self.generation > 0 && !protected_generations.contains(&self.generation) {
-            protected_generations.push(self.generation);
-        }
-        let mut protected_runs: HashSet<String> = HashSet::new();
-        for generation in &protected_generations {
-            let path = self.root.join(manifest::manifest_file_name(*generation));
-            let manifest = manifest::read_manifest(&path)
-                .with_context(|| format!("load protected manifest generation {generation}"))?;
-            protected_runs.extend(manifest.entries.into_iter().map(|entry| entry.file_name));
+        if self.generation > 0 {
+            protected_generations.insert(self.generation);
         }
         let inflight_outputs = self
             .inflight_compaction_outputs
             .lock()
             .map_err(|error| anyhow::anyhow!("compaction output registry is poisoned: {error}"))?;
-        protected_runs.extend(inflight_outputs.iter().cloned());
+        let mut protected_runs: HashSet<String> = inflight_outputs.iter().cloned().collect();
+        let has_inflight_output = !inflight_outputs.is_empty();
         drop(inflight_outputs);
+
+        // Validate every retained generation before deleting any directory
+        // entry. A leased preview is the sole unpublished generation: its
+        // sources are covered by the current manifest and its output by the
+        // in-flight registry above.
+        for generation in &protected_generations {
+            if *generation == 0 {
+                continue;
+            }
+            let path = self.root.join(manifest::manifest_file_name(*generation));
+            let unpublished_preview = self
+                .generation
+                .checked_add(1)
+                .is_some_and(|next| next == *generation)
+                && has_inflight_output
+                && !path
+                    .try_exists()
+                    .with_context(|| format!("inspect protected manifest {}", path.display()))?;
+            if unpublished_preview {
+                continue;
+            }
+            let manifest = manifest::read_manifest(&path)
+                .with_context(|| format!("load protected manifest generation {generation}"))?;
+            protected_runs.extend(manifest.entries.into_iter().map(|entry| entry.file_name));
+        }
+
         let mut stats = GcStats::default();
+        let mut root_changed = false;
+        for entry in fs::read_dir(&self.root)
+            .with_context(|| format!("read pack store directory {}", self.root.display()))?
+        {
+            let entry = entry.context("read pack store directory entry")?;
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let manifest_generation = manifest::parse_manifest_file_name(name);
+            let delete = match manifest_generation {
+                Some(generation) => !protected_generations.contains(&generation),
+                None => manifest::is_manifest_temp_file_name(name),
+            };
+            if !delete {
+                continue;
+            }
+            let bytes = entry.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+            fs::remove_file(&path)
+                .with_context(|| format!("delete superseded manifest {}", path.display()))?;
+            stats.bytes_reclaimed = stats.bytes_reclaimed.saturating_add(bytes);
+            if manifest_generation.is_some() {
+                stats.manifests_deleted = stats.manifests_deleted.saturating_add(1);
+            }
+            root_changed = true;
+        }
+        if root_changed {
+            sync_directory(&self.root)?;
+        }
+
+        let mut runs_changed = false;
         for entry in fs::read_dir(&self.runs_dir)
             .with_context(|| format!("read index-run directory {}", self.runs_dir.display()))?
         {
@@ -425,57 +471,22 @@ impl PackStore {
             let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
                 continue;
             };
-            let extension = path
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .unwrap_or_default();
-            let delete = match extension {
-                // A compaction plan builds outside the writer lock. Runtime
-                // GC therefore leaves temp files alone; startup recovery owns
-                // stale-temp cleanup after acquiring the exclusive lease.
-                "tmp" => false,
-                "idx" => manifest::is_run_file_name(name) && !protected_runs.contains(name),
-                _ => false,
-            };
-            if !delete {
+            // A compaction plan builds outside the writer lock. Runtime GC
+            // leaves temporary and unknown files alone; startup recovery owns
+            // stale-temp cleanup after acquiring the exclusive lease.
+            if !manifest::is_run_file_name(name) || protected_runs.contains(name) {
                 continue;
             }
             let bytes = entry.metadata().map(|metadata| metadata.len()).unwrap_or(0);
             fs::remove_file(&path)
                 .with_context(|| format!("delete superseded index run {}", path.display()))?;
+            stats.runs_deleted = stats.runs_deleted.saturating_add(1);
             stats.bytes_reclaimed = stats.bytes_reclaimed.saturating_add(bytes);
-            if extension == "idx" {
-                stats.runs_deleted = stats.runs_deleted.saturating_add(1);
-            }
+            runs_changed = true;
         }
-        for (generation, path) in manifest::list_manifest_files(&self.root)? {
-            if protected_generations.contains(&generation) {
-                continue;
-            }
-            let bytes = fs::metadata(&path)
-                .map(|metadata| metadata.len())
-                .unwrap_or(0);
-            fs::remove_file(&path)
-                .with_context(|| format!("delete superseded manifest {}", path.display()))?;
-            stats.manifests_deleted = stats.manifests_deleted.saturating_add(1);
-            stats.bytes_reclaimed = stats.bytes_reclaimed.saturating_add(bytes);
+        if runs_changed {
+            sync_directory(&self.runs_dir)?;
         }
-        for entry in fs::read_dir(&self.root)
-            .with_context(|| format!("read pack store directory {}", self.root.display()))?
-        {
-            let entry = entry.context("read pack store directory entry")?;
-            let path = entry.path();
-            let is_manifest_tmp = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(manifest::is_manifest_temp_file_name);
-            if is_manifest_tmp {
-                fs::remove_file(&path)
-                    .with_context(|| format!("delete stale manifest temp {}", path.display()))?;
-            }
-        }
-        sync_directory(&self.runs_dir)?;
-        sync_directory(&self.root)?;
         self.stats.gc_cycles = self.stats.gc_cycles.saturating_add(1);
         self.stats.gc_runs_deleted = self
             .stats
@@ -495,7 +506,19 @@ impl PackStore {
     /// Physical layout: (pack bytes, live index bytes, live run count,
     /// decoded index memory bytes).
     pub fn layout(&self) -> Result<(u64, u64, u64, u64)> {
-        let pack_bytes = self.pack.metadata().context("stat append pack")?.len();
+        let pack_bytes = segment::discover_segment_catalog(&self.root)?
+            .iter()
+            .try_fold(0u64, |total, segment| {
+                total
+                    .checked_add(
+                        fs::metadata(&segment.path)
+                            .with_context(|| {
+                                format!("stat pack segment {}", segment.path.display())
+                            })?
+                            .len(),
+                    )
+                    .context("pack bytes overflow")
+            })?;
         let index_bytes = self.runs.iter().try_fold(0u64, |total, live| {
             total
                 .checked_add(live.run.file_bytes)

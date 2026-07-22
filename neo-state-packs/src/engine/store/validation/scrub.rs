@@ -3,7 +3,7 @@ use super::*;
 pub(super) fn scrub_live_index_run(
     live: &LiveRun,
     runs_dir: &Path,
-    committed_pack_bytes: u64,
+    segments: &SegmentSet,
 ) -> Result<()> {
     let path = runs_dir.join(run_file_name(live.level, live.min_epoch, live.max_epoch));
     let file = File::open(&path)
@@ -40,7 +40,7 @@ pub(super) fn scrub_live_index_run(
         hasher.update(chunk);
         for record in chunk.chunks_exact(INDEX_RECORD_LEN) {
             let entry = decode_record(record)?;
-            validate_index_entry_payload_range(&entry, committed_pack_bytes)?;
+            validate_index_entry_payload_range(&entry, segments)?;
             if let Some(previous) = previous {
                 ensure!(
                     previous.key < entry.key
@@ -83,7 +83,7 @@ pub(super) fn scrub_live_index_run(
 
 pub(super) fn validate_index_entry_payload_range(
     entry: &IndexEntry,
-    committed_pack_bytes: u64,
+    segments: &SegmentSet,
 ) -> Result<()> {
     ensure!(
         entry.key[0] == 0xf0,
@@ -98,18 +98,8 @@ pub(super) fn validate_index_entry_payload_range(
         );
         return Ok(());
     }
-    ensure!(
-        entry.segment_id == PackSegmentId::INITIAL,
-        "index entry names unavailable segment {}",
-        entry.segment_id
-    );
-    let value_end = entry
-        .value_offset
-        .checked_add(u64::from(entry.value_len))
-        .context("indexed value range overflows")?;
-    ensure!(
-        value_end <= committed_pack_bytes,
-        "indexed value range ends at {value_end}, beyond the committed pack length of {committed_pack_bytes} bytes"
-    );
-    Ok(())
+    segments.validate_range(
+        PackPosition::new(entry.segment_id, entry.value_offset),
+        entry.value_len,
+    )
 }

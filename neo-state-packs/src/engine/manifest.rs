@@ -15,8 +15,8 @@
 
 use crate::engine::failpoint;
 use crate::engine::store::{
-    PACK_INDEX_FORMAT_VERSION, PackFrameReceipt, PackSegmentId, PackStoreArtifact, PackStoreConfig,
-    PackStoreError,
+    PACK_INDEX_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackFrameReceipt, PackSegmentId,
+    PackStoreArtifact, PackStoreConfig, PackStoreError,
 };
 use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
@@ -31,7 +31,7 @@ const SUPPORTED_MANIFEST_FORMAT_VERSIONS: &[u32] = &[PACK_MANIFEST_FORMAT_VERSIO
 const MANIFEST_HEADER_LEN: usize = 160;
 const MANIFEST_EXTENT_LEN: usize = 96;
 const MANIFEST_ENTRY_LEN: usize = 192;
-const HARD_MAX_MANIFEST_EXTENTS: usize = PackStoreConfig::HARD_MAX_RECENT_RUNS;
+pub(crate) const HARD_MAX_MANIFEST_EXTENTS: usize = PackStoreConfig::HARD_MAX_RECENT_RUNS;
 const HARD_MAX_MANIFEST_ENTRIES: usize = PackStoreConfig::HARD_MAX_RECENT_RUNS;
 /// Fixed on-disk field for one run file name (NUL-padded).
 const MANIFEST_NAME_BYTES: usize = 56;
@@ -106,11 +106,19 @@ impl Manifest {
             self.entries.len() <= HARD_MAX_MANIFEST_ENTRIES,
             "manifest entry count exceeds the format hard limit"
         );
+        ensure!(
+            self.extents[0].segment_id == PackSegmentId::INITIAL,
+            "manifest segment extents do not start at segment zero"
+        );
 
         let mut expected_epoch = 0u64;
         let mut previous_segment: Option<PackSegmentId> = None;
         for extent in &self.extents {
             ensure!(extent.frame_count > 0, "manifest extent has no frames");
+            ensure!(
+                extent.frame_start == PACK_SEGMENT_HEADER_LEN,
+                "manifest segment extent does not begin after its segment header"
+            );
             ensure!(
                 extent.frame_start < extent.frame_end,
                 "manifest extent is empty"
@@ -263,6 +271,10 @@ pub(crate) fn append_frame_extent(
         return Ok(());
     }
 
+    ensure!(
+        receipt.frame_start == PACK_SEGMENT_HEADER_LEN,
+        "first frame in a manifest segment does not begin after its segment header"
+    );
     if let Some(last) = extents.last() {
         ensure!(
             last.segment_id.checked_next() == Some(receipt.segment_id),
@@ -273,6 +285,10 @@ pub(crate) fn append_frame_extent(
             "frame receipt epoch is not next after the previous segment"
         );
     } else {
+        ensure!(
+            receipt.segment_id == PackSegmentId::INITIAL,
+            "first frame receipt does not belong to segment zero"
+        );
         ensure!(
             receipt.epoch == 0,
             "first frame receipt does not start at epoch zero"
@@ -665,8 +681,37 @@ pub(crate) fn manifest_file_name(generation: u64) -> String {
     format!("manifest-{generation:020}.man")
 }
 
+/// Finds the newest manifest generation in one directory scan without
+/// retaining manifest history in memory.
+pub(crate) fn newest_manifest_file(root: &Path) -> Result<Option<(u64, PathBuf)>> {
+    let directory = match fs::read_dir(root) {
+        Ok(directory) => directory,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(error).with_context(|| format!("read directory {}", root.display()));
+        }
+    };
+    let mut newest: Option<(u64, PathBuf)> = None;
+    for entry in directory {
+        let entry = entry.context("read directory entry")?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let Some(generation) = parse_manifest_file_name(name) else {
+            continue;
+        };
+        if newest
+            .as_ref()
+            .is_none_or(|(current, _)| generation > *current)
+        {
+            newest = Some((generation, entry.path()));
+        }
+    }
+    Ok(newest)
+}
+
 /// Every manifest file in `root`, newest generation first. Generations are
 /// recovered from file names, so even unparseable manifests count here.
+#[cfg(test)]
 pub(crate) fn list_manifest_files(root: &Path) -> Result<Vec<(u64, PathBuf)>> {
     let mut manifests = Vec::new();
     let directory = match fs::read_dir(root) {
@@ -789,6 +834,22 @@ mod tests {
             },
         )
         .expect("second extent");
+        extents
+    }
+
+    fn two_segment_extent_set() -> Vec<ManifestExtent> {
+        let mut extents = Vec::new();
+        append_frame_extent(&mut extents, receipt(0, 74)).expect("first segment extent");
+        append_frame_extent(
+            &mut extents,
+            PackFrameReceipt {
+                segment_id: PackSegmentId::new(1),
+                frame_start: PACK_SEGMENT_HEADER_LEN,
+                frame_end: PACK_SEGMENT_HEADER_LEN + 10,
+                ..receipt(1, 74)
+            },
+        )
+        .expect("second segment extent");
         extents
     }
 
@@ -1012,6 +1073,27 @@ mod tests {
     }
 
     #[test]
+    fn newest_manifest_selection_scans_large_unordered_history() {
+        let root = tempdir().expect("temporary manifest history");
+        const GENERATIONS: u64 = 4_096;
+        for generation in (1..=GENERATIONS).rev() {
+            File::create(root.path().join(manifest_file_name(generation)))
+                .expect("create manifest history entry");
+        }
+        File::create(root.path().join("manifest-not-a-generation.man"))
+            .expect("create unrelated manifest-like file");
+
+        let newest = newest_manifest_file(root.path())
+            .expect("scan manifest history")
+            .expect("newest manifest");
+        assert_eq!(newest.0, GENERATIONS);
+        assert_eq!(
+            newest.1.file_name().and_then(|name| name.to_str()),
+            Some(manifest_file_name(GENERATIONS).as_str())
+        );
+    }
+
+    #[test]
     fn frame_extent_rejects_empty_following_receipt_without_mutation() {
         let mut extents = Vec::new();
         append_frame_extent(&mut extents, receipt(0, 74)).expect("first extent");
@@ -1030,6 +1112,57 @@ mod tests {
             assert!(error.to_string().contains("empty extent"));
             assert_eq!(extents, original);
         }
+    }
+
+    #[test]
+    fn frame_extent_builder_requires_segment_zero_and_header_aligned_starts() {
+        for invalid in [
+            PackFrameReceipt {
+                segment_id: PackSegmentId::new(1),
+                ..receipt(0, 74)
+            },
+            PackFrameReceipt {
+                frame_start: PACK_SEGMENT_HEADER_LEN + 1,
+                frame_end: PACK_SEGMENT_HEADER_LEN + 11,
+                ..receipt(0, 74)
+            },
+        ] {
+            let mut extents = Vec::new();
+            assert!(append_frame_extent(&mut extents, invalid).is_err());
+            assert!(extents.is_empty());
+        }
+
+        let mut extents = extent_set();
+        let original = extents.clone();
+        let invalid_rotation = PackFrameReceipt {
+            segment_id: PackSegmentId::new(1),
+            frame_start: PACK_SEGMENT_HEADER_LEN + 1,
+            frame_end: PACK_SEGMENT_HEADER_LEN + 11,
+            ..receipt(2, 84)
+        };
+        assert!(append_frame_extent(&mut extents, invalid_rotation).is_err());
+        assert_eq!(extents, original);
+    }
+
+    #[test]
+    fn manifest_rejects_nonzero_origin_and_non_header_extent_start() {
+        let mut manifest = Manifest {
+            generation: 15,
+            extents: two_segment_extent_set(),
+            entries: vec![
+                entry(0, 0, 0, "run-00000000000000000000.idx"),
+                entry(0, 1, 1, "run-00000000000000000001.idx"),
+            ],
+        };
+
+        manifest.extents[0].segment_id = PackSegmentId::new(1);
+        let error = encode_manifest(&manifest).expect_err("nonzero origin must fail");
+        assert!(error.to_string().contains("segment zero"));
+
+        manifest.extents = two_segment_extent_set();
+        manifest.extents[1].frame_start += 1;
+        let error = encode_manifest(&manifest).expect_err("misaligned segment extent must fail");
+        assert!(error.to_string().contains("segment header"));
     }
 
     #[test]

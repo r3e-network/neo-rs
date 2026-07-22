@@ -1,9 +1,268 @@
-use super::segment::{SEGMENT_HEADER_LEN, create_initial_segment, open_initial_segment};
+use super::segment::{
+    SEGMENT_HEADER_LEN, SegmentCatalogEntry, create_initial_segment, discover_segment_catalog,
+    open_segment_for_append, open_segment_read_only, required_segment_prefix,
+};
 use super::*;
+
+/// One read-only, structurally scanned segment discovered before recovery is
+/// allowed to mutate the store directory.
+struct ScannedSegment {
+    id: PackSegmentId,
+    path: PathBuf,
+    first_epoch: u64,
+    complete_frames: u64,
+    complete_end: u64,
+    file_bytes: u64,
+}
+
+/// Read-only recovery catalog. Segment scans retain only fixed-size summaries;
+/// every file descriptor is closed before the next segment is opened.
+struct ScannedCatalog {
+    entries: Vec<SegmentCatalogEntry>,
+    required: Vec<ScannedSegment>,
+    orphan_complete_frames: u64,
+}
+
+/// Exact authenticated frame history selected by a manifest or external
+/// commit marker. Frame boundaries are streamed again when they are needed.
+struct SelectedSegment {
+    id: PackSegmentId,
+    path: PathBuf,
+    first_epoch: u64,
+    frame_count: u64,
+    committed_end: u64,
+}
+
+impl SelectedSegment {
+    fn committed_end(&self) -> u64 {
+        self.committed_end
+    }
+}
+
+struct SegmentSelection {
+    segments: Vec<SelectedSegment>,
+    extents: Vec<ManifestExtent>,
+    frame_count: u64,
+    last_frame_receipt: Option<PackFrameReceipt>,
+}
+
+/// Conservative immutable-run shape produced by deterministic recovery.
+/// Record counts are upper bounds until the corresponding merge is built,
+/// because newer records can supersede older keys during compaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PlannedRun {
+    level: u32,
+    min_epoch: u64,
+    max_epoch: u64,
+    record_count: u64,
+    memory_bytes: u64,
+}
+
+/// Complete, read-only proof that recovery can finish within configured
+/// manifest, level, and memory bounds before touching any durable artifact.
+#[derive(Debug)]
+struct RebuildPlan {
+    runs: Vec<PlannedRun>,
+    peak_index_bytes: u64,
+}
+
+struct RebuildPlanner {
+    runs: Vec<PlannedRun>,
+    resident_bytes: u64,
+    peak_index_bytes: u64,
+    expected_epoch: u64,
+    config: PackStoreConfig,
+}
+
+impl RebuildPlanner {
+    fn new(config: PackStoreConfig) -> Self {
+        Self {
+            runs: Vec::new(),
+            resident_bytes: 0,
+            peak_index_bytes: 0,
+            expected_epoch: 0,
+            config,
+        }
+    }
+
+    fn push_frame(
+        &mut self,
+        epoch: u64,
+        metadata_bytes: u64,
+        rows: u64,
+        distinct_keys: usize,
+    ) -> Result<()> {
+        ensure!(
+            epoch == self.expected_epoch,
+            "recovery frame epochs are not contiguous from zero"
+        );
+        let decode_floor =
+            rebuild_decode_workspace_bytes(self.resident_bytes, metadata_bytes, rows)?;
+        self.charge_peak(decode_floor)?;
+        let frame_peak =
+            estimate_rebuild_peak_bytes(self.resident_bytes, metadata_bytes, rows, distinct_keys)?;
+        self.charge_peak(frame_peak)?;
+
+        let memory_bytes = manifest_run_memory_bytes(rows)?;
+        self.resident_bytes = self
+            .resident_bytes
+            .checked_add(memory_bytes)
+            .context("recovery resident index bytes overflow")?;
+        self.charge_peak(self.resident_bytes)?;
+        self.runs.push(PlannedRun {
+            level: 0,
+            min_epoch: epoch,
+            max_epoch: epoch,
+            record_count: rows,
+            memory_bytes,
+        });
+        self.expected_epoch = self
+            .expected_epoch
+            .checked_add(1)
+            .context("recovery planned epoch overflows")?;
+
+        while self.runs.len() >= 2 {
+            let right = self.runs[self.runs.len() - 1];
+            let left = self.runs[self.runs.len() - 2];
+            if left.level != right.level {
+                break;
+            }
+            self.merge_tail(left, right)?;
+        }
+        Ok(())
+    }
+
+    fn merge_tail(&mut self, left: PlannedRun, right: PlannedRun) -> Result<()> {
+        ensure!(
+            left.max_epoch.checked_add(1) == Some(right.min_epoch),
+            "recovery carry inputs are not contiguous"
+        );
+        let level = left
+            .level
+            .checked_add(1)
+            .context("recovery carry level overflows")?;
+        let level_count = u64::from(level)
+            .checked_add(1)
+            .context("recovery level count overflows")?;
+        let maximum_levels = u64::from(self.config.max_index_levels());
+        if level_count > maximum_levels {
+            return Err(PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::IndexLevels,
+                actual: level_count,
+                maximum: maximum_levels,
+            }
+            .into());
+        }
+
+        let record_count = left
+            .record_count
+            .checked_add(right.record_count)
+            .context("recovery merge record upper bound overflows")?;
+        let memory_bytes = manifest_run_memory_bytes(record_count)?;
+        self.charge_peak(estimate_compaction_workspace(
+            self.resident_bytes,
+            record_count,
+        ))?;
+        self.charge_peak(
+            self.resident_bytes
+                .checked_add(memory_bytes)
+                .context("recovery merge overlap bytes overflow")?,
+        )?;
+
+        self.resident_bytes = self
+            .resident_bytes
+            .checked_sub(left.memory_bytes)
+            .and_then(|bytes| bytes.checked_sub(right.memory_bytes))
+            .and_then(|bytes| bytes.checked_add(memory_bytes))
+            .context("recovery resident bytes changed outside the carry plan")?;
+        self.runs.truncate(self.runs.len() - 2);
+        self.runs.push(PlannedRun {
+            level,
+            min_epoch: left.min_epoch,
+            max_epoch: right.max_epoch,
+            record_count,
+            memory_bytes,
+        });
+        Ok(())
+    }
+
+    fn charge_peak(&mut self, bytes: u64) -> Result<()> {
+        ensure_rebuild_memory_bound(bytes, self.config.max_index_memory_bytes())?;
+        self.peak_index_bytes = self.peak_index_bytes.max(bytes);
+        Ok(())
+    }
+
+    fn finish(self) -> Result<RebuildPlan> {
+        let run_count =
+            u64::try_from(self.runs.len()).context("recovery final run count does not fit u64")?;
+        let configured_runs = u64::try_from(self.config.max_recent_runs())
+            .context("configured recent-run limit does not fit u64")?;
+        let maximum_runs = configured_runs.min(PackStoreConfig::HARD_MAX_RECENT_RUNS as u64);
+        if run_count > maximum_runs {
+            return Err(PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::RecentRuns,
+                actual: run_count,
+                maximum: maximum_runs,
+            }
+            .into());
+        }
+        for pair in self.runs.windows(2) {
+            ensure!(
+                pair[0].max_epoch.checked_add(1) == Some(pair[1].min_epoch),
+                "recovery final run ranges are not contiguous"
+            );
+        }
+        Ok(RebuildPlan {
+            runs: self.runs,
+            peak_index_bytes: self.peak_index_bytes,
+        })
+    }
+}
+
+#[cfg(test)]
+pub(super) fn plan_uniform_rebuild_for_test(
+    config: PackStoreConfig,
+    frame_count: u64,
+    metadata_bytes: u64,
+    rows: u64,
+    distinct_keys: usize,
+) -> Result<(u64, Vec<(u32, u64, u64)>)> {
+    let mut planner = RebuildPlanner::new(config);
+    for epoch in 0..frame_count {
+        planner.push_frame(epoch, metadata_bytes, rows, distinct_keys)?;
+    }
+    let plan = planner.finish()?;
+    Ok((
+        plan.peak_index_bytes,
+        plan.runs
+            .iter()
+            .map(|run| (run.level, run.min_epoch, run.max_epoch))
+            .collect(),
+    ))
+}
+
+impl SegmentSelection {
+    fn tip_id(&self) -> PackSegmentId {
+        self.segments
+            .last()
+            .expect("authenticated selection contains segment zero")
+            .id
+    }
+
+    fn tip_end(&self) -> u64 {
+        self.segments
+            .last()
+            .expect("authenticated selection contains segment zero")
+            .committed_end()
+    }
+}
 
 impl PackStore {
     /// Creates an empty pack store in `root` using one validated resource
-    /// contract. The directory must be missing or empty.
+    /// contract. The directory must be missing, empty, or contain only exact
+    /// unpublished artifacts from an interrupted initial creation. Once the
+    /// canonical segment-zero name exists, the store is opened rather than
+    /// created again.
     pub fn create(root: &Path, config: PackStoreConfig) -> PackStoreResult<Self> {
         Self::create_inner(root, config)
             .map_err(|error| PackStoreError::classify_create(error, root))
@@ -16,34 +275,31 @@ impl PackStore {
         read_view::preflight_pack_value_pool(options.batch_value_workers)?;
         let root_existed = root.exists();
         if root_existed {
-            ensure!(
-                fs::read_dir(root)
-                    .with_context(|| format!("read pack store directory {}", root.display()))?
-                    .next()
-                    .is_none(),
-                "pack store directory must be empty: {}",
-                root.display()
-            );
+            preflight_store_creation(root)?;
         } else {
             fs::create_dir_all(root)
                 .with_context(|| format!("create pack store directory {}", root.display()))?;
             sync_parent_directory(root)?;
         }
         let writer_lease = acquire_writer_lease(root)?;
+        clear_interrupted_store_creation(root)?;
         let runs_dir = root.join("runs");
         fs::create_dir(&runs_dir)
             .with_context(|| format!("create index-run directory {}", runs_dir.display()))?;
         let (pack, pack_path) = create_initial_segment(root)?;
-        let initial_len = SEGMENT_HEADER_LEN as u64;
-        let pack_map = Mmap::map(&pack, initial_len, &pack_path)?;
-        let lookup_pack_map = map_random_if_enabled(&pack, initial_len, &pack_path, options)?;
+        let segments = Arc::new(SegmentSet::open(
+            root,
+            &[],
+            options,
+            config.max_segment_bytes(),
+        )?);
         Ok(Self {
             root: root.to_path_buf(),
             runs_dir,
             pack,
             pack_path,
-            pack_map: Arc::new(pack_map),
-            lookup_pack_map: lookup_pack_map.map(Arc::new),
+            active_segment_id: PackSegmentId::INITIAL,
+            segments,
             runs: Vec::new(),
             level_run_counts: BTreeMap::new(),
             ranges: Vec::new(),
@@ -105,11 +361,10 @@ impl PackStore {
         config.validate()?;
         let options = config.read_options().normalized_for_host();
         let config = config.with_read_options(options)?;
-        let max_index_memory_bytes = config.max_index_memory_bytes();
         read_view::preflight_pack_value_pool(options.batch_value_workers)?;
         let writer_lease = acquire_writer_lease(root)?;
-        let (pack, pack_path) = open_initial_segment(root)?;
-        let scan = scan_frames(&pack)?;
+        let required_tip = horizon.map_or(PackSegmentId::INITIAL, |horizon| horizon.segment_id);
+        let catalog = scan_segment_catalog(root, required_tip, config)?;
         let expected_frames = match horizon {
             Some(horizon) => horizon
                 .epoch
@@ -117,47 +372,18 @@ impl PackStore {
                 .context("committed pack epoch overflows")?,
             None => 0,
         };
+        let selection = match horizon {
+            Some(horizon) => select_commit_horizon(&catalog.required, horizon, config)?,
+            None => select_empty_history(&catalog.required)?,
+        };
         ensure!(
-            expected_frames <= scan.frame_ends.len() as u64,
-            "pack commit marker requires {expected_frames} frames but only {} complete frames exist",
-            scan.frame_ends.len()
+            selection.frame_count == expected_frames,
+            "authenticated pack history exposes {} frames, expected {expected_frames}",
+            selection.frame_count
         );
-        if let Some(horizon) = horizon {
-            ensure!(
-                horizon.segment_id == PackSegmentId::INITIAL,
-                "pack commit marker names unavailable segment {}",
-                horizon.segment_id
-            );
-            let receipt = read_frame_receipt(&pack, &scan, horizon.epoch)?;
-            ensure!(
-                receipt.segment_id == horizon.segment_id,
-                "pack commit marker segment {} does not match frame {} segment {}",
-                horizon.segment_id,
-                horizon.epoch,
-                receipt.segment_id
-            );
-            ensure!(
-                receipt.frame_end == horizon.frame_end,
-                "pack commit marker end {} does not match frame {} end {}",
-                horizon.frame_end,
-                horizon.epoch,
-                receipt.frame_end
-            );
-            ensure!(
-                receipt.context == horizon.context,
-                "pack commit marker context does not match frame {}",
-                horizon.epoch
-            );
-            ensure!(
-                receipt.frame_sha256 == horizon.frame_sha256,
-                "pack commit marker frame digest does not match frame {}",
-                horizon.epoch
-            );
-        }
-        let authenticated_extents =
-            authenticate_committed_frame_prefix(&pack, &pack_path, &scan, expected_frames)?;
-        let manifests = manifest::list_manifest_files(root)?;
-        let current_manifest = match manifests.first() {
+        let authenticated_extents = selection.extents.clone();
+        let newest_manifest = manifest::newest_manifest_file(root)?;
+        let current_manifest = match newest_manifest.as_ref() {
             Some((_, path)) => match manifest::read_manifest(path) {
                 Ok(manifest) => Some(manifest),
                 Err(error) if is_unsupported_artifact_version(&error) => return Err(error),
@@ -178,19 +404,23 @@ impl PackStore {
                     current_manifest
                         .as_ref()
                         .expect("validated manifest presence"),
-                    max_index_memory_bytes,
+                    config,
                     options,
                 ) {
                     Ok(_) => true,
-                    Err(error) if is_unsupported_artifact_version(&error) => return Err(error),
+                    Err(error) if is_non_rebuildable_run_error(&error) => return Err(error),
                     Err(_) => false,
                 }
             } else {
                 false
             };
         let fast_open = if expected_frames == 0 {
-            scan.frame_ends.is_empty()
-                && manifests.is_empty()
+            catalog
+                .required
+                .iter()
+                .all(|segment| segment.complete_frames == 0)
+                && catalog.orphan_complete_frames == 0
+                && newest_manifest.is_none()
                 && fs::read_dir(root.join("runs"))
                     .context("read index-run directory for empty horizon")?
                     .next()
@@ -198,54 +428,51 @@ impl PackStore {
         } else {
             manifest_runs_valid
         };
-        drop(pack);
+        let rebuild_generation = if !fast_open && expected_frames > 0 {
+            Some(next_rebuilt_manifest_generation(
+                newest_manifest.as_ref().map(|(generation, _)| *generation),
+            )?)
+        } else {
+            None
+        };
+        let rebuild_plan = if !fast_open && expected_frames > 0 {
+            Some(Self::preflight_rebuild_runs_from_segments(
+                &selection.segments,
+                config,
+            )?)
+        } else {
+            None
+        };
 
-        if !fast_open {
-            if expected_frames > 0 {
-                let prefix = &scan.frame_ends[..usize::try_from(expected_frames)
-                    .context("marker frame count does not fit usize")?];
-                let preflight_pack = File::open(&pack_path).with_context(|| {
-                    format!(
-                        "open append pack {} for rebuild preflight",
-                        pack_path.display()
-                    )
-                })?;
-                Self::preflight_rebuild_runs_from_frames(
-                    &preflight_pack,
-                    prefix,
-                    max_index_memory_bytes,
-                )?;
-            }
-            reset_derived_state_to_frame_prefix(root, &scan, expected_frames)?;
-            if expected_frames > 0 {
-                let (recovered_pack, recovered_path) = open_initial_segment(root)?;
-                ensure!(
-                    recovered_path == pack_path,
-                    "marker rebuild opened a different pack segment"
-                );
-                let recovered_scan = scan_frames(&recovered_pack)?;
-                ensure!(
-                    recovered_scan.frame_ends.len() as u64 == expected_frames,
-                    "marker recovery retained {} frames, expected {expected_frames}",
-                    recovered_scan.frame_ends.len()
-                );
-                let loaded = Self::rebuild_runs_from_frames(
-                    &recovered_pack,
-                    &recovered_scan.frame_ends,
-                    &root.join("runs"),
-                    max_index_memory_bytes,
-                    options,
-                )?;
-                let manifests = manifest::list_manifest_files(root)?;
-                ensure!(
-                    manifests.is_empty(),
-                    "marker recovery did not remove old manifests"
-                );
-                publish_rebuilt_manifest(root, &manifests, &authenticated_extents, &loaded)?;
-            }
+        // All selected bytes, configured resource bounds, and any required
+        // rebuild allocation have been proved above. Only now may recovery
+        // truncate the selected tip or remove later orphan segments.
+        reconcile_segment_files(root, &catalog.entries, &selection)?;
+        if fast_open {
+            clear_stale_temp_files(root)?;
+            clear_rebuild_staging(&root.join("runs"))?;
+        } else if expected_frames == 0 {
+            clear_derived_visibility(root)?;
+        } else {
+            clear_stale_temp_files(root)?;
+            let loaded = Self::rebuild_runs_from_segments(
+                &selection.segments,
+                &root.join("runs"),
+                options,
+                config,
+                rebuild_plan
+                    .as_ref()
+                    .expect("non-empty slow recovery has a preflight plan"),
+            )?;
+            publish_rebuilt_manifest(
+                root,
+                rebuild_generation.expect("non-empty slow recovery has a generation"),
+                &authenticated_extents,
+                &loaded,
+            )?;
         }
 
-        let store = Self::open_with_lease(root, config, writer_lease)?;
+        let mut store = Self::open_with_lease(root, config, writer_lease)?;
         ensure!(
             store.open_validation.frames == expected_frames,
             "recovered pack exposes {} frames, expected {expected_frames}",
@@ -264,6 +491,7 @@ impl PackStore {
             (None, Some(_)) => anyhow::bail!("uncommitted pack frames remain visible"),
             (None, None) => {}
         }
+        store.gc()?;
         Ok(store)
     }
 
@@ -273,108 +501,100 @@ impl PackStore {
         let config = config.with_read_options(options)?;
         read_view::preflight_pack_value_pool(options.batch_value_workers)?;
         let writer_lease = acquire_writer_lease(root)?;
-        Self::open_with_lease(root, config, writer_lease)
+        let mut store = Self::open_with_lease(root, config, writer_lease)?;
+        store.gc()?;
+        Ok(store)
     }
 
     fn open_with_lease(root: &Path, config: PackStoreConfig, writer_lease: File) -> Result<Self> {
         config.validate()?;
-        let max_index_memory_bytes = config.max_index_memory_bytes();
         let options = config.read_options();
         let runs_dir = root.join("runs");
-        let (pack, pack_path) = open_initial_segment(root)?;
-        let scan = scan_frames(&pack)?;
-        let frame_count =
-            u64::try_from(scan.frame_ends.len()).context("frame count does not fit u64")?;
-        let manifests = manifest::list_manifest_files(root)?;
+        let newest_manifest = manifest::newest_manifest_file(root)?;
+        let current_manifest = match newest_manifest.as_ref() {
+            Some((_, path)) => Some(manifest::read_manifest(path).with_context(|| {
+                format!(
+                    "read newest manifest {}; visibility authority is unavailable",
+                    path.display()
+                )
+            })?),
+            None => None,
+        };
+        let required_tip = current_manifest
+            .as_ref()
+            .and_then(|manifest| manifest.extents.last())
+            .map_or(PackSegmentId::INITIAL, |extent| extent.segment_id);
+        let catalog = scan_segment_catalog(root, required_tip, config)?;
         let mut generation = 0u64;
         let mut rebuild = RebuildMetrics::default();
-        let mut extents = Vec::new();
-        let loaded = match manifests.first() {
-            Some((_, path)) => {
-                let current = manifest::read_manifest(path).with_context(|| {
-                    format!(
-                        "read newest manifest {}; visibility authority is unavailable",
-                        path.display()
-                    )
-                })?;
-                let committed_frames = current.frame_count()?;
-                ensure!(
-                    committed_frames <= frame_count,
-                    "manifest generation {} commits {} frames but only {} validated in the pack",
-                    current.generation,
-                    committed_frames,
-                    frame_count
-                );
-                let authenticated_extents = authenticate_committed_frame_prefix(
-                    &pack,
-                    &pack_path,
-                    &scan,
-                    committed_frames,
-                )?;
-                ensure!(
-                    authenticated_extents == current.extents,
-                    "manifest generation {} does not bind the selected frame history",
-                    current.generation
-                );
-                extents = current.extents.clone();
-                let loaded =
-                    Self::load_manifest_runs(&runs_dir, &current, max_index_memory_bytes, options);
+        let (selection, loaded) = match current_manifest {
+            Some(current) => {
+                let selection = select_manifest_history(&catalog.required, &current, config)?;
+                let loaded = Self::load_manifest_runs(&runs_dir, &current, config, options);
                 generation = current.generation;
-                match loaded {
+                let loaded = match loaded {
                     Ok(loaded) => {
+                        reconcile_segment_files(root, &catalog.entries, &selection)?;
                         clear_stale_temp_files(root)?;
+                        clear_rebuild_staging(&runs_dir)?;
                         loaded
                     }
-                    Err(error) if is_unsupported_artifact_version(&error) => return Err(error),
+                    Err(error) if is_non_rebuildable_run_error(&error) => return Err(error),
                     Err(error) => {
                         // Indexes are derived, but only the manifest's exact
                         // visible prefix may be rebuilt without an external
                         // canonical marker. Raw frames beyond it stay orphaned.
-                        let prefix = &scan.frame_ends[..usize::try_from(committed_frames)
-                            .context("manifest frame count does not fit usize")?];
-                        Self::preflight_rebuild_runs_from_frames(
-                            &pack,
-                            prefix,
-                            max_index_memory_bytes,
+                        let rebuild_generation = next_rebuilt_manifest_generation(
+                            newest_manifest.as_ref().map(|(generation, _)| *generation),
                         )?;
+                        let plan = Self::preflight_rebuild_runs_from_segments(
+                            &selection.segments,
+                            config,
+                        )?;
+                        reconcile_segment_files(root, &catalog.entries, &selection)?;
                         clear_stale_temp_files(root)?;
                         let rebuild_started = Instant::now();
-                        let loaded = Self::rebuild_runs_from_frames(
-                            &pack,
-                            prefix,
+                        let loaded = Self::rebuild_runs_from_segments(
+                            &selection.segments,
                             &runs_dir,
-                            max_index_memory_bytes,
                             options,
+                            config,
+                            &plan,
                         )
                         .with_context(|| format!("rebuild manifest index runs: {error:#}"))?;
                         rebuild = RebuildMetrics {
-                            frames: u64::try_from(prefix.len())
-                                .context("rebuild frame count does not fit u64")?,
+                            frames: selection.frame_count,
                             runs: u64::try_from(loaded.runs.len())
                                 .context("rebuild run count does not fit u64")?,
                             index_entries: loaded.index_entries,
                             wall_ns: duration_ns(rebuild_started.elapsed()),
                         };
-                        generation = publish_rebuilt_manifest(root, &manifests, &extents, &loaded)?;
+                        generation = publish_rebuilt_manifest(
+                            root,
+                            rebuild_generation,
+                            &selection.extents,
+                            &loaded,
+                        )?;
                         loaded
                     }
-                }
+                };
+                (selection, loaded)
             }
             // Without a manifest or an explicit external horizon there is no
             // durable commit decision. Complete frames and runs are prepared
             // orphan data and must remain invisible.
             None => {
+                let selection = select_empty_history(&catalog.required)?;
+                reconcile_segment_files(root, &catalog.entries, &selection)?;
                 clear_stale_temp_files(root)?;
-                LoadedRuns::default()
+                clear_rebuild_staging(&runs_dir)?;
+                (selection, LoadedRuns::default())
             }
         };
         Self::finish_open(
             root,
-            pack,
-            pack_path,
-            scan,
+            selection,
             generation,
-            extents,
             loaded,
             config,
             rebuild,
@@ -387,12 +607,14 @@ impl PackStore {
     fn load_manifest_runs(
         runs_dir: &Path,
         current: &Manifest,
-        max_index_memory_bytes: u64,
+        config: PackStoreConfig,
         options: PackStoreOptions,
     ) -> Result<LoadedRuns> {
+        preflight_manifest_runs(current, config)?;
+        let max_index_memory_bytes = config.max_index_memory_bytes();
         let mut loaded = LoadedRuns::default();
         for entry in &current.entries {
-            let run = read_index_run_with_options(&runs_dir.join(&entry.file_name), options)?;
+            let run = read_manifest_index_run(&runs_dir.join(&entry.file_name), entry, options)?;
             ensure!(
                 run.format_version == entry.format_version
                     && run.epoch == entry.max_epoch
@@ -408,6 +630,8 @@ impl PackStore {
                 "manifest entry does not match run {}",
                 entry.file_name
             );
+            verify_run(&run)
+                .with_context(|| format!("verify committed index run {}", entry.file_name))?;
             charge_run_memory(&mut loaded, &run, max_index_memory_bytes)?;
             loaded.runs.push(LiveRun {
                 run: Arc::new(run),
@@ -422,229 +646,175 @@ impl PackStore {
     /// Proves that every selected frame is authenticated, structurally
     /// decodable, and rebuildable within the cumulative resident-index bound.
     /// This must complete before recovery truncates or replaces any artifact.
-    fn preflight_rebuild_runs_from_frames(
-        pack: &File,
-        frame_ends: &[u64],
-        max_index_memory_bytes: u64,
-    ) -> Result<()> {
-        let mut resident_bytes = 0u64;
-        let mut frame_start = SEGMENT_HEADER_LEN as u64;
-        for (epoch, frame_end) in frame_ends.iter().enumerate() {
-            let epoch = u64::try_from(epoch).context("preflight epoch does not fit u64")?;
-            let _ =
-                read_frame_receipt_at(pack, PackSegmentId::INITIAL, epoch, frame_start, *frame_end)
+    fn preflight_rebuild_runs_from_segments(
+        segments: &[SelectedSegment],
+        config: PackStoreConfig,
+    ) -> Result<RebuildPlan> {
+        let segment_count =
+            u64::try_from(segments.len()).context("recovery segment count does not fit u64")?;
+        let maximum_segments = manifest::HARD_MAX_MANIFEST_EXTENTS as u64;
+        if segment_count > maximum_segments {
+            return Err(PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::Segments,
+                actual: segment_count,
+                maximum: maximum_segments,
+            }
+            .into());
+        }
+        let mut planner = RebuildPlanner::new(config);
+        walk_selected_frames(
+            segments,
+            config,
+            |file, segment_id, epoch, frame_start, frame_end, header| {
+                let _ = read_frame_receipt_at(file, segment_id, epoch, frame_start, frame_end)
                     .with_context(|| {
                         format!("authenticate frame {epoch} before recovery mutation")
                     })?;
-            let mut header = [0u8; FRAME_HEADER_LEN];
-            pack.read_exact_at(&mut header, frame_start)
-                .context("read frame header for recovery preflight")?;
-            let header = validate_frame_header(&header, epoch)?;
-            ensure!(
-                frame_start.checked_add(header.frame_bytes) == Some(*frame_end),
-                "preflight frame length mismatch at epoch {epoch}"
-            );
-            let rows =
-                usize::try_from(header.rows).context("preflight row count does not fit usize")?;
-            let metadata_len = usize::try_from(header.metadata_bytes)
-                .context("preflight metadata length does not fit usize")?;
-            ensure_rebuild_memory_bound(
-                rebuild_decode_workspace_bytes(resident_bytes, header.metadata_bytes, header.rows)?,
-                max_index_memory_bytes,
-            )?;
+                let rows = usize::try_from(header.rows)
+                    .context("preflight row count does not fit usize")?;
+                let metadata_len = usize::try_from(header.metadata_bytes)
+                    .context("preflight metadata length does not fit usize")?;
+                let metadata_start = frame_start
+                    .checked_add(FRAME_HEADER_LEN as u64)
+                    .context("preflight metadata offset overflows")?;
+                let mut metadata = Vec::new();
+                metadata
+                    .try_reserve_exact(metadata_len)
+                    .context("reserve frame metadata for recovery preflight")?;
+                metadata.resize(metadata_len, 0);
+                file.read_exact_at(&mut metadata, metadata_start)
+                    .context("read frame metadata for recovery preflight")?;
+                ensure!(
+                    frame_metadata_digest(&metadata) == header.metadata_sha256,
+                    "frame metadata checksum mismatch during recovery preflight"
+                );
+                let distinct =
+                    scan_frame_metadata_distinct_keys(&metadata, rows, header.value_bytes)?;
+                planner.push_frame(epoch, header.metadata_bytes, header.rows, distinct)
+            },
+        )?;
+        planner.finish()
+    }
 
-            let metadata_start = frame_start
-                .checked_add(FRAME_HEADER_LEN as u64)
-                .context("preflight metadata offset overflows")?;
-            let mut metadata = Vec::new();
-            metadata
-                .try_reserve_exact(metadata_len)
-                .context("reserve frame metadata for recovery preflight")?;
-            metadata.resize(metadata_len, 0);
-            pack.read_exact_at(&mut metadata, metadata_start)
-                .context("read frame metadata for recovery preflight")?;
-            ensure!(
-                frame_metadata_digest(&metadata) == header.metadata_sha256,
-                "frame metadata checksum mismatch during recovery preflight"
-            );
-            let distinct = scan_frame_metadata_distinct_keys(&metadata, rows, header.value_bytes)?;
-            ensure_rebuild_memory_bound(
-                estimate_rebuild_peak_bytes(
-                    resident_bytes,
+    /// Rebuilds a bounded binary-carry run set directly from committed frames
+    /// in an isolated staging directory. Canonical run names are replaced only
+    /// after every staged output is durable and verified.
+    fn rebuild_runs_from_segments(
+        segments: &[SelectedSegment],
+        runs_dir: &Path,
+        options: PackStoreOptions,
+        config: PackStoreConfig,
+        plan: &RebuildPlan,
+    ) -> Result<LoadedRuns> {
+        let max_index_memory_bytes = config.max_index_memory_bytes();
+        let staging_dir = prepare_rebuild_staging(runs_dir)?;
+        let mut loaded = LoadedRuns::default();
+        walk_selected_frames(
+            segments,
+            config,
+            |file, segment_id, epoch, frame_start, frame_end, header| {
+                let _ = read_frame_receipt_at(file, segment_id, epoch, frame_start, frame_end)
+                    .with_context(|| format!("authenticate frame {epoch} before index rebuild"))?;
+                let rows =
+                    usize::try_from(header.rows).context("frame row count does not fit usize")?;
+                let metadata_len = usize::try_from(header.metadata_bytes)
+                    .context("frame metadata length does not fit usize")?;
+                let minimum_workspace = rebuild_decode_workspace_bytes(
+                    loaded.decoded_index_bytes,
+                    header.metadata_bytes,
+                    header.rows,
+                )?;
+                ensure_rebuild_memory_bound(minimum_workspace, max_index_memory_bytes)?;
+
+                let metadata_start = frame_start
+                    .checked_add(FRAME_HEADER_LEN as u64)
+                    .context("rebuilt metadata offset overflows")?;
+                let mut metadata = Vec::new();
+                metadata
+                    .try_reserve_exact(metadata_len)
+                    .context("reserve frame metadata for index rebuild")?;
+                metadata.resize(metadata_len, 0);
+                file.read_exact_at(&mut metadata, metadata_start)
+                    .context("read frame metadata for index rebuild")?;
+                ensure!(
+                    frame_metadata_digest(&metadata) == header.metadata_sha256,
+                    "frame metadata checksum mismatch during index rebuild"
+                );
+                let distinct =
+                    scan_frame_metadata_distinct_keys(&metadata, rows, header.value_bytes)?;
+                let estimated_peak = estimate_rebuild_peak_bytes(
+                    loaded.decoded_index_bytes,
                     header.metadata_bytes,
                     header.rows,
                     distinct,
-                )?,
-                max_index_memory_bytes,
-            )?;
-            resident_bytes = resident_bytes
-                .checked_add(run_structured_bytes(rows, distinct)?)
-                .context("preflight resident index bytes overflow")?;
-            frame_start = *frame_end;
-        }
-        Ok(())
-    }
-
-    /// Rebuilds one level-0 run per committed frame directly from the pack.
-    /// Every frame payload is re-hashed and decoded; this is the slow
-    /// recovery path, never the steady-state open.
-    fn rebuild_runs_from_frames(
-        pack: &File,
-        frame_ends: &[u64],
-        runs_dir: &Path,
-        max_index_memory_bytes: u64,
-        options: PackStoreOptions,
-    ) -> Result<LoadedRuns> {
-        let mut loaded = LoadedRuns::default();
-        let mut frame_start = SEGMENT_HEADER_LEN as u64;
-        for (epoch, frame_end) in frame_ends.iter().enumerate() {
-            let epoch = u64::try_from(epoch).context("rebuilt epoch does not fit u64")?;
-            let _ =
-                read_frame_receipt_at(pack, PackSegmentId::INITIAL, epoch, frame_start, *frame_end)
-                    .with_context(|| format!("authenticate frame {epoch} before index rebuild"))?;
-            let mut header = [0u8; FRAME_HEADER_LEN];
-            pack.read_exact_at(&mut header, frame_start)
-                .context("re-read frame header for index rebuild")?;
-            let header = validate_frame_header(&header, epoch)?;
-            let rebuilt_frame_end = frame_start
-                .checked_add(header.frame_bytes)
-                .context("rebuilt frame end overflows")?;
-            ensure!(
-                rebuilt_frame_end == *frame_end,
-                "rebuilt frame length mismatch at epoch {epoch}"
-            );
-            let rows =
-                usize::try_from(header.rows).context("frame row count does not fit usize")?;
-            let metadata_len = usize::try_from(header.metadata_bytes)
-                .context("frame metadata length does not fit usize")?;
-            let minimum_workspace = rebuild_decode_workspace_bytes(
-                loaded.decoded_index_bytes,
-                header.metadata_bytes,
-                header.rows,
-            )?;
-            ensure_rebuild_memory_bound(minimum_workspace, max_index_memory_bytes)?;
-
-            let metadata_start = frame_start
-                .checked_add(FRAME_HEADER_LEN as u64)
-                .context("rebuilt metadata offset overflows")?;
-            let mut metadata = Vec::new();
-            metadata
-                .try_reserve_exact(metadata_len)
-                .context("reserve frame metadata for index rebuild")?;
-            metadata.resize(metadata_len, 0);
-            pack.read_exact_at(&mut metadata, metadata_start)
-                .context("read frame metadata for index rebuild")?;
-            ensure!(
-                frame_metadata_digest(&metadata) == header.metadata_sha256,
-                "frame metadata checksum mismatch during index rebuild"
-            );
-            let distinct = scan_frame_metadata_distinct_keys(&metadata, rows, header.value_bytes)?;
-            let estimated_peak = estimate_rebuild_peak_bytes(
-                loaded.decoded_index_bytes,
-                header.metadata_bytes,
-                header.rows,
-                distinct,
-            )?;
-            ensure_rebuild_memory_bound(estimated_peak, max_index_memory_bytes)?;
-            let entries = decode_frame_metadata(frame_start, &metadata, header.value_bytes)?;
-            drop(metadata);
-            let file_name = run_file_name(0, epoch, epoch);
-            let run = publish_fresh_run(&entries, epoch, runs_dir, &file_name, options)
-                .with_context(|| format!("rebuild index run for frame {epoch}"))?;
-            charge_run_memory(&mut loaded, &run, max_index_memory_bytes)?;
-            loaded.runs.push(LiveRun {
-                run: Arc::new(run),
-                level: 0,
-                min_epoch: epoch,
-                max_epoch: epoch,
-            });
-            frame_start = *frame_end;
-        }
-        Ok(loaded)
+                )?;
+                ensure_rebuild_memory_bound(estimated_peak, max_index_memory_bytes)?;
+                let entries = frame_codec::decode_frame_metadata_in_segment(
+                    segment_id,
+                    frame_start,
+                    &metadata,
+                    header.value_bytes,
+                )?;
+                drop(metadata);
+                let file_name = run_file_name(0, epoch, epoch);
+                let run = publish_fresh_run(&entries, epoch, &staging_dir, &file_name, options)
+                    .with_context(|| format!("rebuild index run for frame {epoch}"))?;
+                verify_run(&run)
+                    .with_context(|| format!("verify rebuilt index run for frame {epoch}"))?;
+                charge_run_memory(&mut loaded, &run, max_index_memory_bytes)?;
+                loaded.runs.push(LiveRun {
+                    run: Arc::new(run),
+                    level: 0,
+                    min_epoch: epoch,
+                    max_epoch: epoch,
+                });
+                compact_rebuild_carry(&mut loaded, &staging_dir, options, max_index_memory_bytes)?;
+                Ok(())
+            },
+        )?;
+        validate_rebuild_result(&loaded, plan)?;
+        promote_rebuilt_runs(runs_dir, &staging_dir, &loaded)?;
+        reload_promoted_runs(runs_dir, &loaded, options, max_index_memory_bytes)
     }
 
     /// Shared open tail: truncate everything past the committed frame prefix,
     /// map the pack, and fully verify every committed frame and index run.
     fn finish_open(
         root: &Path,
-        pack: File,
-        pack_path: PathBuf,
-        scan: FrameScan,
+        selection: SegmentSelection,
         generation: u64,
-        extents: Vec<ManifestExtent>,
         loaded: LoadedRuns,
         config: PackStoreConfig,
         rebuild: RebuildMetrics,
         writer_lease: File,
     ) -> Result<Self> {
         let options = config.read_options();
-        let committed_frames = extents.iter().try_fold(0u64, |total, extent| {
+        let committed_frames = selection.extents.iter().try_fold(0u64, |total, extent| {
             total
                 .checked_add(extent.frame_count)
                 .context("committed frame count overflows")
         })?;
         ensure!(
-            committed_frames <= scan.frame_ends.len() as u64,
-            "manifest commits more frames than the validated pack contains"
+            committed_frames == selection.frame_count,
+            "selected segment history frame count differs from its extents"
         );
-        let committed_end = extents
-            .last()
-            .map_or(SEGMENT_HEADER_LEN as u64, |extent| extent.frame_end);
-        let last_frame_receipt = if committed_frames == 0 {
-            None
-        } else {
-            Some(read_frame_receipt(&pack, &scan, committed_frames - 1)?)
-        };
-        if let Some(tip) = extents.last() {
-            ensure!(
-                tip.segment_id == PackSegmentId::INITIAL,
-                "opened manifest names unavailable segment {}",
-                tip.segment_id
-            );
-            let tip_index = usize::try_from(committed_frames - 1)
-                .context("committed frame count does not fit usize")?;
-            ensure!(
-                scan.frame_ends[tip_index] == tip.frame_end,
-                "manifest tip extent does not match the validated frame chain"
-            );
-        }
-        // A frame becomes visible only with its published manifest. Truncate
-        // torn tail bytes and any frames whose publication was interrupted.
-        if pack.metadata().context("stat append pack")?.len() != committed_end {
-            pack.set_len(committed_end)
-                .context("truncate append pack to committed frames")?;
-            pack.sync_data().context("sync truncated append pack")?;
-        }
-        let pack_map = Mmap::map(&pack, committed_end, &pack_path)?;
-        let lookup_pack_map = map_random_if_enabled(&pack, committed_end, &pack_path, options)?;
-        for epoch in 0..committed_frames {
-            let index = usize::try_from(epoch).context("frame epoch does not fit usize")?;
-            let frame_end = *scan
-                .frame_ends
-                .get(index)
-                .with_context(|| format!("missing committed frame {epoch}"))?;
-            let frame_start = if index == 0 {
-                SEGMENT_HEADER_LEN as u64
-            } else {
-                scan.frame_ends[index - 1]
-            };
-            verify_frame(
-                &pack_map,
-                PackSegmentId::INITIAL,
-                frame_start,
-                frame_end,
-                epoch,
-            )
-            .with_context(|| format!("verify committed frame {epoch}"))?;
-        }
-        for live in &loaded.runs {
-            verify_run(&live.run).with_context(|| {
-                format!(
-                    "verify committed index run through epoch {}",
-                    live.max_epoch
-                )
-            })?;
-        }
+        let active_segment_id = selection.tip_id();
+        let active_segment_end = selection.tip_end();
+        let last_frame_receipt = selection.last_frame_receipt;
+        let extents = selection.extents;
+        drop(selection.segments);
+
+        let (pack, pack_path) = open_segment_for_append(root, active_segment_id)?;
+        ensure!(
+            pack.metadata().context("stat active append segment")?.len() == active_segment_end,
+            "active segment length changed after recovery authentication"
+        );
+        let segments = Arc::new(SegmentSet::open(
+            root,
+            &extents,
+            options,
+            config.max_segment_bytes(),
+        )?);
         let ranges = loaded
             .runs
             .iter()
@@ -665,8 +835,8 @@ impl PackStore {
             runs_dir: root.join("runs"),
             pack,
             pack_path,
-            pack_map: Arc::new(pack_map),
-            lookup_pack_map: lookup_pack_map.map(Arc::new),
+            active_segment_id,
+            segments,
             runs: loaded.runs,
             level_run_counts,
             ranges,
@@ -694,6 +864,283 @@ impl PackStore {
             inflight_compaction_outputs: Arc::new(Mutex::new(HashSet::new())),
         })
     }
+}
+
+pub(super) const REBUILD_STAGING_DIRECTORY: &str = ".rebuild-staging-v1";
+
+/// Walks selected frame prefixes with one segment descriptor open at a time.
+/// The frame codec continues scanning any suffix for unsupported versions,
+/// while the callback sees only the authenticated canonical prefix.
+fn walk_selected_frames(
+    segments: &[SelectedSegment],
+    config: PackStoreConfig,
+    mut visit: impl FnMut(&File, PackSegmentId, u64, u64, u64, frame_codec::FrameHeader) -> Result<()>,
+) -> Result<()> {
+    for segment in segments {
+        let file = File::open(&segment.path)
+            .with_context(|| format!("open selected segment {}", segment.id))?;
+        walk_frames_from_epoch(
+            &file,
+            segment.first_epoch,
+            Some(FrameWalkSelection {
+                frame_count: segment.frame_count,
+                frame_end: segment.committed_end,
+            }),
+            |epoch, frame_start, frame_end, header| {
+                validate_frame_resource_bounds(header, config)?;
+                visit(&file, segment.id, epoch, frame_start, frame_end, header)
+            },
+        )
+        .with_context(|| format!("walk selected segment {}", segment.id))?;
+    }
+    Ok(())
+}
+
+fn prepare_rebuild_staging(runs_dir: &Path) -> Result<PathBuf> {
+    let staging = runs_dir.join(REBUILD_STAGING_DIRECTORY);
+    clear_rebuild_staging(runs_dir)?;
+    fs::create_dir(&staging)
+        .with_context(|| format!("create recovery staging {}", staging.display()))?;
+    sync_directory(runs_dir)?;
+    Ok(staging)
+}
+
+fn clear_rebuild_staging(runs_dir: &Path) -> Result<()> {
+    let staging = runs_dir.join(REBUILD_STAGING_DIRECTORY);
+    match fs::symlink_metadata(&staging) {
+        Ok(metadata) => {
+            ensure!(
+                metadata.file_type().is_dir() && !metadata.file_type().is_symlink(),
+                "recovery staging path is not an owned directory: {}",
+                staging.display()
+            );
+            fs::remove_dir_all(&staging).with_context(|| {
+                format!("remove interrupted recovery staging {}", staging.display())
+            })?;
+            sync_directory(runs_dir)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("inspect recovery staging {}", staging.display()));
+        }
+    }
+    Ok(())
+}
+
+fn compact_rebuild_carry(
+    loaded: &mut LoadedRuns,
+    staging_dir: &Path,
+    options: PackStoreOptions,
+    max_index_memory_bytes: u64,
+) -> Result<()> {
+    while loaded.runs.len() >= 2 {
+        let split = loaded.runs.len() - 2;
+        let level = loaded.runs[split].level;
+        if loaded.runs[split + 1].level != level {
+            break;
+        }
+        let inputs = loaded.runs[split..].to_vec();
+        let pending = build_compacted_run_from_inputs(
+            level,
+            &inputs,
+            staging_dir,
+            options.random_point_mmap,
+            loaded.decoded_index_bytes,
+            max_index_memory_bytes,
+        )?;
+        verify_run(&pending.run).context("verify recovery carry output")?;
+        let decoded_index_bytes = loaded
+            .decoded_index_bytes
+            .checked_sub(pending.input_memory_bytes)
+            .and_then(|bytes| bytes.checked_add(pending.run.memory_bytes))
+            .context("recovery carry decoded index bytes overflow")?;
+        ensure_rebuild_memory_bound(decoded_index_bytes, max_index_memory_bytes)?;
+        let index_entries = loaded
+            .index_entries
+            .checked_sub(pending.input_records)
+            .and_then(|entries| entries.checked_add(pending.output_records))
+            .context("recovery carry index entry count overflow")?;
+        let output = LiveRun {
+            run: Arc::clone(&pending.run),
+            level: pending.level,
+            min_epoch: pending.min_epoch,
+            max_epoch: pending.max_epoch,
+        };
+
+        for input in &inputs {
+            let path =
+                staging_dir.join(run_file_name(input.level, input.min_epoch, input.max_epoch));
+            fs::remove_file(&path)
+                .with_context(|| format!("remove recovery carry input {}", path.display()))?;
+        }
+        loaded.runs.truncate(split);
+        loaded.runs.push(output);
+        loaded.decoded_index_bytes = decoded_index_bytes;
+        loaded.index_entries = index_entries;
+    }
+    Ok(())
+}
+
+fn validate_rebuild_result(loaded: &LoadedRuns, plan: &RebuildPlan) -> Result<()> {
+    ensure!(
+        loaded.runs.len() == plan.runs.len(),
+        "recovery run count differs from its preflight plan"
+    );
+    ensure!(
+        loaded.decoded_index_bytes <= plan.peak_index_bytes,
+        "recovery resident index bytes exceed its preflight peak"
+    );
+    for (actual, planned) in loaded.runs.iter().zip(&plan.runs) {
+        ensure!(
+            actual.level == planned.level
+                && actual.min_epoch == planned.min_epoch
+                && actual.max_epoch == planned.max_epoch,
+            "recovery run shape differs from its preflight plan"
+        );
+        ensure!(
+            actual.run.record_count <= planned.record_count
+                && actual.run.memory_bytes <= planned.memory_bytes,
+            "recovery run size exceeds its preflight upper bound"
+        );
+    }
+    Ok(())
+}
+
+fn promote_rebuilt_runs(runs_dir: &Path, staging_dir: &Path, loaded: &LoadedRuns) -> Result<()> {
+    sync_directory(staging_dir)?;
+    crate::engine::failpoint::crash("recovery.rebuild.after-staging-sync");
+    for live in &loaded.runs {
+        let file_name = run_file_name(live.level, live.min_epoch, live.max_epoch);
+        let source = staging_dir.join(&file_name);
+        let destination = runs_dir.join(&file_name);
+        fs::rename(&source, &destination).with_context(|| {
+            format!(
+                "promote rebuilt run {} as {}",
+                source.display(),
+                destination.display()
+            )
+        })?;
+        crate::engine::failpoint::crash("recovery.rebuild.after-run-promotion");
+    }
+    sync_directory(runs_dir)?;
+    crate::engine::failpoint::crash("recovery.rebuild.after-run-directory-sync");
+    fs::remove_dir(staging_dir).with_context(|| {
+        format!(
+            "remove empty recovery staging directory {}",
+            staging_dir.display()
+        )
+    })?;
+    sync_directory(runs_dir)?;
+    Ok(())
+}
+
+fn reload_promoted_runs(
+    runs_dir: &Path,
+    staged: &LoadedRuns,
+    options: PackStoreOptions,
+    max_index_memory_bytes: u64,
+) -> Result<LoadedRuns> {
+    let mut loaded = LoadedRuns::default();
+    for live in &staged.runs {
+        let file_name = run_file_name(live.level, live.min_epoch, live.max_epoch);
+        let run = read_index_run_with_options(&runs_dir.join(&file_name), options)
+            .with_context(|| format!("reopen promoted recovery run {file_name}"))?;
+        verify_run(&run).with_context(|| format!("verify promoted recovery run {file_name}"))?;
+        charge_run_memory(&mut loaded, &run, max_index_memory_bytes)?;
+        loaded.runs.push(LiveRun {
+            run: Arc::new(run),
+            level: live.level,
+            min_epoch: live.min_epoch,
+            max_epoch: live.max_epoch,
+        });
+    }
+    ensure!(
+        loaded.index_entries == staged.index_entries,
+        "promoted recovery index entry count changed during canonical reopen"
+    );
+    Ok(loaded)
+}
+
+/// Rejects manifest-selected run metadata before any run file is opened or
+/// mapped. The estimate exactly matches the decoded fences, fixed filter
+/// descriptor, and per-run metadata charged after mapping.
+fn preflight_manifest_runs(current: &Manifest, config: PackStoreConfig) -> Result<()> {
+    let run_count =
+        u64::try_from(current.entries.len()).context("manifest run count does not fit u64")?;
+    let maximum_runs = u64::try_from(config.max_recent_runs())
+        .context("configured recent-run limit does not fit u64")?;
+    if run_count > maximum_runs {
+        return Err(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::RecentRuns,
+            actual: run_count,
+            maximum: maximum_runs,
+        }
+        .into());
+    }
+
+    let level_count = current.entries.iter().try_fold(0u64, |maximum, entry| {
+        u64::from(entry.level)
+            .checked_add(1)
+            .map(|count| maximum.max(count))
+            .context("manifest index level count overflows")
+    })?;
+    let maximum_levels = u64::from(config.max_index_levels());
+    if level_count > maximum_levels {
+        return Err(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::IndexLevels,
+            actual: level_count,
+            maximum: maximum_levels,
+        }
+        .into());
+    }
+
+    let decoded_index_bytes = current.entries.iter().try_fold(0u64, |total, entry| {
+        preflight_manifest_run_layout(entry)?;
+        total
+            .checked_add(manifest_run_memory_bytes(entry.record_count)?)
+            .context("manifest decoded index bytes overflow")
+    })?;
+    ensure_rebuild_memory_bound(decoded_index_bytes, config.max_index_memory_bytes())
+}
+
+fn preflight_manifest_run_layout(entry: &ManifestEntry) -> Result<()> {
+    let fence_count = entry.record_count.div_ceil(FENCE_INTERVAL as u64);
+    u32::try_from(fence_count).context("manifest run fence count does not fit u32")?;
+    usize::try_from(entry.record_count).context("manifest run record count does not fit usize")?;
+    let fence_bytes = fence_count
+        .checked_mul(FENCE_KEY_BYTES as u64)
+        .context("manifest run fence bytes overflow")?;
+    let filter_bytes = blocked_bloom_bytes(entry.record_count)?;
+    let records_offset = (INDEX_HEADER_LEN as u64)
+        .checked_add(fence_bytes)
+        .and_then(|bytes| bytes.checked_add(filter_bytes))
+        .context("manifest run records offset overflows")?;
+    let file_bytes = records_offset
+        .checked_add(
+            entry
+                .record_count
+                .checked_mul(INDEX_RECORD_LEN as u64)
+                .context("manifest run record bytes overflow")?,
+        )
+        .context("manifest run file bytes overflow")?;
+    usize::try_from(records_offset).context("manifest run records offset does not fit usize")?;
+    usize::try_from(file_bytes).context("manifest run file bytes do not fit usize")?;
+    ensure!(
+        entry.records_offset == records_offset && entry.file_bytes == file_bytes,
+        "manifest run geometry does not match its record count"
+    );
+    Ok(())
+}
+
+fn manifest_run_memory_bytes(record_count: u64) -> Result<u64> {
+    ensure!(record_count > 0, "manifest run has no records");
+    record_count
+        .div_ceil(FENCE_INTERVAL as u64)
+        .checked_mul(FENCE_KEY_BYTES as u64)
+        .and_then(|bytes| bytes.checked_add(32))
+        .and_then(|bytes| bytes.checked_add(RUN_METADATA_BYTES))
+        .context("manifest run metadata bytes overflow")
 }
 
 fn rebuild_decode_workspace_bytes(
@@ -790,44 +1237,430 @@ fn is_unsupported_artifact_version(error: &anyhow::Error) -> bool {
         .is_some_and(|error| matches!(error, PackStoreError::UnsupportedVersion { .. }))
 }
 
-/// Authenticates the complete marker- or manifest-selected frame prefix before
-/// recovery mutates any pack-store artifact. Validation hashes both variable
-/// sections, verifies the footer/full-frame digest, and parses every canonical
-/// metadata row through a bounded sequential mapping.
-fn authenticate_committed_frame_prefix(
-    pack: &File,
-    pack_path: &Path,
-    scan: &FrameScan,
-    committed_frames: u64,
-) -> Result<Vec<ManifestExtent>> {
+fn is_non_rebuildable_run_error(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<PackStoreError>().is_some_and(|error| {
+        matches!(
+            error,
+            PackStoreError::UnsupportedVersion { .. } | PackStoreError::LimitExceeded { .. }
+        )
+    })
+}
+
+/// Authenticates the required segment prefix and classifies later orphan
+/// segments without changing a directory entry or retaining orphan resources.
+fn scan_segment_catalog(
+    root: &Path,
+    required_tip: PackSegmentId,
+    config: PackStoreConfig,
+) -> Result<ScannedCatalog> {
+    let entries = discover_segment_catalog(root)?;
+    ensure!(!entries.is_empty(), "required pack segment 0 is missing");
+    let required_count = required_segment_prefix(&entries, required_tip)?.len();
+    let mut first_epoch = 0u64;
+    let mut required = Vec::with_capacity(required_count);
+    for entry in &entries[..required_count] {
+        let segment_first_epoch = first_epoch;
+        let (file, path, file_bytes) = open_bounded_segment(root, entry, config)?;
+        let scan = walk_frames_from_epoch(&file, first_epoch, None, |_, _, _, _| Ok(()))
+            .with_context(|| format!("scan pack segment {}", entry.id))?;
+        first_epoch = first_epoch
+            .checked_add(scan.complete_count)
+            .context("segment frame epoch overflows")?;
+        required.push(ScannedSegment {
+            id: entry.id,
+            path,
+            first_epoch: segment_first_epoch,
+            complete_frames: scan.complete_count,
+            complete_end: scan.last_end,
+            file_bytes,
+        });
+    }
+
+    let mut orphan_complete_frames = 0u64;
+    for entry in &entries[required_count..] {
+        let (file, _, _) = open_bounded_segment(root, entry, config)?;
+        let scan = walk_frames_from_epoch(&file, first_epoch, None, |_, _, _, _| Ok(()))
+            .with_context(|| format!("classify orphan pack segment {}", entry.id))?;
+        first_epoch = first_epoch
+            .checked_add(scan.complete_count)
+            .context("orphan segment frame epoch overflows")?;
+        orphan_complete_frames = orphan_complete_frames
+            .checked_add(scan.complete_count)
+            .context("orphan segment frame count overflows")?;
+    }
+    Ok(ScannedCatalog {
+        entries,
+        required,
+        orphan_complete_frames,
+    })
+}
+
+fn open_bounded_segment(
+    root: &Path,
+    entry: &SegmentCatalogEntry,
+    config: PackStoreConfig,
+) -> Result<(File, PathBuf, u64)> {
+    let (file, path) = open_segment_read_only(root, entry.id)?;
     ensure!(
-        committed_frames <= scan.frame_ends.len() as u64,
-        "committed frame prefix requires {committed_frames} frames but only {} complete frames exist",
-        scan.frame_ends.len()
+        path == entry.path,
+        "segment discovery path changed during open"
     );
-    if committed_frames == 0 {
-        return Ok(Vec::new());
+    let file_bytes = file
+        .metadata()
+        .with_context(|| format!("stat pack segment {}", path.display()))?
+        .len();
+    if file_bytes > config.max_segment_bytes() {
+        return Err(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::SegmentBytes,
+            actual: file_bytes,
+            maximum: config.max_segment_bytes(),
+        }
+        .into());
     }
-    let last_index = usize::try_from(committed_frames - 1)
-        .context("committed frame count does not fit usize")?;
-    let committed_end = *scan
-        .frame_ends
-        .get(last_index)
-        .context("committed frame prefix is incomplete")?;
-    let map = Mmap::map_sequential(pack, committed_end, pack_path)?;
-    let mut frame_start = SEGMENT_HEADER_LEN as u64;
+    Ok((file, path, file_bytes))
+}
+
+fn select_empty_history(catalog: &[ScannedSegment]) -> Result<SegmentSelection> {
+    let _ = required_scanned_prefix(catalog, PackSegmentId::INITIAL)?;
+    let initial = &catalog[0];
+    Ok(SegmentSelection {
+        segments: vec![SelectedSegment {
+            id: initial.id,
+            path: initial.path.clone(),
+            first_epoch: 0,
+            frame_count: 0,
+            committed_end: SEGMENT_HEADER_LEN as u64,
+        }],
+        extents: Vec::new(),
+        frame_count: 0,
+        last_frame_receipt: None,
+    })
+}
+
+fn select_manifest_history(
+    catalog: &[ScannedSegment],
+    current: &Manifest,
+    config: PackStoreConfig,
+) -> Result<SegmentSelection> {
+    let tip = current
+        .extents
+        .last()
+        .context("manifest has no segment extents")?
+        .segment_id;
+    let prefix = required_scanned_prefix(catalog, tip)?;
+    ensure!(
+        prefix.len() == current.extents.len(),
+        "manifest segment extent count differs from its required segment prefix"
+    );
+    let mut selected = Vec::with_capacity(prefix.len());
+    for (index, (segment, extent)) in prefix.iter().zip(&current.extents).enumerate() {
+        ensure!(
+            segment.id == extent.segment_id && segment.first_epoch == extent.first_epoch,
+            "manifest generation {} does not bind the selected frame history",
+            current.generation
+        );
+        ensure!(
+            extent.frame_count <= segment.complete_frames,
+            "manifest generation {} commits {} frames in segment {} but only {} are complete",
+            current.generation,
+            extent.frame_count,
+            segment.id,
+            segment.complete_frames
+        );
+        if index + 1 < prefix.len() {
+            ensure!(
+                segment.file_bytes == extent.frame_end
+                    && segment.complete_frames == extent.frame_count
+                    && segment.complete_end == extent.frame_end,
+                "committed segment {} has an incomplete or orphan suffix before the manifest tip",
+                segment.id
+            );
+        }
+        selected.push(SelectedSegment {
+            id: segment.id,
+            path: segment.path.clone(),
+            first_epoch: segment.first_epoch,
+            frame_count: extent.frame_count,
+            committed_end: extent.frame_end,
+        });
+    }
+    let selection = authenticate_segment_selection(selected, config)?;
+    ensure!(
+        selection.extents == current.extents,
+        "manifest generation {} does not bind the selected frame history",
+        current.generation
+    );
+    Ok(selection)
+}
+
+fn select_commit_horizon(
+    catalog: &[ScannedSegment],
+    horizon: PackCommitHorizon,
+    config: PackStoreConfig,
+) -> Result<SegmentSelection> {
+    let prefix = required_scanned_prefix(catalog, horizon.segment_id)?;
+    let mut selected = Vec::with_capacity(prefix.len());
+    for (index, segment) in prefix.iter().enumerate() {
+        let is_tip = index + 1 == prefix.len();
+        let selected_count = if is_tip {
+            let local_epoch = horizon
+                .epoch
+                .checked_sub(segment.first_epoch)
+                .with_context(|| {
+                    format!(
+                        "pack commit marker epoch {} precedes segment {}",
+                        horizon.epoch, segment.id
+                    )
+                })?;
+            local_epoch
+                .checked_add(1)
+                .context("marker segment frame count overflows")?
+        } else {
+            segment.complete_frames
+        };
+        ensure!(
+            selected_count <= segment.complete_frames,
+            "pack commit marker requires frame {} in segment {} but only {} complete frames exist",
+            horizon.epoch,
+            segment.id,
+            segment.complete_frames
+        );
+        let committed_end = if is_tip {
+            horizon.frame_end
+        } else {
+            segment.complete_end
+        };
+        if !is_tip {
+            ensure!(
+                selected_count > 0 && segment.file_bytes == committed_end,
+                "committed segment {} is incomplete before marker segment {}",
+                segment.id,
+                horizon.segment_id
+            );
+        }
+        selected.push(SelectedSegment {
+            id: segment.id,
+            path: segment.path.clone(),
+            first_epoch: segment.first_epoch,
+            frame_count: selected_count,
+            committed_end,
+        });
+    }
+    let selection = authenticate_segment_selection(selected, config)?;
+    let receipt = selection
+        .last_frame_receipt
+        .context("pack commit marker frame is absent")?;
+    ensure!(
+        receipt.segment_id == horizon.segment_id,
+        "pack commit marker segment {} does not match frame {} segment {}",
+        horizon.segment_id,
+        horizon.epoch,
+        receipt.segment_id
+    );
+    ensure!(
+        receipt.frame_end == horizon.frame_end,
+        "pack commit marker end {} does not match frame {} end {}",
+        horizon.frame_end,
+        horizon.epoch,
+        receipt.frame_end
+    );
+    ensure!(
+        receipt.context == horizon.context,
+        "pack commit marker context does not match frame {}",
+        horizon.epoch
+    );
+    ensure!(
+        receipt.frame_sha256 == horizon.frame_sha256,
+        "pack commit marker frame digest does not match frame {}",
+        horizon.epoch
+    );
+    Ok(selection)
+}
+
+fn required_scanned_prefix(
+    catalog: &[ScannedSegment],
+    tip: PackSegmentId,
+) -> Result<&[ScannedSegment]> {
+    let index = catalog
+        .iter()
+        .position(|segment| segment.id == tip)
+        .with_context(|| format!("required pack segment {tip} is missing"))?;
+    Ok(&catalog[..=index])
+}
+
+fn authenticate_segment_selection(
+    segments: Vec<SelectedSegment>,
+    config: PackStoreConfig,
+) -> Result<SegmentSelection> {
+    ensure!(!segments.is_empty(), "selected segment history is empty");
     let mut extents = Vec::new();
-    for epoch in 0..committed_frames {
-        let index = usize::try_from(epoch).context("committed frame epoch does not fit usize")?;
-        let frame_end = *scan
-            .frame_ends
-            .get(index)
-            .with_context(|| format!("committed frame {epoch} is absent"))?;
-        let (receipt, _) =
-            verify_frame(&map, PackSegmentId::INITIAL, frame_start, frame_end, epoch)
-                .with_context(|| format!("authenticate committed frame {epoch}"))?;
-        manifest::append_frame_extent(&mut extents, receipt)?;
-        frame_start = frame_end;
+    let mut frame_count = 0u64;
+    let mut last_frame_receipt = None;
+    for segment in &segments {
+        let committed_end = segment.committed_end();
+        let file = File::open(&segment.path)
+            .with_context(|| format!("open selected segment {}", segment.id))?;
+        ensure!(
+            file.metadata()
+                .with_context(|| format!("stat selected segment {}", segment.id))?
+                .len()
+                >= committed_end,
+            "selected segment {} length does not match frame prefix end {committed_end}",
+            segment.id,
+        );
+        let map = Mmap::map_sequential(&file, committed_end, &segment.path)?;
+        walk_frames_from_epoch(
+            &file,
+            segment.first_epoch,
+            Some(FrameWalkSelection {
+                frame_count: segment.frame_count,
+                frame_end: committed_end,
+            }),
+            |epoch, frame_start, frame_end, header| {
+                validate_frame_resource_bounds(header, config)?;
+                let (receipt, _) = verify_frame(&map, segment.id, frame_start, frame_end, epoch)
+                    .with_context(|| format!("authenticate committed frame {epoch}"))?;
+                manifest::append_frame_extent(&mut extents, receipt)?;
+                last_frame_receipt = Some(receipt);
+                frame_count = frame_count
+                    .checked_add(1)
+                    .context("authenticated frame count overflows")?;
+                Ok(())
+            },
+        )
+        .with_context(|| format!("walk selected segment {}", segment.id))?;
     }
-    Ok(extents)
+    Ok(SegmentSelection {
+        segments,
+        extents,
+        frame_count,
+        last_frame_receipt,
+    })
+}
+
+fn validate_frame_resource_bounds(
+    header: frame_codec::FrameHeader,
+    config: PackStoreConfig,
+) -> Result<()> {
+    if header.rows > config.max_frame_rows() {
+        return Err(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::FrameRows,
+            actual: header.rows,
+            maximum: config.max_frame_rows(),
+        }
+        .into());
+    }
+    let payload_bytes = header
+        .metadata_bytes
+        .checked_add(header.value_bytes)
+        .context("frame payload length overflows")?;
+    if payload_bytes > config.max_frame_payload_bytes() {
+        return Err(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::FramePayloadBytes,
+            actual: payload_bytes,
+            maximum: config.max_frame_payload_bytes(),
+        }
+        .into());
+    }
+    if header.frame_bytes > config.max_pending_bytes() {
+        return Err(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::PendingBytes,
+            actual: header.frame_bytes,
+            maximum: config.max_pending_bytes(),
+        }
+        .into());
+    }
+    let isolated_segment_bytes = PACK_SEGMENT_HEADER_LEN
+        .checked_add(header.frame_bytes)
+        .context("isolated frame segment length overflows")?;
+    if isolated_segment_bytes > config.max_segment_bytes() {
+        return Err(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::SegmentBytes,
+            actual: isolated_segment_bytes,
+            maximum: config.max_segment_bytes(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+fn reconcile_segment_files(
+    root: &Path,
+    catalog: &[SegmentCatalogEntry],
+    selection: &SegmentSelection,
+) -> Result<()> {
+    let tip = selection.tip_id();
+    let tip_end = selection.tip_end();
+    let tip_segment = catalog
+        .iter()
+        .find(|segment| segment.id == tip)
+        .context("selected tip segment disappeared from the recovery catalog")?;
+    let tip_bytes = fs::metadata(&tip_segment.path)
+        .with_context(|| format!("stat selected tip segment {tip}"))?
+        .len();
+    ensure!(
+        tip_bytes >= tip_end,
+        "selected tip segment {tip} became shorter after authentication"
+    );
+    if tip_bytes != tip_end {
+        let writable = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&tip_segment.path)
+            .with_context(|| format!("open segment {} for recovery truncation", tip))?;
+        writable
+            .set_len(tip_end)
+            .with_context(|| format!("truncate segment {tip} to committed prefix"))?;
+        writable
+            .sync_data()
+            .with_context(|| format!("sync truncated segment {tip}"))?;
+    }
+    for segment in catalog.iter().filter(|segment| segment.id > tip) {
+        fs::remove_file(&segment.path)
+            .with_context(|| format!("remove orphan segment {}", segment.id))?;
+        sync_directory(root)?;
+    }
+    Ok(())
+}
+
+/// Removes only derived visibility artifacts after payload authentication and
+/// rebuild preflight have succeeded. Segment reconciliation is deliberately a
+/// separate operation so payload authority cannot be hidden in index cleanup.
+fn clear_derived_visibility(root: &Path) -> Result<()> {
+    let runs_dir = root.join("runs");
+    for entry in fs::read_dir(&runs_dir)
+        .with_context(|| format!("read index-run directory {}", runs_dir.display()))?
+    {
+        let entry = entry.context("read index-run recovery entry")?;
+        let path = entry.path();
+        let remove = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                manifest::is_run_file_name(name) || manifest::is_run_temp_file_name(name)
+            });
+        if remove {
+            fs::remove_file(&path)
+                .with_context(|| format!("remove derived index run {}", path.display()))?;
+        }
+    }
+    clear_rebuild_staging(&runs_dir)?;
+    for entry in fs::read_dir(root)
+        .with_context(|| format!("read pack root {} for recovery", root.display()))?
+    {
+        let entry = entry.context("read pack recovery entry")?;
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if manifest::parse_manifest_file_name(name).is_some()
+            || manifest::is_manifest_temp_file_name(name)
+        {
+            fs::remove_file(&path)
+                .with_context(|| format!("remove derived manifest {}", path.display()))?;
+        }
+    }
+    sync_directory(&runs_dir)?;
+    sync_directory(root)?;
+    Ok(())
 }

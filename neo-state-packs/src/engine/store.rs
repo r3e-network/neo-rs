@@ -10,7 +10,7 @@ use super::mmap::Mmap;
 use crate::{PACK_KEY_BYTES, PackOpKind, PackOperation, PackStageTotals};
 use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::os::unix::fs::{FileExt, OpenOptionsExt};
@@ -32,7 +32,10 @@ mod hashing;
 use hashing::{digest, index_structure_digest, index_structure_digest_parts};
 #[path = "store/lifecycle/io.rs"]
 mod io;
-use io::{clear_stale_temp_files, sync_directory, sync_parent_directory};
+use io::{
+    clear_interrupted_store_creation, clear_stale_temp_files, preflight_store_creation,
+    sync_directory, sync_parent_directory,
+};
 #[path = "store/lifecycle/lease.rs"]
 mod lease;
 use lease::acquire_writer_lease;
@@ -41,13 +44,12 @@ pub use frame_builder::PackFrameBuilder;
 #[path = "store/format/frame_codec.rs"]
 mod frame_codec;
 use frame_codec::{
-    FRAME_METADATA_DIGEST_DOMAIN, FRAME_VALUE_DIGEST_DOMAIN, FramePayloadSection, FrameScan,
-    PendingFrameRow, decode_frame_metadata, encode_frame_footer, encode_frame_header,
+    FRAME_METADATA_DIGEST_DOMAIN, FRAME_VALUE_DIGEST_DOMAIN, FramePayloadSection,
+    FrameWalkSelection, PendingFrameRow, encode_frame_footer, encode_frame_header,
     encode_frame_payload, encode_pending_rows, frame_digest, frame_metadata_digest,
-    frame_value_digest, read_frame_receipt, read_frame_receipt_at,
-    reset_derived_state_to_frame_prefix, scan_frame_metadata_distinct_keys, scan_frames,
+    frame_value_digest, read_frame_receipt_at, scan_frame_metadata_distinct_keys,
     validate_frame_footer, validate_frame_header, validate_payload_rows,
-    validate_payload_rows_with_progress, verify_frame,
+    validate_payload_rows_with_progress, verify_frame, walk_frames_from_epoch,
 };
 mod compaction;
 use compaction::*;
@@ -75,6 +77,9 @@ mod scrub_api;
 #[path = "store/format/segment.rs"]
 mod segment;
 pub(crate) use segment::initial_segment_exists;
+#[path = "store/format/segment_set.rs"]
+mod segment_set;
+use segment_set::{SegmentMapping, SegmentSet};
 
 const FRAME_MAGIC: &[u8; 8] = b"N3PACK02";
 const FRAME_FOOTER_MAGIC: &[u8; 8] = b"N3PKEND2";
@@ -352,8 +357,7 @@ struct PendingAppend {
 struct ValidatedAppend {
     receipt: PackFrameReceipt,
     stage_totals: PackStageTotals,
-    pack_map: Arc<Mmap>,
-    lookup_pack_map: Option<Arc<Mmap>>,
+    segments: Arc<SegmentSet>,
     runs: Vec<LiveRun>,
     ranges: Vec<RunRange>,
     decoded_index_bytes: u64,
@@ -371,7 +375,7 @@ struct RebuildMetrics {
     wall_ns: u64,
 }
 
-/// Append-only pack store: one identified operation segment, immutable
+/// Append-only pack store: identified operation segments, immutable
 /// sorted index runs (`runs/`), and immutable manifest generations gating
 /// visibility. Single-writer: callers serialize appends (the node shadow
 /// writer holds it behind a mutex); readers pin generations through
@@ -381,10 +385,11 @@ pub struct PackStore {
     runs_dir: PathBuf,
     pack: File,
     pack_path: PathBuf,
-    /// Read-only pack mapping, replaced after every append and on open.
-    pack_map: Arc<Mmap>,
-    /// Separate sparse indexed-read view when random advice is explicitly on.
-    lookup_pack_map: Option<Arc<Mmap>>,
+    /// Segment currently owned by the append writer. It may be one segment
+    /// ahead of the visible set while a prepared append awaits activation.
+    active_segment_id: PackSegmentId,
+    /// Exact authenticated segment prefixes of the visible generation.
+    segments: Arc<SegmentSet>,
     /// Live runs of the current manifest generation, sorted by epoch range.
     runs: Vec<LiveRun>,
     /// Small per-level directory used by debt checks on the commit path.
@@ -466,19 +471,21 @@ fn manifest_entry_of(live: &LiveRun) -> ManifestEntry {
     }
 }
 
-/// Publishes a rebuilt run set as the next generation after every manifest
-/// file currently on disk (including unparseable ones).
+fn next_rebuilt_manifest_generation(newest_generation: Option<u64>) -> Result<u64> {
+    newest_generation
+        .unwrap_or(0)
+        .checked_add(1)
+        .context("manifest generation overflows")
+}
+
+/// Publishes a rebuilt run set at the generation proved before recovery was
+/// allowed to mutate segment or derived artifacts.
 fn publish_rebuilt_manifest(
     root: &Path,
-    manifests: &[(u64, PathBuf)],
+    generation: u64,
     extents: &[ManifestExtent],
     loaded: &LoadedRuns,
 ) -> Result<u64> {
-    let generation = manifests
-        .first()
-        .map_or(0, |(generation, _)| *generation)
-        .checked_add(1)
-        .context("manifest generation overflows")?;
     let entries = loaded.runs.iter().map(manifest_entry_of).collect();
     manifest::publish_manifest(
         root,

@@ -580,14 +580,131 @@ impl ShadowPackWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
     use tempfile::tempdir;
 
     const INDEX_MEMORY_BOUND: u64 = 64 * 1024 * 1024;
+    const INITIALIZATION_CRASH_ROOT_ENV: &str = "NEO_STATE_PACKS_INITIALIZATION_CRASH_TEST_ROOT";
+    const INITIALIZATION_CRASH_BOUNDARIES: [&str; 4] = [
+        "segment.header.before-sync",
+        "segment.header.after-sync",
+        "segment.header.after-rename",
+        "segment.header.after-directory-sync",
+    ];
 
     fn test_config() -> PackStoreConfig {
         PackStoreConfig::default()
             .with_max_index_memory_bytes(INDEX_MEMORY_BOUND)
             .expect("valid shadow test configuration")
+    }
+
+    #[test]
+    #[ignore = "subprocess worker selected by initialization_crash_boundaries_are_restartable"]
+    fn initialization_crash_worker() {
+        let root = std::env::var_os(INITIALIZATION_CRASH_ROOT_ENV)
+            .map(std::path::PathBuf::from)
+            .expect("initialization crash root is set");
+        let _writer = ShadowPackWriter::open_or_create(&root, test_config())
+            .expect("start shadow pack initialization");
+        panic!("configured initialization crash failpoint was not reached");
+    }
+
+    #[test]
+    fn initialization_crash_boundaries_are_restartable() {
+        for boundary in INITIALIZATION_CRASH_BOUNDARIES {
+            let root = tempdir().expect("temporary initialization crash root");
+            let output =
+                Command::new(std::env::current_exe().expect("resolve current test executable"))
+                    .arg("--ignored")
+                    .arg("--exact")
+                    .arg("shadow::tests::initialization_crash_worker")
+                    .arg("--test-threads=1")
+                    .env(INITIALIZATION_CRASH_ROOT_ENV, root.path())
+                    .env(crate::engine::FAILPOINT_ENVIRONMENT_VARIABLE, boundary)
+                    .output()
+                    .expect("run initialization crash worker");
+            assert_eq!(
+                output.status.code(),
+                Some(crate::engine::FAILPOINT_EXIT_CODE),
+                "failpoint {boundary} was not reached\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+
+            let pending = root
+                .path()
+                .join(format!("{}.pending", PackSegmentId::INITIAL.file_name()));
+            let canonical = root.path().join(PackSegmentId::INITIAL.file_name());
+            assert_eq!(
+                pending.exists(),
+                matches!(
+                    boundary,
+                    "segment.header.before-sync" | "segment.header.after-sync"
+                ),
+                "unexpected pending segment state at {boundary}"
+            );
+            assert_eq!(
+                canonical.exists(),
+                matches!(
+                    boundary,
+                    "segment.header.after-rename" | "segment.header.after-directory-sync"
+                ),
+                "unexpected canonical segment state at {boundary}"
+            );
+
+            let mut writer = ShadowPackWriter::open_or_create(root.path(), test_config())
+                .unwrap_or_else(|error| panic!("restart after {boundary}: {error:#}"));
+            assert_eq!(writer.store.open_validation().frames, 0);
+            assert!(!pending.exists());
+            assert_eq!(
+                std::fs::metadata(&canonical)
+                    .expect("stat recovered initial segment")
+                    .len(),
+                PACK_SEGMENT_HEADER_LEN
+            );
+            assert!(
+                std::fs::read_dir(root.path().join("runs"))
+                    .expect("read recovered runs directory")
+                    .next()
+                    .is_none()
+            );
+
+            let recovered_key = node_key(0x44);
+            let recovered_value = b"post-initialization-crash".to_vec();
+            let prepared = writer
+                .prepare_state_overlay(
+                    frame_context(1, 1, 0, 1),
+                    vec![(recovered_key.clone(), Some(recovered_value.clone()))],
+                )
+                .unwrap_or_else(|error| panic!("prepare frame after {boundary}: {error:#}"))
+                .expect("recovered frame contains one node operation");
+            let receipt = writer
+                .activate_prepared(prepared)
+                .unwrap_or_else(|error| panic!("activate frame after {boundary}: {error:#}"));
+            assert_eq!(receipt.epoch, 0);
+            assert_eq!(receipt.frames_total, 1);
+            let high_water = ShadowHighWaterRecord::new(&receipt);
+            drop(writer);
+
+            let reopened = ShadowPackWriter::open_or_create_at_high_water(
+                root.path(),
+                test_config(),
+                Some(&high_water),
+            )
+            .unwrap_or_else(|error| panic!("high-water reopen after {boundary}: {error:#}"));
+            assert_eq!(reopened.store.open_validation().frames, 1);
+            let recovered_key: [u8; PACK_KEY_BYTES] = recovered_key
+                .try_into()
+                .expect("fixed-length recovered node key");
+            assert_eq!(
+                reopened
+                    .store
+                    .get(&recovered_key)
+                    .expect("read frame written after initialization recovery"),
+                Some(recovered_value),
+                "recovered value differs after {boundary}"
+            );
+        }
     }
 
     fn node_key(tag: u8) -> Vec<u8> {

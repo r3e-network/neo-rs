@@ -1,5 +1,12 @@
-use super::segment::SEGMENT_HEADER_LEN;
+use super::segment::create_segment;
 use super::*;
+
+fn publish_append_manifest(root: &Path, manifest: &Manifest) -> Result<()> {
+    crate::engine::failpoint::crash("append.manifest.before-publication");
+    manifest::publish_manifest(root, manifest)?;
+    crate::engine::failpoint::crash("append.manifest.after-publication");
+    Ok(())
+}
 
 impl PackStore {
     /// Creates a bounded store-owned builder when aggregate value bytes are
@@ -45,6 +52,7 @@ impl PackStore {
             value_bytes,
             self.config.max_frame_payload_bytes(),
             self.config.max_pending_bytes(),
+            self.config.max_segment_bytes(),
         )
     }
 
@@ -108,11 +116,19 @@ impl PackStore {
                 .checked_add(len)
                 .context("frame value length overflows")
         })?;
-        self.ensure_frame_limits(rows_u64, metadata_bytes, value_bytes)?;
+        let frame_bytes = self.ensure_frame_limits(rows_u64, metadata_bytes, value_bytes)?;
         self.ensure_index_memory(rows, rows)?;
-        let frame_start = self.prepare_frame_start()?;
         let (metadata, values, entries) = encode_frame_payload(operations)?;
-        self.prepare_encoded_append(frame_start, context, rows, metadata, values, entries)
+        let (segment_id, frame_start) = self.prepare_frame_start(frame_bytes)?;
+        self.prepare_encoded_append(
+            segment_id,
+            frame_start,
+            context,
+            rows,
+            metadata,
+            values,
+            entries,
+        )
     }
 
     /// Prepares a frame encoded directly from borrowed values.
@@ -126,34 +142,76 @@ impl PackStore {
             "frame builder belongs to another pack-store handle"
         );
         let layout = builder.preflight()?;
-        self.ensure_frame_limits(
+        let frame_bytes = self.ensure_frame_limits(
             u64::try_from(layout.rows).context("frame row count does not fit u64")?,
             layout.metadata_bytes,
             layout.value_bytes,
         )?;
         self.ensure_index_memory(layout.rows, layout.distinct_keys)?;
-        let frame_start = self.prepare_frame_start()?;
         let (context, rows, metadata, values, entries) = builder.finish()?;
-        self.prepare_encoded_append(frame_start, context, rows, metadata, values, entries)
+        let (segment_id, frame_start) = self.prepare_frame_start(frame_bytes)?;
+        self.prepare_encoded_append(
+            segment_id,
+            frame_start,
+            context,
+            rows,
+            metadata,
+            values,
+            entries,
+        )
     }
 
-    fn prepare_frame_start(&self) -> Result<u64> {
+    fn prepare_frame_start(&mut self, frame_bytes: u64) -> Result<(PackSegmentId, u64)> {
         ensure!(
             self.pending_append.is_none(),
             "a prepared append is already awaiting activation"
         );
+        ensure!(
+            self.active_segment_id == self.segments.tip_id(),
+            "append pack contains an unresolved orphan segment; reopen before preparing another frame"
+        );
         let physical_len = self.pack.metadata().context("stat append pack")?.len();
-        let visible_len = u64::try_from(self.pack_map.as_slice().len())
-            .context("visible pack length does not fit u64")?;
+        let visible_len = self.segments.tip_committed_bytes();
         ensure!(
             physical_len == visible_len,
             "append pack contains an unresolved orphan suffix; reopen before preparing another frame"
         );
-        Ok(physical_len)
+        let appended_len = physical_len
+            .checked_add(frame_bytes)
+            .context("appended segment length overflows")?;
+        if physical_len > PACK_SEGMENT_HEADER_LEN
+            && appended_len > self.config.target_segment_bytes()
+        {
+            let next_extent_count = self
+                .extents
+                .len()
+                .checked_add(1)
+                .context("manifest segment count overflows")?;
+            if next_extent_count > manifest::HARD_MAX_MANIFEST_EXTENTS {
+                return Err(PackStoreError::LimitExceeded {
+                    limit: PackStoreLimit::Segments,
+                    actual: u64::try_from(next_extent_count)
+                        .context("manifest segment count does not fit u64")?,
+                    maximum: manifest::HARD_MAX_MANIFEST_EXTENTS as u64,
+                }
+                .into());
+            }
+            let next_segment = self
+                .active_segment_id
+                .checked_next()
+                .context("pack segment identity overflows")?;
+            let (pack, pack_path) = create_segment(&self.root, next_segment)?;
+            self.pack = pack;
+            self.pack_path = pack_path;
+            self.active_segment_id = next_segment;
+            return Ok((next_segment, PACK_SEGMENT_HEADER_LEN));
+        }
+        Ok((self.active_segment_id, physical_len))
     }
 
     fn prepare_encoded_append(
         &mut self,
+        segment_id: PackSegmentId,
         frame_start: u64,
         context: PackFrameContext,
         rows: usize,
@@ -186,7 +244,6 @@ impl PackStore {
             .0;
         let prospective = self.ensure_index_memory(rows, distinct_key_count)?;
         let epoch = self.next_epoch;
-        let segment_id = PackSegmentId::INITIAL;
         let next_prepare_serial = self
             .next_prepare_serial
             .checked_add(1)
@@ -240,6 +297,7 @@ impl PackStore {
             .context("write frame metadata")?;
         self.pack.write_all(&values).context("write frame values")?;
         self.pack.write_all(&footer).context("write frame footer")?;
+        crate::engine::failpoint::crash("append.frame.after-write");
         let append_write_ns = duration_ns(write_started.elapsed());
         let pack_len = frame_start
             .checked_add(frame_bytes)
@@ -294,6 +352,7 @@ impl PackStore {
         let publication_overlap_ns = duration_ns(overlap_started.elapsed());
         let (pack_sync_result, pack_sync_ns) = pack_sync;
         pack_sync_result?;
+        crate::engine::failpoint::crash("append.frame.after-sync");
         let (index_result, index_build_ns) = index_build;
         let (min_key, max_key, fences, filter, index_bytes, records_sha256) = index_result?;
         let final_path = self.runs_dir.join(run_file_name(0, epoch, epoch));
@@ -307,11 +366,13 @@ impl PackStore {
         index_file
             .write_all(&index_bytes)
             .with_context(|| format!("write index run {}", temp_path.display()))?;
+        crate::engine::failpoint::crash("append.run.before-sync");
         let index_write_ns = duration_ns(index_write_started.elapsed());
         let index_sync_started = Instant::now();
         index_file
             .sync_data()
             .with_context(|| format!("sync index run {}", temp_path.display()))?;
+        crate::engine::failpoint::crash("append.run.after-sync");
         let index_sync_ns = duration_ns(index_sync_started.elapsed());
         drop(index_file);
         fs::rename(&temp_path, &final_path).with_context(|| {
@@ -321,8 +382,10 @@ impl PackStore {
                 final_path.display()
             )
         })?;
+        crate::engine::failpoint::crash("append.run.after-rename");
         let directory_sync_started = Instant::now();
         sync_directory(&self.runs_dir)?;
+        crate::engine::failpoint::crash("append.run.after-directory-sync");
         let directory_sync_ns = duration_ns(directory_sync_started.elapsed());
 
         let file = File::open(&final_path)
@@ -433,6 +496,17 @@ impl PackStore {
             }
             .into());
         }
+        let segment_bytes = PACK_SEGMENT_HEADER_LEN
+            .checked_add(frame_bytes)
+            .context("encoded segment length overflows")?;
+        if segment_bytes > self.config.max_segment_bytes() {
+            return Err(PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::SegmentBytes,
+                actual: segment_bytes,
+                maximum: self.config.max_segment_bytes(),
+            }
+            .into());
+        }
         Ok(frame_bytes)
     }
 
@@ -477,10 +551,9 @@ impl PackStore {
             validated.generation,
             &validated.runs,
             &validated.ranges,
-            &validated.pack_map,
-            validated.lookup_pack_map.as_ref(),
+            &validated.segments,
         )?);
-        manifest::publish_manifest(&self.root, &validated.manifest)?;
+        publish_append_manifest(&self.root, &validated.manifest)?;
         self.install_validated_append(validated);
         Ok(SealedAppend {
             commit_horizon,
@@ -500,7 +573,7 @@ impl PackStore {
         committed: PackCommitHorizon,
     ) -> Result<()> {
         let validated = self.validate_prepared(prepared, committed)?;
-        manifest::publish_manifest(&self.root, &validated.manifest)?;
+        publish_append_manifest(&self.root, &validated.manifest)?;
         self.install_validated_append(validated);
         Ok(())
     }
@@ -551,8 +624,8 @@ impl PackStore {
             "prepared frame activation is out of order"
         );
         ensure!(
-            prepared.receipt.segment_id == PackSegmentId::INITIAL,
-            "prepared frame names an unavailable segment"
+            prepared.receipt.segment_id == self.active_segment_id,
+            "prepared frame does not belong to the active append segment"
         );
         let next_epoch = self
             .next_epoch
@@ -573,14 +646,15 @@ impl PackStore {
         );
         let expected_frame_start = self
             .last_frame_receipt
-            .map_or(SEGMENT_HEADER_LEN as u64, |receipt| receipt.frame_end);
+            .filter(|receipt| receipt.segment_id == prepared.receipt.segment_id)
+            .map_or(PACK_SEGMENT_HEADER_LEN, |receipt| receipt.frame_end);
         ensure!(
             prepared.receipt.frame_start == expected_frame_start,
             "prepared frame does not continue the committed pack tail"
         );
         let actual_receipt = read_frame_receipt_at(
             &self.pack,
-            PackSegmentId::INITIAL,
+            prepared.receipt.segment_id,
             prepared.receipt.epoch,
             prepared.receipt.frame_start,
             prepared.receipt.frame_end,
@@ -589,25 +663,30 @@ impl PackStore {
             actual_receipt == prepared.receipt,
             "prepared frame receipt no longer matches durable bytes"
         );
-        let pack_map = Arc::new(Mmap::map(
-            &self.pack,
-            prepared.receipt.frame_end,
-            &self.pack_path,
-        )?);
+        let pack_map = Mmap::map(&self.pack, prepared.receipt.frame_end, &self.pack_path)?;
         let lookup_pack_map = map_random_if_enabled(
             &self.pack,
             prepared.receipt.frame_end,
             &self.pack_path,
             self.config.read_options(),
-        )?
-        .map(Arc::new);
+        )?;
         verify_frame(
             &pack_map,
-            PackSegmentId::INITIAL,
+            prepared.receipt.segment_id,
             prepared.receipt.frame_start,
             prepared.receipt.frame_end,
             prepared.receipt.epoch,
         )?;
+        // Rotation will select the active segment before this point. This
+        // shim only installs the mapping that publication has authenticated.
+        let segments = Arc::new(self.segments.with_replaced_or_appended(Arc::new(
+            SegmentMapping::from_maps(
+                prepared.receipt.segment_id,
+                self.pack_path.clone(),
+                pack_map,
+                lookup_pack_map,
+            )?,
+        ))?);
 
         let prepared_run = &pending.run.run;
         let run_path = self.runs_dir.join(run_file_name(
@@ -648,8 +727,7 @@ impl PackStore {
         Ok(ValidatedAppend {
             receipt: prepared.receipt,
             stage_totals: prepared.stage_totals(),
-            pack_map,
-            lookup_pack_map,
+            segments,
             runs: activated_runs,
             ranges: activated_ranges,
             decoded_index_bytes: pending.decoded_index_bytes,
@@ -675,8 +753,7 @@ impl PackStore {
                 .metadata_bytes
                 .saturating_add(validated.receipt.value_bytes),
         );
-        self.pack_map = validated.pack_map;
-        self.lookup_pack_map = validated.lookup_pack_map;
+        self.segments = validated.segments;
         self.runs = validated.runs;
         *self.level_run_counts.entry(0).or_default() += 1;
         self.ranges = validated.ranges;

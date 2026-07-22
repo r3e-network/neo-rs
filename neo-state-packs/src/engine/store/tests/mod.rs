@@ -500,7 +500,11 @@ fn random_point_mmaps_are_opt_in_and_survive_append_compaction_and_reopen() {
     default_store
         .append_frame(TEST_FRAME_CONTEXT, &[put(key(1), b"default")])
         .expect("append through default mappings");
-    assert!(default_store.lookup_pack_map.is_none());
+    assert!(
+        !default_store
+            .segments
+            .has_random_lookup(PackSegmentId::INITIAL)
+    );
     assert!(
         default_store
             .runs
@@ -533,7 +537,7 @@ fn random_point_mmaps_are_opt_in_and_survive_append_compaction_and_reopen() {
         .append_frame(TEST_FRAME_CONTEXT, &[tombstone(second)])
         .expect("append tombstone and compact L0");
 
-    assert!(store.lookup_pack_map.is_some());
+    assert!(store.segments.has_random_lookup(PackSegmentId::INITIAL));
     assert!(store.runs.iter().all(|live| live.run.lookup_map.is_some()));
     assert_eq!(store.runs.len(), 1);
     assert_eq!(store.runs[0].level, 1);
@@ -562,7 +566,7 @@ fn random_point_mmaps_are_opt_in_and_survive_append_compaction_and_reopen() {
     drop(store);
 
     let reopened = PackStore::open(root.path(), config).expect("reopen with random mappings");
-    assert!(reopened.lookup_pack_map.is_some());
+    assert!(reopened.segments.has_random_lookup(PackSegmentId::INITIAL));
     assert!(
         reopened
             .runs
@@ -798,6 +802,9 @@ fn bounded_reads_reject_indexed_values_before_result_allocation() {
 
 #[test]
 fn index_scrub_rejects_payload_ranges_beyond_the_committed_pack() {
+    let root = tempdir().expect("temporary scrub store");
+    let store = PackStore::create(root.path(), store_config(1024 * 1024))
+        .expect("create scrub range store");
     let outside = IndexEntry {
         key: key(0x33),
         sequence: 0,
@@ -806,16 +813,16 @@ fn index_scrub_rejects_payload_ranges_beyond_the_committed_pack() {
         value_len: 2,
         tombstone: false,
     };
-    let error = validate_index_entry_payload_range(&outside, 101)
+    let error = validate_index_entry_payload_range(&outside, &store.segments)
         .expect_err("out-of-pack index range must fail scrub");
-    assert!(error.to_string().contains("beyond the committed pack"));
+    assert!(error.to_string().contains("beyond its committed length"));
 
     let overflowing = IndexEntry {
         value_offset: u64::MAX,
         value_len: 1,
         ..outside
     };
-    let error = validate_index_entry_payload_range(&overflowing, u64::MAX)
+    let error = validate_index_entry_payload_range(&overflowing, &store.segments)
         .expect_err("overflowing index range must fail scrub");
     assert!(error.to_string().contains("overflows"));
 
@@ -825,7 +832,7 @@ fn index_scrub_rejects_payload_ranges_beyond_the_committed_pack() {
         tombstone: true,
         ..outside
     };
-    let error = validate_index_entry_payload_range(&tombstone_outside, 101)
+    let error = validate_index_entry_payload_range(&tombstone_outside, &store.segments)
         .expect_err("non-canonical tombstone offset must fail scrub");
     assert!(error.to_string().contains("non-zero value location"));
 
@@ -836,7 +843,7 @@ fn index_scrub_rejects_payload_ranges_beyond_the_committed_pack() {
         tombstone: true,
         ..outside
     };
-    let error = validate_index_entry_payload_range(&foreign_namespace, 101)
+    let error = validate_index_entry_payload_range(&foreign_namespace, &store.segments)
         .expect_err("foreign namespace must fail scrub");
     assert!(error.to_string().contains("outside the MPT node namespace"));
 }
@@ -1507,3 +1514,5 @@ fn metrics_cover_store_and_snapshot_reads_without_dynamic_labels() {
 include!("compaction_recovery_tests.rs");
 include!("crash_failpoint_tests.rs");
 include!("evidence_tests.rs");
+mod cross_segment_semantics_tests;
+mod segment_rotation_tests;

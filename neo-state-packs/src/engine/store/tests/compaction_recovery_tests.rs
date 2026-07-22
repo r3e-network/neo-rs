@@ -1,1672 +1,2097 @@
-    #[test]
-    fn compaction_plan_builds_without_the_writer_and_preserves_later_appends() {
-        let root = tempdir().expect("temporary append store");
-        let mut store = PackStore::create(root.path(), small_compaction_config(1024 * 1024))
-            .expect("create store");
-        let target = key(80);
-        append_without_maintenance(&mut store, &[put(target, b"v0")]);
-        append_without_maintenance(&mut store, &[put(target, b"v1")]);
-        append_without_maintenance(&mut store, &[put(target, b"v2")]);
-        let debt = store.compaction_debt();
-        assert_eq!(debt.excess_runs, 1);
-        assert!(!debt.backpressure_required);
+#[test]
+fn compaction_plan_builds_without_the_writer_and_preserves_later_appends() {
+    let root = tempdir().expect("temporary append store");
+    let mut store =
+        PackStore::create(root.path(), small_compaction_config(1024 * 1024)).expect("create store");
+    let target = key(80);
+    append_without_maintenance(&mut store, &[put(target, b"v0")]);
+    append_without_maintenance(&mut store, &[put(target, b"v1")]);
+    append_without_maintenance(&mut store, &[put(target, b"v2")]);
+    let debt = store.compaction_debt();
+    assert_eq!(debt.excess_runs, 1);
+    assert!(!debt.backpressure_required);
 
-        let plan = store
-            .plan_compaction()
-            .expect("plan compaction")
-            .expect("overfull L0 has a plan");
-        // The immutable plan no longer borrows the writer. A canonical append
-        // can therefore land while the derived output is being built.
-        append_without_maintenance(&mut store, &[put(target, b"v3")]);
-        store.gc().expect("gc honors the plan's source lease");
-        let prepared = plan.build().expect("build compacted output");
-        let output = root
-            .path()
-            .join("runs/run-l1-00000000000000000000-00000000000000000002.idx");
+    let plan = store
+        .plan_compaction()
+        .expect("plan compaction")
+        .expect("overfull L0 has a plan");
+    // The immutable plan no longer borrows the writer. A canonical append
+    // can therefore land while the derived output is being built.
+    append_without_maintenance(&mut store, &[put(target, b"v3")]);
+    store.gc().expect("gc honors the plan's source lease");
+    let prepared = plan.build().expect("build compacted output");
+    let output = root
+        .path()
+        .join("runs/run-l1-00000000000000000000-00000000000000000002.idx");
+    store
+        .gc()
+        .expect("gc must honor the in-flight output lease");
+    assert!(output.exists(), "prepared output must survive runtime GC");
+    store
+        .adopt_compaction(prepared)
+        .expect("adopt against the later generation");
+
+    assert_eq!(
+        store.get(&target).expect("read latest after adoption"),
+        Some(b"v3".to_vec())
+    );
+    assert!(store.runs.iter().any(|live| live.level == 0));
+    assert!(store.runs.iter().any(|live| live.level == 1));
+    assert!(
         store
-            .gc()
-            .expect("gc must honor the in-flight output lease");
-        assert!(output.exists(), "prepared output must survive runtime GC");
-        store
-            .adopt_compaction(prepared)
-            .expect("adopt against the later generation");
+            .runs
+            .iter()
+            .all(|live| { live.run.format_version == PACK_INDEX_FORMAT_VERSION })
+    );
+    let scrub = store.scrub_index_runs().expect("scrub v5 runs");
+    assert_eq!(scrub.runs, 2);
+    assert_eq!(scrub.v5_runs, 2);
+    drop(store);
+    let reopened =
+        PackStore::open(root.path(), store_config(1024 * 1024)).expect("reopen compacted store");
+    assert_eq!(
+        reopened.get(&target).expect("read latest after reopen"),
+        Some(b"v3".to_vec())
+    );
+    assert_eq!(
+        reopened.scrub_index_runs().expect("scrub reopened v5 runs"),
+        scrub
+    );
+}
 
-        assert_eq!(
-            store.get(&target).expect("read latest after adoption"),
-            Some(b"v3".to_vec())
-        );
-        assert!(store.runs.iter().any(|live| live.level == 0));
-        assert!(store.runs.iter().any(|live| live.level == 1));
-        assert!(store.runs.iter().all(|live| {
-            live.run.format_version == PACK_INDEX_FORMAT_VERSION
-        }));
-        let scrub = store.scrub_index_runs().expect("scrub v5 runs");
-        assert_eq!(scrub.runs, 2);
-        assert_eq!(scrub.v5_runs, 2);
-        drop(store);
-        let reopened = PackStore::open(root.path(), store_config(1024 * 1024))
-            .expect("reopen compacted store");
-        assert_eq!(
-            reopened.get(&target).expect("read latest after reopen"),
-            Some(b"v3".to_vec())
-        );
-        assert_eq!(
-            reopened
-                .scrub_index_runs()
-                .expect("scrub reopened v5 runs"),
-            scrub
-        );
+fn canonical_run_files(root: &Path) -> Vec<String> {
+    let mut files: Vec<_> = fs::read_dir(root.join("runs"))
+        .expect("read run directory")
+        .filter_map(|entry| {
+            let entry = entry.expect("read run directory entry");
+            let name = entry.file_name().into_string().ok()?;
+            manifest::is_run_file_name(&name).then_some(name)
+        })
+        .collect();
+    files.sort_unstable();
+    files
+}
+
+fn seed_superseded_compaction_history(root: &Path) -> PackFrameReceipt {
+    let mut store =
+        PackStore::create(root, small_compaction_config(1024 * 1024)).expect("create store");
+    for epoch in 0..3u8 {
+        append_without_maintenance(&mut store, &[put(key(epoch + 1), &[epoch])]);
     }
+    let prepared = store
+        .plan_compaction()
+        .expect("plan compaction")
+        .expect("overfull level has a plan")
+        .build()
+        .expect("build compaction");
+    store
+        .adopt_compaction(prepared)
+        .expect("adopt compaction without reclamation");
+    let receipt = store.last_frame_receipt().expect("pack receipt");
+    assert_eq!(manifest::list_manifest_files(root).unwrap().len(), 4);
+    assert_eq!(canonical_run_files(root).len(), 4);
+    drop(store);
+    receipt
+}
 
-    fn flip_persisted_run_byte(path: &Path, offset: u64) {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)
-            .expect("open prepared compaction output");
-        let mut byte = [0u8; 1];
-        file.read_exact_at(&mut byte, offset)
-            .expect("read prepared compaction byte");
-        file.write_all_at(&[byte[0] ^ 0x40], offset)
-            .expect("corrupt prepared compaction byte");
-        file.sync_all()
-            .expect("sync corrupted prepared compaction output");
+#[test]
+fn standalone_open_collapses_validated_manifest_history() {
+    let root = tempdir().expect("temporary append store");
+    seed_superseded_compaction_history(root.path());
+
+    let reopened = PackStore::open(root.path(), small_compaction_config(1024 * 1024))
+        .expect("reopen and reclaim validated legacy history");
+    assert_eq!(manifest::list_manifest_files(root.path()).unwrap().len(), 1);
+    assert_eq!(canonical_run_files(root.path()).len(), reopened.runs.len());
+    assert_eq!(reopened.runs.len(), 1);
+}
+
+#[test]
+fn external_horizon_open_collapses_validated_manifest_history() {
+    let root = tempdir().expect("temporary append store");
+    let receipt = seed_superseded_compaction_history(root.path());
+
+    let reopened = PackStore::open_at_commit_horizon(
+        root.path(),
+        small_compaction_config(1024 * 1024),
+        Some(PackCommitHorizon {
+            epoch: receipt.epoch,
+            segment_id: receipt.segment_id,
+            frame_end: receipt.frame_end,
+            context: receipt.context,
+            frame_sha256: receipt.frame_sha256,
+        }),
+    )
+    .expect("reopen external horizon and reclaim validated legacy history");
+    assert_eq!(manifest::list_manifest_files(root.path()).unwrap().len(), 1);
+    assert_eq!(canonical_run_files(root.path()).len(), reopened.runs.len());
+    assert_eq!(reopened.runs.len(), 1);
+}
+
+#[test]
+fn maintenance_reclaims_once_after_the_complete_adoption_batch() {
+    let root = tempdir().expect("temporary append store");
+    let mut store =
+        PackStore::create(root.path(), small_compaction_config(1024 * 1024)).expect("create store");
+    for epoch in 0..9u8 {
+        append_without_maintenance(&mut store, &[put(key(epoch + 1), &[epoch])]);
     }
+    assert_eq!(store.compaction_stats().gc_cycles, 0);
 
-    fn rewrite_frame_with_noncanonical_metadata(
-        path: &Path,
-        receipt: PackFrameReceipt,
-    ) {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)
-            .expect("open committed frame for rewrite");
-        let mut header_bytes = [0u8; FRAME_HEADER_LEN];
-        file.read_exact_at(&mut header_bytes, receipt.frame_start)
-            .expect("read committed frame header");
-        let header = validate_frame_header(&header_bytes, receipt.epoch)
-            .expect("validate committed frame header");
-        let metadata_len = usize::try_from(header.metadata_bytes).expect("metadata length fits");
-        let metadata_start = receipt
-            .frame_start
-            .checked_add(FRAME_HEADER_LEN as u64)
-            .expect("metadata offset");
-        let mut metadata = vec![0u8; metadata_len];
-        file.read_exact_at(&mut metadata, metadata_start)
-            .expect("read committed frame metadata");
-        metadata[33] = 1;
+    store.maintain().expect("compact and reclaim one batch");
+    assert!(store.compaction_stats().cycles > 1);
+    assert_eq!(store.compaction_stats().gc_cycles, 1);
+    assert_eq!(manifest::list_manifest_files(root.path()).unwrap().len(), 1);
+    assert_eq!(canonical_run_files(root.path()).len(), store.runs.len());
 
-        header_bytes[128..160].copy_from_slice(&frame_metadata_digest(&metadata));
-        let frame_sha256 = frame_digest(&header_bytes);
-        let footer = encode_frame_footer(header.epoch, header.frame_bytes, frame_sha256)
-            .expect("encode matching frame footer");
-        let footer_start = receipt
-            .frame_end
-            .checked_sub(FRAME_FOOTER_LEN as u64)
-            .expect("footer offset");
-        file.write_all_at(&header_bytes, receipt.frame_start)
-            .expect("rewrite committed frame header");
-        file.write_all_at(&metadata, metadata_start)
-            .expect("rewrite committed frame metadata");
-        file.write_all_at(&footer, footer_start)
-            .expect("rewrite committed frame footer");
-        file.sync_all()
-            .expect("sync self-consistent noncanonical frame");
-    }
+    let orphan = root.path().join("runs").join(run_file_name(0, 99, 99));
+    fs::write(&orphan, b"recognized orphan").expect("plant recognized orphan run");
+    store
+        .maintain()
+        .expect("no-debt maintenance performs no reclamation");
+    assert_eq!(store.compaction_stats().gc_cycles, 1);
+    assert!(orphan.exists(), "maintenance ran GC without an adoption");
+}
 
-    fn snapshot_store_files(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
-        fn collect(root: &Path, directory: &Path, files: &mut Vec<(PathBuf, Vec<u8>)>) {
-            for entry in fs::read_dir(directory).expect("read store artifact directory") {
-                let path = entry.expect("read store artifact entry").path();
-                if path.is_dir() {
-                    collect(root, &path, files);
-                } else {
-                    let relative = path
-                        .strip_prefix(root)
-                        .expect("artifact remains below store root")
-                        .to_path_buf();
-                    files.push((relative, fs::read(&path).expect("read store artifact")));
-                }
+fn flip_persisted_run_byte(path: &Path, offset: u64) {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .expect("open prepared compaction output");
+    let mut byte = [0u8; 1];
+    file.read_exact_at(&mut byte, offset)
+        .expect("read prepared compaction byte");
+    file.write_all_at(&[byte[0] ^ 0x40], offset)
+        .expect("corrupt prepared compaction byte");
+    file.sync_all()
+        .expect("sync corrupted prepared compaction output");
+}
+
+fn rewrite_frame_with_noncanonical_metadata(path: &Path, receipt: PackFrameReceipt) {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .expect("open committed frame for rewrite");
+    let mut header_bytes = [0u8; FRAME_HEADER_LEN];
+    file.read_exact_at(&mut header_bytes, receipt.frame_start)
+        .expect("read committed frame header");
+    let header = validate_frame_header(&header_bytes, receipt.epoch)
+        .expect("validate committed frame header");
+    let metadata_len = usize::try_from(header.metadata_bytes).expect("metadata length fits");
+    let metadata_start = receipt
+        .frame_start
+        .checked_add(FRAME_HEADER_LEN as u64)
+        .expect("metadata offset");
+    let mut metadata = vec![0u8; metadata_len];
+    file.read_exact_at(&mut metadata, metadata_start)
+        .expect("read committed frame metadata");
+    metadata[33] = 1;
+
+    header_bytes[128..160].copy_from_slice(&frame_metadata_digest(&metadata));
+    let frame_sha256 = frame_digest(&header_bytes);
+    let footer = encode_frame_footer(header.epoch, header.frame_bytes, frame_sha256)
+        .expect("encode matching frame footer");
+    let footer_start = receipt
+        .frame_end
+        .checked_sub(FRAME_FOOTER_LEN as u64)
+        .expect("footer offset");
+    file.write_all_at(&header_bytes, receipt.frame_start)
+        .expect("rewrite committed frame header");
+    file.write_all_at(&metadata, metadata_start)
+        .expect("rewrite committed frame metadata");
+    file.write_all_at(&footer, footer_start)
+        .expect("rewrite committed frame footer");
+    file.sync_all()
+        .expect("sync self-consistent noncanonical frame");
+}
+
+fn snapshot_store_files(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    fn collect(root: &Path, directory: &Path, files: &mut Vec<(PathBuf, Vec<u8>)>) {
+        for entry in fs::read_dir(directory).expect("read store artifact directory") {
+            let path = entry.expect("read store artifact entry").path();
+            if path.is_dir() {
+                collect(root, &path, files);
+            } else {
+                let relative = path
+                    .strip_prefix(root)
+                    .expect("artifact remains below store root")
+                    .to_path_buf();
+                files.push((relative, fs::read(&path).expect("read store artifact")));
             }
         }
-
-        let mut files = Vec::new();
-        collect(root, root, &mut files);
-        files.sort_by(|left, right| left.0.cmp(&right.0));
-        files
     }
 
-    fn rewrite_prepared_filter_with_valid_structure_checksum(
-        path: &Path,
-        prepared: &PreparedPackCompaction,
-    ) {
-        let run = &prepared.pending.run;
-        assert_eq!(run.format_version, PACK_INDEX_FORMAT_VERSION);
-        let records_start = usize::try_from(run.records_offset).expect("records offset fits usize");
-        let filter_start = INDEX_HEADER_LEN + run.fences.len() * FENCE_KEY_BYTES;
-        assert!(filter_start < records_start, "prepared run has a filter");
+    let mut files = Vec::new();
+    collect(root, root, &mut files);
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    files
+}
 
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)
-            .expect("open prepared filter for rewrite");
-        let mut header = [0u8; INDEX_HEADER_LEN];
-        file.read_exact_at(&mut header, 0)
-            .expect("read prepared index header");
-        let mut structure = vec![0u8; records_start - INDEX_HEADER_LEN];
-        file.read_exact_at(&mut structure, INDEX_HEADER_LEN as u64)
-            .expect("read prepared index structure");
-        structure[filter_start - INDEX_HEADER_LEN..].fill(0);
+fn rewrite_prepared_filter_with_valid_structure_checksum(
+    path: &Path,
+    prepared: &PreparedPackCompaction,
+) {
+    let run = &prepared.pending.run;
+    assert_eq!(run.format_version, PACK_INDEX_FORMAT_VERSION);
+    let records_start = usize::try_from(run.records_offset).expect("records offset fits usize");
+    let filter_start = INDEX_HEADER_LEN + run.fences.len() * FENCE_KEY_BYTES;
+    assert!(filter_start < records_start, "prepared run has a filter");
 
-        let structure_sha256 = index_structure_digest(
-            PACK_INDEX_FORMAT_VERSION,
-            &header,
-            &structure,
-        )
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .expect("open prepared filter for rewrite");
+    let mut header = [0u8; INDEX_HEADER_LEN];
+    file.read_exact_at(&mut header, 0)
+        .expect("read prepared index header");
+    let mut structure = vec![0u8; records_start - INDEX_HEADER_LEN];
+    file.read_exact_at(&mut structure, INDEX_HEADER_LEN as u64)
+        .expect("read prepared index structure");
+    structure[filter_start - INDEX_HEADER_LEN..].fill(0);
+
+    let structure_sha256 = index_structure_digest(PACK_INDEX_FORMAT_VERSION, &header, &structure)
         .expect("recompute index structure checksum");
-        header[INDEX_STRUCTURE_SHA256_START..INDEX_STRUCTURE_SHA256_END]
-            .copy_from_slice(&structure_sha256);
-        let header_tag = digest(&header[..INDEX_HEADER_TAG_START]);
-        header[INDEX_HEADER_TAG_START..INDEX_HEADER_LEN].copy_from_slice(&header_tag[..4]);
-        file.write_all_at(&header, 0)
-            .expect("rewrite prepared index header");
-        file.write_all_at(&structure, INDEX_HEADER_LEN as u64)
-            .expect("rewrite prepared index structure");
-        file.sync_all()
-            .expect("sync internally checksummed bad filter");
+    header[INDEX_STRUCTURE_SHA256_START..INDEX_STRUCTURE_SHA256_END]
+        .copy_from_slice(&structure_sha256);
+    let header_tag = digest(&header[..INDEX_HEADER_TAG_START]);
+    header[INDEX_HEADER_TAG_START..INDEX_HEADER_LEN].copy_from_slice(&header_tag[..4]);
+    file.write_all_at(&header, 0)
+        .expect("rewrite prepared index header");
+    file.write_all_at(&structure, INDEX_HEADER_LEN as u64)
+        .expect("rewrite prepared index structure");
+    file.sync_all()
+        .expect("sync internally checksummed bad filter");
 
-        read_index_run(path).expect("bad filter remains internally checksummed");
+    read_index_run(path).expect("bad filter remains internally checksummed");
+}
+
+fn assert_prepared_compaction_corruption_is_not_adopted(
+    corrupt: impl FnOnce(&Path, &PreparedPackCompaction),
+) -> String {
+    let root = tempdir().expect("temporary append store");
+    let mut store =
+        PackStore::create(root.path(), small_compaction_config(1024 * 1024)).expect("create store");
+    let expected = [
+        (key(1), b"one".as_slice()),
+        (key(2), b"two".as_slice()),
+        (key(3), b"three".as_slice()),
+    ];
+    for (key, value) in expected {
+        append_without_maintenance(&mut store, &[put(key, value)]);
     }
+    let plan = store
+        .plan_compaction()
+        .expect("plan compaction")
+        .expect("overfull level has a plan");
+    let prepared = plan.build().expect("build prepared compaction");
+    let path = root.path().join("runs").join(run_file_name(
+        prepared.pending.level,
+        prepared.pending.min_epoch,
+        prepared.pending.max_epoch,
+    ));
 
-    fn assert_prepared_compaction_corruption_is_not_adopted(
-        corrupt: impl FnOnce(&Path, &PreparedPackCompaction),
-    ) -> String {
-        let root = tempdir().expect("temporary append store");
-        let mut store = PackStore::create(root.path(), small_compaction_config(1024 * 1024))
-            .expect("create store");
-        let expected = [
-            (key(1), b"one".as_slice()),
-            (key(2), b"two".as_slice()),
-            (key(3), b"three".as_slice()),
-        ];
-        for (key, value) in expected {
-            append_without_maintenance(&mut store, &[put(key, value)]);
-        }
-        let plan = store
-            .plan_compaction()
-            .expect("plan compaction")
-            .expect("overfull level has a plan");
-        let prepared = plan.build().expect("build prepared compaction");
-        let path = root.path().join("runs").join(run_file_name(
-            prepared.pending.level,
-            prepared.pending.min_epoch,
-            prepared.pending.max_epoch,
-        ));
+    let generation = store.generation;
+    let run_identity: Vec<_> = store
+        .runs
+        .iter()
+        .map(|run| (run.level, run.min_epoch, run.max_epoch))
+        .collect();
+    let decoded_index_bytes = store.decoded_index_bytes;
+    let compaction_stats = store.compaction_stats();
+    let manifests = manifest::list_manifest_files(root.path()).expect("list live manifests");
 
-        let generation = store.generation;
-        let run_identity: Vec<_> = store
+    corrupt(&path, &prepared);
+    let error = store
+        .adopt_compaction(prepared)
+        .expect_err("corrupt prepared output must not be adopted");
+
+    assert_eq!(store.generation, generation);
+    assert_eq!(
+        store
             .runs
             .iter()
             .map(|run| (run.level, run.min_epoch, run.max_epoch))
-            .collect();
-        let decoded_index_bytes = store.decoded_index_bytes;
-        let compaction_stats = store.compaction_stats();
-        let manifests = manifest::list_manifest_files(root.path()).expect("list live manifests");
-
-        corrupt(&path, &prepared);
-        let error = store
-            .adopt_compaction(prepared)
-            .expect_err("corrupt prepared output must not be adopted");
-
-        assert_eq!(store.generation, generation);
+            .collect::<Vec<_>>(),
+        run_identity
+    );
+    assert_eq!(store.decoded_index_bytes, decoded_index_bytes);
+    assert_eq!(store.compaction_stats(), compaction_stats);
+    assert_eq!(
+        manifest::list_manifest_files(root.path()).expect("re-list live manifests"),
+        manifests
+    );
+    for (key, value) in expected {
         assert_eq!(
             store
-                .runs
-                .iter()
-                .map(|run| (run.level, run.min_epoch, run.max_epoch))
-                .collect::<Vec<_>>(),
-            run_identity
-        );
-        assert_eq!(store.decoded_index_bytes, decoded_index_bytes);
-        assert_eq!(store.compaction_stats(), compaction_stats);
-        assert_eq!(
-            manifest::list_manifest_files(root.path()).expect("re-list live manifests"),
-            manifests
-        );
-        for (key, value) in expected {
-            assert_eq!(
-                store.get(&key).expect("read prior authoritative generation"),
-                Some(value.to_vec())
-            );
-        }
-        format!("{error:#}")
-    }
-
-    #[test]
-    fn corrupt_prepared_compaction_record_cannot_be_adopted() {
-        let error = assert_prepared_compaction_corruption_is_not_adopted(|path, prepared| {
-            let second_record_value_offset = prepared.pending.run.records_offset
-                + INDEX_RECORD_LEN as u64
-                + PACK_KEY_BYTES as u64
-                + 4;
-            flip_persisted_run_byte(path, second_record_value_offset);
-        });
-        assert!(error.contains("records checksum mismatch during scrub"));
-    }
-
-    #[test]
-    fn corrupt_prepared_compaction_fence_cannot_be_adopted() {
-        let error = assert_prepared_compaction_corruption_is_not_adopted(|path, _| {
-            flip_persisted_run_byte(path, INDEX_HEADER_LEN as u64);
-        });
-        assert!(error.contains("index structure checksum mismatch"));
-    }
-
-    #[test]
-    fn internally_checksummed_false_negative_filter_cannot_be_adopted() {
-        let error = assert_prepared_compaction_corruption_is_not_adopted(|path, prepared| {
-            rewrite_prepared_filter_with_valid_structure_checksum(path, prepared);
-        });
-        assert!(error.contains("prepared compaction output no longer matches its validated build"));
-    }
-
-    #[test]
-    fn index_scrub_detects_middle_record_corruption_in_a_non_tail_v5_run() {
-        let root = tempdir().expect("temporary append store");
-        let mut store = PackStore::create(root.path(), small_compaction_config(1024 * 1024))
-            .expect("create store");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(key(1), b"one")])
-            .expect("append frame 0");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(key(2), b"two")])
-            .expect("append frame 1");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(key(3), b"three")])
-            .expect("append and compact frame 2");
-        append_without_maintenance(&mut store, &[put(key(4), b"tail")]);
-        let compacted = store
-            .runs
-            .iter()
-            .find(|live| live.level == 1)
-            .expect("live v5 compacted run");
-        assert_eq!(compacted.run.format_version, PACK_INDEX_FORMAT_VERSION);
-        assert_eq!(compacted.run.record_count, 3);
-        let corrupt_offset =
-            compacted.run.records_offset + INDEX_RECORD_LEN as u64 + PACK_KEY_BYTES as u64 + 4;
-        let path = root.path().join("runs").join(run_file_name(1, 0, 2));
-        drop(store);
-
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&path)
-            .expect("open non-tail v5 run");
-        let mut byte = [0u8; 1];
-        file.read_exact_at(&mut byte, corrupt_offset)
-            .expect("read middle record byte");
-        file.write_all_at(&[byte[0] ^ 0x40], corrupt_offset)
-            .expect("corrupt middle record byte");
-        file.sync_all().expect("sync middle record corruption");
-        drop(file);
-
-        let error = PackStore::open(root.path(), store_config(1024 * 1024))
-            .err()
-            .expect("ordinary open must reject middle-record corruption");
-        assert!(format!("{error:#}").contains("checksum mismatch"));
-    }
-
-    #[test]
-    fn failed_manifest_adoption_keeps_the_previous_in_memory_generation() {
-        let root = tempdir().expect("temporary append store");
-        let mut store = PackStore::create(root.path(), small_compaction_config(1024 * 1024))
-            .expect("create store");
-        let target = key(70);
-        append_without_maintenance(&mut store, &[put(target, b"v0")]);
-        append_without_maintenance(&mut store, &[put(target, b"v1")]);
-        append_without_maintenance(&mut store, &[put(target, b"v2")]);
-        let generation = store.generation;
-        let run_count = store.runs.len();
-        let decoded = store.decoded_index_bytes;
-        let plan = store
-            .plan_compaction()
-            .expect("plan compaction")
-            .expect("overfull level has a plan");
-        let prepared = plan.build().expect("build invisible compacted output");
-        let next_generation = generation + 1;
-        let manifest_temp = root
-            .path()
-            .join(format!("manifest-{next_generation:020}.tmp"));
-        fs::write(&manifest_temp, b"block candidate manifest publication")
-            .expect("create manifest collision");
-
-        let error = store
-            .adopt_compaction(prepared)
-            .expect_err("manifest collision must reject adoption");
-        assert!(error.to_string().contains("create manifest"));
-        assert_eq!(store.generation, generation);
-        assert_eq!(store.runs.len(), run_count);
-        assert_eq!(store.decoded_index_bytes, decoded);
-        assert_eq!(
-            store.get(&target).expect("read previous live generation"),
-            Some(b"v2".to_vec())
+                .get(&key)
+                .expect("read prior authoritative generation"),
+            Some(value.to_vec())
         );
     }
+    format!("{error:#}")
+}
 
-    #[test]
-    fn runtime_gc_does_not_delete_an_active_compaction_temp_file() {
-        let root = tempdir().expect("temporary append store");
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-        store.append_frame(TEST_FRAME_CONTEXT, &[put(key(1), b"one")]).expect("append frame");
-        let temp = root
-            .path()
-            .join("runs")
-            .join(format!("{}.tmp", run_file_name(1, 0, 0)));
-        let operator_file = root.path().join("runs/operator-notes.idx");
-        fs::write(&temp, b"active").expect("create active temp file");
-        fs::write(&operator_file, b"not owned by the pack engine")
-            .expect("create unrelated operator file");
-        store.gc().expect("runtime gc");
-        assert!(temp.exists(), "runtime GC raced with an active build");
-        assert!(operator_file.exists(), "runtime GC removed an unrelated file");
-        drop(store);
-        let reopened =
-            PackStore::open(root.path(), store_config(1024 * 1024)).expect("reopen store");
-        assert!(
-            !temp.exists(),
-            "startup recovery must remove stale temp files"
-        );
-        assert!(
-            operator_file.exists(),
-            "startup recovery removed an unrelated file"
-        );
-        drop(reopened);
-    }
+#[test]
+fn corrupt_prepared_compaction_record_cannot_be_adopted() {
+    let error = assert_prepared_compaction_corruption_is_not_adopted(|path, prepared| {
+        let second_record_value_offset = prepared.pending.run.records_offset
+            + INDEX_RECORD_LEN as u64
+            + PACK_KEY_BYTES as u64
+            + 4;
+        flip_persisted_run_byte(path, second_record_value_offset);
+    });
+    assert!(error.contains("records checksum mismatch during scrub"));
+}
 
-    #[test]
-    fn recovery_clears_stale_temp_before_rebuilding_a_corrupt_run() {
-        let root = tempdir().expect("temporary append store");
-        let runs_dir = root.path().join("runs");
-        let target = key(0x41);
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"recoverable")])
-            .expect("append committed frame");
-        let run_path = runs_dir.join(run_file_name(0, 0, 0));
-        let records_offset = store.runs[0].run.records_offset;
-        drop(store);
+#[test]
+fn corrupt_prepared_compaction_fence_cannot_be_adopted() {
+    let error = assert_prepared_compaction_corruption_is_not_adopted(|path, _| {
+        flip_persisted_run_byte(path, INDEX_HEADER_LEN as u64);
+    });
+    assert!(error.contains("index structure checksum mismatch"));
+}
 
-        flip_persisted_run_byte(&run_path, records_offset + 1);
-        let stale = runs_dir.join(format!("{}.tmp", run_file_name(0, 0, 0)));
-        fs::write(&stale, b"interrupted prior rebuild").expect("plant stale rebuild output");
+#[test]
+fn internally_checksummed_false_negative_filter_cannot_be_adopted() {
+    let error = assert_prepared_compaction_corruption_is_not_adopted(|path, prepared| {
+        rewrite_prepared_filter_with_valid_structure_checksum(path, prepared);
+    });
+    assert!(error.contains("prepared compaction output no longer matches its validated build"));
+}
 
-        let reopened = PackStore::open(root.path(), store_config(1024 * 1024))
-            .expect("stale output is cleared before rebuilding the corrupt run");
-        assert!(!stale.exists(), "recovery left the stale rebuild output");
+#[test]
+fn recovery_rebuilds_middle_record_corruption_in_a_non_tail_v5_run() {
+    let root = tempdir().expect("temporary append store");
+    let mut store =
+        PackStore::create(root.path(), small_compaction_config(1024 * 1024)).expect("create store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(1), b"one")])
+        .expect("append frame 0");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(2), b"two")])
+        .expect("append frame 1");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(3), b"three")])
+        .expect("append and compact frame 2");
+    append_without_maintenance(&mut store, &[put(key(4), b"tail")]);
+    let compacted = store
+        .runs
+        .iter()
+        .find(|live| live.level == 1)
+        .expect("live v5 compacted run");
+    assert_eq!(compacted.run.format_version, PACK_INDEX_FORMAT_VERSION);
+    assert_eq!(compacted.run.record_count, 3);
+    let corrupt_offset =
+        compacted.run.records_offset + INDEX_RECORD_LEN as u64 + PACK_KEY_BYTES as u64 + 4;
+    let path = root.path().join("runs").join(run_file_name(1, 0, 2));
+    drop(store);
+
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .expect("open non-tail v5 run");
+    let mut byte = [0u8; 1];
+    file.read_exact_at(&mut byte, corrupt_offset)
+        .expect("read middle record byte");
+    file.write_all_at(&[byte[0] ^ 0x40], corrupt_offset)
+        .expect("corrupt middle record byte");
+    file.sync_all().expect("sync middle record corruption");
+    drop(file);
+
+    let reopened = PackStore::open(root.path(), store_config(1024 * 1024))
+        .expect("ordinary open rebuilds a corrupt derived run");
+    for (target, expected) in [
+        (key(1), b"one".as_slice()),
+        (key(2), b"two".as_slice()),
+        (key(3), b"three".as_slice()),
+        (key(4), b"tail".as_slice()),
+    ] {
         assert_eq!(
             reopened.get(&target).expect("read rebuilt value"),
-            Some(b"recoverable".to_vec())
+            Some(expected.to_vec())
         );
-        reopened
-            .scrub_index_runs()
-            .expect("rebuilt run passes complete scrub");
     }
+    reopened
+        .scrub_index_runs()
+        .expect("rebuilt runs pass complete index scrub");
+}
 
-    #[test]
-    fn committed_frame_authentication_failure_preserves_every_store_artifact() {
-        let root = tempdir().expect("temporary corrupt-frame store");
-        let runs_dir = root.path().join("runs");
-        let target = key(0x42);
-        let mut store = PackStore::create(root.path(), store_config(1024 * 1024))
-            .expect("create corrupt-frame store");
+#[test]
+fn failed_manifest_adoption_keeps_the_previous_in_memory_generation() {
+    let root = tempdir().expect("temporary append store");
+    let mut store =
+        PackStore::create(root.path(), small_compaction_config(1024 * 1024)).expect("create store");
+    let target = key(70);
+    append_without_maintenance(&mut store, &[put(target, b"v0")]);
+    append_without_maintenance(&mut store, &[put(target, b"v1")]);
+    append_without_maintenance(&mut store, &[put(target, b"v2")]);
+    let generation = store.generation;
+    let run_count = store.runs.len();
+    let decoded = store.decoded_index_bytes;
+    let plan = store
+        .plan_compaction()
+        .expect("plan compaction")
+        .expect("overfull level has a plan");
+    let prepared = plan.build().expect("build invisible compacted output");
+    let next_generation = generation + 1;
+    let manifest_temp = root
+        .path()
+        .join(format!("manifest-{next_generation:020}.tmp"));
+    fs::write(&manifest_temp, b"block candidate manifest publication")
+        .expect("create manifest collision");
+
+    let error = store
+        .adopt_compaction(prepared)
+        .expect_err("manifest collision must reject adoption");
+    assert!(error.to_string().contains("create manifest"));
+    assert_eq!(store.generation, generation);
+    assert_eq!(store.runs.len(), run_count);
+    assert_eq!(store.decoded_index_bytes, decoded);
+    assert_eq!(
+        store.get(&target).expect("read previous live generation"),
+        Some(b"v2".to_vec())
+    );
+}
+
+#[test]
+fn runtime_gc_does_not_delete_an_active_compaction_temp_file() {
+    let root = tempdir().expect("temporary append store");
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(1), b"one")])
+        .expect("append frame");
+    let temp = root
+        .path()
+        .join("runs")
+        .join(format!("{}.tmp", run_file_name(1, 0, 0)));
+    let operator_file = root.path().join("runs/operator-notes.idx");
+    fs::write(&temp, b"active").expect("create active temp file");
+    fs::write(&operator_file, b"not owned by the pack engine")
+        .expect("create unrelated operator file");
+    store.gc().expect("runtime gc");
+    assert!(temp.exists(), "runtime GC raced with an active build");
+    assert!(
+        operator_file.exists(),
+        "runtime GC removed an unrelated file"
+    );
+    drop(store);
+    let reopened = PackStore::open(root.path(), store_config(1024 * 1024)).expect("reopen store");
+    assert!(
+        !temp.exists(),
+        "startup recovery must remove stale temp files"
+    );
+    assert!(
+        operator_file.exists(),
+        "startup recovery removed an unrelated file"
+    );
+    drop(reopened);
+}
+
+#[test]
+fn recovery_clears_stale_temp_before_rebuilding_a_corrupt_run() {
+    let root = tempdir().expect("temporary append store");
+    let runs_dir = root.path().join("runs");
+    let target = key(0x41);
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"recoverable")])
+        .expect("append committed frame");
+    let run_path = runs_dir.join(run_file_name(0, 0, 0));
+    let records_offset = store.runs[0].run.records_offset;
+    drop(store);
+
+    flip_persisted_run_byte(&run_path, records_offset + 1);
+    let stale = runs_dir.join(format!("{}.tmp", run_file_name(0, 0, 0)));
+    fs::write(&stale, b"interrupted prior rebuild").expect("plant stale rebuild output");
+
+    let reopened = PackStore::open(root.path(), store_config(1024 * 1024))
+        .expect("stale output is cleared before rebuilding the corrupt run");
+    assert!(!stale.exists(), "recovery left the stale rebuild output");
+    assert_eq!(
+        reopened.get(&target).expect("read rebuilt value"),
+        Some(b"recoverable".to_vec())
+    );
+    reopened
+        .scrub_index_runs()
+        .expect("rebuilt run passes complete scrub");
+}
+
+#[test]
+fn committed_frame_authentication_failure_preserves_every_store_artifact() {
+    let root = tempdir().expect("temporary corrupt-frame store");
+    let runs_dir = root.path().join("runs");
+    let target = key(0x42);
+    let mut store = PackStore::create(root.path(), store_config(1024 * 1024))
+        .expect("create corrupt-frame store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"authenticated")])
+        .expect("append committed frame");
+    let receipt = store.last_frame_receipt().expect("committed receipt");
+    drop(store);
+
+    let pack_path = root.path().join(PackSegmentId::INITIAL.file_name());
+    let metadata_byte = receipt
+        .frame_start
+        .checked_add(FRAME_HEADER_LEN as u64 + 1)
+        .expect("metadata byte offset");
+    flip_persisted_run_byte(&pack_path, metadata_byte);
+    let stale = runs_dir.join("run-interrupted.idx.tmp");
+    fs::write(&stale, b"must survive failed authentication").expect("plant stale recovery output");
+    let before = snapshot_store_files(root.path());
+
+    let error = match PackStore::open(root.path(), store_config(1024 * 1024)) {
+        Ok(_) => panic!("committed metadata corruption must fail closed"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, PackStoreError::Corruption { .. }));
+    assert!(error.to_string().contains("metadata checksum mismatch"));
+    assert_eq!(
+        snapshot_store_files(root.path()),
+        before,
+        "authentication failure must precede cleanup, truncation, or derived publication"
+    );
+    assert!(
+        stale.exists(),
+        "stale output was removed before authentication"
+    );
+}
+
+#[test]
+fn noncanonical_committed_rows_fail_before_cleanup_or_truncation() {
+    let root = tempdir().expect("temporary noncanonical-frame store");
+    let runs_dir = root.path().join("runs");
+    let mut store = PackStore::create(root.path(), store_config(1024 * 1024))
+        .expect("create noncanonical-frame store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(0x43), b"canonical")])
+        .expect("append committed frame");
+    let receipt = store.last_frame_receipt().expect("committed receipt");
+    drop(store);
+
+    let pack_path = root.path().join(PackSegmentId::INITIAL.file_name());
+    rewrite_frame_with_noncanonical_metadata(&pack_path, receipt);
+    let pack = OpenOptions::new()
+        .write(true)
+        .open(&pack_path)
+        .expect("open pack for orphan suffix");
+    pack.write_all_at(b"orphan suffix", receipt.frame_end)
+        .expect("append orphan suffix");
+    pack.sync_all().expect("sync orphan suffix");
+    let stale = runs_dir.join("run-interrupted.idx.tmp");
+    fs::write(&stale, b"must survive structural rejection").expect("plant stale recovery output");
+    let before = snapshot_store_files(root.path());
+
+    let error = match PackStore::open(root.path(), store_config(1024 * 1024)) {
+        Ok(_) => panic!("noncanonical committed rows must fail closed"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, PackStoreError::Corruption { .. }));
+    assert!(error.to_string().contains("reserved bytes are non-zero"));
+    assert_eq!(
+        snapshot_store_files(root.path()),
+        before,
+        "structural rejection must precede cleanup and orphan truncation"
+    );
+    assert!(
+        stale.exists(),
+        "stale output was removed before row validation"
+    );
+}
+
+#[test]
+fn leveled_compaction_bounds_levels_beyond_l2() {
+    let root = tempdir().expect("temporary append store");
+    let mut store =
+        PackStore::create(root.path(), small_compaction_config(1024 * 1024)).expect("create store");
+    for frame in 0..27u8 {
         store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"authenticated")])
-            .expect("append committed frame");
-        let receipt = store.last_frame_receipt().expect("committed receipt");
-        drop(store);
-
-        let pack_path = root.path().join(PackSegmentId::INITIAL.file_name());
-        let metadata_byte = receipt
-            .frame_start
-            .checked_add(FRAME_HEADER_LEN as u64 + 1)
-            .expect("metadata byte offset");
-        flip_persisted_run_byte(&pack_path, metadata_byte);
-        let stale = runs_dir.join("run-interrupted.idx.tmp");
-        fs::write(&stale, b"must survive failed authentication")
-            .expect("plant stale recovery output");
-        let before = snapshot_store_files(root.path());
-
-        let error = match PackStore::open(root.path(), store_config(1024 * 1024)) {
-            Ok(_) => panic!("committed metadata corruption must fail closed"),
-            Err(error) => error,
-        };
-        assert!(matches!(error, PackStoreError::Corruption { .. }));
-        assert!(error.to_string().contains("metadata checksum mismatch"));
-        assert_eq!(
-            snapshot_store_files(root.path()),
-            before,
-            "authentication failure must precede cleanup, truncation, or derived publication"
-        );
-        assert!(stale.exists(), "stale output was removed before authentication");
+            .append_frame(TEST_FRAME_CONTEXT, &[put(key(frame), &[frame])])
+            .expect("append recursively compacted frame");
     }
-
-    #[test]
-    fn noncanonical_committed_rows_fail_before_cleanup_or_truncation() {
-        let root = tempdir().expect("temporary noncanonical-frame store");
-        let runs_dir = root.path().join("runs");
-        let mut store = PackStore::create(root.path(), store_config(1024 * 1024))
-            .expect("create noncanonical-frame store");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(key(0x43), b"canonical")])
-            .expect("append committed frame");
-        let receipt = store.last_frame_receipt().expect("committed receipt");
-        drop(store);
-
-        let pack_path = root.path().join(PackSegmentId::INITIAL.file_name());
-        rewrite_frame_with_noncanonical_metadata(&pack_path, receipt);
-        let pack = OpenOptions::new()
-            .write(true)
-            .open(&pack_path)
-            .expect("open pack for orphan suffix");
-        pack.write_all_at(b"orphan suffix", receipt.frame_end)
-            .expect("append orphan suffix");
-        pack.sync_all().expect("sync orphan suffix");
-        let stale = runs_dir.join("run-interrupted.idx.tmp");
-        fs::write(&stale, b"must survive structural rejection")
-            .expect("plant stale recovery output");
-        let before = snapshot_store_files(root.path());
-
-        let error = match PackStore::open(root.path(), store_config(1024 * 1024)) {
-            Ok(_) => panic!("noncanonical committed rows must fail closed"),
-            Err(error) => error,
-        };
-        assert!(matches!(error, PackStoreError::Corruption { .. }));
-        assert!(error.to_string().contains("reserved bytes are non-zero"));
-        assert_eq!(
-            snapshot_store_files(root.path()),
-            before,
-            "structural rejection must precede cleanup and orphan truncation"
-        );
-        assert!(stale.exists(), "stale output was removed before row validation");
-    }
-
-    #[test]
-    fn leveled_compaction_bounds_levels_beyond_l2() {
-        let root = tempdir().expect("temporary append store");
-        let mut store = PackStore::create(root.path(), small_compaction_config(1024 * 1024))
-            .expect("create store");
-        for frame in 0..27u8 {
-            store
-                .append_frame(TEST_FRAME_CONTEXT, &[put(key(frame), &[frame])])
-                .expect("append recursively compacted frame");
-        }
-        let debt = store.compaction_debt();
-        assert_eq!(debt.excess_runs, 0, "all levels stay within bounds");
-        assert!(!debt.backpressure_required);
+    let debt = store.compaction_debt();
+    assert_eq!(debt.excess_runs, 0, "all levels stay within bounds");
+    assert!(!debt.backpressure_required);
+    assert!(
+        store.runs.iter().any(|live| live.level >= 3),
+        "long-running stores must compact beyond the former L2 ceiling"
+    );
+    for level in 0..=store.runs.iter().map(|live| live.level).max().unwrap_or(0) {
         assert!(
-            store.runs.iter().any(|live| live.level >= 3),
-            "long-running stores must compact beyond the former L2 ceiling"
+            store.runs.iter().filter(|live| live.level == level).count() <= 2,
+            "level {level} exceeded its configured run bound"
         );
-        for level in 0..=store.runs.iter().map(|live| live.level).max().unwrap_or(0) {
-            assert!(
-                store.runs.iter().filter(|live| live.level == level).count() <= 2,
-                "level {level} exceeded its configured run bound"
-            );
-        }
     }
+}
 
-    #[test]
-    fn lease_prevents_reclamation_until_snapshot_release() {
-        let root = tempdir().expect("temporary append store");
-        let runs_dir = root.path().join("runs");
-        let mut store = PackStore::create(root.path(), small_compaction_config(1024 * 1024))
-            .expect("create store");
-        let target = key(1);
-        store.append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v1")]).expect("append frame 0");
-        store.append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v2")]).expect("append frame 1");
-        let pinned = store.snapshot().expect("pin generation 2");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v3")])
-            .expect("append frame 2 compacts");
-        assert_eq!(store.runs.len(), 1);
+#[test]
+fn lease_prevents_reclamation_until_snapshot_release() {
+    let root = tempdir().expect("temporary append store");
+    let runs_dir = root.path().join("runs");
+    let mut store =
+        PackStore::create(root.path(), small_compaction_config(1024 * 1024)).expect("create store");
+    let target = key(1);
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v1")])
+        .expect("append frame 0");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v2")])
+        .expect("append frame 1");
+    let pinned = store.snapshot().expect("pin generation 2");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v3")])
+        .expect("append frame 2 compacts");
+    assert_eq!(store.runs.len(), 1);
 
-        let first = store.gc().expect("gc with pinned lease");
-        // run-2 is listed only by the superseded pre-compaction generation
-        // and is reclaimed; the leased generation's runs must survive.
-        assert_eq!(first.runs_deleted, 1, "only unprotected runs go");
-        assert_eq!(first.manifests_deleted, 2, "only unprotected manifests go");
-        for epoch in 0..2 {
-            assert!(
-                runs_dir.join(run_file_name(0, epoch, epoch)).exists(),
-                "leased run {epoch} must be kept"
-            );
-        }
-        assert!(!runs_dir.join(run_file_name(0, 2, 2)).exists());
-        assert!(root.path().join(manifest::manifest_file_name(2)).exists());
-        assert!(!root.path().join(manifest::manifest_file_name(1)).exists());
-        assert_eq!(
-            pinned.get(&target).expect("read through gc"),
-            Some(b"v2".to_vec())
-        );
-
-        drop(pinned);
-        let second = store.gc().expect("gc after lease release");
-        assert_eq!(
-            second.runs_deleted, 2,
-            "leased runs reclaimed after release"
-        );
-        assert_eq!(second.manifests_deleted, 1, "released manifest reclaimed");
-        for epoch in 0..3 {
-            assert!(!runs_dir.join(run_file_name(0, epoch, epoch)).exists());
-        }
+    // Append maintenance compacts and performs one batch GC. The pinned
+    // generation remains durable while the unprotected append generation is
+    // already reclaimed.
+    assert_eq!(store.compaction_stats().gc_cycles, 1);
+    let first = store.gc().expect("repeat gc with pinned lease");
+    // run-2 is listed only by the superseded pre-compaction generation
+    // and is reclaimed; the leased generation's runs must survive.
+    assert_eq!(first.runs_deleted, 0, "batch GC already removed orphan runs");
+    assert_eq!(
+        first.manifests_deleted, 0,
+        "batch GC already collapsed manifest history"
+    );
+    for epoch in 0..2 {
         assert!(
-            runs_dir
-                .join("run-l1-00000000000000000000-00000000000000000002.idx")
-                .exists(),
-            "live compacted run stays"
-        );
-        assert_eq!(
-            store.get(&target).expect("read after reclamation"),
-            Some(b"v3".to_vec())
-        );
-        let stats = store.compaction_stats();
-        assert_eq!(stats.gc_cycles, 2);
-        assert_eq!(stats.gc_runs_deleted, 3);
-    }
-
-    #[test]
-    fn crash_mid_compaction_keeps_previous_generation_live() {
-        let root = tempdir().expect("temporary append store");
-        let runs_dir = root.path().join("runs");
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-        let target = key(1);
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v1"), put(key(2), b"a")])
-            .expect("append frame 0");
-        store.append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v2")]).expect("append frame 1");
-        store.append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v3")]).expect("append frame 2");
-
-        // Publish the merge output run file but drop the store before the
-        // manifest publication: exactly a crash between the two atomic steps.
-        let pending = store
-            .build_compacted_run(0)
-            .expect("merge oldest runs")
-            .expect("three runs are mergeable");
-        let orphan = runs_dir.join(run_file_name(
-            pending.level,
-            pending.min_epoch,
-            pending.max_epoch,
-        ));
-        assert!(orphan.exists());
-        drop(store);
-
-        let mut reopened = PackStore::open(root.path(), store_config(1024 * 1024))
-            .expect("reopen after interrupted compaction");
-        assert_eq!(
-            reopened.open_validation().runs,
-            3,
-            "orphan run is invisible"
-        );
-        assert_eq!(
-            reopened.get(&target).expect("read after crash"),
-            Some(b"v3".to_vec())
-        );
-        assert_eq!(
-            reopened.get(&key(2)).expect("read sibling after crash"),
-            Some(b"a".to_vec())
-        );
-        assert!(orphan.exists(), "gc did not run yet");
-        let stats = reopened
-            .gc()
-            .expect("reclaim interrupted compaction output");
-        assert_eq!(stats.runs_deleted, 1);
-        assert!(!orphan.exists());
-        assert_eq!(
-            reopened.get(&target).expect("read after reclamation"),
-            Some(b"v3".to_vec())
-        );
-
-        // A crashed append leaves a stale temp file; open clears it so the
-        // next publication does not trip over create-new.
-        let stale = runs_dir.join("run-00000000000000000003.tmp");
-        fs::write(&stale, b"torn").expect("plant stale temp file");
-        drop(reopened);
-        let mut cleared = PackStore::open(root.path(), store_config(1024 * 1024))
-            .expect("reopen clears stale");
-        assert!(!stale.exists());
-        cleared
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v4")])
-            .expect("append after stale temp cleanup");
-        assert_eq!(
-            cleared.get(&target).expect("read appended value"),
-            Some(b"v4".to_vec())
+            runs_dir.join(run_file_name(0, epoch, epoch)).exists(),
+            "leased run {epoch} must be kept"
         );
     }
+    assert!(!runs_dir.join(run_file_name(0, 2, 2)).exists());
+    assert!(root.path().join(manifest::manifest_file_name(2)).exists());
+    assert!(!root.path().join(manifest::manifest_file_name(1)).exists());
+    assert_eq!(
+        pinned.get(&target).expect("read through gc"),
+        Some(b"v2".to_vec())
+    );
 
-    #[test]
-    fn reopen_after_compaction_matches_precompaction_byte_for_byte() {
-        let root = tempdir().expect("temporary append store");
-        let mut store = PackStore::create(root.path(), small_compaction_config(1024 * 1024))
-            .expect("create store");
-        let mut model: Vec<(bool, [u8; PACK_KEY_BYTES], Option<Vec<u8>>)> = Vec::new();
-        for tag in 0..16u8 {
-            model.push((false, key(tag), None));
+    drop(pinned);
+    let second = store.gc().expect("gc after lease release");
+    assert_eq!(
+        second.runs_deleted, 2,
+        "leased runs reclaimed after release"
+    );
+    assert_eq!(second.manifests_deleted, 1, "released manifest reclaimed");
+    for epoch in 0..3 {
+        assert!(!runs_dir.join(run_file_name(0, epoch, epoch)).exists());
+    }
+    assert!(
+        runs_dir
+            .join("run-l1-00000000000000000000-00000000000000000002.idx")
+            .exists(),
+        "live compacted run stays"
+    );
+    assert_eq!(
+        store.get(&target).expect("read after reclamation"),
+        Some(b"v3".to_vec())
+    );
+    let stats = store.compaction_stats();
+    assert_eq!(stats.gc_cycles, 3);
+    assert_eq!(stats.gc_runs_deleted, 3);
+}
+
+#[test]
+fn crash_mid_compaction_keeps_previous_generation_live() {
+    let root = tempdir().expect("temporary append store");
+    let runs_dir = root.path().join("runs");
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    let target = key(1);
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v1"), put(key(2), b"a")])
+        .expect("append frame 0");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v2")])
+        .expect("append frame 1");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v3")])
+        .expect("append frame 2");
+
+    // Publish the merge output run file but drop the store before the
+    // manifest publication: exactly a crash between the two atomic steps.
+    let pending = store
+        .build_compacted_run(0)
+        .expect("merge oldest runs")
+        .expect("three runs are mergeable");
+    let orphan = runs_dir.join(run_file_name(
+        pending.level,
+        pending.min_epoch,
+        pending.max_epoch,
+    ));
+    assert!(orphan.exists());
+    drop(store);
+
+    let mut reopened = PackStore::open(root.path(), store_config(1024 * 1024))
+        .expect("reopen after interrupted compaction");
+    assert_eq!(
+        reopened.open_validation().runs,
+        3,
+        "orphan run is invisible"
+    );
+    assert_eq!(
+        reopened.get(&target).expect("read after crash"),
+        Some(b"v3".to_vec())
+    );
+    assert_eq!(
+        reopened.get(&key(2)).expect("read sibling after crash"),
+        Some(b"a".to_vec())
+    );
+    assert!(
+        !orphan.exists(),
+        "successful open must reclaim the invisible compaction output"
+    );
+    let stats = reopened
+        .gc()
+        .expect("repeat reclamation after interrupted compaction");
+    assert_eq!(stats.runs_deleted, 0);
+    assert!(!orphan.exists());
+    assert_eq!(
+        reopened.get(&target).expect("read after reclamation"),
+        Some(b"v3".to_vec())
+    );
+
+    // A crashed append leaves a stale temp file; open clears it so the
+    // next publication does not trip over create-new.
+    let stale = runs_dir.join("run-00000000000000000003.tmp");
+    fs::write(&stale, b"torn").expect("plant stale temp file");
+    drop(reopened);
+    let mut cleared =
+        PackStore::open(root.path(), store_config(1024 * 1024)).expect("reopen clears stale");
+    assert!(!stale.exists());
+    cleared
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v4")])
+        .expect("append after stale temp cleanup");
+    assert_eq!(
+        cleared.get(&target).expect("read appended value"),
+        Some(b"v4".to_vec())
+    );
+}
+
+#[test]
+fn reopen_after_compaction_matches_precompaction_byte_for_byte() {
+    let root = tempdir().expect("temporary append store");
+    let mut store =
+        PackStore::create(root.path(), small_compaction_config(1024 * 1024)).expect("create store");
+    let mut model: Vec<(bool, [u8; PACK_KEY_BYTES], Option<Vec<u8>>)> = Vec::new();
+    for tag in 0..16u8 {
+        model.push((false, key(tag), None));
+    }
+    // Twelve frames drive L0 merges, an L1 merge into L2, tombstones,
+    // and rewrites of earlier keys at every level.
+    for frame in 0..12u8 {
+        let mut operations = Vec::new();
+        for ordinal in 0..8u8 {
+            let tag = frame.wrapping_mul(3).wrapping_add(ordinal) % 16;
+            let value = format!("f{frame}-v{ordinal}");
+            operations.push(put(key(tag), value.as_bytes()));
+            model[usize::from(tag)] = (true, key(tag), Some(value.into_bytes()));
         }
-        // Twelve frames drive L0 merges, an L1 merge into L2, tombstones,
-        // and rewrites of earlier keys at every level.
-        for frame in 0..12u8 {
-            let mut operations = Vec::new();
-            for ordinal in 0..8u8 {
-                let tag = frame.wrapping_mul(3).wrapping_add(ordinal) % 16;
-                let value = format!("f{frame}-v{ordinal}");
-                operations.push(put(key(tag), value.as_bytes()));
-                model[usize::from(tag)] = (true, key(tag), Some(value.into_bytes()));
-            }
-            if frame % 4 == 3 {
-                let tag = (frame + 5) % 16;
-                operations.push(tombstone(key(tag)));
-                model[usize::from(tag)] = (true, key(tag), None);
-            }
-            store.append_frame(TEST_FRAME_CONTEXT, &operations).expect("append model frame");
-            assert_full_scan_matches(&store, &model);
+        if frame % 4 == 3 {
+            let tag = (frame + 5) % 16;
+            operations.push(tombstone(key(tag)));
+            model[usize::from(tag)] = (true, key(tag), None);
         }
-        let all_keys: Vec<_> = model.iter().map(|(_, key, _)| *key).collect();
-        let before = store
-            .get_many_sorted(&all_keys)
-            .expect("capture pre-reopen reads");
-        assert!(
-            store.runs.iter().any(|live| live.level == 2),
-            "L2 must be exercised"
-        );
-        let stats = store.compaction_stats();
-        assert!(
-            stats.cycles >= 4,
-            "several compaction cycles ran: {stats:?}"
-        );
-        drop(store);
-
-        let reopened = PackStore::open(root.path(), store_config(1024 * 1024))
-            .expect("reopen compacted store");
-        let after = reopened
-            .get_many_sorted(&all_keys)
-            .expect("read reopened compacted store");
-        assert_eq!(before, after, "reopen reads diverged after compaction");
-        assert_full_scan_matches(&reopened, &model);
-    }
-
-    fn assert_full_scan_matches(
-        store: &PackStore,
-        model: &[(bool, [u8; PACK_KEY_BYTES], Option<Vec<u8>>)],
-    ) {
-        let touched: Vec<_> = model.iter().filter(|entry| entry.0).collect();
-        let keys: Vec<_> = touched.iter().map(|(_, key, _)| *key).collect();
-        let actual = store.get_many_sorted(&keys).expect("full sorted scan");
-        let expected: Vec<_> = touched.iter().map(|(_, _, value)| value.clone()).collect();
-        assert_eq!(actual, expected, "store diverged from the model");
-    }
-
-    #[test]
-    fn external_horizon_rebuilds_missing_manifest_and_runs_from_frames() {
-        let root = tempdir().expect("temporary append store");
-        let runs_dir = root.path().join("runs");
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-        let target = key(1);
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v1"), put(key(2), b"a")])
-            .expect("append frame 0");
-        store.append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v2")]).expect("append frame 1");
-        store.append_frame(TEST_FRAME_CONTEXT, &[put(key(3), b"c")]).expect("append frame 2");
-        let committed = store.last_frame_receipt().expect("committed receipt");
-        let horizon = PackCommitHorizon {
-            epoch: committed.epoch,
-            segment_id: committed.segment_id,
-            frame_end: committed.frame_end,
-            context: committed.context,
-            frame_sha256: committed.frame_sha256,
-        };
-        drop(store);
-
-        // A missing derived manifest is recoverable only with the explicit
-        // canonical horizon. Raw frames alone are not a commit decision.
-        for (_, path) in manifest::list_manifest_files(root.path()).expect("list manifests") {
-            fs::remove_file(path).expect("delete manifest");
-        }
-        let operator_index = runs_dir.join("operator-checkpoint.idx");
-        let operator_temp = runs_dir.join("operator-checkpoint.tmp");
-        fs::write(&operator_index, b"operator index").expect("plant unrelated index");
-        fs::write(&operator_temp, b"operator temp").expect("plant unrelated temp");
-        let reopened = PackStore::open_at_commit_horizon(
-            root.path(),
-            store_config(1024 * 1024),
-            Some(horizon),
-        )
-        .expect("marker rebuilds the derived generation");
-        assert_eq!(reopened.open_validation().frames, 3);
-        assert_eq!(reopened.open_validation().runs, 3);
-        assert_eq!(
-            reopened.get(&target).expect("read reconstructed"),
-            Some(b"v2".to_vec())
-        );
-        let republished = manifest::list_manifest_files(root.path()).expect("list republished");
-        assert_eq!(
-            republished.len(),
-            1,
-            "marker recovery republishes one generation"
-        );
-        assert_eq!(
-            republished[0].0, 1,
-            "generation restarts after a total manifest loss"
-        );
-        assert!(operator_index.exists(), "recovery removed an unrelated index");
-        assert!(operator_temp.exists(), "recovery removed an unrelated temp");
-        drop(reopened);
-
-        // Lose the manifest again plus one run: the same marker deterministically
-        // rebuilds every run from the committed frame prefix.
-        for (_, path) in manifest::list_manifest_files(root.path()).expect("list manifests") {
-            fs::remove_file(path).expect("delete manifest");
-        }
-        fs::remove_file(runs_dir.join(run_file_name(0, 1, 1))).expect("delete one run");
-        let mut rebuilt = PackStore::open_at_commit_horizon(
-            root.path(),
-            store_config(1024 * 1024),
-            Some(horizon),
-        )
-        .expect("marker rebuilds missing runs from frames");
-        assert_eq!(rebuilt.open_validation().frames, 3);
-        assert_eq!(rebuilt.open_validation().runs, 3);
-        assert_eq!(
-            rebuilt.get(&target).expect("read rebuilt"),
-            Some(b"v2".to_vec())
-        );
-        assert_eq!(
-            rebuilt.get(&key(3)).expect("read rebuilt sibling"),
-            Some(b"c".to_vec())
-        );
-        // The store keeps appending at the right epoch after a rebuild.
-        rebuilt
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v3")])
-            .expect("append after rebuild");
-        assert_eq!(
-            rebuilt.get(&target).expect("read post-rebuild append"),
-            Some(b"v3".to_vec())
-        );
-    }
-
-    #[test]
-    fn manifest_and_run_from_another_same_height_history_fail_before_mutation() {
-        let source_root = tempdir().expect("temporary source pack");
-        let target_root = tempdir().expect("temporary target pack");
-        let source_key = key(41);
-        let target_key = key(42);
-
-        let mut source = PackStore::create(source_root.path(), store_config(1024 * 1024))
-            .expect("create source pack");
-        source
-            .append_frame(TEST_FRAME_CONTEXT, &[put(source_key, b"source")])
-            .expect("append source frame");
-        let source_receipt = source.last_frame_receipt().expect("source receipt");
-        drop(source);
-
-        let mut target = PackStore::create(target_root.path(), store_config(1024 * 1024))
-            .expect("create target pack");
-        target
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target_key, b"target")])
-            .expect("append target frame");
-        let target_receipt = target.last_frame_receipt().expect("target receipt");
-        drop(target);
-        assert_eq!(source_receipt.frame_start, target_receipt.frame_start);
-        assert_eq!(source_receipt.frame_end, target_receipt.frame_end);
-        assert_eq!(source_receipt.rows, target_receipt.rows);
-        assert_eq!(source_receipt.metadata_bytes, target_receipt.metadata_bytes);
-        assert_eq!(source_receipt.value_bytes, target_receipt.value_bytes);
-        assert_ne!(source_receipt.frame_sha256, target_receipt.frame_sha256);
-
-        let source_manifest = manifest::list_manifest_files(source_root.path())
-            .expect("list source manifests")
-            .first()
-            .expect("source manifest")
-            .1
-            .clone();
-        let target_manifest = manifest::list_manifest_files(target_root.path())
-            .expect("list target manifests")
-            .first()
-            .expect("target manifest")
-            .1
-            .clone();
-        let canonical_manifest_bytes = fs::read(&target_manifest).expect("read target manifest");
-        let target_run_path = target_root
-            .path()
-            .join("runs")
-            .join(run_file_name(0, 0, 0));
-        let canonical_run_bytes = fs::read(&target_run_path).expect("read target run");
-        fs::copy(source_manifest, target_manifest).expect("copy foreign manifest");
-        fs::copy(
-            source_root.path().join("runs").join(run_file_name(0, 0, 0)),
-            &target_run_path,
-        )
-        .expect("copy foreign run");
-        let stale_temp = target_root.path().join("runs").join("run-recovery.idx.tmp");
-        fs::write(&stale_temp, b"preserve before fatal history mismatch")
-            .expect("plant stale recovery output");
-
-        let before = snapshot_store_files(target_root.path());
-        let error = match PackStore::open(target_root.path(), store_config(1024 * 1024)) {
-            Ok(_) => panic!("a foreign manifest/run history must be rejected"),
-            Err(error) => error,
-        };
-        assert!(
-            error
-                .to_string()
-                .contains("does not bind the selected frame history"),
-            "unexpected error: {error:#}"
-        );
-        assert_eq!(
-            snapshot_store_files(target_root.path()),
-            before,
-            "standalone rejection must not mutate any store artifact"
-        );
-
-        let recovered = PackStore::open_at_commit_horizon(
-            target_root.path(),
-            store_config(1024 * 1024),
-            Some(PackCommitHorizon {
-                epoch: target_receipt.epoch,
-                segment_id: target_receipt.segment_id,
-                frame_end: target_receipt.frame_end,
-                context: target_receipt.context,
-                frame_sha256: target_receipt.frame_sha256,
-            }),
-        )
-        .expect("external horizon rebuilds a foreign derived generation");
-        assert_eq!(
-            recovered.get(&target_key).expect("read target value"),
-            Some(b"target".to_vec())
-        );
-        assert_eq!(recovered.get(&source_key).expect("read source key"), None);
-        assert_eq!(recovered.last_frame_receipt(), Some(target_receipt));
-        drop(recovered);
-        let rebuilt_manifest = manifest::list_manifest_files(target_root.path())
-            .expect("list rebuilt manifests")
-            .first()
-            .expect("rebuilt manifest")
-            .1
-            .clone();
-        assert_eq!(
-            fs::read(rebuilt_manifest).expect("read rebuilt manifest"),
-            canonical_manifest_bytes
-        );
-        assert_eq!(
-            fs::read(&target_run_path).expect("read rebuilt run"),
-            canonical_run_bytes
-        );
-        let reopened = PackStore::open(target_root.path(), store_config(1024 * 1024))
-            .expect("standalone reopen rebuilt generation");
-        assert_eq!(
-            reopened.get(&target_key).expect("re-read target value"),
-            Some(b"target".to_vec())
-        );
-        assert_eq!(reopened.get(&source_key).expect("re-read source key"), None);
-
-        // The two one-frame histories intentionally have different authenticated
-        // receipts even though their epoch horizon and run names are identical.
-        assert_ne!(source_receipt.frame_sha256, target_receipt.frame_sha256);
-    }
-
-    #[test]
-    fn unknown_manifest_version_fails_closed_without_mutation() {
-        let root = tempdir().expect("temporary append store");
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create pack store");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(key(51), b"value")])
-            .expect("append frame");
-        let receipt = store.last_frame_receipt().expect("frame receipt");
-        drop(store);
-
-        let manifest_path = manifest::list_manifest_files(root.path())
-            .expect("list manifests")
-            .first()
-            .expect("manifest")
-            .1
-            .clone();
-        let mut bytes = fs::read(&manifest_path).expect("read manifest");
-        bytes[8..12].copy_from_slice(&0xfeed_beefu32.to_le_bytes());
-        fs::write(&manifest_path, &bytes).expect("write unknown manifest version");
-        fs::write(
-            root.path().join("runs/run-unknown-version.idx.tmp"),
-            b"must survive unsupported manifest rejection",
-        )
-        .expect("plant stale output");
-        let before = snapshot_store_files(root.path());
-
-        let standalone_error = match PackStore::open(root.path(), store_config(1024 * 1024)) {
-            Ok(_) => panic!("standalone open must reject an unknown manifest version"),
-            Err(error) => error,
-        };
-        assert!(matches!(
-            standalone_error,
-            PackStoreError::UnsupportedVersion {
-                artifact: PackStoreArtifact::Manifest,
-                found: 0xfeed_beef,
-                ..
-            }
-        ));
-        assert_eq!(snapshot_store_files(root.path()), before);
-
-        let external_error = match PackStore::open_at_commit_horizon(
-            root.path(),
-            store_config(1024 * 1024),
-            Some(PackCommitHorizon {
-                epoch: receipt.epoch,
-                segment_id: receipt.segment_id,
-                frame_end: receipt.frame_end,
-                context: receipt.context,
-                frame_sha256: receipt.frame_sha256,
-            }),
-        ) {
-            Ok(_) => panic!("external open must reject an unknown manifest version"),
-            Err(error) => error,
-        };
-        assert!(matches!(
-            external_error,
-            PackStoreError::UnsupportedVersion {
-                artifact: PackStoreArtifact::Manifest,
-                found: 0xfeed_beef,
-                ..
-            }
-        ));
-        assert_eq!(
-            snapshot_store_files(root.path()),
-            before,
-            "unknown-version rejection must not mutate any store artifact"
-        );
-    }
-
-    #[test]
-    fn recovery_rejects_before_temp_output_and_accepts_the_exact_memory_bound() {
-        let root = tempdir().expect("temporary bounded-recovery store");
-        let operations = [
-            put(key(0x51), b"one"),
-            put(key(0x52), b"two"),
-            put(key(0x53), b"three"),
-            put(key(0x54), b"four"),
-        ];
-        let rows = operations.len() as u64;
-        let metadata_bytes = rows
-            .checked_mul(FRAME_ROW_METADATA_LEN as u64)
-            .expect("test metadata size");
-        let exact_bound =
-            recovery::estimate_rebuild_peak_bytes(0, metadata_bytes, rows, operations.len())
-                .expect("estimate exact recovery peak");
-        let rejected_bound = exact_bound.checked_sub(1).expect("positive recovery peak");
-
-        let mut store = PackStore::create(root.path(), store_config(1024 * 1024))
-            .expect("create bounded-recovery store");
         store
             .append_frame(TEST_FRAME_CONTEXT, &operations)
-            .expect("append recovery frame");
-        let run_path = root.path().join("runs").join(run_file_name(0, 0, 0));
-        let temp_path = root
-            .path()
-            .join("runs")
-            .join(format!("{}.tmp", run_file_name(0, 0, 0)));
-        let records_offset = store.runs[0].run.records_offset;
-        drop(store);
-        flip_persisted_run_byte(&run_path, records_offset + 1);
-        let before = snapshot_store_files(root.path());
+            .expect("append model frame");
+        assert_full_scan_matches(&store, &model);
+    }
+    let all_keys: Vec<_> = model.iter().map(|(_, key, _)| *key).collect();
+    let before = store
+        .get_many_sorted(&all_keys)
+        .expect("capture pre-reopen reads");
+    assert!(
+        store.runs.iter().any(|live| live.level == 2),
+        "L2 must be exercised"
+    );
+    let stats = store.compaction_stats();
+    assert!(
+        stats.cycles >= 4,
+        "several compaction cycles ran: {stats:?}"
+    );
+    drop(store);
 
-        let error = match PackStore::open(root.path(), store_config(rejected_bound)) {
-            Ok(_) => panic!("one byte below the recovery peak must fail"),
-            Err(error) => error,
-        };
-        assert!(matches!(
-            error,
-            PackStoreError::LimitExceeded {
-                limit: PackStoreLimit::IndexMemoryBytes,
-                actual,
-                maximum,
-            } if actual == exact_bound && maximum == rejected_bound
-        ));
-        assert!(!temp_path.exists(), "bounded recovery created temp output");
-        assert_eq!(
-            snapshot_store_files(root.path()),
-            before,
-            "bounded recovery mutated artifacts before rejecting its workspace"
-        );
+    let reopened =
+        PackStore::open(root.path(), store_config(1024 * 1024)).expect("reopen compacted store");
+    let after = reopened
+        .get_many_sorted(&all_keys)
+        .expect("read reopened compacted store");
+    assert_eq!(before, after, "reopen reads diverged after compaction");
+    assert_full_scan_matches(&reopened, &model);
+}
 
-        let reopened = PackStore::open(root.path(), store_config(exact_bound))
-            .expect("the inclusive exact recovery bound succeeds");
-        for operation in &operations {
-            let PackOpKind::Put(expected) = &operation.kind else {
-                unreachable!("fixture contains only puts")
-            };
-            assert_eq!(
-                reopened.get(&operation.key).expect("read rebuilt value"),
-                Some(expected.clone())
-            );
+fn assert_full_scan_matches(
+    store: &PackStore,
+    model: &[(bool, [u8; PACK_KEY_BYTES], Option<Vec<u8>>)],
+) {
+    let touched: Vec<_> = model.iter().filter(|entry| entry.0).collect();
+    let keys: Vec<_> = touched.iter().map(|(_, key, _)| *key).collect();
+    let actual = store.get_many_sorted(&keys).expect("full sorted scan");
+    let expected: Vec<_> = touched.iter().map(|(_, _, value)| value.clone()).collect();
+    assert_eq!(actual, expected, "store diverged from the model");
+}
+
+#[test]
+fn external_horizon_rebuilds_missing_manifest_and_runs_from_frames() {
+    let root = tempdir().expect("temporary append store");
+    let runs_dir = root.path().join("runs");
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    let target = key(1);
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v1"), put(key(2), b"a")])
+        .expect("append frame 0");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v2")])
+        .expect("append frame 1");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(3), b"c")])
+        .expect("append frame 2");
+    let committed = store.last_frame_receipt().expect("committed receipt");
+    let horizon = PackCommitHorizon {
+        epoch: committed.epoch,
+        segment_id: committed.segment_id,
+        frame_end: committed.frame_end,
+        context: committed.context,
+        frame_sha256: committed.frame_sha256,
+    };
+    drop(store);
+
+    // A missing derived manifest is recoverable only with the explicit
+    // canonical horizon. Raw frames alone are not a commit decision.
+    for (_, path) in manifest::list_manifest_files(root.path()).expect("list manifests") {
+        fs::remove_file(path).expect("delete manifest");
+    }
+    let operator_index = runs_dir.join("operator-checkpoint.idx");
+    let operator_temp = runs_dir.join("operator-checkpoint.tmp");
+    fs::write(&operator_index, b"operator index").expect("plant unrelated index");
+    fs::write(&operator_temp, b"operator temp").expect("plant unrelated temp");
+    let reopened =
+        PackStore::open_at_commit_horizon(root.path(), store_config(1024 * 1024), Some(horizon))
+            .expect("marker rebuilds the derived generation");
+    assert_eq!(reopened.open_validation().frames, 3);
+    assert_eq!(reopened.open_validation().runs, 2);
+    assert_eq!(
+        reopened.get(&target).expect("read reconstructed"),
+        Some(b"v2".to_vec())
+    );
+    let republished = manifest::list_manifest_files(root.path()).expect("list republished");
+    assert_eq!(
+        republished.len(),
+        1,
+        "marker recovery republishes one generation"
+    );
+    assert_eq!(
+        republished[0].0, 1,
+        "generation restarts after a total manifest loss"
+    );
+    assert!(
+        operator_index.exists(),
+        "recovery removed an unrelated index"
+    );
+    assert!(operator_temp.exists(), "recovery removed an unrelated temp");
+    let republished_manifest =
+        manifest::read_manifest(&republished[0].1).expect("read republished manifest");
+    let run_to_remove = republished_manifest
+        .entries
+        .first()
+        .expect("republished manifest has a run")
+        .file_name
+        .clone();
+    drop(reopened);
+
+    // Lose the manifest again plus one run: the same marker deterministically
+    // rebuilds every run from the committed frame prefix.
+    for (_, path) in manifest::list_manifest_files(root.path()).expect("list manifests") {
+        fs::remove_file(path).expect("delete manifest");
+    }
+    fs::remove_file(runs_dir.join(run_to_remove)).expect("delete one manifest-selected run");
+    let mut rebuilt =
+        PackStore::open_at_commit_horizon(root.path(), store_config(1024 * 1024), Some(horizon))
+            .expect("marker rebuilds missing runs from frames");
+    assert_eq!(rebuilt.open_validation().frames, 3);
+    assert_eq!(rebuilt.open_validation().runs, 2);
+    assert_eq!(
+        rebuilt.get(&target).expect("read rebuilt"),
+        Some(b"v2".to_vec())
+    );
+    assert_eq!(
+        rebuilt.get(&key(3)).expect("read rebuilt sibling"),
+        Some(b"c".to_vec())
+    );
+    // The store keeps appending at the right epoch after a rebuild.
+    rebuilt
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v3")])
+        .expect("append after rebuild");
+    assert_eq!(
+        rebuilt.get(&target).expect("read post-rebuild append"),
+        Some(b"v3".to_vec())
+    );
+}
+
+#[test]
+fn manifest_and_run_from_another_same_height_history_fail_before_mutation() {
+    let source_root = tempdir().expect("temporary source pack");
+    let target_root = tempdir().expect("temporary target pack");
+    let source_key = key(41);
+    let target_key = key(42);
+
+    let mut source = PackStore::create(source_root.path(), store_config(1024 * 1024))
+        .expect("create source pack");
+    source
+        .append_frame(TEST_FRAME_CONTEXT, &[put(source_key, b"source")])
+        .expect("append source frame");
+    let source_receipt = source.last_frame_receipt().expect("source receipt");
+    drop(source);
+
+    let mut target = PackStore::create(target_root.path(), store_config(1024 * 1024))
+        .expect("create target pack");
+    target
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target_key, b"target")])
+        .expect("append target frame");
+    let target_receipt = target.last_frame_receipt().expect("target receipt");
+    drop(target);
+    assert_eq!(source_receipt.frame_start, target_receipt.frame_start);
+    assert_eq!(source_receipt.frame_end, target_receipt.frame_end);
+    assert_eq!(source_receipt.rows, target_receipt.rows);
+    assert_eq!(source_receipt.metadata_bytes, target_receipt.metadata_bytes);
+    assert_eq!(source_receipt.value_bytes, target_receipt.value_bytes);
+    assert_ne!(source_receipt.frame_sha256, target_receipt.frame_sha256);
+
+    let source_manifest = manifest::list_manifest_files(source_root.path())
+        .expect("list source manifests")
+        .first()
+        .expect("source manifest")
+        .1
+        .clone();
+    let target_manifest = manifest::list_manifest_files(target_root.path())
+        .expect("list target manifests")
+        .first()
+        .expect("target manifest")
+        .1
+        .clone();
+    let canonical_manifest =
+        manifest::read_manifest(&target_manifest).expect("read canonical target manifest");
+    let target_run_path = target_root.path().join("runs").join(run_file_name(0, 0, 0));
+    let canonical_run_bytes = fs::read(&target_run_path).expect("read target run");
+    fs::copy(source_manifest, target_manifest).expect("copy foreign manifest");
+    fs::copy(
+        source_root.path().join("runs").join(run_file_name(0, 0, 0)),
+        &target_run_path,
+    )
+    .expect("copy foreign run");
+    let stale_temp = target_root.path().join("runs").join("run-recovery.idx.tmp");
+    fs::write(&stale_temp, b"preserve before fatal history mismatch")
+        .expect("plant stale recovery output");
+
+    let before = snapshot_store_files(target_root.path());
+    let error = match PackStore::open(target_root.path(), store_config(1024 * 1024)) {
+        Ok(_) => panic!("a foreign manifest/run history must be rejected"),
+        Err(error) => error,
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("does not bind the selected frame history"),
+        "unexpected error: {error:#}"
+    );
+    assert_eq!(
+        snapshot_store_files(target_root.path()),
+        before,
+        "standalone rejection must not mutate any store artifact"
+    );
+
+    let recovered = PackStore::open_at_commit_horizon(
+        target_root.path(),
+        store_config(1024 * 1024),
+        Some(PackCommitHorizon {
+            epoch: target_receipt.epoch,
+            segment_id: target_receipt.segment_id,
+            frame_end: target_receipt.frame_end,
+            context: target_receipt.context,
+            frame_sha256: target_receipt.frame_sha256,
+        }),
+    )
+    .expect("external horizon rebuilds a foreign derived generation");
+    assert_eq!(
+        recovered.get(&target_key).expect("read target value"),
+        Some(b"target".to_vec())
+    );
+    assert_eq!(recovered.get(&source_key).expect("read source key"), None);
+    assert_eq!(recovered.last_frame_receipt(), Some(target_receipt));
+    drop(recovered);
+    let rebuilt_manifest = manifest::list_manifest_files(target_root.path())
+        .expect("list rebuilt manifests")
+        .first()
+        .expect("rebuilt manifest")
+        .1
+        .clone();
+    let rebuilt_manifest =
+        manifest::read_manifest(&rebuilt_manifest).expect("read rebuilt manifest");
+    assert_eq!(
+        rebuilt_manifest.generation,
+        canonical_manifest.generation + 1
+    );
+    assert_eq!(rebuilt_manifest.extents, canonical_manifest.extents);
+    assert_eq!(rebuilt_manifest.entries, canonical_manifest.entries);
+    assert_eq!(
+        fs::read(&target_run_path).expect("read rebuilt run"),
+        canonical_run_bytes
+    );
+    let reopened = PackStore::open(target_root.path(), store_config(1024 * 1024))
+        .expect("standalone reopen rebuilt generation");
+    assert_eq!(
+        reopened.get(&target_key).expect("re-read target value"),
+        Some(b"target".to_vec())
+    );
+    assert_eq!(reopened.get(&source_key).expect("re-read source key"), None);
+
+    // The two one-frame histories intentionally have different authenticated
+    // receipts even though their epoch horizon and run names are identical.
+    assert_ne!(source_receipt.frame_sha256, target_receipt.frame_sha256);
+}
+
+#[test]
+fn unknown_manifest_version_fails_closed_without_mutation() {
+    let root = tempdir().expect("temporary append store");
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create pack store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(51), b"value")])
+        .expect("append frame");
+    let receipt = store.last_frame_receipt().expect("frame receipt");
+    drop(store);
+
+    let manifest_path = manifest::list_manifest_files(root.path())
+        .expect("list manifests")
+        .first()
+        .expect("manifest")
+        .1
+        .clone();
+    let mut bytes = fs::read(&manifest_path).expect("read manifest");
+    bytes[8..12].copy_from_slice(&0xfeed_beefu32.to_le_bytes());
+    fs::write(&manifest_path, &bytes).expect("write unknown manifest version");
+    fs::write(
+        root.path().join("runs/run-unknown-version.idx.tmp"),
+        b"must survive unsupported manifest rejection",
+    )
+    .expect("plant stale output");
+    let before = snapshot_store_files(root.path());
+
+    let standalone_error = match PackStore::open(root.path(), store_config(1024 * 1024)) {
+        Ok(_) => panic!("standalone open must reject an unknown manifest version"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        standalone_error,
+        PackStoreError::UnsupportedVersion {
+            artifact: PackStoreArtifact::Manifest,
+            found: 0xfeed_beef,
+            ..
         }
-        assert!(!temp_path.exists(), "successful recovery left temp output");
-    }
+    ));
+    assert_eq!(snapshot_store_files(root.path()), before);
 
-    #[test]
-    fn recovery_preflights_the_cumulative_index_bound_before_replacing_any_run() {
-        let root = tempdir().expect("temporary cumulative-recovery store");
-        let rows = 1u64;
-        let metadata_bytes = FRAME_ROW_METADATA_LEN as u64;
-        let first_resident = run_structured_bytes(1, 1).expect("first run resident bytes");
-        let cumulative_bound = recovery::estimate_rebuild_peak_bytes(
-            first_resident,
-            metadata_bytes,
-            rows,
-            1,
-        )
-        .expect("estimate cumulative recovery peak");
-        let rejected_bound = cumulative_bound
-            .checked_sub(1)
-            .expect("positive cumulative recovery peak");
+    let external_error = match PackStore::open_at_commit_horizon(
+        root.path(),
+        store_config(1024 * 1024),
+        Some(PackCommitHorizon {
+            epoch: receipt.epoch,
+            segment_id: receipt.segment_id,
+            frame_end: receipt.frame_end,
+            context: receipt.context,
+            frame_sha256: receipt.frame_sha256,
+        }),
+    ) {
+        Ok(_) => panic!("external open must reject an unknown manifest version"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        external_error,
+        PackStoreError::UnsupportedVersion {
+            artifact: PackStoreArtifact::Manifest,
+            found: 0xfeed_beef,
+            ..
+        }
+    ));
+    assert_eq!(
+        snapshot_store_files(root.path()),
+        before,
+        "unknown-version rejection must not mutate any store artifact"
+    );
+}
 
-        let mut store = PackStore::create(root.path(), store_config(1024 * 1024))
-            .expect("create cumulative-recovery store");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(key(0x61), b"first")])
-            .expect("append first recovery frame");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(key(0x62), b"second")])
-            .expect("append second recovery frame");
-        let first_run = root.path().join("runs").join(run_file_name(0, 0, 0));
-        let records_offset = store.runs[0].run.records_offset;
-        drop(store);
-        flip_persisted_run_byte(&first_run, records_offset + 1);
-        let before = snapshot_store_files(root.path());
+#[test]
+fn recovery_rejects_before_temp_output_and_accepts_the_exact_memory_bound() {
+    let root = tempdir().expect("temporary bounded-recovery store");
+    let operations = [
+        put(key(0x51), b"one"),
+        put(key(0x52), b"two"),
+        put(key(0x53), b"three"),
+        put(key(0x54), b"four"),
+    ];
+    let rows = operations.len() as u64;
+    let metadata_bytes = rows
+        .checked_mul(FRAME_ROW_METADATA_LEN as u64)
+        .expect("test metadata size");
+    let exact_bound =
+        recovery::estimate_rebuild_peak_bytes(0, metadata_bytes, rows, operations.len())
+            .expect("estimate exact recovery peak");
+    let rejected_bound = exact_bound.checked_sub(1).expect("positive recovery peak");
 
-        let error = match PackStore::open(root.path(), store_config(rejected_bound)) {
-            Ok(_) => panic!("cumulative recovery bound must reject before publication"),
-            Err(error) => error,
+    let mut store = PackStore::create(root.path(), store_config(1024 * 1024))
+        .expect("create bounded-recovery store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &operations)
+        .expect("append recovery frame");
+    let run_path = root.path().join("runs").join(run_file_name(0, 0, 0));
+    let temp_path = root
+        .path()
+        .join("runs")
+        .join(format!("{}.tmp", run_file_name(0, 0, 0)));
+    let records_offset = store.runs[0].run.records_offset;
+    drop(store);
+    flip_persisted_run_byte(&run_path, records_offset + 1);
+    let before = snapshot_store_files(root.path());
+
+    let error = match PackStore::open(root.path(), store_config(rejected_bound)) {
+        Ok(_) => panic!("one byte below the recovery peak must fail"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error,
+        PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::IndexMemoryBytes,
+            actual,
+            maximum,
+        } if actual == exact_bound && maximum == rejected_bound
+    ));
+    assert!(!temp_path.exists(), "bounded recovery created temp output");
+    assert_eq!(
+        snapshot_store_files(root.path()),
+        before,
+        "bounded recovery mutated artifacts before rejecting its workspace"
+    );
+
+    let reopened = PackStore::open(root.path(), store_config(exact_bound))
+        .expect("the inclusive exact recovery bound succeeds");
+    for operation in &operations {
+        let PackOpKind::Put(expected) = &operation.kind else {
+            unreachable!("fixture contains only puts")
         };
-        assert!(matches!(
-            error,
-            PackStoreError::LimitExceeded {
-                limit: PackStoreLimit::IndexMemoryBytes,
-                actual,
-                maximum,
-            } if actual == cumulative_bound && maximum == rejected_bound
-        ));
         assert_eq!(
-            snapshot_store_files(root.path()),
-            before,
-            "cumulative preflight failure replaced a run or manifest"
+            reopened.get(&operation.key).expect("read rebuilt value"),
+            Some(expected.clone())
         );
+    }
+    assert!(!temp_path.exists(), "successful recovery left temp output");
+}
 
-        let reopened = PackStore::open(root.path(), store_config(cumulative_bound))
-            .expect("inclusive cumulative recovery bound succeeds");
+#[test]
+fn recovery_preflights_the_cumulative_index_bound_before_replacing_any_run() {
+    let root = tempdir().expect("temporary cumulative-recovery store");
+    let rows = 1u64;
+    let metadata_bytes = FRAME_ROW_METADATA_LEN as u64;
+    let (cumulative_bound, shape) = recovery::plan_uniform_rebuild_for_test(
+        store_config(1024 * 1024),
+        2,
+        metadata_bytes,
+        rows,
+        1,
+    )
+    .expect("plan cumulative recovery peak");
+    assert_eq!(shape, vec![(1, 0, 1)]);
+    let rejected_bound = cumulative_bound
+        .checked_sub(1)
+        .expect("positive cumulative recovery peak");
+
+    let mut store = PackStore::create(root.path(), store_config(1024 * 1024))
+        .expect("create cumulative-recovery store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(0x61), b"first")])
+        .expect("append first recovery frame");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(0x62), b"second")])
+        .expect("append second recovery frame");
+    let first_run = root.path().join("runs").join(run_file_name(0, 0, 0));
+    let records_offset = store.runs[0].run.records_offset;
+    drop(store);
+    flip_persisted_run_byte(&first_run, records_offset + 1);
+    let before = snapshot_store_files(root.path());
+
+    let error = match PackStore::open(root.path(), store_config(rejected_bound)) {
+        Ok(_) => panic!("cumulative recovery bound must reject before publication"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error,
+        PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::IndexMemoryBytes,
+            actual,
+            maximum,
+        } if actual == cumulative_bound && maximum == rejected_bound
+    ));
+    assert_eq!(
+        snapshot_store_files(root.path()),
+        before,
+        "cumulative preflight failure replaced a run or manifest"
+    );
+
+    let reopened = PackStore::open(root.path(), store_config(cumulative_bound))
+        .expect("inclusive cumulative recovery bound succeeds");
+    assert_eq!(
+        reopened.get(&key(0x61)).expect("read first rebuilt key"),
+        Some(b"first".to_vec())
+    );
+    assert_eq!(
+        reopened.get(&key(0x62)).expect("read second rebuilt key"),
+        Some(b"second".to_vec())
+    );
+}
+
+#[test]
+fn recovery_rebuilds_more_than_sixty_four_frames_into_a_bounded_carry() {
+    let root = tempdir().expect("temporary long-history recovery store");
+    let config = small_compaction_config(16 * 1024 * 1024);
+    let mut store = PackStore::create(root.path(), config).expect("create long-history store");
+    let mut expected = Vec::new();
+    for frame in 0..65u32 {
+        let key = numbered_key(frame);
+        let value = format!("frame-{frame}").into_bytes();
+        store
+            .append_frame(TEST_FRAME_CONTEXT, &[put(key, &value)])
+            .expect("append long-history frame");
+        expected.push((key, value));
+    }
+    let compacted = store
+        .runs
+        .iter()
+        .find(|live| live.level > 0)
+        .expect("long history produced a compacted run");
+    let corrupt_path = root.path().join("runs").join(run_file_name(
+        compacted.level,
+        compacted.min_epoch,
+        compacted.max_epoch,
+    ));
+    let corrupt_offset = compacted.run.records_offset;
+    drop(store);
+    flip_persisted_run_byte(&corrupt_path, corrupt_offset + 1);
+
+    let mut rebuilt = PackStore::open(root.path(), config)
+        .expect("rebuild compacted long history from authenticated frames");
+    assert_eq!(rebuilt.open_validation().frames, 65);
+    assert_eq!(rebuilt.open_validation().runs, 2);
+    assert_eq!(
+        rebuilt
+            .runs
+            .iter()
+            .map(|live| (live.level, live.min_epoch, live.max_epoch))
+            .collect::<Vec<_>>(),
+        vec![(6, 0, 63), (0, 64, 64)]
+    );
+    for (key, value) in &expected {
         assert_eq!(
-            reopened.get(&key(0x61)).expect("read first rebuilt key"),
-            Some(b"first".to_vec())
-        );
-        assert_eq!(
-            reopened.get(&key(0x62)).expect("read second rebuilt key"),
-            Some(b"second".to_vec())
+            rebuilt.get(key).expect("read rebuilt long-history value"),
+            Some(value.clone())
         );
     }
 
-    #[test]
-    fn prepared_append_is_invisible_in_process_and_without_an_external_horizon() {
-        let empty_root = tempdir().expect("temporary empty store");
-        let prepared_key = key(7);
-        let mut empty = PackStore::create(empty_root.path(), store_config(1024 * 1024))
-            .expect("create store");
-        let prepared = empty
-            .prepare_frame(TEST_FRAME_CONTEXT, &[put(prepared_key, b"prepared-only")])
-            .expect("prepare first frame");
-        assert_eq!(prepared.receipt().epoch, 0);
-        assert_eq!(prepared.stage_totals().frames, 1);
-        assert_eq!(empty.get(&prepared_key).expect("read prepared key"), None);
-        assert_eq!(empty.last_frame_receipt(), None);
-        assert_eq!(empty.open_validation().frames, 0);
-        drop(empty);
-
-        let reopened = PackStore::open(empty_root.path(), store_config(1024 * 1024))
-            .expect("plain reopen discards an unactivated first frame");
-        assert_eq!(reopened.open_validation().frames, 0);
+    // Three canonical appends cross the configured L0 bound and force a
+    // post-recovery compaction to reopen the promoted run paths.
+    for frame in 65..68u32 {
+        let key = numbered_key(frame);
+        let value = format!("frame-{frame}").into_bytes();
+        rebuilt
+            .append_frame(TEST_FRAME_CONTEXT, &[put(key, &value)])
+            .expect("append and maintain after recovery");
         assert_eq!(
-            reopened.get(&prepared_key).expect("read after reopen"),
-            None
+            rebuilt.get(&key).expect("read post-recovery append"),
+            Some(value)
         );
-        assert_eq!(
-            reopened.layout().expect("recovered empty layout").0,
-            segment::SEGMENT_HEADER_LEN as u64,
-        );
+    }
+    drop(rebuilt);
+    let reopened = PackStore::open(root.path(), config)
+        .expect("reopen after post-recovery append and compaction");
+    assert_eq!(
+        reopened
+            .get(&numbered_key(67))
+            .expect("read final post-recovery value"),
+        Some(b"frame-67".to_vec())
+    );
+}
 
-        let prefix_root = tempdir().expect("temporary prefixed store");
-        let committed_key = key(1);
-        let orphan_key = key(2);
-        let mut prefixed = PackStore::create(prefix_root.path(), store_config(1024 * 1024))
-            .expect("create prefixed store");
-        prefixed
-            .append_frame(TEST_FRAME_CONTEXT, &[put(committed_key, b"committed")])
-            .expect("append committed prefix");
-        let committed = prefixed.last_frame_receipt().expect("committed receipt");
-        prefixed
-            .prepare_frame(TEST_FRAME_CONTEXT, &[
+#[test]
+fn rebuild_planner_bounds_a_four_thousand_frame_history() {
+    let metadata_bytes = FRAME_ROW_METADATA_LEN as u64;
+    let (_, shape) = recovery::plan_uniform_rebuild_for_test(
+        store_config(16 * 1024 * 1024),
+        4_097,
+        metadata_bytes,
+        1,
+        1,
+    )
+    .expect("plan 4097-frame recovery");
+    assert_eq!(shape, vec![(12, 0, 4_095), (0, 4_096, 4_096)]);
+
+    let bounded = store_config(16 * 1024 * 1024)
+        .with_max_index_levels(12)
+        .expect("valid test level bound");
+    let error = recovery::plan_uniform_rebuild_for_test(bounded, 4_097, metadata_bytes, 1, 1)
+        .expect_err("level bound rejects before recovery I/O");
+    assert!(matches!(
+        error.downcast_ref::<PackStoreError>(),
+        Some(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::IndexLevels,
+            actual: 13,
+            maximum: 12,
+        })
+    ));
+}
+
+#[test]
+fn rebuild_level_preflight_leaves_runs_manifests_and_staging_unchanged() {
+    let root = tempdir().expect("temporary level-bounded recovery store");
+    let mut store = PackStore::create(root.path(), store_config(16 * 1024 * 1024))
+        .expect("create level-bounded store");
+    for frame in 0..8u32 {
+        store
+            .append_frame(TEST_FRAME_CONTEXT, &[put(numbered_key(frame), b"value")])
+            .expect("append level-bounded frame");
+    }
+    let receipt = store.last_frame_receipt().expect("committed recovery tip");
+    drop(store);
+    for (_, path) in manifest::list_manifest_files(root.path()).expect("list manifests") {
+        fs::remove_file(path).expect("remove manifest to require external recovery");
+    }
+    let staging = root
+        .path()
+        .join("runs")
+        .join(recovery::REBUILD_STAGING_DIRECTORY);
+    fs::create_dir(&staging).expect("create interrupted staging fixture");
+    fs::write(staging.join("sentinel"), b"unchanged").expect("write staging sentinel");
+    let before = snapshot_store_files(root.path());
+    let bounded = store_config(16 * 1024 * 1024)
+        .with_max_index_levels(3)
+        .expect("valid test level bound");
+    let error = match PackStore::open_at_commit_horizon(
+        root.path(),
+        bounded,
+        Some(PackCommitHorizon {
+            epoch: receipt.epoch,
+            segment_id: receipt.segment_id,
+            frame_end: receipt.frame_end,
+            context: receipt.context,
+            frame_sha256: receipt.frame_sha256,
+        }),
+    ) {
+        Ok(_) => panic!("level preflight must reject before mutation"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error,
+        PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::IndexLevels,
+            actual: 4,
+            maximum: 3,
+        }
+    ));
+    assert_eq!(
+        snapshot_store_files(root.path()),
+        before,
+        "level preflight changed runs, manifests, or interrupted staging"
+    );
+}
+
+#[test]
+fn fast_open_removes_only_the_owned_recovery_staging_directory() {
+    let root = tempdir().expect("temporary staging-cleanup store");
+    let target = key(0x71);
+    let mut store = PackStore::create(root.path(), store_config(1024 * 1024))
+        .expect("create staging-cleanup store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"value")])
+        .expect("append staging-cleanup frame");
+    drop(store);
+
+    let runs_dir = root.path().join("runs");
+    let staging = runs_dir.join(recovery::REBUILD_STAGING_DIRECTORY);
+    fs::create_dir(&staging).expect("create interrupted recovery staging");
+    fs::write(staging.join("partial.idx"), b"partial").expect("write interrupted staging output");
+    let unrelated = runs_dir.join("operator-staging");
+    fs::create_dir(&unrelated).expect("create unrelated operator directory");
+    fs::write(unrelated.join("sentinel"), b"operator").expect("write unrelated operator sentinel");
+
+    let reopened = PackStore::open(root.path(), store_config(1024 * 1024))
+        .expect("fast open cleans interrupted recovery staging");
+    assert!(!staging.exists(), "owned recovery staging was not removed");
+    assert!(unrelated.join("sentinel").exists());
+    assert_eq!(
+        reopened.get(&target).expect("read after staging cleanup"),
+        Some(b"value".to_vec())
+    );
+}
+
+#[test]
+fn rebuild_generation_overflow_fails_before_reconcile_or_staging_cleanup() {
+    let root = tempdir().expect("temporary generation-overflow store");
+    let target = key(0x72);
+    let mut store = PackStore::create(root.path(), store_config(1024 * 1024))
+        .expect("create generation-overflow store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"value")])
+        .expect("append generation-overflow frame");
+    let run_path = root.path().join("runs").join(run_file_name(0, 0, 0));
+    let records_offset = store.runs[0].run.records_offset;
+    drop(store);
+
+    let current_path = manifest::list_manifest_files(root.path())
+        .expect("list manifests")
+        .first()
+        .expect("current manifest")
+        .1
+        .clone();
+    let mut maximum = manifest::read_manifest(&current_path).expect("read current manifest");
+    maximum.generation = u64::MAX;
+    manifest::publish_manifest(root.path(), &maximum).expect("publish maximum generation");
+    flip_persisted_run_byte(&run_path, records_offset + 1);
+    let staging = root
+        .path()
+        .join("runs")
+        .join(recovery::REBUILD_STAGING_DIRECTORY);
+    fs::create_dir(&staging).expect("create interrupted staging fixture");
+    fs::write(staging.join("sentinel"), b"unchanged").expect("write staging sentinel");
+    let before = snapshot_store_files(root.path());
+
+    let error = match PackStore::open(root.path(), store_config(1024 * 1024)) {
+        Ok(_) => panic!("maximum manifest generation cannot be rebuilt"),
+        Err(error) => error,
+    };
+    assert!(
+        error.to_string().contains("manifest generation overflows"),
+        "unexpected overflow error: {error:#}"
+    );
+    assert_eq!(
+        snapshot_store_files(root.path()),
+        before,
+        "generation overflow mutated runs, manifests, or staging"
+    );
+}
+
+#[test]
+fn manifest_selected_sparse_run_is_rejected_before_bounded_open() {
+    let root = tempdir().expect("temporary sparse-run store");
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create sparse-run store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(0x73), b"value")])
+        .expect("append sparse-run frame");
+    drop(store);
+
+    let manifest_path = manifest::list_manifest_files(root.path())
+        .expect("list sparse-run manifests")
+        .first()
+        .expect("sparse-run manifest")
+        .1
+        .clone();
+    let current = manifest::read_manifest(&manifest_path).expect("read sparse-run manifest");
+    let entry = current.entries.first().expect("manifest run entry");
+    let run_path = root.path().join("runs").join(&entry.file_name);
+    let sparse_bytes = 256 * 1024 * 1024u64;
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&run_path)
+        .expect("open sparse-run fixture");
+    file.set_len(sparse_bytes)
+        .expect("extend sparse-run fixture");
+    file.sync_all().expect("sync sparse-run fixture");
+    drop(file);
+
+    let error = read_manifest_index_run(&run_path, entry, PackStoreOptions::default())
+        .expect_err("manifest length must bound the run before mmap");
+    assert!(
+        error
+            .to_string()
+            .contains("manifest-selected run length changed before bounded open"),
+        "unexpected bounded-open error: {error:#}"
+    );
+    assert_eq!(
+        fs::metadata(&run_path)
+            .expect("stat sparse-run fixture")
+            .len(),
+        sparse_bytes,
+        "bounded reader changed the rejected run"
+    );
+}
+
+#[test]
+fn prepared_append_is_invisible_in_process_and_without_an_external_horizon() {
+    let empty_root = tempdir().expect("temporary empty store");
+    let prepared_key = key(7);
+    let mut empty =
+        PackStore::create(empty_root.path(), store_config(1024 * 1024)).expect("create store");
+    let prepared = empty
+        .prepare_frame(TEST_FRAME_CONTEXT, &[put(prepared_key, b"prepared-only")])
+        .expect("prepare first frame");
+    assert_eq!(prepared.receipt().epoch, 0);
+    assert_eq!(prepared.stage_totals().frames, 1);
+    assert_eq!(empty.get(&prepared_key).expect("read prepared key"), None);
+    assert_eq!(empty.last_frame_receipt(), None);
+    assert_eq!(empty.open_validation().frames, 0);
+    drop(empty);
+
+    let reopened = PackStore::open(empty_root.path(), store_config(1024 * 1024))
+        .expect("plain reopen discards an unactivated first frame");
+    assert_eq!(reopened.open_validation().frames, 0);
+    assert_eq!(
+        reopened.get(&prepared_key).expect("read after reopen"),
+        None
+    );
+    assert_eq!(
+        reopened.layout().expect("recovered empty layout").0,
+        segment::SEGMENT_HEADER_LEN as u64,
+    );
+
+    let prefix_root = tempdir().expect("temporary prefixed store");
+    let committed_key = key(1);
+    let orphan_key = key(2);
+    let mut prefixed = PackStore::create(prefix_root.path(), store_config(1024 * 1024))
+        .expect("create prefixed store");
+    prefixed
+        .append_frame(TEST_FRAME_CONTEXT, &[put(committed_key, b"committed")])
+        .expect("append committed prefix");
+    let committed = prefixed.last_frame_receipt().expect("committed receipt");
+    prefixed
+        .prepare_frame(
+            TEST_FRAME_CONTEXT,
+            &[
                 put(committed_key, b"unactivated-replacement"),
                 put(orphan_key, b"orphan"),
-            ])
-            .expect("prepare suffix");
-        assert_eq!(
-            prefixed.get(&committed_key).expect("read visible prefix"),
-            Some(b"committed".to_vec())
-        );
-        assert_eq!(prefixed.get(&orphan_key).expect("read orphan key"), None);
-        assert_eq!(prefixed.last_frame_receipt(), Some(committed));
-        drop(prefixed);
+            ],
+        )
+        .expect("prepare suffix");
+    assert_eq!(
+        prefixed.get(&committed_key).expect("read visible prefix"),
+        Some(b"committed".to_vec())
+    );
+    assert_eq!(prefixed.get(&orphan_key).expect("read orphan key"), None);
+    assert_eq!(prefixed.last_frame_receipt(), Some(committed));
+    drop(prefixed);
 
-        let reopened = PackStore::open(prefix_root.path(), store_config(1024 * 1024))
-            .expect("plain reopen keeps only manifested prefix");
-        assert_eq!(reopened.open_validation().frames, 1);
-        assert_eq!(
-            reopened.get(&committed_key).expect("read committed key"),
-            Some(b"committed".to_vec())
-        );
-        assert_eq!(reopened.get(&orphan_key).expect("read discarded key"), None);
-    }
+    let reopened = PackStore::open(prefix_root.path(), store_config(1024 * 1024))
+        .expect("plain reopen keeps only manifested prefix");
+    assert_eq!(reopened.open_validation().frames, 1);
+    assert_eq!(
+        reopened.get(&committed_key).expect("read committed key"),
+        Some(b"committed".to_vec())
+    );
+    assert_eq!(reopened.get(&orphan_key).expect("read discarded key"), None);
+}
 
-    #[test]
-    fn sealed_append_pins_the_new_generation_while_old_snapshots_stay_old() {
-        let root = tempdir().expect("temporary sealed store");
-        let target = key(4);
-        let added = key(5);
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+#[test]
+fn sealed_append_pins_the_new_generation_while_old_snapshots_stay_old() {
+    let root = tempdir().expect("temporary sealed store");
+    let target = key(4);
+    let added = key(5);
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"old")])
+        .expect("append committed prefix");
+    let old_snapshot = store.snapshot().expect("pin old snapshot");
+
+    let prepared = store
+        .prepare_frame(
+            TEST_FRAME_CONTEXT,
+            &[put(target, b"new"), put(added, b"added")],
+        )
+        .expect("prepare next generation");
+    let expected_horizon = prepared.commit_horizon();
+    let sealed = store
+        .seal_prepared(prepared)
+        .expect("seal prepared generation");
+
+    assert_eq!(sealed.commit_horizon(), expected_horizon);
+    assert_eq!(
+        old_snapshot.get(&target).expect("read old target"),
+        Some(b"old".to_vec())
+    );
+    assert_eq!(old_snapshot.get(&added).expect("read old added key"), None);
+    assert_eq!(
+        sealed.snapshot().get(&target).expect("read sealed target"),
+        Some(b"new".to_vec())
+    );
+    assert_eq!(
+        sealed
+            .snapshot()
+            .get(&added)
+            .expect("read sealed added key"),
+        Some(b"added".to_vec())
+    );
+    assert!(sealed.snapshot().generation() > old_snapshot.generation());
+
+    let activated_snapshot = sealed.into_snapshot();
+    assert_eq!(
+        activated_snapshot
+            .get(&target)
+            .expect("read consumed sealed snapshot"),
+        Some(b"new".to_vec())
+    );
+}
+
+#[test]
+fn prior_horizon_discards_a_sealed_but_uncommitted_suffix() {
+    let root = tempdir().expect("temporary sealed recovery store");
+    let target = key(6);
+    let suffix_only = key(7);
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"committed")])
+        .expect("append committed prefix");
+    let committed = store.last_frame_receipt().expect("committed receipt");
+    let prior_horizon = PackCommitHorizon {
+        epoch: committed.epoch,
+        segment_id: committed.segment_id,
+        frame_end: committed.frame_end,
+        context: committed.context,
+        frame_sha256: committed.frame_sha256,
+    };
+
+    let prepared = store
+        .prepare_frame(
+            TEST_FRAME_CONTEXT,
+            &[
+                put(target, b"sealed-uncommitted"),
+                put(suffix_only, b"suffix-only"),
+            ],
+        )
+        .expect("prepare suffix");
+    let sealed = store
+        .seal_prepared(prepared)
+        .expect("seal provisional suffix");
+    assert_eq!(
+        sealed.snapshot().get(&target).expect("read sealed value"),
+        Some(b"sealed-uncommitted".to_vec())
+    );
+    drop(sealed);
+    drop(store);
+
+    let reopened = PackStore::open_at_commit_horizon(
+        root.path(),
+        store_config(1024 * 1024),
+        Some(prior_horizon),
+    )
+    .expect("reopen at preceding canonical horizon");
+    assert_eq!(reopened.open_validation().frames, 1);
+    assert_eq!(reopened.last_frame_receipt(), Some(committed));
+    assert_eq!(
+        reopened.get(&target).expect("read committed target"),
+        Some(b"committed".to_vec())
+    );
+    assert_eq!(
+        reopened.get(&suffix_only).expect("read discarded suffix"),
+        None
+    );
+}
+
+#[test]
+fn activation_publishes_the_prepared_view_and_survives_reopen() {
+    let root = tempdir().expect("temporary append store");
+    let target = key(5);
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    let prepared = store
+        .prepare_frame(TEST_FRAME_CONTEXT, &[put(target, b"activated")])
+        .expect("prepare frame");
+    assert_eq!(store.get(&target).expect("read before activation"), None);
+    store
+        .activate_prepared(prepared, prepared.commit_horizon())
+        .expect("activate prepared frame");
+    assert_eq!(store.last_frame_receipt(), Some(prepared.receipt()));
+    assert_eq!(
+        store.get(&target).expect("read activated value"),
+        Some(b"activated".to_vec())
+    );
+    drop(store);
+
+    let reopened =
+        PackStore::open(root.path(), store_config(1024 * 1024)).expect("reopen activated store");
+    assert_eq!(reopened.open_validation().frames, 1);
+    assert_eq!(
+        reopened.get(&target).expect("read reopened value"),
+        Some(b"activated".to_vec())
+    );
+}
+
+#[test]
+fn committed_marker_recovers_a_crash_before_in_process_activation() {
+    let root = tempdir().expect("temporary append store");
+    let target = key(6);
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    let prepared = store
+        .prepare_frame(TEST_FRAME_CONTEXT, &[put(target, b"marker-committed")])
+        .expect("prepare frame");
+    let horizon = prepared.commit_horizon();
+    drop(store);
+
+    let reopened =
+        PackStore::open_at_commit_horizon(root.path(), store_config(1024 * 1024), Some(horizon))
+            .expect("marker rebuilds missing activation index");
+    assert_eq!(reopened.open_validation().frames, 1);
+    assert_eq!(reopened.last_frame_receipt(), Some(prepared.receipt()));
+    assert_eq!(
+        reopened.get(&target).expect("read marker-recovered value"),
+        Some(b"marker-committed".to_vec())
+    );
+}
+
+#[test]
+fn activation_rejects_errors_duplicates_and_reordering_without_visibility() {
+    let root = tempdir().expect("temporary append store");
+    let first_key = key(10);
+    let second_key = key(11);
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    let first = store
+        .prepare_frame(TEST_FRAME_CONTEXT, &[put(first_key, b"first")])
+        .expect("prepare first frame");
+    assert!(
         store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"old")])
-            .expect("append committed prefix");
-        let old_snapshot = store.snapshot().expect("pin old snapshot");
+            .prepare_frame(TEST_FRAME_CONTEXT, &[put(second_key, b"blocked")])
+            .is_err(),
+        "a second prepare must not pass the pending frame"
+    );
+    assert!(store.gc().is_err(), "gc must not reclaim a pending run");
 
-        let prepared = store
-            .prepare_frame(TEST_FRAME_CONTEXT, &[put(target, b"new"), put(added, b"added")])
-            .expect("prepare next generation");
-        let expected_horizon = prepared.commit_horizon();
-        let sealed = store
-            .seal_prepared(prepared)
-            .expect("seal prepared generation");
+    let mut wrong_digest = first.commit_horizon();
+    wrong_digest.frame_sha256[0] ^= 0x80;
+    let digest_error = store
+        .activate_prepared(first, wrong_digest)
+        .expect_err("wrong marker frame digest must fail");
+    assert!(digest_error.to_string().contains("digest"));
+    assert_eq!(store.get(&first_key).expect("read after bad marker"), None);
 
-        assert_eq!(sealed.commit_horizon(), expected_horizon);
-        assert_eq!(
-            old_snapshot.get(&target).expect("read old target"),
-            Some(b"old".to_vec())
-        );
-        assert_eq!(old_snapshot.get(&added).expect("read old added key"), None);
-        assert_eq!(
-            sealed.snapshot().get(&target).expect("read sealed target"),
-            Some(b"new".to_vec())
-        );
-        assert_eq!(
-            sealed
-                .snapshot()
-                .get(&added)
-                .expect("read sealed added key"),
-            Some(b"added".to_vec())
-        );
-        assert!(sealed.snapshot().generation() > old_snapshot.generation());
+    let mut wrong_frame_end = first.commit_horizon();
+    wrong_frame_end.frame_end += 1;
+    let frame_end_error = store
+        .activate_prepared(first, wrong_frame_end)
+        .expect_err("wrong marker frame end must fail");
+    assert!(frame_end_error.to_string().contains("end"));
+    assert_eq!(
+        store.get(&first_key).expect("read after bad frame end"),
+        None
+    );
 
-        let activated_snapshot = sealed.into_snapshot();
-        assert_eq!(
-            activated_snapshot
-                .get(&target)
-                .expect("read consumed sealed snapshot"),
-            Some(b"new".to_vec())
-        );
-    }
+    let wrong_epoch = PackCommitHorizon {
+        epoch: first.receipt().epoch + 1,
+        segment_id: first.receipt().segment_id,
+        frame_end: first.receipt().frame_end,
+        context: first.receipt().context,
+        frame_sha256: first.receipt().frame_sha256,
+    };
+    let epoch_error = store
+        .activate_prepared(first, wrong_epoch)
+        .expect_err("wrong marker epoch must fail");
+    assert!(epoch_error.to_string().contains("epoch"));
+    assert_eq!(store.get(&first_key).expect("read after bad epoch"), None);
 
-    #[test]
-    fn prior_horizon_discards_a_sealed_but_uncommitted_suffix() {
-        let root = tempdir().expect("temporary sealed recovery store");
-        let target = key(6);
-        let suffix_only = key(7);
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"committed")])
-            .expect("append committed prefix");
-        let committed = store.last_frame_receipt().expect("committed receipt");
-        let prior_horizon = PackCommitHorizon {
+    let forged = PreparedAppend {
+        serial: first.serial + 1,
+        ..first
+    };
+    let token_error = store
+        .activate_prepared(forged, first.commit_horizon())
+        .expect_err("forged token must fail");
+    assert!(token_error.to_string().contains("token"));
+    assert_eq!(store.get(&first_key).expect("read after bad token"), None);
+
+    store
+        .activate_prepared(first, first.commit_horizon())
+        .expect("activate first frame");
+    let duplicate_error = store
+        .activate_prepared(first, first.commit_horizon())
+        .expect_err("duplicate activation must fail");
+    assert!(duplicate_error.to_string().contains("no prepared append"));
+    assert_eq!(
+        store.get(&first_key).expect("first remains visible"),
+        Some(b"first".to_vec())
+    );
+
+    let second = store
+        .prepare_frame(TEST_FRAME_CONTEXT, &[put(second_key, b"second")])
+        .expect("prepare second frame");
+    let stale_error = store
+        .activate_prepared(first, second.commit_horizon())
+        .expect_err("stale token must not activate a later frame");
+    assert!(stale_error.to_string().contains("token"));
+    assert_eq!(store.get(&second_key).expect("read reordered frame"), None);
+    store
+        .activate_prepared(second, second.commit_horizon())
+        .expect("activate second frame in order");
+    assert_eq!(
+        store.get(&second_key).expect("read second frame"),
+        Some(b"second".to_vec())
+    );
+}
+
+#[test]
+fn activation_revalidates_prepared_frame_and_run_before_publication() {
+    let frame_root = tempdir().expect("temporary frame-corruption store");
+    let frame_key = key(12);
+    let mut frame_store = PackStore::create(frame_root.path(), store_config(1024 * 1024))
+        .expect("create frame store");
+    let frame_prepared = frame_store
+        .prepare_frame(TEST_FRAME_CONTEXT, &[put(frame_key, b"frame-target")])
+        .expect("prepare frame target");
+    let mut pack = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(frame_root.path().join(PackSegmentId::INITIAL.file_name()))
+        .expect("open prepared pack");
+    pack.seek(SeekFrom::Start(
+        segment::SEGMENT_HEADER_LEN as u64 + FRAME_HEADER_LEN as u64 + 1,
+    ))
+    .expect("seek into prepared payload");
+    pack.write_all(&[0x7f]).expect("corrupt prepared payload");
+    pack.sync_all().expect("sync prepared payload corruption");
+    drop(pack);
+    let frame_error = frame_store
+        .activate_prepared(frame_prepared, frame_prepared.commit_horizon())
+        .expect_err("corrupt prepared frame must not activate");
+    assert!(frame_error.to_string().contains("checksum mismatch"));
+    assert_eq!(
+        frame_store.get(&frame_key).expect("read corrupt frame"),
+        None
+    );
+    assert!(
+        manifest::list_manifest_files(frame_root.path())
+            .expect("list frame manifests")
+            .is_empty()
+    );
+
+    let run_root = tempdir().expect("temporary run-corruption store");
+    let run_key = key(13);
+    let mut run_store =
+        PackStore::create(run_root.path(), store_config(1024 * 1024)).expect("create run store");
+    let run_prepared = run_store
+        .prepare_frame(TEST_FRAME_CONTEXT, &[put(run_key, b"run-target")])
+        .expect("prepare run target");
+    let run_path = run_root.path().join("runs").join(run_file_name(0, 0, 0));
+    let mut run = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&run_path)
+        .expect("open prepared run");
+    run.seek(SeekFrom::End(-1)).expect("seek to run tail");
+    let mut byte = [0u8; 1];
+    run.read_exact(&mut byte).expect("read run tail");
+    run.seek(SeekFrom::End(-1)).expect("rewind to run tail");
+    run.write_all(&[byte[0] ^ 0x80])
+        .expect("corrupt prepared run");
+    run.sync_all().expect("sync prepared run corruption");
+    drop(run);
+    let run_error = run_store
+        .activate_prepared(run_prepared, run_prepared.commit_horizon())
+        .expect_err("corrupt prepared run must not activate");
+    assert!(
+        run_error
+            .to_string()
+            .contains("reserved bytes are non-zero")
+    );
+    assert_eq!(run_store.get(&run_key).expect("read corrupt run"), None);
+    assert!(
+        manifest::list_manifest_files(run_root.path())
+            .expect("list run manifests")
+            .is_empty()
+    );
+}
+
+#[test]
+fn external_commit_horizon_discards_complete_orphan_suffix() {
+    let root = tempdir().expect("temporary append store");
+    let target = key(1);
+    let orphan_only = key(9);
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"committed-zero")])
+        .expect("append frame zero");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"committed-one")])
+        .expect("append frame one");
+    let committed = store.last_frame_receipt().expect("committed frame receipt");
+    store
+        .append_frame(
+            TEST_FRAME_CONTEXT,
+            &[
+                put(target, b"orphan-value"),
+                put(orphan_only, b"orphan-only"),
+            ],
+        )
+        .expect("append complete orphan frame");
+    drop(store);
+
+    let mut reopened = PackStore::open_at_commit_horizon(
+        root.path(),
+        store_config(1024 * 1024),
+        Some(PackCommitHorizon {
             epoch: committed.epoch,
             segment_id: committed.segment_id,
             frame_end: committed.frame_end,
             context: committed.context,
             frame_sha256: committed.frame_sha256,
-        };
+        }),
+    )
+    .expect("recover to external commit marker");
+    assert_eq!(reopened.open_validation().frames, 2);
+    assert_eq!(reopened.last_frame_receipt(), Some(committed));
+    assert_eq!(
+        reopened.get(&target).expect("read committed value"),
+        Some(b"committed-one".to_vec())
+    );
+    assert_eq!(
+        reopened.get(&orphan_only).expect("read discarded key"),
+        None
+    );
 
-        let prepared = store
-            .prepare_frame(TEST_FRAME_CONTEXT, &[
-                put(target, b"sealed-uncommitted"),
-                put(suffix_only, b"suffix-only"),
-            ])
-            .expect("prepare suffix");
-        let sealed = store
-            .seal_prepared(prepared)
-            .expect("seal provisional suffix");
-        assert_eq!(
-            sealed.snapshot().get(&target).expect("read sealed value"),
-            Some(b"sealed-uncommitted".to_vec())
-        );
-        drop(sealed);
-        drop(store);
-
-        let reopened = PackStore::open_at_commit_horizon(
-            root.path(),
-            store_config(1024 * 1024),
-            Some(prior_horizon),
-        )
-        .expect("reopen at preceding canonical horizon");
-        assert_eq!(reopened.open_validation().frames, 1);
-        assert_eq!(reopened.last_frame_receipt(), Some(committed));
-        assert_eq!(
-            reopened.get(&target).expect("read committed target"),
-            Some(b"committed".to_vec())
-        );
-        assert_eq!(
-            reopened.get(&suffix_only).expect("read discarded suffix"),
-            None
-        );
-    }
-
-    #[test]
-    fn activation_publishes_the_prepared_view_and_survives_reopen() {
-        let root = tempdir().expect("temporary append store");
-        let target = key(5);
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-        let prepared = store
-            .prepare_frame(TEST_FRAME_CONTEXT, &[put(target, b"activated")])
-            .expect("prepare frame");
-        assert_eq!(store.get(&target).expect("read before activation"), None);
-        store
-            .activate_prepared(prepared, prepared.commit_horizon())
-            .expect("activate prepared frame");
-        assert_eq!(store.last_frame_receipt(), Some(prepared.receipt()));
-        assert_eq!(
-            store.get(&target).expect("read activated value"),
-            Some(b"activated".to_vec())
-        );
-        drop(store);
-
-        let reopened = PackStore::open(root.path(), store_config(1024 * 1024))
-            .expect("reopen activated store");
-        assert_eq!(reopened.open_validation().frames, 1);
-        assert_eq!(
-            reopened.get(&target).expect("read reopened value"),
-            Some(b"activated".to_vec())
-        );
-    }
-
-    #[test]
-    fn committed_marker_recovers_a_crash_before_in_process_activation() {
-        let root = tempdir().expect("temporary append store");
-        let target = key(6);
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-        let prepared = store
-            .prepare_frame(TEST_FRAME_CONTEXT, &[put(target, b"marker-committed")])
-            .expect("prepare frame");
-        let horizon = prepared.commit_horizon();
-        drop(store);
-
-        let reopened = PackStore::open_at_commit_horizon(
-            root.path(),
-            store_config(1024 * 1024),
-            Some(horizon),
-        )
-        .expect("marker rebuilds missing activation index");
-        assert_eq!(reopened.open_validation().frames, 1);
-        assert_eq!(reopened.last_frame_receipt(), Some(prepared.receipt()));
-        assert_eq!(
-            reopened.get(&target).expect("read marker-recovered value"),
-            Some(b"marker-committed".to_vec())
-        );
-    }
-
-    #[test]
-    fn activation_rejects_errors_duplicates_and_reordering_without_visibility() {
-        let root = tempdir().expect("temporary append store");
-        let first_key = key(10);
-        let second_key = key(11);
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-        let first = store
-            .prepare_frame(TEST_FRAME_CONTEXT, &[put(first_key, b"first")])
-            .expect("prepare first frame");
-        assert!(
-            store
-                .prepare_frame(TEST_FRAME_CONTEXT, &[put(second_key, b"blocked")])
-                .is_err(),
-            "a second prepare must not pass the pending frame"
-        );
-        assert!(store.gc().is_err(), "gc must not reclaim a pending run");
-
-        let mut wrong_digest = first.commit_horizon();
-        wrong_digest.frame_sha256[0] ^= 0x80;
-        let digest_error = store
-            .activate_prepared(first, wrong_digest)
-            .expect_err("wrong marker frame digest must fail");
-        assert!(digest_error.to_string().contains("digest"));
-        assert_eq!(store.get(&first_key).expect("read after bad marker"), None);
-
-        let mut wrong_frame_end = first.commit_horizon();
-        wrong_frame_end.frame_end += 1;
-        let frame_end_error = store
-            .activate_prepared(first, wrong_frame_end)
-            .expect_err("wrong marker frame end must fail");
-        assert!(frame_end_error.to_string().contains("end"));
-        assert_eq!(
-            store.get(&first_key).expect("read after bad frame end"),
-            None
-        );
-
-        let wrong_epoch = PackCommitHorizon {
-            epoch: first.receipt().epoch + 1,
-            segment_id: first.receipt().segment_id,
-            frame_end: first.receipt().frame_end,
-            context: first.receipt().context,
-            frame_sha256: first.receipt().frame_sha256,
-        };
-        let epoch_error = store
-            .activate_prepared(first, wrong_epoch)
-            .expect_err("wrong marker epoch must fail");
-        assert!(epoch_error.to_string().contains("epoch"));
-        assert_eq!(store.get(&first_key).expect("read after bad epoch"), None);
-
-        let forged = PreparedAppend {
-            serial: first.serial + 1,
-            ..first
-        };
-        let token_error = store
-            .activate_prepared(forged, first.commit_horizon())
-            .expect_err("forged token must fail");
-        assert!(token_error.to_string().contains("token"));
-        assert_eq!(store.get(&first_key).expect("read after bad token"), None);
-
-        store
-            .activate_prepared(first, first.commit_horizon())
-            .expect("activate first frame");
-        let duplicate_error = store
-            .activate_prepared(first, first.commit_horizon())
-            .expect_err("duplicate activation must fail");
-        assert!(duplicate_error.to_string().contains("no prepared append"));
-        assert_eq!(
-            store.get(&first_key).expect("first remains visible"),
-            Some(b"first".to_vec())
-        );
-
-        let second = store
-            .prepare_frame(TEST_FRAME_CONTEXT, &[put(second_key, b"second")])
-            .expect("prepare second frame");
-        let stale_error = store
-            .activate_prepared(first, second.commit_horizon())
-            .expect_err("stale token must not activate a later frame");
-        assert!(stale_error.to_string().contains("token"));
-        assert_eq!(store.get(&second_key).expect("read reordered frame"), None);
-        store
-            .activate_prepared(second, second.commit_horizon())
-            .expect("activate second frame in order");
-        assert_eq!(
-            store.get(&second_key).expect("read second frame"),
-            Some(b"second".to_vec())
-        );
-    }
-
-    #[test]
-    fn activation_revalidates_prepared_frame_and_run_before_publication() {
-        let frame_root = tempdir().expect("temporary frame-corruption store");
-        let frame_key = key(12);
-        let mut frame_store =
-            PackStore::create(frame_root.path(), store_config(1024 * 1024))
-                .expect("create frame store");
-        let frame_prepared = frame_store
-            .prepare_frame(TEST_FRAME_CONTEXT, &[put(frame_key, b"frame-target")])
-            .expect("prepare frame target");
-        let mut pack = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(
-                frame_root
-                    .path()
-                    .join(PackSegmentId::INITIAL.file_name()),
-            )
-            .expect("open prepared pack");
-        pack.seek(SeekFrom::Start(
-            segment::SEGMENT_HEADER_LEN as u64 + FRAME_HEADER_LEN as u64 + 1,
-        ))
-            .expect("seek into prepared payload");
-        pack.write_all(&[0x7f]).expect("corrupt prepared payload");
-        pack.sync_all().expect("sync prepared payload corruption");
-        drop(pack);
-        let frame_error = frame_store
-            .activate_prepared(frame_prepared, frame_prepared.commit_horizon())
-            .expect_err("corrupt prepared frame must not activate");
-        assert!(frame_error.to_string().contains("checksum mismatch"));
-        assert_eq!(
-            frame_store.get(&frame_key).expect("read corrupt frame"),
-            None
-        );
-        assert!(
-            manifest::list_manifest_files(frame_root.path())
-                .expect("list frame manifests")
-                .is_empty()
-        );
-
-        let run_root = tempdir().expect("temporary run-corruption store");
-        let run_key = key(13);
-        let mut run_store = PackStore::create(run_root.path(), store_config(1024 * 1024))
-            .expect("create run store");
-        let run_prepared = run_store
-            .prepare_frame(TEST_FRAME_CONTEXT, &[put(run_key, b"run-target")])
-            .expect("prepare run target");
-        let run_path = run_root.path().join("runs").join(run_file_name(0, 0, 0));
-        let mut run = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&run_path)
-            .expect("open prepared run");
-        run.seek(SeekFrom::End(-1)).expect("seek to run tail");
-        let mut byte = [0u8; 1];
-        run.read_exact(&mut byte).expect("read run tail");
-        run.seek(SeekFrom::End(-1)).expect("rewind to run tail");
-        run.write_all(&[byte[0] ^ 0x80])
-            .expect("corrupt prepared run");
-        run.sync_all().expect("sync prepared run corruption");
-        drop(run);
-        let run_error = run_store
-            .activate_prepared(run_prepared, run_prepared.commit_horizon())
-            .expect_err("corrupt prepared run must not activate");
-        assert!(run_error.to_string().contains("reserved bytes are non-zero"));
-        assert_eq!(run_store.get(&run_key).expect("read corrupt run"), None);
-        assert!(
-            manifest::list_manifest_files(run_root.path())
-                .expect("list run manifests")
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn external_commit_horizon_discards_complete_orphan_suffix() {
-        let root = tempdir().expect("temporary append store");
-        let target = key(1);
-        let orphan_only = key(9);
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"committed-zero")])
-            .expect("append frame zero");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"committed-one")])
-            .expect("append frame one");
-        let committed = store.last_frame_receipt().expect("committed frame receipt");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[
-                put(target, b"orphan-value"),
-                put(orphan_only, b"orphan-only"),
-            ])
-            .expect("append complete orphan frame");
-        drop(store);
-
-        let mut reopened = PackStore::open_at_commit_horizon(
-            root.path(),
-            store_config(1024 * 1024),
-            Some(PackCommitHorizon {
-                epoch: committed.epoch,
-                segment_id: committed.segment_id,
-                frame_end: committed.frame_end,
-                context: committed.context,
-                frame_sha256: committed.frame_sha256,
-            }),
-        )
-        .expect("recover to external commit marker");
-        assert_eq!(reopened.open_validation().frames, 2);
-        assert_eq!(reopened.last_frame_receipt(), Some(committed));
-        assert_eq!(
-            reopened.get(&target).expect("read committed value"),
-            Some(b"committed-one".to_vec())
-        );
-        assert_eq!(
-            reopened.get(&orphan_only).expect("read discarded key"),
-            None
-        );
-
+    reopened
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"replacement-two")])
+        .expect("append replacement frame");
+    assert_eq!(
         reopened
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"replacement-two")])
-            .expect("append replacement frame");
-        assert_eq!(
-            reopened
-                .last_frame_receipt()
-                .expect("replacement receipt")
-                .epoch,
-            2
-        );
-        assert_eq!(
-            reopened.get(&target).expect("read replacement value"),
-            Some(b"replacement-two".to_vec())
-        );
-    }
+            .last_frame_receipt()
+            .expect("replacement receipt")
+            .epoch,
+        2
+    );
+    assert_eq!(
+        reopened.get(&target).expect("read replacement value"),
+        Some(b"replacement-two".to_vec())
+    );
+}
 
-    #[test]
-    fn external_commit_horizon_rejects_missing_or_digest_mismatched_frame() {
-        let root = tempdir().expect("temporary append store");
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(key(1), b"committed")])
-            .expect("append committed frame");
-        let receipt = store.last_frame_receipt().expect("frame receipt");
-        drop(store);
+#[test]
+fn external_commit_horizon_rejects_missing_or_digest_mismatched_frame() {
+    let root = tempdir().expect("temporary append store");
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(1), b"committed")])
+        .expect("append committed frame");
+    let receipt = store.last_frame_receipt().expect("frame receipt");
+    drop(store);
 
-        let mut wrong_digest = receipt.frame_sha256;
-        wrong_digest[0] ^= 0x80;
-        let digest_error = PackStore::open_at_commit_horizon(
-            root.path(),
-            store_config(1024 * 1024),
-            Some(PackCommitHorizon {
-                epoch: receipt.epoch,
-                segment_id: receipt.segment_id,
-                frame_end: receipt.frame_end,
-                context: receipt.context,
-                frame_sha256: wrong_digest,
-            }),
-        )
-        .err()
-        .expect("frame digest mismatch must fail");
-        assert!(digest_error.to_string().contains("digest"));
+    let mut wrong_digest = receipt.frame_sha256;
+    wrong_digest[0] ^= 0x80;
+    let digest_error = PackStore::open_at_commit_horizon(
+        root.path(),
+        store_config(1024 * 1024),
+        Some(PackCommitHorizon {
+            epoch: receipt.epoch,
+            segment_id: receipt.segment_id,
+            frame_end: receipt.frame_end,
+            context: receipt.context,
+            frame_sha256: wrong_digest,
+        }),
+    )
+    .err()
+    .expect("frame digest mismatch must fail");
+    assert!(digest_error.to_string().contains("digest"));
 
-        let missing_error = PackStore::open_at_commit_horizon(
-            root.path(),
-            store_config(1024 * 1024),
-            Some(PackCommitHorizon {
-                epoch: receipt.epoch + 1,
-                segment_id: receipt.segment_id,
-                frame_end: receipt.frame_end,
-                context: receipt.context,
-                frame_sha256: receipt.frame_sha256,
-            }),
-        )
-        .err()
-        .expect("missing committed frame must fail");
-        assert!(missing_error.to_string().contains("only 1 complete frames"));
+    let missing_error = PackStore::open_at_commit_horizon(
+        root.path(),
+        store_config(1024 * 1024),
+        Some(PackCommitHorizon {
+            epoch: receipt.epoch + 1,
+            segment_id: receipt.segment_id,
+            frame_end: receipt.frame_end,
+            context: receipt.context,
+            frame_sha256: receipt.frame_sha256,
+        }),
+    )
+    .err()
+    .expect("missing committed frame must fail");
+    assert!(missing_error.to_string().contains("only 1 complete frames"));
 
-        let reopened = PackStore::open_at_commit_horizon(
-            root.path(),
-            store_config(1024 * 1024),
-            Some(PackCommitHorizon {
-                epoch: receipt.epoch,
-                segment_id: receipt.segment_id,
-                frame_end: receipt.frame_end,
-                context: receipt.context,
-                frame_sha256: receipt.frame_sha256,
-            }),
-        )
-        .expect("valid marker remains recoverable");
-        assert_eq!(reopened.open_validation().frames, 1);
-    }
+    let reopened = PackStore::open_at_commit_horizon(
+        root.path(),
+        store_config(1024 * 1024),
+        Some(PackCommitHorizon {
+            epoch: receipt.epoch,
+            segment_id: receipt.segment_id,
+            frame_end: receipt.frame_end,
+            context: receipt.context,
+            frame_sha256: receipt.frame_sha256,
+        }),
+    )
+    .expect("valid marker remains recoverable");
+    assert_eq!(reopened.open_validation().frames, 1);
+}
 
-    #[test]
-    fn external_commit_horizon_rejects_wrong_frame_end_without_changing_visibility() {
-        let root = tempdir().expect("temporary append store");
-        let target = key(4);
-        let mut store =
-            PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-        store
-            .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"committed")])
-            .expect("append committed frame");
-        let receipt = store.last_frame_receipt().expect("frame receipt");
-        let manifests = manifest::list_manifest_files(root.path()).expect("list manifests");
-        drop(store);
+#[test]
+fn external_commit_horizon_rejects_wrong_frame_end_without_changing_visibility() {
+    let root = tempdir().expect("temporary append store");
+    let target = key(4);
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"committed")])
+        .expect("append committed frame");
+    let receipt = store.last_frame_receipt().expect("frame receipt");
+    let manifests = manifest::list_manifest_files(root.path()).expect("list manifests");
+    drop(store);
 
-        let pack_path = root.path().join(PackSegmentId::INITIAL.file_name());
-        let pack_bytes = fs::metadata(&pack_path).expect("stat append pack").len();
-        let error = PackStore::open_at_commit_horizon(
-            root.path(),
-            store_config(1024 * 1024),
-            Some(PackCommitHorizon {
-                epoch: receipt.epoch,
-                segment_id: receipt.segment_id,
-                frame_end: receipt.frame_end + 1,
-                context: receipt.context,
-                frame_sha256: receipt.frame_sha256,
-            }),
-        )
-        .err()
-        .expect("wrong marker frame end must fail");
-        assert!(error.to_string().contains("does not match frame"));
-        assert_eq!(
-            fs::metadata(&pack_path).expect("re-stat append pack").len(),
-            pack_bytes
-        );
-        assert_eq!(
-            manifest::list_manifest_files(root.path()).expect("re-list manifests"),
-            manifests
-        );
+    let pack_path = root.path().join(PackSegmentId::INITIAL.file_name());
+    let pack_bytes = fs::metadata(&pack_path).expect("stat append pack").len();
+    let error = PackStore::open_at_commit_horizon(
+        root.path(),
+        store_config(1024 * 1024),
+        Some(PackCommitHorizon {
+            epoch: receipt.epoch,
+            segment_id: receipt.segment_id,
+            frame_end: receipt.frame_end + 1,
+            context: receipt.context,
+            frame_sha256: receipt.frame_sha256,
+        }),
+    )
+    .err()
+    .expect("wrong marker frame end must fail");
+    assert!(error.to_string().contains("does not match frame"));
+    assert_eq!(
+        fs::metadata(&pack_path).expect("re-stat append pack").len(),
+        pack_bytes
+    );
+    assert_eq!(
+        manifest::list_manifest_files(root.path()).expect("re-list manifests"),
+        manifests
+    );
 
-        let reopened = PackStore::open_at_commit_horizon(
-            root.path(),
-            store_config(1024 * 1024),
-            Some(PackCommitHorizon {
-                epoch: receipt.epoch,
-                segment_id: receipt.segment_id,
-                frame_end: receipt.frame_end,
-                context: receipt.context,
-                frame_sha256: receipt.frame_sha256,
-            }),
-        )
-        .expect("correct marker remains recoverable");
-        assert_eq!(reopened.last_frame_receipt(), Some(receipt));
-        assert_eq!(
-            reopened.get(&target).expect("read committed value"),
-            Some(b"committed".to_vec())
-        );
-    }
+    let reopened = PackStore::open_at_commit_horizon(
+        root.path(),
+        store_config(1024 * 1024),
+        Some(PackCommitHorizon {
+            epoch: receipt.epoch,
+            segment_id: receipt.segment_id,
+            frame_end: receipt.frame_end,
+            context: receipt.context,
+            frame_sha256: receipt.frame_sha256,
+        }),
+    )
+    .expect("correct marker remains recoverable");
+    assert_eq!(reopened.last_frame_receipt(), Some(receipt));
+    assert_eq!(
+        reopened.get(&target).expect("read committed value"),
+        Some(b"committed".to_vec())
+    );
+}

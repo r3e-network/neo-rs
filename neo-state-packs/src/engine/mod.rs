@@ -17,6 +17,10 @@
 //! - `store`: append, recovery, lookup, compaction, leases, and GC.
 
 mod failpoint;
+#[cfg(test)]
+pub(crate) use failpoint::{
+    ENVIRONMENT_VARIABLE as FAILPOINT_ENVIRONMENT_VARIABLE, EXIT_CODE as FAILPOINT_EXIT_CODE,
+};
 mod filter;
 mod manifest;
 mod merge;

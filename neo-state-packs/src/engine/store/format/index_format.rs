@@ -255,11 +255,35 @@ pub(super) fn read_index_run_with_options(
     path: &Path,
     options: PackStoreOptions,
 ) -> Result<IndexRun> {
+    read_index_run_inner(path, options, None)
+}
+
+/// Opens a manifest-selected run while binding all allocation- and mapping-
+/// relevant header fields to the already preflighted manifest entry.
+pub(super) fn read_manifest_index_run(
+    path: &Path,
+    expected: &ManifestEntry,
+    options: PackStoreOptions,
+) -> Result<IndexRun> {
+    read_index_run_inner(path, options, Some(expected))
+}
+
+fn read_index_run_inner(
+    path: &Path,
+    options: PackStoreOptions,
+    expected: Option<&ManifestEntry>,
+) -> Result<IndexRun> {
     let file = File::open(path).with_context(|| format!("open index run {}", path.display()))?;
     let file_len = file
         .metadata()
         .with_context(|| format!("stat index run {}", path.display()))?
         .len();
+    if let Some(expected) = expected {
+        ensure!(
+            file_len == expected.file_bytes,
+            "manifest-selected run length changed before bounded open"
+        );
+    }
     ensure!(
         file_len >= (INDEX_HEADER_LEN + INDEX_RECORD_LEN) as u64,
         "short index run {}",
@@ -300,6 +324,20 @@ pub(super) fn read_index_run_with_options(
     let record_count = u64_at(&header, 24)?;
     ensure!(record_count > 0, "empty index run {}", path.display());
     let records_sha256: [u8; 32] = header[32..64].try_into().expect("records checksum");
+    let structure_sha256: [u8; 32] = header
+        [INDEX_STRUCTURE_SHA256_START..INDEX_STRUCTURE_SHA256_END]
+        .try_into()
+        .expect("structure checksum");
+    if let Some(expected) = expected {
+        ensure!(
+            format_version == expected.format_version
+                && epoch == expected.max_epoch
+                && record_count == expected.record_count
+                && records_sha256 == expected.records_sha256
+                && structure_sha256 == expected.structure_sha256,
+            "manifest-selected run header changed before bounded open"
+        );
+    }
     let fence_count = usize::try_from(u32_at(&header, 64)?).context("fence count overflows")?;
     ensure!(
         u32_at(&header, 68)? as usize == FENCE_INTERVAL,
@@ -337,6 +375,12 @@ pub(super) fn read_index_run_with_options(
         .context("index records offset overflows")?;
     let records_offset =
         u64::try_from(records_offset_usize).context("index records offset does not fit u64")?;
+    if let Some(expected) = expected {
+        ensure!(
+            records_offset == expected.records_offset,
+            "manifest-selected run geometry changed before bounded open"
+        );
+    }
     let expected_len = records_offset
         .checked_add(
             record_count
@@ -415,9 +459,7 @@ pub(super) fn read_index_run_with_options(
         fences,
         filter,
         records_sha256,
-        structure_sha256: header[INDEX_STRUCTURE_SHA256_START..INDEX_STRUCTURE_SHA256_END]
-            .try_into()
-            .expect("structure checksum"),
+        structure_sha256,
         memory_bytes,
     })
 }
