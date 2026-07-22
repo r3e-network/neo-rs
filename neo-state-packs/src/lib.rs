@@ -1,8 +1,7 @@
 //! # neo-state-packs
 //!
 //! Append-only, checksummed node-pack persistence for Neo StateService MPT
-//! rows, extracted from the `append_frames_immutable_sorted_runs_v3`
-//! benchmark prototype.
+//! rows, promoted from the append-frame/sorted-run benchmark prototype.
 //!
 //! ## On-disk layout
 //!
@@ -16,14 +15,12 @@
 //!   visible only when a manifest generation referencing its index run is
 //!   published; anything past the committed prefix is torn/orphaned tail and
 //!   is truncated on open.
-//! - `runs/`: immutable sorted index runs (`N3IDXR01`): v3 level-0 runs use an
-//!   xor16 filter, while streaming compaction emits physical v4 runs with a
-//!   mmap-backed blocked Bloom filter. Both use a 192-byte tagged header,
-//!   domain-separated structure SHA-256, sparse 16-byte fence keys every 64
-//!   records, and fixed 50-byte records
-//!   (`key(33) || sequence(4) || value_offset(8) || value_len(4) ||
-//!   tombstone(1)`). Records point into an identified segment; compaction merges
-//!   runs newest-epoch-wins without rewriting payloads.
+//! - `runs/`: immutable current-only v5 sorted index runs (`N3IDXR01`) with a
+//!   mmap-backed blocked Bloom filter, 192-byte tagged header,
+//!   domain-separated structure SHA-256, and sparse 16-byte fence keys every
+//!   64 records. Each fixed 64-byte record binds key, operation kind, sequence,
+//!   segment id, positioned value offset, and length with zeroed reserved bytes.
+//!   Compaction merges runs newest-epoch-wins without rewriting payloads.
 //! - `manifest-*.man`: immutable manifest generations (`N3MANI01`) listing
 //!   the live runs. Publication is atomic (write `.tmp`, sync, rename,
 //!   directory sync), so a generation is the local visibility activation
@@ -75,13 +72,13 @@ pub mod shadow;
 pub use engine::{
     CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, CheckpointNamespaceEvidence, CompactionDebt,
     CompactionStats, GcStats, OpenValidation, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
-    PACK_INDEX_RUN_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION,
-    PACK_SEGMENT_HEADER_LEN, PackCommitHorizon, PackCompactionPlan, PackFrameBuilder,
-    PackFrameContext, PackFrameReceipt, PackIndexScrubStats, PackMaterializedViewEvidence,
-    PackMetrics, PackPosition, PackScrubStats, PackSegmentId, PackStore, PackStoreArtifact,
-    PackStoreConfig, PackStoreConfigError, PackStoreConfigField, PackStoreError,
-    PackStoreErrorSource, PackStoreLimit, PackStoreOperation, PackStoreOptions, PackStoreResult,
-    PreparedAppend, PreparedPackCompaction, ReadMetrics, SealedAppend, Snapshot,
+    PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN,
+    PackCommitHorizon, PackCompactionPlan, PackFrameBuilder, PackFrameContext, PackFrameReceipt,
+    PackIndexScrubStats, PackMaterializedViewEvidence, PackMetrics, PackPosition, PackScrubStats,
+    PackSegmentId, PackStore, PackStoreArtifact, PackStoreConfig, PackStoreConfigError,
+    PackStoreConfigField, PackStoreError, PackStoreErrorSource, PackStoreLimit, PackStoreOperation,
+    PackStoreOptions, PackStoreResult, PreparedAppend, PreparedPackCompaction, ReadMetrics,
+    SealedAppend, Snapshot,
 };
 
 /// Byte length of one pack key (the StateService `0xf0 || node_hash` node

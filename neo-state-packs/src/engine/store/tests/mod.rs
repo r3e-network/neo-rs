@@ -801,6 +801,7 @@ fn index_scrub_rejects_payload_ranges_beyond_the_committed_pack() {
     let outside = IndexEntry {
         key: key(0x33),
         sequence: 0,
+        segment_id: PackSegmentId::INITIAL,
         value_offset: 100,
         value_len: 2,
         tombstone: false,
@@ -952,7 +953,7 @@ fn reopen_detects_and_rebuilds_corrupt_index_filter() {
 }
 
 #[test]
-fn legacy_v2_index_run_is_rebuilt_before_use() {
+fn unknown_index_version_fails_closed_without_rebuild() {
     let root = tempdir().expect("temporary append store");
     let target = key(6);
     let mut store =
@@ -960,7 +961,6 @@ fn legacy_v2_index_run_is_rebuilt_before_use() {
     store
         .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"legacy-index-target")])
         .expect("append frame");
-    let generation = store.snapshot().expect("snapshot").generation();
     drop(store);
 
     let run_path = root.path().join("runs").join(run_file_name(0, 0, 0));
@@ -968,7 +968,8 @@ fn legacy_v2_index_run_is_rebuilt_before_use() {
     bytes[8..12].copy_from_slice(&2u32.to_le_bytes());
     let tag = digest(&bytes[..INDEX_HEADER_TAG_START]);
     bytes[INDEX_HEADER_TAG_START..INDEX_HEADER_LEN].copy_from_slice(&tag[..4]);
-    fs::write(&run_path, bytes).expect("write legacy index version");
+    fs::write(&run_path, &bytes).expect("write unknown index version");
+    let manifests_before = manifest::list_manifest_files(root.path()).expect("list manifests");
 
     let error = read_index_run(&run_path).expect_err("v2 run must require a rebuild");
     assert!(matches!(
@@ -980,20 +981,22 @@ fn legacy_v2_index_run_is_rebuilt_before_use() {
         })
     ));
 
-    let reopened = PackStore::open(root.path(), store_config(1024 * 1024))
-        .expect("legacy derived run must rebuild from its committed frame");
+    let open_error = match PackStore::open(root.path(), store_config(1024 * 1024)) {
+        Ok(_) => panic!("unknown index version must fail closed"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        open_error,
+        PackStoreError::UnsupportedVersion {
+            artifact: PackStoreArtifact::IndexRun,
+            found: 2,
+            ..
+        }
+    ));
+    assert_eq!(fs::read(&run_path).expect("re-read unknown run"), bytes);
     assert_eq!(
-        reopened.get(&target).expect("read rebuilt value"),
-        Some(b"legacy-index-target".to_vec())
-    );
-    assert!(
-        reopened.snapshot().expect("rebuilt snapshot").generation() > generation,
-        "migration must publish a new manifest generation"
-    );
-    let rebuilt = fs::read(&run_path).expect("read rebuilt index run");
-    assert_eq!(
-        u32_at(&rebuilt, 8).expect("read rebuilt index version"),
-        PACK_INDEX_FORMAT_VERSION
+        manifest::list_manifest_files(root.path()).expect("re-list manifests"),
+        manifests_before
     );
 }
 
@@ -1313,7 +1316,7 @@ fn streaming_compaction_workspace_fits_mainnet_scale_under_one_gibibyte() {
     );
     assert!(
         estimated > 768 * 1024 * 1024,
-        "the estimate must include pinned v3 metadata and v4 output state: {estimated}"
+        "the estimate must include pinned source metadata and v5 output state: {estimated}"
     );
     let error = ensure_compaction_workspace(estimated, 768 * 1024 * 1024)
         .expect_err("MainNet-scale streaming build must honor a smaller bound");

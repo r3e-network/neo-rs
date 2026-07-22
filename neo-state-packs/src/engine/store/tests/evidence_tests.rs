@@ -178,6 +178,7 @@ fn lookup_batch_rejects_one_value_above_the_byte_limit() {
     let entries = [IndexEntry {
         key: key(96),
         sequence: 0,
+        segment_id: PackSegmentId::INITIAL,
         value_offset: 0,
         value_len: 16 * 1024 * 1024 + 1,
         tombstone: false,

@@ -198,7 +198,7 @@ fn publish_streaming_compacted_run(
         let run = read_index_run_with_options(&final_path, options)
             .context("validate existing compacted output before retry")?;
         ensure!(
-            run.format_version == PACK_INDEX_RUN_FORMAT_VERSION
+            run.format_version == PACK_INDEX_FORMAT_VERSION
                 && run.epoch == epoch
                 && run.record_count == first_pass.output_records
                 && run.min_key == first_pass.min_key
@@ -319,7 +319,7 @@ fn publish_streaming_compacted_run(
     match read_index_run_with_options(&final_path, options) {
         Ok(run) => {
             ensure!(
-                run.format_version == PACK_INDEX_RUN_FORMAT_VERSION
+                run.format_version == PACK_INDEX_FORMAT_VERSION
                     && run.record_count == first_pass.output_records
                     && run.records_sha256 == first_pass.records_sha256,
                 "published compacted run differs from its merge evidence"
@@ -346,7 +346,7 @@ fn encode_compacted_index_header(
     );
     let mut header = [0u8; INDEX_HEADER_LEN];
     header[0..8].copy_from_slice(INDEX_MAGIC);
-    header[8..12].copy_from_slice(&PACK_INDEX_RUN_FORMAT_VERSION.to_le_bytes());
+    header[8..12].copy_from_slice(&PACK_INDEX_FORMAT_VERSION.to_le_bytes());
     header[12..16].copy_from_slice(&(INDEX_HEADER_LEN as u32).to_le_bytes());
     header[16..24].copy_from_slice(&epoch.to_le_bytes());
     header[24..32].copy_from_slice(&evidence.output_records.to_le_bytes());
@@ -367,12 +367,8 @@ fn encode_compacted_index_header(
     header[121..154].copy_from_slice(&evidence.max_key);
     header[INDEX_STRUCTURE_SHA256_END..INDEX_HEADER_TAG_START]
         .copy_from_slice(&(BLOOM_HASH_PROBES as u16).to_le_bytes());
-    let structure_sha256 = index_structure_digest_parts(
-        PACK_INDEX_RUN_FORMAT_VERSION,
-        &header,
-        fences,
-        bloom.as_bytes(),
-    )?;
+    let structure_sha256 =
+        index_structure_digest_parts(PACK_INDEX_FORMAT_VERSION, &header, fences, bloom.as_bytes())?;
     header[INDEX_STRUCTURE_SHA256_START..INDEX_STRUCTURE_SHA256_END]
         .copy_from_slice(&structure_sha256);
     let tag = digest(&header[..INDEX_HEADER_TAG_START]);

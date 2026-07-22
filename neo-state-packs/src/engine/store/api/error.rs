@@ -306,7 +306,7 @@ impl PackStoreError {
         }
     }
 
-    pub(in crate::engine::store) fn unsupported_version(
+    pub(crate) fn unsupported_version(
         artifact: PackStoreArtifact,
         found: u32,
         supported: &'static [u32],

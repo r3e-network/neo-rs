@@ -15,8 +15,8 @@
 
 use crate::engine::failpoint;
 use crate::engine::store::{
-    PACK_INDEX_FORMAT_VERSION, PACK_INDEX_RUN_FORMAT_VERSION, PackFrameReceipt, PackSegmentId,
-    PackStoreArtifact, PackStoreConfig, PackStoreError,
+    PACK_INDEX_FORMAT_VERSION, PackFrameReceipt, PackSegmentId, PackStoreArtifact, PackStoreConfig,
+    PackStoreError,
 };
 use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
@@ -147,13 +147,14 @@ impl Manifest {
                 "level-0 manifest entry spans more than one epoch"
             );
             ensure!(entry.record_count > 0, "manifest entry has no records");
-            ensure!(
-                matches!(
+            if entry.format_version != PACK_INDEX_FORMAT_VERSION {
+                return Err(PackStoreError::unsupported_version(
+                    PackStoreArtifact::IndexRun,
                     entry.format_version,
-                    PACK_INDEX_FORMAT_VERSION | PACK_INDEX_RUN_FORMAT_VERSION
-                ),
-                "manifest entry names an unsupported run format"
-            );
+                    &[PACK_INDEX_FORMAT_VERSION],
+                )
+                .into());
+            }
             ensure!(
                 entry.records_offset < entry.file_bytes,
                 "manifest entry has an invalid run extent"
@@ -183,6 +184,50 @@ pub(crate) fn run_file_name(level: u32, min_epoch: u64, max_epoch: u64) -> Strin
     } else {
         format!("run-l{level}-{min_epoch:020}-{max_epoch:020}.idx")
     }
+}
+
+/// Returns whether `name` is an exact immutable-run name emitted by this
+/// engine. Cleanup paths use this classifier so unrelated files are never
+/// removed merely because they share an extension.
+pub(crate) fn is_run_file_name(name: &str) -> bool {
+    let Some(body) = name
+        .strip_prefix("run-")
+        .and_then(|name| name.strip_suffix(".idx"))
+    else {
+        return false;
+    };
+    if let Some(body) = body.strip_prefix('l') {
+        let mut fields = body.split('-');
+        let (Some(level), Some(min_epoch), Some(max_epoch), None) =
+            (fields.next(), fields.next(), fields.next(), fields.next())
+        else {
+            return false;
+        };
+        let (Some(level), Some(min_epoch), Some(max_epoch)) = (
+            level.parse::<u32>().ok().filter(|level| *level > 0),
+            parse_fixed_u64(min_epoch),
+            parse_fixed_u64(max_epoch),
+        ) else {
+            return false;
+        };
+        min_epoch <= max_epoch && run_file_name(level, min_epoch, max_epoch) == name
+    } else {
+        parse_fixed_u64(body).is_some_and(|epoch| run_file_name(0, epoch, epoch) == name)
+    }
+}
+
+/// Returns whether `name` is an exact temporary-run name emitted by append,
+/// recovery, or compaction publication.
+pub(crate) fn is_run_temp_file_name(name: &str) -> bool {
+    let Some(stem) = name.strip_suffix(".tmp") else {
+        return false;
+    };
+    if is_run_file_name(stem) {
+        return true;
+    }
+    stem.strip_prefix("run-")
+        .and_then(parse_fixed_u64)
+        .is_some_and(|epoch| stem == format!("run-{epoch:020}"))
 }
 
 /// Extends the authenticated frame extent set with one next frame receipt.
@@ -644,9 +689,29 @@ pub(crate) fn list_manifest_files(root: &Path) -> Result<Vec<(u64, PathBuf)>> {
     Ok(manifests)
 }
 
-fn parse_manifest_file_name(name: &str) -> Option<u64> {
+pub(crate) fn parse_manifest_file_name(name: &str) -> Option<u64> {
     let rest = name.strip_prefix("manifest-")?;
     let digits = rest.strip_suffix(".man")?;
+    if digits.len() != 20 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// Returns whether `name` is an exact temporary manifest name emitted by this
+/// engine.
+pub(crate) fn is_manifest_temp_file_name(name: &str) -> bool {
+    let Some(digits) = name
+        .strip_prefix("manifest-")
+        .and_then(|name| name.strip_suffix(".tmp"))
+    else {
+        return false;
+    };
+    parse_fixed_u64(digits)
+        .is_some_and(|generation| name == format!("manifest-{generation:020}.tmp"))
+}
+
+fn parse_fixed_u64(digits: &str) -> Option<u64> {
     if digits.len() != 20 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
@@ -732,7 +797,7 @@ mod tests {
             level,
             min_epoch,
             max_epoch,
-            format_version: 4,
+            format_version: PACK_INDEX_FORMAT_VERSION,
             record_count: 1,
             records_offset: 192,
             file_bytes: 242,

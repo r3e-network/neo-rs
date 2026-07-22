@@ -205,6 +205,7 @@ pub(super) fn encode_pending_rows(
         entries.push(IndexEntry {
             key: row.key,
             sequence: row.sequence,
+            segment_id: PackSegmentId::INITIAL,
             value_offset: row.value_offset,
             value_len: row.value_len,
             tombstone: row.tombstone,
@@ -557,12 +558,13 @@ pub(super) fn read_frame_receipt(
     } else {
         scan.frame_ends[index - 1]
     };
-    read_frame_receipt_at(pack, epoch, frame_start, frame_end)
+    read_frame_receipt_at(pack, PackSegmentId::INITIAL, epoch, frame_start, frame_end)
 }
 
 /// Re-authenticates a complete frame using bounded streaming section hashes.
 pub(super) fn read_frame_receipt_at(
     pack: &File,
+    segment_id: PackSegmentId,
     epoch: u64,
     frame_start: u64,
     frame_end: u64,
@@ -612,6 +614,7 @@ pub(super) fn read_frame_receipt_at(
         .with_context(|| format!("read frame {epoch} footer"))?;
     validate_frame_footer(&footer, header, frame_sha256)?;
     Ok(receipt_from_header(
+        segment_id,
         frame_start,
         frame_end,
         header,
@@ -640,6 +643,7 @@ fn hash_file_section(file: &File, offset: u64, len: u64, domain: &[u8]) -> Resul
 }
 
 fn receipt_from_header(
+    segment_id: PackSegmentId,
     frame_start: u64,
     frame_end: u64,
     header: FrameHeader,
@@ -647,7 +651,7 @@ fn receipt_from_header(
 ) -> PackFrameReceipt {
     PackFrameReceipt {
         epoch: header.epoch,
-        segment_id: PackSegmentId::INITIAL,
+        segment_id,
         frame_start,
         frame_end,
         context: header.context,
@@ -701,9 +705,11 @@ pub(super) fn reset_derived_state_to_frame_prefix(
         let entry = entry.context("read index-run recovery entry")?;
         let path = entry.path();
         let remove = path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension == "idx" || extension == "tmp");
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                manifest::is_run_file_name(name) || manifest::is_run_temp_file_name(name)
+            });
         if remove {
             fs::remove_file(&path)
                 .with_context(|| format!("remove derived index run {}", path.display()))?;
@@ -717,7 +723,9 @@ pub(super) fn reset_derived_state_to_frame_prefix(
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if name.starts_with("manifest-") && (name.ends_with(".man") || name.ends_with(".tmp")) {
+        if manifest::parse_manifest_file_name(name).is_some()
+            || manifest::is_manifest_temp_file_name(name)
+        {
             fs::remove_file(&path)
                 .with_context(|| format!("remove derived manifest {}", path.display()))?;
         }
@@ -731,6 +739,7 @@ pub(super) fn reset_derived_state_to_frame_prefix(
 /// decoded row statistics.
 pub(super) fn verify_frame(
     pack: &Mmap,
+    segment_id: PackSegmentId,
     frame_start: u64,
     frame_end: u64,
     epoch: u64,
@@ -741,11 +750,12 @@ pub(super) fn verify_frame(
         .as_slice()
         .get(start..end)
         .context("committed frame lies outside mapped pack")?;
-    validate_complete_frame(frame, epoch, frame_start, frame_end)
+    validate_complete_frame(frame, segment_id, epoch, frame_start, frame_end)
 }
 
 pub(super) fn validate_complete_frame(
     frame: &[u8],
+    segment_id: PackSegmentId,
     epoch: u64,
     frame_start: u64,
     frame_end: u64,
@@ -794,7 +804,7 @@ pub(super) fn validate_complete_frame(
     let expected_rows = usize::try_from(header.rows).context("row count does not fit usize")?;
     let stats = validate_payload_rows(metadata, values, expected_rows)?;
     Ok((
-        receipt_from_header(frame_start, frame_end, header, frame_sha256),
+        receipt_from_header(segment_id, frame_start, frame_end, header, frame_sha256),
         stats,
     ))
 }
@@ -835,6 +845,7 @@ pub(super) fn decode_frame_metadata(
             entries.push(IndexEntry {
                 key: *key,
                 sequence,
+                segment_id: PackSegmentId::INITIAL,
                 value_offset,
                 value_len,
                 tombstone,
@@ -1223,7 +1234,13 @@ mod tests {
         ]
         .concat();
         assert_eq!(hex(&frame), GOLDEN_FRAME_V2_HEX);
-        let (_, stats) = validate_complete_frame(&frame, 7, 64, 64 + frame.len() as u64)?;
+        let (_, stats) = validate_complete_frame(
+            &frame,
+            PackSegmentId::INITIAL,
+            7,
+            64,
+            64 + frame.len() as u64,
+        )?;
         assert_eq!(stats.rows, 4);
         assert_eq!(stats.puts, 3);
         assert_eq!(stats.tombstones, 1);
@@ -1288,7 +1305,16 @@ mod tests {
         ] {
             let mut damaged = frame.clone();
             damaged[offset] ^= 0x80;
-            assert!(validate_complete_frame(&damaged, 7, 64, 64 + damaged.len() as u64).is_err());
+            assert!(
+                validate_complete_frame(
+                    &damaged,
+                    PackSegmentId::INITIAL,
+                    7,
+                    64,
+                    64 + damaged.len() as u64,
+                )
+                .is_err()
+            );
         }
         Ok(())
     }
@@ -1316,7 +1342,14 @@ mod tests {
             frame.len() - 1,
         ] {
             assert!(
-                validate_complete_frame(&frame[..cut], 7, 64, 64 + cut as u64).is_err(),
+                validate_complete_frame(
+                    &frame[..cut],
+                    PackSegmentId::INITIAL,
+                    7,
+                    64,
+                    64 + cut as u64,
+                )
+                .is_err(),
                 "truncation at byte {cut} must fail"
             );
         }

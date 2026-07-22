@@ -6,13 +6,21 @@
 //! that same run. Only one group per input is resident.
 
 use super::mmap::Mmap;
+use super::store::PackSegmentId;
 use crate::PACK_KEY_BYTES;
 use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-pub(super) const INDEX_RECORD_LEN: usize = PACK_KEY_BYTES + 4 + 8 + 4 + 1;
+/// Fixed production v5 index-record length.
+pub(super) const INDEX_RECORD_LEN: usize = 64;
+const INDEX_KIND_OFFSET: usize = PACK_KEY_BYTES;
+const INDEX_SEQUENCE_OFFSET: usize = 36;
+const INDEX_SEGMENT_OFFSET: usize = 40;
+const INDEX_VALUE_OFFSET: usize = 48;
+const INDEX_VALUE_LEN_OFFSET: usize = 56;
+const INDEX_TRAILING_RESERVED_OFFSET: usize = 60;
 const INPUT_HASH_CHUNK_BYTES: usize = 1024 * 1024;
 const OUTPUT_HASH_CHUNK_BYTES: usize = 64 * 1024;
 
@@ -20,6 +28,7 @@ const OUTPUT_HASH_CHUNK_BYTES: usize = 64 * 1024;
 pub(super) struct IndexEntry {
     pub(super) key: [u8; PACK_KEY_BYTES],
     pub(super) sequence: u32,
+    pub(super) segment_id: PackSegmentId,
     pub(super) value_offset: u64,
     pub(super) value_len: u32,
     pub(super) tombstone: bool,
@@ -312,14 +321,25 @@ impl PartialOrd for HeapGroup {
 }
 
 pub(super) fn encode_record(entry: &IndexEntry) -> [u8; INDEX_RECORD_LEN] {
+    debug_assert!(
+        !entry.tombstone
+            || (entry.segment_id == PackSegmentId::INITIAL
+                && entry.value_offset == 0
+                && entry.value_len == 0)
+    );
     let mut record = [0u8; INDEX_RECORD_LEN];
     record[..PACK_KEY_BYTES].copy_from_slice(&entry.key);
-    record[PACK_KEY_BYTES..PACK_KEY_BYTES + 4].copy_from_slice(&entry.sequence.to_le_bytes());
-    record[PACK_KEY_BYTES + 4..PACK_KEY_BYTES + 12]
-        .copy_from_slice(&entry.value_offset.to_le_bytes());
-    record[PACK_KEY_BYTES + 12..PACK_KEY_BYTES + 16]
-        .copy_from_slice(&entry.value_len.to_le_bytes());
-    record[PACK_KEY_BYTES + 16] = u8::from(entry.tombstone);
+    record[INDEX_KIND_OFFSET] = u8::from(!entry.tombstone);
+    record[INDEX_SEQUENCE_OFFSET..INDEX_SEGMENT_OFFSET]
+        .copy_from_slice(&entry.sequence.to_le_bytes());
+    if !entry.tombstone {
+        record[INDEX_SEGMENT_OFFSET..INDEX_VALUE_OFFSET]
+            .copy_from_slice(&entry.segment_id.get().to_le_bytes());
+        record[INDEX_VALUE_OFFSET..INDEX_VALUE_LEN_OFFSET]
+            .copy_from_slice(&entry.value_offset.to_le_bytes());
+        record[INDEX_VALUE_LEN_OFFSET..INDEX_TRAILING_RESERVED_OFFSET]
+            .copy_from_slice(&entry.value_len.to_le_bytes());
+    }
     record
 }
 
@@ -331,32 +351,50 @@ pub(super) fn decode_record(record: &[u8]) -> Result<IndexEntry> {
         key[0] == 0xf0,
         "index record key is outside the MPT node namespace"
     );
-    let flag = record[PACK_KEY_BYTES + 16];
-    ensure!(flag <= 1, "invalid index tombstone flag {flag}");
+    let kind = record[INDEX_KIND_OFFSET];
+    ensure!(kind <= 1, "invalid index operation kind {kind}");
+    ensure!(
+        record[INDEX_KIND_OFFSET + 1..INDEX_SEQUENCE_OFFSET]
+            .iter()
+            .all(|byte| *byte == 0),
+        "index record reserved bytes are non-zero"
+    );
+    ensure!(
+        record[INDEX_TRAILING_RESERVED_OFFSET..]
+            .iter()
+            .all(|byte| *byte == 0),
+        "index record trailing reserved bytes are non-zero"
+    );
+    let segment_id = PackSegmentId::new(u64::from_le_bytes(
+        record[INDEX_SEGMENT_OFFSET..INDEX_VALUE_OFFSET]
+            .try_into()
+            .expect("fixed segment identity"),
+    ));
     let value_offset = u64::from_le_bytes(
-        record[PACK_KEY_BYTES + 4..PACK_KEY_BYTES + 12]
+        record[INDEX_VALUE_OFFSET..INDEX_VALUE_LEN_OFFSET]
             .try_into()
             .expect("fixed value offset"),
     );
     let value_len = u32::from_le_bytes(
-        record[PACK_KEY_BYTES + 12..PACK_KEY_BYTES + 16]
+        record[INDEX_VALUE_LEN_OFFSET..INDEX_TRAILING_RESERVED_OFFSET]
             .try_into()
             .expect("fixed value length"),
     );
     ensure!(
-        flag == 0 || (value_offset == 0 && value_len == 0),
+        kind == 1 || (segment_id == PackSegmentId::INITIAL && value_offset == 0 && value_len == 0),
         "tombstone index record carries a non-zero value location"
     );
     Ok(IndexEntry {
         key,
         sequence: u32::from_le_bytes(
-            record[PACK_KEY_BYTES..PACK_KEY_BYTES + 4]
+            record[INDEX_SEQUENCE_OFFSET..INDEX_SEGMENT_OFFSET]
                 .try_into()
                 .expect("fixed sequence"),
         ),
+        segment_id,
         value_offset,
         value_len,
-        tombstone: flag != 0,
+        tombstone: kind == 0,
     })
 }
 
@@ -370,6 +408,7 @@ mod tests {
         IndexEntry {
             key: bytes,
             sequence,
+            segment_id: PackSegmentId::INITIAL,
             value_offset: u64::from(value),
             value_len: 1,
             tombstone: false,
@@ -454,18 +493,72 @@ mod tests {
         assert!(merge_sorted_runs(&corrupt_sources, |_, _, _| Ok(())).is_err());
 
         let mut invalid_tombstone = encode_record(&entry(4, 0, 4));
-        invalid_tombstone[PACK_KEY_BYTES + 16] = 1;
+        invalid_tombstone[INDEX_KIND_OFFSET] = 0;
         assert!(decode_record(&invalid_tombstone).is_err());
-        invalid_tombstone[PACK_KEY_BYTES + 4..PACK_KEY_BYTES + 12]
+        invalid_tombstone[INDEX_VALUE_OFFSET..INDEX_VALUE_LEN_OFFSET]
             .copy_from_slice(&0u64.to_le_bytes());
-        invalid_tombstone[PACK_KEY_BYTES + 12..PACK_KEY_BYTES + 16]
+        invalid_tombstone[INDEX_VALUE_LEN_OFFSET..INDEX_TRAILING_RESERVED_OFFSET]
             .copy_from_slice(&0u32.to_le_bytes());
         assert!(decode_record(&invalid_tombstone).is_ok());
-        invalid_tombstone[PACK_KEY_BYTES + 16] = 2;
+        invalid_tombstone[INDEX_KIND_OFFSET] = 2;
         assert!(decode_record(&invalid_tombstone).is_err());
+
+        let mut invalid_reserved = encode_record(&entry(4, 0, 4));
+        invalid_reserved[INDEX_KIND_OFFSET + 1] = 1;
+        assert!(decode_record(&invalid_reserved).is_err());
 
         let mut invalid_namespace = encode_record(&entry(5, 0, 5));
         invalid_namespace[0] = 0xef;
         assert!(decode_record(&invalid_namespace).is_err());
+    }
+
+    #[test]
+    fn index_v5_records_bind_positions_and_canonical_kinds() {
+        let mut put = entry(7, 0x4433_2211, 9);
+        put.segment_id = PackSegmentId::new(0x0102_0304_0506_0708);
+        put.value_offset = 0x1112_1314_1516_1718;
+        put.value_len = 0x2122_2324;
+        let encoded = encode_record(&put);
+        let mut expected = [0u8; INDEX_RECORD_LEN];
+        expected[..PACK_KEY_BYTES].copy_from_slice(&put.key);
+        expected[INDEX_KIND_OFFSET] = 1;
+        expected[INDEX_SEQUENCE_OFFSET..INDEX_SEGMENT_OFFSET]
+            .copy_from_slice(&put.sequence.to_le_bytes());
+        expected[INDEX_SEGMENT_OFFSET..INDEX_VALUE_OFFSET]
+            .copy_from_slice(&put.segment_id.get().to_le_bytes());
+        expected[INDEX_VALUE_OFFSET..INDEX_VALUE_LEN_OFFSET]
+            .copy_from_slice(&put.value_offset.to_le_bytes());
+        expected[INDEX_VALUE_LEN_OFFSET..INDEX_TRAILING_RESERVED_OFFSET]
+            .copy_from_slice(&put.value_len.to_le_bytes());
+        assert_eq!(encoded, expected);
+        assert_eq!(decode_record(&encoded).expect("decode positioned put"), put);
+
+        let empty_put = IndexEntry {
+            value_len: 0,
+            ..put
+        };
+        assert_eq!(
+            decode_record(&encode_record(&empty_put)).expect("decode empty put"),
+            empty_put
+        );
+
+        let tombstone = IndexEntry {
+            segment_id: PackSegmentId::INITIAL,
+            value_offset: 0,
+            value_len: 0,
+            tombstone: true,
+            ..put
+        };
+        let encoded = encode_record(&tombstone);
+        assert_eq!(encoded[INDEX_KIND_OFFSET], 0);
+        assert!(
+            encoded[INDEX_SEGMENT_OFFSET..INDEX_TRAILING_RESERVED_OFFSET]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
+        assert_eq!(
+            decode_record(&encoded).expect("decode tombstone"),
+            tombstone
+        );
     }
 }

@@ -28,15 +28,11 @@ impl PackStore {
         for live in &self.runs {
             scrub_live_index_run(live, &self.runs_dir, committed_pack_bytes)?;
             stats.runs = stats.runs.saturating_add(1);
-            match live.run.format_version {
-                XOR_INDEX_RUN_FORMAT_VERSION => {
-                    stats.v3_runs = stats.v3_runs.saturating_add(1);
-                }
-                PACK_INDEX_RUN_FORMAT_VERSION => {
-                    stats.v4_runs = stats.v4_runs.saturating_add(1);
-                }
-                _ => unreachable!("reader accepted only supported run versions"),
-            }
+            ensure!(
+                live.run.format_version == PACK_INDEX_FORMAT_VERSION,
+                "reader exposed an unsupported run version"
+            );
+            stats.v5_runs = stats.v5_runs.saturating_add(1);
             stats.records = stats.records.saturating_add(live.run.record_count);
             stats.record_bytes = stats.record_bytes.saturating_add(
                 live.run

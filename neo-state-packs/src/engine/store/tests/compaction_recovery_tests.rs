@@ -37,16 +37,12 @@
         );
         assert!(store.runs.iter().any(|live| live.level == 0));
         assert!(store.runs.iter().any(|live| live.level == 1));
-        assert!(store.runs.iter().any(|live| {
-            live.level == 0 && live.run.format_version == XOR_INDEX_RUN_FORMAT_VERSION
+        assert!(store.runs.iter().all(|live| {
+            live.run.format_version == PACK_INDEX_FORMAT_VERSION
         }));
-        assert!(store.runs.iter().any(|live| {
-            live.level == 1 && live.run.format_version == PACK_INDEX_RUN_FORMAT_VERSION
-        }));
-        let scrub = store.scrub_index_runs().expect("scrub mixed v3/v4 runs");
+        let scrub = store.scrub_index_runs().expect("scrub v5 runs");
         assert_eq!(scrub.runs, 2);
-        assert_eq!(scrub.v3_runs, 1);
-        assert_eq!(scrub.v4_runs, 1);
+        assert_eq!(scrub.v5_runs, 2);
         drop(store);
         let reopened = PackStore::open(root.path(), store_config(1024 * 1024))
             .expect("reopen compacted store");
@@ -57,7 +53,7 @@
         assert_eq!(
             reopened
                 .scrub_index_runs()
-                .expect("scrub reopened mixed runs"),
+                .expect("scrub reopened v5 runs"),
             scrub
         );
     }
@@ -146,7 +142,7 @@
         prepared: &PreparedPackCompaction,
     ) {
         let run = &prepared.pending.run;
-        assert_eq!(run.format_version, PACK_INDEX_RUN_FORMAT_VERSION);
+        assert_eq!(run.format_version, PACK_INDEX_FORMAT_VERSION);
         let records_start = usize::try_from(run.records_offset).expect("records offset fits usize");
         let filter_start = INDEX_HEADER_LEN + run.fences.len() * FENCE_KEY_BYTES;
         assert!(filter_start < records_start, "prepared run has a filter");
@@ -165,7 +161,7 @@
         structure[filter_start - INDEX_HEADER_LEN..].fill(0);
 
         let structure_sha256 = index_structure_digest(
-            PACK_INDEX_RUN_FORMAT_VERSION,
+            PACK_INDEX_FORMAT_VERSION,
             &header,
             &structure,
         )
@@ -277,7 +273,7 @@
     }
 
     #[test]
-    fn index_scrub_detects_middle_record_corruption_in_a_non_tail_v4_run() {
+    fn index_scrub_detects_middle_record_corruption_in_a_non_tail_v5_run() {
         let root = tempdir().expect("temporary append store");
         let mut store = PackStore::create(root.path(), small_compaction_config(1024 * 1024))
             .expect("create store");
@@ -295,8 +291,8 @@
             .runs
             .iter()
             .find(|live| live.level == 1)
-            .expect("live v4 compacted run");
-        assert_eq!(compacted.run.format_version, PACK_INDEX_RUN_FORMAT_VERSION);
+            .expect("live v5 compacted run");
+        assert_eq!(compacted.run.format_version, PACK_INDEX_FORMAT_VERSION);
         assert_eq!(compacted.run.record_count, 3);
         let corrupt_offset =
             compacted.run.records_offset + INDEX_RECORD_LEN as u64 + PACK_KEY_BYTES as u64 + 4;
@@ -307,7 +303,7 @@
             .read(true)
             .write(true)
             .open(&path)
-            .expect("open non-tail v4 run");
+            .expect("open non-tail v5 run");
         let mut byte = [0u8; 1];
         file.read_exact_at(&mut byte, corrupt_offset)
             .expect("read middle record byte");
@@ -365,16 +361,27 @@
         let mut store =
             PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
         store.append_frame(TEST_FRAME_CONTEXT, &[put(key(1), b"one")]).expect("append frame");
-        let temp = root.path().join("runs/run-active-compaction.idx.tmp");
+        let temp = root
+            .path()
+            .join("runs")
+            .join(format!("{}.tmp", run_file_name(1, 0, 0)));
+        let operator_file = root.path().join("runs/operator-notes.idx");
         fs::write(&temp, b"active").expect("create active temp file");
+        fs::write(&operator_file, b"not owned by the pack engine")
+            .expect("create unrelated operator file");
         store.gc().expect("runtime gc");
         assert!(temp.exists(), "runtime GC raced with an active build");
+        assert!(operator_file.exists(), "runtime GC removed an unrelated file");
         drop(store);
         let reopened =
             PackStore::open(root.path(), store_config(1024 * 1024)).expect("reopen store");
         assert!(
             !temp.exists(),
             "startup recovery must remove stale temp files"
+        );
+        assert!(
+            operator_file.exists(),
+            "startup recovery removed an unrelated file"
         );
         drop(reopened);
     }
@@ -730,6 +737,10 @@
         for (_, path) in manifest::list_manifest_files(root.path()).expect("list manifests") {
             fs::remove_file(path).expect("delete manifest");
         }
+        let operator_index = runs_dir.join("operator-checkpoint.idx");
+        let operator_temp = runs_dir.join("operator-checkpoint.tmp");
+        fs::write(&operator_index, b"operator index").expect("plant unrelated index");
+        fs::write(&operator_temp, b"operator temp").expect("plant unrelated temp");
         let reopened = PackStore::open_at_commit_horizon(
             root.path(),
             store_config(1024 * 1024),
@@ -752,6 +763,8 @@
             republished[0].0, 1,
             "generation restarts after a total manifest loss"
         );
+        assert!(operator_index.exists(), "recovery removed an unrelated index");
+        assert!(operator_temp.exists(), "recovery removed an unrelated temp");
         drop(reopened);
 
         // Lose the manifest again plus one run: the same marker deterministically
@@ -1040,6 +1053,67 @@
             );
         }
         assert!(!temp_path.exists(), "successful recovery left temp output");
+    }
+
+    #[test]
+    fn recovery_preflights_the_cumulative_index_bound_before_replacing_any_run() {
+        let root = tempdir().expect("temporary cumulative-recovery store");
+        let rows = 1u64;
+        let metadata_bytes = FRAME_ROW_METADATA_LEN as u64;
+        let first_resident = run_structured_bytes(1, 1).expect("first run resident bytes");
+        let cumulative_bound = recovery::estimate_rebuild_peak_bytes(
+            first_resident,
+            metadata_bytes,
+            rows,
+            1,
+        )
+        .expect("estimate cumulative recovery peak");
+        let rejected_bound = cumulative_bound
+            .checked_sub(1)
+            .expect("positive cumulative recovery peak");
+
+        let mut store = PackStore::create(root.path(), store_config(1024 * 1024))
+            .expect("create cumulative-recovery store");
+        store
+            .append_frame(TEST_FRAME_CONTEXT, &[put(key(0x61), b"first")])
+            .expect("append first recovery frame");
+        store
+            .append_frame(TEST_FRAME_CONTEXT, &[put(key(0x62), b"second")])
+            .expect("append second recovery frame");
+        let first_run = root.path().join("runs").join(run_file_name(0, 0, 0));
+        let records_offset = store.runs[0].run.records_offset;
+        drop(store);
+        flip_persisted_run_byte(&first_run, records_offset + 1);
+        let before = snapshot_store_files(root.path());
+
+        let error = match PackStore::open(root.path(), store_config(rejected_bound)) {
+            Ok(_) => panic!("cumulative recovery bound must reject before publication"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::IndexMemoryBytes,
+                actual,
+                maximum,
+            } if actual == cumulative_bound && maximum == rejected_bound
+        ));
+        assert_eq!(
+            snapshot_store_files(root.path()),
+            before,
+            "cumulative preflight failure replaced a run or manifest"
+        );
+
+        let reopened = PackStore::open(root.path(), store_config(cumulative_bound))
+            .expect("inclusive cumulative recovery bound succeeds");
+        assert_eq!(
+            reopened.get(&key(0x61)).expect("read first rebuilt key"),
+            Some(b"first".to_vec())
+        );
+        assert_eq!(
+            reopened.get(&key(0x62)).expect("read second rebuilt key"),
+            Some(b"second".to_vec())
+        );
     }
 
     #[test]
@@ -1412,11 +1486,7 @@
         let run_error = run_store
             .activate_prepared(run_prepared, run_prepared.commit_horizon())
             .expect_err("corrupt prepared run must not activate");
-        assert!(
-            run_error
-                .to_string()
-                .contains("invalid index tombstone flag")
-        );
+        assert!(run_error.to_string().contains("reserved bytes are non-zero"));
         assert_eq!(run_store.get(&run_key).expect("read corrupt run"), None);
         assert!(
             manifest::list_manifest_files(run_root.path())

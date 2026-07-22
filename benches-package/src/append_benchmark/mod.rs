@@ -2,7 +2,7 @@
 //!
 //! Benchmark-only append frames with immutable sorted index runs.
 //!
-//! Reads probe per-run xor16 membership filters and a sparse fence index
+//! Reads probe per-run blocked Bloom filters and a sparse fence index
 //! newest-first; index records stay on disk behind positioned reads.
 //! Leveled compaction merges the derived runs (payload frames are never
 //! rewritten), immutable manifest generations gate visibility atomically,
@@ -19,7 +19,7 @@
 //! ## Contents
 //!
 //! - Append campaign runner.
-//! - Benchmark-only compatibility store helpers.
+//! - Benchmark store adapter helpers.
 //! - Stable phase, percentile, and report schemas.
 
 mod runner;

@@ -13,6 +13,7 @@
 //! - [`sync_directory`]: durably fences directory entry changes.
 //! - [`sync_parent_directory`]: durably fences creation of a store directory.
 
+use crate::engine::manifest;
 use anyhow::{Context, Result};
 use std::fs::{self, File};
 use std::path::Path;
@@ -39,8 +40,8 @@ pub(super) fn clear_stale_temp_files(root: &Path) -> Result<()> {
                 path.file_name()
                     .and_then(|name| name.to_str())
                     .is_some_and(|name| {
-                        name.ends_with(".tmp")
-                            && (name.starts_with("run-") || name.starts_with("manifest-"))
+                        manifest::is_run_temp_file_name(name)
+                            || manifest::is_manifest_temp_file_name(name)
                     });
             if is_stale_tmp {
                 fs::remove_file(&path)

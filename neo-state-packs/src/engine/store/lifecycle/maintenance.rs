@@ -245,7 +245,7 @@ impl PackStore {
     /// Merges the oldest runs of one level (up to the fanout) into one run
     /// at the next level: records are decoded, checksum-scrubbed, merged
     /// newest-epoch-wins, and re-encoded with rebuilt fences and filter.
-    /// The output is a physical v4 run file whose payload offsets keep
+    /// The output is a physical v5 run file whose payload positions keep
     /// pointing at the original frames. Nothing in the live set changes and
     /// no manifest is published here, so calling this without adopting the
     /// result exactly simulates a crash after run-file publication.
@@ -434,7 +434,7 @@ impl PackStore {
                 // GC therefore leaves temp files alone; startup recovery owns
                 // stale-temp cleanup after acquiring the exclusive lease.
                 "tmp" => false,
-                "idx" => !protected_runs.contains(name),
+                "idx" => manifest::is_run_file_name(name) && !protected_runs.contains(name),
                 _ => false,
             };
             if !delete {
@@ -468,7 +468,7 @@ impl PackStore {
             let is_manifest_tmp = path
                 .file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("manifest-") && name.ends_with(".tmp"));
+                .is_some_and(manifest::is_manifest_temp_file_name);
             if is_manifest_tmp {
                 fs::remove_file(&path)
                     .with_context(|| format!("delete stale manifest temp {}", path.display()))?;

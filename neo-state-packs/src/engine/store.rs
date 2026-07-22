@@ -1,6 +1,6 @@
 use super::filter::{
-    BLOOM_HASH_PROBES, BlockedBloomFilter, FILTER_FINGERPRINT_BITS, XorFilter, blocked_bloom_bytes,
-    blocked_bloom_maybe_contains_hash, filter_capacity, key_hash, validate_blocked_bloom,
+    BLOOM_HASH_PROBES, BlockedBloomFilter, blocked_bloom_bytes, blocked_bloom_maybe_contains_hash,
+    key_hash, validate_blocked_bloom,
 };
 use super::manifest::{self, Manifest, ManifestEntry, ManifestExtent, run_file_name};
 use super::merge::{
@@ -82,14 +82,7 @@ const INDEX_MAGIC: &[u8; 8] = b"N3IDXR01";
 /// Append-frame format emitted and accepted by this pack engine.
 pub const PACK_FRAME_FORMAT_VERSION: u32 = 2;
 /// Immutable sorted-index format emitted and accepted by this pack engine.
-///
-/// This remains the canonical marker/checkpoint compatibility family. Physical
-/// run headers are versioned independently because derived runs are safely
-/// rebuildable from committed frames.
-pub const PACK_INDEX_FORMAT_VERSION: u32 = 3;
-/// Physical immutable-run format emitted by large-run compaction.
-pub const PACK_INDEX_RUN_FORMAT_VERSION: u32 = 4;
-const XOR_INDEX_RUN_FORMAT_VERSION: u32 = 3;
+pub const PACK_INDEX_FORMAT_VERSION: u32 = 5;
 const FRAME_HEADER_LEN: usize = 224;
 const FRAME_ROW_METADATA_LEN: usize = 56;
 const FRAME_FOOTER_LEN: usize = 96;
@@ -155,14 +148,11 @@ struct IndexRun {
 }
 
 #[derive(Debug)]
-enum RunFilter {
-    Xor16(XorFilter),
-    BlockedBloom {
-        seed: u64,
-        probes: u32,
-        offset: u64,
-        bytes: u64,
-    },
+struct RunFilter {
+    seed: u64,
+    probes: u32,
+    offset: u64,
+    bytes: u64,
 }
 
 /// One immutable sorted run live in the current manifest generation. Runs
@@ -203,10 +193,8 @@ pub struct PackScrubStats {
 pub struct PackIndexScrubStats {
     /// Live runs whose complete record sections were validated.
     pub runs: u64,
-    /// Physical v3 xor16 runs validated.
-    pub v3_runs: u64,
-    /// Physical v4 blocked-Bloom runs validated.
-    pub v4_runs: u64,
+    /// Physical v5 blocked-Bloom runs validated.
+    pub v5_runs: u64,
     /// Fixed-size records decoded and checksummed.
     pub records: u64,
     /// Record-section bytes covered by SHA-256.

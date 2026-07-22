@@ -80,35 +80,24 @@ impl IndexRun {
 
 impl RunFilter {
     pub(super) fn maybe_contains_hash(&self, map: &Mmap, hash: u64) -> Result<bool> {
-        match self {
-            Self::Xor16(filter) => Ok(filter.maybe_contains_hash(hash)),
-            Self::BlockedBloom {
-                seed,
-                probes,
-                offset,
-                bytes,
-            } => {
-                let start = usize::try_from(*offset).context("Bloom offset does not fit usize")?;
-                let len = usize::try_from(*bytes).context("Bloom length does not fit usize")?;
-                let end = start.checked_add(len).context("Bloom range overflows")?;
-                let section = map
-                    .as_slice()
-                    .get(start..end)
-                    .context("mapped Bloom section lies outside the index run")?;
-                Ok(blocked_bloom_maybe_contains_hash(
-                    section, *seed, *probes, hash,
-                ))
-            }
-        }
+        let start = usize::try_from(self.offset).context("Bloom offset does not fit usize")?;
+        let len = usize::try_from(self.bytes).context("Bloom length does not fit usize")?;
+        let end = start.checked_add(len).context("Bloom range overflows")?;
+        let section = map
+            .as_slice()
+            .get(start..end)
+            .context("mapped Bloom section lies outside the index run")?;
+        Ok(blocked_bloom_maybe_contains_hash(
+            section,
+            self.seed,
+            self.probes,
+            hash,
+        ))
     }
 
-    pub(super) fn memory_bytes(&self) -> u64 {
-        match self {
-            Self::Xor16(filter) => filter.memory_bytes(),
-            // V4 Bloom bytes remain mmap-backed; only this fixed metadata is
-            // decoded. The build-time bitset is charged as transient workspace.
-            Self::BlockedBloom { .. } => 32,
-        }
+    pub(super) const fn memory_bytes(&self) -> u64 {
+        // Bloom bytes remain mmap-backed; only this fixed metadata is decoded.
+        32
     }
 }
 
@@ -139,16 +128,6 @@ pub(super) fn key_prefix(key: &[u8; PACK_KEY_BYTES]) -> u64 {
     u64::from_be_bytes(key[..8].try_into().expect("key prefix"))
 }
 
-pub(super) fn distinct_keys(entries: &[IndexEntry]) -> Vec<[u8; PACK_KEY_BYTES]> {
-    let mut keys = Vec::with_capacity(entries.len());
-    for entry in entries {
-        if keys.last() != Some(&entry.key) {
-            keys.push(entry.key);
-        }
-    }
-    keys
-}
-
 pub(super) fn build_fences(entries: &[IndexEntry]) -> Vec<[u8; FENCE_KEY_BYTES]> {
     (0..entries.len())
         .step_by(FENCE_INTERVAL)
@@ -165,26 +144,28 @@ pub(super) fn filter_seed(epoch: u64) -> u64 {
 /// Resident structured bytes for one run: fences, filter, and metadata.
 /// Index records are never decoded into memory, so they are not charged.
 pub(super) fn run_structured_bytes(records: usize, distinct: usize) -> Result<u64> {
+    ensure!(
+        distinct > 0 && distinct <= records,
+        "invalid distinct key count"
+    );
     let fences = u64::try_from(records.div_ceil(FENCE_INTERVAL) * FENCE_KEY_BYTES)
         .context("fence bytes do not fit u64")?;
-    let filter =
-        u64::try_from(filter_capacity(distinct) * 2).context("filter bytes do not fit u64")?;
     fences
-        .checked_add(filter)
+        .checked_add(32)
         .and_then(|total| total.checked_add(RUN_METADATA_BYTES))
         .context("structured index bytes overflow")
 }
 
-/// Encodes one immutable sorted run (format v3): header, sparse fences, the
-/// xor16 membership filter, then the v1 record section. Everything before
-/// the records is derived data rebuilt at publish time. The v3 structure
+/// Encodes one immutable sorted run (format v5): header, sparse fences, a
+/// blocked Bloom membership filter, then fixed positioned records. Everything
+/// before the records is derived data rebuilt at publish time. The structure
 /// digest binds every lookup-routing header field plus the exact serialized
 /// fences and filter before either accelerator may be trusted.
 pub(super) fn encode_index_run(
     epoch: u64,
     entries: &[IndexEntry],
     fences: &[[u8; FENCE_KEY_BYTES]],
-    filter: &XorFilter,
+    filter: &BlockedBloomFilter,
     min_key: &[u8; PACK_KEY_BYTES],
     max_key: &[u8; PACK_KEY_BYTES],
 ) -> Result<(Vec<u8>, [u8; 32])> {
@@ -192,15 +173,11 @@ pub(super) fn encode_index_run(
         .len()
         .checked_mul(INDEX_RECORD_LEN)
         .context("index run size overflows usize")?;
-    let mut records = Vec::with_capacity(record_bytes);
+    let mut records_hasher = Sha256::new();
     for entry in entries {
-        records.extend_from_slice(&entry.key);
-        records.extend_from_slice(&entry.sequence.to_le_bytes());
-        records.extend_from_slice(&entry.value_offset.to_le_bytes());
-        records.extend_from_slice(&entry.value_len.to_le_bytes());
-        records.push(u8::from(entry.tombstone));
+        records_hasher.update(super::super::merge::encode_record(entry));
     }
-    let records_sha256 = digest(&records);
+    let records_sha256: [u8; 32] = records_hasher.finalize().into();
     let mut header = [0u8; INDEX_HEADER_LEN];
     header[0..8].copy_from_slice(INDEX_MAGIC);
     header[8..12].copy_from_slice(&PACK_INDEX_FORMAT_VERSION.to_le_bytes());
@@ -219,26 +196,29 @@ pub(super) fn encode_index_run(
     );
     header[68..72].copy_from_slice(&(FENCE_INTERVAL as u32).to_le_bytes());
     header[72..80].copy_from_slice(&filter.seed().to_le_bytes());
-    header[80..84].copy_from_slice(
-        &u32::try_from(filter.fingerprint_count())
-            .context("filter size does not fit u32")?
+    header[80..88].copy_from_slice(
+        &u64::try_from(filter.as_bytes().len())
+            .context("Bloom byte length does not fit u64")?
             .to_le_bytes(),
     );
-    header[84..88].copy_from_slice(&FILTER_FINGERPRINT_BITS.to_le_bytes());
     header[88..121].copy_from_slice(min_key);
     header[121..154].copy_from_slice(max_key);
-    let filter_bytes = filter.encode();
+    header[INDEX_STRUCTURE_SHA256_END..INDEX_HEADER_TAG_START]
+        .copy_from_slice(&(BLOOM_HASH_PROBES as u16).to_le_bytes());
     let mut output = Vec::with_capacity(
-        INDEX_HEADER_LEN + fences.len() * FENCE_KEY_BYTES + filter_bytes.len() + records.len(),
+        INDEX_HEADER_LEN + fences.len() * FENCE_KEY_BYTES + filter.as_bytes().len() + record_bytes,
     );
     output.extend_from_slice(&header);
     for fence in fences {
         output.extend_from_slice(fence);
     }
-    output.extend_from_slice(&filter_bytes);
+    output.extend_from_slice(filter.as_bytes());
     let structure_end = output.len();
+    for entry in entries {
+        output.extend_from_slice(&super::super::merge::encode_record(entry));
+    }
     let structure_sha256 = index_structure_digest(
-        XOR_INDEX_RUN_FORMAT_VERSION,
+        PACK_INDEX_FORMAT_VERSION,
         output[..INDEX_HEADER_LEN]
             .try_into()
             .expect("index header length"),
@@ -248,11 +228,10 @@ pub(super) fn encode_index_run(
         .copy_from_slice(&structure_sha256);
     let tag = digest(&output[..INDEX_HEADER_TAG_START]);
     output[INDEX_HEADER_TAG_START..INDEX_HEADER_LEN].copy_from_slice(&tag[..4]);
-    output.extend_from_slice(&records);
     Ok((output, records_sha256))
 }
 
-/// Reads a v3 run header, fences, and filter into memory and performs the
+/// Reads a v5 run header, fences, and filter into memory and performs the
 /// integrity and structure checks before either accelerator can affect a
 /// lookup. Records are never decoded here.
 pub(super) fn map_random_if_enabled(
@@ -295,14 +274,11 @@ pub(super) fn read_index_run_with_options(
         path.display()
     );
     let format_version = u32_at(&header, 8)?;
-    if !matches!(
-        format_version,
-        XOR_INDEX_RUN_FORMAT_VERSION | PACK_INDEX_RUN_FORMAT_VERSION
-    ) {
+    if format_version != PACK_INDEX_FORMAT_VERSION {
         return Err(PackStoreError::unsupported_version(
             PackStoreArtifact::IndexRun,
             format_version,
-            &[XOR_INDEX_RUN_FORMAT_VERSION, PACK_INDEX_RUN_FORMAT_VERSION],
+            &[PACK_INDEX_FORMAT_VERSION],
         )
         .into());
     }
@@ -316,20 +292,10 @@ pub(super) fn read_index_run_with_options(
         "index header tag mismatch in {}",
         path.display()
     );
-    match format_version {
-        XOR_INDEX_RUN_FORMAT_VERSION => ensure!(
-            header[INDEX_STRUCTURE_SHA256_END..INDEX_HEADER_TAG_START]
-                .iter()
-                .all(|byte| *byte == 0),
-            "index header reserved bytes are non-zero in {}",
-            path.display()
-        ),
-        PACK_INDEX_RUN_FORMAT_VERSION => ensure!(
-            u16_at(&header, INDEX_STRUCTURE_SHA256_END)? == BLOOM_HASH_PROBES as u16,
-            "unsupported blocked Bloom probe count"
-        ),
-        _ => unreachable!("validated physical run version"),
-    }
+    ensure!(
+        u16_at(&header, INDEX_STRUCTURE_SHA256_END)? == BLOOM_HASH_PROBES as u16,
+        "unsupported blocked Bloom probe count"
+    );
     let epoch = u64_at(&header, 16)?;
     let record_count = u64_at(&header, 24)?;
     ensure!(record_count > 0, "empty index run {}", path.display());
@@ -358,31 +324,13 @@ pub(super) fn read_index_run_with_options(
     let fence_bytes = fence_count
         .checked_mul(FENCE_KEY_BYTES)
         .context("index fence byte length overflows")?;
-    let (filter_bytes, filter_parameter) = match format_version {
-        XOR_INDEX_RUN_FORMAT_VERSION => {
-            let filter_parameter = u32_at(&header, 84)?;
-            ensure!(
-                filter_parameter == FILTER_FINGERPRINT_BITS,
-                "unsupported xor filter fingerprint width"
-            );
-            let bytes = usize::try_from(u32_at(&header, 80)?)
-                .context("xor filter size overflows")?
-                .checked_mul(2)
-                .context("xor filter byte length overflows")?;
-            (bytes, filter_parameter)
-        }
-        PACK_INDEX_RUN_FORMAT_VERSION => {
-            let bytes =
-                usize::try_from(u64_at(&header, 80)?).context("Bloom size does not fit usize")?;
-            ensure!(
-                u64::try_from(bytes).context("Bloom size does not fit u64")?
-                    == blocked_bloom_bytes(record_count)?,
-                "blocked Bloom geometry does not match the unique record count"
-            );
-            (bytes, BLOOM_HASH_PROBES)
-        }
-        _ => unreachable!("validated physical run version"),
-    };
+    let filter_bytes =
+        usize::try_from(u64_at(&header, 80)?).context("Bloom size does not fit usize")?;
+    ensure!(
+        u64::try_from(filter_bytes).context("Bloom size does not fit u64")?
+            == blocked_bloom_bytes(record_count)?,
+        "blocked Bloom geometry does not match the record count"
+    );
     let records_offset_usize = INDEX_HEADER_LEN
         .checked_add(fence_bytes)
         .and_then(|offset| offset.checked_add(filter_bytes))
@@ -421,21 +369,13 @@ pub(super) fn read_index_run_with_options(
         "index fences are not sorted"
     );
     let filter_section = &structure[fence_bytes..];
-    let filter = match format_version {
-        XOR_INDEX_RUN_FORMAT_VERSION => RunFilter::Xor16(
-            XorFilter::decode(seed, filter_section).context("decode run membership filter")?,
-        ),
-        PACK_INDEX_RUN_FORMAT_VERSION => {
-            validate_blocked_bloom(filter_section, filter_parameter)?;
-            RunFilter::BlockedBloom {
-                seed,
-                probes: filter_parameter,
-                offset: u64::try_from(INDEX_HEADER_LEN + fence_bytes)
-                    .context("Bloom offset does not fit u64")?,
-                bytes: u64::try_from(filter_bytes).context("Bloom length does not fit u64")?,
-            }
-        }
-        _ => unreachable!("validated physical run version"),
+    validate_blocked_bloom(filter_section, BLOOM_HASH_PROBES)?;
+    let filter = RunFilter {
+        seed,
+        probes: BLOOM_HASH_PROBES,
+        offset: u64::try_from(INDEX_HEADER_LEN + fence_bytes)
+            .context("Bloom offset does not fit u64")?,
+        bytes: u64::try_from(filter_bytes).context("Bloom length does not fit u64")?,
     };
     let records = map
         .as_slice()
@@ -520,9 +460,7 @@ pub(super) fn publish_fresh_run(
     let min_key = entries.first().expect("non-empty run").key;
     let max_key = entries.last().expect("non-empty run").key;
     let fences = build_fences(entries);
-    let keys = distinct_keys(entries);
-    let filter =
-        XorFilter::build(&keys, filter_seed(epoch)).context("build run membership filter")?;
+    let filter = build_blocked_bloom(entries, epoch)?;
     let (index_bytes, _) = encode_index_run(epoch, entries, &fences, &filter, &min_key, &max_key)?;
     let final_path = runs_dir.join(file_name);
     let temp_path = runs_dir.join(format!("{file_name}.tmp"));
@@ -545,4 +483,16 @@ pub(super) fn publish_fresh_run(
     })?;
     sync_directory(runs_dir)?;
     read_index_run_with_options(&final_path, options)
+}
+
+pub(super) fn build_blocked_bloom(
+    entries: &[IndexEntry],
+    epoch: u64,
+) -> Result<BlockedBloomFilter> {
+    let count = u64::try_from(entries.len()).context("index entry count does not fit u64")?;
+    let mut filter = BlockedBloomFilter::with_capacity(count, filter_seed(epoch))?;
+    for entry in entries {
+        filter.insert_hash(key_hash(&entry.key));
+    }
+    Ok(filter)
 }

@@ -254,6 +254,11 @@ impl ReadView<'_> {
         if entry.tombstone {
             return Ok(None);
         }
+        ensure!(
+            entry.segment_id == PackSegmentId::INITIAL,
+            "index entry names unavailable segment {}",
+            entry.segment_id
+        );
         let offset =
             usize::try_from(entry.value_offset).context("value offset does not fit usize")?;
         let length = usize::try_from(entry.value_len).context("value length does not fit usize")?;

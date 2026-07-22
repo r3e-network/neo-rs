@@ -186,6 +186,7 @@ impl PackStore {
             .0;
         let prospective = self.ensure_index_memory(rows, distinct_key_count)?;
         let epoch = self.next_epoch;
+        let segment_id = PackSegmentId::INITIAL;
         let next_prepare_serial = self
             .next_prepare_serial
             .checked_add(1)
@@ -197,17 +198,19 @@ impl PackStore {
         for entry in &mut entries {
             if entry.tombstone {
                 ensure!(
-                    entry.value_offset == 0 && entry.value_len == 0,
+                    entry.segment_id == PackSegmentId::INITIAL
+                        && entry.value_offset == 0
+                        && entry.value_len == 0,
                     "tombstone index entry carries a value location"
                 );
             } else {
+                entry.segment_id = segment_id;
                 entry.value_offset = value_start
                     .checked_add(entry.value_offset)
                     .context("absolute frame value offset overflows")?;
             }
         }
-        let keys = distinct_keys(&entries);
-        let structured = run_structured_bytes(entries.len(), keys.len())?;
+        let structured = run_structured_bytes(entries.len(), distinct_key_count)?;
         ensure!(
             prospective
                 == self
@@ -243,7 +246,7 @@ impl PackStore {
             .context("appended pack length overflows")?;
         let receipt = PackFrameReceipt {
             epoch,
-            segment_id: PackSegmentId::INITIAL,
+            segment_id,
             frame_start,
             frame_end: pack_len,
             context,
@@ -269,8 +272,8 @@ impl PackStore {
                 let min_key = entries.first().expect("non-empty frame").key;
                 let max_key = entries.last().expect("non-empty frame").key;
                 let fences = build_fences(&entries);
-                let filter = XorFilter::build(&keys, filter_seed(epoch))
-                    .context("build run membership filter");
+                let filter =
+                    build_blocked_bloom(&entries, epoch).context("build run membership filter");
                 let result = filter.and_then(|filter| {
                     encode_index_run(epoch, &entries, &fences, &filter, &min_key, &max_key).map(
                         |(index_bytes, records_sha256)| {
@@ -327,12 +330,12 @@ impl PackStore {
         let file_bytes = u64::try_from(index_bytes.len()).context("index bytes do not fit u64")?;
         let map = Mmap::map(&file, file_bytes, &final_path)?;
         drop(file);
-        let records_offset = (INDEX_HEADER_LEN
-            + fences.len() * FENCE_KEY_BYTES
-            + filter.fingerprint_count() * 2) as u64;
+        let bloom_offset = INDEX_HEADER_LEN + fences.len() * FENCE_KEY_BYTES;
+        let records_offset = u64::try_from(bloom_offset + filter.as_bytes().len())
+            .context("index records offset does not fit u64")?;
         let run = LiveRun {
             run: Arc::new(IndexRun {
-                format_version: XOR_INDEX_RUN_FORMAT_VERSION,
+                format_version: PACK_INDEX_FORMAT_VERSION,
                 epoch,
                 record_count: u64::try_from(entries.len())
                     .context("index count does not fit u64")?,
@@ -347,7 +350,13 @@ impl PackStore {
                 min_prefix: key_prefix(&min_key),
                 max_prefix: key_prefix(&max_key),
                 fences,
-                filter: RunFilter::Xor16(filter),
+                filter: RunFilter {
+                    seed: filter.seed(),
+                    probes: BLOOM_HASH_PROBES,
+                    offset: u64::try_from(bloom_offset).context("Bloom offset does not fit u64")?,
+                    bytes: u64::try_from(filter.as_bytes().len())
+                        .context("Bloom length does not fit u64")?,
+                },
                 records_sha256,
                 structure_sha256: index_bytes
                     [INDEX_STRUCTURE_SHA256_START..INDEX_STRUCTURE_SHA256_END]
@@ -541,6 +550,10 @@ impl PackStore {
             prepared.receipt.epoch == self.next_epoch,
             "prepared frame activation is out of order"
         );
+        ensure!(
+            prepared.receipt.segment_id == PackSegmentId::INITIAL,
+            "prepared frame names an unavailable segment"
+        );
         let next_epoch = self
             .next_epoch
             .checked_add(1)
@@ -567,6 +580,7 @@ impl PackStore {
         );
         let actual_receipt = read_frame_receipt_at(
             &self.pack,
+            PackSegmentId::INITIAL,
             prepared.receipt.epoch,
             prepared.receipt.frame_start,
             prepared.receipt.frame_end,
@@ -589,6 +603,7 @@ impl PackStore {
         .map(Arc::new);
         verify_frame(
             &pack_map,
+            PackSegmentId::INITIAL,
             prepared.receipt.frame_start,
             prepared.receipt.frame_end,
             prepared.receipt.epoch,

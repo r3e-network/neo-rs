@@ -174,7 +174,7 @@ pub fn run_append_benchmark(config: &AppendBenchmarkConfig) -> Result<AppendBenc
     let report = AppendBenchmarkReport {
         schema_version: 3,
         status: "passed".to_owned(),
-        backend: "append_frames_immutable_sorted_runs_v3".to_owned(),
+        backend: "append_frames_immutable_sorted_runs_v5".to_owned(),
         output: config.output.clone(),
         database: config.database.clone(),
         evidence_log: config.evidence_log.clone(),

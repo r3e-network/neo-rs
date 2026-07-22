@@ -15,14 +15,12 @@
 
 use super::{
     INDEX_HEADER_LEN, INDEX_HEADER_TAG_START, INDEX_STRUCTURE_SHA256_END,
-    INDEX_STRUCTURE_SHA256_START, PACK_INDEX_RUN_FORMAT_VERSION, PackStoreArtifact, PackStoreError,
-    XOR_INDEX_RUN_FORMAT_VERSION,
+    INDEX_STRUCTURE_SHA256_START, PACK_INDEX_FORMAT_VERSION, PackStoreArtifact, PackStoreError,
 };
 use anyhow::Result;
 use sha2::{Digest, Sha256};
 
-const INDEX_STRUCTURE_DIGEST_DOMAIN_V3: &[u8] = b"neo-state-packs/index-structure/v3\0";
-const INDEX_STRUCTURE_DIGEST_DOMAIN_V4: &[u8] = b"neo-state-packs/index-structure/v4\0";
+const INDEX_STRUCTURE_DIGEST_DOMAIN_V5: &[u8] = b"neo-state-packs/index-structure/v5\0";
 
 /// Computes the SHA-256 checksum of `bytes`.
 pub(super) fn digest(bytes: &[u8]) -> [u8; 32] {
@@ -54,20 +52,16 @@ pub(super) fn index_structure_digest_parts(
 }
 
 fn index_structure_hasher(format_version: u32, header: &[u8; INDEX_HEADER_LEN]) -> Result<Sha256> {
-    let domain = match format_version {
-        XOR_INDEX_RUN_FORMAT_VERSION => INDEX_STRUCTURE_DIGEST_DOMAIN_V3,
-        PACK_INDEX_RUN_FORMAT_VERSION => INDEX_STRUCTURE_DIGEST_DOMAIN_V4,
-        _ => {
-            return Err(PackStoreError::unsupported_version(
-                PackStoreArtifact::IndexRun,
-                format_version,
-                &[XOR_INDEX_RUN_FORMAT_VERSION, PACK_INDEX_RUN_FORMAT_VERSION],
-            )
-            .into());
-        }
-    };
+    if format_version != PACK_INDEX_FORMAT_VERSION {
+        return Err(PackStoreError::unsupported_version(
+            PackStoreArtifact::IndexRun,
+            format_version,
+            &[PACK_INDEX_FORMAT_VERSION],
+        )
+        .into());
+    }
     let mut hasher = Sha256::new();
-    hasher.update(domain);
+    hasher.update(INDEX_STRUCTURE_DIGEST_DOMAIN_V5);
     hasher.update(&header[..INDEX_STRUCTURE_SHA256_START]);
     hasher.update(&header[INDEX_STRUCTURE_SHA256_END..INDEX_HEADER_TAG_START]);
     Ok(hasher)

@@ -91,11 +91,18 @@ pub(super) fn validate_index_entry_payload_range(
     );
     if entry.tombstone {
         ensure!(
-            entry.value_offset == 0 && entry.value_len == 0,
+            entry.segment_id == PackSegmentId::INITIAL
+                && entry.value_offset == 0
+                && entry.value_len == 0,
             "tombstone index entry carries a non-zero value location"
         );
         return Ok(());
     }
+    ensure!(
+        entry.segment_id == PackSegmentId::INITIAL,
+        "index entry names unavailable segment {}",
+        entry.segment_id
+    );
     let value_end = entry
         .value_offset
         .checked_add(u64::from(entry.value_len))

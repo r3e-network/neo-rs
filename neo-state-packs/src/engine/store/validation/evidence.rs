@@ -262,10 +262,12 @@ impl PackStore {
             return Ok(FrameReferenceEvidence::empty(receipt));
         }
         let mut positions = HashMap::with_capacity(indices.len());
-        let reference_keys: Vec<_> = indices.iter().map(|&index| entries[index].key).collect();
-        let reference_filter =
-            XorFilter::build(&reference_keys, receipt.epoch ^ 0xA076_1D64_78BD_642F)?;
+        let mut reference_filter = BlockedBloomFilter::with_capacity(
+            u64::try_from(indices.len()).context("frame-reference count does not fit u64")?,
+            receipt.epoch ^ 0xA076_1D64_78BD_642F,
+        )?;
         for (position, &index) in indices.iter().enumerate() {
+            reference_filter.insert_hash(key_hash(&entries[index].key));
             ensure!(
                 positions.insert(entries[index].key, position).is_none(),
                 "frame-reference sample contains a duplicate key"
@@ -273,7 +275,12 @@ impl PackStore {
         }
         let mut states = vec![None; indices.len()];
         let scrub = self.scrub_committed_frames_with(|key, kind, value| {
-            if !reference_filter.maybe_contains_hash(key_hash(key)) {
+            if !blocked_bloom_maybe_contains_hash(
+                reference_filter.as_bytes(),
+                reference_filter.seed(),
+                BLOOM_HASH_PROBES,
+                key_hash(key),
+            ) {
                 return Ok(());
             }
             let Some(&position) = positions.get(key) else {

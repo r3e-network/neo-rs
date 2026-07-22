@@ -171,17 +171,23 @@ impl PackStore {
         let manifest_binding_valid = current_manifest
             .as_ref()
             .is_some_and(|manifest| manifest.extents == authenticated_extents);
-        let manifest_runs_valid = manifest_frames == Some(expected_frames)
-            && manifest_binding_valid
-            && current_manifest.as_ref().is_some_and(|manifest| {
-                Self::load_manifest_runs(
+        let manifest_runs_valid =
+            if manifest_frames == Some(expected_frames) && manifest_binding_valid {
+                match Self::load_manifest_runs(
                     &root.join("runs"),
-                    manifest,
+                    current_manifest
+                        .as_ref()
+                        .expect("validated manifest presence"),
                     max_index_memory_bytes,
                     options,
-                )
-                .is_ok()
-            });
+                ) {
+                    Ok(_) => true,
+                    Err(error) if is_unsupported_artifact_version(&error) => return Err(error),
+                    Err(_) => false,
+                }
+            } else {
+                false
+            };
         let fast_open = if expected_frames == 0 {
             scan.frame_ends.is_empty()
                 && manifests.is_empty()
@@ -195,6 +201,21 @@ impl PackStore {
         drop(pack);
 
         if !fast_open {
+            if expected_frames > 0 {
+                let prefix = &scan.frame_ends[..usize::try_from(expected_frames)
+                    .context("marker frame count does not fit usize")?];
+                let preflight_pack = File::open(&pack_path).with_context(|| {
+                    format!(
+                        "open append pack {} for rebuild preflight",
+                        pack_path.display()
+                    )
+                })?;
+                Self::preflight_rebuild_runs_from_frames(
+                    &preflight_pack,
+                    prefix,
+                    max_index_memory_bytes,
+                )?;
+            }
             reset_derived_state_to_frame_prefix(root, &scan, expected_frames)?;
             if expected_frames > 0 {
                 let (recovered_pack, recovered_path) = open_initial_segment(root)?;
@@ -298,16 +319,25 @@ impl PackStore {
                 extents = current.extents.clone();
                 let loaded =
                     Self::load_manifest_runs(&runs_dir, &current, max_index_memory_bytes, options);
-                clear_stale_temp_files(root)?;
                 generation = current.generation;
                 match loaded {
-                    Ok(loaded) => loaded,
+                    Ok(loaded) => {
+                        clear_stale_temp_files(root)?;
+                        loaded
+                    }
+                    Err(error) if is_unsupported_artifact_version(&error) => return Err(error),
                     Err(error) => {
                         // Indexes are derived, but only the manifest's exact
                         // visible prefix may be rebuilt without an external
                         // canonical marker. Raw frames beyond it stay orphaned.
                         let prefix = &scan.frame_ends[..usize::try_from(committed_frames)
                             .context("manifest frame count does not fit usize")?];
+                        Self::preflight_rebuild_runs_from_frames(
+                            &pack,
+                            prefix,
+                            max_index_memory_bytes,
+                        )?;
+                        clear_stale_temp_files(root)?;
                         let rebuild_started = Instant::now();
                         let loaded = Self::rebuild_runs_from_frames(
                             &pack,
@@ -389,6 +419,72 @@ impl PackStore {
         Ok(loaded)
     }
 
+    /// Proves that every selected frame is authenticated, structurally
+    /// decodable, and rebuildable within the cumulative resident-index bound.
+    /// This must complete before recovery truncates or replaces any artifact.
+    fn preflight_rebuild_runs_from_frames(
+        pack: &File,
+        frame_ends: &[u64],
+        max_index_memory_bytes: u64,
+    ) -> Result<()> {
+        let mut resident_bytes = 0u64;
+        let mut frame_start = SEGMENT_HEADER_LEN as u64;
+        for (epoch, frame_end) in frame_ends.iter().enumerate() {
+            let epoch = u64::try_from(epoch).context("preflight epoch does not fit u64")?;
+            let _ =
+                read_frame_receipt_at(pack, PackSegmentId::INITIAL, epoch, frame_start, *frame_end)
+                    .with_context(|| {
+                        format!("authenticate frame {epoch} before recovery mutation")
+                    })?;
+            let mut header = [0u8; FRAME_HEADER_LEN];
+            pack.read_exact_at(&mut header, frame_start)
+                .context("read frame header for recovery preflight")?;
+            let header = validate_frame_header(&header, epoch)?;
+            ensure!(
+                frame_start.checked_add(header.frame_bytes) == Some(*frame_end),
+                "preflight frame length mismatch at epoch {epoch}"
+            );
+            let rows =
+                usize::try_from(header.rows).context("preflight row count does not fit usize")?;
+            let metadata_len = usize::try_from(header.metadata_bytes)
+                .context("preflight metadata length does not fit usize")?;
+            ensure_rebuild_memory_bound(
+                rebuild_decode_workspace_bytes(resident_bytes, header.metadata_bytes, header.rows)?,
+                max_index_memory_bytes,
+            )?;
+
+            let metadata_start = frame_start
+                .checked_add(FRAME_HEADER_LEN as u64)
+                .context("preflight metadata offset overflows")?;
+            let mut metadata = Vec::new();
+            metadata
+                .try_reserve_exact(metadata_len)
+                .context("reserve frame metadata for recovery preflight")?;
+            metadata.resize(metadata_len, 0);
+            pack.read_exact_at(&mut metadata, metadata_start)
+                .context("read frame metadata for recovery preflight")?;
+            ensure!(
+                frame_metadata_digest(&metadata) == header.metadata_sha256,
+                "frame metadata checksum mismatch during recovery preflight"
+            );
+            let distinct = scan_frame_metadata_distinct_keys(&metadata, rows, header.value_bytes)?;
+            ensure_rebuild_memory_bound(
+                estimate_rebuild_peak_bytes(
+                    resident_bytes,
+                    header.metadata_bytes,
+                    header.rows,
+                    distinct,
+                )?,
+                max_index_memory_bytes,
+            )?;
+            resident_bytes = resident_bytes
+                .checked_add(run_structured_bytes(rows, distinct)?)
+                .context("preflight resident index bytes overflow")?;
+            frame_start = *frame_end;
+        }
+        Ok(())
+    }
+
     /// Rebuilds one level-0 run per committed frame directly from the pack.
     /// Every frame payload is re-hashed and decoded; this is the slow
     /// recovery path, never the steady-state open.
@@ -403,8 +499,9 @@ impl PackStore {
         let mut frame_start = SEGMENT_HEADER_LEN as u64;
         for (epoch, frame_end) in frame_ends.iter().enumerate() {
             let epoch = u64::try_from(epoch).context("rebuilt epoch does not fit u64")?;
-            let _ = read_frame_receipt_at(pack, epoch, frame_start, *frame_end)
-                .with_context(|| format!("authenticate frame {epoch} before index rebuild"))?;
+            let _ =
+                read_frame_receipt_at(pack, PackSegmentId::INITIAL, epoch, frame_start, *frame_end)
+                    .with_context(|| format!("authenticate frame {epoch} before index rebuild"))?;
             let mut header = [0u8; FRAME_HEADER_LEN];
             pack.read_exact_at(&mut header, frame_start)
                 .context("re-read frame header for index rebuild")?;
@@ -531,8 +628,14 @@ impl PackStore {
             } else {
                 scan.frame_ends[index - 1]
             };
-            verify_frame(&pack_map, frame_start, frame_end, epoch)
-                .with_context(|| format!("verify committed frame {epoch}"))?;
+            verify_frame(
+                &pack_map,
+                PackSegmentId::INITIAL,
+                frame_start,
+                frame_end,
+                epoch,
+            )
+            .with_context(|| format!("verify committed frame {epoch}"))?;
         }
         for live in &loaded.runs {
             verify_run(&live.run).with_context(|| {
@@ -606,8 +709,8 @@ fn rebuild_decode_workspace_bytes(
 
 /// Conservative phase-aware heap peak for rebuilding one current derived run from
 /// authenticated v2 frame metadata. This includes the already resident run
-/// generation and every allocation family used by metadata decode, xor-filter
-/// construction, duplicate run encoding, and validating readback.
+/// generation and every allocation family used by metadata decode, Bloom-filter
+/// construction, run encoding, and validating readback.
 pub(super) fn estimate_rebuild_peak_bytes(
     resident_bytes: u64,
     metadata_bytes: u64,
@@ -626,45 +729,19 @@ pub(super) fn estimate_rebuild_peak_bytes(
         .and_then(|bytes| bytes.checked_add(sequence_bitmap))
         .context("recovery decode workspace estimate overflows")?;
 
-    let keys = allocation_bytes(distinct_keys, PACK_KEY_BYTES)?;
     let fence_count = rows_usize.div_ceil(FENCE_INTERVAL);
     let fences = allocation_bytes(fence_count, FENCE_KEY_BYTES)?;
-    let filter_slots = filter_capacity(distinct_keys);
-    let key_hashes = allocation_bytes(distinct_keys, std::mem::size_of::<u64>())?;
-    let xor_counts = allocation_bytes(filter_slots, std::mem::size_of::<u8>())?;
-    let xor_values = allocation_bytes(filter_slots, std::mem::size_of::<u64>())?;
-    let xor_queue = allocation_bytes(filter_slots, std::mem::size_of::<usize>())?;
-    let xor_peeled = allocation_bytes(distinct_keys, std::mem::size_of::<(usize, u64)>())?;
-    let filter_bytes = allocation_bytes(filter_slots, std::mem::size_of::<u16>())?;
-    let filter_build_peak = checked_sum(&[
-        entries,
-        keys,
-        fences,
-        key_hashes,
-        xor_counts,
-        xor_values,
-        xor_queue,
-        xor_peeled,
-        filter_bytes,
-    ])?;
+    let filter_bytes = blocked_bloom_bytes(rows)?;
+    let filter_build_peak = checked_sum(&[entries, fences, filter_bytes])?;
 
     let record_bytes = allocation_bytes(rows_usize, INDEX_RECORD_LEN)?;
     let encoded_output =
         checked_sum(&[INDEX_HEADER_LEN as u64, fences, filter_bytes, record_bytes])?;
-    let encode_peak = checked_sum(&[
-        entries,
-        keys,
-        fences,
-        filter_bytes,
-        record_bytes,
-        filter_bytes,
-        encoded_output,
-    ])?;
+    let encode_peak = checked_sum(&[entries, fences, filter_bytes, encoded_output])?;
 
     let readback_structured = run_structured_bytes(rows_usize, distinct_keys)?;
     let readback_peak = checked_sum(&[
         entries,
-        keys,
         fences,
         filter_bytes,
         encoded_output,
@@ -746,8 +823,9 @@ fn authenticate_committed_frame_prefix(
             .frame_ends
             .get(index)
             .with_context(|| format!("committed frame {epoch} is absent"))?;
-        let (receipt, _) = verify_frame(&map, frame_start, frame_end, epoch)
-            .with_context(|| format!("authenticate committed frame {epoch}"))?;
+        let (receipt, _) =
+            verify_frame(&map, PackSegmentId::INITIAL, frame_start, frame_end, epoch)
+                .with_context(|| format!("authenticate committed frame {epoch}"))?;
         manifest::append_frame_extent(&mut extents, receipt)?;
         frame_start = frame_end;
     }

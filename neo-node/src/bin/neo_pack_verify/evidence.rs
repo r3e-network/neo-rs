@@ -57,8 +57,8 @@ pub(super) fn scrub_indexes_with_label(label: &str, pack: &PackStore) -> Result<
         .scrub_index_runs()
         .context("scrub every live authoritative index run")?;
     println!(
-        "scrubbed indexes ({label}): runs={} v3_runs={} v4_runs={} records={} record_bytes={}",
-        stats.runs, stats.v3_runs, stats.v4_runs, stats.records, stats.record_bytes,
+        "scrubbed indexes ({label}): runs={} v5_runs={} records={} record_bytes={}",
+        stats.runs, stats.v5_runs, stats.records, stats.record_bytes,
     );
     Ok(())
 }
