@@ -105,5 +105,7 @@ mod find_limited;
 mod mainnet_vectors;
 #[path = "mpt_trie/node.rs"]
 mod node;
+#[path = "mpt_trie/root_validation.rs"]
+mod root_validation;
 #[path = "mpt_trie/trie.rs"]
 mod trie;

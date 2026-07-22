@@ -3,12 +3,10 @@ use super::cache::PendingNodeFinalization;
 use super::error::{MptError, MptResult};
 use super::node::{BRANCH_CHILD_COUNT, BRANCH_VALUE_INDEX, MAX_KEY_LENGTH, MAX_VALUE_LENGTH, Node};
 use super::node_type::NodeType;
-use super::{MptCache, MptMutationStats};
+use super::{MPT_NODE_PREFIX, MptCache, MptMutationStats};
 use neo_primitives::UInt256;
 use std::cmp::Ordering;
 use std::sync::Arc;
-
-const CACHE_PREFIX: u8 = 0xf0;
 
 mod proof;
 
@@ -71,12 +69,12 @@ where
     ) -> Self {
         let cache = if defer_reference_resolution {
             if defer_intermediate_nodes {
-                MptCache::new_deferred_with_intermediate_nodes(store, CACHE_PREFIX)
+                MptCache::new_deferred_with_intermediate_nodes(store, MPT_NODE_PREFIX)
             } else {
-                MptCache::new_deferred(store, CACHE_PREFIX)
+                MptCache::new_deferred(store, MPT_NODE_PREFIX)
             }
         } else {
-            MptCache::new(store, CACHE_PREFIX)
+            MptCache::new(store, MPT_NODE_PREFIX)
         };
         let root_node = root.map_or_else(Node::new, Node::new_hash);
         Self {

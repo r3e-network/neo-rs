@@ -1,13 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use neo_primitives::{UINT256_SIZE, UInt256};
+use neo_primitives::UInt256;
 use parking_lot::Mutex;
 
-use super::{CACHE_PREFIX, Trie};
+use super::Trie;
 use crate::Crypto;
+use crate::mpt_trie::MPT_NODE_PREFIX;
 use crate::mpt_trie::MptCache;
 use crate::mpt_trie::cache::MptStoreSnapshot;
+use crate::mpt_trie::cache::node_key_bytes;
 use crate::mpt_trie::error::{MptError, MptResult};
 use crate::mpt_trie::node::{BRANCH_VALUE_INDEX, Node};
 use crate::mpt_trie::node_type::NodeType;
@@ -126,8 +128,5 @@ where
 }
 
 fn cache_key(hash: &UInt256) -> Vec<u8> {
-    let mut buffer = Vec::with_capacity(1 + UINT256_SIZE);
-    buffer.push(CACHE_PREFIX);
-    buffer.extend_from_slice(&hash.to_bytes());
-    buffer
+    node_key_bytes(MPT_NODE_PREFIX, hash).to_vec()
 }

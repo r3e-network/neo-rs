@@ -21,6 +21,7 @@
 //! - `error`: Typed error definitions and conversions.
 //! - `node`: Neo MPT node representation and C#-compatible serialization.
 //! - `node_type`: MPT node type identifiers.
+//! - `root_validation`: Bounded validation of one persisted current-root graph.
 //! - `trie`: MPT trie operations and state-root helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
@@ -29,6 +30,7 @@ mod error;
 mod metrics;
 mod node;
 mod node_type;
+mod root_validation;
 mod trie;
 
 #[cfg(test)]
@@ -43,4 +45,10 @@ pub type Cache<S> = MptCache<S>;
 pub use error::{MptError, MptResult};
 pub use node::Node;
 pub use node_type::NodeType;
+pub use root_validation::{
+    PersistedMptGraphLimits, PersistedMptGraphReport, validate_persisted_root_graph,
+};
 pub use trie::{Trie, TrieEntry};
+
+/// Prefix of every content-addressed MPT node key in Neo state storage.
+pub const MPT_NODE_PREFIX: u8 = 0xf0;

@@ -10,6 +10,13 @@ use std::fs;
 use std::sync::Arc;
 use std::time::Instant;
 
+pub(crate) fn node_key_bytes(prefix: u8, hash: &UInt256) -> [u8; 1 + UINT256_SIZE] {
+    let mut key = [0u8; 1 + UINT256_SIZE];
+    key[0] = prefix;
+    key[1..].copy_from_slice(&hash.to_array());
+    key
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TrackState {
     None,
@@ -708,7 +715,7 @@ where
         missing_hashes.sort_unstable_by_key(UInt256::to_array);
         let keys = missing_hashes
             .iter()
-            .map(|hash| Self::key_bytes(self.prefix, hash).to_vec())
+            .map(|hash| node_key_bytes(self.prefix, hash).to_vec())
             .collect::<Vec<_>>();
         let lookups = match self.store.try_get_nodes_with_source(&keys) {
             Ok(lookups) => lookups,
@@ -1097,7 +1104,7 @@ where
         pending.sort_unstable_by_key(|(hash, _)| hash.to_array());
         let keys = pending
             .iter()
-            .map(|(hash, _)| Self::key_bytes(self.prefix, hash))
+            .map(|(hash, _)| node_key_bytes(self.prefix, hash))
             .collect::<Vec<_>>();
         self.mutation_stats.deferred_finalization_prepare_us = self
             .mutation_stats
@@ -1177,7 +1184,7 @@ where
         let Some(entry) = self.deferred_entries.get(hash).copied() else {
             return Ok(());
         };
-        let key = Self::key_bytes(self.prefix, hash);
+        let key = node_key_bytes(self.prefix, hash);
         let lookup_started = Instant::now();
         let lookup = match self.store.try_get_node_with_source(&key) {
             Ok(lookup) => lookup,
@@ -1303,7 +1310,7 @@ where
                 Ok(entry.into_mut())
             }
             Entry::Vacant(entry) => {
-                let key = Self::key_bytes(prefix, hash);
+                let key = node_key_bytes(prefix, hash);
                 let lookup = match store.try_get_node_with_source(&key) {
                     Ok(lookup) => lookup,
                     Err(error) => {
@@ -1343,7 +1350,7 @@ where
     }
 
     fn load_from_store_snapshot(store: &S, prefix: u8, hash: &UInt256) -> MptResult<Option<Node>> {
-        let key = Self::key_bytes(prefix, hash);
+        let key = node_key_bytes(prefix, hash);
         let mut node = store.try_get_node(&key)?;
         if let Some(node) = node.as_mut() {
             node.set_accounted_hash(*hash);
@@ -1356,14 +1363,7 @@ where
     }
 
     fn key_for(prefix: u8, hash: &UInt256) -> Vec<u8> {
-        Self::key_bytes(prefix, hash).to_vec()
-    }
-
-    fn key_bytes(prefix: u8, hash: &UInt256) -> [u8; 1 + UINT256_SIZE] {
-        let mut buffer = [0u8; 1 + UINT256_SIZE];
-        buffer[0] = prefix;
-        buffer[1..].copy_from_slice(&hash.to_array());
-        buffer
+        node_key_bytes(prefix, hash).to_vec()
     }
 }
 
