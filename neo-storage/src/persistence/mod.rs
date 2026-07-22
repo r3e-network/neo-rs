@@ -85,7 +85,7 @@ pub use store::{
 };
 pub use store_cache::{StoreCache, StoreCacheBacking, StoreDataCache};
 pub use store_factory::StoreFactory;
-pub use store_maintenance::StoreMaintenanceBatch;
+pub use store_maintenance::{StoreMaintenanceBatch, StoreValueGuard};
 pub use store_provider::StoreProvider;
 pub use store_snapshot::StoreSnapshot;
 pub use table::{

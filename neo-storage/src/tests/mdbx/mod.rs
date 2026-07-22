@@ -19,7 +19,7 @@ use crate::persistence::providers::RuntimeStore;
 use crate::persistence::{
     CoordinatedCommitMarker, CoordinatedTransactionalStore, RawOverlayCursor, RawOverlaySink,
     RawOverlaySource, RawReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, ShadowCommitMarker,
-    ShadowCommitOutcome, Store, StoreCache, StoreMaintenanceBatch, StoreSnapshot,
+    ShadowCommitOutcome, Store, StoreCache, StoreMaintenanceBatch, StoreSnapshot, StoreValueGuard,
     TransactionalStore, WriteStore, storage::StorageConfig,
 };
 use crate::{StorageError, StorageItem, StorageKey};
@@ -249,6 +249,167 @@ fn required_marker_commits_with_both_overlays_or_rolls_everything_back() {
         .expect_err("mandatory marker write failure must abort the transaction");
     assert_eq!(constrained.try_get_bytes(b"rejected-tip"), None);
     assert_eq!(constrained_state.try_get_bytes(b"\x7f"), None);
+}
+
+#[test]
+fn guarded_marker_replacement_checks_both_tables_and_marker_in_one_transaction() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut canonical = open_store(&tmp, "guarded-marker");
+    let mut state_service = canonical
+        .open_named_table("neo_state_service")
+        .expect("open StateService table");
+    canonical
+        .put(b"ledger-tip".to_vec(), b"block-42".to_vec())
+        .expect("seed Ledger tip");
+    state_service
+        .put(b"state-tip".to_vec(), b"root-42".to_vec())
+        .expect("seed StateService tip");
+    let mut maintenance = StoreMaintenanceBatch::new();
+    maintenance.put_metadata(b"pack-marker".to_vec(), b"legacy".to_vec());
+    canonical
+        .commit_maintenance(&maintenance)
+        .expect("seed marker");
+
+    let transaction_before = canonical.info().expect("MDBX info").last_txnid();
+    canonical
+        .compare_exchange_coordinated_marker(
+            &state_service,
+            &[StoreValueGuard::present(
+                b"ledger-tip".to_vec(),
+                b"block-42".to_vec(),
+            )],
+            &[StoreValueGuard::present(
+                b"state-tip".to_vec(),
+                b"root-42".to_vec(),
+            )],
+            &StoreValueGuard::present(b"pack-marker".to_vec(), b"legacy".to_vec()),
+            &CoordinatedCommitMarker {
+                key: b"pack-marker".to_vec(),
+                value: b"current".to_vec(),
+            },
+        )
+        .expect("replace guarded marker");
+
+    assert_eq!(
+        canonical.info().expect("MDBX info").last_txnid(),
+        transaction_before + 1
+    );
+    assert_eq!(
+        canonical.try_get_bytes(b"ledger-tip"),
+        Some(b"block-42".to_vec())
+    );
+    assert_eq!(
+        state_service.try_get_bytes(b"state-tip"),
+        Some(b"root-42".to_vec())
+    );
+    assert_eq!(
+        canonical
+            .maintenance_metadata(b"pack-marker")
+            .expect("read marker"),
+        Some(b"current".to_vec())
+    );
+}
+
+#[test]
+fn guarded_marker_replacement_aborts_when_any_tip_changed() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut canonical = open_store(&tmp, "guarded-marker-stale");
+    let mut state_service = canonical
+        .open_named_table("neo_state_service")
+        .expect("open StateService table");
+    canonical
+        .put(b"ledger-tip".to_vec(), b"block-43".to_vec())
+        .expect("seed Ledger tip");
+    state_service
+        .put(b"state-tip".to_vec(), b"root-43".to_vec())
+        .expect("seed StateService tip");
+    let mut maintenance = StoreMaintenanceBatch::new();
+    maintenance.put_metadata(b"pack-marker".to_vec(), b"legacy".to_vec());
+    canonical
+        .commit_maintenance(&maintenance)
+        .expect("seed marker");
+
+    let error = canonical
+        .compare_exchange_coordinated_marker(
+            &state_service,
+            &[StoreValueGuard::present(
+                b"ledger-tip".to_vec(),
+                b"block-43".to_vec(),
+            )],
+            &[StoreValueGuard::present(
+                b"state-tip".to_vec(),
+                b"stale-root".to_vec(),
+            )],
+            &StoreValueGuard::present(b"pack-marker".to_vec(), b"legacy".to_vec()),
+            &CoordinatedCommitMarker {
+                key: b"pack-marker".to_vec(),
+                value: b"current".to_vec(),
+            },
+        )
+        .expect_err("stale StateService guard must abort");
+    assert!(error.to_string().contains("secondary value 0 changed"));
+    assert_eq!(
+        canonical
+            .maintenance_metadata(b"pack-marker")
+            .expect("read marker"),
+        Some(b"legacy".to_vec())
+    );
+
+    let wrong_marker_key = canonical
+        .compare_exchange_coordinated_marker(
+            &state_service,
+            &[],
+            &[],
+            &StoreValueGuard::present(b"other-marker".to_vec(), b"legacy".to_vec()),
+            &CoordinatedCommitMarker {
+                key: b"pack-marker".to_vec(),
+                value: b"current".to_vec(),
+            },
+        )
+        .expect_err("marker keys must agree");
+    assert!(wrong_marker_key.to_string().contains("key differs"));
+
+    let missing_data_guards = canonical
+        .compare_exchange_coordinated_marker(
+            &state_service,
+            &[],
+            &[],
+            &StoreValueGuard::present(b"pack-marker".to_vec(), b"legacy".to_vec()),
+            &CoordinatedCommitMarker {
+                key: b"pack-marker".to_vec(),
+                value: b"current".to_vec(),
+            },
+        )
+        .expect_err("both data domains must be guarded");
+    assert!(
+        missing_data_guards
+            .to_string()
+            .contains("requires canonical and secondary")
+    );
+
+    let absent_marker = canonical
+        .compare_exchange_coordinated_marker(
+            &state_service,
+            &[StoreValueGuard::present(
+                b"ledger-tip".to_vec(),
+                b"block-43".to_vec(),
+            )],
+            &[StoreValueGuard::present(
+                b"state-tip".to_vec(),
+                b"root-43".to_vec(),
+            )],
+            &StoreValueGuard::absent(b"pack-marker".to_vec()),
+            &CoordinatedCommitMarker {
+                key: b"pack-marker".to_vec(),
+                value: b"current".to_vec(),
+            },
+        )
+        .expect_err("the preceding marker must be present");
+    assert!(
+        absent_marker
+            .to_string()
+            .contains("existing preceding marker")
+    );
 }
 
 /// Overlay source that resolves one entry at the write cursor, mirroring the

@@ -288,6 +288,31 @@ impl RuntimeStore {
             )),
         }
     }
+
+    /// Replaces one mandatory marker after exact canonical, secondary, and
+    /// preceding-marker guards pass in the same MDBX write transaction.
+    pub fn compare_exchange_coordinated_marker(
+        &self,
+        secondary_store: &Self,
+        primary_guards: &[crate::persistence::StoreValueGuard],
+        secondary_guards: &[crate::persistence::StoreValueGuard],
+        marker_guard: &crate::persistence::StoreValueGuard,
+        replacement: &crate::persistence::CoordinatedCommitMarker,
+    ) -> StorageResult<()> {
+        match (self, secondary_store) {
+            (Self::Mdbx(primary_store), Self::Mdbx(secondary_store)) => primary_store
+                .compare_exchange_coordinated_marker(
+                    secondary_store,
+                    primary_guards,
+                    secondary_guards,
+                    marker_guard,
+                    replacement,
+                ),
+            _ => Err(StorageError::invalid_operation(
+                "guarded marker replacement requires two MDBX views from one environment",
+            )),
+        }
+    }
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RuntimeSnapshot {

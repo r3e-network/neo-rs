@@ -18,7 +18,7 @@ use crate::persistence::{
         RawOverlaySource, ShadowCommitHook, ShadowCommitOutcome, ShadowOverlayEntries, Store,
         StoreBackendKind,
     },
-    store_maintenance::StoreMaintenanceBatch,
+    store_maintenance::{StoreMaintenanceBatch, StoreValueGuard},
     transactional_store::{CoordinatedTransactionalStore, TransactionalStore},
     write_store::WriteStore,
 };
@@ -704,6 +704,76 @@ impl MdbxStore {
             None,
             Some(marker),
         )
+    }
+
+    /// Replaces one mandatory marker only if two coordinated data views and
+    /// the preceding marker still match exact preflight values.
+    ///
+    /// Every comparison and the marker write occur inside one MDBX write
+    /// transaction. This is the offline migration/recovery counterpart to
+    /// [`Self::commit_coordinated_overlays_with_required_marker`]: it cannot
+    /// publish a marker for a stale Ledger or StateService tip, and it never
+    /// rewrites guarded data rows.
+    pub fn compare_exchange_coordinated_marker(
+        &self,
+        secondary_store: &Self,
+        primary_guards: &[StoreValueGuard],
+        secondary_guards: &[StoreValueGuard],
+        marker_guard: &StoreValueGuard,
+        replacement: &CoordinatedCommitMarker,
+    ) -> StorageResult<()> {
+        if !self.shares_environment_with(secondary_store) {
+            return Err(StorageError::invalid_operation(
+                "guarded marker replacement requires stores from the same MDBX environment",
+            ));
+        }
+        if self.data_table == secondary_store.data_table {
+            return Err(StorageError::invalid_operation(
+                "guarded marker replacement requires distinct data tables",
+            ));
+        }
+        if marker_guard.key() != replacement.key.as_slice() {
+            return Err(StorageError::invalid_operation(
+                "guarded marker replacement key differs from the expected marker key",
+            ));
+        }
+        if primary_guards.is_empty() || secondary_guards.is_empty() {
+            return Err(StorageError::invalid_operation(
+                "guarded marker replacement requires canonical and secondary value guards",
+            ));
+        }
+        if marker_guard.expected().is_none() {
+            return Err(StorageError::invalid_operation(
+                "guarded marker replacement requires an existing preceding marker",
+            ));
+        }
+
+        let tx = self.db.begin_rw_txn().map_err(mdbx_error)?;
+        let transaction_id = tx.id();
+        let primary = tx.open_table(self.data_table.name()).map_err(mdbx_error)?;
+        let secondary = tx
+            .open_table(secondary_store.data_table.name())
+            .map_err(mdbx_error)?;
+        let maintenance = tx.open_table(Some(MAINTENANCE_TABLE)).map_err(mdbx_error)?;
+
+        verify_store_value_guards(&tx, &primary, primary_guards, "canonical")?;
+        verify_store_value_guards(&tx, &secondary, secondary_guards, "secondary")?;
+        verify_store_value_guards(
+            &tx,
+            &maintenance,
+            std::slice::from_ref(marker_guard),
+            "maintenance",
+        )?;
+        tx.put(
+            &maintenance,
+            &replacement.key,
+            &replacement.value,
+            WriteFlags::UPSERT,
+        )
+        .map_err(mdbx_error)?;
+        tx.commit().map_err(mdbx_commit_error)?;
+        self.prefix_registry.advance_transaction(transaction_id);
+        Ok(())
     }
 
     fn commit_coordinated_overlays_inner<P, S>(
@@ -1830,6 +1900,23 @@ where
     }
     apply_result?;
     Ok(has_entries)
+}
+
+fn verify_store_value_guards(
+    tx: &Transaction<'_, RW, MdbxDatabaseKind>,
+    table: &Table<'_>,
+    guards: &[StoreValueGuard],
+    domain: &str,
+) -> StorageResult<()> {
+    for (position, guard) in guards.iter().enumerate() {
+        let actual = tx.get::<Vec<u8>>(table, guard.key()).map_err(mdbx_error)?;
+        if actual.as_deref() != guard.expected() {
+            return Err(StorageError::invalid_operation(format!(
+                "guarded marker replacement {domain} value {position} changed before commit"
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn estimate_cursor_write_us(

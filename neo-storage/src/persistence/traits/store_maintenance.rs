@@ -10,6 +10,51 @@ use std::collections::BTreeMap;
 use crate::persistence::table::{IntoTableBytes, Table, TableEncode, TableNamespace};
 use crate::{StorageError, StorageResult};
 
+/// Exact raw value that must remain unchanged until a guarded maintenance
+/// transaction commits.
+///
+/// Guards are evaluated by the backend inside the same write transaction as
+/// the maintenance mutation. They are intended for offline migrations and
+/// recovery tooling that must fail closed if a canonical or service-owned
+/// pointer changes after preflight.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StoreValueGuard {
+    key: Vec<u8>,
+    expected: Option<Vec<u8>>,
+}
+
+impl StoreValueGuard {
+    /// Requires `key` to retain the exact expected value.
+    #[must_use]
+    pub fn present(key: Vec<u8>, expected: Vec<u8>) -> Self {
+        Self {
+            key,
+            expected: Some(expected),
+        }
+    }
+
+    /// Requires `key` to remain absent.
+    #[must_use]
+    pub fn absent(key: Vec<u8>) -> Self {
+        Self {
+            key,
+            expected: None,
+        }
+    }
+
+    /// Raw key checked by the guarded transaction.
+    #[must_use]
+    pub fn key(&self) -> &[u8] {
+        &self.key
+    }
+
+    /// Exact value required by the guarded transaction, or `None` for absence.
+    #[must_use]
+    pub fn expected(&self) -> Option<&[u8]> {
+        self.expected.as_deref()
+    }
+}
+
 /// Ordered data and node-local metadata operations committed atomically.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct StoreMaintenanceBatch {

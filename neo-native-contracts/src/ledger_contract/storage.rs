@@ -16,8 +16,14 @@ pub const PREFIX_TRANSACTION: u8 = 11;
 pub const PREFIX_CURRENT_BLOCK: u8 = 12;
 
 impl LedgerContract {
+    /// Exact native-contract storage key holding the current `(hash, index)`
+    /// Ledger pointer.
+    ///
+    /// Recovery and offline migration tooling uses this owned key to bind an
+    /// atomic storage guard to the same row decoded by
+    /// [`Self::optional_current_tip`](super::LedgerContract::optional_current_tip).
     #[inline]
-    pub(crate) fn current_block_storage_key() -> StorageKey {
+    pub fn current_block_storage_key() -> StorageKey {
         prefixed_key(Self::ID, PREFIX_CURRENT_BLOCK, &[])
     }
 
