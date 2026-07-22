@@ -126,6 +126,79 @@ impl PackMaterializedViewEvidence {
 }
 
 impl PackStore {
+    /// Proves that every put-only checkpoint frame row has one identical
+    /// materialized index winner and that no additional winner exists.
+    ///
+    /// The frame side rebuilds canonical positioned index records from
+    /// authenticated metadata in segment order. The index side independently
+    /// merge-walks every live run with newest-version semantics. Equality of
+    /// their complete record digests binds keys, sequences, segment identities,
+    /// absolute value offsets, and lengths without retaining either stream.
+    pub fn checkpoint_index_evidence(&self) -> Result<PackCheckpointIndexEvidence> {
+        let mut frame_hasher = Sha256::new();
+        let mut frame_records = 0u64;
+        let mut frame_value_bytes = 0u64;
+        let mut previous_key = None;
+        let frame_scrub = self.scrub_committed_frames_with(|row| {
+            ensure!(
+                row.kind == 1,
+                "checkpoint index binding requires a put-only frame stream"
+            );
+            if let Some(previous) = previous_key {
+                ensure!(
+                    previous < *row.key,
+                    "checkpoint index binding requires globally unique ordered frame keys"
+                );
+            }
+            let entry = IndexEntry {
+                key: *row.key,
+                sequence: row.sequence,
+                segment_id: row.segment_id,
+                value_offset: row.value_offset,
+                value_len: row.value_len,
+                tombstone: false,
+            };
+            frame_hasher.update(encode_record(&entry));
+            frame_records = frame_records
+                .checked_add(1)
+                .context("checkpoint frame index-record count overflows u64")?;
+            frame_value_bytes = frame_value_bytes
+                .checked_add(u64::from(row.value_len))
+                .context("checkpoint frame index value bytes overflow u64")?;
+            previous_key = Some(*row.key);
+            Ok(())
+        })?;
+        ensure!(
+            frame_scrub.rows == frame_records
+                && frame_scrub.puts == frame_records
+                && frame_scrub.tombstones == 0
+                && frame_scrub.value_bytes == frame_value_bytes,
+            "checkpoint frame index evidence geometry is inconsistent"
+        );
+        let frame_records_sha256: [u8; 32] = frame_hasher.finalize().into();
+
+        let winners = self.materialized_view_evidence(0)?;
+        ensure!(
+            winners.winner_records == frame_records
+                && winners.puts == frame_records
+                && winners.tombstones == 0
+                && winners.value_bytes == frame_value_bytes,
+            "checkpoint materialized index geometry differs from committed frame rows"
+        );
+        ensure!(
+            winners.winner_records_sha256 == frame_records_sha256,
+            "checkpoint materialized index records differ from committed frame rows"
+        );
+        Ok(PackCheckpointIndexEvidence {
+            frame_records,
+            winner_records: winners.winner_records,
+            value_bytes: frame_value_bytes,
+            records_sha256: frame_records_sha256,
+            live_runs: winners.live_runs,
+            source_records: winners.source_records,
+        })
+    }
+
     /// Validates and hashes the complete newest-version winner stream, then
     /// exercises a deterministic bounded sample through independent expected,
     /// point, and sorted-batch paths. Dedicated sequential mappings release
@@ -273,22 +346,22 @@ impl PackStore {
             );
         }
         let mut states = vec![None; indices.len()];
-        let scrub = self.scrub_committed_frames_with(|key, kind, value| {
+        let scrub = self.scrub_committed_frames_with(|row| {
             if !blocked_bloom_maybe_contains_hash(
                 reference_filter.as_bytes(),
                 reference_filter.seed(),
                 BLOOM_HASH_PROBES,
-                key_hash(key),
+                key_hash(row.key),
             ) {
                 return Ok(());
             }
-            let Some(&position) = positions.get(key) else {
+            let Some(&position) = positions.get(row.key) else {
                 return Ok(());
             };
-            states[position] = Some(if kind == 0 {
+            states[position] = Some(if row.kind == 0 {
                 SampleValueState::Absent
             } else {
-                SampleValueState::from_present(value)
+                SampleValueState::from_present(row.value)
             });
             Ok(())
         })?;

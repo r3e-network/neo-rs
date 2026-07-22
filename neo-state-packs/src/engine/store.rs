@@ -4,7 +4,8 @@ use super::filter::{
 };
 use super::manifest::{self, Manifest, ManifestEntry, ManifestExtent, run_file_name};
 use super::merge::{
-    INDEX_RECORD_LEN, IndexEntry, MergeEvidence, MergeSource, decode_record, merge_sorted_runs,
+    INDEX_RECORD_LEN, IndexEntry, MergeEvidence, MergeSource, decode_record, encode_record,
+    merge_sorted_runs,
 };
 use super::mmap::Mmap;
 use crate::{
@@ -47,11 +48,12 @@ pub use frame_builder::PackFrameBuilder;
 mod frame_codec;
 use frame_codec::{
     FRAME_METADATA_DIGEST_DOMAIN, FRAME_VALUE_DIGEST_DOMAIN, FramePayloadSection,
-    FrameWalkSelection, PendingFrameRow, encode_frame_footer, encode_frame_header,
-    encode_frame_payload, encode_pending_rows, frame_digest, frame_metadata_digest,
-    frame_value_digest, read_frame_receipt_at, scan_frame_metadata_distinct_keys,
-    validate_frame_footer, validate_frame_header, validate_payload_rows,
-    validate_payload_rows_with_progress, verify_frame, walk_frames_from_epoch,
+    FrameWalkSelection, PendingFrameRow, ValidatedPayloadRow, encode_frame_footer,
+    encode_frame_header, encode_frame_payload, encode_pending_rows, frame_digest,
+    frame_metadata_digest, frame_value_digest, read_frame_receipt_at,
+    scan_frame_metadata_distinct_keys, validate_frame_footer, validate_frame_header,
+    validate_payload_rows, validate_payload_rows_detailed_with_progress, verify_frame,
+    walk_frames_from_epoch,
 };
 mod compaction;
 use compaction::*;
@@ -206,6 +208,23 @@ pub struct PackIndexScrubStats {
     pub records: u64,
     /// Record-section bytes covered by SHA-256.
     pub record_bytes: u64,
+}
+
+/// Complete binding between checkpoint frame rows and materialized index winners.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PackCheckpointIndexEvidence {
+    /// Put-only frame rows rebuilt into canonical positioned index records.
+    pub frame_records: u64,
+    /// Unique materialized winner records merge-walked across all live runs.
+    pub winner_records: u64,
+    /// Value bytes addressed by both the frame rows and index winners.
+    pub value_bytes: u64,
+    /// SHA-256 of the exact canonical 64-byte record stream from both sources.
+    pub records_sha256: [u8; 32],
+    /// Live immutable runs participating in the materialized view.
+    pub live_runs: u64,
+    /// Physical source records consumed by the newest-winner merge.
+    pub source_records: u64,
 }
 
 /// Full-payload evidence for an ordered, unique, put-only base checkpoint.

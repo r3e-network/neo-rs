@@ -275,6 +275,15 @@ fn finalize_checkpoint(
         checkpoint_evidence.sha256 == namespace_sha256,
         "checkpoint pack namespace digest does not match the frozen source"
     );
+    let index_evidence = pack
+        .checkpoint_index_evidence()
+        .context("bind checkpoint materialized indexes to committed frame rows")?;
+    ensure!(
+        index_evidence.frame_records == rows
+            && index_evidence.winner_records == rows
+            && index_evidence.value_bytes == value_bytes,
+        "checkpoint index-binding evidence differs from the frozen source geometry"
+    );
     validate_root_node(&pack, source_tip)?;
     let (pack_bytes, live_index_bytes, live_runs, decoded_index_memory_bytes) = pack
         .layout()

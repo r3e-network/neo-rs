@@ -91,6 +91,74 @@ fn materialized_evidence_is_stable_across_compaction_and_reopen() {
 }
 
 #[test]
+fn checkpoint_index_evidence_binds_complete_frame_and_winner_records() {
+    let root = tempdir().expect("temporary checkpoint pack");
+    let mut store =
+        PackStore::create(root.path(), small_compaction_config(1024 * 1024)).expect("create store");
+    append_without_maintenance(
+        &mut store,
+        &[put(numbered_key(1), b"one"), put(numbered_key(2), b"two")],
+    );
+    append_without_maintenance(
+        &mut store,
+        &[
+            put(numbered_key(3), b"three"),
+            put(numbered_key(4), b"four"),
+        ],
+    );
+    append_without_maintenance(&mut store, &[put(numbered_key(5), b"five")]);
+
+    let before = store
+        .checkpoint_index_evidence()
+        .expect("put-only checkpoint indexes must bind to frame rows");
+    assert_eq!(before.frame_records, 5);
+    assert_eq!(before.winner_records, 5);
+    assert_eq!(before.value_bytes, 19);
+    assert_eq!(before.live_runs, 3);
+    assert_eq!(before.source_records, 5);
+
+    let plan = store
+        .plan_compaction()
+        .expect("plan compaction")
+        .expect("overfull L0 has a plan");
+    let prepared = plan.build().expect("build compaction");
+    store.adopt_compaction(prepared).expect("adopt compaction");
+    let compacted = store
+        .checkpoint_index_evidence()
+        .expect("compacted checkpoint indexes remain bound");
+    assert_eq!(compacted.records_sha256, before.records_sha256);
+    assert_eq!(compacted.live_runs, 1);
+    assert_eq!(compacted.source_records, 5);
+
+    drop(store);
+    let reopened =
+        PackStore::open(root.path(), small_compaction_config(1024 * 1024)).expect("reopen pack");
+    assert_eq!(
+        reopened
+            .checkpoint_index_evidence()
+            .expect("reopened checkpoint indexes remain bound"),
+        compacted
+    );
+}
+
+#[test]
+fn checkpoint_index_evidence_rejects_non_checkpoint_version_streams() {
+    let root = tempdir().expect("temporary runtime pack");
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    append_without_maintenance(&mut store, &[put(numbered_key(1), b"present")]);
+    append_without_maintenance(&mut store, &[tombstone(numbered_key(1))]);
+
+    let error = store
+        .checkpoint_index_evidence()
+        .expect_err("checkpoint evidence must reject tombstones and repeated keys");
+    assert!(
+        error.to_string().contains("put-only")
+            || error.to_string().contains("globally unique ordered")
+    );
+}
+
+#[test]
 fn materialized_evidence_compares_lookup_results_with_winner_offsets() {
     let root = tempdir().expect("temporary append store");
     let mut store =

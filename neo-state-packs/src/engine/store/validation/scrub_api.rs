@@ -1,6 +1,16 @@
 use super::segment::SEGMENT_HEADER_LEN;
 use super::*;
 
+pub(super) struct ScrubbedFrameRow<'a> {
+    pub(super) key: &'a [u8; PACK_KEY_BYTES],
+    pub(super) kind: u8,
+    pub(super) sequence: u32,
+    pub(super) segment_id: PackSegmentId,
+    pub(super) value_offset: u64,
+    pub(super) value_len: u32,
+    pub(super) value: &'a [u8],
+}
+
 impl PackStore {
     /// Re-hashes and structurally decodes every committed frame.
     ///
@@ -9,7 +19,7 @@ impl PackStore {
     /// and offline-scrub gate for proving the complete payload prefix rather
     /// than only the tail.
     pub fn scrub_committed_frames(&self) -> Result<PackScrubStats> {
-        self.scrub_committed_frames_with(|_, _, _| Ok(()))
+        self.scrub_committed_frames_with(|_| Ok(()))
     }
 
     /// Re-hashes and structurally validates every record in every live index
@@ -46,19 +56,19 @@ impl PackStore {
         let mut hasher = Sha256::new();
         hasher.update(CHECKPOINT_NAMESPACE_DIGEST_DOMAIN);
         let mut previous_key = None;
-        let scrub = self.scrub_committed_frames_with(|key, kind, value| {
-            ensure!(kind == 1, "checkpoint namespace contains a tombstone");
+        let scrub = self.scrub_committed_frames_with(|row| {
+            ensure!(row.kind == 1, "checkpoint namespace contains a tombstone");
             if let Some(previous) = previous_key {
                 ensure!(
-                    previous < *key,
+                    previous < *row.key,
                     "checkpoint namespace keys are not strictly increasing"
                 );
             }
             hasher.update((PACK_KEY_BYTES as u32).to_le_bytes());
-            hasher.update(key);
-            hasher.update((value.len() as u64).to_le_bytes());
-            hasher.update(value);
-            previous_key = Some(*key);
+            hasher.update(row.key);
+            hasher.update((row.value.len() as u64).to_le_bytes());
+            hasher.update(row.value);
+            previous_key = Some(*row.key);
             Ok(())
         })?;
         Ok(CheckpointNamespaceEvidence {
@@ -69,7 +79,7 @@ impl PackStore {
 
     pub(super) fn scrub_committed_frames_with<F>(&self, mut visit: F) -> Result<PackScrubStats>
     where
-        F: FnMut(&[u8; PACK_KEY_BYTES], u8, &[u8]) -> Result<()>,
+        F: FnMut(ScrubbedFrameRow<'_>) -> Result<()>,
     {
         let mut stats = PackScrubStats::default();
         let expected_frames = self
@@ -145,11 +155,34 @@ impl PackStore {
                 value_hasher.update(FRAME_VALUE_DIGEST_DOMAIN);
                 let mut metadata_release_start = header_end;
                 let mut value_release_start = metadata_end;
-                let payload_stats = validate_payload_rows_with_progress(
+                let value_start = u64::try_from(metadata_end)
+                    .context("scrub frame value start does not fit u64")?;
+                let payload_stats = validate_payload_rows_detailed_with_progress(
                     metadata,
                     values,
                     expected_rows,
-                    &mut visit,
+                    &mut |row: ValidatedPayloadRow<'_>| {
+                        let value_offset = if row.kind == 0 {
+                            0
+                        } else {
+                            value_start
+                                .checked_add(row.value_offset)
+                                .context("scrub absolute value offset overflows")?
+                        };
+                        visit(ScrubbedFrameRow {
+                            key: row.key,
+                            kind: row.kind,
+                            sequence: row.sequence,
+                            segment_id: if row.kind == 0 {
+                                PackSegmentId::INITIAL
+                            } else {
+                                segment_id
+                            },
+                            value_offset,
+                            value_len: row.value_len,
+                            value: row.value,
+                        })
+                    },
                     &mut |section, chunk, consumed| {
                         let (hasher, section_start, section_release_start) = match section {
                             FramePayloadSection::Metadata => (

@@ -37,6 +37,16 @@ pub(super) struct PendingFrameRow {
     pub(super) tombstone: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ValidatedPayloadRow<'a> {
+    pub(super) key: &'a [u8; PACK_KEY_BYTES],
+    pub(super) kind: u8,
+    pub(super) sequence: u32,
+    pub(super) value_offset: u64,
+    pub(super) value_len: u32,
+    pub(super) value: &'a [u8],
+}
+
 /// Encodes owned operations into canonical metadata and value sections.
 ///
 /// Rows are sorted by key and original sequence. Values are copied once, in
@@ -916,11 +926,12 @@ pub(super) fn validate_payload_rows_with<F>(
 where
     F: FnMut(&[u8; PACK_KEY_BYTES], u8, &[u8]) -> Result<()>,
 {
+    let mut visit_row = |row: ValidatedPayloadRow<'_>| visit(row.key, row.kind, row.value);
     validate_payload_rows_internal(
         metadata,
         values,
         expected_rows,
-        visit,
+        &mut visit_row,
         &mut |_, _, _| Ok(()),
     )
 }
@@ -932,6 +943,7 @@ where
 /// receives each contiguous slice exactly once, after every row referring to
 /// it has been validated and visited, so callers may hash and release mapped
 /// pages immediately.
+#[cfg(test)]
 pub(super) fn validate_payload_rows_with_progress<F, P>(
     metadata: &[u8],
     values: &[u8],
@@ -941,6 +953,21 @@ pub(super) fn validate_payload_rows_with_progress<F, P>(
 ) -> Result<PayloadRowStats>
 where
     F: FnMut(&[u8; PACK_KEY_BYTES], u8, &[u8]) -> Result<()>,
+    P: FnMut(FramePayloadSection, &[u8], usize) -> Result<()>,
+{
+    let mut visit_row = |row: ValidatedPayloadRow<'_>| visit(row.key, row.kind, row.value);
+    validate_payload_rows_internal(metadata, values, expected_rows, &mut visit_row, progress)
+}
+
+pub(super) fn validate_payload_rows_detailed_with_progress<F, P>(
+    metadata: &[u8],
+    values: &[u8],
+    expected_rows: usize,
+    visit: &mut F,
+    progress: &mut P,
+) -> Result<PayloadRowStats>
+where
+    F: FnMut(ValidatedPayloadRow<'_>) -> Result<()>,
     P: FnMut(FramePayloadSection, &[u8], usize) -> Result<()>,
 {
     validate_payload_rows_internal(metadata, values, expected_rows, visit, progress)
@@ -954,7 +981,7 @@ fn validate_payload_rows_internal<F, P>(
     progress: &mut P,
 ) -> Result<PayloadRowStats>
 where
-    F: FnMut(&[u8; PACK_KEY_BYTES], u8, &[u8]) -> Result<()>,
+    F: FnMut(ValidatedPayloadRow<'_>) -> Result<()>,
     P: FnMut(FramePayloadSection, &[u8], usize) -> Result<()>,
 {
     let mut metadata_consumed = 0usize;
@@ -965,7 +992,7 @@ where
         metadata,
         expected_rows,
         values.len() as u64,
-        &mut |key, kind, _, value_offset, value_len| {
+        &mut |key, kind, sequence, value_offset, value_len| {
             let value = if kind == 0 {
                 &[][..]
             } else {
@@ -975,7 +1002,14 @@ where
                     .context("value range overflows")?;
                 values.get(start..end).context("frame value is truncated")?
             };
-            visit(key, kind, value)?;
+            visit(ValidatedPayloadRow {
+                key,
+                kind,
+                sequence,
+                value_offset,
+                value_len,
+                value,
+            })?;
 
             metadata_consumed = metadata_consumed
                 .checked_add(FRAME_ROW_METADATA_LEN)
