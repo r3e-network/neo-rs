@@ -95,50 +95,99 @@ impl PackStore {
             let header_end = offset
                 .checked_add(FRAME_HEADER_LEN)
                 .context("scrub frame header offset overflows")?;
-            let header: &[u8; FRAME_HEADER_LEN] = bytes
+            let header_bytes: &[u8; FRAME_HEADER_LEN] = bytes
                 .get(offset..header_end)
                 .with_context(|| format!("committed frame {} header is truncated", stats.frames))?
                 .try_into()
                 .expect("frame header length");
-            let payload_len = validate_frame_header(header, stats.frames)?;
-            let payload_len =
-                usize::try_from(payload_len).context("scrub payload length does not fit usize")?;
-            let payload_end = header_end
-                .checked_add(payload_len)
-                .context("scrub frame end offset overflows")?;
-            let payload = bytes.get(header_end..payload_end).with_context(|| {
-                format!("committed frame {} payload is truncated", stats.frames)
+            let header = validate_frame_header(header_bytes, stats.frames)?;
+            let metadata_len = usize::try_from(header.metadata_bytes)
+                .context("scrub metadata length does not fit usize")?;
+            let metadata_end = header_end
+                .checked_add(metadata_len)
+                .context("scrub metadata end overflows")?;
+            let value_len = usize::try_from(header.value_bytes)
+                .context("scrub value length does not fit usize")?;
+            let value_end = metadata_end
+                .checked_add(value_len)
+                .context("scrub value end overflows")?;
+            let frame_end = offset
+                .checked_add(
+                    usize::try_from(header.frame_bytes)
+                        .context("scrub frame length does not fit usize")?,
+                )
+                .context("scrub frame end overflows")?;
+            ensure!(
+                value_end.checked_add(FRAME_FOOTER_LEN) == Some(frame_end),
+                "committed frame {} section lengths do not reach its exact end",
+                stats.frames
+            );
+            let metadata = bytes.get(header_end..metadata_end).with_context(|| {
+                format!("committed frame {} metadata is truncated", stats.frames)
             })?;
-            let expected_rows = usize::try_from(u64_at(header, 24)?)
-                .context("scrub row count does not fit usize")?;
-            let mut payload_hasher = Sha256::new();
+            let values = bytes.get(metadata_end..value_end).with_context(|| {
+                format!("committed frame {} values are truncated", stats.frames)
+            })?;
+            let footer: &[u8; FRAME_FOOTER_LEN] = bytes
+                .get(value_end..frame_end)
+                .with_context(|| format!("committed frame {} footer is truncated", stats.frames))?
+                .try_into()
+                .context("committed frame footer length mismatch")?;
+            let expected_rows =
+                usize::try_from(header.rows).context("scrub row count does not fit usize")?;
+            let mut metadata_hasher = Sha256::new();
+            metadata_hasher.update(FRAME_METADATA_DIGEST_DOMAIN);
+            let mut value_hasher = Sha256::new();
+            value_hasher.update(FRAME_VALUE_DIGEST_DOMAIN);
+            let mut metadata_release_start = header_end;
+            let mut value_release_start = metadata_end;
             let payload_stats = validate_payload_rows_with_progress(
-                payload,
+                metadata,
+                values,
                 expected_rows,
                 &mut visit,
-                &mut |chunk, consumed| {
-                    payload_hasher.update(chunk);
-                    let absolute_end = header_end
+                &mut |section, chunk, consumed| {
+                    let (hasher, section_start, section_release_start) = match section {
+                        FramePayloadSection::Metadata => (
+                            &mut metadata_hasher,
+                            header_end,
+                            &mut metadata_release_start,
+                        ),
+                        FramePayloadSection::Values => {
+                            (&mut value_hasher, metadata_end, &mut value_release_start)
+                        }
+                    };
+                    hasher.update(chunk);
+                    let absolute_end = section_start
                         .checked_add(consumed)
-                        .context("scrub payload release offset overflows")?;
-                    release_start = mapping.advise_dontneed(release_start, absolute_end)?;
+                        .context("scrub section release offset overflows")?;
+                    *section_release_start =
+                        mapping.advise_dontneed(*section_release_start, absolute_end)?;
                     Ok(())
                 },
             )?;
+            let metadata_sha256: [u8; 32] = metadata_hasher.finalize().into();
             ensure!(
-                <[u8; 32]>::from(payload_hasher.finalize()).as_slice() == &header[40..72],
-                "committed frame {} payload checksum mismatch",
+                metadata_sha256 == header.metadata_sha256,
+                "committed frame {} metadata checksum mismatch",
                 stats.frames
             );
+            let value_sha256: [u8; 32] = value_hasher.finalize().into();
+            ensure!(
+                value_sha256 == header.value_sha256,
+                "committed frame {} value checksum mismatch",
+                stats.frames
+            );
+            validate_frame_footer(footer, header, frame_digest(header_bytes))?;
             stats.frames = stats.frames.saturating_add(1);
             stats.rows = stats.rows.saturating_add(payload_stats.rows);
             stats.puts = stats.puts.saturating_add(payload_stats.puts);
             stats.tombstones = stats.tombstones.saturating_add(payload_stats.tombstones);
             stats.payload_bytes = stats
                 .payload_bytes
-                .saturating_add(u64::try_from(payload.len()).expect("payload length fits u64"));
+                .saturating_add(header.metadata_bytes.saturating_add(header.value_bytes));
             stats.value_bytes = stats.value_bytes.saturating_add(payload_stats.value_bytes);
-            offset = payload_end;
+            offset = frame_end;
             release_start = mapping.advise_dontneed(release_start, offset)?;
         }
 

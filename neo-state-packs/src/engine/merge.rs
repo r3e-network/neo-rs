@@ -327,16 +327,25 @@ pub(super) fn decode_record(record: &[u8]) -> Result<IndexEntry> {
     ensure!(record.len() == INDEX_RECORD_LEN, "short index record");
     let mut key = [0u8; PACK_KEY_BYTES];
     key.copy_from_slice(&record[..PACK_KEY_BYTES]);
+    ensure!(
+        key[0] == 0xf0,
+        "index record key is outside the MPT node namespace"
+    );
     let flag = record[PACK_KEY_BYTES + 16];
     ensure!(flag <= 1, "invalid index tombstone flag {flag}");
+    let value_offset = u64::from_le_bytes(
+        record[PACK_KEY_BYTES + 4..PACK_KEY_BYTES + 12]
+            .try_into()
+            .expect("fixed value offset"),
+    );
     let value_len = u32::from_le_bytes(
         record[PACK_KEY_BYTES + 12..PACK_KEY_BYTES + 16]
             .try_into()
             .expect("fixed value length"),
     );
     ensure!(
-        flag == 0 || value_len == 0,
-        "tombstone index record carries a non-zero value length"
+        flag == 0 || (value_offset == 0 && value_len == 0),
+        "tombstone index record carries a non-zero value location"
     );
     Ok(IndexEntry {
         key,
@@ -345,11 +354,7 @@ pub(super) fn decode_record(record: &[u8]) -> Result<IndexEntry> {
                 .try_into()
                 .expect("fixed sequence"),
         ),
-        value_offset: u64::from_le_bytes(
-            record[PACK_KEY_BYTES + 4..PACK_KEY_BYTES + 12]
-                .try_into()
-                .expect("fixed value offset"),
-        ),
+        value_offset,
         value_len,
         tombstone: flag != 0,
     })
@@ -451,7 +456,16 @@ mod tests {
         let mut invalid_tombstone = encode_record(&entry(4, 0, 4));
         invalid_tombstone[PACK_KEY_BYTES + 16] = 1;
         assert!(decode_record(&invalid_tombstone).is_err());
+        invalid_tombstone[PACK_KEY_BYTES + 4..PACK_KEY_BYTES + 12]
+            .copy_from_slice(&0u64.to_le_bytes());
+        invalid_tombstone[PACK_KEY_BYTES + 12..PACK_KEY_BYTES + 16]
+            .copy_from_slice(&0u32.to_le_bytes());
+        assert!(decode_record(&invalid_tombstone).is_ok());
         invalid_tombstone[PACK_KEY_BYTES + 16] = 2;
         assert!(decode_record(&invalid_tombstone).is_err());
+
+        let mut invalid_namespace = encode_record(&entry(5, 0, 5));
+        invalid_namespace[0] = 0xef;
+        assert!(decode_record(&invalid_namespace).is_err());
     }
 }

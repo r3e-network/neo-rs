@@ -39,15 +39,22 @@ mod tests {
         let auxiliary_value = b"checkpoint-auxiliary-node".to_vec();
 
         let mut pack = PackStore::create(&pack_path, test_pack_config()).expect("create pack");
-        pack.append(&[PackOperation {
-            key: auxiliary_key,
-            kind: PackOpKind::Put(auxiliary_value.clone()),
-        }])
+        let context = PackFrameContext::new(7, 7, root, root);
+        pack.append_frame(
+            context,
+            &[PackOperation {
+                key: auxiliary_key,
+                kind: PackOpKind::Put(auxiliary_value.clone()),
+            }],
+        )
         .expect("append auxiliary node");
-        pack.append(&[PackOperation {
-            key: root_key,
-            kind: PackOpKind::Put(root_value.clone()),
-        }])
+        pack.append_frame(
+            context,
+            &[PackOperation {
+                key: root_key,
+                kind: PackOpKind::Put(root_value.clone()),
+            }],
+        )
         .expect("append root node");
         let receipt = pack.last_frame_receipt().expect("pack receipt");
         let scrub = pack.scrub_committed_frames().expect("scrub fixture pack");
@@ -85,7 +92,7 @@ mod tests {
             "tip_epoch": receipt.epoch,
             "tip_segment_id": receipt.segment_id.get(),
             "tip_frame_end": receipt.frame_end,
-            "tip_payload_sha256": format!("0x{}", hex::encode(receipt.payload_sha256)),
+            "tip_frame_sha256": format!("0x{}", hex::encode(receipt.frame_sha256)),
             "scrubbed_frames": scrub.frames,
             "scrubbed_rows": scrub.rows,
             "scrubbed_puts": scrub.puts,
@@ -119,30 +126,34 @@ mod tests {
     fn put_state_tip(store: &mut RuntimeStore, height: u32, root: [u8; 32]) {
         store
             .put(
-                CURRENT_LOCAL_ROOT_INDEX.to_vec(),
+                neo_state_service::Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec(),
                 height.to_le_bytes().to_vec(),
             )
             .expect("write current StateService index");
-        let mut key = vec![STATE_ROOT_PREFIX];
-        key.extend_from_slice(&height.to_be_bytes());
+        let key = neo_state_service::Keys::state_root(height);
         let mut value = vec![0];
         value.extend_from_slice(&height.to_le_bytes());
         value.extend_from_slice(&root);
+        value.push(0);
         store.put(key, value).expect("write StateService root");
     }
 
     fn append_unmaintained_frames(pack_path: &Path, count: u8) -> PackFrameReceipt {
         let mut pack = PackStore::open(pack_path, test_pack_config()).expect("open fixture pack");
         let mut receipt = pack.last_frame_receipt().expect("fixture pack receipt");
+        let context = receipt.context;
         for tag in 1..=count {
             let mut key = [0u8; PACK_KEY_BYTES];
             key[0] = STATE_NODE_PREFIX;
             key[1..].fill(tag);
             let prepared = pack
-                .prepare_append(&[PackOperation {
-                    key,
-                    kind: PackOpKind::Put(format!("frame-{tag}").into_bytes()),
-                }])
+                .prepare_frame(
+                    context,
+                    &[PackOperation {
+                        key,
+                        kind: PackOpKind::Put(format!("frame-{tag}").into_bytes()),
+                    }],
+                )
                 .expect("prepare unmaintained frame");
             receipt = prepared.receipt();
             let sealed = pack

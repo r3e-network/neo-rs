@@ -7,10 +7,12 @@
 //! ## On-disk layout
 //!
 //! - `frames-{segment_id}.pack`: one identified, versioned append segment
-//!   carrying the ordered operation stream. Every frame has a 72-byte
-//!   versioned header (`N3PACK01`, epoch, row count,
-//!   payload length, SHA-256 payload checksum) followed by rows of
-//!   `key(33) || kind(1) || value_len(4 LE) || value`. A frame becomes
+//!   carrying the ordered operation stream. Every v2 frame has a fixed
+//!   224-byte `N3PACK02` header, sorted 56-byte metadata rows, one contiguous
+//!   value section, and a fixed 96-byte `N3PKEND2` footer. The header binds
+//!   epoch, block/root context, exact section lengths, and independent
+//!   domain-separated metadata/value digests. The footer binds the header
+//!   digest to the epoch and exact complete-frame length. A frame becomes
 //!   visible only when a manifest generation referencing its index run is
 //!   published; anything past the committed prefix is torn/orphaned tail and
 //!   is truncated on open.
@@ -40,7 +42,7 @@
 //!
 //! ## Two-phase publication
 //!
-//! [`PackStore::prepare_append`] durably syncs a frame and immutable run but
+//! [`PackStore::prepare_frame`] durably syncs a frame and immutable run but
 //! leaves the manifest and live view unchanged. Shadow callers may commit an
 //! external [`PackCommitHorizon`] and then invoke
 //! [`PackStore::activate_prepared`]. Production coordinated callers use
@@ -75,16 +77,16 @@ pub use engine::{
     CompactionStats, GcStats, OpenValidation, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
     PACK_INDEX_RUN_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION,
     PACK_SEGMENT_HEADER_LEN, PackCommitHorizon, PackCompactionPlan, PackFrameBuilder,
-    PackFrameReceipt, PackIndexScrubStats, PackMaterializedViewEvidence, PackMetrics, PackPosition,
-    PackScrubStats, PackSegmentId, PackStore, PackStoreArtifact, PackStoreConfig,
-    PackStoreConfigError, PackStoreConfigField, PackStoreError, PackStoreErrorSource,
-    PackStoreLimit, PackStoreOperation, PackStoreOptions, PackStoreResult, PreparedAppend,
-    PreparedPackCompaction, ReadMetrics, SealedAppend, Snapshot,
+    PackFrameContext, PackFrameReceipt, PackIndexScrubStats, PackMaterializedViewEvidence,
+    PackMetrics, PackPosition, PackScrubStats, PackSegmentId, PackStore, PackStoreArtifact,
+    PackStoreConfig, PackStoreConfigError, PackStoreConfigField, PackStoreError,
+    PackStoreErrorSource, PackStoreLimit, PackStoreOperation, PackStoreOptions, PackStoreResult,
+    PreparedAppend, PreparedPackCompaction, ReadMetrics, SealedAppend, Snapshot,
 };
 
 /// Byte length of one pack key (the StateService `0xf0 || node_hash` node
-/// key). The engine treats keys as opaque fixed-size arrays; namespace
-/// filtering is the caller's concern (see [`shadow`]).
+/// key). The engine enforces the namespace byte while treating the remaining
+/// fixed-width node hash as opaque.
 pub const PACK_KEY_BYTES: usize = 33;
 
 /// One versioned key/value operation staged for a single frame.
@@ -107,7 +109,7 @@ pub enum PackOpKind {
 }
 
 /// Per-frame stage timings and counters produced by
-/// [`PackStore::prepare_append`] and returned by [`PackStore::append`].
+/// [`PackStore::prepare_frame`] and returned by [`PackStore::append_frame`].
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub struct PackStageTotals {
     /// Time spent writing append-frame bytes.

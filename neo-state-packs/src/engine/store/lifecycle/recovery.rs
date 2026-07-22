@@ -143,17 +143,33 @@ impl PackStore {
                 receipt.frame_end
             );
             ensure!(
-                receipt.payload_sha256 == horizon.payload_sha256,
-                "pack commit marker checksum does not match frame {}",
+                receipt.context == horizon.context,
+                "pack commit marker context does not match frame {}",
+                horizon.epoch
+            );
+            ensure!(
+                receipt.frame_sha256 == horizon.frame_sha256,
+                "pack commit marker frame digest does not match frame {}",
                 horizon.epoch
             );
         }
-
+        authenticate_committed_frame_prefix(&pack, &pack_path, &scan, expected_frames)?;
         let manifests = manifest::list_manifest_files(root)?;
-        let manifest_frames = manifests
+        let current_manifest = manifests
             .first()
-            .and_then(|(_, path)| manifest::read_manifest(path).ok())
+            .and_then(|(_, path)| manifest::read_manifest(path).ok());
+        let manifest_frames = current_manifest
+            .as_ref()
             .and_then(|manifest| manifest.max_epoch().checked_add(1));
+        let manifest_runs_valid = current_manifest.as_ref().is_some_and(|manifest| {
+            Self::load_manifest_runs(
+                &root.join("runs"),
+                manifest,
+                max_index_memory_bytes,
+                options,
+            )
+            .is_ok()
+        });
         let fast_open = if expected_frames == 0 {
             scan.frame_ends.is_empty()
                 && manifests.is_empty()
@@ -162,7 +178,7 @@ impl PackStore {
                     .next()
                     .is_none()
         } else {
-            manifest_frames == Some(expected_frames)
+            manifest_frames == Some(expected_frames) && manifest_runs_valid
         };
         drop(pack);
 
@@ -207,7 +223,8 @@ impl PackStore {
                 receipt.epoch == horizon.epoch
                     && receipt.segment_id == horizon.segment_id
                     && receipt.frame_end == horizon.frame_end
-                    && receipt.payload_sha256 == horizon.payload_sha256,
+                    && receipt.context == horizon.context
+                    && receipt.frame_sha256 == horizon.frame_sha256,
                 "recovered pack tail does not match the canonical commit marker"
             ),
             (Some(_), None) => anyhow::bail!("recovered pack has no committed tail frame"),
@@ -253,9 +270,20 @@ impl PackStore {
                     current.max_epoch() + 1,
                     frame_count
                 );
+                authenticate_committed_frame_prefix(
+                    &pack,
+                    &pack_path,
+                    &scan,
+                    current
+                        .max_epoch()
+                        .checked_add(1)
+                        .context("manifest committed-frame count overflows")?,
+                )?;
+                let loaded =
+                    Self::load_manifest_runs(&runs_dir, &current, max_index_memory_bytes, options);
+                clear_stale_temp_files(root)?;
                 generation = current.generation;
-                match Self::load_manifest_runs(&runs_dir, &current, max_index_memory_bytes, options)
-                {
+                match loaded {
                     Ok(loaded) => loaded,
                     Err(error) => {
                         // Indexes are derived, but only the manifest's exact
@@ -288,7 +316,10 @@ impl PackStore {
             // Without a manifest or an explicit external horizon there is no
             // durable commit decision. Complete frames and runs are prepared
             // orphan data and must remain invisible.
-            None => LoadedRuns::default(),
+            None => {
+                clear_stale_temp_files(root)?;
+                LoadedRuns::default()
+            }
         };
         Self::finish_open(
             root,
@@ -346,31 +377,54 @@ impl PackStore {
         let mut frame_start = SEGMENT_HEADER_LEN as u64;
         for (epoch, frame_end) in frame_ends.iter().enumerate() {
             let epoch = u64::try_from(epoch).context("rebuilt epoch does not fit u64")?;
+            let _ = read_frame_receipt_at(pack, epoch, frame_start, *frame_end)
+                .with_context(|| format!("authenticate frame {epoch} before index rebuild"))?;
             let mut header = [0u8; FRAME_HEADER_LEN];
             pack.read_exact_at(&mut header, frame_start)
                 .context("re-read frame header for index rebuild")?;
-            let payload_len = validate_frame_header(&header, epoch)?;
-            let payload_end = frame_start
-                .checked_add(FRAME_HEADER_LEN as u64)
-                .and_then(|end| end.checked_add(payload_len))
+            let header = validate_frame_header(&header, epoch)?;
+            let rebuilt_frame_end = frame_start
+                .checked_add(header.frame_bytes)
                 .context("rebuilt frame end overflows")?;
             ensure!(
-                payload_end == *frame_end,
+                rebuilt_frame_end == *frame_end,
                 "rebuilt frame length mismatch at epoch {epoch}"
             );
-            let mut payload = vec![0u8; usize::try_from(payload_len).context("payload too large")?];
-            pack.read_exact_at(&mut payload, frame_start + FRAME_HEADER_LEN as u64)
-                .context("read frame payload for index rebuild")?;
+            let rows =
+                usize::try_from(header.rows).context("frame row count does not fit usize")?;
+            let metadata_len = usize::try_from(header.metadata_bytes)
+                .context("frame metadata length does not fit usize")?;
+            let minimum_workspace = rebuild_decode_workspace_bytes(
+                loaded.decoded_index_bytes,
+                header.metadata_bytes,
+                header.rows,
+            )?;
+            ensure_rebuild_memory_bound(minimum_workspace, max_index_memory_bytes)?;
+
+            let metadata_start = frame_start
+                .checked_add(FRAME_HEADER_LEN as u64)
+                .context("rebuilt metadata offset overflows")?;
+            let mut metadata = Vec::new();
+            metadata
+                .try_reserve_exact(metadata_len)
+                .context("reserve frame metadata for index rebuild")?;
+            metadata.resize(metadata_len, 0);
+            pack.read_exact_at(&mut metadata, metadata_start)
+                .context("read frame metadata for index rebuild")?;
             ensure!(
-                digest(&payload).as_slice() == &header[40..72],
-                "frame payload checksum mismatch during index rebuild"
+                frame_metadata_digest(&metadata) == header.metadata_sha256,
+                "frame metadata checksum mismatch during index rebuild"
             );
-            let mut entries = decode_frame_payload(frame_start, &payload)?;
-            entries.sort_unstable_by(|left, right| {
-                left.key
-                    .cmp(&right.key)
-                    .then_with(|| left.sequence.cmp(&right.sequence))
-            });
+            let distinct = scan_frame_metadata_distinct_keys(&metadata, rows, header.value_bytes)?;
+            let estimated_peak = estimate_rebuild_peak_bytes(
+                loaded.decoded_index_bytes,
+                header.metadata_bytes,
+                header.rows,
+                distinct,
+            )?;
+            ensure_rebuild_memory_bound(estimated_peak, max_index_memory_bytes)?;
+            let entries = decode_frame_metadata(frame_start, &metadata, header.value_bytes)?;
+            drop(metadata);
             let file_name = run_file_name(0, epoch, epoch);
             let run = publish_fresh_run(&entries, epoch, runs_dir, &file_name, options)
                 .with_context(|| format!("rebuild index run for frame {epoch}"))?;
@@ -421,10 +475,6 @@ impl PackStore {
         }
         let pack_map = Mmap::map(&pack, committed_end, &pack_path)?;
         let lookup_pack_map = map_random_if_enabled(&pack, committed_end, &pack_path, options)?;
-        // Interrupted publications leave stale temp files behind; clearing
-        // them here keeps the create-new publication steps from tripping
-        // over a crashed predecessor's leftovers.
-        clear_stale_temp_files(root)?;
         let committed_frames = loaded.runs.last().map_or(0, |tail| tail.max_epoch + 1);
         for epoch in 0..committed_frames {
             let index = usize::try_from(epoch).context("frame epoch does not fit usize")?;
@@ -496,4 +546,157 @@ impl PackStore {
             inflight_compaction_outputs: Arc::new(Mutex::new(HashSet::new())),
         })
     }
+}
+
+fn rebuild_decode_workspace_bytes(
+    resident_bytes: u64,
+    metadata_bytes: u64,
+    rows: u64,
+) -> Result<u64> {
+    resident_bytes
+        .checked_add(metadata_bytes)
+        .and_then(|bytes| bytes.checked_add(rows))
+        .context("recovery metadata workspace estimate overflows")
+}
+
+/// Conservative phase-aware heap peak for rebuilding one current derived run from
+/// authenticated v2 frame metadata. This includes the already resident run
+/// generation and every allocation family used by metadata decode, xor-filter
+/// construction, duplicate run encoding, and validating readback.
+pub(super) fn estimate_rebuild_peak_bytes(
+    resident_bytes: u64,
+    metadata_bytes: u64,
+    rows: u64,
+    distinct_keys: usize,
+) -> Result<u64> {
+    let rows_usize = usize::try_from(rows).context("recovery row count does not fit usize")?;
+    ensure!(
+        distinct_keys > 0 && distinct_keys <= rows_usize,
+        "recovery distinct-key count is outside the frame row set"
+    );
+    let entries = allocation_bytes(rows_usize, std::mem::size_of::<IndexEntry>())?;
+    let sequence_bitmap = allocation_bytes(rows_usize, std::mem::size_of::<bool>())?;
+    let decode_peak = metadata_bytes
+        .checked_add(entries)
+        .and_then(|bytes| bytes.checked_add(sequence_bitmap))
+        .context("recovery decode workspace estimate overflows")?;
+
+    let keys = allocation_bytes(distinct_keys, PACK_KEY_BYTES)?;
+    let fence_count = rows_usize.div_ceil(FENCE_INTERVAL);
+    let fences = allocation_bytes(fence_count, FENCE_KEY_BYTES)?;
+    let filter_slots = filter_capacity(distinct_keys);
+    let key_hashes = allocation_bytes(distinct_keys, std::mem::size_of::<u64>())?;
+    let xor_counts = allocation_bytes(filter_slots, std::mem::size_of::<u8>())?;
+    let xor_values = allocation_bytes(filter_slots, std::mem::size_of::<u64>())?;
+    let xor_queue = allocation_bytes(filter_slots, std::mem::size_of::<usize>())?;
+    let xor_peeled = allocation_bytes(distinct_keys, std::mem::size_of::<(usize, u64)>())?;
+    let filter_bytes = allocation_bytes(filter_slots, std::mem::size_of::<u16>())?;
+    let filter_build_peak = checked_sum(&[
+        entries,
+        keys,
+        fences,
+        key_hashes,
+        xor_counts,
+        xor_values,
+        xor_queue,
+        xor_peeled,
+        filter_bytes,
+    ])?;
+
+    let record_bytes = allocation_bytes(rows_usize, INDEX_RECORD_LEN)?;
+    let encoded_output =
+        checked_sum(&[INDEX_HEADER_LEN as u64, fences, filter_bytes, record_bytes])?;
+    let encode_peak = checked_sum(&[
+        entries,
+        keys,
+        fences,
+        filter_bytes,
+        record_bytes,
+        filter_bytes,
+        encoded_output,
+    ])?;
+
+    let readback_structured = run_structured_bytes(rows_usize, distinct_keys)?;
+    let readback_peak = checked_sum(&[
+        entries,
+        keys,
+        fences,
+        filter_bytes,
+        encoded_output,
+        readback_structured,
+    ])?;
+    resident_bytes
+        .checked_add(
+            decode_peak
+                .max(filter_build_peak)
+                .max(encode_peak)
+                .max(readback_peak),
+        )
+        .context("recovery peak memory estimate overflows")
+}
+
+fn allocation_bytes(count: usize, item_bytes: usize) -> Result<u64> {
+    let bytes = count
+        .checked_mul(item_bytes)
+        .context("recovery allocation estimate overflows usize")?;
+    u64::try_from(bytes).context("recovery allocation estimate does not fit u64")
+}
+
+fn checked_sum(parts: &[u64]) -> Result<u64> {
+    parts.iter().try_fold(0u64, |total, bytes| {
+        total
+            .checked_add(*bytes)
+            .context("recovery workspace estimate overflows")
+    })
+}
+
+fn ensure_rebuild_memory_bound(estimated: u64, maximum: u64) -> Result<()> {
+    if estimated > maximum {
+        return Err(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::IndexMemoryBytes,
+            actual: estimated,
+            maximum,
+        }
+        .into());
+    }
+    Ok(())
+}
+
+/// Authenticates the complete marker- or manifest-selected frame prefix before
+/// recovery mutates any pack-store artifact. Validation hashes both variable
+/// sections, verifies the footer/full-frame digest, and parses every canonical
+/// metadata row through a bounded sequential mapping.
+fn authenticate_committed_frame_prefix(
+    pack: &File,
+    pack_path: &Path,
+    scan: &FrameScan,
+    committed_frames: u64,
+) -> Result<()> {
+    ensure!(
+        committed_frames <= scan.frame_ends.len() as u64,
+        "committed frame prefix requires {committed_frames} frames but only {} complete frames exist",
+        scan.frame_ends.len()
+    );
+    if committed_frames == 0 {
+        return Ok(());
+    }
+    let last_index = usize::try_from(committed_frames - 1)
+        .context("committed frame count does not fit usize")?;
+    let committed_end = *scan
+        .frame_ends
+        .get(last_index)
+        .context("committed frame prefix is incomplete")?;
+    let map = Mmap::map_sequential(pack, committed_end, pack_path)?;
+    let mut frame_start = SEGMENT_HEADER_LEN as u64;
+    for epoch in 0..committed_frames {
+        let index = usize::try_from(epoch).context("committed frame epoch does not fit usize")?;
+        let frame_end = *scan
+            .frame_ends
+            .get(index)
+            .with_context(|| format!("committed frame {epoch} is absent"))?;
+        verify_frame(&map, frame_start, frame_end, epoch)
+            .with_context(|| format!("authenticate committed frame {epoch}"))?;
+        frame_start = frame_end;
+    }
+    Ok(())
 }

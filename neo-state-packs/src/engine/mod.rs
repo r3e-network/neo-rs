@@ -5,9 +5,9 @@
 //!
 //! ## Boundary
 //!
-//! This module owns generic fixed-key pack mechanics. It does not know about
-//! StateService namespaces, MDBX markers, blocks, contracts, or execution.
-//! Callers provide opaque versioned operations and an external commit horizon.
+//! This module owns fixed-width `0xf0 || node_hash` pack mechanics and validates
+//! caller-supplied block/root context. It does not interpret MPT values or know
+//! about MDBX markers, contracts, or execution.
 //!
 //! ## Contents
 //!
@@ -33,9 +33,9 @@ pub use store::{
     CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, CheckpointNamespaceEvidence, OpenValidation,
     PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_INDEX_RUN_FORMAT_VERSION,
     PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackCommitHorizon, PackCompactionPlan,
-    PackFrameBuilder, PackFrameReceipt, PackIndexScrubStats, PackMaterializedViewEvidence,
-    PackPosition, PackScrubStats, PackSegmentId, PackStore, PackStoreArtifact, PackStoreConfig,
-    PackStoreConfigError, PackStoreConfigField, PackStoreError, PackStoreErrorSource,
-    PackStoreLimit, PackStoreOperation, PackStoreOptions, PackStoreResult, PreparedAppend,
-    PreparedPackCompaction, SealedAppend, Snapshot,
+    PackFrameBuilder, PackFrameContext, PackFrameReceipt, PackIndexScrubStats,
+    PackMaterializedViewEvidence, PackPosition, PackScrubStats, PackSegmentId, PackStore,
+    PackStoreArtifact, PackStoreConfig, PackStoreConfigError, PackStoreConfigField, PackStoreError,
+    PackStoreErrorSource, PackStoreLimit, PackStoreOperation, PackStoreOptions, PackStoreResult,
+    PreparedAppend, PreparedPackCompaction, SealedAppend, Snapshot,
 };

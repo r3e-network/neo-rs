@@ -85,11 +85,16 @@ pub(super) fn validate_index_entry_payload_range(
     entry: &IndexEntry,
     committed_pack_bytes: u64,
 ) -> Result<()> {
+    ensure!(
+        entry.key[0] == 0xf0,
+        "index entry key is outside the MPT node namespace"
+    );
     if entry.tombstone {
         ensure!(
-            entry.value_len == 0,
-            "tombstone index entry carries a value"
+            entry.value_offset == 0 && entry.value_len == 0,
+            "tombstone index entry carries a non-zero value location"
         );
+        return Ok(());
     }
     let value_end = entry
         .value_offset

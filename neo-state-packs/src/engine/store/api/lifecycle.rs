@@ -7,6 +7,41 @@ use crate::PackStageTotals;
 use super::super::Snapshot;
 use super::identity::{PackPosition, PackSegmentId};
 
+/// Immutable block and StateService-root context authenticated by one frame.
+///
+/// Pack storage validates this context locally. It deliberately does not
+/// require adjacent frames to be contiguous because checkpoint chunks may
+/// repeat one source context and metadata-only StateService commits may occur
+/// between node-bearing frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PackFrameContext {
+    /// Lowest block index represented by the frame's operation window.
+    pub block_start: u32,
+    /// Highest block index represented by the frame's operation window.
+    pub block_end: u32,
+    /// StateService root before applying the represented operation window.
+    pub previous_root: [u8; 32],
+    /// StateService root after applying the represented operation window.
+    pub resulting_root: [u8; 32],
+}
+
+impl PackFrameContext {
+    /// Creates an immutable frame context.
+    pub const fn new(
+        block_start: u32,
+        block_end: u32,
+        previous_root: [u8; 32],
+        resulting_root: [u8; 32],
+    ) -> Self {
+        Self {
+            block_start,
+            block_end,
+            previous_root,
+            resulting_root,
+        }
+    }
+}
+
 /// Durable placement and checksum of the most recently appended frame.
 ///
 /// The MDBX high-water marker (see [`crate::shadow`]) records these fields so
@@ -20,14 +55,22 @@ pub struct PackFrameReceipt {
     pub segment_id: PackSegmentId,
     /// Segment-relative byte offset of the frame header.
     pub frame_start: u64,
-    /// Segment-relative byte offset one past the frame payload.
+    /// Segment-relative byte offset one past the complete frame footer.
     pub frame_end: u64,
+    /// Authenticated block and root context carried by the frame.
+    pub context: PackFrameContext,
     /// Number of operations encoded in the frame.
     pub rows: u64,
-    /// Frame payload length in bytes (without the 72-byte header).
-    pub payload_bytes: u64,
-    /// SHA-256 checksum of the frame payload, as stored in the frame header.
-    pub payload_sha256: [u8; 32],
+    /// Sorted fixed-width row-metadata bytes.
+    pub metadata_bytes: u64,
+    /// Put-value payload bytes. Tombstones contribute no value bytes.
+    pub value_bytes: u64,
+    /// Domain-separated digest of the fixed header.
+    ///
+    /// The header transitively authenticates the metadata and value sections
+    /// through their independent domain-separated digests. The footer binds
+    /// this digest to the epoch and exact complete-frame length.
+    pub frame_sha256: [u8; 32],
 }
 
 impl PackFrameReceipt {
@@ -73,7 +116,8 @@ impl PreparedAppend {
             epoch: self.receipt.epoch,
             segment_id: self.receipt.segment_id,
             frame_end: self.receipt.frame_end,
-            payload_sha256: self.receipt.payload_sha256,
+            context: self.receipt.context,
+            frame_sha256: self.receipt.frame_sha256,
         }
     }
 }
@@ -129,8 +173,10 @@ pub struct PackCommitHorizon {
     /// a structurally valid frame chain whose canonical high-water record was
     /// corrupted or belongs to another pack layout.
     pub frame_end: u64,
-    /// SHA-256 checksum of that frame's payload.
-    pub payload_sha256: [u8; 32],
+    /// Immutable block and root context authenticated by that frame.
+    pub context: PackFrameContext,
+    /// Domain-separated digest of that frame's authenticated header.
+    pub frame_sha256: [u8; 32],
 }
 
 impl PackCommitHorizon {

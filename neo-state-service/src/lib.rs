@@ -46,6 +46,8 @@ pub use storage::{
 };
 pub use storage::{
     MDBX_STATE_SERVICE_NAMESPACE, MptChange, MptNodeReadGeneration, MptNodeReadSnapshot,
-    MptNodeSnapshotFactory, MptReadSnapshot, MptStore, StateStore, StateStoreLookup,
-    StateStoreTransaction, mpt_store, root_cache, state_store,
+    MptNodeSnapshotFactory, MptReadSnapshot, MptStore, StateRootRecordError, StateStore,
+    StateStoreLookup, StateStoreTransaction, decode_current_local_root_index,
+    decode_local_state_root_record, decode_state_root_record, mpt_store, read_current_local_root,
+    read_current_local_root_from, read_local_state_root, root_cache, state_store,
 };

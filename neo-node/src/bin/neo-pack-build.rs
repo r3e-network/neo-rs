@@ -10,10 +10,9 @@
 //!   neo-pack-build --network-magic <u32-or-hex>
 //!     --mdbx <canonical-store-dir> --pack <new-pack-dir>
 //!     [--rows-per-frame N] [--max-rows N] [--max-index-memory-mb N]
-//!     [--adopt-legacy-complete-pack | --adopt-legacy-partial-pack]
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -22,23 +21,21 @@ use anyhow::{Context, Result, bail, ensure};
 use neo_crypto::Sha256Hasher;
 use neo_state_packs::{
     CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
-    PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PackFrameReceipt, PackOpKind,
+    PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PackFrameContext, PackOpKind,
     PackOperation, PackSegmentId, PackStore, PackStoreConfig,
 };
+use neo_state_service::read_current_local_root;
+use neo_storage::persistence::StoreFactory;
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
-use neo_storage::persistence::{RawReadOnlyStore, StoreFactory};
 use neo_storage::{StorageError, StorageResult};
 use serde::{Deserialize, Serialize};
 
 const STATE_NODE_PREFIX: u8 = 0xf0;
 const STATE_SERVICE_NAMESPACE: &str = "neo_state_service";
-const CURRENT_LOCAL_ROOT_INDEX: &[u8] = &[0x02];
 const DEFAULT_ROWS_PER_FRAME: usize = 1_000_000;
 const DEFAULT_MAX_INDEX_MEMORY_MB: u64 = 512;
-const STATE_ROOT_UNSIGNED_LEN: usize = 1 + 4 + 32;
-const CHECKPOINT_SCHEMA_VERSION: u32 = 3;
-const LEGACY_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
+const CHECKPOINT_SCHEMA_VERSION: u32 = 4;
 const BUILD_IDENTITY_SCHEMA_VERSION: u32 = 2;
 const BUILD_IDENTITY_FILE: &str = "checkpoint-build.json";
 const BUILD_IDENTITY_TMP_FILE: &str = "checkpoint-build.json.tmp";
@@ -57,8 +54,6 @@ struct Arguments {
     rows_per_frame: usize,
     max_rows: Option<u64>,
     max_index_memory_bytes: u64,
-    adopt_legacy_complete_pack: bool,
-    adopt_legacy_partial_pack: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -132,7 +127,7 @@ struct CheckpointReport {
     tip_epoch: u64,
     tip_segment_id: u64,
     tip_frame_end: u64,
-    tip_payload_sha256: String,
+    tip_frame_sha256: String,
     scrubbed_frames: u64,
     scrubbed_rows: u64,
     scrubbed_puts: u64,
@@ -143,43 +138,10 @@ struct CheckpointReport {
     elapsed_seconds: f64,
 }
 
-#[derive(Debug, Deserialize)]
-struct LegacyCheckpointReport {
-    schema_version: u32,
-    authoritative_ready: bool,
-    complete: bool,
-    source_backend: String,
-    #[serde(default)]
-    source_namespace: Option<String>,
-    source_height: u32,
-    source_root: String,
-    source_root_internal_bytes: String,
-    source_namespace_sha256: String,
-    rows: u64,
-    value_bytes: u64,
-    frames: u64,
-    rows_per_frame: usize,
-    pack_bytes: u64,
-    #[serde(default)]
-    live_index_bytes: Option<u64>,
-    #[serde(default)]
-    live_runs: Option<u64>,
-    #[serde(default)]
-    decoded_index_memory_bytes: Option<u64>,
-    #[serde(default)]
-    tip_epoch: Option<u64>,
-    #[serde(default)]
-    tip_frame_end: Option<u64>,
-    #[serde(default)]
-    tip_payload_sha256: Option<String>,
-}
-
 struct OpenedCheckpoint {
     pack: PackStore,
     resumed_rows: u64,
     frames: u64,
-    legacy: Option<LegacyCheckpointReport>,
-    publish_identity_after_rows: Option<u64>,
 }
 
 fn main() -> Result<()> {
@@ -203,8 +165,6 @@ fn main() -> Result<()> {
         mut pack,
         resumed_rows,
         mut frames,
-        legacy,
-        mut publish_identity_after_rows,
     } = open_or_resume_pack(&arguments, source_tip)?;
     let mut operations = Vec::with_capacity(arguments.rows_per_frame);
     let mut hasher = Sha256Hasher::new();
@@ -234,12 +194,8 @@ fn main() -> Result<()> {
             if operations.len() == rows_per_frame {
                 if rows <= resumed_rows {
                     validate_existing_rows(&pack, &mut operations)?;
-                    if publish_identity_after_rows == Some(rows) {
-                        publish_adopted_partial_identity(&mut pack, &arguments, source_tip)?;
-                        publish_identity_after_rows = None;
-                    }
                 } else {
-                    append_frame(&mut pack, &mut operations)?;
+                    append_frame(&mut pack, source_tip, &mut operations)?;
                     frames = frames.saturating_add(1);
                 }
                 eprintln!(
@@ -251,10 +207,6 @@ fn main() -> Result<()> {
     )?;
     ensure!(visited == rows, "streamed row count changed unexpectedly");
     ensure!(
-        publish_identity_after_rows.is_none(),
-        "legacy partial checkpoint contains more rows than the frozen source"
-    );
-    ensure!(
         rows >= resumed_rows,
         "partial checkpoint contains more rows than the source namespace"
     );
@@ -263,7 +215,7 @@ fn main() -> Result<()> {
             validate_existing_rows(&pack, &mut operations)
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
         } else {
-            append_frame(&mut pack, &mut operations)
+            append_frame(&mut pack, source_tip, &mut operations)
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
             frames = frames.saturating_add(1);
         }
@@ -276,9 +228,6 @@ fn main() -> Result<()> {
         "source StateService height/root changed during checkpoint build"
     );
     let namespace_digest = hasher.finalize();
-    if let Some(legacy) = &legacy {
-        validate_legacy_scan_evidence(legacy, rows, value_bytes, namespace_digest)?;
-    }
     let gc = pack.gc().context("reclaim derived checkpoint files")?;
     let scrub_started = Instant::now();
     let checkpoint_evidence = pack
@@ -308,24 +257,12 @@ fn main() -> Result<()> {
         tip.epoch.checked_add(1) == Some(frames),
         "checkpoint tip epoch does not match its frame count"
     );
-    verify_tip_payload_checksum(&arguments.pack_path, tip)?;
-    if let Some(legacy) = &legacy {
-        validate_legacy_pack_evidence(
-            legacy,
-            pack_bytes,
-            live_index_bytes,
-            live_runs,
-            decoded_index_memory_bytes,
-            tip,
-        )?;
-        publish_or_validate_build_identity(&arguments, source_tip)?;
-    }
     let complete = arguments.max_rows.is_none();
     let report = CheckpointReport {
         schema_version: CHECKPOINT_SCHEMA_VERSION,
         // The report is published only by `publish_after_reopen`, after the
         // complete source scan, stable height/root check, payload scrub, tip
-        // checksum verification, and pack reopen all succeed. Bounded builds
+        // frame-digest verification, and pack reopen all succeed. Bounded builds
         // remain explicitly ineligible.
         authoritative_ready: complete,
         complete,
@@ -355,7 +292,7 @@ fn main() -> Result<()> {
         tip_epoch: tip.epoch,
         tip_segment_id: tip.segment_id.get(),
         tip_frame_end: tip.frame_end,
-        tip_payload_sha256: format!("0x{}", hex::encode(tip.payload_sha256)),
+        tip_frame_sha256: format!("0x{}", hex::encode(tip.frame_sha256)),
         scrubbed_frames: scrub.frames,
         scrubbed_rows: scrub.rows,
         scrubbed_puts: scrub.puts,
@@ -365,7 +302,7 @@ fn main() -> Result<()> {
         scrub_elapsed_seconds,
         elapsed_seconds: started.elapsed().as_secs_f64(),
     };
-    publish_after_reopen(&arguments, &report, pack, legacy.is_some())?;
+    publish_after_reopen(&arguments, &report, pack)?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     if !complete {
         eprintln!(
@@ -386,8 +323,6 @@ fn parse_arguments_from(arguments: impl IntoIterator<Item = String>) -> Result<A
     let mut rows_per_frame = DEFAULT_ROWS_PER_FRAME;
     let mut max_rows = None;
     let mut max_index_memory_mb = DEFAULT_MAX_INDEX_MEMORY_MB;
-    let mut adopt_legacy_complete_pack = false;
-    let mut adopt_legacy_partial_pack = false;
     let mut arguments = arguments.into_iter();
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
@@ -411,19 +346,9 @@ fn parse_arguments_from(arguments: impl IntoIterator<Item = String>) -> Result<A
             "--max-index-memory-mb" => {
                 max_index_memory_mb = parse_positive(&mut arguments, "--max-index-memory-mb")?;
             }
-            "--adopt-legacy-complete-pack" => adopt_legacy_complete_pack = true,
-            "--adopt-legacy-partial-pack" => adopt_legacy_partial_pack = true,
             other => bail!("unknown argument {other}"),
         }
     }
-    ensure!(
-        !(adopt_legacy_complete_pack && adopt_legacy_partial_pack),
-        "legacy complete-pack and partial-pack adoption are mutually exclusive"
-    );
-    ensure!(
-        !(adopt_legacy_complete_pack || adopt_legacy_partial_pack) || max_rows.is_none(),
-        "legacy pack adoption cannot be combined with --max-rows"
-    );
     let max_index_memory_bytes = max_index_memory_mb
         .checked_mul(1024 * 1024)
         .context("--max-index-memory-mb overflows bytes")?;
@@ -434,8 +359,6 @@ fn parse_arguments_from(arguments: impl IntoIterator<Item = String>) -> Result<A
         rows_per_frame,
         max_rows,
         max_index_memory_bytes,
-        adopt_legacy_complete_pack,
-        adopt_legacy_partial_pack,
     })
 }
 
@@ -466,35 +389,10 @@ where
 }
 
 fn read_source_tip(store: &RuntimeStore) -> Result<SourceTip> {
-    let index = store
-        .try_get_bytes_result(CURRENT_LOCAL_ROOT_INDEX)?
-        .context("StateService current local root index is absent")?;
-    let index: [u8; 4] = index
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("StateService current local root index is malformed"))?;
-    let height = u32::from_le_bytes(index);
-    let mut root_key = Vec::with_capacity(5);
-    root_key.push(0x01);
-    root_key.extend_from_slice(&height.to_be_bytes());
-    let root = store
-        .try_get_bytes_result(&root_key)?
-        .with_context(|| format!("StateService root record {height} is absent"))?;
-    ensure!(
-        root.len() >= STATE_ROOT_UNSIGNED_LEN,
-        "StateService root record {height} is malformed"
-    );
-    ensure!(
-        root[0] == 0,
-        "StateService root record {height} has an unsupported version"
-    );
-    ensure!(
-        u32::from_le_bytes(root[1..5].try_into().expect("four-byte index")) == height,
-        "StateService root record index does not match the current pointer"
-    );
-    let root_internal = root[5..37].try_into().expect("32-byte root");
+    let root = read_current_local_root(store).context("read frozen StateService source tip")?;
     Ok(SourceTip {
-        height,
-        root_internal,
+        height: root.index(),
+        root_internal: root.root_hash().to_array(),
     })
 }
 
@@ -512,12 +410,6 @@ fn open_or_resume_pack(arguments: &Arguments, source_tip: SourceTip) -> Result<O
         "checkpoint build identity publication is incomplete at {}; inspect it before retrying",
         build_identity_tmp.display()
     );
-    if arguments.adopt_legacy_complete_pack {
-        return open_legacy_complete_pack(arguments, source_tip, &checkpoint);
-    }
-    if arguments.adopt_legacy_partial_pack {
-        return open_legacy_partial_pack(arguments, &checkpoint);
-    }
     ensure!(
         !checkpoint.exists(),
         "checkpoint marker already exists at {}; refusing to overwrite it",
@@ -567,8 +459,6 @@ fn open_or_resume_pack(arguments: &Arguments, source_tip: SourceTip) -> Result<O
             pack,
             resumed_rows: validation.index_entries,
             frames: validation.frames,
-            legacy: None,
-            publish_identity_after_rows: None,
         });
     }
     let build_identity = arguments.pack_path.join(BUILD_IDENTITY_FILE);
@@ -592,167 +482,6 @@ fn open_or_resume_pack(arguments: &Arguments, source_tip: SourceTip) -> Result<O
         pack,
         resumed_rows: 0,
         frames: 0,
-        legacy: None,
-        publish_identity_after_rows: None,
-    })
-}
-
-fn open_legacy_complete_pack(
-    arguments: &Arguments,
-    source_tip: SourceTip,
-    checkpoint: &Path,
-) -> Result<OpenedCheckpoint> {
-    ensure!(
-        checkpoint.exists(),
-        "--adopt-legacy-complete-pack requires an existing checkpoint.json"
-    );
-    let file = File::open(checkpoint)
-        .with_context(|| format!("open legacy checkpoint marker {}", checkpoint.display()))?;
-    let legacy: LegacyCheckpointReport = serde_json::from_reader(BufReader::new(file))
-        .with_context(|| format!("decode legacy checkpoint marker {}", checkpoint.display()))?;
-    validate_legacy_source_identity(&legacy, arguments, source_tip)?;
-
-    let identity_path = arguments.pack_path.join(BUILD_IDENTITY_FILE);
-    if identity_path.exists() {
-        let actual = read_build_identity(&arguments.pack_path)?;
-        let expected = BuildIdentity::current(arguments, source_tip);
-        validate_build_identity(&actual, &expected)
-            .context("validate an interrupted legacy adoption identity")?;
-    }
-
-    let pack = PackStore::open(
-        &arguments.pack_path,
-        pack_store_config(arguments.max_index_memory_bytes)?,
-    )
-    .with_context(|| {
-        format!(
-            "reopen legacy complete checkpoint at {}",
-            arguments.pack_path.display()
-        )
-    })?;
-    let validation = pack.open_validation();
-    ensure!(
-        validation.frames == legacy.frames,
-        "legacy checkpoint frame count differs from the pack"
-    );
-    ensure!(
-        validation.index_entries == legacy.rows,
-        "legacy checkpoint row count differs from the pack"
-    );
-    let rows_per_frame =
-        u64::try_from(legacy.rows_per_frame).context("legacy rows_per_frame does not fit u64")?;
-    let expected_frames = legacy
-        .rows
-        .checked_sub(1)
-        .context("legacy checkpoint has zero rows")?
-        .checked_div(rows_per_frame)
-        .and_then(|frames_before_tip| frames_before_tip.checked_add(1))
-        .context("legacy checkpoint frame geometry overflows u64")?;
-    ensure!(
-        legacy.frames == expected_frames,
-        "legacy checkpoint row/frame geometry is inconsistent"
-    );
-    let tip = pack
-        .last_frame_receipt()
-        .context("legacy complete checkpoint has no tip frame")?;
-    let (pack_bytes, live_index_bytes, live_runs, decoded_index_memory_bytes) = pack
-        .layout()
-        .context("inspect legacy complete checkpoint layout")?;
-    validate_legacy_pack_evidence(
-        &legacy,
-        pack_bytes,
-        live_index_bytes,
-        live_runs,
-        decoded_index_memory_bytes,
-        tip,
-    )?;
-    verify_tip_payload_checksum(&arguments.pack_path, tip)?;
-    eprintln!(
-        "legacy complete checkpoint adoption: validating {} exact source rows across {} frames",
-        legacy.rows, legacy.frames
-    );
-    Ok(OpenedCheckpoint {
-        pack,
-        resumed_rows: legacy.rows,
-        frames: legacy.frames,
-        legacy: Some(legacy),
-        publish_identity_after_rows: None,
-    })
-}
-
-fn open_legacy_partial_pack(arguments: &Arguments, checkpoint: &Path) -> Result<OpenedCheckpoint> {
-    ensure!(
-        !checkpoint.exists(),
-        "--adopt-legacy-partial-pack requires checkpoint.json to be absent"
-    );
-    let identity_path = arguments.pack_path.join(BUILD_IDENTITY_FILE);
-    ensure!(
-        !identity_path.exists(),
-        "legacy partial adoption found checkpoint-build.json; resume without the adoption flag"
-    );
-    ensure!(
-        arguments
-            .pack_path
-            .join(PackSegmentId::INITIAL.file_name())
-            .exists(),
-        "--adopt-legacy-partial-pack requires an existing initial pack segment"
-    );
-    let pack = PackStore::open(
-        &arguments.pack_path,
-        pack_store_config(arguments.max_index_memory_bytes)?,
-    )
-    .with_context(|| {
-        format!(
-            "reopen legacy partial checkpoint at {}",
-            arguments.pack_path.display()
-        )
-    })?;
-    let validation = pack.open_validation();
-    ensure!(
-        validation.frames > 0 && validation.index_entries > 0,
-        "legacy partial checkpoint has no committed rows"
-    );
-    let rows_per_frame =
-        u64::try_from(arguments.rows_per_frame).context("--rows-per-frame does not fit u64")?;
-    let expected_rows = validation
-        .frames
-        .checked_mul(rows_per_frame)
-        .context("legacy partial checkpoint frame geometry overflows u64")?;
-    ensure!(
-        validation.index_entries == expected_rows,
-        "legacy partial checkpoint has {} live rows across {} frames, not exactly {} rows per frame",
-        validation.index_entries,
-        validation.frames,
-        arguments.rows_per_frame
-    );
-    eprintln!(
-        "legacy partial checkpoint adoption: validating {} exact source rows across {} frames before publishing build identity",
-        validation.index_entries, validation.frames
-    );
-    Ok(OpenedCheckpoint {
-        pack,
-        resumed_rows: validation.index_entries,
-        frames: validation.frames,
-        legacy: None,
-        publish_identity_after_rows: Some(validation.index_entries),
-    })
-}
-
-fn publish_adopted_partial_identity(
-    pack: &mut PackStore,
-    arguments: &Arguments,
-    source_tip: SourceTip,
-) -> StorageResult<()> {
-    pack.republish_manifest()
-        .map_err(|error| StorageError::Backend {
-            message: format!("upgrade validated legacy partial manifest: {error:#}"),
-        })?;
-    write_build_identity(
-        &arguments.pack_path,
-        &BuildIdentity::current(arguments, source_tip),
-    )
-    .map_err(|error| StorageError::Backend {
-        message: format!("publish validated legacy partial build identity: {error:#}"),
     })
 }
 
@@ -760,7 +489,7 @@ fn read_build_identity(pack_path: &Path) -> Result<BuildIdentity> {
     let path = pack_path.join(BUILD_IDENTITY_FILE);
     let file = File::open(&path).with_context(|| {
         format!(
-            "open checkpoint build identity {}; legacy partial packs must be rebuilt",
+            "open current checkpoint build identity {}; stores without it must be rebuilt",
             path.display()
         )
     })?;
@@ -801,224 +530,6 @@ fn validate_build_identity(actual: &BuildIdentity, expected: &BuildIdentity) -> 
             && actual.pack_index_format_version == expected.pack_index_format_version
             && actual.pack_manifest_format_version == expected.pack_manifest_format_version,
         "checkpoint pack format version changed"
-    );
-    Ok(())
-}
-
-fn validate_legacy_source_identity(
-    legacy: &LegacyCheckpointReport,
-    arguments: &Arguments,
-    source_tip: SourceTip,
-) -> Result<()> {
-    ensure!(
-        legacy.schema_version == LEGACY_CHECKPOINT_SCHEMA_VERSION,
-        "legacy adoption accepts only checkpoint schema version {}",
-        LEGACY_CHECKPOINT_SCHEMA_VERSION
-    );
-    ensure!(
-        legacy.complete,
-        "legacy checkpoint is not a complete namespace snapshot"
-    );
-    ensure!(
-        !legacy.authoritative_ready,
-        "legacy checkpoint has an unexpected authoritative-ready claim"
-    );
-    ensure!(
-        legacy.source_backend == "mdbx",
-        "legacy checkpoint source backend is not MDBX"
-    );
-    if let Some(namespace) = &legacy.source_namespace {
-        ensure!(
-            namespace == STATE_SERVICE_NAMESPACE,
-            "legacy checkpoint source namespace changed"
-        );
-    }
-    ensure!(
-        arguments.max_rows.is_none(),
-        "legacy adoption requires an uncapped source scan"
-    );
-    ensure!(
-        legacy.rows > 0 && legacy.frames > 0 && legacy.rows_per_frame > 0,
-        "legacy checkpoint has zero rows, frames, or rows_per_frame"
-    );
-    ensure!(
-        legacy.rows_per_frame == arguments.rows_per_frame,
-        "legacy checkpoint rows_per_frame differs from --rows-per-frame"
-    );
-    ensure!(
-        legacy.source_height == source_tip.height,
-        "legacy checkpoint source height differs from the frozen source"
-    );
-    ensure!(
-        legacy.source_root == displayed_root(source_tip.root_internal),
-        "legacy checkpoint displayed root differs from the frozen source"
-    );
-    ensure!(
-        parse_prefixed_hex_32(
-            &legacy.source_root_internal_bytes,
-            "legacy source root internal bytes"
-        )? == source_tip.root_internal,
-        "legacy checkpoint internal root differs from the frozen source"
-    );
-    parse_prefixed_hex_32(
-        &legacy.source_namespace_sha256,
-        "legacy source namespace digest",
-    )?;
-    Ok(())
-}
-
-fn validate_legacy_scan_evidence(
-    legacy: &LegacyCheckpointReport,
-    rows: u64,
-    value_bytes: u64,
-    namespace_digest: [u8; 32],
-) -> Result<()> {
-    ensure!(
-        rows == legacy.rows,
-        "legacy checkpoint row count differs from the frozen source scan"
-    );
-    ensure!(
-        value_bytes == legacy.value_bytes,
-        "legacy checkpoint value bytes differ from the frozen source scan"
-    );
-    ensure!(
-        parse_prefixed_hex_32(
-            &legacy.source_namespace_sha256,
-            "legacy source namespace digest"
-        )? == namespace_digest,
-        "legacy checkpoint namespace digest differs from the frozen source scan"
-    );
-    Ok(())
-}
-
-fn validate_legacy_pack_evidence(
-    legacy: &LegacyCheckpointReport,
-    pack_bytes: u64,
-    live_index_bytes: u64,
-    live_runs: u64,
-    decoded_index_memory_bytes: u64,
-    tip: PackFrameReceipt,
-) -> Result<()> {
-    ensure!(
-        pack_bytes == legacy.pack_bytes,
-        "legacy checkpoint pack byte length differs from the pack"
-    );
-    if let Some(expected) = legacy.live_index_bytes {
-        ensure!(
-            live_index_bytes == expected,
-            "legacy checkpoint live index bytes differ from the pack"
-        );
-    }
-    if let Some(expected) = legacy.live_runs {
-        ensure!(
-            live_runs == expected,
-            "legacy checkpoint live run count differs from the pack"
-        );
-    }
-    if let Some(expected) = legacy.decoded_index_memory_bytes {
-        ensure!(
-            decoded_index_memory_bytes == expected,
-            "legacy checkpoint decoded index memory differs from the pack"
-        );
-    }
-    ensure!(
-        tip.epoch.checked_add(1) == Some(legacy.frames),
-        "legacy checkpoint tip epoch differs from the frame count"
-    );
-    ensure!(
-        tip.frame_end == pack_bytes,
-        "legacy checkpoint tip does not end at the pack boundary"
-    );
-    let rows_per_frame =
-        u64::try_from(legacy.rows_per_frame).context("legacy rows_per_frame does not fit u64")?;
-    let rows_before_tip = legacy
-        .frames
-        .checked_sub(1)
-        .and_then(|frames| frames.checked_mul(rows_per_frame))
-        .context("legacy checkpoint tip row geometry overflows u64")?;
-    ensure!(
-        legacy.rows.checked_sub(rows_before_tip) == Some(tip.rows),
-        "legacy checkpoint tip row count differs from the declared geometry"
-    );
-    match (
-        legacy.tip_epoch,
-        legacy.tip_frame_end,
-        legacy.tip_payload_sha256.as_deref(),
-    ) {
-        (None, None, None) => {}
-        (Some(epoch), Some(frame_end), Some(payload_sha256)) => {
-            ensure!(
-                epoch == tip.epoch
-                    && frame_end == tip.frame_end
-                    && parse_prefixed_hex_32(payload_sha256, "legacy tip payload checksum")?
-                        == tip.payload_sha256,
-                "legacy checkpoint tip identity differs from the pack"
-            );
-        }
-        _ => bail!("legacy checkpoint has an incomplete optional tip identity"),
-    }
-    Ok(())
-}
-
-fn parse_prefixed_hex_32(value: &str, label: &str) -> Result<[u8; 32]> {
-    let encoded = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-        .with_context(|| format!("{label} must start with 0x"))?;
-    let bytes = hex::decode(encoded).with_context(|| format!("{label} is not valid hex"))?;
-    bytes
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("{label} must contain exactly 32 bytes"))
-}
-
-fn publish_or_validate_build_identity(arguments: &Arguments, source_tip: SourceTip) -> Result<()> {
-    let expected = BuildIdentity::current(arguments, source_tip);
-    let path = arguments.pack_path.join(BUILD_IDENTITY_FILE);
-    if path.exists() {
-        let actual = read_build_identity(&arguments.pack_path)?;
-        validate_build_identity(&actual, &expected)
-            .context("validate previously published legacy adoption identity")
-    } else {
-        write_build_identity(&arguments.pack_path, &expected)
-    }
-}
-
-fn verify_tip_payload_checksum(pack_path: &Path, tip: PackFrameReceipt) -> Result<()> {
-    let path = pack_path.join(tip.segment_id.file_name());
-    let mut file = File::open(&path)
-        .with_context(|| format!("open checkpoint pack {} for tip scrub", path.display()))?;
-    let file_bytes = file
-        .metadata()
-        .with_context(|| format!("stat checkpoint pack {}", path.display()))?
-        .len();
-    ensure!(
-        file_bytes == tip.frame_end,
-        "checkpoint tip does not match the physical pack length"
-    );
-    let payload_start = tip
-        .frame_end
-        .checked_sub(tip.payload_bytes)
-        .context("checkpoint tip payload range underflows")?;
-    ensure!(
-        payload_start > tip.frame_start,
-        "checkpoint tip payload does not follow its frame header"
-    );
-    file.seek(SeekFrom::Start(payload_start))
-        .with_context(|| format!("seek checkpoint tip payload in {}", path.display()))?;
-    let mut hasher = Sha256Hasher::new();
-    let mut remaining = tip.payload_bytes;
-    let mut buffer = vec![0u8; 1024 * 1024];
-    while remaining > 0 {
-        let chunk = usize::try_from(remaining.min(buffer.len() as u64))
-            .expect("bounded checksum chunk fits usize");
-        file.read_exact(&mut buffer[..chunk])
-            .with_context(|| format!("read checkpoint tip payload in {}", path.display()))?;
-        hasher.update(&buffer[..chunk]);
-        remaining -= chunk as u64;
-    }
-    ensure!(
-        hasher.finalize() == tip.payload_sha256,
-        "checkpoint tip payload checksum differs from its frame receipt"
     );
     Ok(())
 }
@@ -1067,8 +578,21 @@ fn validate_existing_rows(
     Ok(())
 }
 
-fn append_frame(pack: &mut PackStore, operations: &mut Vec<PackOperation>) -> StorageResult<()> {
-    pack.append(operations)
+fn checkpoint_frame_context(source_tip: SourceTip) -> PackFrameContext {
+    PackFrameContext::new(
+        source_tip.height,
+        source_tip.height,
+        source_tip.root_internal,
+        source_tip.root_internal,
+    )
+}
+
+fn append_frame(
+    pack: &mut PackStore,
+    source_tip: SourceTip,
+    operations: &mut Vec<PackOperation>,
+) -> StorageResult<()> {
+    pack.append_frame(checkpoint_frame_context(source_tip), operations)
         .map_err(|error| StorageError::Backend {
             message: format!("checkpoint pack append failed: {error:#}"),
         })?;
@@ -1097,7 +621,6 @@ fn publish_after_reopen(
     arguments: &Arguments,
     report: &CheckpointReport,
     pack: PackStore,
-    replace_legacy_checkpoint: bool,
 ) -> Result<()> {
     let checkpoint_tmp = arguments.pack_path.join("checkpoint.json.tmp");
     write_checkpoint_temp(&checkpoint_tmp, report)?;
@@ -1120,21 +643,19 @@ fn publish_after_reopen(
     let reopened_tip = reopened
         .last_frame_receipt()
         .context("reopened checkpoint has no tip frame")?;
-    verify_tip_payload_checksum(&arguments.pack_path, reopened_tip)?;
     ensure!(
         reopened_tip.epoch == report.tip_epoch
             && reopened_tip.segment_id.get() == report.tip_segment_id
             && reopened_tip.frame_end == report.tip_frame_end
-            && format!("0x{}", hex::encode(reopened_tip.payload_sha256))
-                == report.tip_payload_sha256,
+            && format!("0x{}", hex::encode(reopened_tip.frame_sha256)) == report.tip_frame_sha256,
         "reopened checkpoint exposes a different tip frame"
     );
     drop(reopened);
 
     let checkpoint = arguments.pack_path.join("checkpoint.json");
     ensure!(
-        replace_legacy_checkpoint == checkpoint.exists(),
-        "checkpoint replacement state changed before publication"
+        !checkpoint.exists(),
+        "checkpoint marker appeared before publication"
     );
     fs::rename(&checkpoint_tmp, &checkpoint).with_context(|| {
         format!(
@@ -1175,117 +696,7 @@ fn sync_directory(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{Value, json};
     use tempfile::tempdir;
-
-    struct LegacyFixture {
-        arguments: Arguments,
-        source_tip: SourceTip,
-        operations: Vec<PackOperation>,
-        marker: Value,
-        tip: PackFrameReceipt,
-    }
-
-    fn create_legacy_fixture(pack_path: &Path) -> LegacyFixture {
-        let arguments = Arguments {
-            network_magic: 0x334F_454E,
-            mdbx_path: PathBuf::new(),
-            pack_path: pack_path.to_path_buf(),
-            rows_per_frame: 2,
-            max_rows: None,
-            max_index_memory_bytes: 1024 * 1024,
-            adopt_legacy_complete_pack: true,
-            adopt_legacy_partial_pack: false,
-        };
-        let source_tip = SourceTip {
-            height: 123,
-            root_internal: [0x55; 32],
-        };
-        let operations = (1u8..=3)
-            .map(|suffix| {
-                let mut key = [suffix; 33];
-                key[0] = STATE_NODE_PREFIX;
-                PackOperation {
-                    key,
-                    kind: PackOpKind::Put(vec![suffix; usize::from(suffix) + 2]),
-                }
-            })
-            .collect::<Vec<_>>();
-        let mut pack = PackStore::create(
-            pack_path,
-            pack_store_config(arguments.max_index_memory_bytes)
-                .expect("valid legacy pack configuration"),
-        )
-        .expect("create legacy pack");
-        pack.append(&operations[..2])
-            .expect("append full legacy frame");
-        pack.append(&operations[2..])
-            .expect("append partial legacy tip frame");
-        let gc = pack.gc().expect("collect legacy derived files");
-        let (pack_bytes, live_index_bytes, live_runs, decoded_index_memory_bytes) =
-            pack.layout().expect("inspect legacy layout");
-        let tip = pack.last_frame_receipt().expect("legacy tip receipt");
-        drop(pack);
-
-        let (namespace_digest, value_bytes) = namespace_evidence(&operations);
-        let marker = json!({
-            "schema_version": LEGACY_CHECKPOINT_SCHEMA_VERSION,
-            "authoritative_ready": false,
-            "complete": true,
-            "source_backend": "mdbx",
-            "source_namespace": STATE_SERVICE_NAMESPACE,
-            "network_magic": "0xDEADBEEF",
-            "source_height": source_tip.height,
-            "source_root": displayed_root(source_tip.root_internal),
-            "source_root_internal_bytes": format!("0x{}", hex::encode(source_tip.root_internal)),
-            "source_namespace_sha256": format!("0x{}", hex::encode(namespace_digest)),
-            "rows": operations.len() as u64,
-            "resumed_rows": 0,
-            "value_bytes": value_bytes,
-            "frames": 2,
-            "rows_per_frame": arguments.rows_per_frame,
-            "pack_bytes": pack_bytes,
-            "live_index_bytes": live_index_bytes,
-            "live_runs": live_runs,
-            "decoded_index_memory_bytes": decoded_index_memory_bytes,
-            "gc_runs_deleted": gc.runs_deleted,
-            "gc_manifests_deleted": gc.manifests_deleted,
-            "gc_bytes_reclaimed": gc.bytes_reclaimed,
-            "elapsed_seconds": 1.0
-        });
-        LegacyFixture {
-            arguments,
-            source_tip,
-            operations,
-            marker,
-            tip,
-        }
-    }
-
-    fn namespace_evidence(operations: &[PackOperation]) -> ([u8; 32], u64) {
-        let mut hasher = Sha256Hasher::new();
-        hasher.update(CHECKPOINT_NAMESPACE_DIGEST_DOMAIN);
-        let mut value_bytes = 0u64;
-        for operation in operations {
-            let PackOpKind::Put(value) = &operation.kind else {
-                panic!("legacy base fixture must contain only puts");
-            };
-            hasher.update(&(operation.key.len() as u32).to_le_bytes());
-            hasher.update(&operation.key);
-            hasher.update(&(value.len() as u64).to_le_bytes());
-            hasher.update(value);
-            value_bytes += value.len() as u64;
-        }
-        (hasher.finalize(), value_bytes)
-    }
-
-    fn write_legacy_marker(pack_path: &Path, marker: &Value) {
-        fs::write(
-            pack_path.join("checkpoint.json"),
-            serde_json::to_vec_pretty(marker).expect("encode legacy checkpoint"),
-        )
-        .expect("write legacy checkpoint");
-    }
 
     #[test]
     fn displayed_root_reverses_internal_uint256_bytes() {
@@ -1295,345 +706,6 @@ mod tests {
         let displayed = displayed_root(internal);
         assert!(displayed.starts_with("0xaa"));
         assert!(displayed.ends_with("11"));
-    }
-
-    #[test]
-    fn legacy_complete_adoption_reissues_current_identity_from_cli_and_verified_pack() {
-        let temporary = tempdir().expect("temporary checkpoint parent");
-        let pack_path = temporary.path().join("pack");
-        let fixture = create_legacy_fixture(&pack_path);
-        write_legacy_marker(&pack_path, &fixture.marker);
-
-        let opened = open_or_resume_pack(&fixture.arguments, fixture.source_tip)
-            .expect("open complete legacy checkpoint");
-        assert_eq!(opened.resumed_rows, fixture.operations.len() as u64);
-        assert_eq!(opened.frames, 2);
-        let legacy = opened.legacy.as_ref().expect("legacy adoption evidence");
-        let mut exact_rows = fixture.operations.clone();
-        validate_existing_rows(&opened.pack, &mut exact_rows)
-            .expect("validate every legacy row exactly");
-        let (namespace_digest, value_bytes) = namespace_evidence(&fixture.operations);
-        validate_legacy_scan_evidence(
-            legacy,
-            fixture.operations.len() as u64,
-            value_bytes,
-            namespace_digest,
-        )
-        .expect("validate legacy namespace evidence");
-
-        let (pack_bytes, live_index_bytes, live_runs, decoded_index_memory_bytes) =
-            opened.pack.layout().expect("inspect adopted pack");
-        let tip = opened.pack.last_frame_receipt().expect("adopted tip");
-        let scrub = opened
-            .pack
-            .scrub_committed_frames()
-            .expect("scrub adopted pack");
-        publish_or_validate_build_identity(&fixture.arguments, fixture.source_tip)
-            .expect("publish adopted build identity");
-        let identity = read_build_identity(&pack_path).expect("read adopted build identity");
-        assert_eq!(
-            identity.network_magic,
-            formatted_network_magic(fixture.arguments.network_magic)
-        );
-        assert_ne!(identity.network_magic, "0xDEADBEEF");
-
-        let report = CheckpointReport {
-            schema_version: CHECKPOINT_SCHEMA_VERSION,
-            authoritative_ready: false,
-            complete: true,
-            source_backend: "mdbx",
-            source_namespace: STATE_SERVICE_NAMESPACE,
-            network_magic: identity.network_magic,
-            source_height: fixture.source_tip.height,
-            source_root: displayed_root(fixture.source_tip.root_internal),
-            source_root_internal_bytes: format!(
-                "0x{}",
-                hex::encode(fixture.source_tip.root_internal)
-            ),
-            source_namespace_sha256: format!("0x{}", hex::encode(namespace_digest)),
-            rows: fixture.operations.len() as u64,
-            resumed_rows: fixture.operations.len() as u64,
-            value_bytes,
-            frames: 2,
-            rows_per_frame: fixture.arguments.rows_per_frame,
-            pack_bytes,
-            live_index_bytes,
-            live_runs,
-            decoded_index_memory_bytes,
-            gc_runs_deleted: 0,
-            gc_manifests_deleted: 0,
-            gc_bytes_reclaimed: 0,
-            pack_segment_format_version: PACK_SEGMENT_FORMAT_VERSION,
-            pack_frame_format_version: PACK_FRAME_FORMAT_VERSION,
-            pack_index_format_version: PACK_INDEX_FORMAT_VERSION,
-            pack_manifest_format_version: PACK_MANIFEST_FORMAT_VERSION,
-            tip_epoch: tip.epoch,
-            tip_segment_id: tip.segment_id.get(),
-            tip_frame_end: tip.frame_end,
-            tip_payload_sha256: format!("0x{}", hex::encode(tip.payload_sha256)),
-            scrubbed_frames: scrub.frames,
-            scrubbed_rows: scrub.rows,
-            scrubbed_puts: scrub.puts,
-            scrubbed_tombstones: scrub.tombstones,
-            scrubbed_payload_bytes: scrub.payload_bytes,
-            scrubbed_value_bytes: scrub.value_bytes,
-            scrub_elapsed_seconds: 0.5,
-            elapsed_seconds: 1.0,
-        };
-        publish_after_reopen(&fixture.arguments, &report, opened.pack, true)
-            .expect("replace legacy checkpoint with v2 marker");
-        let upgraded: Value = serde_json::from_slice(
-            &fs::read(pack_path.join("checkpoint.json")).expect("read upgraded checkpoint"),
-        )
-        .expect("decode upgraded checkpoint");
-        assert_eq!(upgraded["schema_version"], CHECKPOINT_SCHEMA_VERSION);
-        assert_eq!(upgraded["network_magic"], "0x334F454E");
-        assert_eq!(upgraded["tip_epoch"], tip.epoch);
-        assert_eq!(upgraded["tip_segment_id"], tip.segment_id.get());
-        assert_eq!(
-            upgraded["pack_segment_format_version"],
-            PACK_SEGMENT_FORMAT_VERSION
-        );
-        assert_eq!(
-            upgraded["tip_payload_sha256"],
-            format!("0x{}", hex::encode(tip.payload_sha256))
-        );
-    }
-
-    #[test]
-    fn legacy_adoption_rejects_incomplete_root_and_frame_claims() {
-        let temporary = tempdir().expect("temporary checkpoint parent");
-        let incomplete_path = temporary.path().join("incomplete");
-        let mut incomplete = create_legacy_fixture(&incomplete_path);
-        incomplete.marker["complete"] = json!(false);
-        write_legacy_marker(&incomplete_path, &incomplete.marker);
-        let error = open_or_resume_pack(&incomplete.arguments, incomplete.source_tip)
-            .err()
-            .expect("incomplete legacy marker must reject adoption");
-        assert!(error.to_string().contains("not a complete namespace"));
-
-        let root_path = temporary.path().join("root-mismatch");
-        let root_mismatch = create_legacy_fixture(&root_path);
-        write_legacy_marker(&root_path, &root_mismatch.marker);
-        let changed_tip = SourceTip {
-            root_internal: [0x77; 32],
-            ..root_mismatch.source_tip
-        };
-        let error = open_or_resume_pack(&root_mismatch.arguments, changed_tip)
-            .err()
-            .expect("source root mismatch must reject adoption");
-        assert!(error.to_string().contains("displayed root differs"));
-
-        let frame_path = temporary.path().join("frame-mismatch");
-        let mut frame_mismatch = create_legacy_fixture(&frame_path);
-        frame_mismatch.marker["frames"] = json!(3);
-        write_legacy_marker(&frame_path, &frame_mismatch.marker);
-        let error = open_or_resume_pack(&frame_mismatch.arguments, frame_mismatch.source_tip)
-            .err()
-            .expect("frame mismatch must reject adoption");
-        assert!(error.to_string().contains("frame count differs"));
-
-        let tip_path = temporary.path().join("tip-mismatch");
-        let mut tip_mismatch = create_legacy_fixture(&tip_path);
-        tip_mismatch.marker["tip_epoch"] = json!(tip_mismatch.tip.epoch + 1);
-        tip_mismatch.marker["tip_frame_end"] = json!(tip_mismatch.tip.frame_end);
-        tip_mismatch.marker["tip_payload_sha256"] = json!(format!(
-            "0x{}",
-            hex::encode(tip_mismatch.tip.payload_sha256)
-        ));
-        write_legacy_marker(&tip_path, &tip_mismatch.marker);
-        let error = open_or_resume_pack(&tip_mismatch.arguments, tip_mismatch.source_tip)
-            .err()
-            .expect("declared tip mismatch must reject adoption");
-        assert!(error.to_string().contains("tip identity differs"));
-    }
-
-    #[test]
-    fn legacy_adoption_rejects_recomputed_digest_before_identity_publication() {
-        let temporary = tempdir().expect("temporary checkpoint parent");
-        let pack_path = temporary.path().join("pack");
-        let mut fixture = create_legacy_fixture(&pack_path);
-        fixture.marker["source_namespace_sha256"] = json!(format!("0x{}", hex::encode([0x99; 32])));
-        write_legacy_marker(&pack_path, &fixture.marker);
-        let opened = open_or_resume_pack(&fixture.arguments, fixture.source_tip)
-            .expect("static legacy evidence remains structurally valid");
-        let mut exact_rows = fixture.operations.clone();
-        validate_existing_rows(&opened.pack, &mut exact_rows)
-            .expect("legacy values still match exactly");
-        let (digest, value_bytes) = namespace_evidence(&fixture.operations);
-        let error = validate_legacy_scan_evidence(
-            opened.legacy.as_ref().expect("legacy evidence"),
-            fixture.operations.len() as u64,
-            value_bytes,
-            digest,
-        )
-        .expect_err("recomputed namespace digest must reject adoption");
-        assert!(error.to_string().contains("namespace digest differs"));
-        assert!(!pack_path.join(BUILD_IDENTITY_FILE).exists());
-    }
-
-    #[test]
-    fn legacy_adoption_rejects_corrupt_tip_payload() {
-        let temporary = tempdir().expect("temporary checkpoint parent");
-        let pack_path = temporary.path().join("pack");
-        let fixture = create_legacy_fixture(&pack_path);
-        write_legacy_marker(&pack_path, &fixture.marker);
-        let payload_start = fixture.tip.frame_end - fixture.tip.payload_bytes;
-        let corrupt_offset = payload_start + 38;
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(pack_path.join(fixture.tip.segment_id.file_name()))
-            .expect("open legacy pack for corruption");
-        file.seek(SeekFrom::Start(corrupt_offset))
-            .expect("seek legacy value byte");
-        let mut byte = [0u8; 1];
-        file.read_exact(&mut byte).expect("read legacy value byte");
-        byte[0] ^= 0xff;
-        file.seek(SeekFrom::Start(corrupt_offset))
-            .expect("rewind legacy value byte");
-        file.write_all(&byte).expect("corrupt legacy value byte");
-        file.sync_data().expect("sync corrupt legacy payload");
-        drop(file);
-
-        let error = open_or_resume_pack(&fixture.arguments, fixture.source_tip)
-            .err()
-            .expect("corrupt tip payload must reject adoption");
-        assert!(format!("{error:#}").contains("checksum"));
-        assert!(!pack_path.join(BUILD_IDENTITY_FILE).exists());
-    }
-
-    #[test]
-    fn ordinary_resume_rejects_a_legacy_partial_pack_without_identity() {
-        let temporary = tempdir().expect("temporary checkpoint parent");
-        let pack_path = temporary.path().join("pack");
-        let mut pack = PackStore::create(
-            &pack_path,
-            pack_store_config(1024 * 1024).expect("valid legacy partial configuration"),
-        )
-        .expect("create legacy partial");
-        let mut key = [1u8; 33];
-        key[0] = STATE_NODE_PREFIX;
-        pack.append(&[PackOperation {
-            key,
-            kind: PackOpKind::Put(b"value".to_vec()),
-        }])
-        .expect("append legacy partial frame");
-        drop(pack);
-        let arguments = Arguments {
-            network_magic: 0x334F_454E,
-            mdbx_path: PathBuf::new(),
-            pack_path,
-            rows_per_frame: 1,
-            max_rows: None,
-            max_index_memory_bytes: 1024 * 1024,
-            adopt_legacy_complete_pack: false,
-            adopt_legacy_partial_pack: false,
-        };
-        let error = open_or_resume_pack(
-            &arguments,
-            SourceTip {
-                height: 1,
-                root_internal: [0x11; 32],
-            },
-        )
-        .err()
-        .expect("ordinary resume must reject missing identity");
-        assert!(format!("{error:#}").contains("legacy partial packs must be rebuilt"));
-    }
-
-    #[test]
-    fn explicit_legacy_partial_adoption_validates_full_frames_before_identity() {
-        let temporary = tempdir().expect("temporary checkpoint parent");
-        let pack_path = temporary.path().join("pack");
-        let operations = (1u8..=4)
-            .map(|suffix| {
-                let mut key = [suffix; 33];
-                key[0] = STATE_NODE_PREFIX;
-                PackOperation {
-                    key,
-                    kind: PackOpKind::Put(vec![suffix; 3]),
-                }
-            })
-            .collect::<Vec<_>>();
-        let mut pack = PackStore::create(
-            &pack_path,
-            pack_store_config(1024 * 1024).expect("valid legacy partial configuration"),
-        )
-        .expect("create legacy partial pack");
-        pack.append(&operations[..2]).expect("append first frame");
-        pack.append(&operations[2..]).expect("append second frame");
-        drop(pack);
-        let arguments = Arguments {
-            network_magic: 0x334F_454E,
-            mdbx_path: PathBuf::new(),
-            pack_path: pack_path.clone(),
-            rows_per_frame: 2,
-            max_rows: None,
-            max_index_memory_bytes: 1024 * 1024,
-            adopt_legacy_complete_pack: false,
-            adopt_legacy_partial_pack: true,
-        };
-        let source_tip = SourceTip {
-            height: 456,
-            root_internal: [0x66; 32],
-        };
-        let mut opened = open_or_resume_pack(&arguments, source_tip)
-            .expect("open explicit legacy partial adoption");
-        assert_eq!((opened.resumed_rows, opened.frames), (4, 2));
-        assert_eq!(opened.publish_identity_after_rows, Some(4));
-        assert!(!pack_path.join(BUILD_IDENTITY_FILE).exists());
-
-        let mut first = operations[..2].to_vec();
-        validate_existing_rows(&opened.pack, &mut first).expect("validate first prefix frame");
-        assert!(!pack_path.join(BUILD_IDENTITY_FILE).exists());
-        let mut second = operations[2..].to_vec();
-        validate_existing_rows(&opened.pack, &mut second).expect("validate final prefix frame");
-        publish_adopted_partial_identity(&mut opened.pack, &arguments, source_tip)
-            .expect("publish identity after complete prefix validation");
-        let identity = read_build_identity(&pack_path).expect("read adopted identity");
-        assert_eq!(identity.source_height, source_tip.height);
-        assert_eq!(identity.rows_per_frame, 2);
-    }
-
-    #[test]
-    fn legacy_partial_adoption_rejects_non_full_frame_geometry() {
-        let temporary = tempdir().expect("temporary checkpoint parent");
-        let pack_path = temporary.path().join("pack");
-        let mut key = [7u8; 33];
-        key[0] = STATE_NODE_PREFIX;
-        let mut pack = PackStore::create(
-            &pack_path,
-            pack_store_config(1024 * 1024).expect("valid legacy partial configuration"),
-        )
-        .expect("create legacy partial pack");
-        pack.append(&[PackOperation {
-            key,
-            kind: PackOpKind::Put(b"value".to_vec()),
-        }])
-        .expect("append short frame");
-        drop(pack);
-        let arguments = Arguments {
-            network_magic: 0x334F_454E,
-            mdbx_path: PathBuf::new(),
-            pack_path,
-            rows_per_frame: 2,
-            max_rows: None,
-            max_index_memory_bytes: 1024 * 1024,
-            adopt_legacy_complete_pack: false,
-            adopt_legacy_partial_pack: true,
-        };
-        let error = open_or_resume_pack(
-            &arguments,
-            SourceTip {
-                height: 1,
-                root_internal: [0x11; 32],
-            },
-        )
-        .err()
-        .expect("non-full legacy prefix frame must be rejected");
-        assert!(error.to_string().contains("not exactly 2 rows per frame"));
-        assert!(!arguments.pack_path.join(BUILD_IDENTITY_FILE).exists());
     }
 
     #[test]
@@ -1668,7 +740,7 @@ mod tests {
             tip_epoch: 0,
             tip_segment_id: PackSegmentId::INITIAL.get(),
             tip_frame_end: 30,
-            tip_payload_sha256: format!("0x{}", hex::encode([0u8; 32])),
+            tip_frame_sha256: format!("0x{}", hex::encode([0u8; 32])),
             scrubbed_frames: 1,
             scrubbed_rows: 10,
             scrubbed_puts: 10,
@@ -1721,8 +793,6 @@ mod tests {
             rows_per_frame: 2,
             max_rows: None,
             max_index_memory_bytes: 1024 * 1024,
-            adopt_legacy_complete_pack: false,
-            adopt_legacy_partial_pack: false,
         };
         let source_tip = SourceTip {
             height: 123,
@@ -1731,7 +801,9 @@ mod tests {
         let opened = open_or_resume_pack(&arguments, source_tip).expect("create partial pack");
         assert_eq!((opened.resumed_rows, opened.frames), (0, 0));
         let mut store = opened.pack;
-        store.append(&original).expect("append partial prefix");
+        store
+            .append_frame(checkpoint_frame_context(source_tip), &original)
+            .expect("append partial prefix");
         drop(store);
 
         let opened = open_or_resume_pack(&arguments, source_tip).expect("open partial pack");
@@ -1759,8 +831,6 @@ mod tests {
             rows_per_frame: 1,
             max_rows: None,
             max_index_memory_bytes: 1024 * 1024,
-            adopt_legacy_complete_pack: false,
-            adopt_legacy_partial_pack: false,
         };
         let source_tip = SourceTip {
             height: 123,
@@ -1772,10 +842,13 @@ mod tests {
         let mut key = [1u8; 33];
         key[0] = STATE_NODE_PREFIX;
         store
-            .append(&[PackOperation {
-                key,
-                kind: PackOpKind::Put(b"value".to_vec()),
-            }])
+            .append_frame(
+                checkpoint_frame_context(source_tip),
+                &[PackOperation {
+                    key,
+                    kind: PackOpKind::Put(b"value".to_vec()),
+                }],
+            )
             .expect("append partial prefix");
         drop(store);
 
@@ -1820,8 +893,6 @@ mod tests {
             rows_per_frame: 1,
             max_rows: None,
             max_index_memory_bytes: 1024 * 1024,
-            adopt_legacy_complete_pack: false,
-            adopt_legacy_partial_pack: false,
         };
         let source_tip = SourceTip {
             height: 123,
@@ -1834,10 +905,13 @@ mod tests {
             let mut key = [suffix; 33];
             key[0] = STATE_NODE_PREFIX;
             store
-                .append(&[PackOperation {
-                    key,
-                    kind: PackOpKind::Put(vec![suffix]),
-                }])
+                .append_frame(
+                    checkpoint_frame_context(source_tip),
+                    &[PackOperation {
+                        key,
+                        kind: PackOpKind::Put(vec![suffix]),
+                    }],
+                )
                 .expect("append one complete frame");
         }
         drop(store);
@@ -1876,7 +950,6 @@ mod tests {
                 "/source",
                 "--pack",
                 "/checkpoint",
-                "--adopt-legacy-complete-pack",
             ]
             .into_iter()
             .map(str::to_owned),
@@ -1885,25 +958,6 @@ mod tests {
         assert_eq!(arguments.network_magic, 0x334F_454E);
         assert_eq!(arguments.mdbx_path, Path::new("/source"));
         assert_eq!(arguments.pack_path, Path::new("/checkpoint"));
-        assert!(arguments.adopt_legacy_complete_pack);
-        assert!(!arguments.adopt_legacy_partial_pack);
-
-        let partial = parse_arguments_from(
-            [
-                "--network-magic",
-                "0x334F454E",
-                "--mdbx",
-                "/source",
-                "--pack",
-                "/checkpoint",
-                "--adopt-legacy-partial-pack",
-            ]
-            .into_iter()
-            .map(str::to_owned),
-        )
-        .expect("parse partial adoption command line");
-        assert!(partial.adopt_legacy_partial_pack);
-        assert!(!partial.adopt_legacy_complete_pack);
 
         let error = parse_arguments_from(
             ["--mdbx", "/source", "--pack", "/checkpoint"]
@@ -1912,44 +966,5 @@ mod tests {
         )
         .expect_err("network magic must be explicit");
         assert!(error.to_string().contains("--network-magic is required"));
-
-        let error = parse_arguments_from(
-            [
-                "--network-magic",
-                "0x334F454E",
-                "--mdbx",
-                "/source",
-                "--pack",
-                "/checkpoint",
-                "--max-rows",
-                "1",
-                "--adopt-legacy-complete-pack",
-            ]
-            .into_iter()
-            .map(str::to_owned),
-        )
-        .expect_err("legacy adoption cannot use a capped source scan");
-        assert!(
-            error
-                .to_string()
-                .contains("cannot be combined with --max-rows")
-        );
-
-        let error = parse_arguments_from(
-            [
-                "--network-magic",
-                "0x334F454E",
-                "--mdbx",
-                "/source",
-                "--pack",
-                "/checkpoint",
-                "--adopt-legacy-complete-pack",
-                "--adopt-legacy-partial-pack",
-            ]
-            .into_iter()
-            .map(str::to_owned),
-        )
-        .expect_err("legacy adoption modes must be mutually exclusive");
-        assert!(error.to_string().contains("mutually exclusive"));
     }
 }

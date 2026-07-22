@@ -60,11 +60,23 @@ scrubbing, indexing, and leases form an independent persistence subsystem.
 
 ### 2. Store one ordered operation stream per commit epoch
 
-Each frame contains a versioned header, epoch and block range, previous and
-resulting roots, row count, exact payload lengths, sorted row metadata, payload
-and index checksums, and a complete-frame footer. Rows contain the 32-byte node
-hash, put/tombstone operation, and exact existing serialized bytes. The `0xf0`
-namespace byte is implicit. Frames may rotate across bounded segment files but
+The only production frame format is v2 (`N3PACK02` / `N3PKEND2`). A frame has a
+fixed 224-byte header, sorted fixed-width 56-byte metadata rows, one contiguous
+value section, and a fixed 96-byte footer. The header binds the epoch, block
+range, previous and resulting roots, row count, exact section lengths, and
+domain-separated SHA-256 digests of the metadata and value sections. The footer
+binds the exact frame length and a domain-separated full-frame digest. Because
+the full-frame digest authenticates the fixed header and that header
+authenticates both variable sections, marker and checkpoint identity is
+transitive over every frame byte.
+
+Each metadata row contains the 32-byte node hash, put/tombstone kind, zeroed
+reserved bytes, original row sequence, relative value offset, and value length.
+The `0xf0` namespace byte is implicit. Metadata is strictly ordered by
+`(hash, sequence)`, while sequence values form an exact permutation of the
+input row ordinals. A tombstone has zero offset and zero length. An empty put
+has a real (possibly end-of-section) offset and zero length, so it cannot be
+confused with a tombstone. Frames may rotate across bounded segment files but
 one frame is never split.
 
 Repeated hashes are legal. Lookup and compaction use newest committed epoch,
@@ -78,24 +90,27 @@ reference counts and pruning deletes require versioned values.
 ### 3. Use immutable sorted index runs, not a mutable per-row database
 
 Every frame carries enough sorted hash/offset metadata to rebuild its index.
-Recent committed frames expose memory-mapped sorted runs with Bloom or xor
-filters. Background leveled compaction merge-walks index entries and publishes
-an immutable manifest; payload frames are not rewritten during ordinary index
-compaction. Point reads search runs newest first. Batch reads sort once and
-merge-walk relevant runs.
+The only production index-record format is v5: one fixed 64-byte record with a
+33-byte `0xf0 || hash` key, operation kind, zeroed reserved bytes, sequence,
+segment id, positioned value offset, value length, and trailing zeroed reserved
+bytes. A tombstone has a zero segment/offset/length location; an empty put keeps
+a real zero-length position. Recent committed frames expose memory-mapped
+sorted runs with blocked Bloom filters. Background leveled compaction
+merge-walks index entries and publishes an immutable manifest; payload frames
+are not rewritten during ordinary index compaction. Point reads search runs
+newest first. Batch reads sort once and merge-walk relevant runs.
 
-A snapshot pins one manifest generation and leases all referenced segments.
-Index files are derived and replaceable. Missing or corrupt derived files are
-rebuilt from committed frames before the store becomes ready.
+A snapshot pins one immutable `Arc<SegmentSet>` and one manifest-v3 generation.
+The manifest authenticates every referenced segment extent and run identity, so
+positioned reads cannot escape the pinned generation. Index files are derived
+and replaceable. Missing or corrupt derived files are rebuilt by streaming v5
+records from committed frame metadata before the store becomes ready.
 
-Large-run compaction emits physical index-run format v4 with an incremental
-blocked Bloom filter. Readers retain exact v3 xor16 compatibility. The
-canonical marker/checkpoint index compatibility family remains v3 because
-index runs are derived and rebuildable; a separate run-header constant records
-the actual v4 format. This migration therefore does not change frame bytes,
-payload offsets, manifests, roots, marker bytes, or checkpoint identity. An
-older v3-only binary rejects a v4 run and follows the existing canonical-frame
-index rebuild path, while unknown marker/checkpoint families still fail closed.
+Production readers accept only the current frame, index, and manifest formats.
+There is no v3 xor16, v4 index, or old-manifest compatibility branch in the
+node. Unknown numeric format families fail closed. Existing experimental stores
+are migrated offline by their matching old binary into one verified
+current-format checkpoint; compatibility code does not remain in the hot path.
 
 Compaction performs a two-pass k-way merge over already-sorted immutable
 inputs. Both passes validate every input checksum and record-order invariant.
@@ -137,10 +152,12 @@ Authoritative publication order is:
    high-water record in one durable MDBX transaction.
 4. Activate the prepared index run and visible in-memory StateService root.
 
-The high-water record includes format version, epoch, segment identity, byte
-offset, frame checksum, block range, and resulting root. A frame before the
-marker is orphaned durable data; a marker can never precede its durable frame.
-MDBX remains the sole decision of whether an epoch is canonical.
+The high-water record includes the exact format tuple, store identity, epoch,
+segment identity, byte offset, full-frame digest, block range, previous root,
+and resulting root. Shadow marker v5 and authority marker v3 bind that same
+frame context; reserved bytes must be zero. A frame before the marker is orphaned
+durable data; a marker can never precede its durable frame. MDBX remains the
+sole decision of whether an epoch is canonical.
 
 Alternative: commit MDBX first and append later. Rejected because a crash can
 publish an unrecoverable state root. A distributed two-phase commit is
@@ -160,10 +177,27 @@ require an explicit migration/checkpoint and cannot silently reinterpret data.
 
 ### 6. Recover from the committed high-water mark
 
-On startup, validate the MDBX marker against the referenced frame and root.
-An incomplete tail or complete suffix above the marker is truncated or ignored.
-A missing/corrupt committed frame is fatal. Missing derived indexes are rebuilt.
-Incomplete compaction outputs are discarded while source runs remain valid.
+On startup, acquire the writer lease and discover all artifacts without
+mutating persistent bytes. With an external horizon, the MDBX marker/root and
+its selected segment/frame extents are authoritative and must authenticate
+completely. For standalone `open()`, a readable manifest is the commit decision;
+an unreadable manifest is fatal, and its selected segment/frame prefix must
+authenticate completely. Manifests outside an external horizon, and every run
+and filter in either mode, are derived: recovery classifies them read-only and
+may rebuild them only after the authoritative prefix passes prevalidation. At
+that point recovery may remove recognized stale temporary artifacts, durably
+sync each directory whose entries changed, truncate an incomplete tail or
+complete orphan suffix, and rebuild missing or corrupt derived indexes.
+A missing/corrupt committed frame is fatal and leaves pack, run, and manifest
+bytes and names unchanged. Incomplete compaction outputs are discarded while
+source runs remain valid.
+
+Frame recovery hashes metadata and value sections in bounded chunks and scans
+fixed-width metadata without allocating the value section. Before it creates a
+temporary run, it conservatively accounts for the already resident runs,
+metadata/index entries, distinct-key workspace, fences, filter construction,
+encoded output, and validating readback. Exceeding the configured memory bound
+fails before any derived-file mutation; the exact declared bound succeeds.
 
 Deterministic crash campaigns terminate without unwinding at run sync, run
 rename, run-directory sync, manifest sync, manifest rename, and the boundary
@@ -184,10 +218,13 @@ lease.
 ### 7. Bound compaction, memory, and pipeline debt
 
 Configuration specifies maximum frame/segment sizes, recent runs, index levels,
-memory, pending bytes, and compaction debt. Exceeding a hard bound applies
-backpressure; it never drops versions needed by a pinned snapshot. Metrics
-expose logical/physical bytes, append and sync latency, lookups by level,
-filter effectiveness, rebuild time, debt, stalls, and shadow mismatches.
+memory, pending bytes, and compaction debt. Frame context, metadata bytes, value
+bytes, complete frame bytes, positioned index bytes, segment rotation, and all
+derived workspace are preflighted before allocation or file creation. Exceeding
+a hard bound applies backpressure; it never drops versions needed by a pinned
+snapshot. Metrics expose logical/physical bytes, append and sync latency,
+lookups by level, filter effectiveness, rebuild time, debt, stalls, and shadow
+mismatches.
 
 Compaction builds outside the writer lock but never changes the live read view.
 Adoption first constructs a complete candidate generation. Authority tooling
@@ -280,9 +317,9 @@ mixed-corpus overall and transaction-bearing rates.
 4. Add opt-in authoritative packs for the node namespace and retain immediate
    rollback to the last shadow-verified MDBX checkpoint.
 5. Prove sustained replay, bounded compaction, and restart/unwind behavior.
-6. Migrate derived indexes by reading v3 xor16 runs and emitting physical v4
-   blocked-Bloom compacted runs; prove mixed-generation reopen and v3-only
-   canonical-frame rebuild without changing marker or checkpoint identity.
+6. Migrate obsolete stores offline with their matching old binary, then emit
+   and verify one current-format checkpoint. The production reader has no
+   legacy frame, index, or manifest decoder.
 7. Consider a production default only after multiple independent hosts pass.
 8. Add bounded persistence pipelining as a separate measured promotion.
 

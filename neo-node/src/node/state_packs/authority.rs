@@ -11,23 +11,24 @@ use neo_state_packs::authority::{AUTHORITATIVE_HIGH_WATER_KEY, AuthoritativeHigh
 use neo_state_packs::{
     PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_KEY_BYTES,
     PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN,
-    PackFrameBuilder, PackSegmentId, PackStore, PackStoreConfig, PackStoreError, PackStoreOptions,
+    PackFrameContext, PackSegmentId, PackStore, PackStoreConfig, PackStoreError, PackStoreOptions,
     Snapshot as PackSnapshot,
 };
 use neo_state_service::mpt_store::{PreparedMptCommit, PreparedMptMetadataOverlay};
-use neo_state_service::{MptNodeReadGeneration, MptNodeReadSnapshot, MptNodeSnapshotFactory};
+use neo_state_service::{
+    MptNodeReadGeneration, MptNodeReadSnapshot, MptNodeSnapshotFactory,
+    read_current_local_root_from, read_local_state_root,
+};
 use neo_storage::persistence::providers::RuntimeStore;
-use neo_storage::persistence::{CoordinatedCommitMarker, RawReadOnlyStore, TransactionalStore};
+use neo_storage::persistence::{
+    CoordinatedCommitMarker, RawReadOnlyStore, Store, TransactionalStore,
+};
 use neo_storage::{StorageError, StorageResult};
 use parking_lot::{Condvar, Mutex, RwLock};
 use serde::Deserialize;
 use tracing::{error, warn};
 
-const CHECKPOINT_SCHEMA_VERSION: u32 = 3;
-const CURRENT_LOCAL_ROOT_INDEX: &[u8] = &[0x02];
-const STATE_ROOT_PREFIX: u8 = 0x01;
-const STATE_ROOT_VALUE_ROOT_OFFSET: usize = 5;
-const STATE_ROOT_VALUE_UNSIGNED_LEN: usize = 1 + 4 + 32;
+const CHECKPOINT_SCHEMA_VERSION: u32 = 4;
 
 fn validate_authoritative_transition(
     base_marker: AuthoritativeHighWaterRecord,
@@ -51,6 +52,14 @@ fn validate_authoritative_transition(
             "authoritative node packs cannot advance to block {block_index} with a changed state root and an empty node overlay"
         )));
     }
+    if materialized_node_operations.is_some_and(|operations| operations > 0)
+        && block_index <= base_marker.block_index
+    {
+        return Err(StorageError::invalid_operation(format!(
+            "authoritative node packs cannot bind a non-empty frame to block {block_index} after canonical block {}",
+            base_marker.block_index
+        )));
+    }
     Ok(())
 }
 
@@ -70,7 +79,7 @@ struct CheckpointMarker {
     tip_epoch: u64,
     tip_segment_id: u64,
     tip_frame_end: u64,
-    tip_payload_sha256: String,
+    tip_frame_sha256: String,
 }
 
 struct PublishedGeneration {
@@ -377,9 +386,12 @@ impl AuthoritativeNodePack {
             &checkpoint.source_root_internal_bytes,
             "checkpoint source root",
         )?;
-        let checkpoint_payload =
-            decode_hash(&checkpoint.tip_payload_sha256, "checkpoint tip checksum")?;
-        let state_tip = read_state_tip(state_backing)?;
+        let checkpoint_frame_digest =
+            decode_hash(&checkpoint.tip_frame_sha256, "checkpoint tip frame digest")?;
+        let state_snapshot = state_backing.snapshot();
+        let state_root = read_current_local_root_from(state_snapshot.as_ref())
+            .context("read current local StateService root from startup snapshot")?;
+        let state_tip = (state_root.index(), state_root.root_hash().to_array());
         let durable_marker = state_backing
             .maintenance_metadata(AUTHORITATIVE_HIGH_WATER_KEY)
             .context("read authoritative pack high-water marker")?;
@@ -403,6 +415,12 @@ impl AuthoritativeNodePack {
                     marker.block_index >= checkpoint.source_height,
                     "authoritative marker predates its base checkpoint"
                 );
+                validate_authoritative_frame_history(
+                    state_snapshot.as_ref(),
+                    marker,
+                    checkpoint.source_height,
+                    checkpoint_root,
+                )?;
                 let store = PackStore::open_at_commit_horizon(
                     path,
                     pack_config,
@@ -422,7 +440,13 @@ impl AuthoritativeNodePack {
                     epoch: checkpoint.tip_epoch,
                     segment_id: PackSegmentId::new(checkpoint.tip_segment_id),
                     frame_end: checkpoint.tip_frame_end,
-                    payload_sha256: checkpoint_payload,
+                    context: PackFrameContext::new(
+                        checkpoint.source_height,
+                        checkpoint.source_height,
+                        checkpoint_root,
+                        checkpoint_root,
+                    ),
+                    frame_sha256: checkpoint_frame_digest,
                 };
                 let store =
                     PackStore::open_at_commit_horizon(path, pack_config, Some(checkpoint_horizon))
@@ -436,7 +460,8 @@ impl AuthoritativeNodePack {
                     receipt.epoch == checkpoint.tip_epoch
                         && receipt.segment_id.get() == checkpoint.tip_segment_id
                         && receipt.frame_end == checkpoint.tip_frame_end
-                        && receipt.payload_sha256 == checkpoint_payload,
+                        && receipt.context == checkpoint_horizon.context
+                        && receipt.frame_sha256 == checkpoint_frame_digest,
                     "authoritative checkpoint tip differs from checkpoint.json"
                 );
                 let marker = AuthoritativeHighWaterRecord::new(
@@ -507,53 +532,13 @@ impl AuthoritativeNodePack {
         prepared.materialize_deferred_node_overlay()?;
         let expected_operations = prepared.materialized_node_operation_count();
         let expected_value_bytes = prepared.materialized_node_value_bytes();
-        let mut frame_builder = (expected_operations > 0)
-            .then(|| PackFrameBuilder::with_value_bytes(expected_operations, expected_value_bytes))
-            .transpose()
-            .map_err(|error| {
-                StorageError::invalid_operation(format!(
-                    "authoritative pack frame initialization failed: {error:#}"
-                ))
-            })?;
-        let mut conversion_error = None;
-        prepared.visit_materialized_node_overlay(&mut |key: &[u8], value: Option<&[u8]>| {
-            if conversion_error.is_some() {
-                return;
-            }
-            match exact_node_key(key) {
-                Ok(key) => match frame_builder.as_mut() {
-                    Some(builder) => {
-                        if let Err(error) = builder.push_key(key, value) {
-                            conversion_error = Some(StorageError::invalid_operation(format!(
-                                "authoritative pack frame encoding failed: {error:#}"
-                            )));
-                        }
-                    }
-                    None => {
-                        conversion_error = Some(StorageError::invalid_operation(
-                            "authoritative node overlay exceeded its declared operation count",
-                        ));
-                    }
-                },
-                Err(error) => conversion_error = Some(error),
-            }
-        });
-        if let Some(error) = conversion_error {
-            return Err(error);
-        }
-        let encoded_operations = frame_builder.as_ref().map_or(0, PackFrameBuilder::len);
-        if encoded_operations != expected_operations {
-            return Err(StorageError::invalid_operation(
-                "authoritative node overlay conversion omitted an operation",
-            ));
-        }
         validate_authoritative_transition(
             base_marker,
             block_index,
             state_root,
-            Some(encoded_operations),
+            Some(expected_operations),
         )?;
-        let has_operations = encoded_operations > 0;
+        let has_operations = expected_operations > 0;
 
         let mut writer = loop {
             self.maintenance.ensure_healthy()?;
@@ -577,13 +562,50 @@ impl AuthoritativeNodePack {
             )
         })?;
         let sealed = if !has_operations {
+            // The coordinated commit contract requires both overlay halves to
+            // be consumed, including an empty node overlay.
+            prepared.visit_materialized_node_overlay(&mut |_key: &[u8], _value: Option<&[u8]>| {});
             None
         } else {
-            let pending = match store.prepare_built_append(
-                frame_builder
-                    .take()
-                    .expect("non-empty frame has an initialized builder"),
-            ) {
+            let block_start = base_marker.block_index.checked_add(1).ok_or_else(|| {
+                StorageError::invalid_operation(
+                    "authoritative frame block range overflows after u32::MAX",
+                )
+            })?;
+            let context =
+                PackFrameContext::new(block_start, block_index, base_marker.state_root, state_root);
+            let mut frame_builder = store
+                .frame_builder_with_value_bytes(context, expected_operations, expected_value_bytes)
+                .map_err(|error| {
+                    StorageError::invalid_operation(format!(
+                        "authoritative pack frame initialization failed: {error:#}"
+                    ))
+                })?;
+            let mut conversion_error = None;
+            prepared.visit_materialized_node_overlay(&mut |key: &[u8], value: Option<&[u8]>| {
+                if conversion_error.is_some() {
+                    return;
+                }
+                match exact_node_key(key) {
+                    Ok(key) => {
+                        if let Err(error) = frame_builder.push_key(key, value) {
+                            conversion_error = Some(StorageError::invalid_operation(format!(
+                                "authoritative pack frame encoding failed: {error:#}"
+                            )));
+                        }
+                    }
+                    Err(error) => conversion_error = Some(error),
+                }
+            });
+            if let Some(error) = conversion_error {
+                return Err(error);
+            }
+            if frame_builder.len() != expected_operations {
+                return Err(StorageError::invalid_operation(
+                    "authoritative node overlay conversion omitted an operation",
+                ));
+            }
+            let pending = match store.prepare_built_append(frame_builder) {
                 Ok(pending) => pending,
                 Err(error) => {
                     *writer = None;
@@ -732,38 +754,66 @@ fn validate_checkpoint(marker: &CheckpointMarker, network_magic: u32) -> anyhow:
     Ok(())
 }
 
+#[cfg(test)]
 fn read_state_tip(store: &RuntimeStore) -> anyhow::Result<(u32, [u8; 32])> {
-    let index_bytes = store
-        .try_get_bytes_result(CURRENT_LOCAL_ROOT_INDEX)
-        .context("read StateService current local root index")?
-        .context("StateService current local root index is absent")?;
-    let index = u32::from_le_bytes(
-        index_bytes
-            .as_slice()
-            .try_into()
-            .context("StateService current local root index is not four bytes")?,
-    );
-    let mut key = Vec::with_capacity(5);
-    key.push(STATE_ROOT_PREFIX);
-    key.extend_from_slice(&index.to_be_bytes());
-    let value = store
-        .try_get_bytes_result(&key)
-        .context("read StateService current root record")?
-        .context("StateService current root record is absent")?;
+    let root = neo_state_service::read_current_local_root(store)
+        .context("read current local StateService root")?;
+    Ok((root.index(), root.root_hash().to_array()))
+}
+
+fn validate_authoritative_frame_history<R>(
+    snapshot: &R,
+    marker: AuthoritativeHighWaterRecord,
+    checkpoint_height: u32,
+    checkpoint_root: [u8; 32],
+) -> anyhow::Result<()>
+where
+    R: RawReadOnlyStore + ?Sized,
+{
+    let context = marker.frame_context;
     ensure!(
-        value.len() >= STATE_ROOT_VALUE_UNSIGNED_LEN,
-        "StateService current root record is truncated"
+        context.block_end <= marker.block_index,
+        "authoritative frame ends after the canonical StateService tip"
     );
+    let resulting = read_local_state_root(snapshot, context.block_end).with_context(|| {
+        format!(
+            "read authoritative frame resulting root at block {}",
+            context.block_end
+        )
+    })?;
     ensure!(
-        u32::from_le_bytes(value[1..5].try_into().expect("four-byte root index")) == index,
-        "StateService root record index does not match its key"
+        resulting.root_hash().to_array() == context.resulting_root,
+        "authoritative frame resulting root differs from StateService history at block {}",
+        context.block_end
     );
-    Ok((
-        index,
-        value[STATE_ROOT_VALUE_ROOT_OFFSET..STATE_ROOT_VALUE_UNSIGNED_LEN]
-            .try_into()
-            .expect("fixed StateService root range"),
-    ))
+
+    let checkpoint_context = PackFrameContext::new(
+        checkpoint_height,
+        checkpoint_height,
+        checkpoint_root,
+        checkpoint_root,
+    );
+    if context == checkpoint_context {
+        return Ok(());
+    }
+
+    if context.block_start == 0 {
+        ensure!(
+            context.previous_root == [0; 32],
+            "authoritative genesis frame must bind the zero previous root"
+        );
+        return Ok(());
+    }
+
+    let previous_index = context.block_start - 1;
+    let previous = read_local_state_root(snapshot, previous_index).with_context(|| {
+        format!("read authoritative frame previous root at block {previous_index}")
+    })?;
+    ensure!(
+        previous.root_hash().to_array() == context.previous_root,
+        "authoritative frame previous root differs from StateService history at block {previous_index}"
+    );
+    Ok(())
 }
 
 fn parse_network_magic(value: &str) -> anyhow::Result<u32> {
@@ -852,7 +902,8 @@ mod tests {
         assert!(!node_operations.is_empty());
         let mut pack =
             PackStore::create(&pack_path, test_pack_config(64 * 1024 * 1024)).expect("create pack");
-        pack.append(&node_operations).expect("append source nodes");
+        pack.append_frame(PackFrameContext::new(0, 0, root, root), &node_operations)
+            .expect("append source nodes");
         let receipt = pack.last_frame_receipt().expect("pack receipt");
         drop(pack);
         let checkpoint = json!({
@@ -870,7 +921,7 @@ mod tests {
             "tip_epoch": receipt.epoch,
             "tip_segment_id": receipt.segment_id.get(),
             "tip_frame_end": receipt.frame_end,
-            "tip_payload_sha256": format!("0x{}", hex::encode(receipt.payload_sha256)),
+            "tip_frame_sha256": format!("0x{}", hex::encode(receipt.frame_sha256)),
         });
         fs::write(
             pack_path.join("checkpoint.json"),
@@ -990,7 +1041,8 @@ mod tests {
             epoch: 7,
             segment_id: PackSegmentId::INITIAL,
             frame_end: 4_096,
-            frame_payload_sha256: [0x22; 32],
+            frame_sha256: [0x22; 32],
+            frame_context: PackFrameContext::new(40, 42, [0x10; 32], [0x33; 32]),
             block_index: 42,
             state_root: [0x33; 32],
         };
@@ -1009,6 +1061,105 @@ mod tests {
             .expect("metadata-only forward block keeps the root");
         validate_authoritative_transition(base, 43, [0x44; 32], Some(1))
             .expect("a changed root may be bound to materialized node mutations");
+    }
+
+    #[test]
+    fn authoritative_frame_history_binds_result_and_previous_roots() {
+        let mut roots = MemoryStore::new();
+        let previous_root = [0x44; 32];
+        let resulting_root = [0x55; 32];
+        for (index, root) in [(4, previous_root), (5, resulting_root)] {
+            roots
+                .put(
+                    neo_state_service::Keys::state_root(index),
+                    neo_state_service::StateRoot::new_current(
+                        index,
+                        neo_primitives::UInt256::from(root),
+                    )
+                    .to_array(),
+                )
+                .expect("write historical StateService root");
+        }
+        let marker = AuthoritativeHighWaterRecord {
+            network_magic: 0x334F_454E,
+            store_identity: [0x11; 32],
+            epoch: 7,
+            segment_id: PackSegmentId::INITIAL,
+            frame_end: 4_096,
+            frame_sha256: [0x22; 32],
+            frame_context: PackFrameContext::new(5, 5, previous_root, resulting_root),
+            block_index: 6,
+            state_root: resulting_root,
+        };
+        validate_authoritative_frame_history(&roots, marker, 0, [0x10; 32])
+            .expect("valid incremental frame history");
+
+        roots
+            .put(
+                neo_state_service::Keys::state_root(5),
+                neo_state_service::StateRoot::new_current(
+                    5,
+                    neo_primitives::UInt256::from([0x66; 32]),
+                )
+                .to_array(),
+            )
+            .expect("replace resulting root");
+        let error = validate_authoritative_frame_history(&roots, marker, 0, [0x10; 32])
+            .expect_err("historical resulting-root mismatch must fail");
+        assert!(error.to_string().contains("resulting root differs"));
+
+        roots
+            .put(
+                neo_state_service::Keys::state_root(5),
+                neo_state_service::StateRoot::new_current(
+                    5,
+                    neo_primitives::UInt256::from(resulting_root),
+                )
+                .to_array(),
+            )
+            .expect("restore resulting root");
+        roots
+            .put(
+                neo_state_service::Keys::state_root(4),
+                neo_state_service::StateRoot::new_current(
+                    4,
+                    neo_primitives::UInt256::from([0x77; 32]),
+                )
+                .to_array(),
+            )
+            .expect("replace previous root");
+        let error = validate_authoritative_frame_history(&roots, marker, 0, [0x10; 32])
+            .expect_err("historical previous-root mismatch must fail");
+        assert!(error.to_string().contains("previous root differs"));
+    }
+
+    #[test]
+    fn authoritative_checkpoint_context_is_an_explicit_snapshot_anchor() {
+        let mut roots = MemoryStore::new();
+        let checkpoint_root = [0x55; 32];
+        roots
+            .put(
+                neo_state_service::Keys::state_root(5),
+                neo_state_service::StateRoot::new_current(
+                    5,
+                    neo_primitives::UInt256::from(checkpoint_root),
+                )
+                .to_array(),
+            )
+            .expect("write checkpoint root");
+        let marker = AuthoritativeHighWaterRecord {
+            network_magic: 0x334F_454E,
+            store_identity: [0x11; 32],
+            epoch: 7,
+            segment_id: PackSegmentId::INITIAL,
+            frame_end: 4_096,
+            frame_sha256: [0x22; 32],
+            frame_context: PackFrameContext::new(5, 5, checkpoint_root, checkpoint_root),
+            block_index: 8,
+            state_root: checkpoint_root,
+        };
+        validate_authoritative_frame_history(&roots, marker, 5, checkpoint_root)
+            .expect("checkpoint frame binds a snapshot rather than a block transition");
     }
 
     fn exact_oracle_node_entries(oracle: &MemoryStore) -> Vec<(Vec<u8>, Vec<u8>)> {
@@ -1720,11 +1871,22 @@ mod tests {
         key[0] = 0xF0;
         let mut latest_snapshot = None;
         for epoch in 0..9u8 {
+            let previous_root = epoch
+                .checked_sub(1)
+                .map_or([0; 32], |previous| [previous; 32]);
             let prepared = store
-                .prepare_append(&[PackOperation {
-                    key,
-                    kind: PackOpKind::Put(vec![epoch]),
-                }])
+                .prepare_frame(
+                    PackFrameContext::new(
+                        u32::from(epoch),
+                        u32::from(epoch),
+                        previous_root,
+                        [epoch; 32],
+                    ),
+                    &[PackOperation {
+                        key,
+                        kind: PackOpKind::Put(vec![epoch]),
+                    }],
+                )
                 .expect("prepare unmaintained frame");
             latest_snapshot = Some(
                 store
@@ -1825,7 +1987,17 @@ mod tests {
                 })
                 .collect();
             let prepared = store
-                .prepare_append(&operations)
+                .prepare_frame(
+                    PackFrameContext::new(
+                        u32::try_from(epoch).expect("test epoch fits u32"),
+                        u32::try_from(epoch).expect("test epoch fits u32"),
+                        epoch
+                            .checked_sub(1)
+                            .map_or([0; 32], |previous| [previous as u8; 32]),
+                        [epoch as u8; 32],
+                    ),
+                    &operations,
+                )
                 .expect("prepare unmaintained frame");
             drop(
                 store

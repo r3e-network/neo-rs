@@ -26,12 +26,13 @@
 //! - Bounded counters for frames and node operations.
 
 use crate::{
-    PACK_KEY_BYTES, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackCommitHorizon,
-    PackFrameReceipt, PackOpKind, PackOperation, PackSegmentId, PackStore, PackStoreConfig,
-    PreparedAppend,
+    PACK_FRAME_FORMAT_VERSION, PACK_KEY_BYTES, PACK_SEGMENT_FORMAT_VERSION,
+    PACK_SEGMENT_HEADER_LEN, PackCommitHorizon, PackFrameContext, PackFrameReceipt, PackOpKind,
+    PackOperation, PackSegmentId, PackStore, PackStoreConfig, PreparedAppend,
 };
 use anyhow::{Context, Result, ensure};
 use std::path::Path;
+use thiserror::Error;
 
 /// Namespace prefix of StateService MPT node keys (`0xf0 || node_hash`).
 /// Only keys with this prefix and exactly [`PACK_KEY_BYTES`] bytes are
@@ -52,11 +53,9 @@ pub const SHADOW_HIGH_WATER_KEY: &[u8] = b"neo_state_packs_high_water";
 pub const SHADOW_DEGRADED_KEY: &[u8] = b"neo_state_packs_degraded";
 
 const HIGH_WATER_MAGIC: &[u8; 8] = b"N3PHWM01";
-const HIGH_WATER_FORMAT_VERSION: u32 = 4;
-/// magic(8) + marker version(4) + segment format(4) + epoch(8) + frames(8) + segment id(8)
-/// + frame end(8) + ops(8) + value bytes(8) + payload checksum(32)
-/// + block min(4) + block max(4) + root(32).
-pub const HIGH_WATER_RECORD_LEN: usize = 136;
+const HIGH_WATER_FORMAT_VERSION: u32 = 5;
+/// Exact encoded byte length of [`ShadowHighWaterRecord`].
+pub const HIGH_WATER_RECORD_LEN: usize = 176;
 
 const DEGRADED_MAGIC: &[u8; 8] = b"N3PSDG01";
 const DEGRADED_FORMAT_VERSION: u32 = 1;
@@ -66,7 +65,65 @@ const DEGRADED_KNOWN_FLAGS: u32 = DEGRADED_HAS_BLOCK_INDEX | DEGRADED_HAS_STATE_
 /// Exact encoded byte length of [`ShadowDegradedRecord`].
 pub const SHADOW_DEGRADED_RECORD_LEN: usize = 52;
 
-const NO_BLOCK_INDEX: u32 = u32::MAX;
+/// Strict shadow high-water marker decode failure.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum ShadowHighWaterError {
+    /// Record length differs from the fixed v5 layout.
+    #[error("shadow high-water marker length is {actual}, expected {expected}")]
+    InvalidLength {
+        /// Observed byte length.
+        actual: usize,
+        /// Required byte length.
+        expected: usize,
+    },
+    /// Magic does not identify the shadow high-water family.
+    #[error("shadow high-water marker magic is invalid")]
+    InvalidMagic,
+    /// Marker schema is not the current v5 layout.
+    #[error("shadow high-water marker schema {0} is unsupported")]
+    UnsupportedSchema(u32),
+    /// Segment format differs from this binary.
+    #[error("shadow marker segment format {actual} differs from binary {expected}")]
+    SegmentFormatMismatch {
+        /// Persisted segment format.
+        actual: u32,
+        /// Current segment format.
+        expected: u32,
+    },
+    /// Frame format differs from this binary.
+    #[error("shadow marker frame format {actual} differs from binary {expected}")]
+    FrameFormatMismatch {
+        /// Persisted frame format.
+        actual: u32,
+        /// Current frame format.
+        expected: u32,
+    },
+    /// Reserved marker bits are non-canonical.
+    #[error("shadow high-water marker reserved field is nonzero")]
+    NonZeroReserved,
+    /// Epoch and total-frame count disagree.
+    #[error("shadow high-water marker frame count is inconsistent")]
+    InvalidFrameCount,
+    /// Segment identity is impossible for the named epoch.
+    #[error("shadow high-water marker segment {segment_id} cannot contain epoch {epoch}")]
+    InvalidSegmentId {
+        /// Persisted segment identity.
+        segment_id: PackSegmentId,
+        /// Persisted frame epoch.
+        epoch: u64,
+    },
+    /// Frame placement does not extend past the segment header.
+    #[error("shadow high-water marker frame end is invalid")]
+    InvalidFrameEnd,
+    /// The frame context names a reversed block range.
+    #[error("shadow high-water marker block range {block_start}..={block_end} is reversed")]
+    InvalidBlockRange {
+        /// First block represented by the frame.
+        block_start: u32,
+        /// Last block represented by the frame.
+        block_end: u32,
+    },
+}
 
 /// Outcome of one mirrored commit window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,13 +161,11 @@ impl PreparedShadowFrame {
 /// [`SHADOW_HIGH_WATER_KEY`] for every successfully mirrored window.
 ///
 /// Layout (all integers little-endian):
-/// `magic(8) | marker_version(4) | segment_format_version(4) | epoch(8)
-/// | frames_total(8) | segment_id(8) | frame_end(8) | node_operations(8)
-/// | node_put_value_bytes(8) | frame payload SHA-256(32) | block_min(4)
-/// | block_max(4) | state_root(32)`.
-///
-/// `block_min`/`block_max` are `u32::MAX` when the window carried no
-/// state-root record; `state_root` is all-zero when unknown.
+/// `magic(8) | marker_version(4) | segment_format_version(4)
+/// | frame_format_version(4) | reserved_zero(4) | epoch(8) | frames_total(8)
+/// | segment_id(8) | frame_end(8) | node_operations(8)
+/// | node_put_value_bytes(8) | block_start(4) | block_end(4)
+/// | previous_root(32) | resulting_root(32) | frame_sha256(32)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShadowHighWaterRecord {
     /// Commit epoch of the newest mirrored frame.
@@ -125,24 +180,18 @@ pub struct ShadowHighWaterRecord {
     pub node_operations: u64,
     /// Put value bytes mirrored by the newest frame.
     pub node_put_value_bytes: u64,
-    /// SHA-256 checksum of the newest frame payload.
-    pub frame_payload_sha256: [u8; 32],
-    /// Lowest block index whose state-root record was mirrored, if any.
-    pub block_index_min: Option<u32>,
-    /// Highest block index whose state-root record was mirrored, if any.
-    pub block_index_max: Option<u32>,
-    /// State root hash of `block_index_max`, if observed.
-    pub state_root: Option<[u8; 32]>,
+    /// Exact canonical block/root transition represented by the frame.
+    pub frame_context: PackFrameContext,
+    /// Domain-separated digest of the newest frame's authenticated header.
+    ///
+    /// The header binds both variable sections; the footer binds this digest
+    /// to the epoch and exact complete-frame length.
+    pub frame_sha256: [u8; 32],
 }
 
 impl ShadowHighWaterRecord {
     /// Builds the marker for one mirrored window.
-    pub fn new(
-        receipt: &ShadowFrameReceipt,
-        block_index_min: Option<u32>,
-        block_index_max: Option<u32>,
-        state_root: Option<[u8; 32]>,
-    ) -> Self {
+    pub const fn new(receipt: &ShadowFrameReceipt) -> Self {
         Self {
             epoch: receipt.epoch,
             frames_total: receipt.frames_total,
@@ -150,10 +199,8 @@ impl ShadowHighWaterRecord {
             frame_end: receipt.frame.frame_end,
             node_operations: receipt.node_operations,
             node_put_value_bytes: receipt.node_put_value_bytes,
-            frame_payload_sha256: receipt.frame.payload_sha256,
-            block_index_min,
-            block_index_max,
-            state_root,
+            frame_context: receipt.frame.context,
+            frame_sha256: receipt.frame.frame_sha256,
         }
     }
 
@@ -163,89 +210,95 @@ impl ShadowHighWaterRecord {
         bytes.extend_from_slice(HIGH_WATER_MAGIC);
         bytes.extend_from_slice(&HIGH_WATER_FORMAT_VERSION.to_le_bytes());
         bytes.extend_from_slice(&PACK_SEGMENT_FORMAT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&PACK_FRAME_FORMAT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&self.epoch.to_le_bytes());
         bytes.extend_from_slice(&self.frames_total.to_le_bytes());
         bytes.extend_from_slice(&self.segment_id.get().to_le_bytes());
         bytes.extend_from_slice(&self.frame_end.to_le_bytes());
         bytes.extend_from_slice(&self.node_operations.to_le_bytes());
         bytes.extend_from_slice(&self.node_put_value_bytes.to_le_bytes());
-        bytes.extend_from_slice(&self.frame_payload_sha256);
-        bytes.extend_from_slice(&self.block_index_min.unwrap_or(NO_BLOCK_INDEX).to_le_bytes());
-        bytes.extend_from_slice(&self.block_index_max.unwrap_or(NO_BLOCK_INDEX).to_le_bytes());
-        bytes.extend_from_slice(&self.state_root.unwrap_or([0u8; 32]));
+        bytes.extend_from_slice(&self.frame_context.block_start.to_le_bytes());
+        bytes.extend_from_slice(&self.frame_context.block_end.to_le_bytes());
+        bytes.extend_from_slice(&self.frame_context.previous_root);
+        bytes.extend_from_slice(&self.frame_context.resulting_root);
+        bytes.extend_from_slice(&self.frame_sha256);
         debug_assert_eq!(bytes.len(), HIGH_WATER_RECORD_LEN);
         bytes
     }
 
-    /// Decodes a marker record; returns `None` for any malformed input so
-    /// recovery can treat an unreadable marker as "packs not committed".
-    pub fn decode(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() != HIGH_WATER_RECORD_LEN || &bytes[0..8] != HIGH_WATER_MAGIC {
-            return None;
+    /// Strictly decodes the current marker layout.
+    pub fn decode(bytes: &[u8]) -> std::result::Result<Self, ShadowHighWaterError> {
+        if bytes.len() != HIGH_WATER_RECORD_LEN {
+            return Err(ShadowHighWaterError::InvalidLength {
+                actual: bytes.len(),
+                expected: HIGH_WATER_RECORD_LEN,
+            });
         }
-        if u32::from_le_bytes(bytes[8..12].try_into().ok()?) != HIGH_WATER_FORMAT_VERSION {
-            return None;
+        if &bytes[0..8] != HIGH_WATER_MAGIC {
+            return Err(ShadowHighWaterError::InvalidMagic);
         }
-        if u32::from_le_bytes(bytes[12..16].try_into().ok()?) != PACK_SEGMENT_FORMAT_VERSION {
-            return None;
+        let schema = u32_at(bytes, 8);
+        if schema != HIGH_WATER_FORMAT_VERSION {
+            return Err(ShadowHighWaterError::UnsupportedSchema(schema));
         }
-        let u64_at = |offset: usize| -> Option<u64> {
-            Some(u64::from_le_bytes(
-                bytes.get(offset..offset + 8)?.try_into().ok()?,
-            ))
-        };
-        let u32_at = |offset: usize| -> Option<u32> {
-            Some(u32::from_le_bytes(
-                bytes.get(offset..offset + 4)?.try_into().ok()?,
-            ))
-        };
-        let epoch = u64_at(16)?;
-        let frames_total = u64_at(24)?;
+        let segment_format = u32_at(bytes, 12);
+        if segment_format != PACK_SEGMENT_FORMAT_VERSION {
+            return Err(ShadowHighWaterError::SegmentFormatMismatch {
+                actual: segment_format,
+                expected: PACK_SEGMENT_FORMAT_VERSION,
+            });
+        }
+        let frame_format = u32_at(bytes, 16);
+        if frame_format != PACK_FRAME_FORMAT_VERSION {
+            return Err(ShadowHighWaterError::FrameFormatMismatch {
+                actual: frame_format,
+                expected: PACK_FRAME_FORMAT_VERSION,
+            });
+        }
+        if u32_at(bytes, 20) != 0 {
+            return Err(ShadowHighWaterError::NonZeroReserved);
+        }
+        let epoch = u64_at(bytes, 24);
+        let frames_total = u64_at(bytes, 32);
         if epoch.checked_add(1) != Some(frames_total) {
-            return None;
+            return Err(ShadowHighWaterError::InvalidFrameCount);
         }
-        let segment_id = PackSegmentId::new(u64_at(32)?);
+        let segment_id = PackSegmentId::new(u64_at(bytes, 40));
         if segment_id.get() > epoch {
-            return None;
+            return Err(ShadowHighWaterError::InvalidSegmentId { segment_id, epoch });
         }
-        let frame_end = u64_at(40)?;
+        let frame_end = u64_at(bytes, 48);
         if frame_end <= PACK_SEGMENT_HEADER_LEN {
-            return None;
+            return Err(ShadowHighWaterError::InvalidFrameEnd);
         }
-        let block_index_min = match u32_at(96)? {
-            NO_BLOCK_INDEX => None,
-            value => Some(value),
+        let frame_context = PackFrameContext {
+            block_start: u32_at(bytes, 72),
+            block_end: u32_at(bytes, 76),
+            previous_root: bytes[80..112]
+                .try_into()
+                .expect("fixed previous-root range"),
+            resulting_root: bytes[112..144]
+                .try_into()
+                .expect("fixed resulting-root range"),
         };
-        let block_index_max = match u32_at(100)? {
-            NO_BLOCK_INDEX => None,
-            value => Some(value),
-        };
-        let mut frame_payload_sha256 = [0u8; 32];
-        frame_payload_sha256.copy_from_slice(bytes.get(64..96)?);
-        let mut state_root = [0u8; 32];
-        state_root.copy_from_slice(bytes.get(104..136)?);
-        if block_index_min.is_some() != block_index_max.is_some()
-            || block_index_min
-                .zip(block_index_max)
-                .is_some_and(|(min, max)| min > max)
-        {
-            return None;
+        if frame_context.block_start > frame_context.block_end {
+            return Err(ShadowHighWaterError::InvalidBlockRange {
+                block_start: frame_context.block_start,
+                block_end: frame_context.block_end,
+            });
         }
-        let state_root = (state_root != [0u8; 32]).then_some(state_root);
-        if state_root.is_some() && block_index_max.is_none() {
-            return None;
-        }
-        Some(Self {
+        Ok(Self {
             epoch,
             frames_total,
             segment_id,
             frame_end,
-            node_operations: u64_at(48)?,
-            node_put_value_bytes: u64_at(56)?,
-            frame_payload_sha256,
-            block_index_min,
-            block_index_max,
-            state_root,
+            node_operations: u64_at(bytes, 56),
+            node_put_value_bytes: u64_at(bytes, 64),
+            frame_context,
+            frame_sha256: bytes[144..176]
+                .try_into()
+                .expect("fixed frame-digest range"),
         })
     }
 
@@ -255,9 +308,26 @@ impl ShadowHighWaterRecord {
             epoch: self.epoch,
             segment_id: self.segment_id,
             frame_end: self.frame_end,
-            payload_sha256: self.frame_payload_sha256,
+            context: self.frame_context,
+            frame_sha256: self.frame_sha256,
         }
     }
+}
+
+fn u32_at(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes(
+        bytes[offset..offset + 4]
+            .try_into()
+            .expect("fixed u32 range"),
+    )
+}
+
+fn u64_at(bytes: &[u8], offset: usize) -> u64 {
+    u64::from_le_bytes(
+        bytes[offset..offset + 8]
+            .try_into()
+            .expect("fixed u64 range"),
+    )
 }
 
 /// Durable fail-closed marker for an incomplete shadow history.
@@ -418,13 +488,14 @@ impl ShadowPackWriter {
     ///
     /// Returns `Ok(None)` when the window carries no node entries (no frame
     /// is appended and no marker should be published). Any engine error is
-    /// returned to the caller, whose contract is to log, count, and continue
-    /// the canonical commit without the marker.
+    /// returned to the caller, whose contract is to persist a degraded marker
+    /// while allowing the authoritative canonical commit to continue.
     pub fn append_state_overlay(
         &mut self,
+        context: PackFrameContext,
         entries: Vec<(Vec<u8>, Option<Vec<u8>>)>,
     ) -> Result<Option<ShadowFrameReceipt>> {
-        let Some(prepared) = self.prepare_state_overlay(entries)? else {
+        let Some(prepared) = self.prepare_state_overlay(context, entries)? else {
             return Ok(None);
         };
         self.activate_prepared(prepared).map(Some)
@@ -437,6 +508,7 @@ impl ShadowPackWriter {
     /// transaction commits.
     pub fn prepare_state_overlay(
         &mut self,
+        context: PackFrameContext,
         entries: Vec<(Vec<u8>, Option<Vec<u8>>)>,
     ) -> Result<Option<PreparedShadowFrame>> {
         let mut operations = Vec::with_capacity(entries.len());
@@ -463,7 +535,7 @@ impl ShadowPackWriter {
             return Ok(None);
         }
 
-        let pack = self.store.prepare_append(&operations)?;
+        let pack = self.store.prepare_frame(context, &operations)?;
         let frame = pack.receipt();
         Ok(Some(PreparedShadowFrame {
             pack,
@@ -558,6 +630,20 @@ mod tests {
         keys
     }
 
+    fn frame_context(
+        block_start: u32,
+        block_end: u32,
+        previous_root: u8,
+        resulting_root: u8,
+    ) -> PackFrameContext {
+        PackFrameContext {
+            block_start,
+            block_end,
+            previous_root: [previous_root; 32],
+            resulting_root: [resulting_root; 32],
+        }
+    }
+
     #[test]
     fn mirrored_windows_round_trip_byte_for_byte_across_reopen() {
         let root = tempdir().expect("temporary shadow root");
@@ -565,7 +651,7 @@ mod tests {
             .expect("create shadow writer");
 
         let first = writer
-            .append_state_overlay(window_one())
+            .append_state_overlay(frame_context(41, 41, 6, 7), window_one())
             .expect("mirror first window")
             .expect("first window carries node entries");
         assert_eq!(first.epoch, 0);
@@ -577,7 +663,7 @@ mod tests {
         );
 
         let second = writer
-            .append_state_overlay(window_two())
+            .append_state_overlay(frame_context(42, 42, 7, 8), window_two())
             .expect("mirror second window")
             .expect("second window carries node entries");
         assert_eq!(second.epoch, 1);
@@ -613,7 +699,7 @@ mod tests {
             (vec![0x02], Some(7u32.to_le_bytes().to_vec())),
         ];
         let receipt = writer
-            .append_state_overlay(metadata_only)
+            .append_state_overlay(frame_context(7, 7, 0, 1), metadata_only)
             .expect("metadata-only window must not fail");
         assert!(receipt.is_none());
         assert_eq!(writer.frames_appended(), 0);
@@ -629,14 +715,14 @@ mod tests {
         let mut writer = ShadowPackWriter::open_or_create(root.path(), test_config())
             .expect("create shadow writer");
         writer
-            .append_state_overlay(window_one())
+            .append_state_overlay(frame_context(41, 41, 6, 7), window_one())
             .expect("mirror first window");
         drop(writer);
 
         let mut writer = ShadowPackWriter::open_or_create(root.path(), test_config())
             .expect("reopen shadow writer");
         let receipt = writer
-            .append_state_overlay(window_two())
+            .append_state_overlay(frame_context(42, 42, 7, 8), window_two())
             .expect("mirror second window after reopen")
             .expect("second window carries node entries");
         assert_eq!(receipt.epoch, 1, "epochs must continue after reopen");
@@ -649,12 +735,12 @@ mod tests {
         let mut writer = ShadowPackWriter::open_or_create(root.path(), test_config())
             .expect("create shadow writer");
         let committed = writer
-            .append_state_overlay(window_one())
+            .append_state_overlay(frame_context(41, 41, 6, 7), window_one())
             .expect("mirror committed window")
             .expect("committed window has nodes");
-        let marker = ShadowHighWaterRecord::new(&committed, Some(41), Some(41), Some([7u8; 32]));
+        let marker = ShadowHighWaterRecord::new(&committed);
         writer
-            .append_state_overlay(window_two())
+            .append_state_overlay(frame_context(42, 42, 7, 8), window_two())
             .expect("mirror orphan window")
             .expect("orphan window has nodes");
         drop(writer);
@@ -666,7 +752,7 @@ mod tests {
         )
         .expect("reconcile writer to MDBX marker");
         let replacement = writer
-            .append_state_overlay(window_two())
+            .append_state_overlay(frame_context(42, 42, 7, 8), window_two())
             .expect("mirror replacement window")
             .expect("replacement window has nodes");
         assert_eq!(replacement.epoch, 1);
@@ -683,10 +769,10 @@ mod tests {
         let mut writer = ShadowPackWriter::open_or_create(root.path(), test_config())
             .expect("create shadow writer");
         let receipt = writer
-            .append_state_overlay(window_one())
+            .append_state_overlay(frame_context(41, 41, 6, 7), window_one())
             .expect("mirror window")
             .expect("window carries node entries");
-        let record = ShadowHighWaterRecord::new(&receipt, Some(41), Some(41), Some([7u8; 32]));
+        let record = ShadowHighWaterRecord::new(&receipt);
         let decoded = ShadowHighWaterRecord::decode(&record.encode()).expect("decode marker");
         assert_eq!(decoded, record);
         assert_eq!(
@@ -695,47 +781,94 @@ mod tests {
                 epoch: receipt.epoch,
                 segment_id: receipt.frame.segment_id,
                 frame_end: receipt.frame.frame_end,
-                payload_sha256: receipt.frame.payload_sha256,
+                context: receipt.frame.context,
+                frame_sha256: receipt.frame.frame_sha256,
             }
         );
 
-        let sparse = ShadowHighWaterRecord::new(&receipt, None, None, None);
-        let decoded =
-            ShadowHighWaterRecord::decode(&sparse.encode()).expect("decode sparse marker");
-        assert_eq!(decoded, sparse);
-        assert_eq!(decoded.block_index_min, None);
-        assert_eq!(decoded.state_root, None);
-
-        assert!(ShadowHighWaterRecord::decode(&[]).is_none());
-        assert!(ShadowHighWaterRecord::decode(&[0u8; HIGH_WATER_RECORD_LEN]).is_none());
+        assert!(matches!(
+            ShadowHighWaterRecord::decode(&[]),
+            Err(ShadowHighWaterError::InvalidLength { .. })
+        ));
+        assert_eq!(
+            ShadowHighWaterRecord::decode(&[0u8; HIGH_WATER_RECORD_LEN]),
+            Err(ShadowHighWaterError::InvalidMagic)
+        );
         let mut truncated = record.encode();
         truncated.truncate(HIGH_WATER_RECORD_LEN - 1);
-        assert!(ShadowHighWaterRecord::decode(&truncated).is_none());
+        assert!(matches!(
+            ShadowHighWaterRecord::decode(&truncated),
+            Err(ShadowHighWaterError::InvalidLength { .. })
+        ));
 
         let mut inconsistent_frames = record.encode();
-        inconsistent_frames[24..32].copy_from_slice(&99u64.to_le_bytes());
-        assert!(ShadowHighWaterRecord::decode(&inconsistent_frames).is_none());
+        inconsistent_frames[32..40].copy_from_slice(&99u64.to_le_bytes());
+        assert_eq!(
+            ShadowHighWaterRecord::decode(&inconsistent_frames),
+            Err(ShadowHighWaterError::InvalidFrameCount)
+        );
 
         let mut old_schema = record.encode();
         old_schema[8..12].copy_from_slice(&(HIGH_WATER_FORMAT_VERSION - 1).to_le_bytes());
-        assert!(ShadowHighWaterRecord::decode(&old_schema).is_none());
+        assert_eq!(
+            ShadowHighWaterRecord::decode(&old_schema),
+            Err(ShadowHighWaterError::UnsupportedSchema(
+                HIGH_WATER_FORMAT_VERSION - 1
+            ))
+        );
 
         let mut wrong_segment_format = record.encode();
         wrong_segment_format[12..16]
             .copy_from_slice(&(PACK_SEGMENT_FORMAT_VERSION + 1).to_le_bytes());
-        assert!(ShadowHighWaterRecord::decode(&wrong_segment_format).is_none());
+        assert!(matches!(
+            ShadowHighWaterRecord::decode(&wrong_segment_format),
+            Err(ShadowHighWaterError::SegmentFormatMismatch { .. })
+        ));
+
+        let mut wrong_frame_format = record.encode();
+        wrong_frame_format[16..20].copy_from_slice(&(PACK_FRAME_FORMAT_VERSION + 1).to_le_bytes());
+        assert!(matches!(
+            ShadowHighWaterRecord::decode(&wrong_frame_format),
+            Err(ShadowHighWaterError::FrameFormatMismatch { .. })
+        ));
+
+        let mut nonzero_reserved = record.encode();
+        nonzero_reserved[20..24].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            ShadowHighWaterRecord::decode(&nonzero_reserved),
+            Err(ShadowHighWaterError::NonZeroReserved)
+        );
 
         let mut impossible_position = record.encode();
-        impossible_position[40..48].copy_from_slice(&PACK_SEGMENT_HEADER_LEN.to_le_bytes());
-        assert!(ShadowHighWaterRecord::decode(&impossible_position).is_none());
+        impossible_position[48..56].copy_from_slice(&PACK_SEGMENT_HEADER_LEN.to_le_bytes());
+        assert_eq!(
+            ShadowHighWaterRecord::decode(&impossible_position),
+            Err(ShadowHighWaterError::InvalidFrameEnd)
+        );
 
         let mut impossible_segment = record.encode();
-        impossible_segment[32..40].copy_from_slice(&receipt.epoch.saturating_add(1).to_le_bytes());
-        assert!(ShadowHighWaterRecord::decode(&impossible_segment).is_none());
+        impossible_segment[40..48].copy_from_slice(&receipt.epoch.saturating_add(1).to_le_bytes());
+        assert!(matches!(
+            ShadowHighWaterRecord::decode(&impossible_segment),
+            Err(ShadowHighWaterError::InvalidSegmentId { .. })
+        ));
 
         let mut missing_frame_end = record.encode();
-        missing_frame_end[40..48].fill(0);
-        assert!(ShadowHighWaterRecord::decode(&missing_frame_end).is_none());
+        missing_frame_end[48..56].fill(0);
+        assert_eq!(
+            ShadowHighWaterRecord::decode(&missing_frame_end),
+            Err(ShadowHighWaterError::InvalidFrameEnd)
+        );
+
+        let mut reversed_range = record.encode();
+        reversed_range[72..76].copy_from_slice(&43u32.to_le_bytes());
+        assert_eq!(
+            ShadowHighWaterRecord::decode(&reversed_range),
+            Err(ShadowHighWaterError::InvalidBlockRange {
+                block_start: 43,
+                block_end: 41,
+            })
+        );
     }
 
     #[test]

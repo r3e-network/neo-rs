@@ -17,8 +17,8 @@
 
 use crate::{
     PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION,
-    PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackCommitHorizon, PackFrameReceipt,
-    PackSegmentId,
+    PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackCommitHorizon, PackFrameContext,
+    PackFrameReceipt, PackSegmentId,
 };
 use thiserror::Error;
 
@@ -26,15 +26,15 @@ use thiserror::Error;
 pub const AUTHORITATIVE_HIGH_WATER_KEY: &[u8] = b"neo_state_packs_authoritative_high_water";
 
 const MARKER_MAGIC: &[u8; 8] = b"N3PAWM01";
-const MARKER_SCHEMA_VERSION: u32 = 2;
+const MARKER_SCHEMA_VERSION: u32 = 3;
 
 /// Exact encoded byte length of [`AuthoritativeHighWaterRecord`].
-pub const AUTHORITATIVE_HIGH_WATER_RECORD_LEN: usize = 156;
+pub const AUTHORITATIVE_HIGH_WATER_RECORD_LEN: usize = 228;
 
 /// Strict authoritative marker decode or identity error.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum AuthorityMarkerError {
-    /// Record length differs from the fixed v2 layout.
+    /// Record length differs from the fixed v3 layout.
     #[error("authoritative pack marker length is {actual}, expected {expected}")]
     InvalidLength {
         /// Observed byte length.
@@ -81,6 +81,27 @@ pub enum AuthorityMarkerError {
         /// Encoded frame epoch.
         epoch: u64,
     },
+    /// The frame context names a reversed canonical block range.
+    #[error("authoritative pack marker frame block range {block_start}..={block_end} is reversed")]
+    InvalidBlockRange {
+        /// First block represented by the frame.
+        block_start: u32,
+        /// Last block represented by the frame.
+        block_end: u32,
+    },
+    /// The canonical StateService tip predates the newest durable frame.
+    #[error(
+        "authoritative StateService tip {block_index} predates frame ending at block {frame_block_end}"
+    )]
+    CanonicalTipBeforeFrame {
+        /// Canonical StateService tip encoded by the marker.
+        block_index: u32,
+        /// Last block represented by the frame.
+        frame_block_end: u32,
+    },
+    /// A canonical tip at the frame end does not equal the frame resulting root.
+    #[error("authoritative marker canonical root differs from the frame resulting root")]
+    CanonicalRootMismatch,
     /// Marker belongs to another Neo network.
     #[error("authoritative pack marker network {actual:#010x} differs from {expected:#010x}")]
     NetworkMismatch {
@@ -107,8 +128,13 @@ pub struct AuthoritativeHighWaterRecord {
     pub segment_id: PackSegmentId,
     /// Segment-relative end offset of that frame.
     pub frame_end: u64,
-    /// SHA-256 checksum of the newest frame payload.
-    pub frame_payload_sha256: [u8; 32],
+    /// Domain-separated digest of the newest frame's authenticated header.
+    ///
+    /// The header binds both variable sections; the footer binds this digest
+    /// to the epoch and exact complete-frame length.
+    pub frame_sha256: [u8; 32],
+    /// Exact canonical block/root transition represented by the newest frame.
+    pub frame_context: PackFrameContext,
     /// Latest StateService local-root block index committed with this marker.
     pub block_index: u32,
     /// Internal UInt256 bytes of the corresponding StateService root.
@@ -130,7 +156,8 @@ impl AuthoritativeHighWaterRecord {
             epoch: receipt.epoch,
             segment_id: receipt.segment_id,
             frame_end: receipt.frame_end,
-            frame_payload_sha256: receipt.payload_sha256,
+            frame_sha256: receipt.frame_sha256,
+            frame_context: receipt.context,
             block_index,
             state_root,
         }
@@ -142,7 +169,8 @@ impl AuthoritativeHighWaterRecord {
             epoch: self.epoch,
             segment_id: self.segment_id,
             frame_end: self.frame_end,
-            payload_sha256: self.frame_payload_sha256,
+            context: self.frame_context,
+            frame_sha256: self.frame_sha256,
         }
     }
 
@@ -155,7 +183,7 @@ impl AuthoritativeHighWaterRecord {
         }
     }
 
-    /// Encodes the fixed, versioned v2 marker.
+    /// Encodes the fixed, versioned v3 marker.
     pub fn encode(&self) -> [u8; AUTHORITATIVE_HIGH_WATER_RECORD_LEN] {
         let mut bytes = [0u8; AUTHORITATIVE_HIGH_WATER_RECORD_LEN];
         bytes[0..8].copy_from_slice(MARKER_MAGIC);
@@ -169,9 +197,13 @@ impl AuthoritativeHighWaterRecord {
         bytes[64..72].copy_from_slice(&self.epoch.to_le_bytes());
         bytes[72..80].copy_from_slice(&self.segment_id.get().to_le_bytes());
         bytes[80..88].copy_from_slice(&self.frame_end.to_le_bytes());
-        bytes[88..120].copy_from_slice(&self.frame_payload_sha256);
-        bytes[120..124].copy_from_slice(&self.block_index.to_le_bytes());
-        bytes[124..156].copy_from_slice(&self.state_root);
+        bytes[88..120].copy_from_slice(&self.frame_sha256);
+        bytes[120..124].copy_from_slice(&self.frame_context.block_start.to_le_bytes());
+        bytes[124..128].copy_from_slice(&self.frame_context.block_end.to_le_bytes());
+        bytes[128..160].copy_from_slice(&self.frame_context.previous_root);
+        bytes[160..192].copy_from_slice(&self.frame_context.resulting_root);
+        bytes[192..196].copy_from_slice(&self.block_index.to_le_bytes());
+        bytes[196..228].copy_from_slice(&self.state_root);
         bytes
     }
 
@@ -222,15 +254,45 @@ impl AuthoritativeHighWaterRecord {
         if frame_end <= PACK_SEGMENT_HEADER_LEN {
             return Err(AuthorityMarkerError::InvalidFrameEnd);
         }
+        let frame_context = PackFrameContext {
+            block_start: u32_at(bytes, 120),
+            block_end: u32_at(bytes, 124),
+            previous_root: bytes[128..160]
+                .try_into()
+                .expect("fixed previous-root range"),
+            resulting_root: bytes[160..192]
+                .try_into()
+                .expect("fixed resulting-root range"),
+        };
+        if frame_context.block_start > frame_context.block_end {
+            return Err(AuthorityMarkerError::InvalidBlockRange {
+                block_start: frame_context.block_start,
+                block_end: frame_context.block_end,
+            });
+        }
+        let block_index = u32_at(bytes, 192);
+        if block_index < frame_context.block_end {
+            return Err(AuthorityMarkerError::CanonicalTipBeforeFrame {
+                block_index,
+                frame_block_end: frame_context.block_end,
+            });
+        }
+        let state_root: [u8; 32] = bytes[196..228]
+            .try_into()
+            .expect("fixed canonical root range");
+        if block_index == frame_context.block_end && state_root != frame_context.resulting_root {
+            return Err(AuthorityMarkerError::CanonicalRootMismatch);
+        }
         Ok(Self {
             network_magic: u32_at(bytes, 12),
             store_identity: bytes[32..64].try_into().expect("fixed identity range"),
             epoch,
             segment_id,
             frame_end,
-            frame_payload_sha256: bytes[88..120].try_into().expect("fixed checksum range"),
-            block_index: u32_at(bytes, 120),
-            state_root: bytes[124..156].try_into().expect("fixed root range"),
+            frame_sha256: bytes[88..120].try_into().expect("fixed frame-digest range"),
+            frame_context,
+            block_index,
+            state_root,
         })
     }
 
@@ -282,9 +344,16 @@ mod tests {
                 segment_id: PackSegmentId::new(3),
                 frame_start: 1_000,
                 frame_end: 2_000,
+                context: PackFrameContext {
+                    block_start: 40,
+                    block_end: 42,
+                    previous_root: [0x10; 32],
+                    resulting_root: [0x33; 32],
+                },
                 rows: 3,
-                payload_bytes: 928,
-                payload_sha256: [0x22; 32],
+                metadata_bytes: 168,
+                value_bytes: 760,
+                frame_sha256: [0x22; 32],
             },
             42,
             [0x33; 32],
@@ -304,7 +373,13 @@ mod tests {
                 epoch: 7,
                 segment_id: PackSegmentId::new(3),
                 frame_end: 2_000,
-                payload_sha256: [0x22; 32],
+                context: PackFrameContext {
+                    block_start: 40,
+                    block_end: 42,
+                    previous_root: [0x10; 32],
+                    resulting_root: [0x33; 32],
+                },
+                frame_sha256: [0x22; 32],
             }
         );
         let advanced = marker.with_state_tip(99, [0x44; 32]);
@@ -373,6 +448,33 @@ mod tests {
                 segment_id: PackSegmentId::new(8),
                 epoch: 7,
             })
+        );
+
+        let mut reversed_range = marker.encode();
+        reversed_range[120..124].copy_from_slice(&43u32.to_le_bytes());
+        assert_eq!(
+            AuthoritativeHighWaterRecord::decode(&reversed_range),
+            Err(AuthorityMarkerError::InvalidBlockRange {
+                block_start: 43,
+                block_end: 42,
+            })
+        );
+
+        let mut canonical_tip_before_frame = marker.encode();
+        canonical_tip_before_frame[192..196].copy_from_slice(&41u32.to_le_bytes());
+        assert_eq!(
+            AuthoritativeHighWaterRecord::decode(&canonical_tip_before_frame),
+            Err(AuthorityMarkerError::CanonicalTipBeforeFrame {
+                block_index: 41,
+                frame_block_end: 42,
+            })
+        );
+
+        let mut canonical_root_mismatch = marker.encode();
+        canonical_root_mismatch[196..228].fill(0x99);
+        assert_eq!(
+            AuthoritativeHighWaterRecord::decode(&canonical_root_mismatch),
+            Err(AuthorityMarkerError::CanonicalRootMismatch)
         );
     }
 }

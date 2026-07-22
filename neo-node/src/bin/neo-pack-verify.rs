@@ -26,8 +26,10 @@ use neo_state_packs::shadow::{SHADOW_HIGH_WATER_KEY, ShadowHighWaterRecord};
 use neo_state_packs::{
     PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_KEY_BYTES,
     PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN,
-    PackCommitHorizon, PackSegmentId, PackStore, PackStoreConfig, PackStoreOptions,
+    PackCommitHorizon, PackFrameContext, PackSegmentId, PackStore, PackStoreConfig,
+    PackStoreOptions,
 };
+use neo_state_service::read_current_local_root;
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::persistence::{RawReadOnlyStore, StoreFactory, TransactionalStore};
@@ -45,11 +47,7 @@ use checkpoint_compare::{compare_checkpoint_nodes, decode_hash, parse_checkpoint
 
 const STATE_NODE_PREFIX: u8 = 0xf0;
 const STATE_SERVICE_NAMESPACE: &str = "neo_state_service";
-const CURRENT_LOCAL_ROOT_INDEX: &[u8] = &[0x02];
-const STATE_ROOT_PREFIX: u8 = 0x01;
-const STATE_ROOT_VALUE_ROOT_OFFSET: usize = 5;
-const STATE_ROOT_VALUE_UNSIGNED_LEN: usize = 1 + 4 + 32;
-const CHECKPOINT_SCHEMA_VERSION: u32 = 3;
+const CHECKPOINT_SCHEMA_VERSION: u32 = 4;
 const BATCH: usize = 1_024;
 // Neo MPT nodes are well below this defensive verifier ceiling. Keep a wider
 // protocol-independent margin while rejecting corrupt multi-gigabyte index
@@ -111,7 +109,7 @@ struct CheckpointMarker {
     tip_epoch: u64,
     tip_segment_id: u64,
     tip_frame_end: u64,
-    tip_payload_sha256: String,
+    tip_frame_sha256: String,
     scrubbed_frames: u64,
     scrubbed_rows: u64,
     scrubbed_puts: u64,
@@ -123,7 +121,7 @@ struct CheckpointMarker {
 struct CheckpointBinding {
     source_root: [u8; 32],
     store_identity: [u8; 32],
-    tip_payload_sha256: [u8; 32],
+    tip_frame_sha256: [u8; 32],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -291,17 +289,14 @@ fn main() -> Result<()> {
             let marker = ShadowHighWaterRecord::decode(&record)
                 .context("high-water marker failed to decode")?;
             println!(
-                "high-water: epoch={} frames={} node_ops={} value_bytes={} blocks={:?}..={:?} root=0x{}",
+                "high-water: epoch={} frames={} node_ops={} value_bytes={} blocks={}..={} root=0x{}",
                 marker.epoch,
                 marker.frames_total,
                 marker.node_operations,
                 marker.node_put_value_bytes,
-                marker.block_index_min,
-                marker.block_index_max,
-                marker
-                    .state_root
-                    .map(hex::encode)
-                    .unwrap_or_else(|| "none".to_string()),
+                marker.frame_context.block_start,
+                marker.frame_context.block_end,
+                hex::encode(marker.frame_context.resulting_root),
             );
             marker
         }
@@ -438,7 +433,8 @@ fn verify_authority(
         .maintenance_metadata(AUTHORITATIVE_HIGH_WATER_KEY)
         .context("read authoritative pack high-water marker")?;
 
-    let (authority_state, horizon, expected_frame_end, expected_payload) = match durable_marker {
+    let (authority_state, horizon, expected_frame_end, expected_frame_digest) = match durable_marker
+    {
         Some(bytes) => {
             let marker = AuthoritativeHighWaterRecord::decode(&bytes)
                 .context("decode authoritative pack high-water marker")?;
@@ -462,19 +458,21 @@ fn verify_authority(
                 "authoritative marker pack horizon predates its base checkpoint"
             );
             println!(
-                "authority marker: epoch={} segment={} frame_end={} block={} root=0x{} payload_sha256=0x{}",
+                "authority marker: epoch={} segment={} frame_end={} frame_blocks={}..={} block={} root=0x{} frame_sha256=0x{}",
                 marker.epoch,
                 marker.segment_id,
                 marker.frame_end,
+                marker.frame_context.block_start,
+                marker.frame_context.block_end,
                 marker.block_index,
                 hex::encode(marker.state_root),
-                hex::encode(marker.frame_payload_sha256),
+                hex::encode(marker.frame_sha256),
             );
             (
                 AuthorityState::Marker,
                 marker.commit_horizon(),
                 marker.frame_end,
-                marker.frame_payload_sha256,
+                marker.frame_sha256,
             )
         }
         None => {
@@ -494,10 +492,16 @@ fn verify_authority(
                     epoch: checkpoint.tip_epoch,
                     segment_id: PackSegmentId::new(checkpoint.tip_segment_id),
                     frame_end: checkpoint.tip_frame_end,
-                    payload_sha256: binding.tip_payload_sha256,
+                    context: PackFrameContext::new(
+                        checkpoint.source_height,
+                        checkpoint.source_height,
+                        binding.source_root,
+                        binding.source_root,
+                    ),
+                    frame_sha256: binding.tip_frame_sha256,
                 },
                 checkpoint.tip_frame_end,
-                binding.tip_payload_sha256,
+                binding.tip_frame_sha256,
             )
         }
     };
@@ -530,7 +534,8 @@ fn verify_authority(
         receipt.epoch == horizon.epoch
             && receipt.segment_id == horizon.segment_id
             && receipt.frame_end == expected_frame_end
-            && receipt.payload_sha256 == expected_payload,
+            && receipt.context == horizon.context
+            && receipt.frame_sha256 == expected_frame_digest,
         "authoritative pack tip differs from its canonical checkpoint/marker"
     );
     if authority_state == AuthorityState::Checkpoint {
@@ -745,7 +750,8 @@ fn verify_authority(
                 reopened_receipt.epoch == horizon.epoch
                     && reopened_receipt.segment_id == horizon.segment_id
                     && reopened_receipt.frame_end == expected_frame_end
-                    && reopened_receipt.payload_sha256 == expected_payload,
+                    && reopened_receipt.context == horizon.context
+                    && reopened_receipt.frame_sha256 == expected_frame_digest,
                 "reopened authoritative pack tip differs from its canonical checkpoint/marker"
             );
             println!("maintenance equivalence: pre/post/reopen evidence matches exactly");
@@ -877,46 +883,13 @@ fn validate_checkpoint(
             &checkpoint.source_namespace_sha256,
             "checkpoint source namespace digest",
         )?,
-        tip_payload_sha256: decode_hash(&checkpoint.tip_payload_sha256, "checkpoint tip checksum")?,
+        tip_frame_sha256: decode_hash(&checkpoint.tip_frame_sha256, "checkpoint tip digest")?,
     })
 }
 
 fn read_state_tip(store: &RuntimeStore) -> Result<(u32, [u8; 32])> {
-    let index_bytes = store
-        .try_get_bytes_result(CURRENT_LOCAL_ROOT_INDEX)
-        .context("read StateService current local root index")?
-        .context("StateService current local root index is absent")?;
-    let index = u32::from_le_bytes(
-        index_bytes
-            .as_slice()
-            .try_into()
-            .context("StateService current local root index is not four bytes")?,
-    );
-    let mut key = Vec::with_capacity(5);
-    key.push(STATE_ROOT_PREFIX);
-    key.extend_from_slice(&index.to_be_bytes());
-    let value = store
-        .try_get_bytes_result(&key)
-        .context("read StateService current root record")?
-        .context("StateService current root record is absent")?;
-    ensure!(
-        value.len() >= STATE_ROOT_VALUE_UNSIGNED_LEN,
-        "StateService current root record is truncated"
-    );
-    ensure!(
-        value[0] == 0,
-        "StateService current root record has an unsupported version"
-    );
-    ensure!(
-        u32::from_le_bytes(value[1..5].try_into().expect("four-byte root index")) == index,
-        "StateService root record index does not match its key"
-    );
-    Ok((
-        index,
-        value[STATE_ROOT_VALUE_ROOT_OFFSET..STATE_ROOT_VALUE_UNSIGNED_LEN]
-            .try_into()
-            .expect("fixed StateService root range"),
-    ))
+    let root = read_current_local_root(store).context("read current local StateService root")?;
+    Ok((root.index(), root.root_hash().to_array()))
 }
 
 fn parse_u32(value: &str) -> Result<u32> {

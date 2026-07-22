@@ -12,10 +12,12 @@
 //!
 //! - `mpt_store`: MPT-backed state store.
 //! - `root_cache`: state-root cache.
+//! - `state_root_records`: strict persisted state-root record codecs.
 //! - `state_store`: state-service store facade.
 
 pub mod mpt_store;
 pub mod root_cache;
+pub mod state_root_records;
 pub mod state_store;
 
 pub use mpt_store::{
@@ -25,5 +27,10 @@ pub use mpt_store::{
 pub use root_cache::{
     DEFAULT_ROOT_CACHE_CAPACITY, StateRootCache, StateRootCacheEntry, StateRootCacheStats,
     StateRootCacheStatsSnapshot,
+};
+pub use state_root_records::{
+    StateRootRecordError, decode_current_local_root_index, decode_local_state_root_record,
+    decode_state_root_record, read_current_local_root, read_current_local_root_from,
+    read_local_state_root,
 };
 pub use state_store::{StateStore, StateStoreLookup, StateStoreTransaction};

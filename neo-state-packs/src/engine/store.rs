@@ -22,10 +22,10 @@ use std::time::Instant;
 mod api;
 pub use api::{
     OpenValidation, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackCommitHorizon,
-    PackFrameReceipt, PackPosition, PackSegmentId, PackStoreArtifact, PackStoreConfig,
-    PackStoreConfigError, PackStoreConfigField, PackStoreError, PackStoreErrorSource,
-    PackStoreLimit, PackStoreOperation, PackStoreOptions, PackStoreResult, PreparedAppend,
-    SealedAppend,
+    PackFrameContext, PackFrameReceipt, PackPosition, PackSegmentId, PackStoreArtifact,
+    PackStoreConfig, PackStoreConfigError, PackStoreConfigField, PackStoreError,
+    PackStoreErrorSource, PackStoreLimit, PackStoreOperation, PackStoreOptions, PackStoreResult,
+    PreparedAppend, SealedAppend,
 };
 #[path = "store/format/hashing.rs"]
 mod hashing;
@@ -41,8 +41,12 @@ pub use frame_builder::PackFrameBuilder;
 #[path = "store/format/frame_codec.rs"]
 mod frame_codec;
 use frame_codec::{
-    FrameScan, decode_frame_payload, encode_frame_header, encode_frame_payload, read_frame_receipt,
-    read_frame_receipt_at, reset_derived_state_to_frame_prefix, scan_frames, validate_frame_header,
+    FRAME_METADATA_DIGEST_DOMAIN, FRAME_VALUE_DIGEST_DOMAIN, FramePayloadSection, FrameScan,
+    PendingFrameRow, decode_frame_metadata, encode_frame_footer, encode_frame_header,
+    encode_frame_payload, encode_pending_rows, frame_digest, frame_metadata_digest,
+    frame_value_digest, read_frame_receipt, read_frame_receipt_at,
+    reset_derived_state_to_frame_prefix, scan_frame_metadata_distinct_keys, scan_frames,
+    validate_frame_footer, validate_frame_header, validate_payload_rows,
     validate_payload_rows_with_progress, verify_frame,
 };
 mod compaction;
@@ -72,10 +76,11 @@ mod scrub_api;
 mod segment;
 pub(crate) use segment::initial_segment_exists;
 
-const FRAME_MAGIC: &[u8; 8] = b"N3PACK01";
+const FRAME_MAGIC: &[u8; 8] = b"N3PACK02";
+const FRAME_FOOTER_MAGIC: &[u8; 8] = b"N3PKEND2";
 const INDEX_MAGIC: &[u8; 8] = b"N3IDXR01";
 /// Append-frame format emitted and accepted by this pack engine.
-pub const PACK_FRAME_FORMAT_VERSION: u32 = 1;
+pub const PACK_FRAME_FORMAT_VERSION: u32 = 2;
 /// Immutable sorted-index format emitted and accepted by this pack engine.
 ///
 /// This remains the canonical marker/checkpoint compatibility family. Physical
@@ -85,15 +90,31 @@ pub const PACK_INDEX_FORMAT_VERSION: u32 = 3;
 /// Physical immutable-run format emitted by large-run compaction.
 pub const PACK_INDEX_RUN_FORMAT_VERSION: u32 = 4;
 const XOR_INDEX_RUN_FORMAT_VERSION: u32 = 3;
-const FRAME_HEADER_LEN: usize = 72;
+const FRAME_HEADER_LEN: usize = 224;
+const FRAME_ROW_METADATA_LEN: usize = 56;
+const FRAME_FOOTER_LEN: usize = 96;
+const FRAME_NODE_KEY_PREFIX: u8 = 0xf0;
 const INDEX_HEADER_LEN: usize = 192;
 const INDEX_STRUCTURE_SHA256_START: usize = 154;
 const INDEX_STRUCTURE_SHA256_END: usize = INDEX_STRUCTURE_SHA256_START + 32;
 const INDEX_HEADER_TAG_START: usize = 188;
 /// Domain separator for a complete checkpoint's ordered key/value digest.
 pub const CHECKPOINT_NAMESPACE_DIGEST_DOMAIN: &[u8] = b"neo-state-packs-checkpoint-namespace-v1\0";
-const FRAME_ROW_HEADER_BYTES: u64 = (PACK_KEY_BYTES + 1 + 4) as u64;
 const MAX_FRAME_ROWS: u64 = PackStoreConfig::HARD_MAX_FRAME_ROWS;
+
+/// Rejects an invalid operation window before any frame payload allocation.
+///
+/// The same check is repeated by the byte-level decoder because persisted
+/// bytes are untrusted; this boundary check keeps callers from reserving large
+/// builder buffers for a context that can never be encoded.
+fn validate_frame_context(context: PackFrameContext) -> Result<()> {
+    ensure!(
+        context.block_start <= context.block_end,
+        "frame block range is reversed"
+    );
+    Ok(())
+}
+
 const MAX_FRAME_PAYLOAD_BYTES: u64 = PackStoreConfig::HARD_MAX_FRAME_PAYLOAD_BYTES;
 /// Sorted records covered by one sparse fence entry (~3.2 KiB of records).
 const FENCE_INTERVAL: usize = 64;

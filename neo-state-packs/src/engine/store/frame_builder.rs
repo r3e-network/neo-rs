@@ -2,35 +2,43 @@ use super::*;
 
 /// One-copy builder for an append frame backed by borrowed operation values.
 ///
-/// Values are copied directly into their final frame-payload representation;
-/// callers do not need to allocate an intermediate [`PackOperation`]. The
-/// expected row count is exact and is revalidated before any durable bytes are
-/// written by [`PackStore::prepare_built_append`].
+/// Values are copied directly into their final value section; callers do not
+/// allocate an intermediate [`PackOperation`]. Builders are created only by
+/// [`PackStore::frame_builder`] or [`PackStore::frame_builder_with_value_bytes`],
+/// binding every allocation to that store's identity and configured limits.
+/// The exact layout is revalidated before any durable bytes are written by
+/// [`PackStore::prepare_built_append`].
 #[derive(Debug)]
 pub struct PackFrameBuilder {
+    store_instance_id: u64,
+    context: PackFrameContext,
     expected_rows: usize,
-    expected_payload_bytes: Option<usize>,
-    payload: Vec<u8>,
-    entries: Vec<IndexEntry>,
-    keys_are_sorted: bool,
+    expected_value_bytes: Option<usize>,
+    metadata_bytes: u64,
+    max_frame_payload_bytes: u64,
+    max_pending_bytes: u64,
+    values: Vec<u8>,
+    rows: Vec<PendingFrameRow>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct PackFrameBuilderLayout {
+    pub(super) rows: usize,
+    pub(super) metadata_bytes: u64,
+    pub(super) value_bytes: u64,
+    pub(super) distinct_keys: usize,
 }
 
 impl PackFrameBuilder {
-    /// Creates a frame builder for exactly `expected_rows` operations.
-    pub fn new(expected_rows: usize) -> Result<Self> {
-        Self::with_optional_value_bytes(expected_rows, None)
-    }
-
-    /// Creates a builder with an exact aggregate borrowed-value byte count.
-    ///
-    /// Supplying the count performs one payload allocation and adds a final
-    /// fail-closed check that the visited values match the caller's materialized
-    /// overlay accounting.
-    pub fn with_value_bytes(expected_rows: usize, value_bytes: u64) -> Result<Self> {
-        Self::with_optional_value_bytes(expected_rows, Some(value_bytes))
-    }
-
-    fn with_optional_value_bytes(expected_rows: usize, value_bytes: Option<u64>) -> Result<Self> {
+    pub(super) fn for_store(
+        store_instance_id: u64,
+        context: PackFrameContext,
+        expected_rows: usize,
+        value_bytes: Option<u64>,
+        max_frame_payload_bytes: u64,
+        max_pending_bytes: u64,
+    ) -> Result<Self> {
+        validate_frame_context(context)?;
         ensure!(expected_rows > 0, "frame must contain at least one row");
         let operation_count =
             u64::try_from(expected_rows).context("frame row count overflows u64")?;
@@ -38,48 +46,49 @@ impl PackFrameBuilder {
             operation_count <= MAX_FRAME_ROWS,
             "frame row count exceeds the hard limit of {MAX_FRAME_ROWS}"
         );
-        let minimum_payload = expected_rows
-            .checked_mul(PACK_KEY_BYTES + 1 + 4)
-            .context("minimum frame payload size overflows usize")?;
-        let expected_payload_bytes = value_bytes
-            .map(|value_bytes| {
-                usize::try_from(value_bytes)
-                    .context("aggregate frame value bytes overflow usize")
-                    .and_then(|value_bytes| {
-                        minimum_payload
-                            .checked_add(value_bytes)
-                            .context("frame payload size overflows usize")
-                    })
+        let metadata_bytes = expected_rows
+            .checked_mul(FRAME_ROW_METADATA_LEN)
+            .context("frame metadata size overflows usize")?;
+        let metadata_bytes =
+            u64::try_from(metadata_bytes).context("frame metadata size overflows u64")?;
+        let expected_value_bytes = value_bytes
+            .map(|bytes| {
+                usize::try_from(bytes).context("aggregate frame value bytes overflow usize")
             })
             .transpose()?;
-        let initial_capacity = expected_payload_bytes.unwrap_or(minimum_payload);
-        ensure!(
-            u64::try_from(initial_capacity).context("frame payload size overflows u64")?
-                <= MAX_FRAME_PAYLOAD_BYTES,
-            "frame payload exceeds the hard limit of {MAX_FRAME_PAYLOAD_BYTES} bytes"
-        );
+        let initial_capacity = expected_value_bytes.unwrap_or(0);
+        ensure_builder_layout_limits(
+            metadata_bytes,
+            u64::try_from(initial_capacity).context("frame value size overflows u64")?,
+            max_frame_payload_bytes,
+            max_pending_bytes,
+        )?;
 
-        let mut payload = Vec::new();
-        payload
+        let mut values = Vec::new();
+        values
             .try_reserve_exact(initial_capacity)
-            .context("reserve frame payload")?;
-        let mut entries = Vec::new();
-        entries
-            .try_reserve_exact(expected_rows)
-            .context("reserve frame index entries")?;
+            .context("reserve frame values")?;
+        let mut rows = Vec::new();
+        rows.try_reserve_exact(expected_rows)
+            .context("reserve frame rows")?;
         Ok(Self {
+            store_instance_id,
+            context,
             expected_rows,
-            expected_payload_bytes,
-            payload,
-            entries,
-            keys_are_sorted: true,
+            expected_value_bytes,
+            metadata_bytes,
+            max_frame_payload_bytes,
+            max_pending_bytes,
+            values,
+            rows,
         })
     }
 
-    /// Encodes one borrowed operation directly into the final frame payload.
+    /// Encodes one borrowed operation directly into the final frame sections.
     ///
-    /// `Some(value)` is a put (including an empty value); `None` is a
-    /// tombstone. Keys must have the pack format's exact fixed width.
+    /// `Some(value)` is a put, including an empty put; `None` is a tombstone.
+    /// Keys must have the exact fixed width and be supplied in non-decreasing
+    /// order. Duplicate keys retain insertion order through their sequence.
     #[inline]
     pub fn push(&mut self, key: &[u8], value: Option<&[u8]>) -> Result<()> {
         let key: [u8; PACK_KEY_BYTES] = key.try_into().with_context(|| {
@@ -95,52 +104,56 @@ impl PackFrameBuilder {
     #[inline]
     pub fn push_key(&mut self, key: [u8; PACK_KEY_BYTES], value: Option<&[u8]>) -> Result<()> {
         ensure!(
-            self.entries.len() < self.expected_rows,
+            key[0] == FRAME_NODE_KEY_PREFIX,
+            "frame key is outside the MPT node namespace"
+        );
+        ensure!(
+            self.rows.len() < self.expected_rows,
             "frame builder received more than its declared row count"
         );
+        if let Some(previous) = self.rows.last() {
+            ensure!(
+                previous.key <= key,
+                "borrowed frame keys must be supplied in non-decreasing order"
+            );
+        }
+
         let tombstone = value.is_none();
         let value = value.unwrap_or_default();
         let value_len = u32::try_from(value.len()).context("frame value exceeds u32")?;
-        let row_bytes = PACK_KEY_BYTES
-            .checked_add(1 + 4)
-            .and_then(|bytes| bytes.checked_add(value.len()))
-            .context("frame row size overflows usize")?;
-        let next_payload_len = self
-            .payload
+        let next_value_len = self
+            .values
             .len()
-            .checked_add(row_bytes)
-            .context("frame payload size overflows usize")?;
-        if let Some(expected_payload_bytes) = self.expected_payload_bytes {
+            .checked_add(value.len())
+            .context("frame value size overflows usize")?;
+        if let Some(expected_value_bytes) = self.expected_value_bytes {
             ensure!(
-                next_payload_len <= expected_payload_bytes,
+                next_value_len <= expected_value_bytes,
                 "frame values exceed the declared aggregate byte count"
             );
-        } else {
-            ensure!(
-                u64::try_from(next_payload_len).context("frame payload size overflows u64")?
-                    <= MAX_FRAME_PAYLOAD_BYTES,
-                "frame payload exceeds the hard limit of {MAX_FRAME_PAYLOAD_BYTES} bytes"
-            );
         }
-        if self.expected_payload_bytes.is_none()
-            && self.payload.capacity() - self.payload.len() < row_bytes
+        ensure_builder_layout_limits(
+            self.metadata_bytes,
+            u64::try_from(next_value_len).context("frame value size overflows u64")?,
+            self.max_frame_payload_bytes,
+            self.max_pending_bytes,
+        )?;
+        if self.expected_value_bytes.is_none()
+            && self.values.capacity() - self.values.len() < value.len()
         {
-            self.payload
-                .try_reserve(row_bytes)
-                .context("grow frame payload")?;
+            self.values
+                .try_reserve(value.len())
+                .context("grow frame values")?;
         }
 
-        if let Some(previous) = self.entries.last() {
-            self.keys_are_sorted &= previous.key <= key;
-        }
-        let sequence = u32::try_from(self.entries.len()).context("frame sequence exceeds u32")?;
-        self.payload.extend_from_slice(&key);
-        self.payload.push(u8::from(!tombstone));
-        self.payload.extend_from_slice(&value_len.to_le_bytes());
-        let relative_value_offset =
-            u64::try_from(self.payload.len()).context("frame value offset overflows u64")?;
-        self.payload.extend_from_slice(value);
-        self.entries.push(IndexEntry {
+        let sequence = u32::try_from(self.rows.len()).context("frame sequence exceeds u32")?;
+        let relative_value_offset = if tombstone {
+            0
+        } else {
+            u64::try_from(self.values.len()).context("frame value offset overflows u64")?
+        };
+        self.values.extend_from_slice(value);
+        self.rows.push(PendingFrameRow {
             key,
             sequence,
             value_offset: relative_value_offset,
@@ -153,46 +166,86 @@ impl PackFrameBuilder {
     /// Number of operations encoded so far.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.rows.len()
     }
 
     /// Whether no operations have been encoded yet.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.rows.is_empty()
+    }
+
+    pub(super) const fn store_instance_id(&self) -> u64 {
+        self.store_instance_id
+    }
+
+    /// Validates the final layout without allocating metadata or index rows.
+    pub(super) fn preflight(&self) -> Result<PackFrameBuilderLayout> {
+        ensure!(
+            self.rows.len() == self.expected_rows,
+            "frame builder encoded {} rows, expected {}",
+            self.rows.len(),
+            self.expected_rows
+        );
+        if let Some(expected_value_bytes) = self.expected_value_bytes {
+            ensure!(
+                self.values.len() == expected_value_bytes,
+                "frame builder encoded {} value bytes, expected {}",
+                self.values.len(),
+                expected_value_bytes
+            );
+        }
+        let distinct_keys = 1 + self
+            .rows
+            .windows(2)
+            .filter(|rows| rows[0].key != rows[1].key)
+            .count();
+        Ok(PackFrameBuilderLayout {
+            rows: self.expected_rows,
+            metadata_bytes: self.metadata_bytes,
+            value_bytes: u64::try_from(self.values.len())
+                .context("frame value size overflows u64")?,
+            distinct_keys,
+        })
     }
 
     pub(super) fn finish(
-        mut self,
-        frame_start: u64,
-    ) -> Result<(usize, Vec<u8>, Vec<IndexEntry>, bool)> {
-        ensure!(
-            self.entries.len() == self.expected_rows,
-            "frame builder encoded {} rows, expected {}",
-            self.entries.len(),
-            self.expected_rows
-        );
-        if let Some(expected_payload_bytes) = self.expected_payload_bytes {
-            ensure!(
-                self.payload.len() == expected_payload_bytes,
-                "frame builder encoded {} payload bytes, expected {}",
-                self.payload.len(),
-                expected_payload_bytes
-            );
-        }
-        let payload_start = frame_start
-            .checked_add(FRAME_HEADER_LEN as u64)
-            .context("frame payload offset overflows u64")?;
-        for entry in &mut self.entries {
-            entry.value_offset = payload_start
-                .checked_add(entry.value_offset)
-                .context("absolute frame value offset overflows u64")?;
-        }
-        Ok((
-            self.expected_rows,
-            self.payload,
-            self.entries,
-            self.keys_are_sorted,
-        ))
+        self,
+    ) -> Result<(PackFrameContext, usize, Vec<u8>, Vec<u8>, Vec<IndexEntry>)> {
+        let _ = self.preflight()?;
+        let (metadata, values, entries) = encode_pending_rows(self.rows, self.values)?;
+        Ok((self.context, self.expected_rows, metadata, values, entries))
     }
+}
+
+fn ensure_builder_layout_limits(
+    metadata_bytes: u64,
+    value_bytes: u64,
+    max_frame_payload_bytes: u64,
+    max_pending_bytes: u64,
+) -> Result<()> {
+    let payload_bytes = metadata_bytes
+        .checked_add(value_bytes)
+        .context("frame payload size overflows u64")?;
+    if payload_bytes > max_frame_payload_bytes {
+        return Err(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::FramePayloadBytes,
+            actual: payload_bytes,
+            maximum: max_frame_payload_bytes,
+        }
+        .into());
+    }
+    let frame_bytes = payload_bytes
+        .checked_add(FRAME_HEADER_LEN as u64)
+        .and_then(|bytes| bytes.checked_add(FRAME_FOOTER_LEN as u64))
+        .context("encoded frame length overflows")?;
+    if frame_bytes > max_pending_bytes {
+        return Err(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::PendingBytes,
+            actual: frame_bytes,
+            maximum: max_pending_bytes,
+        }
+        .into());
+    }
+    Ok(())
 }

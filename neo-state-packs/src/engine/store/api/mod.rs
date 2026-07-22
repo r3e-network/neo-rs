@@ -27,5 +27,6 @@ pub use identity::{
     PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackPosition, PackSegmentId,
 };
 pub use lifecycle::{
-    OpenValidation, PackCommitHorizon, PackFrameReceipt, PreparedAppend, SealedAppend,
+    OpenValidation, PackCommitHorizon, PackFrameContext, PackFrameReceipt, PreparedAppend,
+    SealedAppend,
 };

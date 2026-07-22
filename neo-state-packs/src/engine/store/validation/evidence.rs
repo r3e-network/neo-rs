@@ -1,10 +1,10 @@
 use super::*;
 use std::collections::HashMap;
 
-const LOOKUP_EVIDENCE_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-lookup-evidence/v3\0";
-const SAMPLE_KEYSET_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-lookup-keyset/v1\0";
-const FRAME_REFERENCE_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-frame-reference/v1\0";
-const SYNTHETIC_MISS_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-synthetic-miss/v1\0";
+const LOOKUP_EVIDENCE_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-lookup-evidence/v4\0";
+const SAMPLE_KEYSET_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-lookup-keyset/v2\0";
+const FRAME_REFERENCE_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-frame-reference/v2\0";
+const SYNTHETIC_MISS_DIGEST_DOMAIN: &[u8] = b"neo-state-packs/materialized-synthetic-miss/v2\0";
 /// Maximum number of keys passed to one sorted lookup call.
 const LOOKUP_BATCH_MAX_ENTRIES: usize = 1_024;
 /// Maximum cumulative value bytes requested by one sorted lookup call.
@@ -28,7 +28,7 @@ pub(super) const FRAME_REFERENCE_VALUE_HASH_CHUNK_BYTES: usize = 4 * 1024 * 1024
 /// location, value length, and tombstone without loading records into memory.
 /// The lookup digest covers a bounded deterministic key sample and compares
 /// the public lookup paths with both winner offsets and committed frame rows.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PackMaterializedViewEvidence {
     /// Manifest generation pinned while producing this evidence.
     pub generation: u64,
@@ -42,8 +42,10 @@ pub struct PackMaterializedViewEvidence {
     pub tip_segment_id: PackSegmentId,
     /// Canonical committed frame end bound to the evidence.
     pub tip_frame_end: u64,
-    /// Canonical tip payload checksum bound to the evidence.
-    pub tip_payload_sha256: [u8; 32],
+    /// Canonical block range and root transition bound to the evidence.
+    pub tip_context: PackFrameContext,
+    /// Canonical full-frame digest bound to the evidence.
+    pub tip_frame_sha256: [u8; 32],
     /// Unique newest-version winner records in the materialized view.
     pub winner_records: u64,
     /// Put winners in the materialized view.
@@ -101,7 +103,8 @@ impl PackMaterializedViewEvidence {
         self.tip_epoch == other.tip_epoch
             && self.tip_segment_id == other.tip_segment_id
             && self.tip_frame_end == other.tip_frame_end
-            && self.tip_payload_sha256 == other.tip_payload_sha256
+            && self.tip_context == other.tip_context
+            && self.tip_frame_sha256 == other.tip_frame_sha256
             && self.winner_records == other.winner_records
             && self.puts == other.puts
             && self.tombstones == other.tombstones
@@ -222,7 +225,8 @@ impl PackStore {
             tip_epoch: receipt.epoch,
             tip_segment_id: receipt.segment_id,
             tip_frame_end: receipt.frame_end,
-            tip_payload_sha256: receipt.payload_sha256,
+            tip_context: receipt.context,
+            tip_frame_sha256: receipt.frame_sha256,
             winner_records: merged.output_records,
             puts,
             tombstones,
@@ -812,8 +816,13 @@ fn evidence_hasher(domain: &[u8], receipt: PackFrameReceipt) -> Sha256 {
     let mut hasher = Sha256::new();
     hasher.update(domain);
     hasher.update(receipt.epoch.to_le_bytes());
+    hasher.update(receipt.segment_id.get().to_le_bytes());
     hasher.update(receipt.frame_end.to_le_bytes());
-    hasher.update(receipt.payload_sha256);
+    hasher.update(receipt.context.block_start.to_le_bytes());
+    hasher.update(receipt.context.block_end.to_le_bytes());
+    hasher.update(receipt.context.previous_root);
+    hasher.update(receipt.context.resulting_root);
+    hasher.update(receipt.frame_sha256);
     hasher
 }
 

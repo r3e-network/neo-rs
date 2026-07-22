@@ -19,7 +19,8 @@ use std::path::Path;
 
 /// Deletes leftover temp files from interrupted run or manifest
 /// publications. Only `.tmp` artifacts of the pack engine's own naming scheme
-/// are touched, and only after the live generation is known.
+/// are touched. Callers hold the writer lease so cleanup cannot race a live
+/// publication.
 pub(super) fn clear_stale_temp_files(root: &Path) -> Result<()> {
     for directory in [root.to_path_buf(), root.join("runs")] {
         let entries = match fs::read_dir(&directory) {
@@ -30,6 +31,7 @@ pub(super) fn clear_stale_temp_files(root: &Path) -> Result<()> {
                     .with_context(|| format!("read directory {}", directory.display()));
             }
         };
+        let mut removed = false;
         for entry in entries {
             let entry = entry.context("read directory entry")?;
             let path = entry.path();
@@ -43,7 +45,11 @@ pub(super) fn clear_stale_temp_files(root: &Path) -> Result<()> {
             if is_stale_tmp {
                 fs::remove_file(&path)
                     .with_context(|| format!("delete stale temp file {}", path.display()))?;
+                removed = true;
             }
+        }
+        if removed {
+            sync_directory(&directory)?;
         }
     }
     Ok(())

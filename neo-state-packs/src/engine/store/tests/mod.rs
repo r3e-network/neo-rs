@@ -36,6 +36,7 @@ fn numbered_key(number: u32) -> [u8; PACK_KEY_BYTES] {
 }
 
 const TEST_NODE_PREFIX: u8 = 0xf0;
+const TEST_FRAME_CONTEXT: PackFrameContext = PackFrameContext::new(0, 0, [0; 32], [0; 32]);
 
 fn put(key: [u8; PACK_KEY_BYTES], value: &[u8]) -> PackOperation {
     PackOperation {
@@ -49,6 +50,34 @@ fn tombstone(key: [u8; PACK_KEY_BYTES]) -> PackOperation {
         key,
         kind: PackOpKind::Tombstone,
     }
+}
+
+fn encoded_test_frame(
+    epoch: u64,
+    context: PackFrameContext,
+    operations: &[PackOperation],
+) -> Vec<u8> {
+    let (metadata, values, _) = encode_frame_payload(operations).expect("encode test payload");
+    let header = encode_frame_header(
+        epoch,
+        context,
+        operations.len(),
+        metadata.len(),
+        values.len(),
+        frame_metadata_digest(&metadata),
+        frame_value_digest(&values),
+    )
+    .expect("encode test frame header");
+    let frame_bytes = (FRAME_HEADER_LEN + metadata.len() + values.len() + FRAME_FOOTER_LEN) as u64;
+    let footer = encode_frame_footer(epoch, frame_bytes, frame_digest(&header))
+        .expect("encode test frame footer");
+    [
+        header.as_slice(),
+        metadata.as_slice(),
+        values.as_slice(),
+        footer.as_slice(),
+    ]
+    .concat()
 }
 
 fn store_config(max_index_memory_bytes: u64) -> PackStoreConfig {
@@ -65,7 +94,7 @@ fn small_compaction_config(max_index_memory_bytes: u64) -> PackStoreConfig {
 
 fn append_without_maintenance(store: &mut PackStore, operations: &[PackOperation]) {
     let prepared = store
-        .prepare_append(operations)
+        .prepare_frame(TEST_FRAME_CONTEXT, operations)
         .expect("prepare unmaintained frame");
     let sealed = store
         .seal_prepared(prepared)
@@ -90,10 +119,12 @@ fn assert_borrowed_frame_matches_owned_format_bytes(
         append_without_maintenance(&mut borrowed, &prefix);
     }
     let owned_prepared = owned
-        .prepare_append(operations)
+        .prepare_frame(TEST_FRAME_CONTEXT, operations)
         .expect("prepare owned frame");
 
-    let mut builder = PackFrameBuilder::new(operations.len()).expect("create frame builder");
+    let mut builder = borrowed
+        .frame_builder(TEST_FRAME_CONTEXT, operations.len())
+        .expect("create frame builder");
     for operation in operations {
         let value = match &operation.kind {
             PackOpKind::Put(value) => Some(value.as_slice()),
@@ -147,19 +178,13 @@ fn borrowed_frame_builder_matches_owned_format_bytes() {
     let repeated = key(9);
     let deleted = key(2);
     let empty = key(7);
-    let unsorted = vec![
-        put(repeated, b"first"),
-        tombstone(deleted),
-        put(repeated, b"newest"),
-        put(empty, b""),
-    ];
     let sorted = vec![
         tombstone(deleted),
         put(empty, b""),
         put(repeated, b"first"),
         put(repeated, b"newest"),
     ];
-    assert_borrowed_frame_matches_owned_format_bytes(&unsorted, false);
+    assert_borrowed_frame_matches_owned_format_bytes(&sorted, false);
     assert_borrowed_frame_matches_owned_format_bytes(&sorted, true);
 }
 
@@ -169,7 +194,9 @@ fn borrowed_frame_builder_fails_before_writing_on_invalid_input() {
     let mut store =
         PackStore::create(root.path(), store_config(1024 * 1024)).expect("create pack store");
 
-    let mut incomplete = PackFrameBuilder::new(2).expect("create incomplete builder");
+    let mut incomplete = store
+        .frame_builder(TEST_FRAME_CONTEXT, 2)
+        .expect("create incomplete builder");
     incomplete
         .push(&key(1), Some(b"one"))
         .expect("encode first row");
@@ -184,15 +211,16 @@ fn borrowed_frame_builder_fails_before_writing_on_invalid_input() {
         segment::SEGMENT_HEADER_LEN as u64
     );
 
-    let mut wrong_value_bytes =
-        PackFrameBuilder::with_value_bytes(1, 4).expect("create exact-size builder");
+    let mut wrong_value_bytes = store
+        .frame_builder_with_value_bytes(TEST_FRAME_CONTEXT, 1, 4)
+        .expect("create exact-size builder");
     wrong_value_bytes
         .push(&key(2), Some(b"one"))
         .expect("encode undersized value");
     let error = store
         .prepare_built_append(wrong_value_bytes)
         .expect_err("aggregate value-byte mismatch must fail");
-    assert!(error.to_string().contains("payload bytes"));
+    assert!(error.to_string().contains("value bytes"));
     assert_eq!(
         fs::metadata(root.path().join(PackSegmentId::INITIAL.file_name()))
             .expect("stat untouched frame file")
@@ -200,14 +228,18 @@ fn borrowed_frame_builder_fails_before_writing_on_invalid_input() {
         segment::SEGMENT_HEADER_LEN as u64
     );
 
-    let mut invalid_key = PackFrameBuilder::new(1).expect("create invalid-key builder");
+    let mut invalid_key = store
+        .frame_builder(TEST_FRAME_CONTEXT, 1)
+        .expect("create invalid-key builder");
     let error = invalid_key
         .push(&[0u8; PACK_KEY_BYTES - 1], Some(b"value"))
         .expect_err("short key must fail");
     assert!(error.to_string().contains("expected 33"));
     assert!(invalid_key.is_empty());
 
-    let mut excess_rows = PackFrameBuilder::new(1).expect("create bounded builder");
+    let mut excess_rows = store
+        .frame_builder(TEST_FRAME_CONTEXT, 1)
+        .expect("create bounded builder");
     excess_rows
         .push(&key(3), Some(b"one"))
         .expect("encode declared row");
@@ -220,21 +252,46 @@ fn borrowed_frame_builder_fails_before_writing_on_invalid_input() {
             .contains("more than its declared row count")
     );
 
-    let mut undersized =
-        PackFrameBuilder::with_value_bytes(1, 2).expect("create undersized builder");
+    let mut undersized = store
+        .frame_builder_with_value_bytes(TEST_FRAME_CONTEXT, 1, 2)
+        .expect("create undersized builder");
     let error = undersized
         .push(&key(5), Some(b"three"))
         .expect_err("value above declared aggregate must fail");
     assert!(error.to_string().contains("declared aggregate byte count"));
     assert!(undersized.is_empty());
 
-    let mut valid = PackFrameBuilder::new(1).expect("create replacement builder");
+    let mut valid = store
+        .frame_builder(TEST_FRAME_CONTEXT, 1)
+        .expect("create replacement builder");
     valid
         .push(&key(3), Some(b"valid"))
         .expect("encode replacement row");
     store
         .prepare_built_append(valid)
         .expect("store remains usable after rejected builders");
+}
+
+#[test]
+fn frame_builder_preflights_index_memory_before_reserving_rows() {
+    let root = tempdir().expect("temporary bounded store");
+    let store = PackStore::create(root.path(), store_config(1)).expect("create bounded store");
+    let error = store
+        .frame_builder(TEST_FRAME_CONTEXT, 1)
+        .expect_err("builder must reject its worst-case index footprint");
+    assert!(matches!(
+        error.downcast_ref::<PackStoreError>(),
+        Some(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::IndexMemoryBytes,
+            ..
+        })
+    ));
+    assert_eq!(
+        fs::metadata(root.path().join(PackSegmentId::INITIAL.file_name()))
+            .expect("stat untouched frame file")
+            .len(),
+        segment::SEGMENT_HEADER_LEN as u64
+    );
 }
 
 #[test]
@@ -362,15 +419,21 @@ fn writer_lease_canonicalizes_a_symlinked_store_path() {
 #[test]
 fn frame_header_enforces_row_payload_and_allocation_hard_limits() {
     let checksum = [0u8; 32];
-    let error =
-        encode_frame_header(0, 0, 0, checksum).expect_err("empty frame header must be rejected");
+    let error = encode_frame_header(0, TEST_FRAME_CONTEXT, 0, 0, 0, checksum, checksum)
+        .expect_err("empty frame header must be rejected");
     assert!(error.to_string().contains("at least one row"));
 
     let too_many_rows = usize::try_from(MAX_FRAME_ROWS + 1).expect("row limit fits usize");
+    let too_many_metadata = too_many_rows
+        .checked_mul(FRAME_ROW_METADATA_LEN)
+        .expect("metadata length fits usize");
     let error = encode_frame_header(
         0,
+        TEST_FRAME_CONTEXT,
         too_many_rows,
-        usize::try_from(MAX_FRAME_PAYLOAD_BYTES).expect("payload limit fits usize"),
+        too_many_metadata,
+        0,
+        checksum,
         checksum,
     )
     .expect_err("oversized row count must be rejected");
@@ -378,31 +441,45 @@ fn frame_header_enforces_row_payload_and_allocation_hard_limits() {
 
     let error = encode_frame_header(
         0,
+        TEST_FRAME_CONTEXT,
         1,
+        FRAME_ROW_METADATA_LEN,
         usize::try_from(MAX_FRAME_PAYLOAD_BYTES + 1).expect("payload overflow fits usize"),
+        checksum,
         checksum,
     )
     .expect_err("oversized payload must be rejected");
     assert!(error.to_string().contains("payload exceeds"));
 
-    let short_payload =
-        usize::try_from(2 * FRAME_ROW_HEADER_BYTES - 1).expect("short payload length fits usize");
-    let error = encode_frame_header(0, 2, short_payload, checksum)
-        .expect_err("short row payload must be rejected");
-    assert!(error.to_string().contains("too short"));
+    let error = encode_frame_header(
+        0,
+        TEST_FRAME_CONTEXT,
+        2,
+        2 * FRAME_ROW_METADATA_LEN - 1,
+        0,
+        checksum,
+        checksum,
+    )
+    .expect_err("short row metadata must be rejected");
+    assert!(error.to_string().contains("metadata length"));
 
-    let mut malicious = [0u8; FRAME_HEADER_LEN];
-    malicious[0..8].copy_from_slice(FRAME_MAGIC);
-    malicious[8..12].copy_from_slice(&PACK_FRAME_FORMAT_VERSION.to_le_bytes());
-    malicious[12..16].copy_from_slice(&(FRAME_HEADER_LEN as u32).to_le_bytes());
-    malicious[24..32].copy_from_slice(&1u64.to_le_bytes());
-    malicious[32..40].copy_from_slice(&(MAX_FRAME_PAYLOAD_BYTES + 1).to_le_bytes());
+    let mut malicious = encode_frame_header(
+        0,
+        TEST_FRAME_CONTEXT,
+        1,
+        FRAME_ROW_METADATA_LEN,
+        0,
+        checksum,
+        checksum,
+    )
+    .expect("valid base frame header");
+    malicious[48..56].copy_from_slice(&(MAX_FRAME_PAYLOAD_BYTES + 1).to_le_bytes());
     let error = validate_frame_header(&malicious, 0)
         .expect_err("oversized reopened payload must be rejected");
     assert!(error.to_string().contains("payload exceeds"));
 
     malicious[8..12].copy_from_slice(&(PACK_FRAME_FORMAT_VERSION + 1).to_le_bytes());
-    malicious[32..40].copy_from_slice(&FRAME_ROW_HEADER_BYTES.to_le_bytes());
+    malicious[48..56].copy_from_slice(&0u64.to_le_bytes());
     let error =
         validate_frame_header(&malicious, 0).expect_err("unknown frame version must fail closed");
     assert!(matches!(
@@ -421,7 +498,7 @@ fn random_point_mmaps_are_opt_in_and_survive_append_compaction_and_reopen() {
     let mut default_store = PackStore::create(default_root.path(), store_config(1024 * 1024))
         .expect("create default store");
     default_store
-        .append(&[put(key(1), b"default")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(1), b"default")])
         .expect("append through default mappings");
     assert!(default_store.lookup_pack_map.is_none());
     assert!(
@@ -443,14 +520,17 @@ fn random_point_mmaps_are_opt_in_and_survive_append_compaction_and_reopen() {
     let first = key(10);
     let second = key(20);
     store
-        .append(&[put(first, b"old"), put(second, b"present")])
+        .append_frame(
+            TEST_FRAME_CONTEXT,
+            &[put(first, b"old"), put(second, b"present")],
+        )
         .expect("append initial versions");
     let pinned = store.snapshot().expect("pin initial generation");
     store
-        .append(&[put(first, b"new")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(first, b"new")])
         .expect("append replacement");
     store
-        .append(&[tombstone(second)])
+        .append_frame(TEST_FRAME_CONTEXT, &[tombstone(second)])
         .expect("append tombstone and compact L0");
 
     assert!(store.lookup_pack_map.is_some());
@@ -537,7 +617,9 @@ fn pack_read_workers_are_bounded_and_parallel_batches_preserve_order() {
     let deleted = numbered_key(1_028);
     let missing = numbered_key(1_029);
     operations.push(tombstone(deleted));
-    store.append(&operations).expect("append shuffled values");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &operations)
+        .expect("append shuffled values");
 
     let duplicate = numbered_key(512);
     let mut keys = stored_keys.clone();
@@ -592,18 +674,21 @@ fn newest_row_and_run_win_and_tombstones_survive_reopen() {
     let second = key(2);
 
     store
-        .append(&[
-            put(first, b"old"),
-            put(second, b"second"),
-            put(first, b"same-frame-new"),
-        ])
+        .append_frame(
+            TEST_FRAME_CONTEXT,
+            &[
+                put(first, b"old"),
+                put(second, b"second"),
+                put(first, b"same-frame-new"),
+            ],
+        )
         .expect("append first frame");
     assert_eq!(
         store.get(&first).expect("read same-frame version"),
         Some(b"same-frame-new".to_vec())
     );
     store
-        .append(&[put(first, b"new-run")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(first, b"new-run")])
         .expect("append replacement frame");
     assert_eq!(
         store.get(&first).expect("read newer run"),
@@ -616,7 +701,9 @@ fn newest_row_and_run_win_and_tombstones_survive_reopen() {
         sorted,
         vec![Some(b"new-run".to_vec()), Some(b"second".to_vec())]
     );
-    store.append(&[tombstone(first)]).expect("append tombstone");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[tombstone(first)])
+        .expect("append tombstone");
     assert_eq!(store.get(&first).expect("read tombstone"), None);
     drop(store);
 
@@ -643,14 +730,17 @@ fn sorted_batch_restores_key_order_after_payload_offset_reads() {
     // Payload offsets follow operation order, deliberately opposing the
     // sorted query order used by the index scan.
     store
-        .append(&[
-            put(third, b"third"),
-            put(second, b"second"),
-            put(first, b"first"),
-        ])
+        .append_frame(
+            TEST_FRAME_CONTEXT,
+            &[
+                put(third, b"third"),
+                put(second, b"second"),
+                put(first, b"first"),
+            ],
+        )
         .expect("append reverse-offset values");
     store
-        .append(&[tombstone(second)])
+        .append_frame(TEST_FRAME_CONTEXT, &[tombstone(second)])
         .expect("append second-key tombstone");
 
     assert_eq!(
@@ -682,7 +772,10 @@ fn bounded_reads_reject_indexed_values_before_result_allocation() {
     let first = key(0x11);
     let second = key(0x22);
     store
-        .append(&[put(first, b"first"), put(second, b"second")])
+        .append_frame(
+            TEST_FRAME_CONTEXT,
+            &[put(first, b"first"), put(second, b"second")],
+        )
         .expect("append bounded-read values");
 
     let point_error = store
@@ -732,8 +825,19 @@ fn index_scrub_rejects_payload_ranges_beyond_the_committed_pack() {
         ..outside
     };
     let error = validate_index_entry_payload_range(&tombstone_outside, 101)
-        .expect_err("out-of-pack tombstone offset must fail scrub");
-    assert!(error.to_string().contains("beyond the committed pack"));
+        .expect_err("non-canonical tombstone offset must fail scrub");
+    assert!(error.to_string().contains("non-zero value location"));
+
+    let foreign_namespace = IndexEntry {
+        key: [0xef; PACK_KEY_BYTES],
+        value_offset: 0,
+        value_len: 0,
+        tombstone: true,
+        ..outside
+    };
+    let error = validate_index_entry_payload_range(&foreign_namespace, 101)
+        .expect_err("foreign namespace must fail scrub");
+    assert!(error.to_string().contains("outside the MPT node namespace"));
 }
 
 #[test]
@@ -743,9 +847,15 @@ fn append_rejects_decoded_index_memory_overflow_before_writing() {
     let mut store =
         PackStore::create(root.path(), store_config(bound)).expect("create bounded store");
     let error = store
-        .append(&[put(key(3), b"value")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(3), b"value")])
         .expect_err("index memory bound must reject frame");
-    assert!(error.to_string().contains("exceeds configured bound"));
+    assert!(matches!(
+        error.downcast_ref::<PackStoreError>(),
+        Some(PackStoreError::LimitExceeded {
+            limit: PackStoreLimit::IndexMemoryBytes,
+            ..
+        })
+    ));
     assert_eq!(
         store.layout().expect("empty layout"),
         (segment::SEGMENT_HEADER_LEN as u64, 0, 0, 0),
@@ -758,7 +868,7 @@ fn reopen_rejects_corrupt_committed_frame_payload() {
     let mut store =
         PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
     store
-        .append(&[put(key(4), b"checksum-target")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(4), b"checksum-target")])
         .expect("append frame");
     drop(store);
 
@@ -788,7 +898,7 @@ fn assert_corrupt_index_structure_is_rebuilt(byte_offset: u64) {
     let mut store =
         PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
     store
-        .append(&[put(target, b"structure-target")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"structure-target")])
         .expect("append frame");
     let generation = store.snapshot().expect("snapshot").generation();
     drop(store);
@@ -848,7 +958,7 @@ fn legacy_v2_index_run_is_rebuilt_before_use() {
     let mut store =
         PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
     store
-        .append(&[put(target, b"legacy-index-target")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"legacy-index-target")])
         .expect("append frame");
     let generation = store.snapshot().expect("snapshot").generation();
     drop(store);
@@ -895,10 +1005,13 @@ fn committed_frame_scrub_counts_every_historical_row() {
     let first = key(41);
     let second = key(42);
     store
-        .append(&[put(first, b"old"), put(second, b"second")])
+        .append_frame(
+            TEST_FRAME_CONTEXT,
+            &[put(first, b"old"), put(second, b"second")],
+        )
         .expect("append first frame");
     store
-        .append(&[put(first, b"new"), tombstone(second)])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(first, b"new"), tombstone(second)])
         .expect("append second frame");
     let generation_before = store
         .snapshot()
@@ -930,10 +1043,10 @@ fn checkpoint_scrub_hashes_every_ordered_key_and_value() {
     let first = key(45);
     let second = key(46);
     store
-        .append(&[put(first, b"first")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(first, b"first")])
         .expect("append first checkpoint frame");
     store
-        .append(&[put(second, b"second")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(second, b"second")])
         .expect("append second checkpoint frame");
 
     let evidence = store
@@ -962,10 +1075,10 @@ fn checkpoint_scrub_rejects_versioned_or_tombstoned_streams() {
         PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
     let repeated = key(47);
     store
-        .append(&[put(repeated, b"first")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(repeated, b"first")])
         .expect("append first version");
     store
-        .append(&[put(repeated, b"second")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(repeated, b"second")])
         .expect("append repeated version");
     let error = store
         .scrub_checkpoint_namespace()
@@ -976,7 +1089,7 @@ fn checkpoint_scrub_rejects_versioned_or_tombstoned_streams() {
     let mut tombstone_store =
         PackStore::create(tombstone_root.path(), store_config(1024 * 1024)).expect("create store");
     tombstone_store
-        .append(&[tombstone(key(48))])
+        .append_frame(TEST_FRAME_CONTEXT, &[tombstone(key(48))])
         .expect("append tombstone");
     let error = tombstone_store
         .scrub_checkpoint_namespace()
@@ -990,10 +1103,10 @@ fn committed_frame_scrub_detects_corrupt_non_tail_payload() {
     let mut store =
         PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
     store
-        .append(&[put(key(43), b"first")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(43), b"first")])
         .expect("append first frame");
     store
-        .append(&[put(key(44), b"tail")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(44), b"tail")])
         .expect("append tail frame");
     drop(store);
 
@@ -1004,7 +1117,9 @@ fn committed_frame_scrub_detects_corrupt_non_tail_payload() {
         .open(&pack_path)
         .expect("open pack for corruption");
     pack.seek(SeekFrom::Start(
-        segment::SEGMENT_HEADER_LEN as u64 + FRAME_HEADER_LEN as u64 + FRAME_ROW_HEADER_BYTES,
+        segment::SEGMENT_HEADER_LEN as u64
+            + FRAME_HEADER_LEN as u64
+            + FRAME_ROW_METADATA_LEN as u64,
     ))
     .expect("seek into first value");
     pack.write_all(&[0xff]).expect("corrupt first payload");
@@ -1040,7 +1155,9 @@ fn fence_probe_handles_boundaries_and_truncated_prefix_collisions() {
         .enumerate()
         .map(|(index, key)| put(*key, format!("value-{index}").as_bytes()))
         .collect();
-    store.append(&operations).expect("append adversarial frame");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &operations)
+        .expect("append adversarial frame");
     for (index, key) in keys.iter().enumerate() {
         assert_eq!(
             store.get(key).expect("read boundary key"),
@@ -1085,10 +1202,10 @@ fn reopen_truncates_torn_tail_without_a_published_run() {
     let mut store =
         PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
     store
-        .append(&[put(first, b"one")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(first, b"one")])
         .expect("append first frame");
     store
-        .append(&[put(second, b"two")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(second, b"two")])
         .expect("append second frame");
     let (committed_len, _, _, _) = store.layout().expect("committed layout");
     drop(store);
@@ -1120,36 +1237,83 @@ fn reopen_truncates_torn_tail_without_a_published_run() {
     );
     drop(reopened);
 
-    // Case two: well-formed header whose payload is torn.
+    // Cases two through four: one otherwise-valid next frame torn in each
+    // independently authenticated variable/final section.
+    let complete = encoded_test_frame(2, TEST_FRAME_CONTEXT, &[put(key(3), b"complete-value")]);
+    let metadata_end = FRAME_HEADER_LEN + FRAME_ROW_METADATA_LEN;
+    let value_end = metadata_end + b"complete-value".len();
+    for (label, cut) in [
+        ("metadata", FRAME_HEADER_LEN + 1),
+        ("values", metadata_end + 1),
+        ("footer", value_end + 1),
+    ] {
+        let mut pack = OpenOptions::new()
+            .append(true)
+            .open(&pack_path)
+            .unwrap_or_else(|error| panic!("open pack for torn {label}: {error}"));
+        pack.write_all(&complete[..cut])
+            .unwrap_or_else(|error| panic!("write torn {label}: {error}"));
+        pack.sync_all()
+            .unwrap_or_else(|error| panic!("sync torn {label}: {error}"));
+        drop(pack);
+
+        let reopened = PackStore::open(root.path(), store_config(1024 * 1024))
+            .unwrap_or_else(|error| panic!("reopen truncates torn {label}: {error}"));
+        assert_eq!(reopened.open_validation().frames, 2);
+        assert_eq!(
+            reopened
+                .get(&second)
+                .unwrap_or_else(|error| panic!("read after torn {label}: {error}")),
+            Some(b"two".to_vec())
+        );
+        assert_eq!(
+            reopened.layout().expect("truncated layout").0,
+            committed_len
+        );
+        drop(reopened);
+    }
+}
+
+#[test]
+fn reopen_rejects_unknown_numeric_frame_tail_without_truncating_it() {
+    let root = tempdir().expect("temporary append store");
+    let mut store =
+        PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(1), b"committed")])
+        .expect("append committed frame");
+    drop(store);
+
+    let pack_path = root.path().join(PackSegmentId::INITIAL.file_name());
+    let mut unknown = encoded_test_frame(1, TEST_FRAME_CONTEXT, &[put(key(2), b"future-format")]);
+    unknown[..8].copy_from_slice(b"N3PACK03");
     let mut pack = OpenOptions::new()
         .append(true)
         .open(&pack_path)
-        .expect("open pack for torn payload");
-    let mut fake = [0u8; FRAME_HEADER_LEN];
-    fake[0..8].copy_from_slice(FRAME_MAGIC);
-    fake[8..12].copy_from_slice(&PACK_FRAME_FORMAT_VERSION.to_le_bytes());
-    fake[12..16].copy_from_slice(&(FRAME_HEADER_LEN as u32).to_le_bytes());
-    fake[16..24].copy_from_slice(&2u64.to_le_bytes());
-    fake[24..32].copy_from_slice(&1u64.to_le_bytes());
-    fake[32..40].copy_from_slice(&1_000_000u64.to_le_bytes());
-    pack.write_all(&fake).expect("write torn frame header");
-    pack.write_all(&[0xCDu8; 128])
-        .expect("write torn payload bytes");
-    pack.sync_all().expect("sync torn payload");
+        .expect("open pack for unknown frame");
+    pack.write_all(&unknown[..8])
+        .expect("append unknown partial frame family");
+    pack.sync_all().expect("sync unknown frame family");
     drop(pack);
+    let before = fs::metadata(&pack_path).expect("stat unknown tail").len();
 
-    let reopened = PackStore::open(root.path(), store_config(1024 * 1024))
-        .expect("reopen truncates a torn payload");
-    assert_eq!(reopened.open_validation().frames, 2);
+    let error = PackStore::open(root.path(), store_config(1024 * 1024))
+        .err()
+        .expect("unknown numeric frame family must fail closed");
+    assert!(matches!(
+        error,
+        PackStoreError::UnsupportedVersion {
+            artifact: PackStoreArtifact::Frame,
+            found: 3,
+            ..
+        }
+    ));
     assert_eq!(
-        reopened
-            .get(&second)
-            .expect("read second after payload truncation"),
-        Some(b"two".to_vec())
-    );
-    assert_eq!(
-        reopened.layout().expect("truncated layout").0,
-        committed_len
+        fs::metadata(&pack_path)
+            .expect("stat preserved unknown tail")
+            .len(),
+        before,
+        "unsupported bytes must not be truncated"
     );
 }
 
@@ -1223,15 +1387,19 @@ fn compaction_dedups_and_pinned_generation_reads_older_versions() {
         PackStore::create(root.path(), small_compaction_config(1024 * 1024)).expect("create store");
     let target = key(1);
     store
-        .append(&[put(target, b"v1"), put(key(2), b"a")])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v1"), put(key(2), b"a")])
         .expect("append frame 0");
-    store.append(&[put(target, b"v2")]).expect("append frame 1");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v2")])
+        .expect("append frame 1");
     let pinned = store.snapshot().expect("pin generation 2");
     assert_eq!(pinned.generation(), 2);
 
     // Frame 2 pushes L0 past its bound: the first compaction cycle merges
     // all three frames into one L1 run, keeping the newest version.
-    store.append(&[put(target, b"v3")]).expect("append frame 2");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v3")])
+        .expect("append frame 2");
     assert_eq!(store.runs.len(), 1);
     assert_eq!(store.runs[0].level, 1);
     assert_eq!(
@@ -1244,12 +1412,24 @@ fn compaction_dedups_and_pinned_generation_reads_older_versions() {
     );
 
     // Drive L1 into L2: three more L0 cycles, then one L1 merge.
-    store.append(&[put(key(3), b"b")]).expect("append frame 3");
-    store.append(&[put(key(4), b"c")]).expect("append frame 4");
-    store.append(&[put(target, b"v4")]).expect("append frame 5");
-    store.append(&[put(key(5), b"d")]).expect("append frame 6");
-    store.append(&[put(key(6), b"e")]).expect("append frame 7");
-    store.append(&[put(key(7), b"f")]).expect("append frame 8");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(3), b"b")])
+        .expect("append frame 3");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(4), b"c")])
+        .expect("append frame 4");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(target, b"v4")])
+        .expect("append frame 5");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(5), b"d")])
+        .expect("append frame 6");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(6), b"e")])
+        .expect("append frame 7");
+    store
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(7), b"f")])
+        .expect("append frame 8");
     assert_eq!(store.runs.len(), 1);
     assert_eq!(store.runs[0].level, 2);
     assert_eq!(store.runs[0].min_epoch, 0);
@@ -1293,7 +1473,10 @@ fn metrics_cover_store_and_snapshot_reads_without_dynamic_labels() {
     let second = key(2);
     let absent = key(3);
     store
-        .append(&[put(first, b"one"), put(second, b"two")])
+        .append_frame(
+            TEST_FRAME_CONTEXT,
+            &[put(first, b"one"), put(second, b"two")],
+        )
         .expect("append values");
 
     let snapshot = store.snapshot().expect("pin snapshot");

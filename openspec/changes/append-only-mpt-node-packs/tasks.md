@@ -9,11 +9,11 @@
 ## 2. Node-Pack Format And Index
 
 - [x] 2.1 Create the `neo-state-packs` crate with bounded configuration, typed errors, single-writer lease, segment identity, and explicit format versioning
-- [ ] 2.2 Implement deterministic frame encode/decode for put and tombstone rows with roots, block range, lengths, ordering, checksums, and complete footer
+- [x] 2.2 Implement deterministic frame encode/decode for put and tombstone rows with roots, block range, lengths, ordering, checksums, and complete footer
 - [ ] 2.3 Add segment rotation, positioned reads, append and `sync_data`, directory durability, and hard frame/segment limits
 - [ ] 2.4 Implement high-water recovery, torn-tail truncation, orphan suffix handling, and fatal committed-frame corruption checks
 - [ ] 2.5 Implement rebuildable immutable sorted index runs, verified filters, newest-version point reads, and ordered batch reads
-- [ ] 2.6 Implement immutable manifest generations, snapshot segment leases, deferred reclaim, and bounded recent-run memory
+- [ ] 2.6 Implement immutable manifest generations that authenticate selected segment/frame extents and run identities, snapshot segment leases, deferred reclaim, and bounded recent-run memory
 - [x] 2.7 Implement leveled index compaction with newest-epoch/reference-count semantics and safe tombstone retention
 - [x] 2.8 Add scrub/probe APIs and bounded-label append, sync, lookup, rebuild, compaction, debt, stall, and amplification metrics
 

@@ -2,14 +2,64 @@ use super::segment::SEGMENT_HEADER_LEN;
 use super::*;
 
 impl PackStore {
-    /// Compatibility append API: durably prepares one frame and then
-    /// immediately activates it through its matching commit horizon.
+    /// Creates a bounded store-owned builder when aggregate value bytes are
+    /// not known in advance.
+    pub fn frame_builder(
+        &self,
+        context: PackFrameContext,
+        expected_rows: usize,
+    ) -> Result<PackFrameBuilder> {
+        self.new_frame_builder(context, expected_rows, None)
+    }
+
+    /// Creates a bounded store-owned builder with an exact aggregate value
+    /// byte count, allowing its final value buffer to be reserved once.
+    pub fn frame_builder_with_value_bytes(
+        &self,
+        context: PackFrameContext,
+        expected_rows: usize,
+        value_bytes: u64,
+    ) -> Result<PackFrameBuilder> {
+        self.new_frame_builder(context, expected_rows, Some(value_bytes))
+    }
+
+    fn new_frame_builder(
+        &self,
+        context: PackFrameContext,
+        expected_rows: usize,
+        value_bytes: Option<u64>,
+    ) -> Result<PackFrameBuilder> {
+        validate_frame_context(context)?;
+        let rows = u64::try_from(expected_rows).context("frame row count does not fit u64")?;
+        let metadata_bytes = rows
+            .checked_mul(FRAME_ROW_METADATA_LEN as u64)
+            .context("frame metadata length overflows")?;
+        self.ensure_frame_limits(rows, metadata_bytes, value_bytes.unwrap_or(0))?;
+        // The builder reserves one pending row per operation. Prove the
+        // worst-case all-distinct derived-index footprint before that reserve.
+        self.ensure_index_memory(expected_rows, expected_rows)?;
+        PackFrameBuilder::for_store(
+            self.instance_id,
+            context,
+            expected_rows,
+            value_bytes,
+            self.config.max_frame_payload_bytes(),
+            self.config.max_pending_bytes(),
+        )
+    }
+
+    /// Durably prepares one contextual frame and immediately activates it
+    /// through its matching commit horizon.
     ///
     /// If post-activation index maintenance fails, the returned error is
     /// [`PackStoreError::CommittedMaintenance`]. The frame is already visible
     /// and callers must not retry the same logical append through this handle.
-    pub fn append(&mut self, operations: &[PackOperation]) -> Result<PackStageTotals> {
-        let prepared = self.prepare_append(operations)?;
+    pub fn append_frame(
+        &mut self,
+        context: PackFrameContext,
+        operations: &[PackOperation],
+    ) -> Result<PackStageTotals> {
+        let prepared = self.prepare_frame(context, operations)?;
         let totals = prepared.stage_totals();
         self.activate_prepared(prepared, prepared.commit_horizon())?;
         self.maintain()
@@ -17,7 +67,8 @@ impl PackStore {
         Ok(totals)
     }
 
-    /// One-copy compatibility append for a frame built from borrowed values.
+    /// Activates a frame built from borrowed values without an intermediate
+    /// owned operation graph.
     pub fn append_built(&mut self, builder: PackFrameBuilder) -> Result<PackStageTotals> {
         let prepared = self.prepare_built_append(builder)?;
         let totals = prepared.stage_totals();
@@ -33,22 +84,57 @@ impl PackStore {
     /// The returned token supplies the receipt for an external canonical
     /// marker. Exactly one prepared append may exist at a time; callers must
     /// activate it, or drop and reopen the store to discard the orphan suffix.
-    pub fn prepare_append(&mut self, operations: &[PackOperation]) -> Result<PreparedAppend> {
+    pub fn prepare_frame(
+        &mut self,
+        context: PackFrameContext,
+        operations: &[PackOperation],
+    ) -> Result<PreparedAppend> {
+        validate_frame_context(context)?;
         ensure!(!operations.is_empty(), "append frame must not be empty");
+        let rows = operations.len();
+        let rows_u64 = u64::try_from(rows).context("frame row count does not fit u64")?;
+        let metadata_bytes = rows_u64
+            .checked_mul(FRAME_ROW_METADATA_LEN as u64)
+            .context("frame metadata length overflows")?;
+        let value_bytes = operations.iter().try_fold(0u64, |total, operation| {
+            let len = match &operation.kind {
+                PackOpKind::Put(value) => {
+                    let _ = u32::try_from(value.len()).context("frame value exceeds u32")?;
+                    u64::try_from(value.len()).context("frame value length does not fit u64")?
+                }
+                PackOpKind::Tombstone => 0,
+            };
+            total
+                .checked_add(len)
+                .context("frame value length overflows")
+        })?;
+        self.ensure_frame_limits(rows_u64, metadata_bytes, value_bytes)?;
+        self.ensure_index_memory(rows, rows)?;
         let frame_start = self.prepare_frame_start()?;
-        let (payload, entries) = encode_frame_payload(frame_start, operations)?;
-        self.prepare_encoded_append(frame_start, operations.len(), payload, entries, false)
+        let (metadata, values, entries) = encode_frame_payload(operations)?;
+        self.prepare_encoded_append(frame_start, context, rows, metadata, values, entries)
     }
 
     /// Prepares a frame encoded directly from borrowed values.
     ///
     /// The builder must contain exactly the row count declared when it was
     /// created. This retains the same frame and index formats as
-    /// [`Self::prepare_append`] while avoiding intermediate owned values.
+    /// [`Self::prepare_frame`] while avoiding intermediate owned values.
     pub fn prepare_built_append(&mut self, builder: PackFrameBuilder) -> Result<PreparedAppend> {
+        ensure!(
+            builder.store_instance_id() == self.instance_id,
+            "frame builder belongs to another pack-store handle"
+        );
+        let layout = builder.preflight()?;
+        self.ensure_frame_limits(
+            u64::try_from(layout.rows).context("frame row count does not fit u64")?,
+            layout.metadata_bytes,
+            layout.value_bytes,
+        )?;
+        self.ensure_index_memory(layout.rows, layout.distinct_keys)?;
         let frame_start = self.prepare_frame_start()?;
-        let (rows, payload, entries, keys_are_sorted) = builder.finish(frame_start)?;
-        self.prepare_encoded_append(frame_start, rows, payload, entries, keys_are_sorted)
+        let (context, rows, metadata, values, entries) = builder.finish()?;
+        self.prepare_encoded_append(frame_start, context, rows, metadata, values, entries)
     }
 
     fn prepare_frame_start(&self) -> Result<u64> {
@@ -69,87 +155,102 @@ impl PackStore {
     fn prepare_encoded_append(
         &mut self,
         frame_start: u64,
+        context: PackFrameContext,
         rows: usize,
-        payload: Vec<u8>,
+        metadata: Vec<u8>,
+        values: Vec<u8>,
         mut entries: Vec<IndexEntry>,
-        keys_are_sorted: bool,
     ) -> Result<PreparedAppend> {
+        validate_frame_context(context)?;
         ensure!(rows > 0, "append frame must not be empty");
         ensure!(entries.len() == rows, "frame index row count mismatch");
         let rows_u64 = u64::try_from(rows).context("frame row count does not fit u64")?;
-        if rows_u64 > self.config.max_frame_rows() {
-            return Err(PackStoreError::LimitExceeded {
-                limit: PackStoreLimit::FrameRows,
-                actual: rows_u64,
-                maximum: self.config.max_frame_rows(),
-            }
-            .into());
-        }
-        let payload_bytes =
-            u64::try_from(payload.len()).context("frame payload length does not fit u64")?;
-        if payload_bytes > self.config.max_frame_payload_bytes() {
-            return Err(PackStoreError::LimitExceeded {
-                limit: PackStoreLimit::FramePayloadBytes,
-                actual: payload_bytes,
-                maximum: self.config.max_frame_payload_bytes(),
-            }
-            .into());
-        }
-        let frame_bytes = payload_bytes
-            .checked_add(FRAME_HEADER_LEN as u64)
-            .context("encoded frame length overflows")?;
-        if frame_bytes > self.config.max_pending_bytes() {
-            return Err(PackStoreError::LimitExceeded {
-                limit: PackStoreLimit::PendingBytes,
-                actual: frame_bytes,
-                maximum: self.config.max_pending_bytes(),
-            }
-            .into());
-        }
+        let metadata_bytes =
+            u64::try_from(metadata.len()).context("metadata length does not fit u64")?;
+        let value_bytes = u64::try_from(values.len()).context("value length does not fit u64")?;
+        let frame_bytes = self.ensure_frame_limits(rows_u64, metadata_bytes, value_bytes)?;
+        let _ = validate_payload_rows(&metadata, &values, rows)?;
+        ensure!(
+            entries.windows(2).all(|pair| {
+                pair[0].key < pair[1].key
+                    || (pair[0].key == pair[1].key && pair[0].sequence < pair[1].sequence)
+            }),
+            "frame index rows are not ordered by key and sequence"
+        );
+        let distinct_key_count = entries
+            .iter()
+            .map(|entry| entry.key)
+            .fold((0usize, None), |(count, previous), key| {
+                (count + usize::from(previous != Some(key)), Some(key))
+            })
+            .0;
+        let prospective = self.ensure_index_memory(rows, distinct_key_count)?;
         let epoch = self.next_epoch;
         let next_prepare_serial = self
             .next_prepare_serial
             .checked_add(1)
             .context("prepared append serial overflows")?;
-        if !keys_are_sorted {
-            entries.sort_unstable_by(|left, right| {
-                left.key
-                    .cmp(&right.key)
-                    .then_with(|| left.sequence.cmp(&right.sequence))
-            });
+        let value_start = frame_start
+            .checked_add(FRAME_HEADER_LEN as u64)
+            .and_then(|offset| offset.checked_add(metadata_bytes))
+            .context("absolute frame value offset overflows")?;
+        for entry in &mut entries {
+            if entry.tombstone {
+                ensure!(
+                    entry.value_offset == 0 && entry.value_len == 0,
+                    "tombstone index entry carries a value location"
+                );
+            } else {
+                entry.value_offset = value_start
+                    .checked_add(entry.value_offset)
+                    .context("absolute frame value offset overflows")?;
+            }
         }
         let keys = distinct_keys(&entries);
         let structured = run_structured_bytes(entries.len(), keys.len())?;
-        let prospective = self
-            .decoded_index_bytes
-            .checked_add(structured)
-            .context("decoded index bytes overflow")?;
         ensure!(
-            prospective <= self.config.max_index_memory_bytes(),
-            "decoded index memory {prospective} exceeds configured bound {}",
-            self.config.max_index_memory_bytes()
+            prospective
+                == self
+                    .decoded_index_bytes
+                    .checked_add(structured)
+                    .context("decoded index bytes overflow")?,
+            "frame index preflight changed after key materialization"
         );
-        let payload_checksum = digest(&payload);
-        let header = encode_frame_header(epoch, rows, payload.len(), payload_checksum)?;
+        let metadata_sha256 = frame_metadata_digest(&metadata);
+        let value_sha256 = frame_value_digest(&values);
+        let header = encode_frame_header(
+            epoch,
+            context,
+            rows,
+            metadata.len(),
+            values.len(),
+            metadata_sha256,
+            value_sha256,
+        )?;
+        let frame_sha256 = frame_digest(&header);
+        let footer = encode_frame_footer(epoch, frame_bytes, frame_sha256)?;
 
         let write_started = Instant::now();
         self.pack.write_all(&header).context("write frame header")?;
         self.pack
-            .write_all(&payload)
-            .context("write frame payload")?;
+            .write_all(&metadata)
+            .context("write frame metadata")?;
+        self.pack.write_all(&values).context("write frame values")?;
+        self.pack.write_all(&footer).context("write frame footer")?;
         let append_write_ns = duration_ns(write_started.elapsed());
         let pack_len = frame_start
-            .checked_add(FRAME_HEADER_LEN as u64)
-            .and_then(|end| end.checked_add(payload.len() as u64))
+            .checked_add(frame_bytes)
             .context("appended pack length overflows")?;
         let receipt = PackFrameReceipt {
             epoch,
             segment_id: PackSegmentId::INITIAL,
             frame_start,
             frame_end: pack_len,
+            context,
             rows: rows_u64,
-            payload_bytes,
-            payload_sha256: payload_checksum,
+            metadata_bytes,
+            value_bytes,
+            frame_sha256,
         };
 
         // The append frame is now fully written. Its durable sync and the
@@ -280,6 +381,69 @@ impl PackStore {
         Ok(token)
     }
 
+    fn ensure_frame_limits(&self, rows: u64, metadata_bytes: u64, value_bytes: u64) -> Result<u64> {
+        if rows > self.config.max_frame_rows() {
+            return Err(PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::FrameRows,
+                actual: rows,
+                maximum: self.config.max_frame_rows(),
+            }
+            .into());
+        }
+        let expected_metadata = rows
+            .checked_mul(FRAME_ROW_METADATA_LEN as u64)
+            .context("frame metadata length overflows")?;
+        ensure!(
+            rows > 0 && metadata_bytes == expected_metadata,
+            "frame metadata length does not match its row count"
+        );
+        let payload_bytes = metadata_bytes
+            .checked_add(value_bytes)
+            .context("frame payload length overflows")?;
+        if payload_bytes > self.config.max_frame_payload_bytes() {
+            return Err(PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::FramePayloadBytes,
+                actual: payload_bytes,
+                maximum: self.config.max_frame_payload_bytes(),
+            }
+            .into());
+        }
+        let frame_bytes = payload_bytes
+            .checked_add(FRAME_HEADER_LEN as u64)
+            .and_then(|bytes| bytes.checked_add(FRAME_FOOTER_LEN as u64))
+            .context("encoded frame length overflows")?;
+        if frame_bytes > self.config.max_pending_bytes() {
+            return Err(PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::PendingBytes,
+                actual: frame_bytes,
+                maximum: self.config.max_pending_bytes(),
+            }
+            .into());
+        }
+        Ok(frame_bytes)
+    }
+
+    fn ensure_index_memory(&self, rows: usize, distinct_keys: usize) -> Result<u64> {
+        ensure!(
+            distinct_keys <= rows,
+            "distinct key count exceeds row count"
+        );
+        let structured = run_structured_bytes(rows, distinct_keys)?;
+        let prospective = self
+            .decoded_index_bytes
+            .checked_add(structured)
+            .context("decoded index bytes overflow")?;
+        if prospective > self.config.max_index_memory_bytes() {
+            return Err(PackStoreError::LimitExceeded {
+                limit: PackStoreLimit::IndexMemoryBytes,
+                actual: prospective,
+                maximum: self.config.max_index_memory_bytes(),
+            }
+            .into());
+        }
+        Ok(prospective)
+    }
+
     /// Completes every fallible pack operation before an external canonical
     /// marker commit.
     ///
@@ -314,9 +478,9 @@ impl PackStore {
     /// Activates a prepared append after the caller has durably committed the
     /// matching external marker.
     ///
-    /// This post-marker compatibility path is retained for shadow mode. New
-    /// authoritative coordination should use [`Self::seal_prepared`] so every
-    /// fallible pack operation completes before the marker commit.
+    /// Shadow validation uses this post-marker path. Authoritative
+    /// coordination uses [`Self::seal_prepared`] so every fallible pack
+    /// operation completes before the marker commit.
     pub fn activate_prepared(
         &mut self,
         prepared: PreparedAppend,
@@ -362,8 +526,12 @@ impl PackStore {
             "external commit marker end does not match the prepared frame"
         );
         ensure!(
-            committed.payload_sha256 == prepared.receipt.payload_sha256,
-            "external commit marker checksum does not match the prepared frame"
+            committed.context == prepared.receipt.context,
+            "external commit marker context does not match the prepared frame"
+        );
+        ensure!(
+            committed.frame_sha256 == prepared.receipt.frame_sha256,
+            "external commit marker digest does not match the prepared frame"
         );
         ensure!(
             prepared.receipt.epoch == self.next_epoch,
@@ -476,9 +644,12 @@ impl PackStore {
     /// disk publication ahead of the writer's in-process bookkeeping.
     fn install_validated_append(&mut self, validated: ValidatedAppend) {
         self.stage_totals.merge(validated.stage_totals);
-        self.logical_payload_bytes = self
-            .logical_payload_bytes
-            .saturating_add(validated.receipt.payload_bytes);
+        self.logical_payload_bytes = self.logical_payload_bytes.saturating_add(
+            validated
+                .receipt
+                .metadata_bytes
+                .saturating_add(validated.receipt.value_bytes),
+        );
         self.pack_map = validated.pack_map;
         self.lookup_pack_map = validated.lookup_pack_map;
         self.runs = validated.runs;

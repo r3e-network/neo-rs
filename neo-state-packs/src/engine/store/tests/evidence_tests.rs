@@ -95,7 +95,7 @@ fn materialized_evidence_compares_lookup_results_with_winner_offsets() {
     let root = tempdir().expect("temporary append store");
     let mut store =
         PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-    store.append(&[put(key(95), b"value")]).expect("append");
+    store.append_frame(TEST_FRAME_CONTEXT, &[put(key(95), b"value")]).expect("append");
     store
         .materialized_view_evidence(1)
         .expect("baseline evidence");
@@ -112,7 +112,7 @@ fn materialized_evidence_rejects_an_unbounded_sample_before_work() {
     let root = tempdir().expect("temporary append store");
     let mut store =
         PackStore::create(root.path(), store_config(1024 * 1024)).expect("create store");
-    store.append(&[put(key(94), b"value")]).expect("append");
+    store.append_frame(TEST_FRAME_CONTEXT, &[put(key(94), b"value")]).expect("append");
     let error = store
         .materialized_view_evidence(1_000_001)
         .expect_err("unbounded sample must fail");
@@ -136,7 +136,7 @@ fn materialized_evidence_bounds_large_value_lookup_batches() {
             put(operation_key, &value)
         })
         .collect();
-    store.append(&operations).expect("append large values");
+    store.append_frame(TEST_FRAME_CONTEXT, &operations).expect("append large values");
 
     let evidence = store
         .materialized_view_evidence(LARGE_VALUES as usize)
@@ -162,7 +162,7 @@ fn materialized_evidence_hashes_a_multichunk_frame_reference_value() {
         PackStore::create(root.path(), store_config(8 * 1024 * 1024)).expect("create store");
     let value = vec![0x5A; evidence::FRAME_REFERENCE_VALUE_HASH_CHUNK_BYTES + 17];
     store
-        .append(&[put(key(97), &value)])
+        .append_frame(TEST_FRAME_CONTEXT, &[put(key(97), &value)])
         .expect("append multi-chunk value");
 
     let evidence = store

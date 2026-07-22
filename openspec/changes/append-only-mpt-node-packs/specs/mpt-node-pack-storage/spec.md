@@ -18,6 +18,13 @@ The system SHALL encode node operations in versioned bounded frames with block
 range, previous and resulting roots, sorted row metadata, payload lengths,
 checksums, and an unambiguous complete-frame footer.
 
+The production reader SHALL accept only frame v2. Its full-frame digest SHALL
+transitively authenticate the fixed header, metadata section, value section,
+footer, and exact frame length. Metadata SHALL be strictly ordered by key and
+sequence, sequences SHALL form a permutation of input row ordinals, reserved
+bytes SHALL be zero, and every key SHALL belong to the implicit `0xf0` node
+namespace.
+
 #### Scenario: A frame is reopened
 - **WHEN** a complete frame is read after process restart
 - **THEN** its header, row index, payload, footer, roots, lengths, ordering, and checksums SHALL validate before any row is exposed
@@ -25,6 +32,14 @@ checksums, and an unambiguous complete-frame footer.
 #### Scenario: A write tears before its footer
 - **WHEN** startup encounters an incomplete frame suffix
 - **THEN** recovery SHALL reject that suffix as uncommitted and SHALL preserve every preceding complete committed frame
+
+#### Scenario: An unknown numeric frame family is encountered
+- **WHEN** a frame start carries an `N3PACKnn` numeric magic other than the current v2 family
+- **THEN** startup SHALL return a typed unsupported-version error and SHALL NOT classify or truncate it as an ordinary torn suffix
+
+#### Scenario: Empty put and tombstone are decoded
+- **WHEN** one metadata row describes an empty put and another describes a tombstone
+- **THEN** the empty put SHALL retain a real zero-length value position while the tombstone SHALL carry a canonical zero segment, offset, and length
 
 ### Requirement: Cold-first canonical publication
 The system SHALL sync node-pack bytes before atomically committing the canonical
@@ -48,6 +63,17 @@ Startup SHALL reconcile packs and derived indexes to the MDBX high-water mark,
 truncate or ignore uncommitted suffixes, rebuild missing derived indexes, and
 fail closed if committed authoritative bytes are absent or corrupt.
 
+Startup SHALL acquire the single-writer lease before removing recognized stale
+temporary outputs and SHALL sync each mutated directory. With an external
+horizon, it SHALL authenticate the complete MDBX marker/root and selected
+segment/frame extents. Without one, it SHALL treat the readable manifest as the
+commit decision and authenticate its complete selected segment/frame prefix;
+an unreadable manifest SHALL be fatal. It SHALL discover and classify derived
+manifests, runs, and filters read-only before any truncation, deletion, rename,
+or manifest publication. Section hashing and metadata scans SHALL be streaming
+and bounded; recovery SHALL reject an over-budget rebuild before creating a
+temporary output.
+
 #### Scenario: Crash after canonical marker before index publication
 - **WHEN** the committed frame is valid but its derived index run is missing
 - **THEN** startup SHALL rebuild the index from frame metadata before reporting the StateService ready
@@ -60,17 +86,34 @@ fail closed if committed authoritative bytes are absent or corrupt.
 - **WHEN** a crash leaves an incomplete index-compaction output
 - **THEN** startup SHALL discard that output and retain the complete source runs
 
+#### Scenario: A committed artifact is corrupt during marker-first validation
+- **WHEN** the MDBX marker/root, a selected frame or segment extent, or the standalone commit-decision manifest fails authentication
+- **THEN** startup SHALL fail closed with pack, run, and manifest bytes and names unchanged
+
+#### Scenario: A stale rebuild output accompanies a corrupt derived run
+- **WHEN** startup holds the writer lease and must rebuild a corrupt derived run while a recognized stale temp file remains from an earlier attempt
+- **THEN** it SHALL delete and directory-sync that stale file before rebuilding, then expose only the authenticated rebuilt generation
+
+#### Scenario: Recovery workspace reaches its configured bound
+- **WHEN** conservative peak accounting is one byte above the configured index-memory bound
+- **THEN** recovery SHALL fail before creating any temporary output, while the same input at the exact bound SHALL complete
+
 ### Requirement: Correct indexed lookup
 The system SHALL provide point and sorted-batch reads with newest-committed-
 version semantics across recent and compacted runs. Filters SHALL only remove
 impossible runs and SHALL never synthesize an authoritative value.
+
+The production index SHALL use only fixed-width positioned v5 records and
+blocked Bloom filters. Readers SHALL reject non-`0xf0` keys, non-zero reserved
+bytes, non-canonical tombstone locations, and every prior or unknown index
+format rather than retaining a compatibility branch.
 
 #### Scenario: A hash has versions in several runs
 - **WHEN** a snapshot looks up a hash present in multiple committed epochs
 - **THEN** it SHALL receive the newest version visible to its pinned manifest or the newest visible tombstone
 
 #### Scenario: A filter reports no membership
-- **WHEN** a run's verified Bloom or xor filter proves a hash absent
+- **WHEN** a run's verified blocked Bloom filter proves a hash absent
 - **THEN** lookup MAY skip that run but SHALL preserve the same result as a complete run search
 
 #### Scenario: A sorted batch spans index levels
@@ -81,6 +124,10 @@ impossible runs and SHALL never synthesize an authoritative value.
 Each read snapshot SHALL pin one immutable index manifest and lease every
 referenced segment. Compaction, unwind, and cleanup SHALL not change its results
 or remove its bytes before release.
+
+The current manifest-v3 generation SHALL authenticate the complete extents of
+an immutable `SegmentSet`; positioned reads SHALL resolve only through that
+pinned set.
 
 #### Scenario: Compaction publishes during a read
 - **WHEN** a new compacted manifest becomes current while an older snapshot is active
