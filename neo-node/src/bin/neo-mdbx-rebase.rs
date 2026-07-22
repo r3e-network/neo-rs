@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result, ensure};
 use clap::Parser;
+use neo_node::NodeLifecycleLock;
 use neo_state_service::{MDBX_STATE_SERVICE_NAMESPACE, MPT_NODE_KEY_BYTES, MPT_NODE_PREFIX};
 use neo_storage::mdbx::{
     MdbxExactKeyExclusion, MdbxRebaseOptions, finalize_mdbx_rebase, rebase_mdbx_environment,
@@ -56,6 +57,8 @@ fn main() -> Result<()> {
         .init();
     let cli = Cli::parse();
     validate_report_path(&cli)?;
+    let _source_lifecycle_lock = NodeLifecycleLock::acquire(&cli.source)
+        .context("acquire exclusive ownership of the source MDBX")?;
     ensure!(
         !cli.report.exists(),
         "report path {} already exists",

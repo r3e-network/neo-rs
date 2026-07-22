@@ -26,6 +26,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail, ensure};
 use neo_crypto::Sha256Hasher;
 use neo_crypto::mpt_trie::Node;
+use neo_node::NodeLifecycleLock;
 use neo_primitives::UInt256;
 use neo_state_packs::checkpoint::{
     PACK_CHECKPOINT_SCHEMA_VERSION, PACK_CHECKPOINT_SOURCE_NAMESPACE,
@@ -187,6 +188,8 @@ struct AccumulatedCheckpoint {
 
 fn main() -> Result<()> {
     let arguments = parse_arguments()?;
+    let _lifecycle_lock = NodeLifecycleLock::acquire(arguments.source.metadata_mdbx_path())
+        .context("acquire exclusive ownership of the checkpoint metadata MDBX")?;
     let canonical: Arc<RuntimeStore> = StoreFactory::get_store_with_config(
         "mdbx",
         StorageConfig {

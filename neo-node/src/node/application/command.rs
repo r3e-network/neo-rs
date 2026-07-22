@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use anyhow::Context;
+use neo_node::NodeLifecycleLock;
 use tracing::info;
 
 use super::runtime::{NodeRuntime, OpenNodeRuntime};
@@ -61,6 +63,18 @@ impl NodeCommand {
             return Ok(OpenNodeRuntime::Exit);
         }
 
+        let lifecycle_lock = if ledger_mode.uses_local_replay_services() {
+            self.cli
+                .storage_path
+                .clone()
+                .or_else(|| config.storage.data_directory())
+                .map(NodeLifecycleLock::acquire)
+                .transpose()
+                .context("acquiring exclusive node data-directory ownership")?
+        } else {
+            None
+        };
+
         let observability = observability::ObservabilityRuntime::from_config(
             &config.observability,
             settings.network,
@@ -99,6 +113,7 @@ impl NodeCommand {
             logging_guards,
             observability,
             running_node,
+            lifecycle_lock,
         )))
     }
 }

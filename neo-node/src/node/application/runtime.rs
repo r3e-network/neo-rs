@@ -5,6 +5,7 @@ use crate::node::config::NodeConfig;
 use crate::node::lifecycle::workflow::RunningNode;
 use crate::node::logging::LoggingGuards;
 use crate::node::observability::ObservabilityRuntime;
+use neo_node::NodeLifecycleLock;
 
 /// Result of opening runtime resources for an operator command.
 pub(in crate::node) enum OpenNodeRuntime {
@@ -32,6 +33,7 @@ pub(in crate::node) struct NodeRuntime {
     _logging_guards: LoggingGuards,
     observability: Option<ObservabilityRuntime>,
     running_node: RunningNode,
+    lifecycle_lock: Option<NodeLifecycleLock>,
 }
 
 impl NodeRuntime {
@@ -42,6 +44,7 @@ impl NodeRuntime {
         logging_guards: LoggingGuards,
         observability: Option<ObservabilityRuntime>,
         running_node: RunningNode,
+        lifecycle_lock: Option<NodeLifecycleLock>,
     ) -> Self {
         Self {
             cli,
@@ -50,6 +53,7 @@ impl NodeRuntime {
             _logging_guards: logging_guards,
             observability,
             running_node,
+            lifecycle_lock,
         }
     }
 
@@ -61,6 +65,7 @@ impl NodeRuntime {
             _logging_guards,
             observability,
             running_node,
+            lifecycle_lock: _lifecycle_lock,
         } = self;
         running_node
             .run_requested_mode(&cli, &config, network_magic, observability.as_ref())
