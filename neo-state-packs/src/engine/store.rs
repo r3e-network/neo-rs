@@ -7,7 +7,9 @@ use super::merge::{
     INDEX_RECORD_LEN, IndexEntry, MergeEvidence, MergeSource, decode_record, merge_sorted_runs,
 };
 use super::mmap::Mmap;
-use crate::{PACK_KEY_BYTES, PackOpKind, PackOperation, PackStageTotals};
+use crate::{
+    PACK_FRAME_ROW_METADATA_BYTES, PACK_KEY_BYTES, PackOpKind, PackOperation, PackStageTotals,
+};
 use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -89,7 +91,7 @@ pub const PACK_FRAME_FORMAT_VERSION: u32 = 2;
 /// Immutable sorted-index format emitted and accepted by this pack engine.
 pub const PACK_INDEX_FORMAT_VERSION: u32 = 5;
 const FRAME_HEADER_LEN: usize = 224;
-const FRAME_ROW_METADATA_LEN: usize = 56;
+const FRAME_ROW_METADATA_LEN: usize = PACK_FRAME_ROW_METADATA_BYTES;
 const FRAME_FOOTER_LEN: usize = 96;
 const FRAME_NODE_KEY_PREFIX: u8 = 0xf0;
 const INDEX_HEADER_LEN: usize = 192;

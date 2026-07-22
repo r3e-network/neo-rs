@@ -66,7 +66,9 @@
 //! - `shadow`: StateService node filtering and MDBX marker records.
 
 pub mod authority;
+pub mod checkpoint;
 mod engine;
+pub mod migration;
 pub mod shadow;
 
 pub use engine::{
@@ -85,6 +87,12 @@ pub use engine::{
 /// key). The engine enforces the namespace byte while treating the remaining
 /// fixed-width node hash as opaque.
 pub const PACK_KEY_BYTES: usize = 33;
+
+/// Byte length of one v2 frame metadata row.
+///
+/// Offline builders use this authenticated format constant to split input
+/// before a frame can exceed its configured payload bound.
+pub const PACK_FRAME_ROW_METADATA_BYTES: usize = 56;
 
 /// One versioned key/value operation staged for a single frame.
 #[derive(Debug, Clone, PartialEq, Eq)]

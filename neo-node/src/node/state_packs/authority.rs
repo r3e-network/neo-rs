@@ -1,6 +1,5 @@
 //! Cold-first authoritative pack manager for exact StateService MPT nodes.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
@@ -8,10 +7,9 @@ use std::thread::{self, JoinHandle};
 
 use anyhow::{Context, ensure};
 use neo_state_packs::authority::{AUTHORITATIVE_HIGH_WATER_KEY, AuthoritativeHighWaterRecord};
+use neo_state_packs::checkpoint::PackCheckpoint;
 use neo_state_packs::{
-    PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_KEY_BYTES,
-    PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN,
-    PackFrameContext, PackSegmentId, PackStore, PackStoreConfig, PackStoreError, PackStoreOptions,
+    PACK_KEY_BYTES, PackFrameContext, PackStore, PackStoreConfig, PackStoreError, PackStoreOptions,
     Snapshot as PackSnapshot,
 };
 use neo_state_service::mpt_store::{PreparedMptCommit, PreparedMptMetadataOverlay};
@@ -25,10 +23,7 @@ use neo_storage::persistence::{
 };
 use neo_storage::{StorageError, StorageResult};
 use parking_lot::{Condvar, Mutex, RwLock};
-use serde::Deserialize;
 use tracing::{error, warn};
-
-const CHECKPOINT_SCHEMA_VERSION: u32 = 4;
 
 fn validate_authoritative_transition(
     base_marker: AuthoritativeHighWaterRecord,
@@ -61,25 +56,6 @@ fn validate_authoritative_transition(
         )));
     }
     Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-struct CheckpointMarker {
-    schema_version: u32,
-    authoritative_ready: bool,
-    complete: bool,
-    network_magic: String,
-    source_height: u32,
-    source_root_internal_bytes: String,
-    source_namespace_sha256: String,
-    pack_segment_format_version: u32,
-    pack_frame_format_version: u32,
-    pack_index_format_version: u32,
-    pack_manifest_format_version: u32,
-    tip_epoch: u64,
-    tip_segment_id: u64,
-    tip_frame_end: u64,
-    tip_frame_sha256: String,
 }
 
 struct PublishedGeneration {
@@ -385,18 +361,11 @@ impl AuthoritativeNodePack {
             .context("validate authoritative pack index-memory bound")?
             .with_read_options(options)
             .context("validate authoritative pack read options")?;
-        let checkpoint = read_checkpoint(path)?;
-        validate_checkpoint(&checkpoint, network_magic)?;
-        let store_identity = decode_hash(
-            &checkpoint.source_namespace_sha256,
-            "checkpoint source namespace digest",
-        )?;
-        let checkpoint_root = decode_hash(
-            &checkpoint.source_root_internal_bytes,
-            "checkpoint source root",
-        )?;
-        let checkpoint_frame_digest =
-            decode_hash(&checkpoint.tip_frame_sha256, "checkpoint tip frame digest")?;
+        let checkpoint = PackCheckpoint::read(path).context("read authoritative checkpoint")?;
+        let checkpoint_binding = checkpoint.validate_authoritative(network_magic)?;
+        let store_identity = checkpoint_binding.store_identity();
+        let checkpoint_root = checkpoint_binding.source_root_internal();
+        let checkpoint_frame_digest = checkpoint_binding.tip_frame_sha256();
         let state_snapshot = state_backing.snapshot();
         let state_root = read_current_local_root_from(state_snapshot.as_ref())
             .context("read current local StateService root from startup snapshot")?;
@@ -445,18 +414,7 @@ impl AuthoritativeNodePack {
                     state_tip == (checkpoint.source_height, checkpoint_root),
                     "StateService tip does not equal the unactivated checkpoint base"
                 );
-                let checkpoint_horizon = neo_state_packs::PackCommitHorizon {
-                    epoch: checkpoint.tip_epoch,
-                    segment_id: PackSegmentId::new(checkpoint.tip_segment_id),
-                    frame_end: checkpoint.tip_frame_end,
-                    context: PackFrameContext::new(
-                        checkpoint.source_height,
-                        checkpoint.source_height,
-                        checkpoint_root,
-                        checkpoint_root,
-                    ),
-                    frame_sha256: checkpoint_frame_digest,
-                };
+                let checkpoint_horizon = checkpoint_binding.commit_horizon(&checkpoint);
                 let store =
                     PackStore::open_at_commit_horizon(path, pack_config, Some(checkpoint_horizon))
                         .with_context(|| {
@@ -716,53 +674,6 @@ fn exact_node_key(key: &[u8]) -> StorageResult<[u8; PACK_KEY_BYTES]> {
     Ok(key.try_into().expect("validated pack key length"))
 }
 
-fn read_checkpoint(path: &Path) -> anyhow::Result<CheckpointMarker> {
-    let marker_path = path.join("checkpoint.json");
-    let bytes = fs::read(&marker_path)
-        .with_context(|| format!("read checkpoint marker {}", marker_path.display()))?;
-    serde_json::from_slice(&bytes)
-        .with_context(|| format!("decode checkpoint marker {}", marker_path.display()))
-}
-
-fn validate_checkpoint(marker: &CheckpointMarker, network_magic: u32) -> anyhow::Result<()> {
-    ensure!(
-        marker.schema_version == CHECKPOINT_SCHEMA_VERSION,
-        "checkpoint schema {} is unsupported",
-        marker.schema_version
-    );
-    ensure!(
-        marker.complete && marker.authoritative_ready,
-        "checkpoint is not complete and explicitly authoritative-ready"
-    );
-    ensure!(
-        parse_network_magic(&marker.network_magic)? == network_magic,
-        "checkpoint network differs from configured network"
-    );
-    ensure!(
-        (
-            marker.pack_segment_format_version,
-            marker.pack_frame_format_version,
-            marker.pack_index_format_version,
-            marker.pack_manifest_format_version,
-        ) == (
-            PACK_SEGMENT_FORMAT_VERSION,
-            PACK_FRAME_FORMAT_VERSION,
-            PACK_INDEX_FORMAT_VERSION,
-            PACK_MANIFEST_FORMAT_VERSION,
-        ),
-        "checkpoint pack format tuple differs from this binary"
-    );
-    ensure!(
-        marker.tip_frame_end > PACK_SEGMENT_HEADER_LEN,
-        "checkpoint pack tip does not extend past its segment header"
-    );
-    ensure!(
-        marker.tip_segment_id <= marker.tip_epoch,
-        "checkpoint tip segment cannot contain a frame after the tip epoch"
-    );
-    Ok(())
-}
-
 #[cfg(test)]
 fn read_state_tip(store: &RuntimeStore) -> anyhow::Result<(u32, [u8; 32])> {
     let root = neo_state_service::read_current_local_root(store)
@@ -825,29 +736,17 @@ where
     Ok(())
 }
 
-fn parse_network_magic(value: &str) -> anyhow::Result<u32> {
-    let value = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-        .context("checkpoint network magic lacks 0x prefix")?;
-    u32::from_str_radix(value, 16).context("decode checkpoint network magic")
-}
-
-fn decode_hash(value: &str, field: &'static str) -> anyhow::Result<[u8; 32]> {
-    let value = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-        .with_context(|| format!("{field} lacks 0x prefix"))?;
-    let bytes = hex::decode(value).with_context(|| format!("decode {field}"))?;
-    bytes
-        .try_into()
-        .map_err(|bytes: Vec<u8>| anyhow::anyhow!("{field} has {} bytes, expected 32", bytes.len()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_state_packs::{PackOpKind, PackOperation};
+    use neo_state_packs::checkpoint::{
+        PACK_CHECKPOINT_SCHEMA_VERSION, PACK_CHECKPOINT_SOURCE_NAMESPACE, PackCheckpoint,
+    };
+    use neo_state_packs::{
+        PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION,
+        PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN, PackOpKind, PackOperation,
+        PackSegmentId,
+    };
     use neo_storage::mdbx::MdbxStoreProvider;
     use neo_storage::persistence::providers::MemoryStore;
     use neo_storage::persistence::storage::StorageConfig;
@@ -857,6 +756,7 @@ mod tests {
     use neo_storage::{DataCache, StorageItem, StorageKey};
     use serde_json::json;
     use std::collections::BTreeSet;
+    use std::fs;
     use tempfile::tempdir;
 
     fn test_pack_config(max_index_memory_bytes: u64) -> PackStoreConfig {
@@ -913,25 +813,62 @@ mod tests {
             PackStore::create(&pack_path, test_pack_config(64 * 1024 * 1024)).expect("create pack");
         pack.append_frame(PackFrameContext::new(0, 0, root, root), &node_operations)
             .expect("append source nodes");
+        let scrub = pack
+            .scrub_checkpoint_namespace()
+            .expect("scrub fixture checkpoint");
+        let (pack_bytes, live_index_bytes, live_runs, decoded_index_memory_bytes) =
+            pack.layout().expect("fixture pack layout");
         let receipt = pack.last_frame_receipt().expect("pack receipt");
         drop(pack);
-        let checkpoint = json!({
-            "schema_version": CHECKPOINT_SCHEMA_VERSION,
-            "authoritative_ready": true,
-            "complete": true,
-            "network_magic": "0x334F454E",
-            "source_height": 0,
-            "source_root_internal_bytes": format!("0x{}", hex::encode(root)),
-            "source_namespace_sha256": format!("0x{}", hex::encode([0x11; 32])),
-            "pack_segment_format_version": PACK_SEGMENT_FORMAT_VERSION,
-            "pack_frame_format_version": PACK_FRAME_FORMAT_VERSION,
-            "pack_index_format_version": PACK_INDEX_FORMAT_VERSION,
-            "pack_manifest_format_version": PACK_MANIFEST_FORMAT_VERSION,
-            "tip_epoch": receipt.epoch,
-            "tip_segment_id": receipt.segment_id.get(),
-            "tip_frame_end": receipt.frame_end,
-            "tip_frame_sha256": format!("0x{}", hex::encode(receipt.frame_sha256)),
-        });
+        let value_bytes = node_operations
+            .iter()
+            .map(|operation| match &operation.kind {
+                PackOpKind::Put(value) => value.len() as u64,
+                PackOpKind::Tombstone => 0,
+            })
+            .sum();
+        let mut display_root = root;
+        display_root.reverse();
+        let checkpoint = PackCheckpoint {
+            schema_version: PACK_CHECKPOINT_SCHEMA_VERSION,
+            authoritative_ready: true,
+            complete: true,
+            source_backend: "mdbx".to_owned(),
+            source_namespace: PACK_CHECKPOINT_SOURCE_NAMESPACE.to_owned(),
+            network_magic: "0x334F454E".to_owned(),
+            source_height: 0,
+            source_root: format!("0x{}", hex::encode(display_root)),
+            source_root_internal_bytes: format!("0x{}", hex::encode(root)),
+            source_namespace_sha256: format!("0x{}", hex::encode(scrub.sha256)),
+            rows: node_operations.len() as u64,
+            resumed_rows: 0,
+            value_bytes,
+            frames: 1,
+            rows_per_frame: node_operations.len(),
+            pack_bytes,
+            live_index_bytes,
+            live_runs,
+            decoded_index_memory_bytes,
+            gc_runs_deleted: 0,
+            gc_manifests_deleted: 0,
+            gc_bytes_reclaimed: 0,
+            pack_segment_format_version: PACK_SEGMENT_FORMAT_VERSION,
+            pack_frame_format_version: PACK_FRAME_FORMAT_VERSION,
+            pack_index_format_version: PACK_INDEX_FORMAT_VERSION,
+            pack_manifest_format_version: PACK_MANIFEST_FORMAT_VERSION,
+            tip_epoch: receipt.epoch,
+            tip_segment_id: receipt.segment_id.get(),
+            tip_frame_end: receipt.frame_end,
+            tip_frame_sha256: format!("0x{}", hex::encode(receipt.frame_sha256)),
+            scrubbed_frames: scrub.scrub.frames,
+            scrubbed_rows: scrub.scrub.rows,
+            scrubbed_puts: scrub.scrub.puts,
+            scrubbed_tombstones: scrub.scrub.tombstones,
+            scrubbed_payload_bytes: scrub.scrub.payload_bytes,
+            scrubbed_value_bytes: scrub.scrub.value_bytes,
+            scrub_elapsed_seconds: 0.0,
+            elapsed_seconds: 0.0,
+        };
         fs::write(
             pack_path.join("checkpoint.json"),
             serde_json::to_vec_pretty(&checkpoint).expect("encode checkpoint"),
@@ -975,15 +912,17 @@ mod tests {
                 .expect("decode authority checkpoint");
 
         let mut old_schema = original.clone();
-        old_schema["schema_version"] = json!(CHECKPOINT_SCHEMA_VERSION - 1);
+        old_schema["schema_version"] = json!(PACK_CHECKPOINT_SCHEMA_VERSION - 1);
         fs::write(
             &checkpoint_path,
             serde_json::to_vec_pretty(&old_schema).expect("encode old checkpoint schema"),
         )
         .expect("write old checkpoint schema");
-        let checkpoint = read_checkpoint(&fixture.pack_path).expect("decode complete old schema");
+        let checkpoint =
+            PackCheckpoint::read(&fixture.pack_path).expect("decode complete old schema");
         assert!(
-            validate_checkpoint(&checkpoint, 0x334F_454E)
+            checkpoint
+                .validate_authoritative(0x334F_454E)
                 .expect_err("old checkpoint schema must fail")
                 .to_string()
                 .contains("unsupported")
@@ -1000,7 +939,7 @@ mod tests {
                 serde_json::to_vec_pretty(&incomplete).expect("encode incomplete checkpoint"),
             )
             .expect("write incomplete checkpoint");
-            let error = read_checkpoint(&fixture.pack_path)
+            let error = PackCheckpoint::read(&fixture.pack_path)
                 .expect_err("missing segment identity must fail decoding");
             assert!(format!("{error:#}").contains(missing));
         }
@@ -1012,10 +951,11 @@ mod tests {
             serde_json::to_vec_pretty(&header_position).expect("encode header checkpoint tip"),
         )
         .expect("write header checkpoint tip");
-        let checkpoint =
-            read_checkpoint(&fixture.pack_path).expect("decode complete header checkpoint tip");
+        let checkpoint = PackCheckpoint::read(&fixture.pack_path)
+            .expect("decode complete header checkpoint tip");
         assert!(
-            validate_checkpoint(&checkpoint, 0x334F_454E)
+            checkpoint
+                .validate_authoritative(0x334F_454E)
                 .expect_err("checkpoint tip inside its segment header must fail")
                 .to_string()
                 .contains("segment header")
@@ -1032,10 +972,11 @@ mod tests {
                 .expect("encode impossible checkpoint segment"),
         )
         .expect("write impossible checkpoint segment");
-        let checkpoint = read_checkpoint(&fixture.pack_path)
+        let checkpoint = PackCheckpoint::read(&fixture.pack_path)
             .expect("decode complete impossible checkpoint segment");
         assert!(
-            validate_checkpoint(&checkpoint, 0x334F_454E)
+            checkpoint
+                .validate_authoritative(0x334F_454E)
                 .expect_err("segment after the tip epoch must fail")
                 .to_string()
                 .contains("after the tip epoch")

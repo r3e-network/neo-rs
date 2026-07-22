@@ -16,24 +16,18 @@
 //!     [--scrub] [--scrub-indexes] [--lookup-digest-samples N]
 //!     [--random-point-mmap] [--maintain | --gc]
 
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail, ensure};
 use neo_state_packs::authority::{AUTHORITATIVE_HIGH_WATER_KEY, AuthoritativeHighWaterRecord};
+use neo_state_packs::checkpoint::{PACK_CHECKPOINT_SOURCE_NAMESPACE, PackCheckpoint};
 use neo_state_packs::shadow::{SHADOW_HIGH_WATER_KEY, ShadowHighWaterRecord};
-use neo_state_packs::{
-    PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION, PACK_KEY_BYTES,
-    PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN,
-    PackCommitHorizon, PackFrameContext, PackSegmentId, PackStore, PackStoreConfig,
-    PackStoreOptions,
-};
+use neo_state_packs::{PACK_KEY_BYTES, PackStore, PackStoreConfig, PackStoreOptions};
 use neo_state_service::read_current_local_root;
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::persistence::{RawReadOnlyStore, StoreFactory, TransactionalStore};
-use serde::Deserialize;
 
 #[path = "neo_pack_verify/evidence.rs"]
 mod evidence;
@@ -43,11 +37,9 @@ use evidence::{
 };
 #[path = "neo_pack_verify/checkpoint_compare.rs"]
 mod checkpoint_compare;
-use checkpoint_compare::{compare_checkpoint_nodes, decode_hash, parse_checkpoint_network_magic};
+use checkpoint_compare::compare_checkpoint_nodes;
 
 const STATE_NODE_PREFIX: u8 = 0xf0;
-const STATE_SERVICE_NAMESPACE: &str = "neo_state_service";
-const CHECKPOINT_SCHEMA_VERSION: u32 = 4;
 const BATCH: usize = 1_024;
 // Neo MPT nodes are well below this defensive verifier ceiling. Keep a wider
 // protocol-independent margin while rejecting corrupt multi-gigabyte index
@@ -86,42 +78,6 @@ impl VerificationMode {
             _ => bail!("--mode must be shadow or authority"),
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct CheckpointMarker {
-    schema_version: u32,
-    authoritative_ready: bool,
-    complete: bool,
-    source_backend: String,
-    source_namespace: String,
-    network_magic: String,
-    source_height: u32,
-    source_root_internal_bytes: String,
-    source_namespace_sha256: String,
-    rows: u64,
-    value_bytes: u64,
-    frames: u64,
-    pack_segment_format_version: u32,
-    pack_frame_format_version: u32,
-    pack_index_format_version: u32,
-    pack_manifest_format_version: u32,
-    tip_epoch: u64,
-    tip_segment_id: u64,
-    tip_frame_end: u64,
-    tip_frame_sha256: String,
-    scrubbed_frames: u64,
-    scrubbed_rows: u64,
-    scrubbed_puts: u64,
-    scrubbed_tombstones: u64,
-    scrubbed_value_bytes: u64,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct CheckpointBinding {
-    source_root: [u8; 32],
-    store_identity: [u8; 32],
-    tip_frame_sha256: [u8; 32],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -258,7 +214,7 @@ fn main() -> Result<()> {
     )
     .map_err(|err| anyhow::anyhow!("open MDBX store: {err}"))?;
     let state_store = canonical
-        .open_coordinated_namespace(STATE_SERVICE_NAMESPACE)
+        .open_coordinated_namespace(PACK_CHECKPOINT_SOURCE_NAMESPACE)
         .context("open coordinated MDBX StateService namespace")?;
 
     if mode == VerificationMode::Authority {
@@ -426,8 +382,10 @@ fn verify_authority(
     // verifier is unit-tested through this function directly, and callers
     // embedding the verifier must not be able to skip the evidence gate.
     validate_authority_mutation_flags(maintain, gc, scrub_indexes, lookup_digest_samples)?;
-    let checkpoint = read_checkpoint(pack_path)?;
-    let binding = validate_checkpoint(&checkpoint, network_magic)?;
+    let checkpoint = PackCheckpoint::read(pack_path).context("read strict pack checkpoint")?;
+    let binding = checkpoint
+        .validate_authoritative(network_magic)
+        .context("validate strict authoritative checkpoint")?;
     let state_tip = read_state_tip(state_store)?;
     let durable_marker = state_store
         .maintenance_metadata(AUTHORITATIVE_HIGH_WATER_KEY)
@@ -439,7 +397,7 @@ fn verify_authority(
             let marker = AuthoritativeHighWaterRecord::decode(&bytes)
                 .context("decode authoritative pack high-water marker")?;
             marker
-                .validate_identity(network_magic, binding.store_identity)
+                .validate_identity(network_magic, binding.store_identity())
                 .context("validate authoritative pack marker identity")?;
             ensure!(
                 (marker.block_index, marker.state_root) == state_tip,
@@ -477,31 +435,20 @@ fn verify_authority(
         }
         None => {
             ensure!(
-                state_tip == (checkpoint.source_height, binding.source_root),
+                state_tip == (checkpoint.source_height, binding.source_root_internal()),
                 "StateService tip does not equal the unactivated checkpoint base"
             );
             println!(
                 "authority checkpoint: unactivated base block={} root=0x{} identity=0x{}",
                 checkpoint.source_height,
-                hex::encode(binding.source_root),
-                hex::encode(binding.store_identity),
+                hex::encode(binding.source_root_internal()),
+                hex::encode(binding.store_identity()),
             );
             (
                 AuthorityState::Checkpoint,
-                PackCommitHorizon {
-                    epoch: checkpoint.tip_epoch,
-                    segment_id: PackSegmentId::new(checkpoint.tip_segment_id),
-                    frame_end: checkpoint.tip_frame_end,
-                    context: PackFrameContext::new(
-                        checkpoint.source_height,
-                        checkpoint.source_height,
-                        binding.source_root,
-                        binding.source_root,
-                    ),
-                    frame_sha256: binding.tip_frame_sha256,
-                },
+                binding.commit_horizon(&checkpoint),
                 checkpoint.tip_frame_end,
-                binding.tip_frame_sha256,
+                binding.tip_frame_sha256(),
             )
         }
     };
@@ -610,7 +557,7 @@ fn verify_authority(
             state_store,
             &pack,
             &checkpoint,
-            binding.store_identity,
+            binding.store_identity(),
             samples,
             walk_cap,
             full_scan,
@@ -645,7 +592,7 @@ fn verify_authority(
                 .scrub_checkpoint_namespace()
                 .context("scrub and hash authoritative checkpoint namespace")?;
             ensure!(
-                evidence.sha256 == binding.store_identity,
+                evidence.sha256 == binding.store_identity(),
                 "checkpoint pack namespace digest differs from checkpoint.json"
             );
             println!(
@@ -806,85 +753,6 @@ fn ensure_authoritative_root(pack: &PackStore, root: [u8; 32]) -> Result<()> {
     );
     println!("root node: reachable at 0x{}", hex::encode(root_key));
     Ok(())
-}
-
-fn read_checkpoint(pack_path: &Path) -> Result<CheckpointMarker> {
-    let path = pack_path.join("checkpoint.json");
-    let bytes =
-        fs::read(&path).with_context(|| format!("read checkpoint marker {}", path.display()))?;
-    serde_json::from_slice(&bytes)
-        .with_context(|| format!("decode checkpoint marker {}", path.display()))
-}
-
-fn validate_checkpoint(
-    checkpoint: &CheckpointMarker,
-    network_magic: u32,
-) -> Result<CheckpointBinding> {
-    ensure!(
-        checkpoint.schema_version == CHECKPOINT_SCHEMA_VERSION,
-        "checkpoint schema {} is unsupported",
-        checkpoint.schema_version
-    );
-    ensure!(
-        checkpoint.complete && checkpoint.authoritative_ready,
-        "checkpoint is not complete and explicitly authoritative-ready"
-    );
-    ensure!(
-        checkpoint.source_backend == "mdbx"
-            && checkpoint.source_namespace == STATE_SERVICE_NAMESPACE,
-        "checkpoint source is not the MDBX StateService namespace"
-    );
-    ensure!(
-        parse_checkpoint_network_magic(&checkpoint.network_magic)? == network_magic,
-        "checkpoint network differs from --network-magic"
-    );
-    ensure!(
-        (
-            checkpoint.pack_segment_format_version,
-            checkpoint.pack_frame_format_version,
-            checkpoint.pack_index_format_version,
-            checkpoint.pack_manifest_format_version,
-        ) == (
-            PACK_SEGMENT_FORMAT_VERSION,
-            PACK_FRAME_FORMAT_VERSION,
-            PACK_INDEX_FORMAT_VERSION,
-            PACK_MANIFEST_FORMAT_VERSION,
-        ),
-        "checkpoint pack format tuple differs from this binary"
-    );
-    ensure!(
-        checkpoint.rows > 0
-            && checkpoint.frames > 0
-            && checkpoint.tip_frame_end > PACK_SEGMENT_HEADER_LEN,
-        "checkpoint pack geometry is empty"
-    );
-    ensure!(
-        checkpoint.tip_segment_id <= checkpoint.tip_epoch,
-        "checkpoint tip segment cannot contain a frame after the tip epoch"
-    );
-    ensure!(
-        checkpoint.tip_epoch.checked_add(1) == Some(checkpoint.frames),
-        "checkpoint tip epoch differs from its frame count"
-    );
-    ensure!(
-        checkpoint.scrubbed_frames == checkpoint.frames
-            && checkpoint.scrubbed_rows == checkpoint.rows
-            && checkpoint.scrubbed_puts == checkpoint.rows
-            && checkpoint.scrubbed_tombstones == 0
-            && checkpoint.scrubbed_value_bytes == checkpoint.value_bytes,
-        "checkpoint scrub evidence differs from its source geometry"
-    );
-    Ok(CheckpointBinding {
-        source_root: decode_hash(
-            &checkpoint.source_root_internal_bytes,
-            "checkpoint source root",
-        )?,
-        store_identity: decode_hash(
-            &checkpoint.source_namespace_sha256,
-            "checkpoint source namespace digest",
-        )?,
-        tip_frame_sha256: decode_hash(&checkpoint.tip_frame_sha256, "checkpoint tip digest")?,
-    })
 }
 
 fn read_state_tip(store: &RuntimeStore) -> Result<(u32, [u8; 32])> {

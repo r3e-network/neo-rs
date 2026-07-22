@@ -131,9 +131,27 @@ is offline migration tooling, not a node mode. It streams a frozen StateService
 node namespace into bounded frames and publishes `checkpoint.json` only after
 stable height/root and pack reopen checks. The marker binds network magic,
 format versions, source digest/root, and the exact tip-frame checksum.
+For a one-time format migration whose legacy binary cannot open current packs,
+export the exact live namespace to the versioned neutral stream and run:
+
+```bash
+neo-pack-build --network-magic <u32-or-hex> \
+  --migration-stream <neutral-v1-file> \
+  --metadata-mdbx <canonical-store-dir> \
+  --pack <new-pack-dir>
+```
+
+The stream mode is not a trust shortcut. It requires read-only coordinated
+MDBX metadata and rejects a stream whose network, height, or internal root
+differs from that frozen StateService tip. It also requires strictly increasing
+unique 33-byte `0xf0` keys, exact values of at most 1 MiB, declared row/value/
+payload geometry, domain-separated namespace/payload/stream SHA-256, a complete
+trailer, and exact EOF. `--max-rows` is rejected because a partial stream cannot
+authenticate the complete namespace. This build publishes only the pack
+checkpoint; a separate explicit activation step owns the MDBX authority marker.
 Before the first frame, the builder also durably publishes
 `checkpoint-build.json`, binding the network magic, source height/root,
-`--rows-per-frame`, and all three pack format versions used by an interrupted
+source transport, `--rows-per-frame`, and all four pack format versions used by an interrupted
 build.
 `--max-rows` always produces `"complete": false` and
 `"authoritative_ready": false` smoke evidence; such output cannot authorize
@@ -144,11 +162,12 @@ checkpoint build so the before/after height/root guard represents one canonical
 source generation. If a build stops after complete frames but before marker
 publication, rerun it with the same network magic, source generation, and
 `--rows-per-frame`: the builder validates the durable build identity, proves
-that every prior frame has the declared row geometry, then compares every
-stored prefix value with the frozen source before appending. A missing build
+that the prior row horizon lands on the same bounded frame partition, then
+compares every stored prefix value with the frozen source before appending. A missing build
 identity or any mismatch aborts instead of silently adopting a partial pack.
 Before publishing a complete marker, the builder also sequentially re-hashes
-and decodes every committed frame payload. The report records scrubbed frames,
+and decodes every committed frame payload, resolves the root node, and repeats
+the root-node check after reopen. The report records scrubbed frames,
 rows, puts, tombstones, payload/value bytes, and scrub wall time.
 
 Pack manifests and authority tuples are current-only. Artifacts that embed pack

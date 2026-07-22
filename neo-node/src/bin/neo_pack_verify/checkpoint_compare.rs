@@ -1,39 +1,21 @@
 use anyhow::{Context, Result, bail, ensure};
 use neo_crypto::Sha256Hasher;
+use neo_state_packs::checkpoint::PackCheckpoint;
 use neo_state_packs::{CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, PACK_KEY_BYTES, PackStore};
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::{RawReadOnlyStore, Store};
 
 use super::{
-    AUTHORITY_LOOKUP_BATCH_VALUE_BYTES, AUTHORITY_LOOKUP_MAX_VALUE_BYTES, BATCH, CheckpointMarker,
-    STATE_NODE_PREFIX, XorShift64,
+    AUTHORITY_LOOKUP_BATCH_VALUE_BYTES, AUTHORITY_LOOKUP_MAX_VALUE_BYTES, BATCH, STATE_NODE_PREFIX,
+    XorShift64,
 };
 
 const MAX_CHECKPOINT_SAMPLES: usize = 1_000_000;
 
-pub(super) fn parse_checkpoint_network_magic(value: &str) -> Result<u32> {
-    let value = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-        .context("checkpoint network magic lacks 0x prefix")?;
-    u32::from_str_radix(value, 16).context("decode checkpoint network magic")
-}
-
-pub(super) fn decode_hash(value: &str, field: &'static str) -> Result<[u8; 32]> {
-    let value = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-        .with_context(|| format!("{field} lacks 0x prefix"))?;
-    let bytes = hex::decode(value).with_context(|| format!("decode {field}"))?;
-    bytes
-        .try_into()
-        .map_err(|bytes: Vec<u8>| anyhow::anyhow!("{field} has {} bytes, expected 32", bytes.len()))
-}
-
 pub(super) fn compare_checkpoint_nodes(
     state_store: &RuntimeStore,
     pack: &PackStore,
-    checkpoint: &CheckpointMarker,
+    checkpoint: &PackCheckpoint,
     expected_digest: [u8; 32],
     samples: usize,
     walk_cap: u64,

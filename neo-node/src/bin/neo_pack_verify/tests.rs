@@ -1,9 +1,16 @@
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
     use neo_crypto::Sha256Hasher;
+    use neo_state_packs::checkpoint::{
+        PACK_CHECKPOINT_SCHEMA_VERSION, PACK_CHECKPOINT_SOURCE_NAMESPACE, PackCheckpoint,
+    };
     use neo_state_packs::{
-        CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, PackFrameReceipt, PackOpKind, PackOperation,
+        CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
+        PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PACK_SEGMENT_HEADER_LEN,
+        PackFrameContext, PackFrameReceipt, PackOpKind, PackOperation,
     };
     use neo_storage::persistence::providers::MemoryStore;
     use neo_storage::persistence::{StoreMaintenanceBatch, WriteStore};
@@ -72,33 +79,48 @@ mod tests {
             hasher.update(value);
         }
         let identity = hasher.finalize();
-        let checkpoint = json!({
-            "schema_version": CHECKPOINT_SCHEMA_VERSION,
-            "authoritative_ready": true,
-            "complete": true,
-            "source_backend": "mdbx",
-            "source_namespace": STATE_SERVICE_NAMESPACE,
-            "network_magic": "0x334F454E",
-            "source_height": 7,
-            "source_root_internal_bytes": format!("0x{}", hex::encode(root)),
-            "source_namespace_sha256": format!("0x{}", hex::encode(identity)),
-            "rows": 2,
-            "value_bytes": root_value.len() + auxiliary_value.len(),
-            "frames": 2,
-            "pack_segment_format_version": PACK_SEGMENT_FORMAT_VERSION,
-            "pack_frame_format_version": PACK_FRAME_FORMAT_VERSION,
-            "pack_index_format_version": PACK_INDEX_FORMAT_VERSION,
-            "pack_manifest_format_version": PACK_MANIFEST_FORMAT_VERSION,
-            "tip_epoch": receipt.epoch,
-            "tip_segment_id": receipt.segment_id.get(),
-            "tip_frame_end": receipt.frame_end,
-            "tip_frame_sha256": format!("0x{}", hex::encode(receipt.frame_sha256)),
-            "scrubbed_frames": scrub.frames,
-            "scrubbed_rows": scrub.rows,
-            "scrubbed_puts": scrub.puts,
-            "scrubbed_tombstones": scrub.tombstones,
-            "scrubbed_value_bytes": scrub.value_bytes,
-        });
+        let mut display_root = root;
+        display_root.reverse();
+        let checkpoint = PackCheckpoint {
+            schema_version: PACK_CHECKPOINT_SCHEMA_VERSION,
+            authoritative_ready: true,
+            complete: true,
+            source_backend: "mdbx".to_owned(),
+            source_namespace: PACK_CHECKPOINT_SOURCE_NAMESPACE.to_owned(),
+            network_magic: "0x334F454E".to_owned(),
+            source_height: 7,
+            source_root: format!("0x{}", hex::encode(display_root)),
+            source_root_internal_bytes: format!("0x{}", hex::encode(root)),
+            source_namespace_sha256: format!("0x{}", hex::encode(identity)),
+            rows: 2,
+            resumed_rows: 0,
+            value_bytes: scrub.value_bytes,
+            frames: receipt.epoch + 1,
+            rows_per_frame: 1,
+            pack_bytes: receipt.frame_end,
+            live_index_bytes: 1,
+            live_runs: receipt.epoch + 1,
+            decoded_index_memory_bytes: 0,
+            gc_runs_deleted: 0,
+            gc_manifests_deleted: 0,
+            gc_bytes_reclaimed: 0,
+            pack_segment_format_version: PACK_SEGMENT_FORMAT_VERSION,
+            pack_frame_format_version: PACK_FRAME_FORMAT_VERSION,
+            pack_index_format_version: PACK_INDEX_FORMAT_VERSION,
+            pack_manifest_format_version: PACK_MANIFEST_FORMAT_VERSION,
+            tip_epoch: receipt.epoch,
+            tip_segment_id: receipt.segment_id.get(),
+            tip_frame_end: receipt.frame_end,
+            tip_frame_sha256: format!("0x{}", hex::encode(receipt.frame_sha256)),
+            scrubbed_frames: scrub.frames,
+            scrubbed_rows: scrub.rows,
+            scrubbed_puts: scrub.puts,
+            scrubbed_tombstones: scrub.tombstones,
+            scrubbed_payload_bytes: scrub.payload_bytes,
+            scrubbed_value_bytes: scrub.value_bytes,
+            scrub_elapsed_seconds: 0.0,
+            elapsed_seconds: 0.0,
+        };
         fs::write(
             pack_path.join("checkpoint.json"),
             serde_json::to_vec_pretty(&checkpoint).expect("encode checkpoint"),
@@ -215,15 +237,17 @@ mod tests {
                 .expect("decode fixture checkpoint");
 
         let mut old_schema = original.clone();
-        old_schema["schema_version"] = json!(CHECKPOINT_SCHEMA_VERSION - 1);
+        old_schema["schema_version"] = json!(PACK_CHECKPOINT_SCHEMA_VERSION - 1);
         fs::write(
             &checkpoint_path,
             serde_json::to_vec_pretty(&old_schema).expect("encode old checkpoint schema"),
         )
         .expect("write old checkpoint schema");
-        let checkpoint = read_checkpoint(&fixture.pack_path).expect("decode complete old schema");
+        let checkpoint =
+            PackCheckpoint::read(&fixture.pack_path).expect("decode complete old schema");
         assert!(
-            validate_checkpoint(&checkpoint, 0x334F_454E)
+            checkpoint
+                .validate_authoritative(0x334F_454E)
                 .expect_err("old checkpoint schema must fail")
                 .to_string()
                 .contains("unsupported")
@@ -240,7 +264,7 @@ mod tests {
                 serde_json::to_vec_pretty(&incomplete).expect("encode incomplete checkpoint"),
             )
             .expect("write incomplete checkpoint");
-            let error = read_checkpoint(&fixture.pack_path)
+            let error = PackCheckpoint::read(&fixture.pack_path)
                 .expect_err("missing segment identity must fail decoding");
             assert!(format!("{error:#}").contains(missing));
         }
@@ -252,12 +276,14 @@ mod tests {
             serde_json::to_vec_pretty(&header_position).expect("encode header checkpoint tip"),
         )
         .expect("write header checkpoint tip");
-        let checkpoint = read_checkpoint(&fixture.pack_path).expect("decode header checkpoint tip");
+        let checkpoint =
+            PackCheckpoint::read(&fixture.pack_path).expect("decode header checkpoint tip");
         assert!(
-            validate_checkpoint(&checkpoint, 0x334F_454E)
+            checkpoint
+                .validate_authoritative(0x334F_454E)
                 .expect_err("checkpoint tip inside its segment header must fail")
                 .to_string()
-                .contains("geometry")
+                .contains("tip_frame_end")
         );
 
         let mut impossible_segment = original;
@@ -269,9 +295,10 @@ mod tests {
         )
         .expect("write impossible checkpoint segment");
         let checkpoint =
-            read_checkpoint(&fixture.pack_path).expect("decode impossible checkpoint segment");
+            PackCheckpoint::read(&fixture.pack_path).expect("decode impossible checkpoint segment");
         assert!(
-            validate_checkpoint(&checkpoint, 0x334F_454E)
+            checkpoint
+                .validate_authoritative(0x334F_454E)
                 .expect_err("segment after the tip epoch must fail")
                 .to_string()
                 .contains("after the tip epoch")
@@ -406,7 +433,7 @@ mod tests {
             .expect("maintain marker-bound authority"),
             AuthorityState::Marker
         );
-        assert_eq!(index_file_count(&fixture.pack_path), 12);
+        assert_eq!(index_file_count(&fixture.pack_path), 1);
         assert_eq!(live_run_count(&fixture.pack_path), 1);
         assert_eq!(pack_generation(&fixture.pack_path), generation_before + 1);
 
@@ -460,31 +487,29 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_rejects_corrupt_non_tail_index_before_lookup() {
+    fn checkpoint_rebuilds_corrupt_derived_index_before_lookup() {
         let fixture = fixture();
         corrupt_oldest_run_value_offset(&fixture.pack_path);
-        let error = verify_authority(
-            &fixture.state,
-            &fixture.pack_path,
-            0x334F_454E,
-            1,
-            PackStoreOptions::default(),
-            0,
-            16,
-            true,
-            false,
-            true,
-            true,
-            0,
-            false,
-        )
-        .expect_err("non-tail index corruption must fail before any sampled lookup");
-        let details = format!("{error:#}");
-        assert!(
-            details.contains("checksum mismatch in committed run")
-                || details.contains("checksum mismatch during scrub"),
-            "unexpected corruption error: {details}"
+        assert_eq!(
+            verify_authority(
+                &fixture.state,
+                &fixture.pack_path,
+                0x334F_454E,
+                1,
+                PackStoreOptions::default(),
+                0,
+                16,
+                true,
+                false,
+                true,
+                true,
+                0,
+                false,
+            )
+            .expect("rebuild the corrupt derived index from authenticated frames"),
+            AuthorityState::Checkpoint
         );
+        assert_eq!(index_file_count(&fixture.pack_path), 1);
     }
 
     #[test]
@@ -499,7 +524,7 @@ mod tests {
                 vec![0u8; AUTHORITY_LOOKUP_MAX_VALUE_BYTES + 1],
             )
             .expect("write oversized source node");
-        let checkpoint = read_checkpoint(&fixture.pack_path).expect("read fixture checkpoint");
+        let checkpoint = PackCheckpoint::read(&fixture.pack_path).expect("read fixture checkpoint");
         let pack =
             PackStore::open(&fixture.pack_path, test_pack_config()).expect("open fixture pack");
 

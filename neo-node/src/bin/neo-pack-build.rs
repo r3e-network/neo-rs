@@ -1,8 +1,10 @@
-//! Build a bounded offline node-pack checkpoint from the authoritative MDBX
-//! StateService `0xf0 || node_hash` namespace.
+//! Build a bounded offline node-pack checkpoint from either the authoritative
+//! MDBX StateService `0xf0 || node_hash` namespace or an authenticated neutral
+//! migration stream.
 //!
-//! The source is streamed through one frozen MDBX cursor. A checkpoint marker
-//! is published only after the source height/root remain stable and the pack
+//! Both source modes require read-only coordinated MDBX metadata. A checkpoint
+//! marker is published only after the source height/root remain stable, the
+//! complete namespace scrubs exactly, its root node resolves, and the pack
 //! reopens successfully. Interrupted or bounded smoke builds therefore never
 //! look like complete authoritative checkpoints.
 //!
@@ -10,6 +12,10 @@
 //!   neo-pack-build --network-magic <u32-or-hex>
 //!     --mdbx <canonical-store-dir> --pack <new-pack-dir>
 //!     [--rows-per-frame N] [--max-rows N] [--max-index-memory-mb N]
+//!   neo-pack-build --network-magic <u32-or-hex>
+//!     --migration-stream <neutral-v1-file>
+//!     --metadata-mdbx <canonical-store-dir> --pack <new-pack-dir>
+//!     [--rows-per-frame N] [--max-index-memory-mb N]
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Write};
@@ -19,10 +25,17 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail, ensure};
 use neo_crypto::Sha256Hasher;
+use neo_state_packs::checkpoint::{
+    PACK_CHECKPOINT_SCHEMA_VERSION, PACK_CHECKPOINT_SOURCE_NAMESPACE,
+    PackCheckpoint as CheckpointReport,
+};
+use neo_state_packs::migration::{
+    MigrationStreamEvidence, MigrationStreamHeader, MigrationStreamLimits, MigrationStreamReader,
+};
 use neo_state_packs::{
-    CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, PACK_FRAME_FORMAT_VERSION, PACK_INDEX_FORMAT_VERSION,
-    PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION, PackFrameContext, PackOpKind,
-    PackOperation, PackSegmentId, PackStore, PackStoreConfig,
+    CHECKPOINT_NAMESPACE_DIGEST_DOMAIN, PACK_FRAME_FORMAT_VERSION, PACK_FRAME_ROW_METADATA_BYTES,
+    PACK_INDEX_FORMAT_VERSION, PACK_MANIFEST_FORMAT_VERSION, PACK_SEGMENT_FORMAT_VERSION,
+    PackFrameContext, PackOpKind, PackOperation, PackSegmentId, PackStore, PackStoreConfig,
 };
 use neo_state_service::read_current_local_root;
 use neo_storage::persistence::StoreFactory;
@@ -32,10 +45,8 @@ use neo_storage::{StorageError, StorageResult};
 use serde::{Deserialize, Serialize};
 
 const STATE_NODE_PREFIX: u8 = 0xf0;
-const STATE_SERVICE_NAMESPACE: &str = "neo_state_service";
 const DEFAULT_ROWS_PER_FRAME: usize = 1_000_000;
 const DEFAULT_MAX_INDEX_MEMORY_MB: u64 = 512;
-const CHECKPOINT_SCHEMA_VERSION: u32 = 4;
 const BUILD_IDENTITY_SCHEMA_VERSION: u32 = 2;
 const BUILD_IDENTITY_FILE: &str = "checkpoint-build.json";
 const BUILD_IDENTITY_TMP_FILE: &str = "checkpoint-build.json.tmp";
@@ -49,11 +60,40 @@ fn pack_store_config(max_index_memory_bytes: u64) -> Result<PackStoreConfig> {
 #[derive(Clone, Debug)]
 struct Arguments {
     network_magic: u32,
-    mdbx_path: PathBuf,
+    source: SourceArguments,
     pack_path: PathBuf,
     rows_per_frame: usize,
     max_rows: Option<u64>,
     max_index_memory_bytes: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum SourceArguments {
+    Mdbx {
+        path: PathBuf,
+    },
+    MigrationStream {
+        stream_path: PathBuf,
+        metadata_mdbx_path: PathBuf,
+    },
+}
+
+impl SourceArguments {
+    const fn backend_name(&self) -> &'static str {
+        match self {
+            Self::Mdbx { .. } => "mdbx",
+            Self::MigrationStream { .. } => "migration-stream-v1",
+        }
+    }
+
+    fn metadata_mdbx_path(&self) -> &Path {
+        match self {
+            Self::Mdbx { path } => path,
+            Self::MigrationStream {
+                metadata_mdbx_path, ..
+            } => metadata_mdbx_path,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -79,11 +119,11 @@ struct BuildIdentity {
 }
 
 impl BuildIdentity {
-    fn current(arguments: &Arguments, source_tip: SourceTip) -> Self {
+    fn current(arguments: &Arguments, source_tip: SourceTip, source_backend: &str) -> Self {
         Self {
             schema_version: BUILD_IDENTITY_SCHEMA_VERSION,
-            source_backend: "mdbx".to_owned(),
-            source_namespace: STATE_SERVICE_NAMESPACE.to_owned(),
+            source_backend: source_backend.to_owned(),
+            source_namespace: PACK_CHECKPOINT_SOURCE_NAMESPACE.to_owned(),
             network_magic: formatted_network_magic(arguments.network_magic),
             source_height: source_tip.height,
             source_root_internal_bytes: format!("0x{}", hex::encode(source_tip.root_internal)),
@@ -96,52 +136,33 @@ impl BuildIdentity {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct CheckpointReport {
-    schema_version: u32,
-    authoritative_ready: bool,
-    complete: bool,
-    source_backend: &'static str,
-    source_namespace: &'static str,
-    network_magic: String,
-    source_height: u32,
-    source_root: String,
-    source_root_internal_bytes: String,
-    source_namespace_sha256: String,
-    rows: u64,
-    resumed_rows: u64,
-    value_bytes: u64,
-    frames: u64,
-    rows_per_frame: usize,
-    pack_bytes: u64,
-    live_index_bytes: u64,
-    live_runs: u64,
-    decoded_index_memory_bytes: u64,
-    gc_runs_deleted: u64,
-    gc_manifests_deleted: u64,
-    gc_bytes_reclaimed: u64,
-    pack_segment_format_version: u32,
-    pack_frame_format_version: u32,
-    pack_index_format_version: u32,
-    pack_manifest_format_version: u32,
-    tip_epoch: u64,
-    tip_segment_id: u64,
-    tip_frame_end: u64,
-    tip_frame_sha256: String,
-    scrubbed_frames: u64,
-    scrubbed_rows: u64,
-    scrubbed_puts: u64,
-    scrubbed_tombstones: u64,
-    scrubbed_payload_bytes: u64,
-    scrubbed_value_bytes: u64,
-    scrub_elapsed_seconds: f64,
-    elapsed_seconds: f64,
-}
-
 struct OpenedCheckpoint {
     pack: PackStore,
     resumed_rows: u64,
     frames: u64,
+}
+
+struct RowAccumulator<'a> {
+    arguments: &'a Arguments,
+    source_tip: SourceTip,
+    pack: PackStore,
+    resumed_rows: u64,
+    frames: u64,
+    operations: Vec<PackOperation>,
+    frame_value_bytes: u64,
+    rows: u64,
+    value_bytes: u64,
+    namespace_hasher: Sha256Hasher,
+    max_frame_payload_bytes: u64,
+}
+
+struct AccumulatedCheckpoint {
+    pack: PackStore,
+    resumed_rows: u64,
+    frames: u64,
+    rows: u64,
+    value_bytes: u64,
+    namespace_sha256: [u8; 32],
 }
 
 fn main() -> Result<()> {
@@ -149,85 +170,90 @@ fn main() -> Result<()> {
     let canonical: Arc<RuntimeStore> = StoreFactory::get_store_with_config(
         "mdbx",
         StorageConfig {
-            path: arguments.mdbx_path.clone(),
+            path: arguments.source.metadata_mdbx_path().to_path_buf(),
             read_only: true,
             ..Default::default()
         },
     )
     .map_err(|error| anyhow::anyhow!("open MDBX store: {error}"))?;
     let state_store = canonical
-        .open_coordinated_namespace(STATE_SERVICE_NAMESPACE)
+        .open_coordinated_namespace(PACK_CHECKPOINT_SOURCE_NAMESPACE)
         .context("open coordinated MDBX StateService namespace")?;
     let source_tip = read_source_tip(&state_store)?;
 
     let started = Instant::now();
-    let OpenedCheckpoint {
-        mut pack,
-        resumed_rows,
-        mut frames,
-    } = open_or_resume_pack(&arguments, source_tip)?;
-    let mut operations = Vec::with_capacity(arguments.rows_per_frame);
-    let mut hasher = Sha256Hasher::new();
-    hasher.update(CHECKPOINT_NAMESPACE_DIGEST_DOMAIN);
-    let mut rows = 0u64;
-    let mut value_bytes = 0u64;
-    let rows_per_frame = arguments.rows_per_frame;
-    let visited = state_store.visit_raw_entries_with_prefix(
-        &[STATE_NODE_PREFIX],
-        arguments.max_rows,
-        |key, value| {
-            ensure_storage(
-                key.len() == 33 && key.first() == Some(&STATE_NODE_PREFIX),
-                "StateService node scan returned a malformed key",
-            )?;
-            let key: [u8; 33] = key.try_into().expect("validated 33-byte key");
-            hasher.update(&(key.len() as u32).to_le_bytes());
-            hasher.update(&key);
-            hasher.update(&(value.len() as u64).to_le_bytes());
-            hasher.update(value);
-            rows = rows.saturating_add(1);
-            value_bytes = value_bytes.saturating_add(value.len() as u64);
-            operations.push(PackOperation {
-                key,
-                kind: PackOpKind::Put(value.to_vec()),
-            });
-            if operations.len() == rows_per_frame {
-                if rows <= resumed_rows {
-                    validate_existing_rows(&pack, &mut operations)?;
-                } else {
-                    append_frame(&mut pack, source_tip, &mut operations)?;
-                    frames = frames.saturating_add(1);
-                }
-                eprintln!(
-                    "checkpoint progress: rows={rows} frames={frames} value_bytes={value_bytes}"
-                );
-            }
-            Ok(())
-        },
-    )?;
-    ensure!(visited == rows, "streamed row count changed unexpectedly");
-    ensure!(
-        rows >= resumed_rows,
-        "partial checkpoint contains more rows than the source namespace"
-    );
-    if !operations.is_empty() {
-        if rows <= resumed_rows {
-            validate_existing_rows(&pack, &mut operations)
-                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        } else {
-            append_frame(&mut pack, source_tip, &mut operations)
-                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-            frames = frames.saturating_add(1);
+    let mut migration_reader = match &arguments.source {
+        SourceArguments::Mdbx { .. } => None,
+        SourceArguments::MigrationStream { stream_path, .. } => {
+            let file = File::open(stream_path).with_context(|| {
+                format!("open neutral migration stream {}", stream_path.display())
+            })?;
+            let reader =
+                MigrationStreamReader::new(BufReader::new(file), MigrationStreamLimits::default())
+                    .context("decode neutral migration stream header")?;
+            validate_migration_header(reader.header(), &arguments, source_tip)?;
+            Some(reader)
         }
+    };
+    let source_backend = arguments.source.backend_name();
+    let opened = open_or_resume_pack(&arguments, source_tip, source_backend)?;
+    let mut accumulator = RowAccumulator::new(&arguments, source_tip, opened)?;
+    let migration_evidence = match migration_reader.as_mut() {
+        None => {
+            let visited = state_store.visit_raw_entries_with_prefix(
+                &[STATE_NODE_PREFIX],
+                arguments.max_rows,
+                |key, value| accumulator.push_storage_row(key, value),
+            )?;
+            ensure!(
+                visited == accumulator.rows,
+                "streamed row count changed unexpectedly"
+            );
+            None
+        }
+        Some(reader) => {
+            while let Some(row) = reader
+                .read_row()
+                .context("decode neutral migration stream row")?
+            {
+                accumulator.push(row.key, &row.value)?;
+            }
+            Some(
+                migration_reader
+                    .take()
+                    .expect("migration source installs one reader")
+                    .finish()
+                    .context("validate neutral migration stream trailer")?,
+            )
+        }
+    };
+    let accumulated = accumulator.finish()?;
+    if let Some(evidence) = migration_evidence {
+        validate_migration_evidence(evidence, &accumulated)?;
     }
-    ensure!(rows > 0, "StateService node namespace is empty");
 
     let source_tip_after = read_source_tip(&state_store)?;
     ensure!(
         source_tip_after == source_tip,
         "source StateService height/root changed during checkpoint build"
     );
-    let namespace_digest = hasher.finalize();
+    finalize_checkpoint(&arguments, source_tip, accumulated, started)
+}
+
+fn finalize_checkpoint(
+    arguments: &Arguments,
+    source_tip: SourceTip,
+    accumulated: AccumulatedCheckpoint,
+    started: Instant,
+) -> Result<()> {
+    let AccumulatedCheckpoint {
+        mut pack,
+        resumed_rows,
+        frames,
+        rows,
+        value_bytes,
+        namespace_sha256,
+    } = accumulated;
     let gc = pack.gc().context("reclaim derived checkpoint files")?;
     let scrub_started = Instant::now();
     let checkpoint_evidence = pack
@@ -244,9 +270,10 @@ fn main() -> Result<()> {
         "checkpoint payload scrub does not match the frozen source geometry"
     );
     ensure!(
-        checkpoint_evidence.sha256 == namespace_digest,
+        checkpoint_evidence.sha256 == namespace_sha256,
         "checkpoint pack namespace digest does not match the frozen source"
     );
+    validate_root_node(&pack, source_tip)?;
     let (pack_bytes, live_index_bytes, live_runs, decoded_index_memory_bytes) = pack
         .layout()
         .context("inspect completed checkpoint layout")?;
@@ -259,20 +286,22 @@ fn main() -> Result<()> {
     );
     let complete = arguments.max_rows.is_none();
     let report = CheckpointReport {
-        schema_version: CHECKPOINT_SCHEMA_VERSION,
+        schema_version: PACK_CHECKPOINT_SCHEMA_VERSION,
         // The report is published only by `publish_after_reopen`, after the
         // complete source scan, stable height/root check, payload scrub, tip
         // frame-digest verification, and pack reopen all succeed. Bounded builds
         // remain explicitly ineligible.
         authoritative_ready: complete,
         complete,
-        source_backend: "mdbx",
-        source_namespace: STATE_SERVICE_NAMESPACE,
+        // The neutral stream is an authenticated transport of this exact
+        // legacy MDBX namespace, not a distinct semantic source backend.
+        source_backend: "mdbx".to_owned(),
+        source_namespace: PACK_CHECKPOINT_SOURCE_NAMESPACE.to_owned(),
         network_magic: formatted_network_magic(arguments.network_magic),
         source_height: source_tip.height,
         source_root: displayed_root(source_tip.root_internal),
         source_root_internal_bytes: format!("0x{}", hex::encode(source_tip.root_internal)),
-        source_namespace_sha256: format!("0x{}", hex::encode(namespace_digest)),
+        source_namespace_sha256: format!("0x{}", hex::encode(namespace_sha256)),
         rows,
         resumed_rows,
         value_bytes,
@@ -302,7 +331,7 @@ fn main() -> Result<()> {
         scrub_elapsed_seconds,
         elapsed_seconds: started.elapsed().as_secs_f64(),
     };
-    publish_after_reopen(&arguments, &report, pack)?;
+    publish_after_reopen(arguments, &report, source_tip, pack)?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     if !complete {
         eprintln!(
@@ -319,6 +348,8 @@ fn parse_arguments() -> Result<Arguments> {
 fn parse_arguments_from(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
     let mut network_magic = None;
     let mut mdbx_path = None;
+    let mut migration_stream_path = None;
+    let mut metadata_mdbx_path = None;
     let mut pack_path = None;
     let mut rows_per_frame = DEFAULT_ROWS_PER_FRAME;
     let mut max_rows = None;
@@ -336,6 +367,10 @@ fn parse_arguments_from(arguments: impl IntoIterator<Item = String>) -> Result<A
                 );
             }
             "--mdbx" => mdbx_path = arguments.next().map(PathBuf::from),
+            "--migration-stream" => {
+                migration_stream_path = arguments.next().map(PathBuf::from);
+            }
+            "--metadata-mdbx" => metadata_mdbx_path = arguments.next().map(PathBuf::from),
             "--pack" => pack_path = arguments.next().map(PathBuf::from),
             "--rows-per-frame" => {
                 rows_per_frame = parse_positive(&mut arguments, "--rows-per-frame")?;
@@ -352,14 +387,227 @@ fn parse_arguments_from(arguments: impl IntoIterator<Item = String>) -> Result<A
     let max_index_memory_bytes = max_index_memory_mb
         .checked_mul(1024 * 1024)
         .context("--max-index-memory-mb overflows bytes")?;
+    ensure!(
+        rows_per_frame <= PackStoreConfig::HARD_MAX_FRAME_ROWS as usize,
+        "--rows-per-frame exceeds the pack format limit of {}",
+        PackStoreConfig::HARD_MAX_FRAME_ROWS
+    );
+    let source = match (mdbx_path, migration_stream_path, metadata_mdbx_path) {
+        (Some(path), None, None) => SourceArguments::Mdbx { path },
+        (None, Some(stream_path), Some(metadata_mdbx_path)) => {
+            ensure!(
+                max_rows.is_none(),
+                "--max-rows is not valid with --migration-stream because the complete authenticated stream is mandatory"
+            );
+            SourceArguments::MigrationStream {
+                stream_path,
+                metadata_mdbx_path,
+            }
+        }
+        (None, None, _) => {
+            bail!("choose --mdbx, or use --migration-stream together with --metadata-mdbx")
+        }
+        _ => bail!("--mdbx is mutually exclusive with --migration-stream and --metadata-mdbx"),
+    };
     Ok(Arguments {
         network_magic: network_magic.context("--network-magic is required")?,
-        mdbx_path: mdbx_path.context("--mdbx is required")?,
+        source,
         pack_path: pack_path.context("--pack is required")?,
         rows_per_frame,
         max_rows,
         max_index_memory_bytes,
     })
+}
+
+impl<'a> RowAccumulator<'a> {
+    fn new(
+        arguments: &'a Arguments,
+        source_tip: SourceTip,
+        opened: OpenedCheckpoint,
+    ) -> Result<Self> {
+        let config = pack_store_config(arguments.max_index_memory_bytes)?;
+        let mut operations = Vec::new();
+        operations
+            .try_reserve_exact(arguments.rows_per_frame)
+            .context("reserve checkpoint frame operations")?;
+        let mut namespace_hasher = Sha256Hasher::new();
+        namespace_hasher.update(CHECKPOINT_NAMESPACE_DIGEST_DOMAIN);
+        Ok(Self {
+            arguments,
+            source_tip,
+            pack: opened.pack,
+            resumed_rows: opened.resumed_rows,
+            frames: opened.frames,
+            operations,
+            frame_value_bytes: 0,
+            rows: 0,
+            value_bytes: 0,
+            namespace_hasher,
+            max_frame_payload_bytes: config.max_frame_payload_bytes(),
+        })
+    }
+
+    fn push_storage_row(&mut self, key: &[u8], value: &[u8]) -> StorageResult<()> {
+        ensure_storage(
+            key.len() == 33 && key.first() == Some(&STATE_NODE_PREFIX),
+            "StateService node scan returned a malformed key",
+        )?;
+        let key: [u8; 33] = key.try_into().expect("validated 33-byte key");
+        self.push(key, value)
+            .map_err(|error| StorageError::Backend {
+                message: format!("build checkpoint pack: {error:#}"),
+            })
+    }
+
+    fn push(&mut self, key: [u8; 33], value: &[u8]) -> Result<()> {
+        ensure!(
+            key[0] == STATE_NODE_PREFIX,
+            "checkpoint row is outside the exact StateService node namespace"
+        );
+        let value_len =
+            u64::try_from(value.len()).context("checkpoint value length overflows u64")?;
+        if !self.operations.is_empty()
+            && (self.operations.len() == self.arguments.rows_per_frame
+                || !self.next_row_fits(value_len)?)
+        {
+            self.flush()?;
+        }
+        ensure!(
+            self.next_row_fits(value_len)?,
+            "one checkpoint row cannot fit the configured pack frame payload bound"
+        );
+
+        let mut owned_value = Vec::new();
+        owned_value
+            .try_reserve_exact(value.len())
+            .context("reserve exact checkpoint node value")?;
+        owned_value.extend_from_slice(value);
+        self.namespace_hasher
+            .update(&(key.len() as u32).to_le_bytes());
+        self.namespace_hasher.update(&key);
+        self.namespace_hasher.update(&value_len.to_le_bytes());
+        self.namespace_hasher.update(value);
+        self.rows = self
+            .rows
+            .checked_add(1)
+            .context("checkpoint row count overflows u64")?;
+        self.value_bytes = self
+            .value_bytes
+            .checked_add(value_len)
+            .context("checkpoint value byte count overflows u64")?;
+        self.frame_value_bytes = self
+            .frame_value_bytes
+            .checked_add(value_len)
+            .context("checkpoint frame value byte count overflows u64")?;
+        self.operations.push(PackOperation {
+            key,
+            kind: PackOpKind::Put(owned_value),
+        });
+        Ok(())
+    }
+
+    fn next_row_fits(&self, value_len: u64) -> Result<bool> {
+        let rows = u64::try_from(self.operations.len())
+            .context("checkpoint frame row count overflows u64")?
+            .checked_add(1)
+            .context("checkpoint frame row count overflows u64")?;
+        let metadata_bytes = rows
+            .checked_mul(PACK_FRAME_ROW_METADATA_BYTES as u64)
+            .context("checkpoint frame metadata length overflows u64")?;
+        let value_bytes = self
+            .frame_value_bytes
+            .checked_add(value_len)
+            .context("checkpoint frame value length overflows u64")?;
+        Ok(metadata_bytes
+            .checked_add(value_bytes)
+            .context("checkpoint frame payload length overflows u64")?
+            <= self.max_frame_payload_bytes)
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        if self.operations.is_empty() {
+            return Ok(());
+        }
+        let frame_rows = u64::try_from(self.operations.len())
+            .context("checkpoint frame row count overflows u64")?;
+        let frame_start = self
+            .rows
+            .checked_sub(frame_rows)
+            .context("checkpoint frame row accounting underflow")?;
+        if self.rows <= self.resumed_rows {
+            validate_existing_rows(&self.pack, &mut self.operations)
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        } else {
+            ensure!(
+                frame_start >= self.resumed_rows,
+                "partial checkpoint row horizon falls inside a deterministically rebuilt frame"
+            );
+            append_frame(&mut self.pack, self.source_tip, &mut self.operations)
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            self.frames = self
+                .frames
+                .checked_add(1)
+                .context("checkpoint frame count overflows u64")?;
+        }
+        self.frame_value_bytes = 0;
+        eprintln!(
+            "checkpoint progress: rows={} frames={} value_bytes={}",
+            self.rows, self.frames, self.value_bytes
+        );
+        Ok(())
+    }
+
+    fn finish(mut self) -> Result<AccumulatedCheckpoint> {
+        self.flush()?;
+        ensure!(self.rows > 0, "StateService node namespace is empty");
+        ensure!(
+            self.rows >= self.resumed_rows,
+            "partial checkpoint contains more rows than the source namespace"
+        );
+        Ok(AccumulatedCheckpoint {
+            pack: self.pack,
+            resumed_rows: self.resumed_rows,
+            frames: self.frames,
+            rows: self.rows,
+            value_bytes: self.value_bytes,
+            namespace_sha256: self.namespace_hasher.finalize(),
+        })
+    }
+}
+
+fn validate_migration_header(
+    header: MigrationStreamHeader,
+    arguments: &Arguments,
+    source_tip: SourceTip,
+) -> Result<()> {
+    ensure!(
+        header.network_magic == arguments.network_magic,
+        "migration stream network 0x{:08X} differs from --network-magic 0x{:08X}",
+        header.network_magic,
+        arguments.network_magic
+    );
+    ensure!(
+        (header.height, header.root_internal) == (source_tip.height, source_tip.root_internal),
+        "migration stream height/root differs from coordinated StateService metadata"
+    );
+    ensure!(header.rows > 0, "migration stream node namespace is empty");
+    Ok(())
+}
+
+fn validate_migration_evidence(
+    evidence: MigrationStreamEvidence,
+    accumulated: &AccumulatedCheckpoint,
+) -> Result<()> {
+    ensure!(
+        evidence.header.rows == accumulated.rows
+            && evidence.header.value_bytes == accumulated.value_bytes,
+        "migration stream geometry differs from the imported checkpoint"
+    );
+    ensure!(
+        evidence.header.namespace_sha256 == accumulated.namespace_sha256,
+        "migration stream namespace digest differs from the imported checkpoint"
+    );
+    Ok(())
 }
 
 fn parse_u32_literal(value: &str) -> Result<u32> {
@@ -396,7 +644,11 @@ fn read_source_tip(store: &RuntimeStore) -> Result<SourceTip> {
     })
 }
 
-fn open_or_resume_pack(arguments: &Arguments, source_tip: SourceTip) -> Result<OpenedCheckpoint> {
+fn open_or_resume_pack(
+    arguments: &Arguments,
+    source_tip: SourceTip,
+    source_backend: &str,
+) -> Result<OpenedCheckpoint> {
     let checkpoint = arguments.pack_path.join("checkpoint.json");
     let checkpoint_tmp = arguments.pack_path.join("checkpoint.json.tmp");
     ensure!(
@@ -415,7 +667,7 @@ fn open_or_resume_pack(arguments: &Arguments, source_tip: SourceTip) -> Result<O
         "checkpoint marker already exists at {}; refusing to overwrite it",
         checkpoint.display()
     );
-    let expected_identity = BuildIdentity::current(arguments, source_tip);
+    let expected_identity = BuildIdentity::current(arguments, source_tip, source_backend);
     if arguments
         .pack_path
         .join(PackSegmentId::INITIAL.file_name())
@@ -437,19 +689,6 @@ fn open_or_resume_pack(arguments: &Arguments, source_tip: SourceTip) -> Result<O
         ensure!(
             validation.frames > 0 && validation.index_entries > 0,
             "partial checkpoint has no committed rows"
-        );
-        let rows_per_frame =
-            u64::try_from(arguments.rows_per_frame).context("--rows-per-frame does not fit u64")?;
-        let expected_rows = validation
-            .frames
-            .checked_mul(rows_per_frame)
-            .context("partial checkpoint frame geometry overflows u64")?;
-        ensure!(
-            validation.index_entries == expected_rows,
-            "partial checkpoint has {} live rows across {} frames, not exactly {} rows per frame",
-            validation.index_entries,
-            validation.frames,
-            arguments.rows_per_frame
         );
         eprintln!(
             "checkpoint resume: validating {} existing rows across {} frames",
@@ -608,6 +847,19 @@ fn ensure_storage(condition: bool, message: &str) -> StorageResult<()> {
     }
 }
 
+fn validate_root_node(pack: &PackStore, source_tip: SourceTip) -> Result<()> {
+    let mut root_key = [0u8; 33];
+    root_key[0] = STATE_NODE_PREFIX;
+    root_key[1..].copy_from_slice(&source_tip.root_internal);
+    ensure!(
+        pack.get(&root_key)
+            .context("resolve checkpoint StateService root node")?
+            .is_some(),
+        "checkpoint pack does not contain the StateService root node"
+    );
+    Ok(())
+}
+
 fn displayed_root(mut internal: [u8; 32]) -> String {
     internal.reverse();
     format!("0x{}", hex::encode(internal))
@@ -620,8 +872,12 @@ fn formatted_network_magic(network_magic: u32) -> String {
 fn publish_after_reopen(
     arguments: &Arguments,
     report: &CheckpointReport,
+    source_tip: SourceTip,
     pack: PackStore,
 ) -> Result<()> {
+    report
+        .validate_authoritative(arguments.network_magic)
+        .context("validate completed checkpoint metadata")?;
     let checkpoint_tmp = arguments.pack_path.join("checkpoint.json.tmp");
     write_checkpoint_temp(&checkpoint_tmp, report)?;
     drop(pack);
@@ -640,6 +896,7 @@ fn publish_after_reopen(
         validation.index_entries == report.rows,
         "reopened checkpoint exposes a different row count"
     );
+    validate_root_node(&reopened, source_tip)?;
     let reopened_tip = reopened
         .last_frame_receipt()
         .context("reopened checkpoint has no tip frame")?;
@@ -698,6 +955,23 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    fn test_arguments(pack_path: PathBuf, rows_per_frame: usize) -> Arguments {
+        Arguments {
+            network_magic: 0x334F_454E,
+            source: SourceArguments::Mdbx {
+                path: PathBuf::new(),
+            },
+            pack_path,
+            rows_per_frame,
+            max_rows: None,
+            max_index_memory_bytes: 1024 * 1024,
+        }
+    }
+
+    fn open_test_pack(arguments: &Arguments, source_tip: SourceTip) -> Result<OpenedCheckpoint> {
+        open_or_resume_pack(arguments, source_tip, arguments.source.backend_name())
+    }
+
     #[test]
     fn displayed_root_reverses_internal_uint256_bytes() {
         let mut internal = [0u8; 32];
@@ -711,11 +985,11 @@ mod tests {
     #[test]
     fn incomplete_report_cannot_be_confused_with_a_complete_checkpoint() {
         let report = CheckpointReport {
-            schema_version: CHECKPOINT_SCHEMA_VERSION,
+            schema_version: PACK_CHECKPOINT_SCHEMA_VERSION,
             authoritative_ready: false,
             complete: false,
-            source_backend: "mdbx",
-            source_namespace: STATE_SERVICE_NAMESPACE,
+            source_backend: "mdbx".to_owned(),
+            source_namespace: PACK_CHECKPOINT_SOURCE_NAMESPACE.to_owned(),
             network_magic: "0x334F454E".to_owned(),
             source_height: 1,
             source_root: displayed_root([0u8; 32]),
@@ -753,7 +1027,7 @@ mod tests {
         let json = serde_json::to_value(report).expect("serialize checkpoint report");
         assert_eq!(json["complete"], false);
         assert_eq!(json["authoritative_ready"], false);
-        assert_eq!(json["schema_version"], CHECKPOINT_SCHEMA_VERSION);
+        assert_eq!(json["schema_version"], PACK_CHECKPOINT_SCHEMA_VERSION);
         assert_eq!(json["network_magic"], "0x334F454E");
         assert_eq!(
             json["pack_segment_format_version"],
@@ -786,19 +1060,12 @@ mod tests {
                 kind: PackOpKind::Put(b"second".to_vec()),
             },
         ];
-        let arguments = Arguments {
-            network_magic: 0x334F_454E,
-            mdbx_path: PathBuf::new(),
-            pack_path: pack_path.clone(),
-            rows_per_frame: 2,
-            max_rows: None,
-            max_index_memory_bytes: 1024 * 1024,
-        };
+        let arguments = test_arguments(pack_path.clone(), 2);
         let source_tip = SourceTip {
             height: 123,
             root_internal: [0x55; 32],
         };
-        let opened = open_or_resume_pack(&arguments, source_tip).expect("create partial pack");
+        let opened = open_test_pack(&arguments, source_tip).expect("create partial pack");
         assert_eq!((opened.resumed_rows, opened.frames), (0, 0));
         let mut store = opened.pack;
         store
@@ -806,7 +1073,7 @@ mod tests {
             .expect("append partial prefix");
         drop(store);
 
-        let opened = open_or_resume_pack(&arguments, source_tip).expect("open partial pack");
+        let opened = open_test_pack(&arguments, source_tip).expect("open partial pack");
         assert_eq!((opened.resumed_rows, opened.frames), (2, 1));
         let pack = opened.pack;
         let mut matching = original.clone();
@@ -824,19 +1091,12 @@ mod tests {
     fn partial_pack_resume_rejects_identity_and_format_drift() {
         let temporary = tempdir().expect("temporary checkpoint parent");
         let pack_path = temporary.path().join("pack");
-        let arguments = Arguments {
-            network_magic: 0x334F_454E,
-            mdbx_path: PathBuf::new(),
-            pack_path: pack_path.clone(),
-            rows_per_frame: 1,
-            max_rows: None,
-            max_index_memory_bytes: 1024 * 1024,
-        };
+        let arguments = test_arguments(pack_path.clone(), 1);
         let source_tip = SourceTip {
             height: 123,
             root_internal: [0x55; 32],
         };
-        let mut store = open_or_resume_pack(&arguments, source_tip)
+        let mut store = open_test_pack(&arguments, source_tip)
             .expect("create partial pack")
             .pack;
         let mut key = [1u8; 33];
@@ -854,7 +1114,7 @@ mod tests {
 
         let mut wrong_network = arguments.clone();
         wrong_network.network_magic = 0x3554_334E;
-        let error = open_or_resume_pack(&wrong_network, source_tip)
+        let error = open_test_pack(&wrong_network, source_tip)
             .err()
             .expect("network identity drift must reject resume");
         assert!(error.to_string().contains("network magic changed"));
@@ -863,7 +1123,7 @@ mod tests {
             height: source_tip.height + 1,
             ..source_tip
         };
-        let error = open_or_resume_pack(&arguments, changed_tip)
+        let error = open_test_pack(&arguments, changed_tip)
             .err()
             .expect("source generation drift must reject resume");
         assert!(error.to_string().contains("source height or root changed"));
@@ -876,29 +1136,22 @@ mod tests {
             serde_json::to_vec_pretty(&identity).expect("encode changed identity"),
         )
         .expect("replace build identity");
-        let error = open_or_resume_pack(&arguments, source_tip)
+        let error = open_test_pack(&arguments, source_tip)
             .err()
             .expect("format identity drift must reject resume");
         assert!(error.to_string().contains("format version changed"));
     }
 
     #[test]
-    fn partial_pack_resume_rejects_inconsistent_frame_geometry() {
+    fn partial_pack_resume_accepts_payload_bounded_variable_frame_geometry() {
         let temporary = tempdir().expect("temporary checkpoint parent");
         let pack_path = temporary.path().join("pack");
-        let mut arguments = Arguments {
-            network_magic: 0x334F_454E,
-            mdbx_path: PathBuf::new(),
-            pack_path: pack_path.clone(),
-            rows_per_frame: 1,
-            max_rows: None,
-            max_index_memory_bytes: 1024 * 1024,
-        };
+        let arguments = test_arguments(pack_path.clone(), 2);
         let source_tip = SourceTip {
             height: 123,
             root_internal: [0x55; 32],
         };
-        let mut store = open_or_resume_pack(&arguments, source_tip)
+        let mut store = open_test_pack(&arguments, source_tip)
             .expect("create partial pack")
             .pack;
         for suffix in [1u8, 2] {
@@ -916,18 +1169,9 @@ mod tests {
         }
         drop(store);
 
-        arguments.rows_per_frame = 2;
-        let mut identity = read_build_identity(&pack_path).expect("read build identity");
-        identity.rows_per_frame = arguments.rows_per_frame;
-        fs::write(
-            pack_path.join(BUILD_IDENTITY_FILE),
-            serde_json::to_vec_pretty(&identity).expect("encode changed identity"),
-        )
-        .expect("replace build identity");
-        let error = open_or_resume_pack(&arguments, source_tip)
-            .err()
-            .expect("frame geometry inconsistent with declared size must reject resume");
-        assert!(error.to_string().contains("not exactly 2 rows per frame"));
+        let opened = open_test_pack(&arguments, source_tip)
+            .expect("variable complete frame geometry is recoverable");
+        assert_eq!((opened.resumed_rows, opened.frames), (2, 2));
     }
 
     #[test]
@@ -956,7 +1200,12 @@ mod tests {
         )
         .expect("parse complete command line");
         assert_eq!(arguments.network_magic, 0x334F_454E);
-        assert_eq!(arguments.mdbx_path, Path::new("/source"));
+        assert_eq!(
+            arguments.source,
+            SourceArguments::Mdbx {
+                path: PathBuf::from("/source")
+            }
+        );
         assert_eq!(arguments.pack_path, Path::new("/checkpoint"));
 
         let error = parse_arguments_from(
@@ -966,5 +1215,152 @@ mod tests {
         )
         .expect_err("network magic must be explicit");
         assert!(error.to_string().contains("--network-magic is required"));
+    }
+
+    #[test]
+    fn command_line_requires_exactly_one_complete_source_mode() {
+        let migration = parse_arguments_from(
+            [
+                "--network-magic",
+                "0x334F454E",
+                "--migration-stream",
+                "/stream",
+                "--metadata-mdbx",
+                "/metadata",
+                "--pack",
+                "/checkpoint",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .expect("parse migration source");
+        assert_eq!(
+            migration.source,
+            SourceArguments::MigrationStream {
+                stream_path: PathBuf::from("/stream"),
+                metadata_mdbx_path: PathBuf::from("/metadata"),
+            }
+        );
+
+        for invalid in [
+            vec![
+                "--network-magic",
+                "0x334F454E",
+                "--migration-stream",
+                "/stream",
+                "--pack",
+                "/checkpoint",
+            ],
+            vec![
+                "--network-magic",
+                "0x334F454E",
+                "--mdbx",
+                "/source",
+                "--migration-stream",
+                "/stream",
+                "--metadata-mdbx",
+                "/metadata",
+                "--pack",
+                "/checkpoint",
+            ],
+            vec![
+                "--network-magic",
+                "0x334F454E",
+                "--migration-stream",
+                "/stream",
+                "--metadata-mdbx",
+                "/metadata",
+                "--pack",
+                "/checkpoint",
+                "--max-rows",
+                "1",
+            ],
+        ] {
+            assert!(parse_arguments_from(invalid.into_iter().map(str::to_owned)).is_err());
+        }
+    }
+
+    #[test]
+    fn migration_header_must_match_network_and_coordinated_state_tip() {
+        let arguments = Arguments {
+            source: SourceArguments::MigrationStream {
+                stream_path: PathBuf::from("/stream"),
+                metadata_mdbx_path: PathBuf::from("/metadata"),
+            },
+            ..test_arguments(PathBuf::from("/checkpoint"), 2)
+        };
+        let source_tip = SourceTip {
+            height: 123,
+            root_internal: [0x55; 32],
+        };
+        let header = MigrationStreamHeader {
+            network_magic: arguments.network_magic,
+            height: source_tip.height,
+            root_internal: source_tip.root_internal,
+            rows: 2,
+            value_bytes: 3,
+            payload_bytes: 77,
+            namespace_sha256: [0x66; 32],
+            payload_sha256: [0x77; 32],
+        };
+        validate_migration_header(header, &arguments, source_tip).expect("matching identity");
+        assert!(
+            validate_migration_header(
+                MigrationStreamHeader {
+                    network_magic: 1,
+                    ..header
+                },
+                &arguments,
+                source_tip,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_migration_header(
+                MigrationStreamHeader {
+                    height: 124,
+                    ..header
+                },
+                &arguments,
+                source_tip,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn shared_accumulator_builds_scrubs_and_reopens_root_reachable_checkpoint() {
+        let temporary = tempdir().expect("temporary checkpoint parent");
+        let arguments = test_arguments(temporary.path().join("pack"), 1);
+        let source_tip = SourceTip {
+            height: 123,
+            root_internal: [0x55; 32],
+        };
+        let opened = open_test_pack(&arguments, source_tip).expect("create checkpoint");
+        let mut accumulator =
+            RowAccumulator::new(&arguments, source_tip, opened).expect("create row accumulator");
+        let mut root_key = [0u8; 33];
+        root_key[0] = STATE_NODE_PREFIX;
+        root_key[1..].copy_from_slice(&source_tip.root_internal);
+        let mut later_key = [0x66; 33];
+        later_key[0] = STATE_NODE_PREFIX;
+        accumulator.push(root_key, b"root-node").expect("root row");
+        accumulator.push(later_key, b"later").expect("later row");
+        let accumulated = accumulator.finish().expect("finish rows");
+        assert_eq!((accumulated.rows, accumulated.frames), (2, 2));
+        let scrub = accumulated
+            .pack
+            .scrub_checkpoint_namespace()
+            .expect("scrub current pack");
+        assert_eq!(scrub.sha256, accumulated.namespace_sha256);
+        validate_root_node(&accumulated.pack, source_tip).expect("root reachable");
+        drop(accumulated.pack);
+
+        let reopened = PackStore::open(
+            &arguments.pack_path,
+            pack_store_config(arguments.max_index_memory_bytes).expect("pack config"),
+        )
+        .expect("reopen current checkpoint");
+        validate_root_node(&reopened, source_tip).expect("reopened root reachable");
     }
 }
