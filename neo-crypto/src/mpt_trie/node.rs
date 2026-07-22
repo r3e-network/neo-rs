@@ -387,6 +387,111 @@ impl Node {
         Ok((node_type, reference, bytes))
     }
 
+    /// Validates one canonical node row from the persisted MPT namespace.
+    ///
+    /// Persisted rows are content-addressed by the hash of their serialized
+    /// payload without the reference count. Unlike embedded child nodes, a row
+    /// must contain a materialized branch, extension, or leaf node. This path
+    /// intentionally avoids allocating a [`Node`], making it suitable for full
+    /// pack and checkpoint scrubs.
+    pub fn validate_persisted(bytes: &[u8], expected_hash: UInt256) -> MptResult<()> {
+        let payload_len = Self::persisted_payload_len(bytes)?;
+        let actual_hash = UInt256::from_bytes(&Crypto::hash256(&bytes[..payload_len]))?;
+        if actual_hash != expected_hash {
+            return Err(MptError::invalid(
+                "persisted MPT node hash does not match its storage key",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Decodes a canonical persisted MPT row after validating its storage key.
+    ///
+    /// Use [`Node::validate_persisted`] for bulk scrubs that do not need to
+    /// inspect child hashes. This method materializes the bounded node object
+    /// needed by root-graph traversal and proof validation.
+    pub fn deserialize_persisted(bytes: &[u8], expected_hash: UInt256) -> MptResult<Self> {
+        Self::validate_persisted(bytes, expected_hash)?;
+        let mut reader = MemoryReader::new(bytes);
+        let node = Self::deserialize(&mut reader).map_err(MptError::from)?;
+        debug_assert_eq!(reader.remaining(), 0);
+        Ok(node)
+    }
+
+    fn persisted_payload_len(bytes: &[u8]) -> MptResult<usize> {
+        let mut reader = MemoryReader::new(bytes);
+        let node_type = Self::read_node_type(&mut reader)?;
+        match node_type {
+            NodeType::BranchNode => {
+                for _ in 0..BRANCH_CHILD_COUNT {
+                    Self::skip_persisted_child(&mut reader)?;
+                }
+            }
+            NodeType::ExtensionNode => {
+                Self::read_canonical_var_memory(&mut reader, MAX_KEY_LENGTH)?;
+                Self::skip_persisted_child(&mut reader)?;
+            }
+            NodeType::LeafNode => {
+                Self::read_canonical_var_memory(&mut reader, MAX_VALUE_LENGTH)?;
+            }
+            NodeType::HashNode | NodeType::Empty => {
+                return Err(MptError::invalid(
+                    "persisted MPT row must contain a materialized node",
+                ));
+            }
+        }
+
+        let payload_len = reader.position();
+        let reference_start = reader.position();
+        let reference = reader.read_var_uint().map_err(MptError::from)?;
+        if reference == 0 || reference > i32::MAX as u64 {
+            return Err(MptError::invalid(
+                "persisted MPT node reference count is outside the positive int32 domain",
+            ));
+        }
+        if reader.position() - reference_start != VarInt::encoded_len(reference) {
+            return Err(MptError::invalid(
+                "persisted MPT node reference count is not canonically encoded",
+            ));
+        }
+        if reader.remaining() != 0 {
+            return Err(MptError::invalid(
+                "persisted MPT node contains trailing bytes",
+            ));
+        }
+        Ok(payload_len)
+    }
+
+    fn read_canonical_var_memory(reader: &mut MemoryReader<'_>, maximum: usize) -> MptResult<()> {
+        let start = reader.position();
+        let length = reader
+            .read_var_memory(maximum)
+            .map_err(MptError::from)?
+            .len();
+        let encoded_width = reader.position() - start - length;
+        if encoded_width != VarInt::encoded_len(length as u64) {
+            return Err(MptError::invalid(
+                "persisted MPT node length is not canonically encoded",
+            ));
+        }
+        Ok(())
+    }
+
+    fn skip_persisted_child(reader: &mut MemoryReader<'_>) -> MptResult<()> {
+        match Self::read_node_type(reader)? {
+            NodeType::HashNode => {
+                reader.read_memory(UINT256_SIZE).map_err(MptError::from)?;
+            }
+            NodeType::Empty => {}
+            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
+                return Err(MptError::invalid(
+                    "persisted MPT child is not canonically hash-addressed",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn serialized_reference_parts(bytes: &[u8]) -> MptResult<(NodeType, i32, usize)> {
         let mut reader = MemoryReader::new(bytes);
         let node_type = Self::read_node_type(&mut reader)?;

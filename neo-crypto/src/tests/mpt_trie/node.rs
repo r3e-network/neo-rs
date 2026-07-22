@@ -1,4 +1,5 @@
 use super::*;
+use neo_io::var_int::VarInt;
 use std::thread;
 
 // ============================================================================
@@ -369,5 +370,91 @@ fn split_serialized_reference_rejects_trailing_bytes_and_excessive_depth() {
             .expect_err("excessive nesting must be rejected")
             .to_string()
             .contains("nesting depth")
+    );
+}
+
+#[test]
+fn persisted_node_validation_binds_canonical_bytes_to_storage_hash() {
+    for mut node in [
+        Node::new_leaf(vec![0x12, 0x34]),
+        Node::new_extension(vec![0x01, 0x02], prepare_mpt_node2()).unwrap(),
+        prepare_mpt_node3(),
+    ] {
+        node.reference = 7;
+        let expected_hash = node.try_hash().unwrap();
+        let bytes = node.to_array().unwrap();
+
+        Node::validate_persisted(&bytes, expected_hash).unwrap();
+        let decoded = Node::deserialize_persisted(&bytes, expected_hash).unwrap();
+        assert_eq!(decoded.node_type, node.node_type);
+        assert_eq!(decoded.reference, 7);
+        assert_eq!(decoded.try_hash().unwrap(), expected_hash);
+    }
+}
+
+#[test]
+fn persisted_node_validation_rejects_wrong_hash_and_trailing_bytes() {
+    let node = Node::new_leaf(vec![0xAA]);
+    let expected_hash = node.try_hash().unwrap();
+    let bytes = node.to_array().unwrap();
+
+    assert!(
+        Node::validate_persisted(&bytes, UInt256::zero())
+            .expect_err("storage key must bind the row payload")
+            .to_string()
+            .contains("does not match")
+    );
+
+    let mut trailing = bytes;
+    trailing.push(0xFF);
+    assert!(
+        Node::validate_persisted(&trailing, expected_hash)
+            .expect_err("trailing bytes must be rejected")
+            .to_string()
+            .contains("trailing bytes")
+    );
+}
+
+#[test]
+fn persisted_node_validation_rejects_non_rows_and_invalid_references() {
+    for node in [Node::new(), Node::new_hash(UInt256::zero())] {
+        let bytes = node.to_array().unwrap();
+        assert!(
+            Node::validate_persisted(&bytes, node.try_hash().unwrap())
+                .expect_err("only materialized nodes may occupy persisted rows")
+                .to_string()
+                .contains("materialized node")
+        );
+    }
+
+    let leaf = Node::new_leaf(vec![0xBB]);
+    let expected_hash = leaf.try_hash().unwrap();
+    let payload = leaf.to_array_without_reference().unwrap();
+
+    let mut zero_reference = payload.clone();
+    VarInt::write_var_int(0, &mut zero_reference);
+    assert!(
+        Node::validate_persisted(&zero_reference, expected_hash)
+            .expect_err("zero references cannot be persisted")
+            .to_string()
+            .contains("positive int32")
+    );
+
+    let mut oversized_reference = payload.clone();
+    VarInt::write_var_int(i32::MAX as u64 + 1, &mut oversized_reference);
+    assert!(
+        Node::validate_persisted(&oversized_reference, expected_hash)
+            .expect_err("persisted references must fit the C# int domain")
+            .to_string()
+            .contains("positive int32")
+    );
+
+    let mut noncanonical_reference = payload;
+    noncanonical_reference.extend_from_slice(&[0xFD, 0x01, 0x00]);
+    assert!(
+        Node::validate_persisted(&noncanonical_reference, expected_hash)
+            .expect_err("persisted references must use canonical var-int encoding")
+            .to_string()
+            .contains("canonically encoded")
     );
 }
