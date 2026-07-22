@@ -199,6 +199,36 @@ fn contract_script_hash_scan_returns_exact_versioned_contract_metadata() {
 }
 
 #[test]
+fn storage_write_waits_for_exclusive_node_lifecycle_ownership() {
+    let temp = tempfile::tempdir().expect("temporary MDBX directory");
+    let db = temp.path().join("canonical");
+    drop(open_store(&db, false).expect("initialize canonical MDBX"));
+    let contract_id = -4;
+    let key = vec![0x42];
+    let value = vec![0xaa, 0xbb];
+    let lifecycle_lock = NodeLifecycleLock::acquire(&db).expect("hold node lifecycle lock");
+
+    let error = write_storage_value(&db, contract_id, key.clone(), value.clone())
+        .expect_err("contended lifecycle lock must reject the write");
+    assert!(
+        format!("{error:#}").contains("node data directory is already in use"),
+        "unexpected write error: {error:#}"
+    );
+    assert_eq!(
+        read_storage_value(&db, None, contract_id, key.clone()).expect("read after rejected write"),
+        None
+    );
+
+    drop(lifecycle_lock);
+    write_storage_value(&db, contract_id, key.clone(), value.clone())
+        .expect("write after lifecycle lock release");
+    assert_eq!(
+        read_storage_value(&db, None, contract_id, key).expect("read committed value"),
+        Some(value)
+    );
+}
+
+#[test]
 fn decode_nep17_account_state_balance() {
     let bytes = base64_decode("QQEhBEGk/QI=").expect("base64");
 

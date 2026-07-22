@@ -22,6 +22,7 @@ use neo_execution::{ApplicationEngine, ContractState, Diagnostic};
 use neo_io::Serializable;
 use neo_manifest::CallFlags;
 use neo_native_contracts::{GasToken, LedgerContract, StandardNativeProvider};
+use neo_node::NodeLifecycleLock;
 use neo_payloads::{Block, Transaction, TransactionState, VerifiableContainer};
 use neo_primitives::{TriggerType, UInt160, UInt256};
 use neo_state_service::{MDBX_STATE_SERVICE_NAMESPACE, MptStore};
@@ -1072,6 +1073,8 @@ fn write_storage_value(
     key_suffix: Vec<u8>,
     value: Vec<u8>,
 ) -> Result<()> {
+    let _lifecycle_lock = NodeLifecycleLock::acquire(db_path)
+        .context("acquire exclusive ownership of the writable MDBX")?;
     let store = open_store(db_path, false)?;
     let mut snapshot = store.snapshot();
     let snapshot = Arc::get_mut(&mut snapshot)
