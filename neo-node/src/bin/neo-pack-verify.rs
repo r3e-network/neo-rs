@@ -446,7 +446,7 @@ fn verify_authority(
             );
             (
                 AuthorityState::Checkpoint,
-                binding.commit_horizon(&checkpoint),
+                binding.commit_horizon(),
                 checkpoint.tip_frame_end,
                 binding.tip_frame_sha256(),
             )

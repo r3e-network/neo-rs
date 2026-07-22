@@ -49,7 +49,7 @@ use serde::{Deserialize, Serialize};
 const STATE_NODE_PREFIX: u8 = 0xf0;
 const DEFAULT_ROWS_PER_FRAME: usize = 1_000_000;
 const DEFAULT_MAX_INDEX_MEMORY_MB: u64 = 512;
-const BUILD_IDENTITY_SCHEMA_VERSION: u32 = 2;
+const BUILD_IDENTITY_SCHEMA_VERSION: u32 = 3;
 const BUILD_IDENTITY_FILE: &str = "checkpoint-build.json";
 const BUILD_IDENTITY_TMP_FILE: &str = "checkpoint-build.json.tmp";
 
@@ -81,13 +81,6 @@ enum SourceArguments {
 }
 
 impl SourceArguments {
-    const fn backend_name(&self) -> &'static str {
-        match self {
-            Self::Mdbx { .. } => "mdbx",
-            Self::MigrationStream { .. } => "migration-stream-v1",
-        }
-    }
-
     fn metadata_mdbx_path(&self) -> &Path {
         match self {
             Self::Mdbx { path } => path,
@@ -108,7 +101,7 @@ struct SourceTip {
 #[serde(deny_unknown_fields)]
 struct BuildIdentity {
     schema_version: u32,
-    source_backend: String,
+    source: BuildSourceIdentity,
     source_namespace: String,
     network_magic: String,
     source_height: u32,
@@ -120,11 +113,36 @@ struct BuildIdentity {
     pack_manifest_format_version: u32,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "backend", rename_all = "kebab-case", deny_unknown_fields)]
+enum BuildSourceIdentity {
+    Mdbx,
+    MigrationStreamV1 {
+        rows: u64,
+        value_bytes: u64,
+        payload_bytes: u64,
+        namespace_sha256: String,
+        payload_sha256: String,
+    },
+}
+
+impl BuildSourceIdentity {
+    fn migration_stream(header: MigrationStreamHeader) -> Self {
+        Self::MigrationStreamV1 {
+            rows: header.rows,
+            value_bytes: header.value_bytes,
+            payload_bytes: header.payload_bytes,
+            namespace_sha256: format!("0x{}", hex::encode(header.namespace_sha256)),
+            payload_sha256: format!("0x{}", hex::encode(header.payload_sha256)),
+        }
+    }
+}
+
 impl BuildIdentity {
-    fn current(arguments: &Arguments, source_tip: SourceTip, source_backend: &str) -> Self {
+    fn current(arguments: &Arguments, source_tip: SourceTip, source: BuildSourceIdentity) -> Self {
         Self {
             schema_version: BUILD_IDENTITY_SCHEMA_VERSION,
-            source_backend: source_backend.to_owned(),
+            source,
             source_namespace: PACK_CHECKPOINT_SOURCE_NAMESPACE.to_owned(),
             network_magic: formatted_network_magic(arguments.network_magic),
             source_height: source_tip.height,
@@ -184,8 +202,8 @@ fn main() -> Result<()> {
     let source_tip = read_source_tip(&state_store)?;
 
     let started = Instant::now();
-    let mut migration_reader = match &arguments.source {
-        SourceArguments::Mdbx { .. } => None,
+    let (mut migration_reader, build_source) = match &arguments.source {
+        SourceArguments::Mdbx { .. } => (None, BuildSourceIdentity::Mdbx),
         SourceArguments::MigrationStream { stream_path, .. } => {
             let file = File::open(stream_path).with_context(|| {
                 format!("open neutral migration stream {}", stream_path.display())
@@ -194,11 +212,14 @@ fn main() -> Result<()> {
                 MigrationStreamReader::new(BufReader::new(file), MigrationStreamLimits::default())
                     .context("decode neutral migration stream header")?;
             validate_migration_header(reader.header(), &arguments, source_tip)?;
-            Some(reader)
+            // The header is available before any pack mutation and its two
+            // digests bind the complete payload once `finish` validates it.
+            // The trailer-only stream digest would require a separate prepass.
+            let build_source = BuildSourceIdentity::migration_stream(reader.header());
+            (Some(reader), build_source)
         }
     };
-    let source_backend = arguments.source.backend_name();
-    let opened = open_or_resume_pack(&arguments, source_tip, source_backend)?;
+    let opened = open_or_resume_pack(&arguments, source_tip, build_source)?;
     let mut accumulator = RowAccumulator::new(&arguments, source_tip, opened)?;
     let migration_evidence = match migration_reader.as_mut() {
         None => {
@@ -662,7 +683,7 @@ fn read_source_tip(store: &RuntimeStore) -> Result<SourceTip> {
 fn open_or_resume_pack(
     arguments: &Arguments,
     source_tip: SourceTip,
-    source_backend: &str,
+    source: BuildSourceIdentity,
 ) -> Result<OpenedCheckpoint> {
     let checkpoint = arguments.pack_path.join("checkpoint.json");
     let checkpoint_tmp = arguments.pack_path.join("checkpoint.json.tmp");
@@ -682,7 +703,7 @@ fn open_or_resume_pack(
         "checkpoint marker already exists at {}; refusing to overwrite it",
         checkpoint.display()
     );
-    let expected_identity = BuildIdentity::current(arguments, source_tip, source_backend);
+    let expected_identity = BuildIdentity::current(arguments, source_tip, source);
     if arguments
         .pack_path
         .join(PackSegmentId::INITIAL.file_name())
@@ -757,9 +778,8 @@ fn validate_build_identity(actual: &BuildIdentity, expected: &BuildIdentity) -> 
         "checkpoint build identity schema version changed"
     );
     ensure!(
-        actual.source_backend == expected.source_backend
-            && actual.source_namespace == expected.source_namespace,
-        "checkpoint build source backend or namespace changed"
+        actual.source == expected.source && actual.source_namespace == expected.source_namespace,
+        "checkpoint build source identity or namespace changed"
     );
     ensure!(
         actual.network_magic == expected.network_magic,
@@ -985,7 +1005,7 @@ mod tests {
     }
 
     fn open_test_pack(arguments: &Arguments, source_tip: SourceTip) -> Result<OpenedCheckpoint> {
-        open_or_resume_pack(arguments, source_tip, arguments.source.backend_name())
+        open_or_resume_pack(arguments, source_tip, BuildSourceIdentity::Mdbx)
     }
 
     #[test]
@@ -1156,6 +1176,132 @@ mod tests {
             .err()
             .expect("format identity drift must reject resume");
         assert!(error.to_string().contains("format version changed"));
+    }
+
+    #[test]
+    fn partial_migration_resume_rejects_a_different_same_tip_stream() {
+        let temporary = tempdir().expect("temporary checkpoint parent");
+        let pack_path = temporary.path().join("pack");
+        let mut arguments = test_arguments(pack_path, 1);
+        arguments.source = SourceArguments::MigrationStream {
+            stream_path: PathBuf::from("/first-stream"),
+            metadata_mdbx_path: PathBuf::from("/metadata"),
+        };
+        let source_tip = SourceTip {
+            height: 123,
+            root_internal: [0x55; 32],
+        };
+        let header = MigrationStreamHeader {
+            network_magic: arguments.network_magic,
+            height: source_tip.height,
+            root_internal: source_tip.root_internal,
+            rows: 2,
+            value_bytes: 11,
+            payload_bytes: 85,
+            namespace_sha256: [0x66; 32],
+            payload_sha256: [0x77; 32],
+        };
+        let mut store = open_or_resume_pack(
+            &arguments,
+            source_tip,
+            BuildSourceIdentity::migration_stream(header),
+        )
+        .expect("create partial migration pack")
+        .pack;
+        let mut key = [1u8; 33];
+        key[0] = STATE_NODE_PREFIX;
+        store
+            .append_frame(
+                checkpoint_frame_context(source_tip),
+                &[PackOperation {
+                    key,
+                    kind: PackOpKind::Put(b"shared-prefix".to_vec()),
+                }],
+            )
+            .expect("append shared stream prefix");
+        drop(store);
+
+        let mut different_stream = header;
+        different_stream.payload_sha256 = [0x88; 32];
+        let error = open_or_resume_pack(
+            &arguments,
+            source_tip,
+            BuildSourceIdentity::migration_stream(different_stream),
+        )
+        .err()
+        .expect("different authenticated stream must reject the partial prefix");
+        assert!(error.to_string().contains("source identity"));
+    }
+
+    #[test]
+    fn migration_build_identity_binds_complete_authenticated_header_geometry() {
+        let arguments = test_arguments(PathBuf::from("/checkpoint"), 2);
+        let source_tip = SourceTip {
+            height: 123,
+            root_internal: [0x55; 32],
+        };
+        let header = MigrationStreamHeader {
+            network_magic: arguments.network_magic,
+            height: source_tip.height,
+            root_internal: source_tip.root_internal,
+            rows: 2,
+            value_bytes: 11,
+            payload_bytes: 85,
+            namespace_sha256: [0x66; 32],
+            payload_sha256: [0x77; 32],
+        };
+        let expected = BuildIdentity::current(
+            &arguments,
+            source_tip,
+            BuildSourceIdentity::migration_stream(header),
+        );
+        let mut candidates = Vec::new();
+        candidates.push(MigrationStreamHeader {
+            rows: header.rows + 1,
+            ..header
+        });
+        candidates.push(MigrationStreamHeader {
+            value_bytes: header.value_bytes + 1,
+            ..header
+        });
+        candidates.push(MigrationStreamHeader {
+            payload_bytes: header.payload_bytes + 1,
+            ..header
+        });
+        candidates.push(MigrationStreamHeader {
+            namespace_sha256: [0x88; 32],
+            ..header
+        });
+        candidates.push(MigrationStreamHeader {
+            payload_sha256: [0x99; 32],
+            ..header
+        });
+
+        for candidate in candidates {
+            let actual = BuildIdentity::current(
+                &arguments,
+                source_tip,
+                BuildSourceIdentity::migration_stream(candidate),
+            );
+            assert!(validate_build_identity(&actual, &expected).is_err());
+        }
+    }
+
+    #[test]
+    fn mdbx_build_identity_has_no_migration_stream_fields() {
+        let arguments = test_arguments(PathBuf::from("/checkpoint"), 2);
+        let identity = BuildIdentity::current(
+            &arguments,
+            SourceTip {
+                height: 123,
+                root_internal: [0x55; 32],
+            },
+            BuildSourceIdentity::Mdbx,
+        );
+        let encoded = serde_json::to_value(identity).expect("encode build identity");
+        assert_eq!(encoded["schema_version"], BUILD_IDENTITY_SCHEMA_VERSION);
+        assert_eq!(encoded["source"], serde_json::json!({ "backend": "mdbx" }));
+        assert!(encoded.get("source_backend").is_none());
     }
 
     #[test]

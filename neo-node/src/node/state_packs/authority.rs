@@ -414,7 +414,7 @@ impl AuthoritativeNodePack {
                     state_tip == (checkpoint.source_height, checkpoint_root),
                     "StateService tip does not equal the unactivated checkpoint base"
                 );
-                let checkpoint_horizon = checkpoint_binding.commit_horizon(&checkpoint);
+                let checkpoint_horizon = checkpoint_binding.commit_horizon();
                 let store =
                     PackStore::open_at_commit_horizon(path, pack_config, Some(checkpoint_horizon))
                         .with_context(|| {

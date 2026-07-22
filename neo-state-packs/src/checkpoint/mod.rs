@@ -153,9 +153,8 @@ pub struct PackCheckpoint {
 /// Decoded authoritative identity and current pack tip.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ValidatedPackCheckpoint {
-    source_root_internal: [u8; 32],
     store_identity: [u8; 32],
-    tip_frame_sha256: [u8; 32],
+    commit_horizon: PackCommitHorizon,
 }
 
 impl PackCheckpoint {
@@ -300,9 +299,19 @@ impl PackCheckpoint {
         let store_identity = decode_hash(&self.source_namespace_sha256, "source_namespace_sha256")?;
         let tip_frame_sha256 = decode_hash(&self.tip_frame_sha256, "tip_frame_sha256")?;
         Ok(ValidatedPackCheckpoint {
-            source_root_internal,
             store_identity,
-            tip_frame_sha256,
+            commit_horizon: PackCommitHorizon {
+                epoch: self.tip_epoch,
+                segment_id: PackSegmentId::new(self.tip_segment_id),
+                frame_end: self.tip_frame_end,
+                context: PackFrameContext::new(
+                    self.source_height,
+                    self.source_height,
+                    source_root_internal,
+                    source_root_internal,
+                ),
+                frame_sha256: tip_frame_sha256,
+            },
         })
     }
 }
@@ -310,7 +319,7 @@ impl PackCheckpoint {
 impl ValidatedPackCheckpoint {
     /// Returns internal little-endian source root bytes.
     pub const fn source_root_internal(self) -> [u8; 32] {
-        self.source_root_internal
+        self.commit_horizon.context.resulting_root
     }
 
     /// Returns the domain-separated complete namespace identity.
@@ -320,23 +329,12 @@ impl ValidatedPackCheckpoint {
 
     /// Returns the authenticated tip-frame receipt digest.
     pub const fn tip_frame_sha256(self) -> [u8; 32] {
-        self.tip_frame_sha256
+        self.commit_horizon.frame_sha256
     }
 
-    /// Constructs the exact pack commit horizon bound by the checkpoint.
-    pub fn commit_horizon(self, checkpoint: &PackCheckpoint) -> PackCommitHorizon {
-        PackCommitHorizon {
-            epoch: checkpoint.tip_epoch,
-            segment_id: PackSegmentId::new(checkpoint.tip_segment_id),
-            frame_end: checkpoint.tip_frame_end,
-            context: PackFrameContext::new(
-                checkpoint.source_height,
-                checkpoint.source_height,
-                self.source_root_internal,
-                self.source_root_internal,
-            ),
-            frame_sha256: self.tip_frame_sha256,
-        }
+    /// Returns the exact pack commit horizon captured during validation.
+    pub const fn commit_horizon(self) -> PackCommitHorizon {
+        self.commit_horizon
     }
 }
 
@@ -442,9 +440,29 @@ mod tests {
             .expect("validate checkpoint");
         assert_eq!(validated.store_identity(), [0x66; 32]);
         assert_eq!(validated.source_root_internal(), [0x55; 32]);
-        let horizon = validated.commit_horizon(&checkpoint);
+        let horizon = validated.commit_horizon();
         assert_eq!(horizon.epoch, 0);
         assert_eq!(horizon.context.resulting_root, [0x55; 32]);
+    }
+
+    #[test]
+    fn validated_horizon_is_immutable_after_source_checkpoint_changes() {
+        let mut checkpoint = checkpoint();
+        let validated = checkpoint
+            .validate_authoritative(0x334f_454e)
+            .expect("validate checkpoint");
+        checkpoint.tip_epoch = 41;
+        checkpoint.tip_segment_id = 17;
+        checkpoint.tip_frame_end += 1_024;
+        checkpoint.source_height += 1;
+        checkpoint.tip_frame_sha256 = format!("0x{}", hex::encode([0x99; 32]));
+
+        let horizon = validated.commit_horizon();
+        assert_eq!(horizon.epoch, 0);
+        assert_eq!(horizon.segment_id, PackSegmentId::INITIAL);
+        assert_eq!(horizon.context.block_start, 123);
+        assert_eq!(horizon.context.block_end, 123);
+        assert_eq!(horizon.frame_sha256, [0x77; 32]);
     }
 
     #[test]
