@@ -71,7 +71,7 @@ public re-exports.
 //! - `module_a`: What this module is responsible for.
 //! - `module_b`: What this module is responsible for.
 
-#![doc(html_root_url = "https://docs.rs/neo-crate-name/0.10.0")]
+#![doc(html_root_url = "https://docs.rs/neo-crate-name/0.11.0")]
 
 // Module declarations (private mod, then feature-gated).
 mod module_a;

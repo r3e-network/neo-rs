@@ -106,7 +106,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.10.0"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.89"
 authors = [
@@ -237,52 +237,52 @@ approx_constant = "allow"
 [workspace.dependencies]
 # === Internal crates ===
 # Foundation layer
-neo-primitives = { path = "neo-primitives", version = "0.10.0" }
+neo-primitives = { path = "neo-primitives", version = "0.11.0" }
 
 # Infrastructure layer
-neo-config = { path = "neo-config", version = "0.10.0" }
-neo-crypto = { path = "neo-crypto", version = "0.10.0" }
-neo-trie = { path = "neo-trie", version = "0.10.0" }
-neo-storage = { path = "neo-storage", version = "0.10.0" }
-neo-static-files = { path = "neo-static-files", version = "0.10.0" }
-neo-state-packs = { path = "neo-state-packs", version = "0.10.0" }
-neo-checkpoint = { path = "neo-checkpoint", version = "0.10.0" }
-neo-io = { path = "neo-io", version = "0.10.0" }
-neo-vm = { path = "neo-vm", version = "0.10.0" }
-neo-error = { path = "neo-error", version = "0.10.0" }
-neo-serialization = { path = "neo-serialization", version = "0.10.0" }
-neo-manifest = { path = "neo-manifest", version = "0.10.0" }
+neo-config = { path = "neo-config", version = "0.11.0" }
+neo-crypto = { path = "neo-crypto", version = "0.11.0" }
+neo-trie = { path = "neo-trie", version = "0.11.0" }
+neo-storage = { path = "neo-storage", version = "0.11.0" }
+neo-static-files = { path = "neo-static-files", version = "0.11.0" }
+neo-state-packs = { path = "neo-state-packs", version = "0.11.0" }
+neo-checkpoint = { path = "neo-checkpoint", version = "0.11.0" }
+neo-io = { path = "neo-io", version = "0.11.0" }
+neo-vm = { path = "neo-vm", version = "0.11.0" }
+neo-error = { path = "neo-error", version = "0.11.0" }
+neo-serialization = { path = "neo-serialization", version = "0.11.0" }
+neo-manifest = { path = "neo-manifest", version = "0.11.0" }
 
 # Protocol layer
-neo-payloads = { path = "neo-payloads", version = "0.10.0" }
-neo-consensus = { path = "neo-consensus", version = "0.10.0" }
-neo-hsm = { path = "neo-hsm", version = "0.10.0" }
+neo-payloads = { path = "neo-payloads", version = "0.11.0" }
+neo-consensus = { path = "neo-consensus", version = "0.11.0" }
+neo-hsm = { path = "neo-hsm", version = "0.11.0" }
 
 # Domain service layer
-neo-runtime = { path = "neo-runtime", version = "0.10.0" }
-neo-execution = { path = "neo-execution", version = "0.10.0" }
-neo-native-contracts = { path = "neo-native-contracts", version = "0.10.0" }
-neo-state-service = { path = "neo-state-service", version = "0.10.0" }
-neo-mempool = { path = "neo-mempool", version = "0.10.0" }
+neo-runtime = { path = "neo-runtime", version = "0.11.0" }
+neo-execution = { path = "neo-execution", version = "0.11.0" }
+neo-native-contracts = { path = "neo-native-contracts", version = "0.11.0" }
+neo-state-service = { path = "neo-state-service", version = "0.11.0" }
+neo-mempool = { path = "neo-mempool", version = "0.11.0" }
 
 # Node service layer
-neo-blockchain = { path = "neo-blockchain", version = "0.10.0" }
-neo-network = { path = "neo-network", version = "0.10.0" }
-neo-wallets = { path = "neo-wallets", version = "0.10.0" }
-neo-indexer = { path = "neo-indexer", version = "0.10.0" }
-neo-oracle-service = { path = "neo-oracle-service", version = "0.10.0" }
+neo-blockchain = { path = "neo-blockchain", version = "0.11.0" }
+neo-network = { path = "neo-network", version = "0.11.0" }
+neo-wallets = { path = "neo-wallets", version = "0.11.0" }
+neo-indexer = { path = "neo-indexer", version = "0.11.0" }
+neo-oracle-service = { path = "neo-oracle-service", version = "0.11.0" }
 
 # Composition layer
-neo-system = { path = "neo-system", version = "0.10.0" }
+neo-system = { path = "neo-system", version = "0.11.0" }
 
 # Plugin / RPC boundary
-neo-rpc = { path = "neo-rpc", version = "0.10.0" }
+neo-rpc = { path = "neo-rpc", version = "0.11.0" }
 
 # Application layer
-neo-node = { path = "neo-node", version = "0.10.0" }
+neo-node = { path = "neo-node", version = "0.11.0" }
 
 # Development-only crates
-neo-test-fixtures = { path = "neo-test-fixtures", version = "0.10.0" }
+neo-test-fixtures = { path = "neo-test-fixtures", version = "0.11.0" }
 
 # === Core dependencies ===
 # Async runtime

@@ -810,7 +810,7 @@ checksum = "9252111cf132ba0929b6f8e030cac2a24b507f3a4d6db6fb2896f27b354c714b"
 
 [[package]]
 name = "neo-config"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "neo-crypto",
  "neo-error",
@@ -822,7 +822,7 @@ dependencies = [
 
 [[package]]
 name = "neo-crypto"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "base64",
  "bitvec",
@@ -854,7 +854,7 @@ dependencies = [
 
 [[package]]
 name = "neo-error"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "neo-io",
  "neo-primitives",
@@ -863,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "neo-io"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bytes",
  "lz4_flex",
@@ -873,7 +873,7 @@ dependencies = [
 
 [[package]]
 name = "neo-network"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bytes",
  "futures",
@@ -894,7 +894,7 @@ dependencies = [
 
 [[package]]
 name = "neo-payloads"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "base64",
  "bitvec",
@@ -915,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "neo-primitives"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bitflags",
  "bs58",
@@ -946,7 +946,7 @@ dependencies = [
 
 [[package]]
 name = "neo-runtime"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "neo-payloads",
  "neo-primitives",
@@ -959,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "neo-serialization"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "hex",
  "indexmap",
@@ -975,7 +975,7 @@ dependencies = [
 
 [[package]]
 name = "neo-storage"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "libmdbx",
  "mdbx-sys",
@@ -996,7 +996,7 @@ dependencies = [
 
 [[package]]
 name = "neo-vm"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "base64",
  "neo-crypto",

@@ -22,7 +22,7 @@
 //!   helpers.
 //! - `tx_builder`: Transaction builder helpers for constructing Neo payloads.
 
-#![doc(html_root_url = "https://docs.rs/neo-payloads/0.10.0")]
+#![doc(html_root_url = "https://docs.rs/neo-payloads/0.11.0")]
 
 // ── P2P wire payload types (relocated from neo-p2p) ───────────────────
 

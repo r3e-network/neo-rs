@@ -11,7 +11,7 @@
 //!
 //! - `process`: process-wide ownership and lifecycle primitives.
 
-#![doc(html_root_url = "https://docs.rs/neo-node/0.10.0")]
+#![doc(html_root_url = "https://docs.rs/neo-node/0.11.0")]
 
 mod process;
 

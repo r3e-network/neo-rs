@@ -15,7 +15,7 @@
 //! - `json_serializer`: JSON serializer implementation.
 //! - `serialization`: serialization codecs and compatibility checks.
 
-#![doc(html_root_url = "https://docs.rs/neo-serialization/0.10.0")]
+#![doc(html_root_url = "https://docs.rs/neo-serialization/0.11.0")]
 
 #[path = "codec/binary_serializer.rs"]
 pub mod binary_serializer;

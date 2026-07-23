@@ -12,7 +12,7 @@
 //! - `admission`: Typed mempool admission and transaction verification.
 //! - `pool`: Runtime policy, memory-pool indexes, items, and mutation helpers.
 
-#![doc(html_root_url = "https://docs.rs/neo-mempool/0.10.0")]
+#![doc(html_root_url = "https://docs.rs/neo-mempool/0.11.0")]
 
 mod admission;
 mod pool;

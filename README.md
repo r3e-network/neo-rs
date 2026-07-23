@@ -26,9 +26,11 @@ still release gates, not current claims.
 neo-rs is a from-scratch node implementation intended to speak Neo N3's wire
 protocol, execute its virtual machine, and maintain the same ledger and state
 as the canonical C# node. It is not yet promoted as a production replacement:
-the retained MainNet replay evidence reaches height **3,377,022** with a root
-matching two public references, while full-history and later-hardfork evidence
-remain incomplete. It is organized as an 8-layer, multi-crate Rust workspace built on mature
+the retained StateRoot-enabled MainNet replay evidence reaches height
+**3,457,022** with the same root on paired replicas, and a StateRoot-disabled
+ledger replay reaches the available archive tip at **11,492,708**. Full-history
+StateRoot replay and later-hardfork evidence remain incomplete. It is organized
+as an 8-layer, multi-crate Rust workspace built on mature
 libraries (MDBX, jsonrpsee, the RustCrypto suite) with the protocol-defining
 parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification.
 
@@ -51,6 +53,73 @@ remaining release gates.
 | **JSON-RPC** | ~55 methods (blockchain, state, invocation, governance, wallet, oracle) |
 | **Storage** | MDBX, append-only static Ledger archives, hot/cold provider factories, or ephemeral in-memory storage |
 | **Oracle** | HTTPS + NeoFS request fulfilment |
+
+## Sync and execution optimizations
+
+The release keeps one canonical semantic path: workspace `neo-vm` executes all
+scripts, canonical block import commits heights in order, and every accelerator
+must fall back without changing protocol-visible bytes or state. The following
+optimizations are implemented:
+
+- **Bulk archive and network import.** `chain.acc`, P2P, and RPC submissions feed
+  the typed import pipeline. Bounded queues, durable stage checkpoints, ordered
+  batch commits, and resumable import markers amortize per-block orchestration
+  without publishing a block before its storage fence succeeds.
+- **Continuous empty-block fast-forward.** Eligible consecutive empty blocks
+  bypass transaction-engine construction and apply the exact native reward
+  transition as one bounded run. Hardfork, native-contract, observer, and
+  committing-hook gates force the ordinary per-block path whenever the shortcut
+  is not provably equivalent.
+- **Engine and object reuse.** Multi-transaction blocks reuse an
+  `ApplicationEngine` and block-local transaction/cache containers after a full
+  reset. Immutable native binding tables, contract-method metadata, VM jump
+  tables, and parsed instruction maps are reused instead of rebuilt per call.
+- **Bounded caching.** Storage overlays cache reads and proven misses; native
+  dispatch caches are keyed by contract identity and semantic call inputs.
+  Stateful execution output is never cached as a pure result.
+- **Optimistic signature preverification.** An opt-in bounded worker pool
+  overlaps standard P-256 header-witness checks with ordered import. Results are
+  bound to the complete header/witness context and are consumed only inside the
+  canonical NeoVM verification fence; unsupported, stale, failed, or saturated
+  work falls back synchronously.
+- **StateRoot finalization and state packs.** Deferred MPT journals fuse backing
+  reference resolution into the durable cursor pass. State-pack publication
+  copies values directly into checksummed append frames, and large immutable
+  value reads can use a bounded shared pool. Ordered roots and reopen validation
+  remain mandatory.
+
+Optimistic transaction/block execution and guarded script specialization exist
+only behind dependency capture, shadow comparison, and sequential fallback
+gates. They are not enabled as production sync shortcuts in this release.
+
+## Measured performance
+
+All numbers below are release-build MainNet archive replays on the same 8-vCPU,
+62 GiB host family. A/B rows compare the same data and durability mode. Overall
+BPS includes execution, finalization, and canonical persistence; transaction and
+empty-block BPS are narrower stage rates and must not be averaged together.
+
+| Mode / accepted change | Before | After | Observed gain |
+|---|---:|---:|---:|
+| StateRoot enabled, optimistic header signature preverification, 5,000 blocks | 255.04 BPS | 346.63 BPS | **+35.91%** |
+| StateRoot enabled, one-copy state-pack publication, 5,000 blocks | 318.36 BPS | 343.46 BPS | **+7.88%** |
+| StateRoot enabled, bounded pack value-read pool, 10,000 pooled blocks | 424.72 BPS | 436.69 BPS | **+2.82%** |
+| StateRoot disabled, full remaining archive `3,875,678..11,492,708` | n/a | **1,938.65 BPS** overall | unpaired supplemental result |
+
+The full StateRoot-disabled continuation imported **7,617,031 blocks** and
+**4,609,575 transactions** in **3,929.03 seconds**. Its transaction-bearing
+stage processed 1,543,571 blocks at 674.82 BPS; the empty-block stage processed
+6,073,460 blocks at 50,130.55 BPS. It performed zero MPT apply attempts by
+construction. See the
+[full archive report](./reports/performance/mainnet-full-archive-no-stateroot-3875677-11492708-20260724.md),
+[signature A/B](./reports/performance/optimistic-signature-verification-20260721.md),
+[one-copy A/B](./reports/performance/mainnet-authoritative-one-copy-ab-3382022-3387022-20260719.md),
+and [bounded-pool A/B](./reports/performance/mainnet-authoritative-shared-pool-ab-3417022-3427022-20260720.md).
+
+The production requirement remains **2,000 BPS with StateRoot enabled**. This
+release does not meet that gate, and the StateRoot-disabled result is not a
+substitute. StateRoot is disabled by default for operators; enable it explicitly
+with `--enable-stateroot` or `--stateroot true`.
 
 ## Architecture at a glance
 

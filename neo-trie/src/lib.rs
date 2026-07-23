@@ -22,7 +22,7 @@
 //!   trie operations.
 //! - `tests`: Module-local tests and regression coverage.
 
-#![doc(html_root_url = "https://docs.rs/neo-trie/0.10.0")]
+#![doc(html_root_url = "https://docs.rs/neo-trie/0.11.0")]
 
 mod mpt;
 

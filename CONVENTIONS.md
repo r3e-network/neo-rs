@@ -147,7 +147,7 @@ hand-written.
   intentional, keep them.
 - `#![doc(html_root_url = "https://docs.rs/neo-<crate>/<version>")]` — the
   version **MUST** match `workspace.package.version` in the root `Cargo.toml`
-  (ADR-013). Currently `0.10.0`. Do not let this drift on release.
+  (ADR-013). Currently `0.11.0`. Do not let this drift on release.
 - Do **not** re-add `#![deny(unsafe_code)]` / `#![warn(missing_docs)]` headers
   to `lib.rs`/`main.rs` or submodule `mod.rs` — they are inherited from the
   workspace lints. (Only benchmark/test harness files may use

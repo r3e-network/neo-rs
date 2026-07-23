@@ -14,7 +14,7 @@
 //! - `method_token`: NEF method-token records.
 //! - `nef_file`: NEF file records and checksum logic.
 
-#![doc(html_root_url = "https://docs.rs/neo-manifest/0.10.0")]
+#![doc(html_root_url = "https://docs.rs/neo-manifest/0.11.0")]
 
 pub mod manifest;
 #[path = "nef/method_token.rs"]

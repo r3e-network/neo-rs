@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-24
+
+### Added
+- **Typed chain composition.** Added immutable `NeoChainSpec`, provider/factory read capabilities, a staged sync/import pipeline, bounded optimistic signature preverification, append-only state packs, and explicit checkpoint format scaffolding.
+- **Operational sync paths.** Added resumable `chain.acc` import markers, durable sync-stage checkpoints, hot/cold ledger providers, static Ledger archives, coordinated StateService commits, and continuous empty-block fast-forwarding with deterministic fallback.
+- **Performance evidence.** Added release-build MainNet A/B reports, stage timing, allocation/storage metrics, and replay tooling that distinguishes end-to-end BPS from transaction-bearing and empty-block stage rates.
+
+### Performance
+- **Optimistic header signature preverification.** Improved the paired StateRoot-enabled 5,000-block mean from 255.04 to 346.63 BPS (**+35.91%**) while retaining canonical NeoVM verification and identical roots.
+- **One-copy state-pack publication.** Improved a paired StateRoot-enabled 5,000-block window from 318.36 to 343.46 BPS (**+7.88%**) and reduced direct publication peak RSS by 12.98%.
+- **Bounded state-pack value reads.** Two workers improved pooled StateRoot-enabled throughput from 424.72 to 436.69 BPS (**+2.82%**) on the measured host; one worker remains the portable default.
+- **Full archive without StateRoot.** Replayed blocks 3,875,678 through 11,492,708 at 1,938.65 end-to-end BPS. This is a supplemental result and does not satisfy the 2,000 BPS StateRoot-enabled release gate.
+
+### Architecture
+- **One VM authority.** Removed `neo-vm-rs` and stack-value conversion bridges; workspace `neo-vm` is the sole execution semantic authority.
+- **Reth-derived boundaries.** Converged storage providers, import queues, mempool admission, P2P downloading, RPC composition, and node lifecycle on typed capability boundaries with downward-only crate ownership.
+- **Focused modules.** Split oversized storage, state-pack, execution, network, RPC, native-contract, and node orchestration modules while removing obsolete compatibility aliases and duplicate helpers.
+- **StateRoot operator policy.** StateRoot remains fully supported but is disabled by default; operators enable it with `--enable-stateroot` or `--stateroot true`.
+
 ### Changed
 - **Neo N3 v3.10.1 compatibility target.** Added `HF_Huyao` to the canonical hardfork enum and updated the protocol compatibility documentation. The C#-compatible config loader now has regression coverage for the v3.10.1 `Hardforks: {}` rule, which enables every known hardfork at height 0; built-in MainNet/TestNet presets remain explicit schedules through `HF_Faun` until a loaded network config schedules later forks.
 
