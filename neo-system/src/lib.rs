@@ -13,7 +13,7 @@
 //! - `composition`: Composition-root builders and node assembly
 //!   helpers.
 
-#![doc(html_root_url = "https://docs.rs/neo-system/0.11.0")]
+#![doc(html_root_url = "https://docs.rs/neo-system/0.11.1")]
 
 mod composition;
 

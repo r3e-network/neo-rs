@@ -16,7 +16,7 @@
 //!   providers, lifecycle helpers, and command processing.
 //! - `support`: Protocol-neutral runtime measurement helpers.
 
-#![doc(html_root_url = "https://docs.rs/neo-runtime/0.11.0")]
+#![doc(html_root_url = "https://docs.rs/neo-runtime/0.11.1")]
 
 mod errors;
 pub mod node;

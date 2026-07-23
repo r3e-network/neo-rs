@@ -1,3 +1,5 @@
+import shlex
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -100,6 +102,27 @@ def initial_rustdoc_block(path: Path) -> list[str]:
 
 
 class RepositoryHygieneTests(unittest.TestCase):
+    def test_docker_builder_copies_every_workspace_member(self):
+        workspace = tomllib.loads((REPO_ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+        required = {Path(member).parts[0] for member in workspace["workspace"]["members"]}
+
+        copied = set()
+        for raw_line in (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line.startswith("COPY ") or line.startswith("COPY --from="):
+                continue
+            fields = shlex.split(line)
+            for source in fields[1:-1]:
+                source_path = Path(source.rstrip("/"))
+                if len(source_path.parts) == 1:
+                    copied.add(source_path.parts[0])
+
+        self.assertEqual(
+            sorted(required - copied),
+            [],
+            "Docker builder context must copy every workspace member because Cargo loads every member manifest",
+        )
+
     def test_gitignore_excludes_local_test_and_runtime_artifacts(self):
         gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
         required_patterns = [

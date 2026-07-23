@@ -20,7 +20,7 @@
 //! - `crypto`: Wallet key pairs, signing, and address helpers.
 //! - `scripting`: Wallet script construction and verification helpers.
 
-#![doc(html_root_url = "https://docs.rs/neo-wallets/0.11.0")]
+#![doc(html_root_url = "https://docs.rs/neo-wallets/0.11.1")]
 
 // ============================================================================
 // Wallet data model

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-07-24
+
+### Fixed
+- **Docker release context.** Copy every workspace member into the builder stage so Cargo can load `neo-trie`, `neo-state-packs`, and `neo-checkpoint` during the locked `neo-node` release build. Repository hygiene tests now reject future workspace/Docker copy-list drift.
+
 ## [0.11.0] - 2026-07-24
 
 ### Added

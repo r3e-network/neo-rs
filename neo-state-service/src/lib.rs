@@ -16,7 +16,7 @@
 //!   processing.
 //! - `storage`: MPT storage, state-root cache, and durable state records.
 
-#![doc(html_root_url = "https://docs.rs/neo-state-service/0.11.0")]
+#![doc(html_root_url = "https://docs.rs/neo-state-service/0.11.1")]
 
 mod protocol;
 pub mod providers;

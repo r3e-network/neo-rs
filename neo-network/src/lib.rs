@@ -20,7 +20,7 @@
 //! - `wire`: Wire encoders, decoders, and deterministic network framing
 //!   helpers.
 
-#![doc(html_root_url = "https://docs.rs/neo-network/0.11.0")]
+#![doc(html_root_url = "https://docs.rs/neo-network/0.11.1")]
 
 mod download;
 mod errors;

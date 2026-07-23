@@ -20,7 +20,7 @@
 //!   processing.
 //! - `state_root`: Signed StateRoot vote aggregation and witness verification.
 
-#![doc(html_root_url = "https://docs.rs/neo-blockchain/0.11.0")]
+#![doc(html_root_url = "https://docs.rs/neo-blockchain/0.11.1")]
 
 /// Ledger caches and persisted ledger-record helpers used by the service loop.
 pub mod ledger;

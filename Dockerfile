@@ -34,8 +34,11 @@ COPY Cargo.toml Cargo.lock ./
 COPY neo-primitives/ neo-primitives/
 COPY neo-config/ neo-config/
 COPY neo-crypto/ neo-crypto/
+COPY neo-trie/ neo-trie/
 COPY neo-storage/ neo-storage/
 COPY neo-static-files/ neo-static-files/
+COPY neo-state-packs/ neo-state-packs/
+COPY neo-checkpoint/ neo-checkpoint/
 COPY neo-io/ neo-io/
 COPY neo-vm/ neo-vm/
 COPY neo-error/ neo-error/
