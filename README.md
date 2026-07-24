@@ -13,6 +13,7 @@ still release gates, not current claims.
 
 [![Build Status](https://github.com/r3e-network/neo-rs/workflows/CI/badge.svg)](https://github.com/r3e-network/neo-rs/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MainNet Validated](https://img.shields.io/badge/MainNet-11.49M%20blocks%20validated-brightgreen)](docs/MAINNET_VALIDATION.md)
 [![Rust Version](https://img.shields.io/badge/rust-1.89+-blue.svg)](https://www.rust-lang.org)
 
 > **New here?** This README is a complete tour. For depth, the [`docs/`](./docs/README.md)

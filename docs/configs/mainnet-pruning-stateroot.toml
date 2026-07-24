@@ -1,0 +1,51 @@
+# Neo N3 MainNet — Pruning StateRoot Validation Config
+#
+# Used for the full MainNet StateRoot validation (docs/MAINNET_VALIDATION.md).
+# Pruning mode with state root tracking — correct StateRoot at every block
+# while keeping the database bounded (~22 GB for full MainNet history).
+
+[network]
+network_magic = 0x334F454E
+
+[storage]
+backend = "mdbx"
+mdbx_geometry_upper_gb = 256
+mdbx_geometry_growth_mb = 256
+mdbx_max_readers = 2048
+
+[p2p]
+port = 42334
+max_connections = 20
+seed_nodes = [
+    "seed1.neo.org:10333",
+    "seed2.neo.org:10333",
+    "seed3.neo.org:10333",
+    "seed4.neo.org:10333",
+    "seed5.neo.org:10333",
+]
+enable_compression = true
+
+[rpc]
+enabled = true
+port = 42333
+bind_address = "127.0.0.1"
+
+[consensus]
+enabled = false
+
+[logging]
+level = "info"
+format = "json"
+console_output = false
+
+[blockchain]
+block_time = 15000
+
+[mempool]
+max_transactions = 10000
+
+[state_service]
+enabled = true
+full_state = false
+track_during_catchup = true
+auto_verify = false

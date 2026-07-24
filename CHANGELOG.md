@@ -1,6 +1,28 @@
 # Changelog
 
 ## [Unreleased]
+## [0.11.0] - 2026-07-24
+
+### Validated
+- Full MainNet StateRoot replay: 11,492,708 blocks, 0 MPT failures, 12 seed-verified
+  checkpoints. Pruning mode (full_state=false + track_during_catchup=true)
+  produces correct state roots for every block while keeping the database at 22 GB.
+  See docs/MAINNET_VALIDATION.md for the full report.
+
+### Added
+- --enable-stateroot / --stateroot <bool> CLI flags: explicit StateRoot
+  control; disabled by default.
+- --verify-import-chain flag for full protocol verification during chain.acc import.
+- neo-state-packs crate: experimental append-frame MPT node storage with
+  shadow-mode dual-write and MDBX marker records.
+- neo-checkpoint crate: checkpoint generation, export, and restore foundations.
+- Bounded optimistic header signature verification (opt-in).
+- Empty-block fast-path import: 30-50k blocks/s.
+
+### Changed
+- Architecture converged: Rust layer model, Reth-derived subsystem shape,
+  provider/factory patterns, chain specification (NeoChainSpec).
+
 
 ## [0.11.1] - 2026-07-24
 
