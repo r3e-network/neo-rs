@@ -58,3 +58,88 @@ fn rejected_preflight_response_is_plain_forbidden() {
     );
     assert_eq!(header(&response, "access-control-allow-origin"), "");
 }
+
+/// Builds a POST request carrying the given `Content-Type`, or none at all when
+/// `content_type` is `None`.
+fn post_request(content_type: Option<&str>) -> jsonrpsee::server::HttpRequest<()> {
+    let mut builder = jsonrpsee::server::HttpRequest::builder().method("POST");
+    if let Some(value) = content_type {
+        builder = builder.header("content-type", value);
+    }
+    builder.body(()).expect("request builds")
+}
+
+fn request_content_type(request: &jsonrpsee::server::HttpRequest<()>) -> &str {
+    request
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+}
+
+/// jsonrpsee answers `415 Unsupported Media Type` unless a request declares a
+/// JSON content type, but the C# `RpcServer` plugin ignores the header entirely
+/// and just parses the body. neo-go's RPC client depends on that leniency and
+/// sends no `Content-Type` at all, so without this normalisation every neo-go
+/// client fails against a neo-rs node on its very first call
+/// (`failed to get network magic: HTTP 415/Unsupported Media Type`), which was
+/// observed on a mixed private network.
+#[test]
+fn missing_content_type_is_normalized_to_json() {
+    let mut request = post_request(None);
+    normalize_json_content_type(&mut request);
+    assert_eq!(
+        request_content_type(&request),
+        "application/json",
+        "a body with no Content-Type must be treated as JSON, as C# does"
+    );
+}
+
+#[test]
+fn non_json_content_type_is_normalized_to_json() {
+    for supplied in ["text/plain", "application/x-www-form-urlencoded", ""] {
+        let mut request = post_request(Some(supplied));
+        normalize_json_content_type(&mut request);
+        assert_eq!(
+            request_content_type(&request),
+            "application/json",
+            "Content-Type {supplied:?} must be normalized rather than rejected"
+        );
+    }
+}
+
+/// Content types jsonrpsee already accepts must survive untouched, parameters
+/// and all, so nothing about the existing accepted path changes.
+#[test]
+fn json_content_types_are_left_untouched() {
+    for supplied in [
+        "application/json",
+        "application/json; charset=utf-8",
+        "application/json-rpc",
+        "application/jsonrequest",
+        "APPLICATION/JSON",
+    ] {
+        let mut request = post_request(Some(supplied));
+        normalize_json_content_type(&mut request);
+        assert_eq!(
+            request_content_type(&request),
+            supplied,
+            "already-JSON Content-Type {supplied:?} must not be rewritten"
+        );
+    }
+}
+
+/// GET carries no body to interpret, so it must not gain a body content type.
+#[test]
+fn get_requests_are_left_untouched() {
+    let mut request = jsonrpsee::server::HttpRequest::builder()
+        .method("GET")
+        .body(())
+        .expect("request builds");
+    normalize_json_content_type(&mut request);
+    assert_eq!(
+        request_content_type(&request),
+        "",
+        "GET has no body, so no Content-Type should be invented"
+    );
+}

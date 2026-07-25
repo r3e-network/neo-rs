@@ -315,3 +315,59 @@ async fn invokescript_faults_when_gas_limit_exceeded() {
         .expect("gasconsumed");
     assert!(gas_consumed >= max_gas);
 }
+
+/// C# serialises a notification's `State` by calling `ToJson()` on the VM array,
+/// so `state` is a stack item object -- `{"type":"Array","value":[..]}` -- not a
+/// bare JSON array of the elements.
+///
+/// neo-rs used to emit the bare array, which typed clients cannot decode: on a
+/// mixed private network every neo-go transfer against a neo-rs node aborted with
+/// `cannot unmarshal array into Go struct field invokeAux.notifications of type
+/// stackitem.rawItem`, because neo-go decodes `state` into a single stack item.
+/// The element values were already correct; only the wrapper was missing.
+#[test]
+fn notification_state_is_a_stack_item_not_a_bare_array() {
+    let notification = neo_payloads::NotifyEventArgs::new_with_optional_container(
+        None,
+        UInt160::zero(),
+        "Transfer".to_string(),
+        vec![
+            neo_vm::stack_item::StackItem::from_byte_string(vec![0x01, 0x02]),
+            neo_vm::stack_item::StackItem::from_int(BigInt::from(1_250_000_000u64)),
+        ],
+    );
+
+    let json = crate::server::smart_contract::response::notification_to_json(&notification, None)
+        .expect("notification serialises");
+
+    assert_eq!(
+        json.get("eventname").and_then(Value::as_str),
+        Some("Transfer")
+    );
+
+    let state = json.get("state").expect("state field");
+    assert!(
+        state.is_object(),
+        "state must be a stack item object, got: {state}"
+    );
+    assert_eq!(
+        state.get("type").and_then(Value::as_str),
+        Some("Array"),
+        "state must be typed as an Array stack item"
+    );
+
+    let values = state
+        .get("value")
+        .and_then(Value::as_array)
+        .expect("state.value must be the element array");
+    assert_eq!(values.len(), 2, "both notification arguments must survive");
+    assert_eq!(
+        values[0].get("type").and_then(Value::as_str),
+        Some("ByteString")
+    );
+    assert_eq!(
+        values[1].get("value").and_then(Value::as_str),
+        Some("1250000000"),
+        "integer arguments keep their decimal string form"
+    );
+}

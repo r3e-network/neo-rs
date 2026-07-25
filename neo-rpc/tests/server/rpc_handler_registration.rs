@@ -49,6 +49,12 @@ fn wallet_handler_registration_preserves_protected_metadata() {
     let handlers = RpcServerWallet::register_handlers();
     let names = handler_names(&handlers);
 
+    // `calculatenetworkfee` registers last and public. Every other method here
+    // opens a wallet, exports keys, or moves funds, so all of them stay
+    // protected. This test previously asserted the whole group required auth,
+    // which hid `calculatenetworkfee` from unauthenticated nodes entirely --
+    // protected methods are dropped from the transport method list when RPC
+    // basic auth is not configured, so callers saw `-32601 Method not found`.
     assert_eq!(
         names,
         [
@@ -60,18 +66,24 @@ fn wallet_handler_registration_preserves_protected_metadata() {
             "importprivkey",
             "listaddress",
             "openwallet",
-            "calculatenetworkfee",
             "sendfrom",
             "sendtoaddress",
             "sendmany",
             "canceltransaction",
+            "calculatenetworkfee",
         ]
     );
-    assert!(
-        handlers
+    let (public, protected): (Vec<_>, Vec<_>) = handlers
+        .iter()
+        .partition(|handler| !handler.descriptor().requires_auth());
+    assert_eq!(
+        public
             .iter()
-            .all(|handler| handler.descriptor().requires_auth())
+            .map(|handler| handler.descriptor().name.as_str())
+            .collect::<Vec<_>>(),
+        ["calculatenetworkfee"]
     );
+    assert_eq!(protected.len(), names.len() - 1);
 }
 
 #[test]

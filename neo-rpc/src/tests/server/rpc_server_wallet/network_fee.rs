@@ -87,3 +87,39 @@ fn calculate_network_fee_rejects_invalid_transaction_bytes() {
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
 }
+
+#[test]
+fn calculate_network_fee_is_public_while_the_rest_of_the_group_is_protected() {
+    // Protected methods are filtered out of the transport method list when RPC
+    // basic auth is not configured, so marking this one protected made it answer
+    // `-32601 Method not found` on every unauthenticated node. C# reaches it
+    // without auth or an open wallet, and it needs neither: the account-script
+    // lookup is optional and no key material is exposed.
+    let handlers = RpcServerWallet::register_handlers();
+    assert!(
+        !find_handler(&handlers, "calculatenetworkfee")
+            .descriptor()
+            .requires_auth(),
+        "calculatenetworkfee must stay reachable without auth"
+    );
+
+    for method in [
+        "closewallet",
+        "dumpprivkey",
+        "getnewaddress",
+        "getwalletbalance",
+        "getwalletunclaimedgas",
+        "importprivkey",
+        "listaddress",
+        "openwallet",
+        "sendfrom",
+        "sendtoaddress",
+        "sendmany",
+        "canceltransaction",
+    ] {
+        assert!(
+            find_handler(&handlers, method).descriptor().requires_auth(),
+            "{method} touches key material or funds and must stay protected"
+        );
+    }
+}

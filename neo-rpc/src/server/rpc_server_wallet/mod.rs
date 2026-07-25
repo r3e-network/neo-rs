@@ -40,10 +40,21 @@ impl RpcServerWallet {
     /// Registers all wallet RPC handlers.
     ///
     /// # Security
-    /// Wallet methods are marked as protected metadata. Authentication is enforced
-    /// only when RPC basic auth is configured, matching C# behavior.
+    /// Wallet methods that touch key material or move funds are marked as
+    /// protected metadata. Authentication is enforced only when RPC basic auth is
+    /// configured, matching C# behavior.
+    ///
+    /// `calculatenetworkfee` is deliberately public. It is a read-only fee
+    /// computation over a caller-supplied unsigned transaction: it needs no open
+    /// wallet (the account-script lookup is optional) and reveals no key
+    /// material, which makes it a peer of the already-public `invokescript`.
+    /// C# reaches it without auth or a wallet -- an unparameterised call there
+    /// answers with a missing-`tx` parameter error, whereas genuinely
+    /// wallet-scoped methods answer `-302 No opened wallet`. Grouping it with
+    /// the protected methods made it vanish from the module whenever auth was
+    /// off, so callers got `-32601 Method not found` and could not size a fee.
     pub fn register_handlers() -> Vec<RpcHandler> {
-        super::rpc_handlers![
+        let mut handlers = super::rpc_handlers![
             // Wallet methods are marked as protected metadata.
             protected;
             "closewallet" => Self::close_wallet,
@@ -54,12 +65,15 @@ impl RpcServerWallet {
             "importprivkey" => Self::import_priv_key,
             "listaddress" => Self::list_address,
             "openwallet" => Self::open_wallet,
-            "calculatenetworkfee" => Self::calculate_network_fee,
             "sendfrom" => Self::send_from,
             "sendtoaddress" => Self::send_to_address,
             "sendmany" => Self::send_many,
             "canceltransaction" => Self::cancel_transaction,
-        ]
+        ];
+        handlers.extend(super::rpc_handlers![
+            "calculatenetworkfee" => Self::calculate_network_fee,
+        ]);
+        handlers
     }
 }
 

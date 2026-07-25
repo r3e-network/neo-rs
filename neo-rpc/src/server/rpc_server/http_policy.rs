@@ -170,6 +170,8 @@ where
             return RpcHttpFuture::ready(Ok(preflight_response(cors_headers)));
         }
 
+        normalize_json_content_type(&mut request);
+
         if let Some(credentials) = self.auth_credentials.as_ref() {
             let header = request
                 .headers()
@@ -229,6 +231,52 @@ where
                 apply_cors_headers(&mut response, cors_headers.as_ref());
                 Poll::Ready(Ok(response))
             }
+        }
+    }
+}
+
+/// Rewrites a missing or non-JSON `Content-Type` on a request body to
+/// `application/json`.
+///
+/// jsonrpsee answers `415 Unsupported Media Type` unless the request declares a
+/// JSON content type, but the C# `RpcServer` plugin does not inspect the header
+/// at all: it reads the body and parses it as JSON regardless. neo-go's RPC
+/// client relies on that leniency and sends no `Content-Type` whatsoever, so the
+/// strict check makes every neo-go client fail against this node with
+/// `HTTP 415/Unsupported Media Type` before a single call goes through.
+///
+/// Normalising the header here keeps the permissive C# behaviour without giving
+/// up jsonrpsee's parsing: a body that is not actually JSON still fails, just as
+/// a JSON parse error rather than a media-type rejection, which is what C#
+/// returns too.
+fn normalize_json_content_type<Body>(request: &mut jsonrpsee::server::HttpRequest<Body>) {
+    // GET carries no body to interpret, and OPTIONS is already handled above.
+    let method = request.method().as_str();
+    if method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("OPTIONS") {
+        return;
+    }
+
+    let already_json = request
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            // Match jsonrpsee's own notion of an acceptable JSON media type,
+            // ignoring any parameters such as `; charset=utf-8`.
+            let essence = value
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase();
+            essence == "application/json"
+                || essence == "application/json-rpc"
+                || essence == "application/jsonrequest"
+        });
+
+    if !already_json {
+        if let Ok(value) = "application/json".parse() {
+            request.headers_mut().insert("content-type", value);
         }
     }
 }

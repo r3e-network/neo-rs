@@ -124,12 +124,15 @@ fn stack_item_error(message: impl Into<String>) -> RpcException {
 
 pub(super) fn notification_to_json(
     notification: &NotifyEventArgs,
-    mut session: Option<&mut Session>,
+    session: Option<&mut Session>,
 ) -> Result<Value, RpcException> {
-    let mut state = Vec::new();
-    for entry in notification.state() {
-        state.push(stack_item_to_json(entry, session.as_deref_mut())?);
-    }
+    // C# serialises `NotificationRecord.State` with `ToJson()` on the VM array
+    // itself, so `state` is a stack item object -- `{"type":"Array","value":[..]}`
+    // -- and not a bare JSON array of its elements. Emitting the bare array makes
+    // typed clients fail to decode the notification: neo-go rejects it with
+    // `cannot unmarshal array into Go struct field invokeAux.notifications of
+    // type stackitem.rawItem`, which aborts any neo-go transfer against this node.
+    let state = stack_item_to_json(&notification.state_array(), session)?;
     Ok(json!({
         "eventname": notification.event_name,
         "contract": notification.script_hash.to_string(),
