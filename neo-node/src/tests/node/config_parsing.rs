@@ -487,11 +487,11 @@ fn shipped_mainnet_and_testnet_configs_match_v3101_transaction_limits() {
         .parent()
         .expect("neo-node has a workspace parent");
     let cases = [
-        ("config/mainnet.toml", 200),
-        ("config/mainnet-service.toml", 200),
-        ("config/mainnet-stateroot.toml", 200),
-        ("neo_mainnet_node.toml", 200),
-        ("neo_production_node.toml", 200),
+        ("config/mainnet.toml", 512),
+        ("config/mainnet-service.toml", 512),
+        ("config/mainnet-stateroot.toml", 512),
+        ("neo_mainnet_node.toml", 512),
+        ("neo_production_node.toml", 512),
         ("config/testnet.toml", 5_000),
         ("config/testnet-service.toml", 5_000),
         ("neo_testnet_node.toml", 5_000),
@@ -641,10 +641,9 @@ fn load_config_rejects_unknown_and_incomplete_private_networks() {
     let dir = tempfile::tempdir().expect("temp config root");
     let cases = [
         ("unknown", "invalid [network].network_type"),
-        (
-            "private",
-            "private networks require an explicit NeoChainSpec",
-        ),
+        // A private network still fails closed without a complete spec; it now
+        // names the configuration key that supplies one.
+        ("private", "requires [network].protocol_config"),
     ];
 
     for (network_type, expected) in cases {
@@ -659,6 +658,88 @@ fn load_config_rejects_unknown_and_incomplete_private_networks() {
         let message = format!("{error:#}");
         assert!(message.contains(expected), "{message}");
     }
+}
+
+/// A private chain takes its whole identity from a C# `ProtocolConfiguration`
+/// document, so a mixed-implementation network can share one protocol file.
+#[test]
+fn load_config_builds_private_chain_from_csharp_protocol_document() {
+    let dir = tempfile::tempdir().expect("temp config root");
+    let protocol = dir.path().join("protocol.json");
+    std::fs::write(
+        &protocol,
+        r#"{"ProtocolConfiguration":{
+             "Network": 56753,
+             "ValidatorsCount": 1,
+             "MillisecondsPerBlock": 1000,
+             "StandbyCommittee": [
+               "022889742b9e7639e81a2b0f43114c416182c00e64e431781f092eeaffcc263c17"
+             ],
+             "Hardforks": {"HF_Aspidochelone": 0}
+           }}"#,
+    )
+    .expect("write protocol document");
+
+    let path = dir.path().join("private.toml");
+    std::fs::write(
+        &path,
+        format!(
+            "[network]\nnetwork_type = \"Private\"\nprotocol_config = {:?}\n\
+             chain_name = \"unit-privnet\"\n",
+            protocol
+        ),
+    )
+    .expect("write config");
+
+    let (chain_spec, _) = load_config(&path, None).expect("private chain spec is accepted");
+    assert_eq!(chain_spec.network_magic(), 56753);
+    assert_eq!(chain_spec.identity().name(), "unit-privnet");
+    let settings = chain_spec.protocol_settings();
+    assert_eq!(settings.validators_count, 1);
+    assert_eq!(settings.milliseconds_per_block, 1000);
+    // Genesis is derived from the same settings object, so the validator set
+    // cannot disagree with the committee it was taken from.
+    assert_eq!(chain_spec.genesis().validators.len(), 1);
+    assert_eq!(chain_spec.genesis().committee.len(), 1);
+}
+
+/// A missing protocol document must fail rather than silently falling back to
+/// the bare C# default record, which would boot an empty committee.
+#[test]
+fn load_config_rejects_private_chain_with_missing_protocol_document() {
+    let dir = tempfile::tempdir().expect("temp config root");
+    let path = dir.path().join("private.toml");
+    std::fs::write(
+        &path,
+        "[network]\nnetwork_type = \"Private\"\n\
+         protocol_config = \"/nonexistent/protocol.json\"\n",
+    )
+    .expect("write config");
+
+    let error = load_config(&path, None).expect_err("missing document must fail closed");
+    let message = format!("{error:#}");
+    assert!(message.contains("does not exist"), "{message}");
+}
+
+/// The built-in networks stay closed identities: a protocol document cannot
+/// redefine MainNet.
+#[test]
+fn load_config_rejects_protocol_document_for_builtin_networks() {
+    let dir = tempfile::tempdir().expect("temp config root");
+    let path = dir.path().join("mainnet.toml");
+    std::fs::write(
+        &path,
+        "[network]\nnetwork_type = \"MainNet\"\n\
+         protocol_config = \"/tmp/protocol.json\"\n",
+    )
+    .expect("write config");
+
+    let error = load_config(&path, None).expect_err("override must fail closed");
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("cannot override the built-in"),
+        "{message}"
+    );
 }
 
 /// Unknown / extra `[storage]` keys do not break parsing.

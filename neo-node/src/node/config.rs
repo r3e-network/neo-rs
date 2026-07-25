@@ -10,6 +10,7 @@ use tracing::info;
 
 mod execution;
 mod observability;
+mod private_chain;
 mod services;
 mod validation;
 
@@ -67,12 +68,24 @@ pub(super) struct NodeConfig {
 /// `[network]`: which Neo network the node joins.
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct NetworkSection {
-    /// `"TestNet"` / `"MainNet"` - selects the immutable built-in chain spec.
+    /// `"TestNet"` / `"MainNet"` selects an immutable built-in chain spec;
+    /// `"Private"` builds one from `protocol_config`.
     #[serde(default)]
     network_type: Option<String>,
     /// Optional assertion of the built-in spec's canonical network magic.
     #[serde(default)]
     network_magic: Option<u32>,
+    /// Path to a C# `ProtocolConfiguration` document (`config.json`).
+    /// Required for, and only honoured by, `network_type = "Private"`.
+    #[serde(default)]
+    protocol_config: Option<PathBuf>,
+    /// Display name recorded in the private chain's identity.
+    #[serde(default)]
+    chain_name: Option<String>,
+    /// Optional genesis-hash pin for a private chain. Enforced at boot so a
+    /// committee transcription error cannot fork the network silently.
+    #[serde(default)]
+    expected_genesis_hash: Option<String>,
 }
 
 /// `[storage]`: persistence backend.
@@ -600,12 +613,38 @@ pub(super) fn load_config(
             .map_or(Ok(NetworkType::MainNet), |value| {
                 value.parse::<NetworkType>().map_err(|error| {
                     anyhow::anyhow!(
-                        "invalid [network].network_type: {error}; expected MainNet or TestNet"
+                        "invalid [network].network_type: {error}; expected MainNet, TestNet or Private"
                     )
                 })
             })?;
-    let chain_spec = NeoChainSpec::from_network_type(network_type)
-        .with_context(|| format!("loading built-in {network_type} chain specification"))?;
+    let chain_spec = match network_type {
+        NetworkType::Private => {
+            let protocol_config =
+                config.network.protocol_config.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "[network].network_type = \"Private\" requires \
+                         [network].protocol_config, the path to a C# \
+                         ProtocolConfiguration document; private chains have no \
+                         built-in identity"
+                    )
+                })?;
+            let name = config.network.chain_name.as_deref().unwrap_or("neo-private");
+            Arc::new(private_chain::load_private_chain_spec(
+                name,
+                protocol_config,
+                config.network.expected_genesis_hash.as_deref(),
+            )?)
+        }
+        NetworkType::MainNet | NetworkType::TestNet => {
+            anyhow::ensure!(
+                config.network.protocol_config.is_none(),
+                "[network].protocol_config cannot override the built-in \
+                 {network_type} chain specification"
+            );
+            NeoChainSpec::from_network_type(network_type)
+                .with_context(|| format!("loading built-in {network_type} chain specification"))?
+        }
+    };
     let settings = chain_spec.protocol_settings();
 
     validate_network_magic(
