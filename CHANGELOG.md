@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Blocks that do not extend the tip are rejected at import.** The persist path
+  verified a block sat at `current_height + 1` but never that it descended from
+  the tip, and nothing else on the consensus path inspected the parent: the
+  cached-header check is inert for locally produced blocks, import-integrity
+  covers only version/merkle/duplicate-txs, and witness verification is skipped
+  outright. `prev_hash` was validated only in the header-first sync path. That is
+  how the v0.12.0 dBFT `prev_hash` fork persisted an unverifiable header instead
+  of failing loudly. The driver-side fix stops producing such a block; this stops
+  one being accepted.
+
+### Verified
+- **Privnet fault tolerance.** On the mixed neo-rs / neo-cli / neo-go network:
+  F=1 (one node down) keeps producing in lockstep at a reduced rate, F=2 (two of
+  four, below M=3) stalls cleanly with no fork and both survivors agreeing on the
+  tip, and killing neo-rs makes the other three view-change past its primary
+  slots before it rejoins and converges. View change is a dBFT path replay never
+  exercises.
+
 ## [0.12.0] - 2026-07-25
 
 First release validated against a live multi-implementation network. A 4-node
