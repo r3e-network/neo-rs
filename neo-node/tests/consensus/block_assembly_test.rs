@@ -26,6 +26,8 @@ async fn test_complete_block_assembly_workflow() {
     // Create BlockData from consensus
     let block_data = BlockData {
         block_index: 12345,
+        version: 0,
+        prev_hash: neo_primitives::UInt256::zero(),
         timestamp: 1700000000,
         nonce: 0xDEADBEEFCAFEBABE,
         primary_index: 1,

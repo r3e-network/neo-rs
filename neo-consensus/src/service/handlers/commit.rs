@@ -269,6 +269,8 @@ where
 
         Ok(BlockData {
             block_index: self.context.block_index,
+            version: self.context.version,
+            prev_hash: self.context.prev_hash,
             timestamp: self.context.proposed_timestamp,
             nonce: self.context.nonce,
             primary_index: self.context.primary_index(),

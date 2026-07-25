@@ -477,9 +477,14 @@ where
                         return;
                     }
                 };
-                match block_data.assemble_block(BLOCK_VERSION, self.current_prev_hash, txs) {
+                // Every header field, including the parent, comes from the
+                // committed round. `current_prev_hash` only seeds new rounds; it
+                // must not feed assembly, because the next round can be seeded
+                // from `RuntimeEvent::Imported` before this block is submitted,
+                // and a parent that differs from the agreed one produces a
+                // header the commit signatures do not cover.
+                match block_data.assemble_block(txs) {
                     Ok(block) => {
-                        self.current_prev_hash = block.header.hash();
                         let block = Arc::new(block);
                         // Persist through the C# Blockchain.Persist pipeline; the
                         // validators already signed, so it is pre-verified.

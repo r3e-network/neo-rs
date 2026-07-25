@@ -33,6 +33,8 @@ async fn assemble_block_builds_header_and_multisig_witness() {
     let signature = vec![0xABu8; 64];
     let data = BlockData {
         block_index: 1,
+        version: 0,
+        prev_hash: UInt256::zero(),
         timestamp: 12_345,
         nonce: 7,
         primary_index: 0,
@@ -46,7 +48,7 @@ async fn assemble_block_builds_header_and_multisig_witness() {
     };
 
     let block = data
-        .assemble_block(0, UInt256::zero(), Vec::new())
+        .assemble_block(Vec::new())
         .expect("assemble");
 
     // Header fields carried through from the committed consensus data.
@@ -84,6 +86,8 @@ async fn assemble_block_builds_header_and_multisig_witness() {
 async fn assemble_block_rejects_insufficient_signatures() {
     let data = BlockData {
         block_index: 2,
+        version: 0,
+        prev_hash: UInt256::zero(),
         timestamp: 1,
         nonce: 0,
         primary_index: 0,
@@ -93,7 +97,7 @@ async fn assemble_block_rejects_insufficient_signatures() {
         required_signatures: 2,
         next_consensus: UInt160::zero(),
     };
-    assert!(data.assemble_block(0, UInt256::zero(), Vec::new()).is_err());
+    assert!(data.assemble_block(Vec::new()).is_err());
 }
 
 #[tokio::test]
@@ -102,6 +106,8 @@ async fn assemble_block_uses_committed_next_consensus_address() {
     let committed_next_consensus = UInt160::from_bytes(&[0x42; 20]).expect("test next consensus");
     let data = BlockData {
         block_index: 3,
+        version: 0,
+        prev_hash: UInt256::zero(),
         timestamp: 12_345,
         nonce: 7,
         primary_index: 0,
@@ -113,7 +119,7 @@ async fn assemble_block_uses_committed_next_consensus_address() {
     };
 
     let block = data
-        .assemble_block(0, UInt256::zero(), Vec::new())
+        .assemble_block(Vec::new())
         .expect("assemble");
 
     assert_eq!(*block.header.next_consensus(), committed_next_consensus);

@@ -13,6 +13,16 @@ use crate::service::helpers::ConsensusBlockFields;
 pub struct BlockData {
     /// Block index
     pub block_index: u32,
+    /// Header `Version` agreed by the consensus round.
+    pub version: u32,
+    /// Header `PrevHash` agreed by the consensus round.
+    ///
+    /// This is the parent the commit signatures were computed over, so it must
+    /// come from the consensus context rather than from a separately tracked
+    /// chain tip. A caller-supplied parent can drift from the agreed one (for
+    /// example when the next round is seeded before the previous block finishes
+    /// persisting), which yields a header whose witness cannot verify.
+    pub prev_hash: UInt256,
     /// Block timestamp
     pub timestamp: u64,
     /// Block nonce
@@ -46,12 +56,11 @@ impl BlockData {
     ///
     /// `transactions` must be the full transactions for `transaction_hashes`
     /// (resolved by the caller from the mempool / ledger), in block order.
-    pub fn assemble_block(
-        &self,
-        version: u32,
-        prev_hash: UInt256,
-        transactions: Vec<Transaction>,
-    ) -> ConsensusResult<Block> {
+    ///
+    /// Every header field comes from the committed consensus round, so the
+    /// assembled block is exactly the one the validators signed. Nothing about
+    /// the header is caller-supplied.
+    pub fn assemble_block(&self, transactions: Vec<Transaction>) -> ConsensusResult<Block> {
         // Reuse the consensus crate's canonical computations so the assembled
         // block is byte-identical to the one the validators committed to:
         // MerkleRoot over the transaction hashes, and the M-of-N multi-sig
@@ -97,8 +106,8 @@ impl BlockData {
         witness.verification_script = verification_script;
 
         let header = Header::from_parts(
-            version,
-            prev_hash,
+            self.version,
+            self.prev_hash,
             merkle_root,
             self.timestamp,
             self.nonce,

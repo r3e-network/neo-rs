@@ -212,7 +212,7 @@ async fn committed_round_assembles_into_the_agreed_block() {
     // Assemble the final block and prove it IS the block the validators committed to:
     // its hash equals the proposed block hash the commit signatures were taken over.
     let block = block_data
-        .assemble_block(0, UInt256::zero(), Vec::new())
+        .assemble_block(Vec::new())
         .expect("assemble committed block");
     assert_eq!(
         block.header.hash(),
@@ -228,4 +228,105 @@ async fn committed_round_assembles_into_the_agreed_block() {
         ),
     );
     assert!(!block.header.witness.invocation_script.is_empty());
+}
+
+/// The committed `BlockData` carries the round's own agreed parent, so assembly
+/// cannot be handed a different one.
+///
+/// This is the regression guard for a mixed-implementation privnet stall: the
+/// node driver used to pass its separately tracked chain tip into
+/// `assemble_block`, and because the next round is seeded from the block-imported
+/// event, that tip could already have advanced past the round being assembled.
+/// The result was a header whose `PrevHash` the commit signatures did not cover —
+/// an unverifiable block that still persisted (it is submitted pre-verified),
+/// permanently forking the node off the network at that height.
+///
+/// A non-zero parent is essential here: with `UInt256::zero()` on both sides the
+/// agreed and supplied parents coincide and the divergence stays invisible.
+#[tokio::test]
+async fn committed_block_data_carries_the_rounds_agreed_parent() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    let parent = UInt256::from_bytes(&[0x11; 32]).expect("parent hash");
+    service.start(8, 1_000, parent, 0).unwrap();
+    service.on_transactions_received(Vec::new()).await.unwrap();
+
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event {
+            if payload.message_type == ConsensusMessageType::PrepareRequest {
+                break;
+            }
+        }
+    }
+    let preparation_hash = service
+        .context()
+        .preparation_hash
+        .expect("preparation hash");
+
+    for validator_index in 1..=2 {
+        let response = PrepareResponseMessage::new(8, 0, validator_index, preparation_hash);
+        let mut payload = ConsensusPayload::new(
+            network,
+            8,
+            validator_index,
+            0,
+            ConsensusMessageType::PrepareResponse,
+            response.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+        service.process_message(payload).await.unwrap();
+    }
+
+    let block_hash = service
+        .context()
+        .proposed_block_hash
+        .expect("proposed block hash");
+
+    for validator_index in 1..=2 {
+        let signature = sign_commit(network, &block_hash, &keys[validator_index as usize]);
+        let commit = CommitMessage::new(8, 0, validator_index, signature);
+        let mut payload = ConsensusPayload::new(
+            network,
+            8,
+            validator_index,
+            0,
+            ConsensusMessageType::Commit,
+            commit.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+        service.process_message(payload).await.unwrap();
+    }
+
+    let mut block_data = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BlockCommitted {
+            block_data: data, ..
+        } = event
+        {
+            block_data = Some(data);
+            break;
+        }
+    }
+    let block_data = block_data.expect("round must commit a block");
+
+    assert_eq!(
+        block_data.prev_hash, parent,
+        "committed block data must carry the parent the round agreed on"
+    );
+
+    let block = block_data
+        .assemble_block(Vec::new())
+        .expect("assemble committed block");
+    assert_eq!(
+        *block.header.prev_hash(), parent,
+        "assembled header must chain to the agreed parent"
+    );
+    assert_eq!(
+        block.header.hash(),
+        block_hash,
+        "assembled block must hash to the block the commit signatures covered"
+    );
 }
