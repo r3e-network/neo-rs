@@ -93,7 +93,7 @@ fn load_mainnet_json_matches_neo_node_v3101_protocol_configuration() {
             "Network": 860833102,
             "AddressVersion": 53,
             "MillisecondsPerBlock": 15000,
-            "MaxTransactionsPerBlock": 200,
+            "MaxTransactionsPerBlock": 512,
             "MemoryPoolMaxTransactions": 50000,
             "MaxTraceableBlocks": 2102400,
             "Hardforks": {
@@ -220,7 +220,10 @@ fn mainnet_preset_matches_neo_n3_v3101_protocol_limits() {
     let settings = ProtocolSettings::mainnet();
 
     assert_eq!(settings.network, constants::MAINNET_MAGIC);
-    assert_eq!(settings.max_transactions_per_block, 200);
+    assert_eq!(
+        settings.max_transactions_per_block,
+        constants::MAX_TRANSACTIONS_PER_BLOCK as u32
+    );
     assert_eq!(
         settings.hardforks.activation_height(Hardfork::HfFaun),
         Some(8_800_000)

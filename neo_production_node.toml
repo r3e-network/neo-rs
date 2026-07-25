@@ -96,7 +96,7 @@ max_files = 10
 
 [blockchain]
 block_time = 15000  # 15 seconds in milliseconds
-max_transactions_per_block = 200
+max_transactions_per_block = 512  # official MainNet config.json
 
 [mempool]
 max_transactions = 50000

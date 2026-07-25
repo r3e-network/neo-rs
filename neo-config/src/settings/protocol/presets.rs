@@ -107,7 +107,12 @@ impl ProtocolSettings {
                 "seed5.neo.org:10333".to_string(),
             ],
             milliseconds_per_block: 15_000,
-            max_transactions_per_block: 200,
+            // Official MainNet `config.json` ships
+            // `"MaxTransactionsPerBlock": 512`, matching C#
+            // `ProtocolSettings.Default`. This bounds block *production* in
+            // dBFT only (never block validation), so a lower value silently
+            // caps this node's proposals below the rest of the committee.
+            max_transactions_per_block: constants::MAX_TRANSACTIONS_PER_BLOCK as u32,
             max_block_size: constants::MAX_BLOCK_SIZE as u32,
             max_valid_until_block_increment: constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT,
             max_traceable_blocks: constants::MAX_TRACEABLE_BLOCKS,

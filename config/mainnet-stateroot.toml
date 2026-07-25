@@ -88,7 +88,7 @@ console_output = true
 
 [blockchain]
 block_time = 15000
-max_transactions_per_block = 200
+max_transactions_per_block = 512  # official MainNet config.json
 
 [mempool]
 max_transactions = 50000
