@@ -1,28 +1,87 @@
 # Changelog
 
 ## [Unreleased]
-## [0.11.0] - 2026-07-24
 
-### Validated
-- Full MainNet StateRoot replay: 11,492,708 blocks, 0 MPT failures, 12 seed-verified
-  checkpoints. Pruning mode (full_state=false + track_during_catchup=true)
-  produces correct state roots for every block while keeping the database at 22 GB.
-  See docs/MAINNET_VALIDATION.md for the full report.
+## [0.12.0] - 2026-07-25
+
+First release validated against a live multi-implementation network. A 4-node
+private network running neo-rs alongside neo-cli v3.10.1 and neo-go v0.121.0
+exercised consensus and client interoperability, which replaying `chain.acc`
+cannot reach: replay never runs dBFT and never sees a third-party RPC client.
+It found four defects, all fixed here.
 
 ### Added
-- --enable-stateroot / --stateroot <bool> CLI flags: explicit StateRoot
-  control; disabled by default.
-- --verify-import-chain flag for full protocol verification during chain.acc import.
-- neo-state-packs crate: experimental append-frame MPT node storage with
-  shadow-mode dual-write and MDBX marker records.
-- neo-checkpoint crate: checkpoint generation, export, and restore foundations.
-- Bounded optimistic header signature verification (opt-in).
-- Empty-block fast-path import: 30-50k blocks/s.
+- **Private chains.** `[network].network_type = "Private"` builds a chain
+  specification from `[network].protocol_config`, the same C#
+  `ProtocolConfiguration` document neo-cli consumes, so every implementation on
+  a mixed network shares one canonical protocol file. `[network].chain_name`
+  names the chain and `[network].expected_genesis_hash` optionally pins genesis
+  so a committee transcription error fails at boot instead of forking silently.
+  A missing `protocol_config`, or one supplied alongside MainNet/TestNet, is
+  rejected rather than silently falling back to a built-in identity.
+
+### Fixed
+- **dBFT committed-block assembly (consensus-critical).** The committed block is
+  now assembled entirely from the consensus round's agreed header fields.
+  `ConsensusDriver` previously supplied its own tracked `prev_hash` and then
+  speculatively advanced it, but the commit signatures are computed over the
+  parent held in the consensus context. Because the next round can be seeded
+  from `RuntimeEvent::Imported` before the current block is submitted, the two
+  could drift, producing a header whose witness no validator had signed. A
+  validating node forked itself off a live 4-node network after roughly 1800
+  blocks and stalled. `BlockData` now carries the agreed `version` and
+  `prev_hash`, and `assemble_block(txs)` accepts no header input at all.
+- **`Content-Type` handling.** A missing or non-JSON `Content-Type` on a request
+  body is normalised to `application/json`. jsonrpsee answers `415 Unsupported
+  Media Type` without a JSON media type, but the C# `RpcServer` never inspects
+  the header, and neo-go's client sends none -- so every neo-go client failed
+  against this node before its first call. Genuine JSON types, including
+  `application/json-rpc`, `application/jsonrequest`, and any `; charset=`
+  parameter, pass through untouched; a non-JSON body still fails, as a parse
+  error rather than a media-type rejection, matching C#.
+- **Notification `state` shape.** `invokefunction` / `invokescript` now emit
+  notification `state` as a stack item object, `{"type":"Array","value":[..]}`,
+  matching C#'s `ToJson()` on the VM array. The previous bare JSON array could
+  not be decoded by typed clients. `getapplicationlog` rendering was already
+  correct.
+- **`calculatenetworkfee` reachability.** Registered public instead of
+  protected. Protected methods are dropped from the transport method list when
+  RPC basic auth is not configured, so on any node with auth off the method was
+  absent from the module and answered `-32601 Method not found`. It is a
+  read-only computation over a caller-supplied unsigned transaction, needs no
+  open wallet, and exposes no key material. Every other wallet method still
+  requires auth.
 
 ### Changed
-- Architecture converged: Rust layer model, Reth-derived subsystem shape,
-  provider/factory patterns, chain specification (NeoChainSpec).
+- **MainNet `max_transactions_per_block` 200 to 512.** Official MainNet
+  `config.json` ships 512, matching C# `ProtocolSettings.Default`. This bounds
+  block *production* in dBFT only, never validation, so replay could not
+  surface it; it capped this node's proposals below the rest of the committee.
+  The preset now derives from `constants::MAX_TRANSACTIONS_PER_BLOCK`.
 
+### Documentation
+- **MainNet replay claims corrected.** `docs/MAINNET_VALIDATION.md` reported a
+  "PASSED — 100% Correct" full-archive StateRoot validation, with 12 checkpoints
+  through h=11.49M each marked as matching `seed1.neo.org` / `seed2.neo.org`.
+  Its own source report
+  (`reports/performance/mainnet-full-archive-no-stateroot-3875677-11492708-20260724.md`)
+  contradicts that on every point: the run set `--stateroot false`, recorded
+  `0 / 0` MPT apply attempts *and* failures, and covered
+  `3,875,678..11,492,708` (7,617,031 blocks continuing an existing database),
+  not a full 11.49M replay. Zero MPT failures there follows from zero MPT
+  attempts. The stated final root, 22 GB footprint, checkpoint table, and
+  `full_state`/`track_during_catchup` configuration were unsupported; actual
+  footprint was 115 GiB on `neo-node 0.10.0`. The document now separates
+  seed-compared StateRoot-enabled evidence (sampled, highest recorded
+  `getstateroot` seed match h=3,372,022) from the StateRoot-disabled throughput
+  continuation, and states that full-history parity remains open — as the source
+  report itself concludes.
+- **README badge.** Replaced "MainNet 11.49M blocks validated" with
+  "3.37M seed-verified / 11.49M ledger". The badge had conflated the
+  StateRoot-disabled ledger run with state-root validation; the README prose
+  below it was already correctly qualified.
+- Removed a duplicated `[0.11.0]` section and restored descending version
+  order.
 
 ## [0.11.1] - 2026-07-24
 
@@ -33,7 +92,8 @@
 
 ### Added
 - **Typed chain composition.** Added immutable `NeoChainSpec`, provider/factory read capabilities, a staged sync/import pipeline, bounded optimistic signature preverification, append-only state packs, and explicit checkpoint format scaffolding.
-- **Operational sync paths.** Added resumable `chain.acc` import markers, durable sync-stage checkpoints, hot/cold ledger providers, static Ledger archives, coordinated StateService commits, and continuous empty-block fast-forwarding with deterministic fallback.
+- **Operational sync paths.** Added resumable `chain.acc` import markers, durable sync-stage checkpoints, hot/cold ledger providers, static Ledger archives, coordinated StateService commits, and continuous empty-block fast-forwarding with deterministic fallback (30-50k blocks/s on the empty-block fast path).
+- **Import verification flag.** Added `--verify-import-chain` for full protocol verification during `chain.acc` import.
 - **Performance evidence.** Added release-build MainNet A/B reports, stage timing, allocation/storage metrics, and replay tooling that distinguishes end-to-end BPS from transaction-bearing and empty-block stage rates.
 
 ### Performance
