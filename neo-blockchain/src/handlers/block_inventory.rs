@@ -392,6 +392,28 @@ where
         // with a valid witness but a different hash is invalid, not a fork choice.
         self.ensure_block_matches_cached_header(index, hash)?;
 
+        // The block must *extend* the current tip, not merely sit at the next
+        // height. The height check above cannot see a wrong parent, and the
+        // cached-header check above is a no-op for locally produced blocks
+        // because no header was ever announced for them. That leaves the
+        // consensus path with nothing guarding its parent link, since it also
+        // skips witness verification below: commit signatures cover the round's
+        // agreed parent, so a header assembled against a different one is
+        // unverifiable by any peer yet persists silently here. dBFT forked this
+        // node off a private network for ~1800 blocks exactly that way.
+        //
+        // A missing tip hash (cold cache after restart, before backfill) leaves
+        // the check inert rather than rejecting, matching how
+        // `ensure_block_matches_cached_header` treats an absent header.
+        if let Some(tip_hash) = self.ledger.block_hash_at(current_height)
+            && block.prev_hash() != &tip_hash
+        {
+            return Err(CoreError::other(format!(
+                "block {index} parent {} does not extend current tip {tip_hash} at height {current_height}",
+                block.prev_hash()
+            )));
+        }
+
         // Stateless block-integrity pre-checks before persisting a peer-relayed
         // block (the structural half of C# `Block.Verify`): version, transaction
         // merkle root, and duplicate transaction hashes.
