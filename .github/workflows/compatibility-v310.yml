@@ -133,12 +133,21 @@ jobs:
         SKIP_BASELINE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_baseline
           || 'false' }}
         VECTOR_GAS_TOLERANCE: 1000000
-      # The validation can fail transiently when ALL live C#/NeoGo reference seeds
-      # are unreachable from the runner (observed flaky: mainnet lane alternates
-      # X/✓ across runs purely on seed reachability). Retry up to 3x so a
-      # network-outage red self-heals on the next attempt. The build is cached,
-      # so retries only re-run the validator script (fast). A real parity failure
-      # (vector mismatch the reconciler cannot accept) fails every attempt.
+      # The validator distinguishes two kinds of non-zero exit, and so must we:
+      #
+      #   1  a parity MISMATCH -- neo-rs disagrees with the reference. A real
+      #      failure; must go red.
+      #   75 REFERENCE-UNREACHABLE -- no live C#/NeoGo seed was reachable, so
+      #      parity was never evaluated. Says nothing about neo-rs.
+      #
+      # Retry 3x first, since reachability is often transient (the build is
+      # cached, so a retry only re-runs the validator). If all three attempts
+      # still come back 75, the runner simply has no route to the seeds -- GitHub
+      # runners are frequently blocked by them. Reporting that as a build failure
+      # is what left this workflow red for ten consecutive runs, which in turn
+      # means an actual mismatch would have been indistinguishable from the
+      # ambient red. So 75 surfaces as a loud warning and leaves the lane green;
+      # anything else still fails.
       run: |
         if [ "$TARGET_NETWORK" != "all" ] && [ "$TARGET_NETWORK" != "${{ matrix.network }}" ]; then
           echo "Skipping matrix lane '${{ matrix.network }}' for requested network '$TARGET_NETWORK'"
@@ -160,6 +169,19 @@ jobs:
           fi
           [ "$attempt" -lt 3 ] && sleep 15
         done
+
+        if [ "$rc" -eq 75 ]; then
+          msg="${{ matrix.network }}: parity NOT EVALUATED -- no C#/NeoGo reference seed reachable from this runner after 3 attempts. This is not a parity result."
+          echo "::warning title=v3.10.1 consistency not evaluated::$msg"
+          {
+            echo "### :warning: ${{ matrix.network }} consistency not evaluated"
+            echo
+            echo "No live C#/NeoGo reference seed was reachable from the runner after 3 attempts,"
+            echo "so parity was never compared. This is **not** a mismatch, and **not** evidence"
+            echo "of parity either. A genuine mismatch exits 1 and fails this lane."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
         exit "$rc"
     - name: Upload consistency artifacts
       if: always()
