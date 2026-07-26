@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.13.1] - 2026-07-26
+
+Three defects found immediately after tagging v0.13.0, two of them by fixing the
+CI signal that had been hiding them.
+
+### Fixed
+- **TestNet block time was MainNet's.** The built-in TestNet preset carried
+  `milliseconds_per_block: 15_000`, copied from MainNet and from C#
+  `ProtocolSettings.Default`; live T5 seeds report `3000`. Because the built-in
+  chain rejects a `[blockchain].block_time` that disagrees with it, the wrong
+  preset made the *correct* value illegal, and the v3.10.1 consistency harness
+  died on every run before comparing anything — so the TestNet lane has never
+  actually evaluated parity. Four shipped configs carried 15000 as well and are
+  corrected. Two tests agreed with the bug instead of the chain (the TestNet JSON
+  fixture and the shipped-local-config assertion), the same failure mode as the
+  MainNet `max_transactions_per_block` 200/512 fix: assertions reverse-engineered
+  from Rust rather than from the reference. Every other TestNet field was verified
+  equal to the live seed, including all seven hardfork heights.
+- **All three fuzz targets failed to build.** `fuzz/` sits outside the workspace,
+  so `cargo update --workspace` never touched it and its path dependencies stayed
+  pinned at `version = "0.11.1"` through two version bumps, leaving cargo unable
+  to satisfy `neo-io = "^0.11.1"`. The pins only matter when publishing and the
+  crate is `publish = false`, so they are removed rather than re-bumped.
+- **Unformatted code on `main`.** `cargo fmt --all --check` failed on three files,
+  meaning the pre-flight gate was skipped when they landed. Note that `cargo fmt
+  --all` needs two passes to converge on `neo-node/src/node/config.rs`.
+
+### Changed
+- **CI reports unevaluated parity as unevaluated.** The v3.10.1 consistency
+  validator returns 1 for a mismatch and 75 for `REFERENCE-UNREACHABLE`, but the
+  workflow collapsed both into red. GitHub runners are routinely blocked by the
+  public Neo seeds, so the lane sat red for ten consecutive runs — every one exit
+  75, zero mismatches. The cost was not the red but that a genuine mismatch would
+  have been indistinguishable from it; the TestNet defect above surfaced within
+  one run of fixing this. 75 now emits a warning annotation and leaves the lane
+  green; a mismatch still fails.
+- The release pre-flight now covers the three crates outside the workspace
+  (`fuzz`, `neo-gui`, `benchmarks/bench-client`), which every `--workspace`
+  command silently skips.
+
 ## [0.13.0] - 2026-07-26
 
 Closes the two things v0.12.0 left open: a block that does not extend the tip
