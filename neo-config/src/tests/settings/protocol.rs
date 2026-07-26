@@ -152,7 +152,7 @@ fn load_testnet_json_matches_neo_node_v3101_protocol_configuration() {
         "ProtocolConfiguration": {
             "Network": 894710606,
             "AddressVersion": 53,
-            "MillisecondsPerBlock": 15000,
+            "MillisecondsPerBlock": 3000,
             "MaxTransactionsPerBlock": 5000,
             "MemoryPoolMaxTransactions": 50000,
             "MaxTraceableBlocks": 2102400,
@@ -220,6 +220,7 @@ fn mainnet_preset_matches_neo_n3_v3101_protocol_limits() {
     let settings = ProtocolSettings::mainnet();
 
     assert_eq!(settings.network, constants::MAINNET_MAGIC);
+    assert_eq!(settings.milliseconds_per_block, 15_000);
     assert_eq!(
         settings.max_transactions_per_block,
         constants::MAX_TRANSACTIONS_PER_BLOCK as u32
@@ -245,6 +246,10 @@ fn testnet_preset_matches_neo_n3_v3101_protocol_limits() {
 
     assert_eq!(settings.network, constants::TESTNET_MAGIC);
     assert_eq!(settings.max_transactions_per_block, 5_000);
+    // TestNet is the one N3 chain that does not run at 15s. Live seeds report
+    // `"msperblock": 3000`; this preset carried the MainNet 15000 until the
+    // v3.10.1 consistency harness was rejected for supplying the true value.
+    assert_eq!(settings.milliseconds_per_block, 3_000);
     assert_eq!(
         settings.hardforks.activation_height(Hardfork::HfFaun),
         Some(12_960_000)

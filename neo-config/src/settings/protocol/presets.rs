@@ -146,7 +146,12 @@ impl ProtocolSettings {
                 "seed4t5.neo.org:20333".to_string(),
                 "seed5t5.neo.org:20333".to_string(),
             ],
-            milliseconds_per_block: 15_000,
+            // TestNet T5 runs at 3s, not the 15s of MainNet and of C#
+            // `ProtocolSettings.Default`. Live seeds report
+            // `"msperblock": 3000`. This had been left at the MainNet/default
+            // 15000, which made the built-in TestNet chain reject a correct
+            // `[blockchain].block_time = 3000` as an illegal override.
+            milliseconds_per_block: 3_000,
             max_transactions_per_block: 5_000,
             max_block_size: constants::MAX_BLOCK_SIZE as u32,
             max_valid_until_block_increment: constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT,

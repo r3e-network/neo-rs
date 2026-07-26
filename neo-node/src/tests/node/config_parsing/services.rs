@@ -146,7 +146,10 @@ fn shipped_local_config_selects_canonical_testnet_identity() {
     assert_eq!(settings.network, 0x3554_334E);
     validate_config(&config, settings.network)
         .expect("local config must satisfy canonical TestNet rules");
-    assert_eq!(settings.milliseconds_per_block, 15_000);
+    // TestNet T5 runs at 3s. This asserted MainNet's 15000 while the TestNet
+    // preset carried the same wrong value, so the pair agreed with each other
+    // and not with the chain.
+    assert_eq!(settings.milliseconds_per_block, 3_000);
     assert!(settings.max_transactions_per_block > 0);
 }
 

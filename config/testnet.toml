@@ -96,5 +96,5 @@ max_file_size = "50MB"
 max_files = 5
 
 [blockchain]
-block_time = 15000  # 15 seconds in milliseconds
+block_time = 3000  # TestNet T5 runs at 3s, unlike MainNet's 15s
 max_transactions_per_block = 5000
