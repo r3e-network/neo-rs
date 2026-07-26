@@ -1154,6 +1154,8 @@ mod block_flow;
 mod extensible_headers;
 #[path = "handlers/sync_batch.rs"]
 mod sync_batch;
+#[path = "handlers/tip_extension.rs"]
+mod tip_extension;
 #[path = "handlers/transactions.rs"]
 mod transactions;
 

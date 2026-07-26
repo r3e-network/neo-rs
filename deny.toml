@@ -25,6 +25,14 @@ ignore = ["RUSTSEC-2025-0141"]
 multiple-versions = "warn"
 # Disallow `version = "*"` style wildcard dependencies.
 wildcards = "deny"
+# ...except unversioned `{ path = "..." }` deps inside crates that are
+# `publish = false`. `neo-rs-fuzz` lives outside the workspace, so a `version`
+# pin there is not maintained by `cargo update --workspace` and silently rots:
+# it sat at 0.11.1 through two releases and made every fuzz target
+# unbuildable. The pin only has meaning when publishing, and that crate never
+# publishes. This exemption is scoped to private crates, so a real registry
+# wildcard -- or a path wildcard in anything publishable -- still fails.
+allow-wildcard-paths = true
 # Prefer the workspace dependency table over per-crate pins (advisory).
 workspace-default-features = "allow"
 

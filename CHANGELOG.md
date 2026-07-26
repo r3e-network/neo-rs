@@ -1,5 +1,44 @@
 # Changelog
 
+## [Unreleased]
+
+Follow-on from v0.13.1: the honest consistency signal kept paying out, and CI
+surfaced three more defects on the release commit itself.
+
+### Fixed
+- **Two clippy errors only the pinned CI toolchain sees.** CI pins Rust 1.89.0
+  while local development runs 1.96.0, and `collapsible_else_if` (in
+  `neo-storage/src/mdbx/store.rs`) plus `unit_cmp` (an `assert_eq!(.., ())` in the
+  data-cache tests) fire on the older one alone. `cargo clippy -- -D warnings`
+  passed locally and failed in CI for the whole v0.13.x line. Reproduced by
+  running the CI invocation under `+1.89.0`, which is now the way to check this.
+- **`cargo deny` rejected the fuzz manifest.** Dropping the stale `version` pins
+  in v0.13.1 turned those path dependencies into wildcards, which `deny.toml`
+  bans outright. `allow-wildcard-paths` is enabled instead: cargo-deny scopes it
+  to `publish = false` crates, verified by flipping the fuzz crate to
+  `publish = true` and watching the check fail again.
+- **File-size policy was stale on `main`.** The tip-extension test added in
+  v0.13.0 grew `handlers/block_flow.rs` past its frozen ceiling. Since the policy
+  records exact no-growth ceilings, the test moved to its own
+  `handlers/tip_extension.rs` module rather than raising the ceiling to match; the
+  7 lines that fix an *existing* test's parent link cannot be extracted and are
+  ratcheted.
+
+### Changed
+- **A fee-policy difference no longer reads as a parity failure.** With the
+  TestNet block time fixed, the consistency lane got far enough to run, and
+  neo-rs passed both protocol parity and the vector diff — then the lane went red
+  on the C#-vs-NeoGo baseline, where 242 of 405 vectors differed by exactly 30×.
+  Both live networks have voted `ExecFeeFactor` from the genesis default of 30
+  down to 1, while the execution-spec vectors and a genesis-state local node both
+  price opcodes at 30. So the references disagreed with the vectors *identically*
+  — the signature of a fee-policy difference, not an implementation one, and the
+  reason both summaries read 163 passed / 242 failed. The validator now reads the
+  live factor and returns a distinct status 76 (`BASELINE-NOT-COMPARABLE`), kept
+  separate from 75 (unreachable) and 1 (mismatch) so none of the three can be
+  mistaken for another. When the factor cannot be read the baseline runs
+  unchanged.
+
 ## [0.13.1] - 2026-07-26
 
 Three defects found immediately after tagging v0.13.0, two of them by fixing the

@@ -761,6 +761,46 @@ PY
   return "$rc"
 }
 
+# The execution-spec vectors price opcodes at the genesis default ExecFeeFactor.
+# A local node started at genesis carries that default, which is why the neo-rs
+# vector diff above is an apples-to-apples comparison. Live chains do not: both
+# MainNet and TestNet have voted ExecFeeFactor down to 1, so every vector that
+# reports gas differs from the model by exactly that factor ratio on a live
+# endpoint -- against C# and NeoGo alike, identically. Comparing gas across two
+# different fee policies is meaningless, so read the live factor and refuse to
+# draw a conclusion when it does not match what the vectors assume.
+readonly SPEC_VECTOR_EXEC_FEE_FACTOR=30
+readonly POLICY_CONTRACT_HASH=cc5e4edd9f5f8dba8bb65734541df7a1c081c67b
+
+live_exec_fee_factor() {
+  local rpc="$1"
+  local payload
+  payload="$(printf '{"jsonrpc":"2.0","id":1,"method":"invokefunction","params":["%s","getExecFeeFactor",[]]}' \
+    "$POLICY_CONTRACT_HASH")"
+
+  local response
+  response="$(curl --compressed -sS --max-time 15 -H 'Content-Type: application/json' \
+    -d "$payload" "$rpc" 2>/dev/null || true)"
+  [[ -z "$response" ]] && return 0
+
+  RESPONSE="$response" python3 - <<'PY' || true
+import json
+import os
+
+try:
+    result = json.loads(os.environ["RESPONSE"])["result"]
+except (json.JSONDecodeError, KeyError, TypeError):
+    raise SystemExit(0)
+
+if result.get("state") != "HALT":
+    raise SystemExit(0)
+stack = result.get("stack") or []
+if len(stack) != 1 or stack[0].get("type") != "Integer":
+    raise SystemExit(0)
+print(stack[0].get("value", ""))
+PY
+}
+
 run_baseline_compat() {
   local network="$1"
   local network_dir="$2"
@@ -770,6 +810,13 @@ run_baseline_compat() {
   local neogo_candidates="$6"
   local expected_network="$7"
   local expected_msperblock="$8"
+
+  local live_factor
+  live_factor="$(live_exec_fee_factor "$csharp_rpc")"
+  if [[ -n "$live_factor" && "$live_factor" != "$SPEC_VECTOR_EXEC_FEE_FACTOR" ]]; then
+    echo "[$network] BASELINE-NOT-COMPARABLE: live ExecFeeFactor is $live_factor but the execution-spec vectors price opcodes at $SPEC_VECTOR_EXEC_FEE_FACTOR (the genesis default). Every gas figure would differ by that ratio against C# and NeoGo alike, so the C#-vs-NeoGo baseline was not evaluated. This says nothing about neo-rs: the neo-rs vector diff above ran against a genesis-state local node, which does use $SPEC_VECTOR_EXEC_FEE_FACTOR." >&2
+    return "$V310_BASELINE_NOT_COMPARABLE_EXIT"
+  fi
 
   echo "[$network] running baseline C# vs NeoGo compatibility"
 

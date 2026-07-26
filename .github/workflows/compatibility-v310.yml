@@ -167,6 +167,10 @@ jobs:
             rc=$?
             echo "attempt $attempt failed (rc=$rc)" >&2
           fi
+          # 76 is a deterministic property of the live chain's fee policy, not a
+          # flaky endpoint. Retrying re-runs the whole vector suite for the same
+          # answer, so stop here.
+          [ "$rc" -eq 76 ] && break
           [ "$attempt" -lt 3 ] && sleep 15
         done
 
@@ -179,6 +183,22 @@ jobs:
             echo "No live C#/NeoGo reference seed was reachable from the runner after 3 attempts,"
             echo "so parity was never compared. This is **not** a mismatch, and **not** evidence"
             echo "of parity either. A genuine mismatch exits 1 and fails this lane."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+
+        if [ "$rc" -eq 76 ]; then
+          msg="${{ matrix.network }}: neo-rs parity checks passed; the C#-vs-NeoGo baseline was NOT EVALUATED because the live chain's ExecFeeFactor differs from the value the execution-spec vectors price opcodes at."
+          echo "::warning title=v3.10.1 baseline not comparable::$msg"
+          {
+            echo "### :warning: ${{ matrix.network }} baseline not comparable"
+            echo
+            echo "The neo-rs protocol-parity and vector-diff checks ran and passed. Only the"
+            echo "C#-vs-NeoGo baseline cross-check was skipped: the execution-spec vectors price"
+            echo "opcodes at the genesis default \`ExecFeeFactor\`, and both live networks have"
+            echo "voted theirs to a different value. Every gas figure would then differ by that"
+            echo "ratio against C# and NeoGo *identically*, which is a fee-policy difference"
+            echo "rather than an implementation one. A genuine mismatch exits 1 and fails this lane."
           } >> "$GITHUB_STEP_SUMMARY"
           exit 0
         fi

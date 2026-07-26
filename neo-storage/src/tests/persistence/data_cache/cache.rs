@@ -531,7 +531,10 @@ fn atomic_merge_holds_exclusive_lock_across_validation_and_publication() {
     );
 
     release_sender.send(()).expect("release validation");
-    assert_eq!(merge_thread.join().expect("merge thread").unwrap(), ());
+    merge_thread
+        .join()
+        .expect("merge thread")
+        .expect("merge must succeed once validation is released");
     writer_done_receiver
         .recv_timeout(Duration::from_secs(1))
         .expect("writer completed after publication");

@@ -1590,17 +1590,14 @@ where
                 let elapsed_ns = write_started.elapsed().as_nanos();
                 if exact_measurement {
                     cursor_write_exact_ns = cursor_write_exact_ns.saturating_add(elapsed_ns);
-                } else {
-                    if let Some(previous_sample_ns) =
-                        pending_cursor_write_sample_ns.replace(elapsed_ns)
-                    {
-                        cursor_write_weighted_ns = cursor_write_weighted_ns.saturating_add(
-                            previous_sample_ns
-                                .saturating_mul(u128::from(CURSOR_WRITE_SAMPLE_INTERVAL)),
-                        );
-                        cursor_write_weighted_entries = cursor_write_weighted_entries
-                            .saturating_add(CURSOR_WRITE_SAMPLE_INTERVAL);
-                    }
+                } else if let Some(previous_sample_ns) =
+                    pending_cursor_write_sample_ns.replace(elapsed_ns)
+                {
+                    cursor_write_weighted_ns = cursor_write_weighted_ns.saturating_add(
+                        previous_sample_ns.saturating_mul(u128::from(CURSOR_WRITE_SAMPLE_INTERVAL)),
+                    );
+                    cursor_write_weighted_entries =
+                        cursor_write_weighted_entries.saturating_add(CURSOR_WRITE_SAMPLE_INTERVAL);
                 }
             }
         };
