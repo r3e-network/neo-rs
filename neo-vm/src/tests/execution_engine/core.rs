@@ -481,6 +481,72 @@ mod execution_engine_tests {
         }
     }
 
+    /// `ENDTRY`, `ENDTRY_L` and `ENDFINALLY` whose jump target lands *exactly* at
+    /// `script.len()` must HALT, not fault. This is the one place the two
+    /// reference implementations disagree: C# v3.10.1 treats a target equal to
+    /// the script length as a normal end of execution, while NeoGo rejects it
+    /// with "instruction offset is out of range". C# is the reference.
+    ///
+    /// Scripts and expected stacks are the execution-spec vectors
+    /// `TRY_no_exception`, `TRY_with_throw_catch`, `TRY_L_no_exception` and
+    /// `TRY_finally_no_exception`, each confirmed against live TestNet C#
+    /// (`invokescript` -> HALT) and live NeoGo (-> FAULT) on 2026-07-26.
+    ///
+    /// A target *beyond* the script end stays an error in both, which
+    /// `endtry_target_beyond_script_end` covers.
+    #[test]
+    fn end_try_target_at_exact_script_end_halts_like_csharp() {
+        for (name, hex_script, expected) in [
+            ("TRY_no_exception", "3b0700002a3d05103d00", vec![42i64]),
+            (
+                "TRY_with_throw_catch",
+                "3b0b000c036572723a3d074500633d02",
+                vec![99],
+            ),
+            (
+                "TRY_L_no_exception",
+                "3c1000000000000000002a3e0b000000103e05000000",
+                vec![42],
+            ),
+            ("TRY_finally_no_exception", "3b0006113d04123f", vec![1, 2]),
+        ] {
+            let script_bytes: Vec<u8> = (0..hex_script.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex_script[i..i + 2], 16).expect("hex byte"))
+                .collect();
+
+            let mut engine = ExecutionEngine::<()>::new(None);
+            engine
+                .load_script(Script::new_relaxed(script_bytes), -1, 0)
+                .unwrap_or_else(|e| panic!("{name}: load script: {e:?}"));
+
+            assert_eq!(
+                engine.execute(),
+                VMState::HALT,
+                "{name}: a jump target at exactly script.len() must halt, as C# does"
+            );
+
+            // The result stack reads top-down, so compare against the reverse of
+            // the vector's bottom-up expectation.
+            let observed: Vec<num_bigint::BigInt> = (0..engine.result_stack().len())
+                .map(|i| {
+                    engine
+                        .result_stack()
+                        .peek(i)
+                        .unwrap_or_else(|e| panic!("{name}: stack item {i}: {e:?}"))
+                        .as_int()
+                        .unwrap_or_else(|e| panic!("{name}: item {i} as int: {e:?}"))
+                })
+                .collect();
+            let want: Vec<num_bigint::BigInt> = expected
+                .iter()
+                .rev()
+                .map(|v| num_bigint::BigInt::from(*v))
+                .collect();
+            assert_eq!(observed, want, "{name}: result stack");
+        }
+    }
+
     #[test]
     fn pickitem_struct_out_of_range_is_catchable() {
         let mut engine = ExecutionEngine::<()>::new(None);
