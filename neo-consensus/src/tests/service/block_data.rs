@@ -47,9 +47,7 @@ async fn assemble_block_builds_header_and_multisig_witness() {
         )),
     };
 
-    let block = data
-        .assemble_block(Vec::new())
-        .expect("assemble");
+    let block = data.assemble_block(Vec::new()).expect("assemble");
 
     // Header fields carried through from the committed consensus data.
     assert_eq!(block.header.index(), 1);
@@ -118,9 +116,7 @@ async fn assemble_block_uses_committed_next_consensus_address() {
         next_consensus: committed_next_consensus,
     };
 
-    let block = data
-        .assemble_block(Vec::new())
-        .expect("assemble");
+    let block = data.assemble_block(Vec::new()).expect("assemble");
 
     assert_eq!(*block.header.next_consensus(), committed_next_consensus);
     assert_eq!(

@@ -321,7 +321,8 @@ async fn committed_block_data_carries_the_rounds_agreed_parent() {
         .assemble_block(Vec::new())
         .expect("assemble committed block");
     assert_eq!(
-        *block.header.prev_hash(), parent,
+        *block.header.prev_hash(),
+        parent,
         "assembled header must chain to the agreed parent"
     );
     assert_eq!(

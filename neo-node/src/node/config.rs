@@ -612,23 +612,26 @@ pub(super) fn load_config(
             .as_deref()
             .map_or(Ok(NetworkType::MainNet), |value| {
                 value.parse::<NetworkType>().map_err(|error| {
-                    anyhow::anyhow!(
-                        "invalid [network].network_type: {error}; expected MainNet, TestNet or Private"
-                    )
-                })
+                anyhow::anyhow!(
+                    "invalid [network].network_type: {error}; expected MainNet, TestNet or Private"
+                )
+            })
             })?;
     let chain_spec = match network_type {
         NetworkType::Private => {
-            let protocol_config =
-                config.network.protocol_config.as_deref().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "[network].network_type = \"Private\" requires \
+            let protocol_config = config.network.protocol_config.as_deref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "[network].network_type = \"Private\" requires \
                          [network].protocol_config, the path to a C# \
                          ProtocolConfiguration document; private chains have no \
                          built-in identity"
-                    )
-                })?;
-            let name = config.network.chain_name.as_deref().unwrap_or("neo-private");
+                )
+            })?;
+            let name = config
+                .network
+                .chain_name
+                .as_deref()
+                .unwrap_or("neo-private");
             Arc::new(private_chain::load_private_chain_spec(
                 name,
                 protocol_config,
