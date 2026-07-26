@@ -1,0 +1,52 @@
+{
+  "checkpoint_stages": [
+    {
+      "command": "scripts/checkpoint-on-height.sh none --once --height 11493112",
+      "height": 11493112,
+      "label": "base-h11493112",
+      "stage": "base",
+      "verified_against_reference": true,
+      "verified_stateroot_root": "0xb2e1e6c40aa1eebe87e42d9e6bed5e567772ae2cd0252513cac32d683961f87d"
+    },
+    {
+      "command": "scripts/checkpoint-on-height.sh none --once --height 11494611",
+      "height": 11494611,
+      "label": "mid-h11494611",
+      "stage": "mid"
+    },
+    {
+      "command": "scripts/checkpoint-on-height.sh none --once --height 11496111",
+      "height": 11496111,
+      "label": "latest-h11496111",
+      "stage": "latest",
+      "verified_against_reference": true,
+      "verified_stateroot_root": "0x93d65e77d7e65515a8495ede4661de63fe50618a727479eb5ce4672c078b894e"
+    }
+  ],
+  "elapsed_seconds": 194.86299085617065,
+  "last_validated_block": 11496111,
+  "local_block_count": 11562709,
+  "local_state_height": 11831355,
+  "local_url": "http://127.0.0.1:42333/",
+  "local_validated_height": 11831355,
+  "match_percentage": 100.0,
+  "next_block": 11496112,
+  "rate_per_second": 15.395432384666183,
+  "recent_errors": [],
+  "recent_mismatches": [],
+  "reference_urls": [
+    "http://seed1.neo.org:10332/",
+    "http://seed2.neo.org:10332/",
+    "http://seed3.neo.org:10332/",
+    "http://seed4.neo.org:10332/",
+    "http://seed5.neo.org:10332/"
+  ],
+  "start_block": 11493112,
+  "status": "PASS",
+  "target_stop_at": null,
+  "timestamp": "2026-07-26T10:02:12+08:00",
+  "total_compared": 3000,
+  "total_errors": 0,
+  "total_matched": 3000,
+  "total_mismatched": 0
+}
