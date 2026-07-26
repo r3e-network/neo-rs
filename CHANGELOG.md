@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.13.0] - 2026-07-26
+
+Closes the two things v0.12.0 left open: a block that does not extend the tip
+could still be accepted at import, and the full-archive StateRoot parity claim
+had been retracted without being re-established. Both are resolved here.
 
 ### Fixed
 - **Blocks that do not extend the tip are rejected at import.** The persist path
@@ -20,6 +24,35 @@
   tip, and killing neo-rs makes the other three view-change past its primary
   slots before it rejoins and converges. View change is a dBFT path replay never
   exercises.
+- **Full-archive MainNet StateRoot parity, actually compared.** v0.12.0 retracted
+  this claim because the run it cited had been launched with `--stateroot false`
+  and computed no roots at all. A StateRoot-enabled genesis→11,492,708 replay did
+  exist — built across 229 node invocations, every one logging
+  `stateroot_enabled: true`, zero MPT apply failures throughout — and had simply
+  never been compared to a reference. It now is: **114,932 heights at stride 100
+  across the whole range, zero mismatches, zero errors**, against roots fetched
+  from the C# public MainNet seeds.
+
+  The comparison is guarded against being vacuous. Eight arbitrary non-stride
+  heights match individually; the node answering ran with `max_connections = 0`
+  and `getconnectioncount` of 0, so no root could have been peer-relayed to it;
+  `findstates` → `getproof` → `verifyproof` confirm a materialized local trie
+  rather than a recorded number; block hashes match at four heights including
+  genesis and the archive tip; and the reference ladder itself is corroborated at
+  14 sampled heights by a second operator. Root at h=11,492,708 is
+  `0xd2e265ac1a6ef96071d54e6f471e97a43aff21a8b600d0ef4f75fb70e80a14de`.
+
+  Past the archive tip, the same database was synced over P2P to the live MainNet
+  tip (matching the seeds exactly at 11,831,664) and that segment is compared
+  **per block**, not sampled — 71,000 consecutive blocks and still advancing at
+  release time, zero mismatches — because live sync is the path archive import
+  never exercises.
+
+  Evidence and method in `reports/stateroot-parity/`; `docs/MAINNET_VALIDATION.md`
+  rewritten from it. Two new tools: `scripts/fetch-reference-stateroots-strided.py`
+  (the existing downloader fetches every height, untenable over 11.49M) and
+  `scripts/compare-local-roots-against-reference.py` (reports the lowest diverging
+  height, which is where a divergence investigation starts).
 
 ## [0.12.0] - 2026-07-25
 
