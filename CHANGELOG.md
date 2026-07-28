@@ -2,8 +2,57 @@
 
 ## [Unreleased]
 
-Follow-on from v0.13.1: the honest consistency signal kept paying out, and CI
-surfaced three more defects on the release commit itself.
+## [0.14.0] - 2026-07-29
+
+Follow-on from v0.13.1: the honest consistency signal kept paying out, CI
+surfaced three more defects on the release commit itself, and a review of the
+storage layer found two real defects in `StorageKey` — one of them a comparator
+that disagreed with equality.
+
+### Fixed
+- **`StorageKey`'s comparator disagreed with its own equality.** `Ord` derived
+  order from the optional `cache` field while `PartialEq` and `Hash` use
+  `(id, key)`. `from_bytes` accepts fewer than four bytes and then caches the
+  input verbatim with no contract-ID prefix, so for those keys the two
+  disagreed: `from_bytes(&[1, 2])` and `new(0, vec![1, 2])` are equal but did not
+  compare `Equal`. A `BTreeSet` with an inconsistent comparator can silently lose
+  or duplicate entries, and `DataCache::change_set` is exactly such a set — its
+  ordering feeds MPT insertion and therefore the state root. `Ord` now reads the
+  same `(id, key)` fields as `Eq`, which makes the agreement structural rather
+  than incidental, and removing the `cache` branch dropped the two helpers that
+  existed only to serve it. Unreachable in practice today, since every real
+  storage key is at least four bytes; the regression test is pinned through a
+  `BTreeSet` and was verified to fail against the previous comparator.
+- **`StorageKey::Ord` allocated twice per comparison on the write path.** `cmp`
+  called `as_bytes()`, which only borrows when `cache` is populated — and the
+  write path never populates it, so every `System.Storage.Put` and native
+  contract write compared through two fresh heap buffers. At a 1k-entry change
+  set that is roughly 20 allocations per storage write. Comparison is now
+  allocation-free: 19.8 ns to 2.25 ns, and a 20k-key `BTreeSet` insert from
+  769 ns/op to 114 ns/op. Ordering was proven byte-identical to the old
+  materialized compare over 111,556 pairs with identical sort order, then
+  confirmed on chain data — see below.
+- **`StorageKey::length()` was off by one when uncached.** It returned
+  `PREFIX_LENGTH + key.len()` (five plus the suffix) but `cache.len()` (four plus
+  the suffix) when cached, giving two answers for the same key. C# `Build()`
+  allocates `sizeof(int) + Key.Length` and the suffix already carries its own
+  prefix byte. The only callers are size accounting in the unwired
+  `optimistic_execution` staging area, so no consensus surface was affected. The
+  test that covered this asserted the buggy value and was corrected with the
+  derivation recorded alongside it.
+
+### Verified
+- **StateRoot parity on chain data for the storage comparator change.** Because
+  the change alters the ordering that feeds MPT insertion, unit-level evidence
+  was not sufficient. Replayed 200,001 MainNet blocks from a local `chain.acc`
+  into an isolated database with StateRoot enabled, then compared every
+  stride-100 reference root against the C# reference set: **2001 of 2001
+  byte-identical, 0 mismatches, 0 unavailable.** Parity above height 200,000 is
+  not established by this run. Two process notes worth keeping: the release
+  binary predated the commit under test and had to be rebuilt first, and the node
+  refuses to start with `state_service.enabled = true` unless `--stateroot true`
+  is passed explicitly — a run without it produces no MPT attempts and no
+  evidence.
 
 ### Fixed
 - **Two clippy errors only the pinned CI toolchain sees.** CI pins Rust 1.89.0
@@ -38,6 +87,34 @@ surfaced three more defects on the release commit itself.
   separate from 75 (unreachable) and 1 (mismatch) so none of the three can be
   mistaken for another. When the factor cannot be read the baseline runs
   unchanged.
+- **`StackItem::ByteString` is now backed by `Arc<[u8]>`.** `ByteString` is
+  immutable by definition in Neo, so sharing its allocation is unobservable, and
+  cloning it happens on every `DUP`, slot load, `peek`, and argument pass —
+  effectively per opcode. A clone is now a refcount bump rather than a buffer
+  copy. `Buffer`, the mutable counterpart, keeps its own copy, which is why
+  `SUBSTR`, `LEFT`, and `RIGHT` still allocate: they return `Buffer`. A new
+  `into_byte_string` is the allocation-free counterpart to `into_bytes`, which
+  now copies rather than moves because an `Arc<[u8]>` cannot be unwrapped into a
+  `Vec` even at refcount 1 — the payload is unsized. Every other edit is
+  mechanical and value-preserving; no VM semantics change. **This is not a
+  claimed throughput win.** The clone is a flat 9 ns at any size, which beats
+  copying large buffers but runs roughly 3 ns slower below ~512 B, and small
+  payloads dominate real execution where 20- and 32-byte hashes are everywhere.
+  No StateRoot-enabled replay has been run against it, so it lands on the
+  correctness and clarity argument, not a performance one.
+- **`ENDTRY` at the exact end of a script is pinned to C#, not NeoGo.** The
+  v3.10.1 consistency run found five vectors where the two reference
+  implementations disagree with *each other*, all the same case: `ENDTRY`,
+  `ENDTRY_L`, or `ENDFINALLY` whose jump target lands at exactly `script.len()`.
+  Live C# v3.10.1 HALTs, live NeoGo FAULTs with "instruction offset is out of
+  range" — identical scripts, gas, and final stacks, differing only in VM state.
+  C# is the reference, so NeoGo is wrong here. neo-rs already matched C#, which
+  is why it passed a vector suite both references failed, but nothing pinned it:
+  a regression toward NeoGo's reading would have surfaced only in a live
+  consistency run against a reachable C# seed. Now asserted directly. A target
+  *beyond* the script end remains an error — the boundary is at, not past, the
+  final byte. Expected stacks were confirmed by `invokescript` against
+  seed1t5.neo.org and rpc.t5.n3.nspcc.ru on 2026-07-26.
 
 ## [0.13.1] - 2026-07-26
 
