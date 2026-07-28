@@ -351,6 +351,45 @@ fn storage_key_length_matches_materialized_bytes() {
     }
 }
 
+/// `Ord` must agree with `Eq`: whenever two keys are equal they must compare
+/// `Equal`, or a `BTreeSet` can silently lose or duplicate entries.
+///
+/// `from_bytes` accepts fewer than four bytes and then caches the input verbatim
+/// with no contract-ID prefix, so a comparator that ordered by the cached bytes
+/// disagreed with `Eq` for those keys. Ordering by `(id, key)` — the same fields
+/// `Eq` and `Hash` use — makes the contract structural.
+#[test]
+fn storage_key_ord_agrees_with_eq_for_short_from_bytes_keys() {
+    for raw in [
+        [].as_slice(),
+        [0x01].as_slice(),
+        [0x01, 0x02].as_slice(),
+        [0x01, 0x02, 0x03].as_slice(),
+    ] {
+        let from_raw = StorageKey::from_bytes(raw);
+        let constructed = StorageKey::new(0, raw.to_vec());
+        assert_eq!(
+            from_raw, constructed,
+            "from_bytes({raw:?}) and new(0, {raw:?}) must be equal"
+        );
+        assert_eq!(
+            from_raw.cmp(&constructed),
+            std::cmp::Ordering::Equal,
+            "equal keys must compare Equal for raw {raw:?}"
+        );
+        assert_eq!(constructed.cmp(&from_raw), std::cmp::Ordering::Equal);
+
+        // The Eq/Ord agreement must hold through a BTreeSet, which is where the
+        // inconsistency would actually corrupt the change set.
+        let mut set = std::collections::BTreeSet::new();
+        set.insert(from_raw.clone());
+        set.insert(constructed.clone());
+        assert_eq!(set.len(), 1, "equal keys must dedupe in a BTreeSet");
+        assert!(set.contains(&from_raw));
+        assert!(set.contains(&constructed));
+    }
+}
+
 /// `Ord` must be antisymmetric and transitive for `BTreeSet`/`BTreeMap` to
 /// behave, since `change_set` ordering feeds MPT insertion and therefore the
 /// state root.

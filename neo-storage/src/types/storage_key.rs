@@ -240,92 +240,27 @@ impl PartialOrd for StorageKey {
     }
 }
 
-/// Lexicographically compares two byte sequences that are each supplied as two
-/// contiguous segments, without materializing either concatenation.
-///
-/// `StorageKey` ordering is defined over the full key bytes, which are either
-/// the populated `cache` or `id.to_le_bytes() ++ key`. Comparing the segments in
-/// place keeps `Ord` allocation-free on the write path, where every
-/// `change_set` insert performs `O(log n)` comparisons.
-fn cmp_segments(
-    left_head: &[u8],
-    left_tail: &[u8],
-    right_head: &[u8],
-    right_tail: &[u8],
-) -> std::cmp::Ordering {
-    use std::cmp::Ordering;
-
-    let mut left = left_head;
-    let mut left_rest = left_tail;
-    let mut right = right_head;
-    let mut right_rest = right_tail;
-
-    loop {
-        if left.is_empty() {
-            left = std::mem::take(&mut left_rest);
-            if left.is_empty() {
-                return if right.is_empty() && right_rest.is_empty() {
-                    Ordering::Equal
-                } else {
-                    Ordering::Less
-                };
-            }
-        }
-        if right.is_empty() {
-            right = std::mem::take(&mut right_rest);
-            if right.is_empty() {
-                return Ordering::Greater;
-            }
-        }
-
-        let shared = left.len().min(right.len());
-        match left[..shared].cmp(&right[..shared]) {
-            Ordering::Equal => {
-                left = &left[shared..];
-                right = &right[shared..];
-            }
-            non_equal => return non_equal,
-        }
-    }
-}
-
-impl StorageKey {
-    /// Returns the full key bytes as at most two contiguous segments.
-    ///
-    /// `prefix` is scratch space owned by the caller so the little-endian
-    /// contract ID can be compared without a heap allocation.
-    #[inline]
-    fn key_segments<'a>(&'a self, prefix: &'a mut [u8; 4]) -> (&'a [u8], &'a [u8]) {
-        match self.cache {
-            Some(ref cache) => (cache.as_slice(), &[]),
-            None => {
-                *prefix = self.id.to_le_bytes();
-                (prefix.as_slice(), self.key.as_slice())
-            }
-        }
-    }
-}
-
 impl Ord for StorageKey {
+    /// Orders by the full key bytes (`id.to_le_bytes() ++ key`) without
+    /// materializing them, by comparing the same `(id, key)` fields that
+    /// [`PartialEq`] and [`Hash`](std::hash::Hash) use.
+    ///
+    /// Comparing the four little-endian ID bytes lexicographically is exactly an
+    /// unsigned big-endian compare of that encoding, so this is byte-identical
+    /// to comparing `as_bytes()` for every well-formed key while staying
+    /// allocation-free — which matters because each `change_set` insert performs
+    /// `O(log n)` comparisons on the storage write path.
+    ///
+    /// Deriving the order from `(id, key)` rather than from the optional `cache`
+    /// is what keeps `Ord` consistent with `Eq`. [`Self::from_bytes`] accepts
+    /// fewer than four bytes, and in that case caches the input verbatim with no
+    /// ID prefix; ordering by `cache` then disagreed with `Eq` — for example
+    /// `from_bytes(&[1, 2])` and `new(0, vec![1, 2])` are equal but compared
+    /// `Greater` — which can make a `BTreeSet` lose or duplicate entries.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Fast path for the write path's dominant shape: both keys built by a
-        // `new`/`create_*` constructor, so neither caches full bytes. The full
-        // key is `id.to_le_bytes() ++ key`, and comparing those four ID bytes
-        // lexicographically is exactly an unsigned big-endian compare of the
-        // little-endian ID encoding.
-        if let (None, None) = (&self.cache, &other.cache) {
-            let left_id = u32::from_be_bytes(self.id.to_le_bytes());
-            let right_id = u32::from_be_bytes(other.id.to_le_bytes());
-            return left_id
-                .cmp(&right_id)
-                .then_with(|| self.key.as_slice().cmp(other.key.as_slice()));
-        }
-
-        let mut left_prefix = [0u8; 4];
-        let mut right_prefix = [0u8; 4];
-        let (left_head, left_tail) = self.key_segments(&mut left_prefix);
-        let (right_head, right_tail) = other.key_segments(&mut right_prefix);
-        cmp_segments(left_head, left_tail, right_head, right_tail)
+        u32::from_be_bytes(self.id.to_le_bytes())
+            .cmp(&u32::from_be_bytes(other.id.to_le_bytes()))
+            .then_with(|| self.key.as_slice().cmp(other.key.as_slice()))
     }
 }
 
