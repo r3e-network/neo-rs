@@ -165,7 +165,11 @@ fn test_storage_key_suffix() {
 #[test]
 fn test_storage_key_length() {
     let key = StorageKey::new(-1, vec![0x01, 0x02, 0x03]);
-    assert_eq!(key.length(), 8);
+    // C# `StorageKey.Length` returns `Build().Length`, and `Build()` allocates
+    // `sizeof(int) + Key.Length`. The suffix carries its own prefix byte, so a
+    // 3-byte suffix is 4 + 3 = 7, not `PREFIX_LENGTH + 3`.
+    assert_eq!(key.length(), 7);
+    assert_eq!(key.length(), key.as_bytes().len());
 }
 
 #[test]
@@ -252,4 +256,143 @@ fn test_serde_storage_key() {
     let deserialized: StorageKey = serde_json::from_str(&serialized).unwrap();
     assert_eq!(key.id, deserialized.id);
     assert_eq!(key.key, deserialized.key);
+}
+
+/// `Ord` is allocation-free but must stay byte-identical to comparing the
+/// materialized full keys, which is what C# `DataCache.Seek` does via
+/// `ByteArrayComparer.SequenceCompareTo` over `p.Key.ToArray()`.
+///
+/// The corpus deliberately mixes both construction paths so cached keys
+/// (`from_bytes`, taken by MDBX/`StoreCache` reads) are compared against
+/// uncached keys (`new`/`create_*`, produced by `Storage.Put` and native
+/// writes). `change_set` holds both shapes in one `BTreeSet`.
+#[test]
+fn storage_key_ord_is_byte_identical_to_materialized_compare() {
+    fn materialized_cmp(a: &StorageKey, b: &StorageKey) -> std::cmp::Ordering {
+        a.as_bytes().as_ref().cmp(b.as_bytes().as_ref())
+    }
+
+    let mut seed = 0x2545_F491_4F6C_DD1D_u64;
+    let mut next = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed
+    };
+
+    let ids = [0, 1, 2, 77, 255, 256, -1, -2, -4, i32::MAX, i32::MIN];
+    let mut keys = Vec::new();
+    for id in ids {
+        for len in 0_usize..10 {
+            let suffix: Vec<u8> = (0..len)
+                .map(|i| ((next() >> (i % 8)) & 0xFF) as u8)
+                .collect();
+            // Uncached: the write-path shape.
+            keys.push(StorageKey::new(id, suffix.clone()));
+            keys.push(StorageKey::create_with_bytes(id, 0x0B, &suffix));
+            // Cached: the read-path shape (`from_bytes` populates `cache`).
+            let mut raw = id.to_le_bytes().to_vec();
+            raw.extend_from_slice(&suffix);
+            keys.push(StorageKey::from_bytes(&raw));
+        }
+    }
+
+    for left in &keys {
+        for right in &keys {
+            assert_eq!(
+                left.cmp(right),
+                materialized_cmp(left, right),
+                "ordering diverged for {:?} vs {:?}",
+                left.as_bytes(),
+                right.as_bytes()
+            );
+        }
+    }
+
+    let mut fast = keys.clone();
+    fast.sort();
+    let mut materialized = keys;
+    materialized.sort_by(materialized_cmp);
+    assert_eq!(
+        fast.iter().map(StorageKey::to_array).collect::<Vec<_>>(),
+        materialized
+            .iter()
+            .map(StorageKey::to_array)
+            .collect::<Vec<_>>(),
+        "sorted change-set order must not depend on which keys cache full bytes"
+    );
+}
+
+/// `length()` must equal the materialized key length regardless of whether the
+/// key caches its full bytes, matching C# `StorageKey.Length` (which always
+/// builds `id ++ key`). The suffix already contains any leading prefix byte.
+#[test]
+fn storage_key_length_matches_materialized_bytes() {
+    let cases = [
+        StorageKey::new(0, vec![]),
+        StorageKey::new(-1, vec![0x01, 0x02]),
+        StorageKey::create(77, 0x0B),
+        StorageKey::create_with_byte(77, 0x0B, 0x01),
+        StorageKey::create_with_uint160(-5, 0x14, &neo_primitives::UInt160::zero()),
+        StorageKey::from_bytes(&[77, 0, 0, 0, 0x0B, 0x01]),
+    ];
+
+    for key in &cases {
+        assert_eq!(
+            key.length(),
+            key.as_bytes().len(),
+            "length() diverged from materialized bytes for {key}"
+        );
+        assert_eq!(
+            key.length(),
+            StorageKey::new(key.id(), key.key().to_vec()).length(),
+            "length() must not depend on whether full bytes are cached for {key}"
+        );
+    }
+}
+
+/// `Ord` must be antisymmetric and transitive for `BTreeSet`/`BTreeMap` to
+/// behave, since `change_set` ordering feeds MPT insertion and therefore the
+/// state root.
+#[test]
+fn storage_key_ord_is_a_total_order() {
+    let keys = [
+        StorageKey::new(0, vec![]),
+        StorageKey::new(0, vec![0x00]),
+        StorageKey::new(0, vec![0xFF]),
+        StorageKey::new(1, vec![0x00]),
+        StorageKey::new(-1, vec![0x00]),
+        StorageKey::new(i32::MIN, vec![0x01]),
+        StorageKey::new(i32::MAX, vec![0x01]),
+        StorageKey::create_with_byte(77, 0x0B, 0x01),
+        StorageKey::from_bytes(&[77, 0, 0, 0, 0x0B, 0x01]),
+    ];
+
+    for left in &keys {
+        for right in &keys {
+            assert_eq!(
+                left.cmp(right).reverse(),
+                right.cmp(left),
+                "antisymmetry violated"
+            );
+            if left == right {
+                assert_eq!(
+                    left.cmp(right),
+                    std::cmp::Ordering::Equal,
+                    "equal keys must compare Equal"
+                );
+            }
+            for mid in &keys {
+                if left.cmp(mid) == std::cmp::Ordering::Less
+                    && mid.cmp(right) == std::cmp::Ordering::Less
+                {
+                    assert_eq!(
+                        left.cmp(right),
+                        std::cmp::Ordering::Less,
+                        "transitivity violated"
+                    );
+                }
+            }
+        }
+    }
 }
