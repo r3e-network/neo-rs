@@ -28,14 +28,14 @@ fn contract_abi_projects_to_neo_vm_stack_item() {
     let left = abi.to_stack_item();
     let right = StackItem::from_struct(vec![
         StackItem::from_array(vec![StackItem::from_struct(vec![
-            StackItem::ByteString(b"main".to_vec()),
+            StackItem::from_byte_string(b"main".to_vec()),
             StackItem::from_array(Vec::new()),
             StackItem::from_i64(ContractParameterType::Void as u8 as i64),
             StackItem::from_i64(7),
             StackItem::Boolean(true),
         ])]),
         StackItem::from_array(vec![StackItem::from_struct(vec![
-            StackItem::ByteString(b"Notify".to_vec()),
+            StackItem::from_byte_string(b"Notify".to_vec()),
             StackItem::from_array(Vec::new()),
         ])]),
     ]);

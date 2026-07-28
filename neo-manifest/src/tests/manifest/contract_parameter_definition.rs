@@ -13,7 +13,7 @@ fn parameter_definition_projects_to_neo_vm_stack_item() {
 
     let left = definition.to_stack_item();
     let right = StackItem::from_struct(vec![
-        StackItem::ByteString(b"owner".to_vec()),
+        StackItem::from_byte_string(b"owner".to_vec()),
         StackItem::from_i64(ContractParameterType::Hash160 as u8 as i64),
     ]);
     assert!(
@@ -28,7 +28,7 @@ fn parameter_definition_reads_from_neo_vm_stack_item() {
 
     definition
         .from_stack_item(StackItem::from_struct(vec![
-            StackItem::ByteString(b"flag".to_vec()),
+            StackItem::from_byte_string(b"flag".to_vec()),
             StackItem::from_i64(ContractParameterType::Boolean as u8 as i64),
         ]))
         .unwrap();
@@ -46,7 +46,7 @@ fn parameter_definition_rejects_invalid_stack_fields_like_csharp() {
     assert!(
         definition
             .from_stack_item(StackItem::from_struct(vec![
-                StackItem::ByteString(b"changed".to_vec()),
+                StackItem::from_byte_string(b"changed".to_vec()),
                 StackItem::from_i64(0x7f),
             ]))
             .is_err()
@@ -62,7 +62,7 @@ fn parameter_definition_rejects_invalid_stack_fields_like_csharp() {
     assert!(
         definition
             .from_stack_item(StackItem::from_struct(vec![
-                StackItem::ByteString(vec![0xff]),
+                StackItem::from_byte_string(vec![0xff]),
                 StackItem::from_i64(ContractParameterType::Boolean as u8 as i64),
             ]))
             .is_err()
@@ -70,7 +70,7 @@ fn parameter_definition_rejects_invalid_stack_fields_like_csharp() {
     assert!(
         definition
             .from_stack_item(StackItem::from_struct(vec![
-                StackItem::ByteString(b"changed".to_vec()),
+                StackItem::from_byte_string(b"changed".to_vec()),
                 StackItem::from_i64(-1),
             ]))
             .is_err()

@@ -15,10 +15,10 @@ fn contract_permission_projects_to_neo_vm_stack_item() {
 
     let left = permission.to_stack_item();
     let right = StackItem::from_struct(vec![
-        StackItem::ByteString(hash.to_bytes()),
+        StackItem::from_byte_string(hash.to_bytes()),
         StackItem::from_array(vec![
-            StackItem::ByteString(b"transfer".to_vec()),
-            StackItem::ByteString(b"balanceOf".to_vec()),
+            StackItem::from_byte_string(b"transfer".to_vec()),
+            StackItem::from_byte_string(b"balanceOf".to_vec()),
         ]),
     ]);
     assert!(
@@ -34,8 +34,8 @@ fn contract_permission_reads_from_neo_vm_stack_item() {
 
     permission
         .from_stack_item(StackItem::from_struct(vec![
-            StackItem::ByteString(hash.to_bytes()),
-            StackItem::from_array(vec![StackItem::ByteString(b"mint".to_vec())]),
+            StackItem::from_byte_string(hash.to_bytes()),
+            StackItem::from_array(vec![StackItem::from_byte_string(b"mint".to_vec())]),
         ]))
         .unwrap();
 

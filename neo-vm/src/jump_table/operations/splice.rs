@@ -39,7 +39,7 @@ fn span_bytes(item: StackItem) -> VmResult<Vec<u8>> {
         StackItem::Boolean(value) => Ok(vec![u8::from(value)]),
         StackItem::Integer(value) if value.is_zero() => Ok(Vec::new()),
         StackItem::Integer(value) => Ok(value.to_signed_bytes_le()),
-        StackItem::ByteString(bytes) => Ok(bytes),
+        StackItem::ByteString(bytes) => Ok(bytes.to_vec()),
         StackItem::Buffer(buffer) => Ok(buffer.data()),
         _ => Err(VmError::invalid_type_simple(
             "Stack item does not expose byte memory",

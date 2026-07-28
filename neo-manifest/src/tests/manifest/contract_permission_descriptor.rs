@@ -21,11 +21,11 @@ fn permission_descriptor_projects_to_neo_vm_stack_item() {
     );
     assert_eq!(
         ContractPermissionDescriptor::create_hash(hash).to_stack_item(),
-        StackItem::ByteString(hash.to_bytes())
+        StackItem::from_byte_string(hash.to_bytes())
     );
     assert_eq!(
         ContractPermissionDescriptor::create_group(group).to_stack_item(),
-        StackItem::ByteString(group_bytes)
+        StackItem::from_byte_string(group_bytes)
     );
 }
 
@@ -40,8 +40,10 @@ fn permission_descriptor_reads_from_neo_vm_stack_item() {
         ContractPermissionDescriptor::Wildcard
     );
     assert_eq!(
-        ContractPermissionDescriptor::from_stack_item(&StackItem::ByteString(hash.to_bytes()))
-            .unwrap(),
+        ContractPermissionDescriptor::from_stack_item(&StackItem::from_byte_string(
+            hash.to_bytes()
+        ))
+        .unwrap(),
         ContractPermissionDescriptor::Hash(hash)
     );
     assert_eq!(
@@ -54,10 +56,11 @@ fn permission_descriptor_reads_from_neo_vm_stack_item() {
 #[test]
 fn permission_descriptor_rejects_invalid_stack_byte_lengths_like_csharp() {
     assert!(
-        ContractPermissionDescriptor::from_stack_item(&StackItem::ByteString(Vec::new())).is_err()
+        ContractPermissionDescriptor::from_stack_item(&StackItem::from_byte_string(Vec::new()))
+            .is_err()
     );
     assert!(
-        ContractPermissionDescriptor::from_stack_item(&StackItem::ByteString(b"*".to_vec()))
+        ContractPermissionDescriptor::from_stack_item(&StackItem::from_byte_string(b"*".to_vec()))
             .is_err()
     );
 }
@@ -102,7 +105,9 @@ fn permission_descriptor_rejects_non_secp256r1_stack_group_like_csharp() {
     let k1_group = Secp256k1Crypto::derive_public_key(&private_key).expect("secp256k1 public key");
 
     assert!(
-        ContractPermissionDescriptor::from_stack_item(&StackItem::ByteString(k1_group.to_vec()))
-            .is_err()
+        ContractPermissionDescriptor::from_stack_item(&StackItem::from_byte_string(
+            k1_group.to_vec()
+        ))
+        .is_err()
     );
 }

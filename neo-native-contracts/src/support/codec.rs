@@ -162,7 +162,7 @@ impl<'a> StructDecoder<'a> {
             .get(i)
             .ok_or_else(|| CoreError::invalid_data(format!("{} {} missing", self.label, field)))?;
         match v {
-            StackItem::ByteString(bytes) => Ok(bytes.clone()),
+            StackItem::ByteString(bytes) => Ok(bytes.to_vec()),
             StackItem::Buffer(buffer) => Ok(buffer.data()),
             _ => Err(CoreError::invalid_data(format!(
                 "{} {}: expected byte-like value",

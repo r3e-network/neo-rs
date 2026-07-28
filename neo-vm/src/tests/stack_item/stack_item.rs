@@ -312,7 +312,7 @@ mod buffer_bytestring_equal_tests {
     fn buffer_never_equals_bytestring() {
         // In C# Neo VM, Buffer uses reference equality (compound type).
         // Buffer == ByteString is always false, even with same content.
-        let bs = StackItem::ByteString(vec![0x01]);
+        let bs = StackItem::from_byte_string(vec![0x01]);
         let buf = StackItem::Buffer(BufferItem::new(vec![0x01]));
         assert!(
             !bs.equals(&buf).unwrap(),

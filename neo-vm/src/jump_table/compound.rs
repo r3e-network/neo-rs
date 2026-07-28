@@ -98,7 +98,7 @@ fn primitive_memory(value: &StackItem) -> VmResult<Vec<u8>> {
     match value {
         StackItem::Boolean(value) => Ok(vec![u8::from(*value)]),
         StackItem::Integer(value) => Ok(integer_memory(value)),
-        StackItem::ByteString(bytes) => Ok(bytes.clone()),
+        StackItem::ByteString(bytes) => Ok(bytes.to_vec()),
         _ => Err(VmError::invalid_type_simple("Expected PrimitiveType")),
     }
 }

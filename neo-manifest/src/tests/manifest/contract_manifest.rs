@@ -94,7 +94,7 @@ fn contract_manifest_projects_to_stack_item() {
     };
     let items = structure.items();
 
-    assert_eq!(items[0], StackItem::ByteString(b"sample".to_vec()));
+    assert_eq!(items[0], StackItem::from_byte_string(b"sample".to_vec()));
     let expected_groups = StackItem::from_array(Vec::new());
     assert!(
         stack_item_struct_eq(&items[1], &expected_groups),
@@ -108,7 +108,8 @@ fn contract_manifest_projects_to_stack_item() {
         features.is_empty(),
         "C# ContractManifest.ToStackItem always emits an empty features map"
     );
-    let expected_standards = StackItem::from_array(vec![StackItem::ByteString(b"NEP-17".to_vec())]);
+    let expected_standards =
+        StackItem::from_array(vec![StackItem::from_byte_string(b"NEP-17".to_vec())]);
     assert!(
         stack_item_struct_eq(&items[3], &expected_standards),
         "structural StackItem mismatch: {:?} vs {expected_standards:?}",
@@ -268,8 +269,8 @@ fn contract_manifest_rejects_non_empty_features_stack_item_like_csharp() {
     let source = ContractManifest::new("sample".to_string());
     let mut items = stack_items_from_manifest(&source);
     items[2] = StackItem::from_map(vec![(
-        StackItem::ByteString(b"feature".to_vec()),
-        StackItem::ByteString(b"{}".to_vec()),
+        StackItem::from_byte_string(b"feature".to_vec()),
+        StackItem::from_byte_string(b"{}".to_vec()),
     )]);
 
     assert!(
@@ -296,18 +297,18 @@ fn contract_manifest_rejects_malformed_stack_fields_like_csharp() {
         items[1] = StackItem::from_array(vec![StackItem::Null]);
     });
     assert_rejected(|items| {
-        items[3] = StackItem::from_array(vec![StackItem::ByteString(vec![0xff])]);
+        items[3] = StackItem::from_array(vec![StackItem::from_byte_string(vec![0xff])]);
     });
     assert_rejected(|items| {
         items[3] = StackItem::from_array(vec![StackItem::Null]);
     });
     assert_rejected(|items| {
-        items[6] = StackItem::from_array(vec![StackItem::ByteString(vec![1, 2, 3])]);
+        items[6] = StackItem::from_array(vec![StackItem::from_byte_string(vec![1, 2, 3])]);
     });
     assert_rejected(|items| {
         items[7] = StackItem::Null;
     });
     assert_rejected(|items| {
-        items[7] = StackItem::ByteString(b"[]".to_vec());
+        items[7] = StackItem::from_byte_string(b"[]".to_vec());
     });
 }

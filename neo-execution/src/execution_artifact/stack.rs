@@ -320,7 +320,7 @@ impl CanonicalGraphBuilder {
             }
             StackItem::ByteString(bytes) => {
                 self.retain_bytes(bytes.len())?;
-                Ok(CanonicalStackValue::ByteString(bytes.clone()))
+                Ok(CanonicalStackValue::ByteString(bytes.to_vec()))
             }
             StackItem::Buffer(buffer) => {
                 let (id, fresh) = self.reserve_node(RuntimeIdentity::Buffer(buffer.id()))?;

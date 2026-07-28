@@ -311,7 +311,7 @@ where
 
         let token_id = if state_items.len() == 4 {
             match &state_items[3] {
-                StackItem::ByteString(bytes) => Some(bytes.clone()),
+                StackItem::ByteString(bytes) => Some(bytes.to_vec()),
                 _ => None,
             }
         } else {

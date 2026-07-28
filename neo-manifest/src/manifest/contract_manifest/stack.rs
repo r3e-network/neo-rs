@@ -201,7 +201,7 @@ impl ContractManifest {
 
 fn byte_like_data(item: &StackItem, field: &str) -> Result<Vec<u8>, CoreError> {
     match item {
-        StackItem::ByteString(bytes) => Ok(bytes.clone()),
+        StackItem::ByteString(bytes) => Ok(bytes.to_vec()),
         StackItem::Buffer(buffer) => Ok(buffer.data()),
         _ => Err(CoreError::invalid_format(format!(
             "{field} must be ByteString"

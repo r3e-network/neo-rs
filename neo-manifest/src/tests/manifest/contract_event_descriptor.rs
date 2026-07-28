@@ -23,14 +23,14 @@ fn event_descriptor_projects_to_neo_vm_stack_item() {
 
     let left = event.to_stack_item();
     let right = StackItem::from_struct(vec![
-        StackItem::ByteString(b"Transfer".to_vec()),
+        StackItem::from_byte_string(b"Transfer".to_vec()),
         StackItem::from_array(vec![
             StackItem::from_struct(vec![
-                StackItem::ByteString(b"from".to_vec()),
+                StackItem::from_byte_string(b"from".to_vec()),
                 StackItem::from_i64(ContractParameterType::Hash160 as u8 as i64),
             ]),
             StackItem::from_struct(vec![
-                StackItem::ByteString(b"amount".to_vec()),
+                StackItem::from_byte_string(b"amount".to_vec()),
                 StackItem::from_i64(ContractParameterType::Integer as u8 as i64),
             ]),
         ]),
@@ -47,9 +47,9 @@ fn event_descriptor_reads_from_neo_vm_stack_item() {
 
     event
         .from_stack_item(StackItem::from_struct(vec![
-            StackItem::ByteString(b"Approval".to_vec()),
+            StackItem::from_byte_string(b"Approval".to_vec()),
             StackItem::from_array(vec![StackItem::from_struct(vec![
-                StackItem::ByteString(b"spender".to_vec()),
+                StackItem::from_byte_string(b"spender".to_vec()),
                 StackItem::from_i64(ContractParameterType::Hash160 as u8 as i64),
             ])]),
         ]))
@@ -69,9 +69,9 @@ fn event_descriptor_rejects_struct_parameter_sequence_like_csharp() {
     assert!(
         event
             .from_stack_item(StackItem::from_struct(vec![
-                StackItem::ByteString(b"Vote".to_vec()),
+                StackItem::from_byte_string(b"Vote".to_vec()),
                 StackItem::from_struct(vec![StackItem::from_struct(vec![
-                    StackItem::ByteString(b"candidate".to_vec()),
+                    StackItem::from_byte_string(b"candidate".to_vec()),
                     StackItem::from_i64(ContractParameterType::PublicKey as u8 as i64),
                 ])]),
             ]))
@@ -94,7 +94,7 @@ fn event_descriptor_rejects_invalid_name_like_csharp() {
     assert!(
         event
             .from_stack_item(StackItem::from_struct(vec![
-                StackItem::ByteString(vec![0xff]),
+                StackItem::from_byte_string(vec![0xff]),
                 StackItem::from_array(Vec::new()),
             ]))
             .is_err()

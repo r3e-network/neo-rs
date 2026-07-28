@@ -58,7 +58,7 @@ fn stack_item_to_bigint(value: &StackItem) -> Result<num_bigint::BigInt, CoreErr
 
 fn stack_item_to_bytes(value: &StackItem) -> Option<Vec<u8>> {
     match value {
-        StackItem::ByteString(bytes) => Some(bytes.clone()),
+        StackItem::ByteString(bytes) => Some(bytes.to_vec()),
         StackItem::Buffer(buffer) => Some(buffer.data()),
         _ => None,
     }

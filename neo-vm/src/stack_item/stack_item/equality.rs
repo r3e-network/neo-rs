@@ -71,7 +71,7 @@ fn byte_string_size_eq_with_budget(
                     b.len()
                 )));
             }
-            Ok(a == b.as_slice())
+            Ok(a == &b[..])
         }
         // C# `other is not ByteString b` → return false (comparedSize stays 1).
         _ => Ok(false),

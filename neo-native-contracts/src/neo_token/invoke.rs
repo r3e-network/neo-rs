@@ -384,7 +384,7 @@ impl NeoToken {
         let data = args.get(2).map(Vec::as_slice).unwrap_or(&[]);
         let item = crate::support::codec::decode_stack_item(data, "NeoToken::onNEP17Payment data")?;
         let pubkey_bytes = match item {
-            StackItem::ByteString(bytes) => bytes,
+            StackItem::ByteString(bytes) => bytes.to_vec(),
             StackItem::Buffer(buffer) => buffer.data(),
             _ => {
                 return Err(CoreError::invalid_operation(

@@ -19,8 +19,8 @@ fn string_list_projects_to_neo_vm_byte_string_array() {
 
     let left = container.to_stack_item();
     let right = StackItem::from_array(vec![
-        StackItem::ByteString(b"transfer".to_vec()),
-        StackItem::ByteString(b"balanceOf".to_vec()),
+        StackItem::from_byte_string(b"transfer".to_vec()),
+        StackItem::from_byte_string(b"balanceOf".to_vec()),
     ]);
     assert!(
         stack_item_struct_eq(&left, &right),
@@ -49,8 +49,8 @@ fn string_wildcard_reads_from_neo_vm_null() {
 fn string_list_reads_from_neo_vm_array() {
     assert_eq!(
         WildCardContainer::<String>::from_stack_item(&StackItem::from_array(vec![
-            StackItem::ByteString(b"mint".to_vec()),
-            StackItem::ByteString(b"burn".to_vec()),
+            StackItem::from_byte_string(b"mint".to_vec()),
+            StackItem::from_byte_string(b"burn".to_vec()),
         ]))
         .unwrap(),
         WildCardContainer::create(vec!["mint".to_string(), "burn".into()])
@@ -61,8 +61,8 @@ fn string_list_reads_from_neo_vm_array() {
 fn string_list_rejects_struct_and_invalid_strings_like_csharp() {
     assert!(
         WildCardContainer::<String>::from_stack_item(&StackItem::from_struct(vec![
-            StackItem::ByteString(b"verify".to_vec()),
-            StackItem::ByteString(b"onNEP17Payment".to_vec()),
+            StackItem::from_byte_string(b"verify".to_vec()),
+            StackItem::from_byte_string(b"onNEP17Payment".to_vec()),
         ]))
         .is_err()
     );
@@ -72,7 +72,7 @@ fn string_list_rejects_struct_and_invalid_strings_like_csharp() {
     );
     assert!(
         WildCardContainer::<String>::from_stack_item(&StackItem::from_array(vec![
-            StackItem::ByteString(vec![0xff])
+            StackItem::from_byte_string(vec![0xff])
         ]))
         .is_err()
     );

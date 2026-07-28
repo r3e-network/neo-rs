@@ -410,7 +410,7 @@ fn clone_stack_item_as_immutable(
         StackItem::Integer(value) => Ok(StackItem::Integer(value.clone())),
         StackItem::ByteString(bytes) => Ok(StackItem::ByteString(bytes.clone())),
         // Immutable clone (C# DeepCopy asImmutable=true): Buffer collapses to ByteString.
-        StackItem::Buffer(buffer) => Ok(StackItem::ByteString(buffer.data())),
+        StackItem::Buffer(buffer) => Ok(StackItem::ByteString(std::sync::Arc::from(buffer.data()))),
         StackItem::Pointer(pointer) => Ok(StackItem::Pointer(pointer.clone())),
         StackItem::InteropInterface(interface) => {
             Ok(StackItem::InteropInterface(interface.clone()))

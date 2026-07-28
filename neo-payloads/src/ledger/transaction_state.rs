@@ -108,7 +108,7 @@ impl TransactionState {
         }
 
         let tx_bytes = match &items[1] {
-            StackItem::ByteString(bytes) => bytes.clone(),
+            StackItem::ByteString(bytes) => bytes.to_vec(),
             StackItem::Buffer(buffer) => buffer.data(),
             _ => {
                 return Err(CoreError::invalid_data(

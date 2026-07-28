@@ -12,7 +12,7 @@ pub(super) fn deserialize_stack_item(bytes: &[u8]) -> Result<StackItem> {
 
 pub(super) fn stack_item_bytes(item: &StackItem) -> Option<Vec<u8>> {
     match item {
-        StackItem::ByteString(bytes) => Some(bytes.clone()),
+        StackItem::ByteString(bytes) => Some(bytes.to_vec()),
         StackItem::Buffer(buffer) => Some(buffer.data()),
         _ => None,
     }

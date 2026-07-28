@@ -134,7 +134,7 @@ fn encode_node_list_sorts_and_round_trips() {
     let expected_value = StackItem::from_array(
         expected
             .iter()
-            .map(|point| StackItem::ByteString(point.to_bytes()))
+            .map(|point| StackItem::from_byte_string(point.to_bytes()))
             .collect(),
     );
     let expected_encoded = BinarySerializer::serialize_default(&expected_value)
@@ -154,8 +154,8 @@ fn node_list_interoperable_projection_matches_csharp_shape() {
     let nodes = vec![a.clone(), b.clone()];
     let state = NodeList::new(nodes.clone());
     let expected_value = StackItem::from_array(vec![
-        StackItem::ByteString(a.to_bytes()),
-        StackItem::ByteString(b.to_bytes()),
+        StackItem::from_byte_string(a.to_bytes()),
+        StackItem::from_byte_string(b.to_bytes()),
     ]);
 
     let trait_value = Interoperable::to_stack_item(&state).unwrap();
@@ -248,11 +248,10 @@ fn designation_backward_seek_picks_most_recent() {
     );
 
     // Designate the Oracle role at index 10 (a 1-element node list).
-    let list =
-        BinarySerializer::serialize_default(&StackItem::from_array(vec![StackItem::ByteString(
-            point.to_bytes(),
-        )]))
-        .unwrap();
+    let list = BinarySerializer::serialize_default(&StackItem::from_array(vec![
+        StackItem::from_byte_string(point.to_bytes()),
+    ]))
+    .unwrap();
     cache.add(
         RoleManagement::designation_key(Role::Oracle.as_byte(), 10),
         StorageItem::from_bytes(list),

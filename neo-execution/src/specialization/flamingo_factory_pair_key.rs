@@ -168,9 +168,9 @@ pub fn try_flamingo_pair_key(
     // most significant byte without allocating BigInts.
     let lower_first = token_a.iter().rev().cmp(token_b.iter().rev()).is_lt();
     let (lower, higher) = if lower_first {
-        (token_a.as_slice(), token_b.as_slice())
+        (&token_a[..], &token_b[..])
     } else {
-        (token_b.as_slice(), token_a.as_slice())
+        (&token_b[..], &token_a[..])
     };
     let mut result = Vec::with_capacity(41);
     result.push(0xFF);

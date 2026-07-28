@@ -218,7 +218,7 @@ impl StackItemShape {
         match (&self.constraint, item) {
             (StackItemConstraint::Any, _) => true,
             (StackItemConstraint::ExactBytes(expected), StackItem::ByteString(actual)) => {
-                expected.as_ref() == actual.as_slice()
+                expected.as_ref() == &actual[..]
             }
             (StackItemConstraint::ExactBytes(expected), StackItem::Buffer(actual)) => {
                 actual.with_data(|bytes| bytes == expected.as_ref())

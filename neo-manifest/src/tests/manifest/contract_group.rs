@@ -21,8 +21,8 @@ fn contract_group_projects_to_neo_vm_stack_item() {
 
     let left = group.to_stack_item();
     let right = StackItem::from_struct(vec![
-        StackItem::ByteString(pub_key_bytes),
-        StackItem::ByteString(vec![0xAB; 64]),
+        StackItem::from_byte_string(pub_key_bytes),
+        StackItem::from_byte_string(vec![0xAB; 64]),
     ]);
     assert!(
         stack_item_struct_eq(&left, &right),
@@ -36,8 +36,8 @@ fn contract_group_reads_from_neo_vm_stack_item() {
     let pub_key_bytes = group.pub_key.encode_point(true).expect("compressed key");
 
     let decoded = ContractGroup::try_from_stack_item(&StackItem::from_struct(vec![
-        StackItem::ByteString(pub_key_bytes),
-        StackItem::ByteString(vec![0xCD; 64]),
+        StackItem::from_byte_string(pub_key_bytes),
+        StackItem::from_byte_string(vec![0xCD; 64]),
     ]))
     .unwrap();
 

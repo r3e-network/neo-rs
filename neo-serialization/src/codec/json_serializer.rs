@@ -123,7 +123,7 @@ impl JsonSerializer {
                 // strict from_utf8 (mirroring the map-key path) instead of the lossy
                 // decode, so an invalid-UTF-8 value cannot succeed here while a C#
                 // node faults — a StdLib.jsonSerialize state divergence.
-                let string = String::from_utf8(bytes.clone())
+                let string = String::from_utf8(bytes.to_vec())
                     .map_err(|_| CoreError::other("Invalid UTF-8 in byte string"))?;
                 Ok(JsonValue::String(string))
             }
@@ -190,7 +190,7 @@ impl JsonSerializer {
         let mut result = JsonMap::new();
         for (key, value) in map.iter() {
             let key_bytes = match &key {
-                StackItem::ByteString(bytes) => bytes.clone(),
+                StackItem::ByteString(bytes) => bytes.to_vec(),
                 StackItem::Buffer(buffer) => buffer.data(),
                 _ => return Err(CoreError::other("Map key must be a byte string")),
             };

@@ -124,7 +124,14 @@ pub enum StackItem {
     Integer(VmInteger),
 
     /// Represents an immutable byte string.
-    ByteString(Vec<u8>),
+    ///
+    /// Held behind an `Arc` so that cloning is a refcount bump rather than a
+    /// buffer copy. `ByteString` is immutable by definition in Neo, so sharing
+    /// the allocation is unobservable — and cloning happens on every `DUP`,
+    /// slot load, `peek`, and argument pass, i.e. per opcode. The mutable
+    /// counterpart (`Buffer`) keeps its own copy, which is why `SUBSTR`/`LEFT`/
+    /// `RIGHT` still allocate: they return `Buffer`, not `ByteString`.
+    ByteString(Arc<[u8]>),
 
     /// Represents a mutable byte buffer.
     Buffer(BufferItem),
@@ -187,8 +194,12 @@ impl StackItem {
     }
 
     /// Creates a byte string stack item.
+    ///
+    /// Accepts anything convertible into a shared byte buffer, so callers that
+    /// already hold an `Arc<[u8]>` (e.g. a cached instruction operand) pay only
+    /// a refcount bump instead of a copy.
     #[inline]
-    pub fn from_byte_string<T: Into<Vec<u8>>>(value: T) -> Self {
+    pub fn from_byte_string<T: Into<Arc<[u8]>>>(value: T) -> Self {
         Self::ByteString(value.into())
     }
 
@@ -395,14 +406,19 @@ impl StackItem {
             Self::Integer(value) => Ok(value
                 .to_i64()
                 .map_or_else(|| value.to_signed_bytes_le(), crate::encode_integer)),
-            Self::ByteString(bytes) => Ok(bytes.clone()),
+            Self::ByteString(bytes) => Ok(bytes.to_vec()),
             Self::Buffer(buffer) => Ok(buffer.data()),
             _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
         }
     }
 
-    /// Consuming version of `as_bytes` — moves the Vec out of ByteString
-    /// instead of cloning. Use when the StackItem is already owned (e.g., after `pop()`).
+    /// Consuming version of `as_bytes`. Use when the StackItem is already owned
+    /// (e.g. after `pop()`).
+    ///
+    /// Since `ByteString` now shares its buffer, this copies rather than moves:
+    /// an `Arc<[u8]>` cannot be unwrapped into a `Vec` even at refcount 1
+    /// because the payload is unsized. Prefer [`into_byte_string`](Self::into_byte_string)
+    /// when a shared buffer is acceptable — it stays allocation-free.
     #[inline]
     pub fn into_bytes(self) -> VmResult<Vec<u8>> {
         match self {
@@ -411,9 +427,22 @@ impl StackItem {
             Self::Integer(value) => Ok(value
                 .to_i64()
                 .map_or_else(|| value.to_signed_bytes_le(), crate::encode_integer)),
-            Self::ByteString(bytes) => Ok(bytes),
+            Self::ByteString(bytes) => Ok(bytes.to_vec()),
             Self::Buffer(buffer) => Ok(buffer.data()),
             _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
+        }
+    }
+
+    /// Consuming accessor that preserves buffer sharing for `ByteString`.
+    ///
+    /// This is the allocation-free counterpart to [`into_bytes`](Self::into_bytes):
+    /// a `ByteString` yields its existing `Arc` and every other convertible
+    /// variant allocates exactly once, as it would have anyway.
+    #[inline]
+    pub fn into_byte_string(self) -> VmResult<Arc<[u8]>> {
+        match self {
+            Self::ByteString(bytes) => Ok(bytes),
+            other => other.into_bytes().map(Arc::from),
         }
     }
 
@@ -426,7 +455,7 @@ impl StackItem {
     #[inline]
     pub fn as_bytes_ref(&self) -> Option<&[u8]> {
         match self {
-            Self::ByteString(b) => Some(b.as_slice()),
+            Self::ByteString(b) => Some(&b[..]),
             _ => None,
         }
     }
@@ -643,7 +672,7 @@ impl StackItem {
         match item_type {
             StackItemType::Boolean => Ok(Self::Boolean(self.as_bool()?)),
             StackItemType::Integer => Ok(Self::Integer(VmInteger::from_bigint(self.as_int()?))),
-            StackItemType::ByteString => Ok(Self::ByteString(self.as_bytes()?)),
+            StackItemType::ByteString => Ok(Self::ByteString(Arc::from(self.as_bytes()?))),
             StackItemType::Buffer => Ok(Self::Buffer(BufferItem::new(self.as_bytes()?))),
             _ => Err(VmError::invalid_type_simple(format!(
                 "Cannot convert to {item_type:?}"
@@ -688,8 +717,8 @@ impl Ord for StackItem {
             (Self::Integer(a), Self::Integer(b)) => a.cmp(b),
             (Self::ByteString(a), Self::ByteString(b)) => a.cmp(b),
             (Self::Buffer(a), Self::Buffer(b)) => a.cmp(b),
-            (Self::ByteString(a), Self::Buffer(b)) => b.with_data(|data| a.as_slice().cmp(data)),
-            (Self::Buffer(a), Self::ByteString(b)) => a.with_data(|data| data.cmp(b.as_slice())),
+            (Self::ByteString(a), Self::Buffer(b)) => b.with_data(|data| a[..].cmp(data)),
+            (Self::Buffer(a), Self::ByteString(b)) => a.with_data(|data| data.cmp(&b[..])),
             (Self::Pointer(a), Self::Pointer(b)) => a.cmp(b),
             (Self::Array(a), Self::Array(b)) => cmp_stack_item_sequences(a.iter(), b.iter()),
             (Self::Struct(a), Self::Struct(b)) => cmp_stack_item_sequences(a.iter(), b.iter()),

@@ -79,7 +79,7 @@ impl OracleRequest {
         }
         let field_bytes = |index: usize, name: &str| -> CoreResult<Vec<u8>> {
             match &items[index] {
-                StackItem::ByteString(bytes) => Ok(bytes.clone()),
+                StackItem::ByteString(bytes) => Ok(bytes.to_vec()),
                 StackItem::Buffer(buffer) => Ok(buffer.data()),
                 _ => Err(CoreError::invalid_data(format!(
                     "OracleRequest {name}: not bytes"

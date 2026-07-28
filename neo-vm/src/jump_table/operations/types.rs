@@ -25,7 +25,7 @@ fn primitive_memory(item: StackItem) -> VmResult<Vec<u8>> {
     match item {
         StackItem::Boolean(value) => Ok(vec![u8::from(value)]),
         StackItem::Integer(value) => Ok(integer_memory(&value)),
-        StackItem::ByteString(bytes) => Ok(bytes),
+        StackItem::ByteString(bytes) => Ok(bytes.to_vec()),
         StackItem::Buffer(buffer) => Ok(buffer.data()),
         other => Err(VmError::invalid_type_simple(format!(
             "Cannot convert {:?} to a byte sequence",
@@ -215,7 +215,7 @@ mod tests {
         ));
         assert!(matches!(
             convert_item(StackItem::from_bool(false), StackItemType::ByteString),
-            StackItem::ByteString(bytes) if bytes == vec![0]
+            StackItem::ByteString(bytes) if bytes[..] == [0]
         ));
     }
 

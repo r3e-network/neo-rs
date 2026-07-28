@@ -22,9 +22,9 @@ fn method_descriptor_projects_to_neo_vm_stack_item() {
 
     let left = method.to_stack_item();
     let right = StackItem::from_struct(vec![
-        StackItem::ByteString(b"balanceOf".to_vec()),
+        StackItem::from_byte_string(b"balanceOf".to_vec()),
         StackItem::from_array(vec![StackItem::from_struct(vec![
-            StackItem::ByteString(b"account".to_vec()),
+            StackItem::from_byte_string(b"account".to_vec()),
             StackItem::from_i64(ContractParameterType::Hash160 as u8 as i64),
         ])]),
         StackItem::from_i64(ContractParameterType::Integer as u8 as i64),
@@ -43,9 +43,9 @@ fn method_descriptor_reads_from_neo_vm_stack_item() {
 
     method
         .from_stack_item(StackItem::from_struct(vec![
-            StackItem::ByteString(b"symbol".to_vec()),
+            StackItem::from_byte_string(b"symbol".to_vec()),
             StackItem::from_array(vec![StackItem::from_struct(vec![
-                StackItem::ByteString(b"format".to_vec()),
+                StackItem::from_byte_string(b"format".to_vec()),
                 StackItem::from_i64(ContractParameterType::String as u8 as i64),
             ])]),
             StackItem::from_i64(ContractParameterType::String as u8 as i64),
@@ -71,9 +71,9 @@ fn method_descriptor_rejects_struct_parameter_sequence_like_csharp() {
     assert!(
         method
             .from_stack_item(StackItem::from_struct(vec![
-                StackItem::ByteString(b"verify".to_vec()),
+                StackItem::from_byte_string(b"verify".to_vec()),
                 StackItem::from_struct(vec![StackItem::from_struct(vec![
-                    StackItem::ByteString(b"signature".to_vec()),
+                    StackItem::from_byte_string(b"signature".to_vec()),
                     StackItem::from_i64(ContractParameterType::Signature as u8 as i64),
                 ])]),
                 StackItem::from_i64(ContractParameterType::Boolean as u8 as i64),
@@ -98,7 +98,7 @@ fn method_descriptor_rejects_invalid_stack_fields_like_csharp() {
     assert!(
         method
             .from_stack_item(StackItem::from_struct(vec![
-                StackItem::ByteString(b"changed".to_vec()),
+                StackItem::from_byte_string(b"changed".to_vec()),
                 StackItem::from_array(Vec::new()),
                 StackItem::from_i64(0x7f),
                 StackItem::from_i64(3),
@@ -120,7 +120,7 @@ fn method_descriptor_rejects_invalid_stack_fields_like_csharp() {
     assert!(
         method
             .from_stack_item(StackItem::from_struct(vec![
-                StackItem::ByteString(vec![0xff]),
+                StackItem::from_byte_string(vec![0xff]),
                 StackItem::from_array(Vec::new()),
                 StackItem::from_i64(ContractParameterType::Boolean as u8 as i64),
                 StackItem::from_i64(3),
@@ -131,7 +131,7 @@ fn method_descriptor_rejects_invalid_stack_fields_like_csharp() {
     assert!(
         method
             .from_stack_item(StackItem::from_struct(vec![
-                StackItem::ByteString(b"changed".to_vec()),
+                StackItem::from_byte_string(b"changed".to_vec()),
                 StackItem::from_array(Vec::new()),
                 StackItem::from_i64(ContractParameterType::Boolean as u8 as i64),
                 StackItem::from_i64(i64::MAX),

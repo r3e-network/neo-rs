@@ -466,7 +466,7 @@ fn ledger_public_return_encoders_use_stack_item_projection() {
 fn decode_transaction_state_rejects_malformed_full_record() {
     let record = BinarySerializer::serialize_default(&StackItem::from_struct(vec![
         StackItem::from_i64(7),
-        StackItem::ByteString(vec![0xff]),
+        StackItem::from_byte_string(vec![0xff]),
         StackItem::from_i64(VMState::HALT.to_byte() as i64),
     ]))
     .unwrap();
@@ -483,7 +483,7 @@ fn hash_index_state_interoperable_projection_matches_csharp_shape() {
     let hash = UInt256::from_bytes(&[0x77; 32]).unwrap();
     let state = HashIndexState::new(hash, 1234);
     let expected_value = StackItem::from_struct(vec![
-        StackItem::ByteString(hash.to_bytes()),
+        StackItem::from_byte_string(hash.to_bytes()),
         StackItem::from_i64(1234),
     ]);
 
@@ -506,7 +506,7 @@ fn hash_index_state_interoperable_projection_matches_csharp_shape() {
     assert!(HashIndexState::from_stack_item(&StackItem::from_array(Vec::new())).is_err());
     assert!(
         HashIndexState::from_stack_item(&StackItem::from_struct(vec![
-            StackItem::ByteString(vec![0x77; 31]),
+            StackItem::from_byte_string(vec![0x77; 31]),
             StackItem::from_i64(1)
         ]))
         .is_err()
