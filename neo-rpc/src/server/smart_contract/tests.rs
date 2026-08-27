@@ -22,7 +22,7 @@ use neo_core::{NeoSystem, ProtocolSettings, UInt160, WitnessScope};
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use neo_core::vm_runtime::InteropInterface as VmInteropInterface;
-use neo_vm_rs::{ExecutionEngineLimits, OpCode};
+use neo_vm::{ExecutionEngineLimits, OpCode};
 use num_bigint::BigInt;
 use serde_json::{json, Value};
 use std::sync::Arc;

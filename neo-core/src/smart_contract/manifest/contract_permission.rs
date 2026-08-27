@@ -11,7 +11,7 @@ use crate::neo_vm::StackItem;
 use crate::ECPoint;
 use crate::UInt160;
 // Removed neo_cryptography dependency - using external crypto crates directly
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 
 /// Represents a permission that a contract requires.
@@ -183,7 +183,7 @@ impl Interoperable for ContractPermission {
 mod tests {
     use super::*;
     use crate::smart_contract::interoperable::Interoperable;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     #[test]
     fn contract_permission_projects_to_neo_vm_rs_stack_value() {

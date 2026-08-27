@@ -21,8 +21,8 @@ use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{Contract, ContractParameterType, StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{Verifiable, Result as CoreResult, UInt160, UInt256, WitnessScope};
-use neo_vm_rs::ExecutionEngineLimits;
-use neo_vm_rs::OpCode;
+use neo_vm::ExecutionEngineLimits;
+use neo_vm::OpCode;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::collections::HashMap;
@@ -432,7 +432,7 @@ fn test_deposit_default() {
 /// Tests Deposit to/from StackValue conversion
 #[test]
 fn test_deposit_stack_value_roundtrip() {
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     let original = Deposit::new(BigInt::from(500), 100);
     let stack_value = original.to_stack_value();

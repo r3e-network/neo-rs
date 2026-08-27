@@ -26,8 +26,8 @@ use neo_core::smart_contract::StorageKey;
 use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{Contract, ContractParameterType};
 use neo_core::{Verifiable, UInt160};
-use neo_vm_rs::ExecutionEngineLimits;
-use neo_vm_rs::OpCode;
+use neo_vm::ExecutionEngineLimits;
+use neo_vm::OpCode;
 use num_bigint::BigInt;
 use std::sync::Arc;
 

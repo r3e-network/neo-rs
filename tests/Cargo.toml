@@ -26,7 +26,7 @@ neo-p2p = { workspace = true }
 # Layer 4 - Services
 neo-rpc = { workspace = true }
 neo-telemetry = { workspace = true }
-neo-vm-rs = { workspace = true }
+neo-vm = { workspace = true }
 
 # Utilities
 num-bigint = { workspace = true }

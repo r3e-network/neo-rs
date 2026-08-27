@@ -301,7 +301,7 @@ fn replay_block_294369_debug() {
         // and the resulting state writes would cascade through subsequent blocks.
         assert_eq!(
             vm_state,
-            neo_vm_rs::VmState::FAULT,
+            neo_vm::VmState::FAULT,
             "tx{} must FAULT (gas={gas}) — HALT means gas is under-counted",
             idx + 1,
         );

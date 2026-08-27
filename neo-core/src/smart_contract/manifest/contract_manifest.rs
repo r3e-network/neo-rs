@@ -16,7 +16,7 @@ use crate::smart_contract::manifest::{
 };
 use crate::neo_vm::StackItem;
 use crate::UInt160;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
 use std::collections::{HashMap, HashSet};
@@ -713,7 +713,7 @@ fn parse_extra_bytes(bytes: &[u8]) -> Option<Value> {
 mod manifest_extra_escape_tests {
     use super::*;
     use crate::smart_contract::Interoperable;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     /// Bug #10 regression — manifest `extra` JSON must use C# JavaScriptEncoder.Default
     /// escape semantics. serde_json's minimal RFC-8259 escape set produces wrong bytes

@@ -7,7 +7,7 @@ use crate::smart_contract::manifest::stack_value_helpers::{
 };
 use crate::smart_contract::manifest::ContractParameterDefinition;
 use crate::neo_vm::StackItem;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 
 /// Represents an event in a smart contract ABI (matches C# ContractEventDescriptor)
@@ -136,7 +136,7 @@ impl Interoperable for ContractEventDescriptor {
 mod tests {
     use super::*;
     use crate::smart_contract::ContractParameterType;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     fn parameter(name: &str, param_type: ContractParameterType) -> ContractParameterDefinition {
         ContractParameterDefinition::new(name.to_string(), param_type).unwrap()

@@ -119,7 +119,7 @@ mod tests {
     use crate::network::p2p::payloads::transaction::Transaction;
     use crate::network::p2p::payloads::witness::Witness;
     use crate::{UInt160, WitnessScope};
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
 
     fn transaction_with_script(script: Vec<u8>) -> Transaction {
         let mut tx = Transaction::new();

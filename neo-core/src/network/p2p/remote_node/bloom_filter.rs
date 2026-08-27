@@ -181,7 +181,7 @@ mod tests {
         signer::Signer, transaction::Transaction, witness::Witness,
     };
     use crate::{UInt160, WitnessScope};
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     fn endpoint() -> SocketAddr {

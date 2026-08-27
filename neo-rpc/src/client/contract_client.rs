@@ -124,7 +124,7 @@ mod tests {
     use neo_core::{ContractManifest, KeyPair};
     use neo_json::{JArray, JObject, JToken};
     use neo_primitives::UInt160;
-    use neo_vm_rs::{OpCode, StackValue};
+    use neo_vm::{OpCode, StackValue};
     use num_bigint::BigInt;
     use regex::escape;
     use reqwest::Url;

@@ -18,8 +18,8 @@ use neo_core::smart_contract::manifest::{
 use neo_core::smart_contract::TriggerType;
 use neo_core::witness::Witness;
 use neo_core::{Verifiable, UInt160, WitnessScope};
-use neo_vm_rs::OpCode;
-use neo_vm_rs::StackItemType;
+use neo_vm::OpCode;
+use neo_vm::StackItemType;
 use num_bigint::BigInt;
 use std::any::Any;
 use std::str::FromStr;

@@ -251,7 +251,7 @@ mod tests {
     use neo_core::persistence::{StorageItem, StorageKey};
     use neo_core::smart_contract::FindOptions;
     use neo_core::{NeoSystem, ProtocolSettings};
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn session_registers_and_traverses_storage_iterator() {

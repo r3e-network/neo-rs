@@ -6,7 +6,7 @@ use neo_config::ProtocolSettings;
 use neo_core::ScriptBuilder;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use regex::escape;
 use reqwest::Url;
 use std::fs;

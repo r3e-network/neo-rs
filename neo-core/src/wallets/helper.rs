@@ -39,7 +39,7 @@ use crate::{
 use neo_primitives::base58_check::{self, AddressDecodeError, Base58CheckDecodeError};
 use neo_primitives::UInt256;
 use neo_primitives::WitnessScope;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use crate::neo_vm::StackItemExt;
 use num_bigint::{BigInt, Sign};
 use rand::rngs::OsRng;
@@ -318,7 +318,7 @@ impl Helper {
         engine
             .execute()
             .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
-        if engine.state() == neo_vm_rs::VmState::FAULT {
+        if engine.state() == neo_vm::VmState::FAULT {
             return Err(WalletError::TransactionCreationFailed(
                 "Smart contract execution failed.".to_string(),
             ));
@@ -428,7 +428,7 @@ impl Helper {
             engine
                 .execute()
                 .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
-            if engine.state() == neo_vm_rs::VmState::FAULT {
+            if engine.state() == neo_vm::VmState::FAULT {
                 return Err(WalletError::TransactionCreationFailed(
                     "Smart contract execution failed.".to_string(),
                 ));

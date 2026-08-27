@@ -330,7 +330,7 @@ impl ApplicationEngine {
 
     fn apply_external_vm_result(
         &mut self,
-        result: neo_vm_rs::ExecutionResult,
+        result: neo_vm::ExecutionResult,
         instructions_executed: u64,
     ) -> VMState {
         self.vm_engine.engine_mut().instructions_executed = instructions_executed;
@@ -400,7 +400,7 @@ impl ApplicationEngine {
 }
 
 fn script_uses_application_engine_host(script: &[u8]) -> bool {
-    let instructions = match neo_vm_rs::parse_script_instructions(script) {
+    let instructions = match neo_vm::parse_script_instructions(script) {
         Ok(instructions) => instructions,
         Err(_) => return true,
     };
@@ -438,37 +438,37 @@ enum ExternalRuntimeSyscall {
 }
 
 fn external_runtime_syscall(api: u32) -> Option<ExternalRuntimeSyscall> {
-    if api == neo_vm_rs::interop_hash("System.Runtime.Platform") {
+    if api == neo_vm::interop_hash("System.Runtime.Platform") {
         Some(ExternalRuntimeSyscall::Platform)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.GetTrigger") {
+    } else if api == neo_vm::interop_hash("System.Runtime.GetTrigger") {
         Some(ExternalRuntimeSyscall::GetTrigger)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.GetNetwork") {
+    } else if api == neo_vm::interop_hash("System.Runtime.GetNetwork") {
         Some(ExternalRuntimeSyscall::GetNetwork)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.GetAddressVersion") {
+    } else if api == neo_vm::interop_hash("System.Runtime.GetAddressVersion") {
         Some(ExternalRuntimeSyscall::GetAddressVersion)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.GetTime") {
+    } else if api == neo_vm::interop_hash("System.Runtime.GetTime") {
         Some(ExternalRuntimeSyscall::GetTime)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.GetExecutingScriptHash") {
+    } else if api == neo_vm::interop_hash("System.Runtime.GetExecutingScriptHash") {
         Some(ExternalRuntimeSyscall::GetExecutingScriptHash)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.GetCallingScriptHash") {
+    } else if api == neo_vm::interop_hash("System.Runtime.GetCallingScriptHash") {
         Some(ExternalRuntimeSyscall::GetCallingScriptHash)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.GetEntryScriptHash") {
+    } else if api == neo_vm::interop_hash("System.Runtime.GetEntryScriptHash") {
         Some(ExternalRuntimeSyscall::GetEntryScriptHash)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.GetInvocationCounter") {
+    } else if api == neo_vm::interop_hash("System.Runtime.GetInvocationCounter") {
         Some(ExternalRuntimeSyscall::GetInvocationCounter)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.GasLeft") {
+    } else if api == neo_vm::interop_hash("System.Runtime.GasLeft") {
         Some(ExternalRuntimeSyscall::GasLeft)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.BurnGas") {
+    } else if api == neo_vm::interop_hash("System.Runtime.BurnGas") {
         Some(ExternalRuntimeSyscall::BurnGas)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.CheckWitness") {
+    } else if api == neo_vm::interop_hash("System.Runtime.CheckWitness") {
         Some(ExternalRuntimeSyscall::CheckWitness)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.GetRandom") {
+    } else if api == neo_vm::interop_hash("System.Runtime.GetRandom") {
         Some(ExternalRuntimeSyscall::GetRandom)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.CurrentSigners") {
+    } else if api == neo_vm::interop_hash("System.Runtime.CurrentSigners") {
         Some(ExternalRuntimeSyscall::CurrentSigners)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.GetScriptContainer") {
+    } else if api == neo_vm::interop_hash("System.Runtime.GetScriptContainer") {
         Some(ExternalRuntimeSyscall::GetScriptContainer)
-    } else if api == neo_vm_rs::interop_hash("System.Runtime.Log") {
+    } else if api == neo_vm::interop_hash("System.Runtime.Log") {
         Some(ExternalRuntimeSyscall::Log)
     } else {
         None
@@ -505,7 +505,7 @@ fn pop_vm_i64(stack: &mut Vec<VmStackValue>, syscall: &str) -> std::result::Resu
     let value = stack
         .pop()
         .ok_or_else(|| format!("{syscall} expects an argument"))?;
-    neo_vm_rs::stack_value_as_i64(&value).ok_or_else(|| {
+    neo_vm::stack_value_as_i64(&value).ok_or_else(|| {
         format!("{syscall} expects an Integer argument that fits into i64, got {value:?}")
     })
 }

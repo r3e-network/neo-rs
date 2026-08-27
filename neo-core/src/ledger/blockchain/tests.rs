@@ -37,8 +37,8 @@ mod tests {
     use crate::wallets::KeyPair;
     use crate::WitnessScope;
     use crate::{neo_io::Serializable, NeoSystem, ProtocolSettings, UInt160, UInt256};
-    use neo_vm_rs::ExecutionEngineLimits;
-    use neo_vm_rs::OpCode;
+    use neo_vm::ExecutionEngineLimits;
+    use neo_vm::OpCode;
     use num_bigint::BigInt;
     use std::sync::Arc;
     use tokio::time::{sleep, timeout, Duration};

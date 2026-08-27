@@ -16,7 +16,7 @@ use crate::smart_contract::native::{NativeContract, NativeMethod, PolicyContract
 use crate::smart_contract::StorageKey;
 use crate::neo_vm::{StackItem, StackItemExt};
 use crate::UInt160;
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
+use neo_vm::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use parking_lot::RwLock;

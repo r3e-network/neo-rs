@@ -1,5 +1,5 @@
 use neo_core::builders::WitnessBuilder;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 #[test]
 fn witness_builder_new() {

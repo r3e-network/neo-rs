@@ -10,7 +10,7 @@ use crate::panic_message;
 use crate::neo_vm::StackItem;
 use crate::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
 use crate::UInt256;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 use parking_lot::Mutex;
 use serde_json::{Map, Value};
 use std::any::Any;

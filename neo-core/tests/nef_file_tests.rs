@@ -3,7 +3,7 @@ use neo_core::smart_contract::contract_state::NefFile;
 use neo_core::smart_contract::MethodToken;
 use neo_core::smart_contract::CallFlags;
 use neo_primitives::UInt160;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 
 const NEF_MAGIC: u32 = 0x3346_454E;
 const COMPILER_LEN: usize = 64;

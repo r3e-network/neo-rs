@@ -3,7 +3,7 @@
 use crate::error::CoreError;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::network::p2p::payloads::transaction::Transaction;
-use neo_vm_rs::{StackValue, VmState as VMState};
+use neo_vm::{StackValue, VmState as VMState};
 use tracing::warn;
 
 /// State of a transaction in the ledger (matches C# TransactionState).
@@ -109,7 +109,7 @@ mod tests {
     use crate::network::p2p::payloads::{signer::Signer, transaction::Transaction};
     use crate::smart_contract::BinarySerializer;
     use crate::{UInt160, Witness, WitnessScope};
-    use neo_vm_rs::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
+    use neo_vm::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
 
     fn sample_transaction(nonce: u32, network_fee: i64) -> Transaction {
         let mut tx = Transaction::new();

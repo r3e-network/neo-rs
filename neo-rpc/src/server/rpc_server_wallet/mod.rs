@@ -26,8 +26,8 @@ use neo_core::wallets::{
     WalletAccount, WalletError, WalletResult,
 };
 use neo_core::{UInt160, WitnessScope};
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::OpCode;
+use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use serde_json::{Map, Value, json};

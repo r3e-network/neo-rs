@@ -13,7 +13,7 @@ use crate::smart_contract::LogEventArgs;
 use crate::smart_contract::ContractParameterDefinition;
 use crate::smart_contract::Interoperable;
 use crate::UInt160;
-use neo_vm_rs::StackItemType;
+use neo_vm::StackItemType;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 use std::convert::TryFrom;

@@ -2,7 +2,7 @@ use crate::error::{CoreError, CoreError as Error, CoreResult as Result};
 use crate::smart_contract::native::stack_value_numeric::{
     stack_value_to_bigint, stack_value_to_u32,
 };
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 /// Notary deposit state (matches C# Deposit in Notary).

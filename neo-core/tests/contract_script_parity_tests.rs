@@ -1,7 +1,7 @@
 use neo_core::cryptography::ECPoint;
 use neo_core::smart_contract::Contract;
 use neo_core::wallets::key_pair::KeyPair;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 fn fixed_keypair(hex_privkey_32: &str) -> KeyPair {
     let bytes = hex::decode(hex_privkey_32).expect("hex private key");
@@ -21,7 +21,7 @@ fn signature_redeem_script_matches_opcode_layout() {
     let pubkey_point = ECPoint::decode_secp256r1(&pubkey_bytes).expect("pubkey point");
     let script = Contract::create_signature_redeem_script(pubkey_point);
 
-    let syscall_hash = neo_vm_rs::interop_hash("System.Crypto.CheckSig");
+    let syscall_hash = neo_vm::interop_hash("System.Crypto.CheckSig");
     let mut expected = Vec::with_capacity(1 + 1 + 33 + 1 + 4);
     expected.push(OpCode::PUSHDATA1.byte());
     expected.push(0x21);
@@ -46,7 +46,7 @@ fn multisig_redeem_script_sorts_pubkeys_like_csharp() {
 
     let script = Contract::create_multi_sig_redeem_script(2, &keys);
 
-    let syscall_hash = neo_vm_rs::interop_hash("System.Crypto.CheckMultisig");
+    let syscall_hash = neo_vm::interop_hash("System.Crypto.CheckMultisig");
     let mut expected = Vec::with_capacity(1 + (1 + 1 + 33) * 2 + 1 + 1 + 4);
     expected.push(OpCode::PUSH2.byte());
 

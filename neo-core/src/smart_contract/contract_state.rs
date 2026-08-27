@@ -17,7 +17,7 @@ use crate::neo_vm::StackItem;
 use crate::UInt160;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
-use neo_vm_rs::{OpCode, StackValue};
+use neo_vm::{OpCode, StackValue};
 use num_traits::ToPrimitive;
 use serde_json::{json, Value};
 
@@ -387,7 +387,7 @@ impl Serializable for NefFile {
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        use neo_vm_rs::ExecutionEngineLimits;
+        use neo_vm::ExecutionEngineLimits;
 
         writer.write_u32(Self::MAGIC)?;
 
@@ -446,7 +446,7 @@ impl Serializable for NefFile {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        use neo_vm_rs::ExecutionEngineLimits;
+        use neo_vm::ExecutionEngineLimits;
 
         let start_position = reader.position();
 
@@ -513,7 +513,7 @@ impl Serializable for NefFile {
 mod tests {
     use super::*;
     use crate::smart_contract::manifest::ContractManifest;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     #[test]
     fn contract_state_roundtrip_matches_signed_id() {

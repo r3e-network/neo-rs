@@ -286,7 +286,7 @@ mod tests {
     use super::super::signer::Signer;
     use super::*;
     use crate::WitnessScope;
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
 
     fn sample_header() -> Header {
         let mut header = Header::new();

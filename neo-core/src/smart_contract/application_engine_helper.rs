@@ -12,7 +12,7 @@ use crate::smart_contract::interoperable::Interoperable;
 use crate::smart_contract::NotifyEventArgs;
 use crate::smart_contract::TriggerType;
 use crate::UInt160;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;

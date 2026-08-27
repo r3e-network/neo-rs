@@ -6,7 +6,7 @@ use neo_core::neo_io::serializable::helper::get_var_size;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::application_engine::CHECK_SIG_PRICE;
 use neo_core::smart_contract::helper::Helper;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 #[test]
 fn test_signature_contract_cost_matches_csharp() {

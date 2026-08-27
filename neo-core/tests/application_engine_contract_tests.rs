@@ -6,8 +6,8 @@ use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::TriggerType;
 use neo_core::UInt160;
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::OpCode;
+use neo_vm::VmState as VMState;
 use std::sync::Arc;
 
 fn emit_byte_array_array(builder: &mut ScriptBuilder, items: &[Vec<u8>]) {

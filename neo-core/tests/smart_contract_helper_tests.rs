@@ -16,8 +16,8 @@ use neo_core::smart_contract::diagnostic::Diagnostic;
 use neo_core::smart_contract::TriggerType;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::{Transaction, UInt160, WitnessScope};
-use neo_vm_rs::Instruction;
-use neo_vm_rs::OpCode;
+use neo_vm::Instruction;
+use neo_vm::OpCode;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::Arc;
 

@@ -9,7 +9,7 @@ use neo_core::smart_contract::StorageContext;
 use neo_core::smart_contract::StorageItem;
 use neo_core::smart_contract::StorageKey;
 use neo_core::smart_contract::TriggerType;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 use std::sync::Arc;
 
 #[test]

@@ -319,7 +319,7 @@ mod multisig_verify_tests {
     use crate::smart_contract::Contract;
     use crate::smart_contract::{StorageItem, StorageKey};
     use crate::wallets::KeyPair;
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
 
     #[test]
     fn verify_accepts_signatures_as_subsequence_of_sorted_keys() {

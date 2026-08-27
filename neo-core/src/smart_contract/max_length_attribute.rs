@@ -1,7 +1,7 @@
 //! MaxLengthAttribute - matches C# Neo.SmartContract.MaxLengthAttribute exactly
 
 use crate::smart_contract::validator_attribute::ValidatorAttribute;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 /// MaxLength validator attribute (matches C# MaxLengthAttribute)
 #[derive(Clone, Debug)]
@@ -46,7 +46,7 @@ impl ValidatorAttribute for MaxLengthAttribute {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     #[test]
     fn integer_length_uses_neo_vm_rs_byte_string_rules() {

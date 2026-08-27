@@ -1,7 +1,7 @@
 //! Diagnostic trait for ApplicationEngine.
 
 use crate::neo_vm::ExecutionContext;
-use neo_vm_rs::Instruction;
+use neo_vm::Instruction;
 
 /// Diagnostic interface for ApplicationEngine.
 pub trait Diagnostic: std::fmt::Debug + Send {

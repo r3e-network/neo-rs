@@ -13,8 +13,8 @@ use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::Interoperable;
 use neo_core::witness::Witness;
 use neo_core::{Verifiable, NativeContract, UInt160, WitnessScope};
-use neo_vm_rs::ExecutionEngineLimits;
-use neo_vm_rs::OpCode;
+use neo_vm::ExecutionEngineLimits;
+use neo_vm::OpCode;
 use std::sync::Arc;
 
 fn default_manifest() -> ContractManifest {

@@ -5,7 +5,7 @@ use neo_core::network::p2p::payloads::{
     TransactionAttribute, WitnessCondition, WitnessRuleAction, WitnessScope,
 };
 use neo_core::{UInt160, UInt256};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 #[test]
 fn transaction_builder_new() {

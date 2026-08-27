@@ -3,7 +3,7 @@ use neo_core::smart_contract::execution_context_state::ExecutionContextState;
 use neo_core::smart_contract::ApplicationEngine;
 use neo_core::vm_runtime::ExecutionContext;
 use neo_core::UInt160;
-use neo_vm_rs::Instruction;
+use neo_vm::Instruction;
 use parking_lot::Mutex;
 use std::fmt;
 use std::sync::Arc;

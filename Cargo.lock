@@ -2220,7 +2220,7 @@ dependencies = [
  "neo-crypto",
  "neo-io",
  "neo-primitives",
- "neo-vm-rs",
+ "neo-vm",
 ]
 
 [[package]]
@@ -2245,7 +2245,6 @@ dependencies = [
  "neo-io",
  "neo-primitives",
  "neo-vm",
- "neo-vm-rs",
  "rand 0.8.5",
  "serde",
  "thiserror 2.0.18",
@@ -2295,7 +2294,6 @@ dependencies = [
  "neo-primitives",
  "neo-storage",
  "neo-vm",
- "neo-vm-rs",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2444,7 +2442,7 @@ dependencies = [
  "neo-rpc",
  "neo-tee",
  "neo-telemetry",
- "neo-vm-rs",
+ "neo-vm",
  "num_cpus",
  "parking_lot",
  "prometheus",
@@ -2522,7 +2520,7 @@ dependencies = [
  "neo-io",
  "neo-json",
  "neo-primitives",
- "neo-vm-rs",
+ "neo-vm",
  "num-bigint",
  "num-traits",
  "p12",
@@ -2626,7 +2624,7 @@ dependencies = [
  "neo-rpc",
  "neo-storage",
  "neo-telemetry",
- "neo-vm-rs",
+ "neo-vm",
  "num-bigint",
  "serde_json",
  "tempfile",
@@ -2652,16 +2650,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "neo-vm-rs"
-version = "0.1.0"
-dependencies = [
- "num-bigint",
- "num-traits",
- "serde",
- "sha2",
 ]
 
 [[package]]

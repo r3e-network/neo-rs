@@ -20,8 +20,8 @@ use crate::{
     },
 };
 use neo_primitives::UInt160;
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::OpCode;
+use neo_vm::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 

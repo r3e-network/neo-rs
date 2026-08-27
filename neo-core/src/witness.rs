@@ -22,7 +22,7 @@
 //!
 //! ```rust
 //! use neo_core::Witness;
-//! use neo_vm_rs::OpCode;
+//! use neo_vm::OpCode;
 //!
 //! // Create a witness from scripts
 //! let invocation_script = vec![OpCode::PUSHDATA1.byte(), 0x40, 0x01, 0x02];
@@ -42,7 +42,7 @@ use crate::neo_io::{serializable::helper::get_var_size_bytes, Serializable};
 use crate::smart_contract::helper::Helper;
 use crate::UInt160;
 use base64::{engine::general_purpose, Engine as _};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt};

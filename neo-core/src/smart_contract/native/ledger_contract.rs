@@ -61,8 +61,8 @@ mod tests {
     use crate::persistence::DataCache;
     use crate::UInt160;
     use crate::WitnessScope;
-    use neo_vm_rs::OpCode;
-    use neo_vm_rs::VmState as VMState;
+    use neo_vm::OpCode;
+    use neo_vm::VmState as VMState;
 
     fn make_signed_transaction() -> Transaction {
         let mut tx = Transaction::new();

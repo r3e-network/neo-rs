@@ -15,7 +15,7 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::{
     Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
 };
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 // ============================================================================
 // Transaction Edge Case Tests
@@ -27,7 +27,7 @@ mod tests {
     use neo_core::network::p2p::payloads::inventory::Inventory;
     use neo_core::smart_contract::Interoperable;
     use neo_core::Verifiable;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
     use num_traits::ToPrimitive;
     use std::str::FromStr;
 

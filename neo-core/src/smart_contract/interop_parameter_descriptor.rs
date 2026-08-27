@@ -1,7 +1,7 @@
 //! InteropParameterDescriptor - matches C# Neo.SmartContract.InteropParameterDescriptor exactly
 
 use crate::smart_contract::validator_attribute::ValidatorAttribute;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -249,7 +249,7 @@ pub enum ConvertedValue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     #[test]
     fn non_nullable_string_rejects_null() {

@@ -1,6 +1,6 @@
 //! ValidatorAttribute - matches C# Neo.SmartContract.ValidatorAttribute exactly
 
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 /// Abstract base for validator attributes (matches C# ValidatorAttribute)
 /// Note: In C# this is an abstract class with [AttributeUsage(AttributeTargets.Parameter)]

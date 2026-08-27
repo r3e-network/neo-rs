@@ -1,7 +1,7 @@
 use crate::network::p2p::payloads::Transaction;
 use crate::smart_contract::{ApplicationEngine, LogEventArgs, NotifyEventArgs, TriggerType};
 use crate::neo_vm::StackItem;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 
 #[derive(Clone)]
 pub struct ApplicationExecuted {

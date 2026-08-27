@@ -15,7 +15,7 @@ use cbc::{
     cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
     Decryptor, Encryptor,
 };
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use scrypt::Params;
 use std::fmt;
 use subtle::ConstantTimeEq;

@@ -9,7 +9,7 @@ use neo_core::vm_runtime::rpc_json::stack_item_rpc_json_deferred_size_check;
 use neo_core::vm_runtime::StackItem;
 use neo_core::UInt160;
 use neo_json::JToken;
-use neo_vm_rs::{StackValue, VmState};
+use neo_vm::{StackValue, VmState};
 use num_traits::ToPrimitive;
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
@@ -83,7 +83,7 @@ pub(super) fn build_dynamic_call_script(
     let mut builder = neo_core::ScriptBuilder::new();
 
     if args.is_empty() {
-        builder.emit_opcode(neo_vm_rs::OpCode::NEWARRAY0);
+        builder.emit_opcode(neo_vm::OpCode::NEWARRAY0);
     } else {
         for item in args.iter().rev() {
             builder
@@ -91,7 +91,7 @@ pub(super) fn build_dynamic_call_script(
                 .map_err(|err| internal_error(err.to_string()))?;
         }
         builder.emit_push_int(args.len() as i64);
-        builder.emit_opcode(neo_vm_rs::OpCode::PACK);
+        builder.emit_opcode(neo_vm::OpCode::PACK);
     }
 
     builder.emit_push_int(i64::from(CallFlags::ALL.bits()));

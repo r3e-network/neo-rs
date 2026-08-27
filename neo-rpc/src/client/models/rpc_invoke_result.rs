@@ -17,8 +17,8 @@ use super::vm_state_utils::{
     parse_vm_state_field,
 };
 use neo_json::{JObject, JToken};
-use neo_vm_rs::StackValue;
-use neo_vm_rs::VmState;
+use neo_vm::StackValue;
+use neo_vm::VmState;
 
 /// RPC invoke result matching C# `RpcInvokeResult`
 #[derive(Debug, Clone)]
@@ -141,7 +141,7 @@ mod tests {
     use super::*;
     use super::super::test_fixtures::rpc_case_result;
     use neo_json::{JArray, JToken};
-    use neo_vm_rs::{stack_value_as_bytes, StackValue, VmState};
+    use neo_vm::{stack_value_as_bytes, StackValue, VmState};
 
     #[test]
     fn invoke_result_roundtrip() {

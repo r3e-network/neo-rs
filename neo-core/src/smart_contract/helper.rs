@@ -16,8 +16,8 @@ use crate::smart_contract::TriggerType;
 use crate::smart_contract::ContractParameterType;
 use crate::neo_vm::StackItemExt;
 use crate::{Verifiable, VerifiableExt, UInt160, UInt256};
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::OpCode;
+use neo_vm::VmState as VMState;
 use std::any::Any;
 use std::sync::Arc;
 
@@ -165,7 +165,7 @@ impl Helper {
 
     /// Computes syscall hash
     fn syscall_hash(name: &str) -> [u8; 4] {
-        neo_vm_rs::interop_hash(name).to_le_bytes()
+        neo_vm::interop_hash(name).to_le_bytes()
     }
 
     /// Computes the hash of a deployed contract.
@@ -182,7 +182,7 @@ impl Helper {
     /// Parses a multi-signature contract script, returning the required signature count and
     /// the ordered public keys when the script matches the canonical Neo multi-sig format.
     pub fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, Vec<Vec<u8>>)> {
-        use neo_vm_rs::OpCode;
+        use neo_vm::OpCode;
 
         if script.len() < 42 {
             return None;
@@ -247,7 +247,7 @@ impl Helper {
         invocation: &[u8],
         required_signatures: usize,
     ) -> Option<Vec<Vec<u8>>> {
-        use neo_vm_rs::OpCode;
+        use neo_vm::OpCode;
 
         if required_signatures == 0 {
             return None;

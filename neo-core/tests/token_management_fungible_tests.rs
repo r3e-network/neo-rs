@@ -11,7 +11,7 @@ use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::native::{NativeContract, TokenManagement};
 use neo_core::smart_contract::TriggerType;
 use neo_core::{UInt160, UInt256};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -88,7 +88,7 @@ fn emit_contract_call(
 ) {
     let arg_count = args.len();
     for arg in args.drain(..).rev() {
-        let value = neo_vm_rs::StackValue::try_from(arg).expect("convert arg");
+        let value = neo_vm::StackValue::try_from(arg).expect("convert arg");
         sb.emit_push_stack_value(&value).expect("emit arg");
     }
     sb.emit_push_int(arg_count as i64);
@@ -249,7 +249,7 @@ fn get_assets_of_owner_excludes_fully_burned_asset_in_same_overlay() {
 
     fixture
         .engine
-        .load_script(vec![neo_vm_rs::OpCode::RET.byte()], CallFlags::ALL, None)
+        .load_script(vec![neo_vm::OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load overlay script");
     fixture.engine.set_calling_script_hash(Some(holder));
 

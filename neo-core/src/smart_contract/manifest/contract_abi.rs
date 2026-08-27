@@ -7,7 +7,7 @@ use crate::smart_contract::manifest::stack_value_helpers::{
 };
 use crate::smart_contract::manifest::{ContractEventDescriptor, ContractMethodDescriptor};
 use crate::neo_vm::StackItem;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -206,7 +206,7 @@ impl Interoperable for ContractAbi {
 mod tests {
     use super::*;
     use crate::smart_contract::ContractParameterType;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     fn method(name: &str) -> ContractMethodDescriptor {
         ContractMethodDescriptor::new(

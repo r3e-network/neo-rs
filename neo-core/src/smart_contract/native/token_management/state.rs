@@ -6,7 +6,7 @@ use crate::error::CoreError;
 use crate::smart_contract::interoperable::Interoperable;
 use crate::neo_vm::StackItem;
 use crate::UInt160;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 

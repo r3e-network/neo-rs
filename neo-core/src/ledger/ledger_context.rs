@@ -169,7 +169,7 @@ mod tests {
     use crate::network::p2p::payloads::signer::Signer;
     use crate::network::p2p::payloads::witness::Witness;
     use crate::{UInt160, WitnessScope};
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
     use std::sync::atomic::Ordering;
 
     fn transaction_with_script(script: Vec<u8>) -> Transaction {

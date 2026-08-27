@@ -12,7 +12,7 @@ use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_
 use neo_core::smart_contract::call_flags::CallFlags;
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::{UInt160, WitnessScope};
-use neo_vm_rs::{
+use neo_vm::{
     ExceptionHandlingContext, ExceptionHandlingState, ExecutionEngineLimits, Instruction, OpCode,
     StackValue, VmOrderedDictionary, VmState as VMState,
 };
@@ -364,18 +364,18 @@ fn execution_engine_limits_facade_is_removed() {
         "neo-core should not keep a local ExecutionEngineLimits facade"
     );
     assert!(
-        engine_module.contains("use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};"),
+        engine_module.contains("use neo_vm::{ExecutionEngineLimits, VmState as VMState};"),
         "local execution engine internals should import ExecutionEngineLimits directly \
          from neo-vm-rs"
     );
     assert_eq!(
         limits.max_stack_size,
-        neo_vm_rs::DEFAULT_MAX_STACK_DEPTH as u32,
+        neo_vm::DEFAULT_MAX_STACK_DEPTH as u32,
         "ExecutionEngineLimits should use neo-vm-rs for the default stack depth"
     );
     assert_eq!(
         limits.max_invocation_stack_size,
-        neo_vm_rs::DEFAULT_MAX_INVOCATION_DEPTH as u32,
+        neo_vm::DEFAULT_MAX_INVOCATION_DEPTH as u32,
         "ExecutionEngineLimits should use neo-vm-rs for the default invocation depth"
     );
     assert_eq!(
@@ -411,10 +411,10 @@ fn exception_handling_facades_are_removed() {
         "neo-core should not keep local exception handling facades"
     );
     assert!(
-        execution_context.contains("use neo_vm_rs::ExceptionHandlingContext;")
-            && execution_context.contains("use neo_vm_rs::ExceptionHandlingState;")
-            && exception_runtime.contains("use neo_vm_rs::ExceptionHandlingContext;")
-            && exception_runtime.contains("use neo_vm_rs::ExceptionHandlingState;"),
+        execution_context.contains("use neo_vm::ExceptionHandlingContext;")
+            && execution_context.contains("use neo_vm::ExceptionHandlingState;")
+            && exception_runtime.contains("use neo_vm::ExceptionHandlingContext;")
+            && exception_runtime.contains("use neo_vm::ExceptionHandlingState;"),
         "local runtime should import exception frame types directly from neo-vm-rs"
     );
 
@@ -460,13 +460,13 @@ fn neo_core_ordered_dictionary_facade_is_removed() {
         "shared VmOrderedDictionary should preserve insertion order"
     );
     assert!(
-        map_source.contains("use neo_vm_rs::VmOrderedDictionary;")
-            && stack_item_source.contains("use neo_vm_rs::{StackValue, VmOrderedDictionary};"),
+        map_source.contains("use neo_vm::VmOrderedDictionary;")
+            && stack_item_source.contains("use neo_vm::{StackValue, VmOrderedDictionary};"),
         "local stack item map code should use neo-vm-rs VmOrderedDictionary directly"
     );
     assert!(
-        helper_source.contains("use neo_vm_rs::VmOrderedDictionary;")
-            && serializer_source.contains("neo_vm_rs::VmOrderedDictionary::new()"),
+        helper_source.contains("use neo_vm::VmOrderedDictionary;")
+            && serializer_source.contains("neo_vm::VmOrderedDictionary::new()"),
         "smart-contract helpers should not allocate maps through the local ordered dictionary copy"
     );
 }
@@ -477,9 +477,9 @@ fn neo_core_does_not_reexport_opcode_through_vm_facade() {
     let vm_module = read_source(workspace.join("neo-core/src/neo_vm/mod.rs"));
 
     assert!(
-        !vm_module.contains("pub use neo_vm_rs::OpCode;"),
+        !vm_module.contains("pub use neo_vm::OpCode;"),
         "neo_core::neo_vm should not keep an OpCode facade; callers should import \
-         neo_vm_rs::OpCode directly"
+         neo_vm::OpCode directly"
     );
     assert!(
         !vm_module.contains("pub use op_code::OpCode;"),
@@ -509,7 +509,7 @@ fn neo_core_vm_internals_import_opcode_from_neo_vm_rs() {
 
     assert!(
         offenders.is_empty(),
-        "neo-core VM internals should import neo_vm_rs::OpCode directly, not \
+        "neo-core VM internals should import neo_vm::OpCode directly, not \
          through the compatibility op_code module: {offenders:?}"
     );
 }
@@ -532,7 +532,7 @@ fn neo_core_sources_do_not_use_legacy_opcode_module_path() {
 
     assert!(
         offenders.is_empty(),
-        "neo-core sources should use neo_vm_rs::OpCode directly, not a \
+        "neo-core sources should use neo_vm::OpCode directly, not a \
          neo_vm OpCode facade or legacy op_code module path: {offenders:?}"
     );
 }
@@ -543,9 +543,9 @@ fn neo_core_vm_facade_only_reexports_opcode_from_neo_vm_rs() {
     let vm_module = read_source(workspace.join("neo-core/src/neo_vm/mod.rs"));
 
     assert!(
-        !vm_module.contains("pub use neo_vm_rs"),
-        "neo_core::neo_vm should not facade re-export neo_vm_rs symbols; \
-         callers should import them directly from neo_vm_rs"
+        !vm_module.contains("pub use neo_vm"),
+        "neo_core::neo_vm should not facade re-export neo_vm symbols; \
+         callers should import them directly from neo_vm"
     );
 
     for symbol in [
@@ -559,8 +559,8 @@ fn neo_core_vm_facade_only_reexports_opcode_from_neo_vm_rs() {
     ] {
         assert!(
             !vm_module.contains(symbol),
-            "neo_core::neo_vm should not facade re-export neo_vm_rs::{symbol}; \
-             callers should import it directly from neo_vm_rs"
+            "neo_core::neo_vm should not facade re-export neo_vm::{symbol}; \
+             callers should import it directly from neo_vm"
         );
     }
 }
@@ -572,8 +572,8 @@ fn native_contract_static_syscall_hash_uses_neo_vm_rs_directly() {
         read_source(workspace.join("neo-core/src/smart_contract/native/native_contract.rs"));
 
     assert!(
-        native_contract.contains("neo_vm_rs::interop_hash(\"System.Contract.CallNative\")"),
-        "static native contract syscall hashing should call neo_vm_rs::interop_hash directly"
+        native_contract.contains("neo_vm::interop_hash(\"System.Contract.CallNative\")"),
+        "static native contract syscall hashing should call neo_vm::interop_hash directly"
     );
     assert!(
         !native_contract.contains("ScriptBuilder::hash_syscall(\"System.Contract.CallNative\")"),
@@ -588,7 +588,7 @@ fn interop_service_hashes_syscalls_with_neo_vm_rs_directly() {
         read_source(workspace.join("neo-core/src/neo_vm/interop_service.rs"));
 
     assert!(
-        interop_service.contains("neo_vm_rs::interop_hash"),
+        interop_service.contains("neo_vm::interop_hash"),
         "InteropService should compute syscall hashes with neo-vm-rs directly"
     );
     assert!(
@@ -605,7 +605,7 @@ fn smart_contract_helper_hashes_syscalls_with_neo_vm_rs_directly() {
         read_source(workspace.join("neo-core/src/smart_contract/helper.rs"));
 
     assert!(
-        helper.contains("neo_vm_rs::interop_hash(name).to_le_bytes()"),
+        helper.contains("neo_vm::interop_hash(name).to_le_bytes()"),
         "smart_contract::Helper should use neo-vm-rs interop_hash for syscall IDs"
     );
     assert!(
@@ -621,7 +621,7 @@ fn interop_descriptor_hashes_syscalls_with_neo_vm_rs_directly() {
         read_source(workspace.join("neo-core/src/smart_contract/interop_descriptor.rs"));
 
     assert!(
-        descriptor.contains("neo_vm_rs::interop_hash(&self.name)"),
+        descriptor.contains("neo_vm::interop_hash(&self.name)"),
         "InteropDescriptor should use neo-vm-rs interop_hash for service hashes"
     );
     assert!(
@@ -637,7 +637,7 @@ fn script_builder_reuses_neo_vm_rs_integer_encoding_for_i64_pushes() {
         read_source(workspace.join("neo-core/src/script_builder.rs"));
 
     assert!(
-        script_builder.matches("neo_vm_rs::encode_integer").count() >= 2,
+        script_builder.matches("neo_vm::encode_integer").count() >= 2,
         "ScriptBuilder should reuse neo-vm-rs integer encoding for direct i64 pushes \
          and for i64-sized BigInt pushes"
     );
@@ -747,7 +747,7 @@ fn witness_and_rpc_script_bytes_use_neo_vm_rs_opcode_metadata() {
             "OpCode::PUSH1 as u8",
             "OpCode::RET as u8",
             "OpCode::ASSERT as u8",
-            "neo_vm_rs::OpCode::PUSHDATA1 as u8",
+            "neo_vm::OpCode::PUSHDATA1 as u8",
         ] {
             assert!(
                 !source.contains(cast),
@@ -843,7 +843,7 @@ fn vm_state_byte_serialization_uses_neo_vm_rs_mapping() {
         "neo-core should not keep a local VMState facade"
     );
     assert!(
-        engine_module.contains("use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};"),
+        engine_module.contains("use neo_vm::{ExecutionEngineLimits, VmState as VMState};"),
         "local execution engine internals should import VmState directly from neo-vm-rs"
     );
 
@@ -985,7 +985,7 @@ fn non_vm_layers_import_shared_vm_scalars_directly() {
 
     assert!(
         offenders.is_empty(),
-        "non-VM layers should import shared VM scalar types from neo_vm_rs directly: \
+        "non-VM layers should import shared VM scalar types from neo_vm directly: \
          {offenders:?}"
     );
 }
@@ -1019,7 +1019,7 @@ fn script_builder_emit_syscall_hashes_with_neo_vm_rs_directly() {
         read_source(workspace.join("neo-core/src/script_builder.rs"));
 
     assert!(
-        script_builder.contains("neo_vm_rs::interop_hash(api)"),
+        script_builder.contains("neo_vm::interop_hash(api)"),
         "ScriptBuilder::emit_syscall should hash with neo-vm-rs directly"
     );
     assert!(
@@ -1027,7 +1027,7 @@ fn script_builder_emit_syscall_hashes_with_neo_vm_rs_directly() {
             && !script_builder.contains("Self::hash_syscall")
             && !script_builder.contains("ScriptBuilder::hash_syscall"),
         "ScriptBuilder should not expose a redundant syscall-hash wrapper; callers can \
-         use neo_vm_rs::interop_hash directly"
+         use neo_vm::interop_hash directly"
     );
 }
 
@@ -1041,7 +1041,7 @@ fn script_builder_does_not_accept_local_stackitem_bridge() {
         !script_builder.contains("use crate::neo_vm::stack_item::StackItem")
             && !script_builder.contains("emit_push_stack_item")
             && !script_builder.contains("stack_item_to_stack_value"),
-        "ScriptBuilder should accept neo_vm_rs::StackValue directly instead of keeping \
+        "ScriptBuilder should accept neo_vm::StackValue directly instead of keeping \
          a local StackItem conversion bridge"
     );
 
@@ -1071,7 +1071,7 @@ fn script_builder_does_not_accept_local_stackitem_bridge() {
 
     assert!(
         offenders.is_empty(),
-        "script-building callers should push neo_vm_rs::StackValue directly instead of \
+        "script-building callers should push neo_vm::StackValue directly instead of \
          routing through ScriptBuilder::emit_push_stack_item: {offenders:?}"
     );
 }
@@ -1095,8 +1095,8 @@ fn witness_rules_project_through_neo_vm_rs_stack_value() {
     let witness_rule = witness_sources.join("\n");
 
     assert!(
-        witness_rule.contains("use neo_vm_rs::StackValue;"),
-        "witness rules should import neo_vm_rs::StackValue directly for their data \
+        witness_rule.contains("use neo_vm::StackValue;"),
+        "witness rules should import neo_vm::StackValue directly for their data \
          projection boundary"
     );
     assert!(
@@ -1123,7 +1123,7 @@ fn witness_rules_project_through_neo_vm_rs_stack_value() {
         assert!(
             !witness_rule.contains(local_builder),
             "witness rules should not hand-build stack-item shapes with {local_builder}; \
-             build neo_vm_rs::StackValue first"
+             build neo_vm::StackValue first"
         );
     }
 }
@@ -1135,8 +1135,8 @@ fn signer_stack_projection_uses_neo_vm_rs_stack_value() {
         read_source(workspace.join("neo-core/src/network/p2p/payloads/signer.rs"));
 
     assert!(
-        signer.contains("use neo_vm_rs::StackValue;"),
-        "Signer should import neo_vm_rs::StackValue directly for its data projection boundary"
+        signer.contains("use neo_vm::StackValue;"),
+        "Signer should import neo_vm::StackValue directly for its data projection boundary"
     );
     assert!(
         signer.contains("pub fn to_stack_value(&self) -> StackValue"),
@@ -1159,7 +1159,7 @@ fn signer_stack_projection_uses_neo_vm_rs_stack_value() {
         assert!(
             !signer.contains(local_builder),
             "Signer should not hand-build stack-item shapes with {local_builder}; build \
-             neo_vm_rs::StackValue first"
+             neo_vm::StackValue first"
         );
     }
 }
@@ -1173,8 +1173,8 @@ fn transaction_stack_projection_uses_neo_vm_rs_stack_value() {
     .unwrap();
 
     assert!(
-        transaction.contains("use neo_vm_rs::StackValue;"),
-        "Transaction should import neo_vm_rs::StackValue directly for its data projection boundary"
+        transaction.contains("use neo_vm::StackValue;"),
+        "Transaction should import neo_vm::StackValue directly for its data projection boundary"
     );
     assert!(
         transaction.contains("pub fn to_stack_value(&self) -> Result<StackValue, CoreError>"),
@@ -1192,7 +1192,7 @@ fn transaction_stack_projection_uses_neo_vm_rs_stack_value() {
         assert!(
             !transaction.contains(local_builder),
             "Transaction should not hand-build stack-item shapes with {local_builder}; build \
-             neo_vm_rs::StackValue first"
+             neo_vm::StackValue first"
         );
     }
 }
@@ -1206,8 +1206,8 @@ fn contract_parameter_definition_projection_uses_neo_vm_rs_stack_value() {
     .unwrap();
 
     assert!(
-        parameter_definition.contains("use neo_vm_rs::StackValue;"),
-        "ContractParameterDefinition should import neo_vm_rs::StackValue directly for \
+        parameter_definition.contains("use neo_vm::StackValue;"),
+        "ContractParameterDefinition should import neo_vm::StackValue directly for \
          its manifest data projection"
     );
     assert!(
@@ -1239,7 +1239,7 @@ fn contract_parameter_definition_projection_uses_neo_vm_rs_stack_value() {
         assert!(
             !parameter_definition.contains(local_builder),
             "ContractParameterDefinition should not hand-build stack-item shapes with \
-             {local_builder}; build neo_vm_rs::StackValue first"
+             {local_builder}; build neo_vm::StackValue first"
         );
     }
 }
@@ -1253,8 +1253,8 @@ fn wild_card_container_projection_uses_neo_vm_rs_stack_value() {
     .unwrap();
 
     assert!(
-        wild_card_container.contains("use neo_vm_rs::StackValue;"),
-        "WildCardContainer should import neo_vm_rs::StackValue directly for \
+        wild_card_container.contains("use neo_vm::StackValue;"),
+        "WildCardContainer should import neo_vm::StackValue directly for \
          its manifest data projection"
     );
     assert!(
@@ -1281,7 +1281,7 @@ fn wild_card_container_projection_uses_neo_vm_rs_stack_value() {
         assert!(
             !wild_card_container.contains(local_builder),
             "WildCardContainer<String> should not hand-build stack-item shapes with \
-             {local_builder}; build neo_vm_rs::StackValue first"
+             {local_builder}; build neo_vm::StackValue first"
         );
     }
 }
@@ -1303,8 +1303,8 @@ fn manifest_event_and_method_descriptors_project_through_neo_vm_rs_stack_value()
         ("ContractMethodDescriptor", method_descriptor.as_str()),
     ] {
         assert!(
-            source.contains("use neo_vm_rs::StackValue;"),
-            "{name} should import neo_vm_rs::StackValue directly for manifest projection"
+            source.contains("use neo_vm::StackValue;"),
+            "{name} should import neo_vm::StackValue directly for manifest projection"
         );
         assert!(
             source.contains("pub fn to_stack_value(&self) -> StackValue"),
@@ -1333,7 +1333,7 @@ fn manifest_event_and_method_descriptors_project_through_neo_vm_rs_stack_value()
             assert!(
                 !source.contains(local_builder),
                 "{name} should not hand-build stack-item shapes with {local_builder}; build \
-                 neo_vm_rs::StackValue first"
+                 neo_vm::StackValue first"
             );
         }
     }
@@ -1352,8 +1352,8 @@ fn manifest_permissions_project_through_neo_vm_rs_stack_value() {
     .unwrap();
 
     assert!(
-        permission_descriptor.contains("use neo_vm_rs::StackValue;"),
-        "ContractPermissionDescriptor should import neo_vm_rs::StackValue directly for \
+        permission_descriptor.contains("use neo_vm::StackValue;"),
+        "ContractPermissionDescriptor should import neo_vm::StackValue directly for \
          manifest projection"
     );
     assert!(
@@ -1378,13 +1378,13 @@ fn manifest_permissions_project_through_neo_vm_rs_stack_value() {
         assert!(
             !permission_descriptor.contains(local_builder),
             "ContractPermissionDescriptor should not hand-build stack-item shapes with \
-             {local_builder}; build neo_vm_rs::StackValue first"
+             {local_builder}; build neo_vm::StackValue first"
         );
     }
 
     assert!(
-        permission.contains("use neo_vm_rs::StackValue;"),
-        "ContractPermission should import neo_vm_rs::StackValue directly for manifest projection"
+        permission.contains("use neo_vm::StackValue;"),
+        "ContractPermission should import neo_vm::StackValue directly for manifest projection"
     );
     assert!(
         permission.contains("pub fn to_stack_value(&self) -> StackValue"),
@@ -1406,7 +1406,7 @@ fn manifest_permissions_project_through_neo_vm_rs_stack_value() {
     );
     assert!(
         !permission.contains("StackItem::from_struct"),
-        "ContractPermission should not hand-build StackItem structs; build neo_vm_rs::StackValue first"
+        "ContractPermission should not hand-build StackItem structs; build neo_vm::StackValue first"
     );
 }
 
@@ -1419,8 +1419,8 @@ fn contract_group_projects_through_neo_vm_rs_stack_value() {
     .unwrap();
 
     assert!(
-        contract_group.contains("use neo_vm_rs::StackValue;"),
-        "ContractGroup should import neo_vm_rs::StackValue directly for manifest projection"
+        contract_group.contains("use neo_vm::StackValue;"),
+        "ContractGroup should import neo_vm::StackValue directly for manifest projection"
     );
     assert!(
         contract_group.contains("pub fn to_stack_value(&self) -> StackValue"),
@@ -1453,7 +1453,7 @@ fn contract_group_projects_through_neo_vm_rs_stack_value() {
         assert!(
             !contract_group.contains(local_builder),
             "ContractGroup should not hand-build stack-item shapes with {local_builder}; build \
-             neo_vm_rs::StackValue first"
+             neo_vm::StackValue first"
         );
     }
 }
@@ -1465,8 +1465,8 @@ fn contract_abi_projects_through_neo_vm_rs_stack_value() {
         read_source(workspace.join("neo-core/src/smart_contract/manifest/contract_abi.rs"));
 
     assert!(
-        contract_abi.contains("use neo_vm_rs::StackValue;"),
-        "ContractAbi should import neo_vm_rs::StackValue directly for manifest projection"
+        contract_abi.contains("use neo_vm::StackValue;"),
+        "ContractAbi should import neo_vm::StackValue directly for manifest projection"
     );
     assert!(
         contract_abi.contains("pub fn to_stack_value(&self) -> StackValue"),
@@ -1494,7 +1494,7 @@ fn contract_abi_projects_through_neo_vm_rs_stack_value() {
         assert!(
             !contract_abi.contains(local_builder),
             "ContractAbi should not hand-build stack-item shapes with {local_builder}; build \
-             neo_vm_rs::StackValue first"
+             neo_vm::StackValue first"
         );
     }
 }
@@ -1510,8 +1510,8 @@ fn contract_manifest_and_state_project_through_neo_vm_rs_stack_value() {
         read_source(workspace.join("neo-core/src/smart_contract/contract_state.rs"));
 
     assert!(
-        manifest.contains("use neo_vm_rs::StackValue;"),
-        "ContractManifest should import neo_vm_rs::StackValue directly for metadata projection"
+        manifest.contains("use neo_vm::StackValue;"),
+        "ContractManifest should import neo_vm::StackValue directly for metadata projection"
     );
     assert!(
         manifest.contains("pub fn to_stack_value(&self) -> StackValue"),
@@ -1539,13 +1539,13 @@ fn contract_manifest_and_state_project_through_neo_vm_rs_stack_value() {
         assert!(
             !manifest.contains(local_builder),
             "ContractManifest should not hand-build stack-item shapes with {local_builder}; \
-             build neo_vm_rs::StackValue first"
+             build neo_vm::StackValue first"
         );
     }
 
     assert!(
-        contract_state.contains("use neo_vm_rs::StackValue;"),
-        "ContractState should import neo_vm_rs::StackValue directly for metadata projection"
+        contract_state.contains("use neo_vm::StackValue;"),
+        "ContractState should import neo_vm::StackValue directly for metadata projection"
     );
     assert!(
         contract_state.contains("pub fn to_stack_value(&self) -> StackValue"),
@@ -1576,7 +1576,7 @@ fn contract_manifest_and_state_project_through_neo_vm_rs_stack_value() {
         assert!(
             !contract_state.contains(local_builder),
             "ContractState should not hand-build stack-item shapes with {local_builder}; \
-             build neo_vm_rs::StackValue first"
+             build neo_vm::StackValue first"
         );
     }
 }
@@ -1600,9 +1600,9 @@ fn contract_management_persisted_contract_state_uses_neo_vm_rs_stack_value() {
         .expect("contract-management ContractState storage read section");
 
     assert!(
-        source.contains("use neo_vm_rs::StackValue;")
-            || source.contains("use neo_vm_rs::{ExecutionEngineLimits, StackValue};"),
-        "ContractManagement persisted ContractState storage should import neo_vm_rs::StackValue"
+        source.contains("use neo_vm::StackValue;")
+            || source.contains("use neo_vm::{ExecutionEngineLimits, StackValue};"),
+        "ContractManagement persisted ContractState storage should import neo_vm::StackValue"
     );
     assert!(
         storage_write_section.contains("contract.to_stack_value()")
@@ -1644,7 +1644,7 @@ fn contract_management_manifest_validation_uses_neo_vm_rs_stack_value() {
         validation_section.contains("BinarySerializer::serialize_stack_value")
             && validation_section.contains("manifest.to_stack_value()"),
         "ContractManagement manifest validation should serialize ContractManifest through direct \
-         neo_vm_rs::StackValue projection"
+         neo_vm::StackValue projection"
     );
     assert!(
         !validation_section.contains("manifest.to_stack_item()")
@@ -1664,9 +1664,9 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     )
     .unwrap();
     assert!(
-        transaction_state.contains("use neo_vm_rs::StackValue;")
-            || transaction_state.contains("use neo_vm_rs::{StackValue, VmState as VMState};"),
-        "TransactionState should import neo_vm_rs::StackValue directly for native data projection"
+        transaction_state.contains("use neo_vm::StackValue;")
+            || transaction_state.contains("use neo_vm::{StackValue, VmState as VMState};"),
+        "TransactionState should import neo_vm::StackValue directly for native data projection"
     );
     assert!(
         transaction_state.contains("pub fn to_stack_value(&self) -> StackValue"),
@@ -1697,7 +1697,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         assert!(
             !transaction_state.contains(local_builder),
             "TransactionState should not hand-build stack-item shapes with {local_builder}; build \
-             neo_vm_rs::StackValue first"
+             neo_vm::StackValue first"
         );
     }
 
@@ -1708,8 +1708,8 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     )
     .unwrap();
     assert!(
-        oracle_request.contains("use neo_vm_rs::StackValue;"),
-        "OracleRequest should import neo_vm_rs::StackValue directly for native data projection"
+        oracle_request.contains("use neo_vm::StackValue;"),
+        "OracleRequest should import neo_vm::StackValue directly for native data projection"
     );
     assert!(
         oracle_request.contains("pub fn to_stack_value(&self) -> StackValue"),
@@ -1737,7 +1737,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         assert!(
             !oracle_request.contains(local_builder),
             "OracleRequest should not hand-build stack-item shapes with {local_builder}; build \
-             neo_vm_rs::StackValue first"
+             neo_vm::StackValue first"
         );
     }
     let oracle_request_storage_section = oracle_storage
@@ -1745,12 +1745,12 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         .next()
         .expect("Oracle request storage section");
     assert!(
-        oracle_request_storage_section.contains("use neo_vm_rs::StackValue;")
+        oracle_request_storage_section.contains("use neo_vm::StackValue;")
             && oracle_request_storage_section.contains("BinarySerializer::serialize_stack_value")
             && oracle_request_storage_section.contains("BinarySerializer::deserialize_stack_value")
             && oracle_request_storage_section.contains("OracleRequest::new(")
             && oracle_request_storage_section.contains(".to_stack_value()"),
-        "Oracle request storage should serialize/deserialize direct neo_vm_rs::StackValue \
+        "Oracle request storage should serialize/deserialize direct neo_vm::StackValue \
          projections"
     );
     assert!(
@@ -1766,8 +1766,8 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     let trimmed_block =
         read_source(workspace.join("neo-core/src/smart_contract/native/trimmed_block.rs"));
     assert!(
-        trimmed_block.contains("use neo_vm_rs::StackValue;"),
-        "TrimmedBlock should import neo_vm_rs::StackValue directly for native data projection"
+        trimmed_block.contains("use neo_vm::StackValue;"),
+        "TrimmedBlock should import neo_vm::StackValue directly for native data projection"
     );
     assert!(
         trimmed_block.contains("pub fn to_stack_value(&self) -> StackValue"),
@@ -1785,15 +1785,15 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         assert!(
             !trimmed_block.contains(local_builder),
             "TrimmedBlock should not hand-build stack-item shapes with {local_builder}; build \
-             neo_vm_rs::StackValue first"
+             neo_vm::StackValue first"
         );
     }
 
     let deposit_section =
         read_source(workspace.join("neo-core/src/smart_contract/native/notary/deposit.rs"));
     assert!(
-        deposit_section.contains("use neo_vm_rs::StackValue;"),
-        "Notary Deposit should import neo_vm_rs::StackValue directly for native data projection"
+        deposit_section.contains("use neo_vm::StackValue;"),
+        "Notary Deposit should import neo_vm::StackValue directly for native data projection"
     );
     assert!(
         deposit_section.contains("pub fn to_stack_value(&self) -> StackValue")
@@ -1814,8 +1814,8 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     )
     .unwrap();
     assert!(
-        hash_index_state.contains("use neo_vm_rs::StackValue;"),
-        "HashIndexState should import neo_vm_rs::StackValue directly for native data projection"
+        hash_index_state.contains("use neo_vm::StackValue;"),
+        "HashIndexState should import neo_vm::StackValue directly for native data projection"
     );
     assert!(
         hash_index_state.contains("pub fn to_stack_value(&self) -> StackValue")
@@ -1835,8 +1835,8 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     let gas_token =
         read_source(workspace.join("neo-core/src/smart_contract/native/gas_token/mod.rs"));
     assert!(
-        account_state.contains("use neo_vm_rs::StackValue;"),
-        "native AccountState should import neo_vm_rs::StackValue directly for native data \
+        account_state.contains("use neo_vm::StackValue;"),
+        "native AccountState should import neo_vm::StackValue directly for native data \
          projection"
     );
     assert!(
@@ -1856,7 +1856,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         gas_token.contains("BinarySerializer::deserialize_stack_value(bytes.as_ref())")
             && gas_token.contains("state.from_stack_value(stack_value)")
             && !gas_token.contains("state.from_stack_item(stack_item)"),
-        "GAS account state reads should deserialize directly into neo_vm_rs::StackValue"
+        "GAS account state reads should deserialize directly into neo_vm::StackValue"
     );
     assert!(
         gas_token.contains("BinarySerializer::serialize_stack_value")
@@ -1875,9 +1875,9 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         .and_then(|tail| tail.split("/// The Policy native contract.").next())
         .expect("Policy WhitelistedContract section");
     assert!(
-        policy_contract.contains("use neo_vm_rs::StackValue;")
-            || policy_contract.contains("use neo_vm_rs::{ExecutionEngineLimits, StackValue};"),
-        "Policy WhitelistedContract should import neo_vm_rs::StackValue directly for \
+        policy_contract.contains("use neo_vm::StackValue;")
+            || policy_contract.contains("use neo_vm::{ExecutionEngineLimits, StackValue};"),
+        "Policy WhitelistedContract should import neo_vm::StackValue directly for \
          native policy data projection"
     );
     assert!(
@@ -1907,7 +1907,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
         assert!(
             !policy_contract.contains(local_builder),
             "Policy WhitelistedContract should not hand-build stack-item shapes with \
-             {local_builder}; build neo_vm_rs::StackValue first"
+             {local_builder}; build neo_vm::StackValue first"
         );
     }
 }
@@ -1998,8 +1998,8 @@ fn neo_token_states_project_through_neo_vm_rs_stack_value() {
         .expect("NeoAccountState helper section");
 
     assert!(
-        types.contains("use neo_vm_rs::StackValue;"),
-        "NeoToken state structs should import neo_vm_rs::StackValue directly for native \
+        types.contains("use neo_vm::StackValue;"),
+        "NeoToken state structs should import neo_vm::StackValue directly for native \
          data projection"
     );
     assert!(
@@ -2027,7 +2027,7 @@ fn neo_token_states_project_through_neo_vm_rs_stack_value() {
     assert!(
         types.contains("BinarySerializer::deserialize_stack_value(bytes)")
             && !types.contains("BinarySerializer::deserialize(bytes"),
-        "NeoToken persisted state reads should deserialize directly into neo_vm_rs::StackValue"
+        "NeoToken persisted state reads should deserialize directly into neo_vm::StackValue"
     );
     for (name, source) in [
         ("native_impl.rs", native_impl.as_str()),
@@ -2055,7 +2055,7 @@ fn neo_token_states_project_through_neo_vm_rs_stack_value() {
         assert!(
             !types.contains(local_builder) && !native_account_projection.contains(local_builder),
             "NeoToken state projections should not hand-build stack-item shapes with \
-             {local_builder}; build neo_vm_rs::StackValue first"
+             {local_builder}; build neo_vm::StackValue first"
         );
     }
 }
@@ -2072,7 +2072,7 @@ fn neo_token_committee_payloads_use_neo_vm_rs_stack_value() {
         committee.contains("BinarySerializer::deserialize_stack_value(&bytes)")
             && committee.contains("decode_committee_stack_value")
             && committee.contains("decode_committee_with_votes_value"),
-        "NeoToken committee cache reads should deserialize direct neo_vm_rs::StackValue payloads"
+        "NeoToken committee cache reads should deserialize direct neo_vm::StackValue payloads"
     );
     assert!(
         committee.contains("StackValue::Array")
@@ -2111,7 +2111,7 @@ fn neo_token_committee_payloads_use_neo_vm_rs_stack_value() {
         assert!(
             section.contains("StackValue::Array")
                 && section.contains("BinarySerializer::serialize_stack_value"),
-            "{method} should serialize its ABI result through neo_vm_rs::StackValue"
+            "{method} should serialize its ABI result through neo_vm::StackValue"
         );
         assert!(
             !section.contains("StackItem::from_array")
@@ -2135,8 +2135,8 @@ fn token_management_states_project_through_neo_vm_rs_stack_value() {
     let state_section = source.as_str();
 
     assert!(
-        source.contains("use neo_vm_rs::StackValue;"),
-        "TokenManagement state structs should import neo_vm_rs::StackValue directly for \
+        source.contains("use neo_vm::StackValue;"),
+        "TokenManagement state structs should import neo_vm::StackValue directly for \
          native data projection"
     );
     assert!(
@@ -2173,7 +2173,7 @@ fn token_management_states_project_through_neo_vm_rs_stack_value() {
     assert!(
         storage.contains("BinarySerializer::deserialize_stack_value_with_limits"),
         "TokenManagement persisted state reads should deserialize directly into \
-         neo_vm_rs::StackValue"
+         neo_vm::StackValue"
     );
     assert!(
         storage.contains("BinarySerializer::serialize_stack_value"),
@@ -2197,7 +2197,7 @@ fn token_management_states_project_through_neo_vm_rs_stack_value() {
         assert!(
             !state_section.contains(local_builder),
             "TokenManagement state projections should not hand-build stack-item shapes with \
-             {local_builder}; build neo_vm_rs::StackValue first"
+             {local_builder}; build neo_vm::StackValue first"
         );
     }
 }
@@ -2220,8 +2220,8 @@ fn role_management_designated_nodes_storage_uses_neo_vm_rs_stack_value() {
         .expect("role-management public-key parsing section");
 
     assert!(
-        source.contains("use neo_vm_rs::StackValue;"),
-        "RoleManagement persisted designated-node payloads should import neo_vm_rs::StackValue"
+        source.contains("use neo_vm::StackValue;"),
+        "RoleManagement persisted designated-node payloads should import neo_vm::StackValue"
     );
     assert!(
         serialization_section.contains("StackValue::Array")
@@ -2299,7 +2299,7 @@ fn local_vm_docs_do_not_advertise_deleted_neo_vm_crate() {
     assert!(
         offenders.is_empty(),
         "local VM docs should not advertise the deleted standalone neo-vm crate or \
-         hide direct neo_vm_rs imports: {offenders:?}"
+         hide direct neo_vm imports: {offenders:?}"
     );
 }
 
@@ -2344,7 +2344,7 @@ fn instruction_parsing_uses_neo_vm_rs_opcode_operand_metadata_directly() {
     );
     assert!(
         local_instruction_imports.is_empty(),
-        "callers should import neo_vm_rs::Instruction directly: {local_instruction_imports:?}"
+        "callers should import neo_vm::Instruction directly: {local_instruction_imports:?}"
     );
     assert!(
         script.contains("parse_script_instructions")
@@ -2356,7 +2356,7 @@ fn instruction_parsing_uses_neo_vm_rs_opcode_operand_metadata_directly() {
          neo-vm-rs instead of keeping local instruction-walking loops"
     );
     assert!(
-        vm_error.contains("impl From<neo_vm_rs::InstructionError> for VmError"),
+        vm_error.contains("impl From<neo_vm::InstructionError> for VmError"),
         "neo-core should map shared Instruction errors at the VM boundary"
     );
     assert!(
@@ -2388,7 +2388,7 @@ fn p2p_validation_uses_direct_neo_vm_rs_script_validation() {
 
     let validator = read_source(workspace.join("neo-core/src/script_validation.rs"));
     assert!(
-        validator.contains("pub use neo_vm_rs::{")
+        validator.contains("pub use neo_vm::{")
             && validator.contains("parse_script_instructions")
             && validator.contains("validate_script")
             && validator.contains("validate_strict_script")
@@ -2455,7 +2455,7 @@ fn newbuffer_reuses_neo_vm_rs_collection_semantics() {
         read_source(workspace.join("neo-core/src/neo_vm/jump_table/splice.rs"));
 
     assert!(
-        splice.contains("neo_vm_rs::semantics::collections::new_buffer"),
+        splice.contains("neo_vm::semantics::collections::new_buffer"),
         "NEWBUFFER should reuse neo-vm-rs collection semantics instead of rebuilding \
          the StackValue rule locally"
     );
@@ -2472,16 +2472,16 @@ fn array_and_struct_constructors_reuse_neo_vm_rs_collection_semantics() {
         read_source(workspace.join("neo-core/src/neo_vm/jump_table/compound.rs"));
 
     assert!(
-        compound.contains("neo_vm_rs::semantics::collections::new_array("),
+        compound.contains("neo_vm::semantics::collections::new_array("),
         "NEWARRAY should reuse neo-vm-rs collection semantics instead of rebuilding \
          null-filled Array values locally"
     );
     assert!(
-        compound.contains("neo_vm_rs::semantics::collections::new_array_t"),
+        compound.contains("neo_vm::semantics::collections::new_array_t"),
         "NEWARRAY_T should reuse neo-vm-rs typed-array default semantics"
     );
     assert!(
-        compound.contains("neo_vm_rs::semantics::collections::new_struct"),
+        compound.contains("neo_vm::semantics::collections::new_struct"),
         "NEWSTRUCT should reuse neo-vm-rs collection semantics instead of rebuilding \
          null-filled Struct values locally"
     );
@@ -2502,7 +2502,7 @@ fn newmap_reuses_neo_vm_rs_map_semantics() {
         read_source(workspace.join("neo-core/src/neo_vm/jump_table/compound.rs"));
 
     assert!(
-        compound.contains("neo_vm_rs::semantics::collections::pack_map(Vec::new())"),
+        compound.contains("neo_vm::semantics::collections::pack_map(Vec::new())"),
         "NEWMAP should reuse neo-vm-rs empty-map semantics instead of constructing the \
          map directly in the opcode handler"
     );
@@ -2545,7 +2545,7 @@ fn stack_item_primitive_truthiness_reuses_neo_vm_rs_rules() {
         read_source(workspace.join("neo-core/src/neo_vm/stack_item/stack_item.rs"));
 
     assert!(
-        stack_item.contains("neo_vm_rs::semantics::comparison::boolean_value"),
+        stack_item.contains("neo_vm::semantics::comparison::boolean_value"),
         "StackItem primitive truthiness should reuse neo-vm-rs StackValue truthiness rules"
     );
     assert!(
@@ -2569,7 +2569,7 @@ fn stack_item_convert_to_byte_targets_reuses_neo_vm_rs_conversion_semantics() {
         read_source(workspace.join("neo-core/src/neo_vm/stack_item/stack_item.rs"));
 
     assert!(
-        stack_item.contains("neo_vm_rs::semantics::conversion::convert_value"),
+        stack_item.contains("neo_vm::semantics::conversion::convert_value"),
         "StackItem::convert_to should reuse neo-vm-rs conversion semantics for primitive \
          ByteString/Buffer targets"
     );
@@ -2636,7 +2636,7 @@ fn stack_item_type_facade_is_removed_and_byte_tags_use_neo_vm_rs() {
     );
     assert!(
         !neo_vm_mod.contains("StackItemType"),
-        "neo_vm should not re-export StackItemType; callers should import neo_vm_rs::StackItemType"
+        "neo_vm should not re-export StackItemType; callers should import neo_vm::StackItemType"
     );
     for cast in [
         "StackItemType::Any as u8",
@@ -2667,7 +2667,7 @@ fn size_primitive_lengths_reuse_neo_vm_rs_byte_string_rules() {
         read_source(workspace.join("neo-core/src/neo_vm/jump_table/compound.rs"));
 
     assert!(
-        compound.contains("neo_vm_rs::semantics::collections::size(&value)"),
+        compound.contains("neo_vm::semantics::collections::size(&value)"),
         "SIZE for primitive Integer/Boolean values should reuse neo-vm-rs collection \
          semantics"
     );
@@ -3401,7 +3401,7 @@ fn isnull_reuses_neo_vm_rs_null_predicate() {
     let types = read_source(workspace.join("neo-core/src/neo_vm/jump_table/types.rs"));
 
     assert!(
-        types.contains("neo_vm_rs::semantics::comparison::is_null"),
+        types.contains("neo_vm::semantics::comparison::is_null"),
         "ISNULL should reuse neo-vm-rs null predicate through a narrow local StackItem adapter"
     );
     assert!(
@@ -3421,7 +3421,7 @@ fn istype_reuses_neo_vm_rs_type_semantics_with_shallow_adapter() {
         read_source(workspace.join("neo-core/src/neo_vm/jump_table/types.rs"));
 
     assert!(
-        types.contains("neo_vm_rs::semantics::conversion::is_type"),
+        types.contains("neo_vm::semantics::conversion::is_type"),
         "ISTYPE should reuse neo-vm-rs type predicate semantics"
     );
     assert!(
@@ -3453,7 +3453,7 @@ fn convert_byte_sequence_targets_reuse_neo_vm_rs_conversion_semantics() {
     let stack_item = read_source(workspace.join("neo-core/src/neo_vm/stack_item/stack_item.rs"));
 
     assert!(
-        stack_item.contains("neo_vm_rs::semantics::conversion::convert_value"),
+        stack_item.contains("neo_vm::semantics::conversion::convert_value"),
         "CONVERT to ByteString/Buffer should reuse neo-vm-rs conversion semantics \
          through StackItem::convert_to after local null and same-type fast paths"
     );
@@ -3588,12 +3588,12 @@ fn compound_byte_sequence_reads_reuse_neo_vm_rs_collection_semantics() {
         read_source(workspace.join("neo-core/src/neo_vm/jump_table/compound.rs"));
 
     assert!(
-        compound.contains("neo_vm_rs::semantics::collections::has_key"),
+        compound.contains("neo_vm::semantics::collections::has_key"),
         "HASKEY for byte sequences should reuse neo-vm-rs collection semantics after \
          local index adaptation"
     );
     assert!(
-        compound.contains("neo_vm_rs::semantics::collections::pick_item"),
+        compound.contains("neo_vm::semantics::collections::pick_item"),
         "PICKITEM for byte sequences should reuse neo-vm-rs collection semantics after \
          local index validation"
     );
@@ -3682,15 +3682,15 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
 
     // b4f8bbb6: VM EQUAL is type-strict for primitives; byte-identical
     // Integer/ByteString values must not compare equal.
-    assert!(neo_vm_rs::semantics::comparison::not_equal_values(
+    assert!(neo_vm::semantics::comparison::not_equal_values(
         &StackValue::Integer(1),
         &StackValue::ByteString(vec![1])
     ));
 
     // b4f8bbb6 / 8be8f005 / bug #11: minimal signed-LE integer bytes matter
     // for persisted payloads and PrimitiveType.Size.
-    assert_eq!(neo_vm_rs::encode_integer(0), Vec::<u8>::new());
-    assert_eq!(neo_vm_rs::encode_integer(128), vec![0x80, 0x00]);
+    assert_eq!(neo_vm::encode_integer(0), Vec::<u8>::new());
+    assert_eq!(neo_vm::encode_integer(128), vec![0x80, 0x00]);
     assert_eq!(
         StackValue::Boolean(false).to_byte_string_bytes(),
         Some(vec![0]),
@@ -3701,57 +3701,57 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     // SIZE/PICKITEM cases from bugs #4/#11, so neo-core can route those paths
     // through shared semantics instead of keeping a separate local table.
     assert_eq!(
-        neo_vm_rs::semantics::collections::size(&StackValue::Integer(128)),
+        neo_vm::semantics::collections::size(&StackValue::Integer(128)),
         Ok(2)
     );
     assert_eq!(
-        neo_vm_rs::semantics::collections::size(&StackValue::Boolean(false)),
+        neo_vm::semantics::collections::size(&StackValue::Boolean(false)),
         Ok(1)
     );
     assert_eq!(
-        neo_vm_rs::semantics::collections::pick_item(
+        neo_vm::semantics::collections::pick_item(
             &StackValue::Integer(128),
             &StackValue::Integer(0)
         ),
         Ok(StackValue::Integer(128))
     );
     assert_eq!(
-        neo_vm_rs::semantics::collections::pick_item(
+        neo_vm::semantics::collections::pick_item(
             &StackValue::Integer(128),
             &StackValue::Integer(-1)
         ),
         Err("PICKITEM: byte index out of range".to_string())
     );
     assert_eq!(
-        neo_vm_rs::semantics::collections::pick_item(
+        neo_vm::semantics::collections::pick_item(
             &StackValue::Integer(128),
             &StackValue::Integer(2)
         ),
         Err("PICKITEM: byte index out of range".to_string())
     );
     assert_eq!(
-        neo_vm_rs::semantics::collections::pick_item(
+        neo_vm::semantics::collections::pick_item(
             &StackValue::Boolean(false),
             &StackValue::Integer(0)
         ),
         Ok(StackValue::Integer(0))
     );
     assert_eq!(
-        neo_vm_rs::semantics::collections::pick_item(
+        neo_vm::semantics::collections::pick_item(
             &StackValue::Boolean(false),
             &StackValue::Integer(-1)
         ),
         Err("PICKITEM: byte index out of range".to_string())
     );
     assert_eq!(
-        neo_vm_rs::semantics::collections::pick_item(
+        neo_vm::semantics::collections::pick_item(
             &StackValue::Boolean(false),
             &StackValue::Integer(1)
         ),
         Err("PICKITEM: byte index out of range".to_string())
     );
     assert!(
-        compound.contains("neo_vm_rs::semantics::collections::size"),
+        compound.contains("neo_vm::semantics::collections::size"),
         "SIZE should use neo-vm-rs public collection semantics now that it supports \
          Integer and Boolean PrimitiveType.Size"
     );
@@ -3761,8 +3761,8 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     );
     assert!(
         compound.contains("item @ (StackItem::Integer(_) | StackItem::Boolean(_))")
-            && compound.contains("neo_vm_rs::StackValue::try_from(item)?")
-            && compound.contains("neo_vm_rs::semantics::collections::pick_item"),
+            && compound.contains("neo_vm::StackValue::try_from(item)?")
+            && compound.contains("neo_vm::semantics::collections::pick_item"),
         "PICKITEM should route primitive Boolean/Integer spans through neo-vm-rs \
          collection semantics"
     );
@@ -3895,12 +3895,12 @@ fn static_syscall_hash_expectations_use_neo_vm_rs_directly() {
         read_source(workspace.join("neo-core/tests/contract_script_parity_tests.rs"));
 
     assert!(
-        parity_tests.contains("neo_vm_rs::interop_hash(\"System.Crypto.CheckSig\")"),
-        "static CheckSig expectation should use neo_vm_rs::interop_hash directly"
+        parity_tests.contains("neo_vm::interop_hash(\"System.Crypto.CheckSig\")"),
+        "static CheckSig expectation should use neo_vm::interop_hash directly"
     );
     assert!(
-        parity_tests.contains("neo_vm_rs::interop_hash(\"System.Crypto.CheckMultisig\")"),
-        "static CheckMultisig expectation should use neo_vm_rs::interop_hash directly"
+        parity_tests.contains("neo_vm::interop_hash(\"System.Crypto.CheckMultisig\")"),
+        "static CheckMultisig expectation should use neo_vm::interop_hash directly"
     );
     assert!(
         !parity_tests.contains("ScriptBuilder::hash_syscall(\"System.Crypto."),
@@ -3928,7 +3928,7 @@ fn neo_rpc_uses_neo_vm_rs_opcode_directly() {
 
     assert!(
         offenders.is_empty(),
-        "neo-rpc should import neo_vm_rs::OpCode directly instead of routing \
+        "neo-rpc should import neo_vm::OpCode directly instead of routing \
          through neo-core's compatibility module: {offenders:?}"
     );
 }
@@ -3977,7 +3977,7 @@ fn external_crates_import_opcode_from_neo_vm_rs() {
 
     assert!(
         offenders.is_empty(),
-        "external crates/tests/benches should import neo_vm_rs::OpCode directly: {offenders:?}"
+        "external crates/tests/benches should import neo_vm::OpCode directly: {offenders:?}"
     );
 }
 
@@ -4008,7 +4008,7 @@ fn workspace_tests_and_benches_do_not_import_local_vm_runtime() {
 
     assert!(
         offenders.is_empty(),
-        "workspace-level tests and benchmarks should use neo_vm_rs directly instead of \
+        "workspace-level tests and benchmarks should use neo_vm directly instead of \
          local neo_core::neo_vm runtime APIs: {offenders:?}"
     );
 }
@@ -4207,7 +4207,7 @@ fn storage_inspection_examples_use_neo_vm_rs_stackvalue_boundary() {
         read_source(workspace.join("neo-core/src/smart_contract/binary_serializer.rs"));
     assert!(
         serializer.contains("pub fn deserialize_stack_value")
-            && serializer.contains("neo_vm_rs::StackValue"),
+            && serializer.contains("neo_vm::StackValue"),
         "BinarySerializer should expose a neo-vm-rs StackValue deserialization boundary for \
          non-runtime storage inspectors"
     );
@@ -4219,9 +4219,9 @@ fn storage_inspection_examples_use_neo_vm_rs_stackvalue_boundary() {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
             source.contains("deserialize_stack_value")
-                && source.contains("use neo_vm_rs::StackValue"),
+                && source.contains("use neo_vm::StackValue"),
             "{relative} should deserialize storage payloads directly into \
-             neo_vm_rs::StackValue"
+             neo_vm::StackValue"
         );
         assert!(
             !source.contains("neo_core::neo_vm")
@@ -4270,9 +4270,9 @@ fn primitive_interop_validation_uses_stackvalue_directly() {
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
-            source.contains("neo_vm_rs::StackValue"),
+            source.contains("neo_vm::StackValue"),
             "{relative} should validate primitive interop payloads with \
-             neo_vm_rs::StackValue"
+             neo_vm::StackValue"
         );
         assert!(
             !source.contains("crate::neo_vm::StackItem"),
@@ -4296,7 +4296,7 @@ fn primitive_interop_validation_uses_stackvalue_directly() {
         interop.contains("ConvertedValue::StackValue")
             && !interop.contains("ConvertedValue::StackItem"),
         "InteropParameterDescriptor should preserve generic values as \
-         neo_vm_rs::StackValue, not local StackItem"
+         neo_vm::StackValue, not local StackItem"
     );
 }
 
@@ -4470,7 +4470,7 @@ fn reference_graph_helpers_are_owned_by_neo_vm_rs() {
         "compound stack item id allocation should not keep a local stack_item_vertex facade"
     );
     assert!(
-        reference_counter.contains("use neo_vm_rs::Tarjan;")
+        reference_counter.contains("use neo_vm::Tarjan;")
             && !reference_counter
                 .contains("crate::neo_vm::strongly_connected_components::Tarjan::new()"),
         "ReferenceCounter should use the shared Tarjan implementation directly"
@@ -4490,7 +4490,7 @@ fn reference_graph_helpers_are_owned_by_neo_vm_rs() {
         );
     }
 
-    let mut shared_tarjan = neo_vm_rs::Tarjan::new();
+    let mut shared_tarjan = neo_vm::Tarjan::new();
     shared_tarjan.add_edge(1, 2);
     shared_tarjan.add_edge(2, 1);
     assert_eq!(shared_tarjan.find_components().len(), 1);
@@ -4548,7 +4548,7 @@ fn unused_primitive_stack_item_wrappers_are_removed() {
         assert!(
             !workspace.join(relative).exists(),
             "{relative} should be removed; primitive values should use StackItem or \
-             neo_vm_rs::StackValue directly"
+             neo_vm::StackValue directly"
         );
     }
 
@@ -4718,8 +4718,8 @@ fn rpc_final_state_models_use_neo_vm_rs_vmstate_directly() {
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
-            source.contains("use neo_vm_rs::VmState;"),
-            "{relative} should use neo_vm_rs::VmState directly for final RPC VM states"
+            source.contains("use neo_vm::VmState;"),
+            "{relative} should use neo_vm::VmState directly for final RPC VM states"
         );
         assert!(
             !contains_neo_core_vmstate_import(&source),
@@ -4731,11 +4731,11 @@ fn rpc_final_state_models_use_neo_vm_rs_vmstate_directly() {
         read_source(workspace.join("neo-rpc/src/client/models/vm_state_utils.rs"));
     assert!(
         helper.contains("pub fn vm_state_to_string(state: VmState)"),
-        "RPC VM-state formatting should accept neo_vm_rs::VmState directly"
+        "RPC VM-state formatting should accept neo_vm::VmState directly"
     );
     assert!(
         helper.contains("pub fn vm_state_from_str(value: &str) -> Option<VmState>"),
-        "RPC VM-state parsing should return neo_vm_rs::VmState directly"
+        "RPC VM-state parsing should return neo_vm::VmState directly"
     );
     assert!(
         helper.contains("final_name()"),
@@ -4794,9 +4794,9 @@ fn rpc_server_blockchain_tests_seed_native_state_through_stack_value() {
         read_source(workspace.join("neo-rpc/src/server/rpc_server_blockchain/tests.rs"));
 
     assert!(
-        source.contains("use neo_vm_rs::{OpCode, StackValue};")
+        source.contains("use neo_vm::{OpCode, StackValue};")
             && source.contains("BinarySerializer::serialize_stack_value"),
-        "RPC blockchain tests should seed native-contract storage through neo_vm_rs::StackValue"
+        "RPC blockchain tests should seed native-contract storage through neo_vm::StackValue"
     );
     assert!(
         !source.contains("neo_core::neo_vm::StackItem")
@@ -4819,8 +4819,8 @@ fn rpc_client_stack_models_use_neo_vm_rs_stackvalue_directly() {
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
-            source.contains("use neo_vm_rs::StackValue;"),
-            "{relative} should use neo_vm_rs::StackValue directly for RPC stack payloads"
+            source.contains("use neo_vm::StackValue;"),
+            "{relative} should use neo_vm::StackValue directly for RPC stack payloads"
         );
         assert!(
             !source.contains("neo_core::neo_vm::StackItem")
@@ -4891,8 +4891,8 @@ fn rpc_server_invoke_arguments_push_neo_vm_rs_stackvalue_directly() {
         read_source(workspace.join("neo-core/src/script_builder.rs"));
     assert!(
         script_builder.contains("pub fn emit_push_stack_value")
-            && script_builder.contains("neo_vm_rs::StackValue"),
-        "ScriptBuilder should accept neo_vm_rs::StackValue directly for callers that no \
+            && script_builder.contains("neo_vm::StackValue"),
+        "ScriptBuilder should accept neo_vm::StackValue directly for callers that no \
          longer need local StackItem identity"
     );
 
@@ -4902,7 +4902,7 @@ fn rpc_server_invoke_arguments_push_neo_vm_rs_stackvalue_directly() {
         helpers.contains("contract_parameter_to_stack_value")
             && helpers.contains("emit_push_stack_value(item)"),
         "RPC invoke argument script construction should convert contract parameters to \
-         neo_vm_rs::StackValue and push them directly"
+         neo_vm::StackValue and push them directly"
     );
     assert!(
         !helpers.contains("contract_parameter_to_stack_item")

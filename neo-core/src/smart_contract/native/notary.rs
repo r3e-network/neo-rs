@@ -22,7 +22,7 @@ use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::StorageItem;
 use crate::neo_vm::{StackItem, StackItemExt};
 use crate::UInt160;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::sync::Arc;

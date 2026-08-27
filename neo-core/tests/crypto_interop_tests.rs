@@ -8,7 +8,7 @@ use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::TriggerType;
 use neo_core::wallets::KeyPair;
 use neo_core::Verifiable;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::sync::Arc;
 
 fn sample_transaction() -> Transaction {

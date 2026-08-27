@@ -12,7 +12,7 @@ use crate::wallets::helper::Helper;
 use crate::wallets::key_pair::KeyPair;
 use crate::wallets::wallet::{WalletError, WalletResult};
 use crate::UInt160;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::sync::Arc;
 
 /// Common interface shared by all wallet-backed accounts.

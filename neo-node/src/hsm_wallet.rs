@@ -450,7 +450,7 @@ mod tests {
     use neo_core::WitnessScope;
     use neo_crypto::Secp256r1Crypto;
     use neo_hsm::{HsmConfig, SimulationSigner};
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
 
     #[tokio::test]
     async fn hsm_wallet_signs_and_builds_witness() {

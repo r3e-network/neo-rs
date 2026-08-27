@@ -1,8 +1,8 @@
 use neo_core::smart_contract::native::hash_index_state::HashIndexState;
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::UInt256;
-use neo_vm_rs::ExecutionEngineLimits;
-use neo_vm_rs::StackValue;
+use neo_vm::ExecutionEngineLimits;
+use neo_vm::StackValue;
 
 #[test]
 fn hash_index_state_round_trips_via_stack_value() {

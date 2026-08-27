@@ -12,7 +12,7 @@ use neo_core::smart_contract::native::{trimmed_block::TrimmedBlock, LedgerContra
 use neo_core::smart_contract::StorageKey;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
 use neo_rpc::server::{RpcHandler, RpcServer, RpcServerBlockchain, RpcServerConfig};
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 use serde_json::Value;
 
 fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {

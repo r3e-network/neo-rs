@@ -20,8 +20,8 @@ use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{UInt160, UInt256};
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::OpCode;
+use neo_vm::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 
@@ -948,7 +948,7 @@ fn persist_oracle_request(snapshot: &DataCache, id: u64, original_tx_id: UInt256
     ]);
     let bytes = neo_core::smart_contract::BinarySerializer::serialize(
         &stack_item,
-        &neo_vm_rs::ExecutionEngineLimits::default(),
+        &neo_vm::ExecutionEngineLimits::default(),
     )
     .expect("serialize oracle request");
 

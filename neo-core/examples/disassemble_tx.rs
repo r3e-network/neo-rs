@@ -4,7 +4,7 @@ use neo_core::persistence::{
 use neo_core::script_validation::{parse_script_instructions, validate_script};
 use neo_core::smart_contract::native::ledger_contract::LedgerContract;
 use neo_core::UInt256;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::path::PathBuf;
 
 fn format_ascii_preview(bytes: &[u8]) -> String {

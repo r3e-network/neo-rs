@@ -1,6 +1,6 @@
 use base64::Engine as _;
 use neo_core::script_validation::parse_script_instructions;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 fn format_ascii_preview(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len());

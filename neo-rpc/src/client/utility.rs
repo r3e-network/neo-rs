@@ -52,7 +52,7 @@ use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Block, BlockHeader, Contract, ECCurve, ECPoint, KeyPair, Transaction, Witness};
 use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 use std::sync::OnceLock;
 

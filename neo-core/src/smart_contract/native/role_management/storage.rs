@@ -5,8 +5,8 @@ use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::Role;
 use crate::smart_contract::storage_key::StorageKey;
 use crate::{ECCurve, ECPoint};
-use neo_vm_rs::ExecutionEngineLimits;
-use neo_vm_rs::StackValue;
+use neo_vm::ExecutionEngineLimits;
+use neo_vm::StackValue;
 use std::convert::TryInto;
 
 impl RoleManagement {

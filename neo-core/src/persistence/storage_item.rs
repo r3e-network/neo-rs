@@ -9,7 +9,7 @@ use crate::neo_io::{IoResult, MemoryReader};
 use crate::smart_contract::BinarySerializer;
 use crate::smart_contract::interoperable::Interoperable;
 use neo_storage::types::storage_item::CacheProvider;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use std::any::Any;
 

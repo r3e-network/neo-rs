@@ -597,7 +597,7 @@ mod tests {
     };
     use crate::network::{MessageCommand, MessageFlags};
     use crate::{UInt160, WitnessScope};
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,

@@ -2,7 +2,7 @@
 
 use crate::error::CoreError;
 use crate::UInt256;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -69,7 +69,7 @@ impl HashIndexState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     #[test]
     fn hash_index_state_projects_to_neo_vm_rs_stack_value() {

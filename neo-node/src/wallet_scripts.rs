@@ -18,7 +18,7 @@ pub(crate) fn signature_invocation(signature: &[u8]) -> WalletResult<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
 
     #[test]
     fn signature_invocation_uses_neo_pushdata1_form() {

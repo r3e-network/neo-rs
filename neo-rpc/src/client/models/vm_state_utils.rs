@@ -1,6 +1,6 @@
 use super::super::utility::required_string;
 use neo_json::{JObject, JToken};
-use neo_vm_rs::VmState;
+use neo_vm::VmState;
 
 pub fn vm_state_to_string(state: VmState) -> String {
     state

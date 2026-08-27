@@ -654,7 +654,7 @@ fn get_nfts_excludes_burned_nft_in_same_overlay() {
 
     fixture
         .engine
-        .load_script(vec![neo_vm_rs::OpCode::RET.byte()], CallFlags::ALL, None)
+        .load_script(vec![neo_vm::OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load overlay script");
     fixture.engine.set_calling_script_hash(Some(holder));
 
@@ -695,7 +695,7 @@ fn get_nfts_of_owner_excludes_burned_nft_in_same_overlay() {
 
     fixture
         .engine
-        .load_script(vec![neo_vm_rs::OpCode::RET.byte()], CallFlags::ALL, None)
+        .load_script(vec![neo_vm::OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load overlay script");
     fixture.engine.set_calling_script_hash(Some(holder));
 

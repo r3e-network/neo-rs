@@ -7,7 +7,7 @@ use neo_tests::mempool::{Mempool, MempoolConfig};
 use neo_tests::state::{
     AccountState, MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState,
 };
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 // Creates a test account with NEO and GAS balances
 fn create_test_account(neo_balance: u64, gas_balance: u64) -> (UInt160, AccountState) {

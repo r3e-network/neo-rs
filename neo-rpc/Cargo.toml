@@ -21,7 +21,7 @@ neo-io = { workspace = true }
 neo-config = { workspace = true, optional = true }
 neo-core = { path = "../neo-core", optional = true, features = ["runtime"] }
 neo-json = { path = "../neo-json", optional = true }
-neo-vm-rs = { workspace = true, optional = true }
+neo-vm = { workspace = true, optional = true }
 # neo-config merged into neo-core
 
 # Async runtime
@@ -90,7 +90,7 @@ server = [
     "dep:neo-config",
     "dep:neo-core",
     "dep:neo-json",
-    "dep:neo-vm-rs",
+    "dep:neo-vm",
     "dep:warp",
     "dep:hyper",
     "dep:uuid",
@@ -119,7 +119,7 @@ client = [
     "dep:neo-config",
     "dep:neo-core",
     "dep:neo-json",
-    "dep:neo-vm-rs",
+    "dep:neo-vm",
     "dep:reqwest",
     "dep:hyper",
     "dep:anyhow",

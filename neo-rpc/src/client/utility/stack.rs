@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose, Engine as _};
 use neo_json::{JObject, JToken};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 

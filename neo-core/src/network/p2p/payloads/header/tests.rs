@@ -12,7 +12,7 @@ use crate::smart_contract::native::LedgerContract;
 use crate::smart_contract::StorageKey;
 use crate::smart_contract::StorageItem;
 use crate::Witness as LedgerWitness;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::sync::Arc;
 
 const LEDGER_CONTRACT_ID: i32 = -4;

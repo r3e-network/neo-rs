@@ -74,7 +74,7 @@ impl InteropDescriptor {
     pub fn hash(&self) -> u32 {
         *self
             .hash_cache
-            .get_or_init(|| neo_vm_rs::interop_hash(&self.name))
+            .get_or_init(|| neo_vm::interop_hash(&self.name))
     }
 
     /// Checks if this descriptor matches a given hash

@@ -4,7 +4,7 @@ use super::contract_group::ContractGroup;
 use crate::cryptography::ECPoint;
 use crate::neo_vm::{StackItem, StackItemExt};
 use crate::UInt160;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -192,7 +192,7 @@ impl<'de> Deserialize<'de> for ContractPermissionDescriptor {
 mod tests {
     use super::*;
     use crate::wallets::KeyPair;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     fn group_key() -> ECPoint {
         KeyPair::new(vec![1u8; 32])

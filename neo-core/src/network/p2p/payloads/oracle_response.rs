@@ -19,7 +19,7 @@ use crate::ScriptBuilder;
 use crate::smart_contract::CallFlags;
 use crate::smart_contract::native::{oracle_contract::OracleContract, NativeContract};
 use crate::WitnessScope;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 

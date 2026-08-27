@@ -78,7 +78,7 @@ impl Ord for PoolItem {
 mod tests {
     use super::PoolItem;
     use crate::network::p2p::payloads::{Transaction, TransactionAttribute, Witness};
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
     use std::cmp::Ordering;
 
     fn make_transaction(nonce: u32, network_fee: i64, high_priority: bool) -> Transaction {

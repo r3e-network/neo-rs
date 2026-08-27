@@ -30,7 +30,7 @@ use neo_core::smart_contract::native::{LedgerContract, NeoToken, helpers::Native
 use neo_core::time_provider::TimeProvider;
 use neo_core::wallets::Wallet;
 use neo_core::{ContainsTransactionType, UInt160, UInt256};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use parking_lot::Mutex;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};

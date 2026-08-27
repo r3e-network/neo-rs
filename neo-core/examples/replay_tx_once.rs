@@ -15,7 +15,7 @@ use neo_core::smart_contract::native::LedgerTransactionStates;
 use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::{Verifiable, UInt256};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -44,7 +44,7 @@ fn print_instruction_window(script: &[u8], target_ip: usize) {
         instruction.pointer() <= target_ip
             && matches!(
                 instruction.opcode(),
-                neo_vm_rs::OpCode::INITSLOT | neo_vm_rs::OpCode::INITSSLOT
+                neo_vm::OpCode::INITSLOT | neo_vm::OpCode::INITSSLOT
             )
     });
     if let Some(instruction) = nearest_initslot {

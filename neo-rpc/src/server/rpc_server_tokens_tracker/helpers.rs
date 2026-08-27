@@ -11,8 +11,8 @@ use neo_core::tokens_tracker::{
 use neo_core::tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::UInt160;
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::OpCode;
+use neo_vm::VmState as VMState;
 use num_traits::ToPrimitive;
 use serde_json::{json, Value};
 use std::sync::Arc;

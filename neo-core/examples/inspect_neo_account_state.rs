@@ -4,7 +4,7 @@ use neo_core::persistence::{
 };
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::UInt160;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 use std::path::PathBuf;
 

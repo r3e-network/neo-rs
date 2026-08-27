@@ -14,7 +14,7 @@ use neo_config::ProtocolSettings;
 use neo_core::Transaction;
 use neo_json::JObject;
 use neo_primitives::UInt256;
-use neo_vm_rs::VmState;
+use neo_vm::VmState;
 
 /// RPC transaction information matching C# `RpcTransaction`
 #[derive(Debug, Clone)]

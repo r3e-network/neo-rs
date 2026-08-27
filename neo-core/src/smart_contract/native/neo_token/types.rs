@@ -3,7 +3,7 @@
 //
 
 use super::*;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
     match value {
@@ -219,7 +219,7 @@ impl CandidateState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     fn sample_vote_target() -> ECPoint {
         let encoded =

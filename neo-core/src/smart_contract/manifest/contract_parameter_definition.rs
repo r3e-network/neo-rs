@@ -4,7 +4,7 @@ use crate::error::CoreError;
 use crate::smart_contract::interoperable::Interoperable;
 use crate::smart_contract::ContractParameterType;
 use crate::neo_vm::StackItem;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 
 /// Represents a parameter of an event or method in ABI (matches C# ContractParameterDefinition)
@@ -131,7 +131,7 @@ impl Interoperable for ContractParameterDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     #[test]
     fn parameter_definition_projects_to_neo_vm_rs_stack_value() {

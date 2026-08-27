@@ -12,7 +12,7 @@ use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::helpers::NativeHelpers;
 use crate::Witness;
 use neo_primitives::{UInt160, UInt256};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 /// Creates the genesis block for the given protocol settings.
 pub fn create_genesis_block(settings: &ProtocolSettings) -> Block {

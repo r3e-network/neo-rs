@@ -2,7 +2,7 @@
 
 use crate::error::CoreError;
 use crate::smart_contract::native::stack_value_numeric::stack_value_to_bigint;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 /// Base account state for native tokens (matches C# AccountState)
@@ -70,7 +70,7 @@ impl AccountState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     #[test]
     fn account_state_projects_to_neo_vm_rs_stack_value() {

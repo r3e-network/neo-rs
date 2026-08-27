@@ -8,7 +8,7 @@ pub use neo_vm::{
 #[cfg(test)]
 mod tests {
     use super::{parse_script_instructions, validate_script, validate_strict_script};
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
 
     #[test]
     fn accepts_empty_and_simple_scripts() {
@@ -43,7 +43,7 @@ mod tests {
     fn rejects_any_type_for_convert() {
         assert!(validate_strict_script(&[
             OpCode::CONVERT.byte(),
-            neo_vm_rs::NEOVM_STACK_ITEM_TYPE_ANY,
+            neo_vm::NEOVM_STACK_ITEM_TYPE_ANY,
             OpCode::RET.byte()
         ])
         .is_err());

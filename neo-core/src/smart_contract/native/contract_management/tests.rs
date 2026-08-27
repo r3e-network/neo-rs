@@ -19,7 +19,7 @@ use crate::neo_vm::StackItem;
 use crate::wallets::KeyPair;
 use crate::witness::Witness;
 use crate::{Verifiable, UInt160, WitnessScope};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::sync::Arc;
 
 fn default_manifest() -> ContractManifest {

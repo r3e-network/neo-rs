@@ -17,7 +17,7 @@ use neo_core::tokens_tracker::{
     find_prefix, Nep17Tracker, Nep17TransferKey, TokenTransfer, TokenTransferKeyView, Tracker,
 };
 use neo_core::{UInt160, WitnessScope};
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use std::sync::Arc;
 

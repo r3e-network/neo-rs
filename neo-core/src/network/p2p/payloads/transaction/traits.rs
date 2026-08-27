@@ -6,7 +6,7 @@ use super::*;
 use crate::error::CoreError;
 use neo_primitives::error::PrimitiveResult;
 use neo_primitives::SerializablePayload;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 impl SerializablePayload for Transaction {
     fn hash_data(&self) -> Vec<u8> {

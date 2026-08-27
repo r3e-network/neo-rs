@@ -7,7 +7,7 @@ use crate::script_validation::ValidatedScript;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::manifest::ContractAbi;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 use std::collections::{HashMap, HashSet};
 
 impl ContractManagement {

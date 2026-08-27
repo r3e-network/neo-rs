@@ -2,7 +2,7 @@
 
 use neo_core::UInt160;
 use neo_tests::state::{MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState};
-use neo_vm_rs::{ExecutionResult, OpCode, StackValue, VmState, interpret};
+use neo_vm::{ExecutionResult, OpCode, StackValue, VmState, interpret};
 use num_bigint::BigInt;
 
 fn run_script(script: &[u8]) -> ExecutionResult {

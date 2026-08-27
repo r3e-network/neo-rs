@@ -15,8 +15,8 @@ use neo_core::smart_contract::native::{LedgerContract, NativeContract, NativeHel
 use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::ContractParameterType;
 use neo_core::{UInt160, UInt256, Witness};
-use neo_vm_rs::VmState as VMState;
-use neo_vm_rs::{ExecutionEngineLimits, OpCode};
+use neo_vm::VmState as VMState;
+use neo_vm::{ExecutionEngineLimits, OpCode};
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 

@@ -10,7 +10,7 @@ use neo_core::wallets::wallet::WalletResult;
 use neo_core::wallets::{KeyPair, Nep6Wallet, Wallet};
 use neo_core::WitnessScope;
 use neo_crypto::Secp256r1Crypto;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use rand::RngCore;
 use tokio::runtime::Runtime;
 

@@ -261,8 +261,8 @@ mod tests {
 use crate::neo_vm::StackItem;
     use crate::witness::Witness;
     use crate::{ECCurve, ECPoint, UInt256, Verifiable, WitnessScope};
-    use neo_vm_rs::OpCode;
-    use neo_vm_rs::StackValue;
+    use neo_vm::OpCode;
+    use neo_vm::StackValue;
     use std::sync::Arc;
 
     fn sample_point(tag: u8) -> ECPoint {
@@ -359,7 +359,7 @@ use crate::neo_vm::StackItem;
     ) {
         let arg_count = args.len();
         for arg in args.drain(..).rev() {
-            let value = neo_vm_rs::StackValue::try_from(arg).expect("convert arg");
+            let value = neo_vm::StackValue::try_from(arg).expect("convert arg");
             sb.emit_push_stack_value(&value).expect("emit arg");
         }
         sb.emit_push_int(arg_count as i64);

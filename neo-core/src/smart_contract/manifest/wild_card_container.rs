@@ -1,7 +1,7 @@
 //! WildCardContainer - matches C# Neo.SmartContract.Manifest.WildCardContainer exactly
 
 use crate::neo_vm::StackItem;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -179,7 +179,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     #[test]
     fn string_wildcard_projects_to_neo_vm_rs_null() {

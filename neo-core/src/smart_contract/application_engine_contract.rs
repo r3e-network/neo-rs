@@ -9,7 +9,7 @@ use crate::smart_contract::env_flags::env_flag_enabled;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
 use crate::smart_contract::native::crypto_lib::Bls12381Interop;
 use crate::UInt160;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::sync::OnceLock;

@@ -8,7 +8,7 @@ use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::interoperable::Interoperable;
 use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::storage_context::StorageContext;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 
 fn put_storage_if_changed(
     engine: &mut ApplicationEngine,

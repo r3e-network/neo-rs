@@ -111,22 +111,22 @@ fn witness_rule_projects_to_neo_vm_rs_stack_value() {
 
     assert_eq!(
         rule.to_stack_value(),
-        neo_vm_rs::StackValue::Array(vec![
-            neo_vm_rs::StackValue::Integer(WitnessRuleAction::Allow.to_byte().into()),
-            neo_vm_rs::StackValue::Array(vec![
-                neo_vm_rs::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
-                neo_vm_rs::StackValue::Array(vec![
-                    neo_vm_rs::StackValue::Array(vec![
-                        neo_vm_rs::StackValue::Integer(
+        neo_vm::StackValue::Array(vec![
+            neo_vm::StackValue::Integer(WitnessRuleAction::Allow.to_byte().into()),
+            neo_vm::StackValue::Array(vec![
+                neo_vm::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
+                neo_vm::StackValue::Array(vec![
+                    neo_vm::StackValue::Array(vec![
+                        neo_vm::StackValue::Integer(
                             WitnessConditionType::Boolean.to_byte().into()
                         ),
-                        neo_vm_rs::StackValue::Boolean(true),
+                        neo_vm::StackValue::Boolean(true),
                     ]),
-                    neo_vm_rs::StackValue::Array(vec![
-                        neo_vm_rs::StackValue::Integer(
+                    neo_vm::StackValue::Array(vec![
+                        neo_vm::StackValue::Integer(
                             WitnessConditionType::ScriptHash.to_byte().into()
                         ),
-                        neo_vm_rs::StackValue::ByteString(hash.to_bytes()),
+                        neo_vm::StackValue::ByteString(hash.to_bytes()),
                     ]),
                 ]),
             ]),

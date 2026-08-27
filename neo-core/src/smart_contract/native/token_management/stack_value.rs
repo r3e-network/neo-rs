@@ -3,7 +3,7 @@ use crate::smart_contract::native::stack_value_numeric::{
     stack_value_to_bigint_result, MAX_VM_INTEGER_BYTES,
 };
 use crate::neo_vm::StackItem;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 pub(super) fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, CoreError> {

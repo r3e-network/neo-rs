@@ -9,7 +9,7 @@ neo-core = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-primitives = { workspace = true }
-neo-vm-rs = { workspace = true }
+neo-vm = { workspace = true }
 hex = { workspace = true }
 
 [[bench]]

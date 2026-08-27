@@ -27,8 +27,8 @@ use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{Verifiable, NeoSystem, UInt160, UInt256, WitnessScope};
 use neo_json::JToken;
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::OpCode;
+use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use std::sync::Arc;
 

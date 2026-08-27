@@ -17,7 +17,7 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_error_factory;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 use super::helpers::{
     final_rpc_vm_state_string, internal_error, invalid_params, parse_contract_parameters,

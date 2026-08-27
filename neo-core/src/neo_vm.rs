@@ -3,21 +3,11 @@
 // Licensed under the MIT License
 // See LICENSE file for details
 
-//! Neo VM compatibility surface — re-exports from the standalone `neo-vm` crate.
+//! Neo VM compatibility surface — re-exports from the self-contained `neo-vm` crate.
+//!
+//! `neo-vm` now vendors the full VM (native `StackItem` engine + the ABI/semantics
+//! layer previously provided by the external `neo-vm-rs` crate). A glob re-export
+//! keeps this compatibility module in sync with `neo-vm`'s public surface so
+//! `crate::neo_vm::<Symbol>` resolves for every VM type used across neo-core.
 
-pub use neo_vm::error;
-pub use neo_vm::evaluation_stack;
-pub use neo_vm::execution_context;
-pub use neo_vm::execution_engine;
-pub use neo_vm::interop_service;
-pub use neo_vm::jump_table;
-pub use neo_vm::reference_counter;
-pub use neo_vm::script;
-pub use neo_vm::slot;
-pub use neo_vm::stack_item;
-pub use neo_vm::io;
-
-pub use neo_vm::{
-    CompoundParent, EvaluationStack, ExecutionContext, ExecutionEngine, InteropService, JumpTable,
-    ReferenceCounter, Script, Slot, StackItem, VmError, VmResult,
-};
+pub use neo_vm::*;

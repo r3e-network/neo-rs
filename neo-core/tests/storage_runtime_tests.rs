@@ -14,7 +14,7 @@ use neo_core::smart_contract::StorageContext;
 use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::{constants, UInt160};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::sync::Arc;
 
 const CONTRACT_MANAGEMENT_ID: i32 = -1;

@@ -4,7 +4,7 @@ use crate::neo_io::impl_serializable;
 use crate::smart_contract::interoperable::Interoperable;
 use crate::neo_vm::StackItem;
 use crate::{CoreResult, UInt256};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 /// A trimmed block containing only the header and transaction hashes (matches C# TrimmedBlock)
@@ -122,8 +122,8 @@ mod tests {
     use crate::network::p2p::payloads::Transaction;
     use crate::smart_contract::Interoperable;
     use crate::{UInt160, UInt256, Witness};
-    use neo_vm_rs::OpCode;
-    use neo_vm_rs::StackValue;
+    use neo_vm::OpCode;
+    use neo_vm::StackValue;
 
     fn sample_block() -> TrimmedBlock {
         let header = BlockHeader::new(

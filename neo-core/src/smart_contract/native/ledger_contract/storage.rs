@@ -16,7 +16,7 @@ use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::{policy_contract::PolicyContract, trimmed_block::TrimmedBlock};
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::{UInt160, UInt256};
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 
 impl LedgerContract {
     /// Gets the current block hash from the persisted state.

@@ -10,7 +10,7 @@ use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::{LedgerContract, OracleRequest};
 use crate::smart_contract::StorageItem;
 use crate::{UInt160, UInt256, WitnessScope};
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 
 fn sample_point(byte: u8) -> ECPoint {
     let mut private_key = [0u8; 32];
@@ -60,7 +60,7 @@ fn create_response_tx_matches_csharp_fee_math() {
     origin_tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
     origin_tx.set_attributes(Vec::new());
     origin_tx.set_valid_until_block(1);
-    origin_tx.set_script(vec![neo_vm_rs::OpCode::RET.byte()]);
+    origin_tx.set_script(vec![neo_vm::OpCode::RET.byte()]);
     origin_tx.set_witnesses(vec![Witness::empty()]);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

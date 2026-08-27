@@ -3,7 +3,7 @@
 use neo_consensus::BlockData;
 use neo_core::network::p2p::payloads::Block;
 use neo_crypto::{ecc::generate_keypair, ECCurve};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 #[tokio::test]
 async fn test_complete_block_assembly_workflow() {
@@ -71,7 +71,7 @@ async fn test_complete_block_assembly_workflow() {
 async fn assemble_test_block(block_data: BlockData) -> anyhow::Result<Block> {
     use neo_core::network::p2p::payloads::{Block, Header, Witness};
     use neo_core::smart_contract::helper::Helper;
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
 
     // Build invocation script
     let mut invocation = Vec::new();

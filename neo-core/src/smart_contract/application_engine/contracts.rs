@@ -442,7 +442,7 @@ impl ApplicationEngine {
 mod tests {
     use super::*;
     use crate::smart_contract::native::GasToken;
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
 
     #[test]
     fn call_contract_uses_execution_state_script_hash_for_caller() {

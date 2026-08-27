@@ -21,7 +21,7 @@ use crate::smart_contract::StorageItem;
 use crate::neo_vm::StackItem;
 use crate::UInt160;
 use neo_primitives::TransactionAttributeType;
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
+use neo_vm::{ExecutionEngineLimits, StackValue};
 use num_bigint::{BigInt, Sign};
 use num_traits::{ToPrimitive, Zero};
 

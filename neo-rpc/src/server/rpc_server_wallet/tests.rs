@@ -16,7 +16,7 @@ use neo_core::NeoSystem;
 use neo_core::UInt256;
 use neo_core::Witness;
 use neo_crypto::Secp256r1Crypto;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};

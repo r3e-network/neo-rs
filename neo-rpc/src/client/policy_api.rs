@@ -104,7 +104,7 @@ mod tests {
     use mockito::{Matcher, Server};
     use neo_core::ScriptBuilder;
     use neo_json::{JArray, JObject, JToken};
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
     use regex::escape;
     use reqwest::Url;
     use std::sync::Arc;

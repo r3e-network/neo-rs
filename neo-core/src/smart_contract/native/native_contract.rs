@@ -12,7 +12,7 @@ use crate::smart_contract::manifest::{
 };
 use crate::smart_contract::native::HardforkActivable;
 use crate::smart_contract::{ContractManifest, ContractParameterType, ContractState, NefFile};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
@@ -432,7 +432,7 @@ fn build_native_contract_state<T: NativeContract + ?Sized>(
     settings: &ProtocolSettings,
     block_height: u32,
 ) -> ContractState {
-    let syscall_hash = neo_vm_rs::interop_hash("System.Contract.CallNative");
+    let syscall_hash = neo_vm::interop_hash("System.Contract.CallNative");
 
     // Native contract state generation: include a method if either:
     // 1. It has no ActiveIn (always present), OR

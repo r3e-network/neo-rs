@@ -24,7 +24,7 @@ use crate::{
 };
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_primitives::{UInt160, UINT160_SIZE};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 // Hash and Hasher now provided by impl_hash_for_fields macro
 use std::str::FromStr;
@@ -437,7 +437,7 @@ crate::impl_hash_for_fields!(Signer, account, scopes);
 mod tests {
     use super::*;
     use crate::smart_contract::Interoperable;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     #[test]
     fn signer_projects_to_neo_vm_rs_stack_value() {

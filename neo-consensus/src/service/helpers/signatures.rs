@@ -2,7 +2,7 @@ use super::super::ConsensusService;
 use crate::{ConsensusError, ConsensusResult};
 use neo_vm::ScriptBuilder;
 use neo_primitives::{UInt160, UInt256};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use tracing::{debug, warn};
 
 pub(in crate::service) fn invocation_script_from_signature(signature: &[u8]) -> Vec<u8> {

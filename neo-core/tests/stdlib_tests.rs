@@ -13,7 +13,7 @@ use neo_core::smart_contract::native::{NativeContract, StdLib};
 use neo_core::smart_contract::TriggerType;
 use neo_core::witness::Witness;
 use neo_core::{UInt160, Verifiable, WitnessScope};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use num_traits::ToPrimitive;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -73,7 +73,7 @@ fn emit_stdlib_call(
 ) {
     let arg_count = args.len();
     for arg in args.drain(..).rev() {
-        let value = neo_vm_rs::StackValue::try_from(arg).expect("convert arg");
+        let value = neo_vm::StackValue::try_from(arg).expect("convert arg");
         sb.emit_push_stack_value(&value).expect("emit arg");
     }
     sb.emit_push_int(arg_count as i64);
@@ -295,7 +295,7 @@ fn stdlib_deserialize_returns_stack_item_shape_for_any_results() {
         StackItem::from_byte_string(b"neo".to_vec()),
     ]);
     let encoded =
-        BinarySerializer::serialize(&original, &neo_vm_rs::ExecutionEngineLimits::default())
+        BinarySerializer::serialize(&original, &neo_vm::ExecutionEngineLimits::default())
             .expect("serialize array");
 
     let mut sb = ScriptBuilder::new();

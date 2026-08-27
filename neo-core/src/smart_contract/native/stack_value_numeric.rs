@@ -1,5 +1,5 @@
 use crate::error::CoreError;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 

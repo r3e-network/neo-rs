@@ -17,7 +17,7 @@ use neo_core::smart_contract::CallFlags;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{Contract, ECPoint, KeyPair, Signer, Transaction};
 use neo_primitives::{UInt160, WitnessScope};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;

@@ -576,7 +576,7 @@ mod tests {
     use neo_core::smart_contract::helper::Helper as ContractHelper;
     use neo_core::WitnessScope;
     use neo_crypto::Secp256r1Crypto;
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
     use tempfile::tempdir;
 
     #[tokio::test]

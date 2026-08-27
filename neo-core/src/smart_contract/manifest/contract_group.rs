@@ -11,7 +11,7 @@ use crate::{ECCurve, ECPoint};
 use base64::{engine::general_purpose, Engine as _};
 use std::convert::TryFrom;
 // Removed neo_cryptography dependency - using external crypto crates directly
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 
 /// Represents a set of mutually trusted contracts.

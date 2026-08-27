@@ -14,7 +14,7 @@ use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};
 
 // Imports for tests moved to neo-node (Phase 2 refactoring):
 // use neo_core::protocol_settings::ProtocolSettings;
-// use neo_vm_rs::VmState as VMState;
+// use neo_vm::VmState as VMState;
 // use neo_core::network::p2p::payloads::{Block, Header, Transaction};
 // use neo_core::network::p2p::local_node::BroadcastEvent;
 // use neo_core::network::p2p::RelayInventory;
@@ -22,7 +22,7 @@ use neo_primitives::{UInt160, UInt256, UINT160_SIZE, UINT256_SIZE};
 // use neo_core::smart_contract::TriggerType;
 // use neo_core::state_service::StateRoot;
 // use neo_core::WitnessScope;
-// use neo_vm_rs::OpCode;
+// use neo_vm::OpCode;
 // use std::net::SocketAddr;
 
 use num_bigint::BigInt;

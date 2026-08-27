@@ -20,7 +20,7 @@ use crate::smart_contract::trigger_type::TriggerType;
 use crate::neo_vm::StackItem;
 use crate::{UInt160, UInt256, Verifiable};
 use neo_primitives::TransactionAttributeType;
-use neo_vm_rs::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
+use neo_vm::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;

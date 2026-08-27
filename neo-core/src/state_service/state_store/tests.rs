@@ -13,7 +13,7 @@ use crate::smart_contract::native::LedgerContract;
 use crate::smart_contract::native::{role_management::RoleManagement, NativeContract, Role};
 use crate::smart_contract::Contract;
 use crate::wallets::KeyPair;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::any::Any;
 use std::io::Write;
 use std::sync::Arc;

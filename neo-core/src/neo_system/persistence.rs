@@ -35,7 +35,7 @@ use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::neo_vm::StackItem;
 use crate::UInt256;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 use tracing::{debug, info, warn};
 
 #[derive(Default)]

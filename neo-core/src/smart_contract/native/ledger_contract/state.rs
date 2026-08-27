@@ -6,7 +6,7 @@ use crate::smart_contract::native::{
     hash_index_state::HashIndexState, trimmed_block::TrimmedBlock,
 };
 use crate::UInt256;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 use serde::{Deserialize, Serialize};
 
 const RECORD_KIND_TRANSACTION: u8 = 0x01;

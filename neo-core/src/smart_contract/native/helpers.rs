@@ -12,7 +12,7 @@ use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::NeoToken;
 use crate::smart_contract::Contract;
 use crate::{UInt160, UInt256};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use std::sync::LazyLock;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -32,7 +32,7 @@ pub(crate) fn parse_uint160_arg(arg: &[u8], label: &str) -> crate::CoreResult<UI
 ///     .map_err(CoreError::native_contract)?
 /// ```
 pub(crate) fn serialize_stack_value_native(value: &StackValue) -> CoreResult<Vec<u8>> {
-    use neo_vm_rs::ExecutionEngineLimits;
+    use neo_vm::ExecutionEngineLimits;
     BinarySerializer::serialize_stack_value(value, &ExecutionEngineLimits::default())
         .map_err(crate::CoreError::native_contract)
 }

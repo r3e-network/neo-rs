@@ -21,7 +21,7 @@ use neo_core::smart_contract::native::{NativeContract, NativeContractsCache};
 use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::ContractParameterType;
 use neo_core::UInt160;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use num_bigint::BigInt;
 use secp256k1::{Message, Secp256k1, SecretKey};
 use std::collections::HashMap;

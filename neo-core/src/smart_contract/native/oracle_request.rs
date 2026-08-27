@@ -2,7 +2,7 @@
 
 use crate::error::CoreError;
 use crate::{UInt160, UInt256};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 /// Oracle request state (matches C# OracleRequest)
 #[derive(Clone, Debug)]
@@ -129,7 +129,7 @@ impl OracleRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_rs::StackValue;
+    use neo_vm::StackValue;
 
     fn sample_request(filter: Option<&str>) -> OracleRequest {
         OracleRequest::new(

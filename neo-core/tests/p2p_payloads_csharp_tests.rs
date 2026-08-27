@@ -18,8 +18,8 @@ use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::{LedgerContract, NativeContract, PolicyContract};
 use neo_core::{UInt160, UInt256, Verifiable};
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::OpCode;
+use neo_vm::VmState as VMState;
 use serde_json::json;
 use std::net::{IpAddr, Ipv4Addr};
 

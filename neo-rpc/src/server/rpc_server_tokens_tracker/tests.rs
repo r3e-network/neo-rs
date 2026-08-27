@@ -21,8 +21,8 @@ use neo_core::tokens_tracker::{
 };
 use neo_core::NativeContract;
 use neo_core::UInt256;
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::OpCode;
+use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::collections::HashMap;

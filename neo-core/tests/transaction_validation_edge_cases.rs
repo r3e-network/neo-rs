@@ -39,7 +39,7 @@ use neo_core::{
     network::p2p::helper::get_sign_data_vec, Transaction, TransactionAttribute,
     TransactionAttributeType, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
 };
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;

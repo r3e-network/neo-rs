@@ -1,5 +1,5 @@
 use super::*;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 fn sample_uint160(seed: u8) -> UInt160 {
     UInt160::from_bytes(&[seed; 20]).expect("valid UInt160")
