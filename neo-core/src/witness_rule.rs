@@ -14,7 +14,7 @@ pub use neo_io_crate::witness_rule::{WitnessCondition, WitnessConditionType, Wit
 
 // Stack projection stays in neo-core (depends on neo-vm StackItem)
 mod stack_projection;
-pub use stack_projection::ToStackItem;
+pub use stack_projection::{ToStackItem, ToStackValue};
 
 #[cfg(test)]
 #[allow(dead_code)]
