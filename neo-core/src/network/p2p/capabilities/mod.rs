@@ -12,9 +12,6 @@ use crate::neo_io::IoResult;
 
 pub use neo_p2p::payloads::node_capability::MAX_UNKNOWN_CAPABILITY_DATA;
 pub use neo_p2p::payloads::node_capability::NodeCapability;
-pub(crate) use neo_p2p::payloads::node_capability::{
-    deserialize_node_capabilities, node_capabilities_size, serialize_node_capabilities,
-};
 pub use node_capability_type::NodeCapabilityType;
 
 /// Creates an archival node capability descriptor.

@@ -231,7 +231,10 @@ mockall = "0.12"
 pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
 
 # Compression and metrics (always enabled)
-lz4_flex = "=0.10.0"
+# lz4_flex 0.10.0 is affected by RUSTSEC-2026-0041 (CVSS 8.2: decompression can
+# leak uninitialized memory). 0.12.1 fixes it and keeps the same
+# compress_prepend_size / decompress_size_prepended API used by neo-io & neo-core.
+lz4_flex = "0.12.1"
 prometheus = "0.14"
 sysinfo = "0.29"
 
