@@ -70,7 +70,7 @@ use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::StackItem;
 use neo_primitives::CallFlags;
-use neo_vm_rs::Instruction;
+use crate::Instruction;
 
 use std::convert::TryFrom;
 
@@ -190,7 +190,7 @@ impl HostPtr {
 /// Value is in fractional GAS units where 1 GAS = 100_000_000 (10^8)
 pub const DEFAULT_GAS_LIMIT: u64 = 20_0000_0000; // 20 GAS
 
-use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
+use crate::{ExecutionEngineLimits, VmState as VMState};
 
 /// The execution engine for the Neo VM.
 pub struct ExecutionEngine {

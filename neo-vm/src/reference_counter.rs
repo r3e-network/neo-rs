@@ -11,7 +11,7 @@
 //! without the risk of mutex poisoning that comes with `std::sync::Mutex`.
 
 use crate::stack_item::StackItem;
-use neo_vm_rs::Tarjan;
+use crate::Tarjan;
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};

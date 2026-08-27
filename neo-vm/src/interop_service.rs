@@ -8,7 +8,7 @@ use crate::error::{VmError, VmResult};
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
 use neo_primitives::CallFlags;
-use neo_vm_rs::Instruction;
+use crate::Instruction;
 use std::collections::HashMap;
 use std::str;
 
@@ -248,5 +248,5 @@ fn hash_syscall(api: &str) -> VmResult<u32> {
         )));
     }
 
-    Ok(neo_vm_rs::interop_hash(api))
+    Ok(crate::interop_hash(api))
 }

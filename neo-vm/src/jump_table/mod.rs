@@ -15,8 +15,8 @@ pub mod types; // Matches JumpTable.Types.cs
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use neo_vm_rs::Instruction;
-use neo_vm_rs::OpCode;
+use crate::Instruction;
+use crate::OpCode;
 
 /// A handler for a VM instruction.
 pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> VmResult<()>;

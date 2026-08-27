@@ -3,8 +3,8 @@
 //! JsonSerializer - mirrors `Neo.SmartContract.JsonSerializer`.
 
 // Old wrapper types removed - StackValue compounds are flat Vecs now
-use crate::{StackItem, StackItemExt};
-use neo_vm_rs::StackItemType;
+use crate::StackItem;
+use crate::StackItemType;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};

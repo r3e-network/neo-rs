@@ -7,7 +7,7 @@ use super::{ExecutionEngine, StackItem, TryFrom, VMState, VmError, VmResult};
 impl ExecutionEngine {
     /// Executes a try block
     pub fn execute_try(&mut self, catch_offset: i32, finally_offset: i32) -> VmResult<()> {
-        use neo_vm_rs::ExceptionHandlingContext;
+        use crate::ExceptionHandlingContext;
 
         if catch_offset == 0 && finally_offset == 0 {
             return Err(VmError::invalid_operation_msg(
@@ -55,7 +55,7 @@ impl ExecutionEngine {
 
     /// Executes an end try operation
     pub fn execute_end_try(&mut self, end_offset: i32) -> VmResult<()> {
-        use neo_vm_rs::ExceptionHandlingState;
+        use crate::ExceptionHandlingState;
 
         let context = self
             .current_context_mut()
@@ -114,7 +114,7 @@ impl ExecutionEngine {
 
     /// Executes an end finally operation
     pub fn execute_end_finally(&mut self) -> VmResult<()> {
-        use neo_vm_rs::ExceptionHandlingState;
+        use crate::ExceptionHandlingState;
 
         let end_pointer = {
             let context = self
@@ -157,7 +157,7 @@ impl ExecutionEngine {
 
     /// Executes a throw operation
     pub fn execute_throw(&mut self, ex: Option<StackItem>) -> VmResult<()> {
-        use neo_vm_rs::ExceptionHandlingState;
+        use crate::ExceptionHandlingState;
 
         self.uncaught_exception = ex;
 

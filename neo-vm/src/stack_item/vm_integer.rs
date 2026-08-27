@@ -7,7 +7,7 @@
 //!
 //! Provides the `VmInteger` enum that avoids heap allocation for values fitting in `i64`.
 
-use neo_vm_rs::StackValue;
+use crate::StackValue;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 

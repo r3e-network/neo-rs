@@ -7,14 +7,14 @@ use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::jump_table::{register_jump_handlers, JumpTable};
 use crate::stack_item::{Array, Map, StackItem, Struct};
-use neo_vm_rs::Instruction;
-use neo_vm_rs::OpCode;
-use neo_vm_rs::StackItemType;
+use crate::Instruction;
+use crate::OpCode;
+use crate::StackItemType;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::collections::BTreeMap;
 
-fn collection_stack_item(value: Result<neo_vm_rs::StackValue, String>) -> VmResult<StackItem> {
+fn collection_stack_item(value: Result<crate::StackValue, String>) -> VmResult<StackItem> {
     StackItem::try_from(value.map_err(VmError::invalid_operation_msg)?)
 }
 
@@ -30,25 +30,25 @@ fn normalize_index(type_name: &str, index: &BigInt, length: usize) -> VmResult<u
     )))
 }
 
-fn byte_sequence_key_value(key: &StackItem) -> VmResult<neo_vm_rs::StackValue> {
+fn byte_sequence_key_value(key: &StackItem) -> VmResult<crate::StackValue> {
     let index = key
         .as_int()?
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
-    Ok(neo_vm_rs::StackValue::Integer(index))
+    Ok(crate::StackValue::Integer(index))
 }
 
-fn byte_sequence_has_key(value: neo_vm_rs::StackValue, key: &StackItem) -> VmResult<bool> {
+fn byte_sequence_has_key(value: crate::StackValue, key: &StackItem) -> VmResult<bool> {
     let key = byte_sequence_key_value(key)?;
-    neo_vm_rs::semantics::collections::has_key(&value, &key).map_err(VmError::invalid_operation_msg)
+    crate::semantics::collections::has_key(&value, &key).map_err(VmError::invalid_operation_msg)
 }
 
-fn pick_byte_sequence_item(value: neo_vm_rs::StackValue, index: usize) -> VmResult<StackItem> {
-    let key = neo_vm_rs::StackValue::Integer(
+fn pick_byte_sequence_item(value: crate::StackValue, index: usize) -> VmResult<StackItem> {
+    let key = crate::StackValue::Integer(
         i64::try_from(index).map_err(|_| VmError::invalid_operation_msg("Invalid index"))?,
     );
     StackItem::try_from(
-        neo_vm_rs::semantics::collections::pick_item(&value, &key)
+        crate::semantics::collections::pick_item(&value, &key)
             .map_err(VmError::invalid_operation_msg)?,
     )
 }
@@ -88,7 +88,7 @@ fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let array = collection_stack_item(neo_vm_rs::semantics::collections::new_array(0))?;
+    let array = collection_stack_item(crate::semantics::collections::new_array(0))?;
     context.push(array)?;
 
     Ok(())
@@ -108,7 +108,7 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
-    let array = collection_stack_item(neo_vm_rs::semantics::collections::new_array(count))?;
+    let array = collection_stack_item(crate::semantics::collections::new_array(count))?;
     context.push(array)?;
 
     Ok(())
@@ -141,7 +141,7 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
         )));
     }
 
-    let array = collection_stack_item(neo_vm_rs::semantics::collections::new_array_t(
+    let array = collection_stack_item(crate::semantics::collections::new_array_t(
         count, type_byte,
     ))?;
     context.push(array)?;
@@ -156,7 +156,7 @@ fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let structure = collection_stack_item(neo_vm_rs::semantics::collections::new_struct(0))?;
+    let structure = collection_stack_item(crate::semantics::collections::new_struct(0))?;
     context.push(structure)?;
 
     Ok(())
@@ -176,7 +176,7 @@ fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
-    let structure = collection_stack_item(neo_vm_rs::semantics::collections::new_struct(count))?;
+    let structure = collection_stack_item(crate::semantics::collections::new_struct(count))?;
     context.push(structure)?;
 
     Ok(())
@@ -189,7 +189,7 @@ fn new_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let map_value = neo_vm_rs::semantics::collections::pack_map(Vec::new());
+    let map_value = crate::semantics::collections::pack_map(Vec::new());
     let map = collection_stack_item(Ok(map_value))?;
     context.push(map)?;
 
@@ -391,10 +391,10 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         }
         StackItem::Map(map) => map.contains_key(&key)?,
         StackItem::ByteString(bytes) => {
-            byte_sequence_has_key(neo_vm_rs::StackValue::ByteString(bytes.clone()), &key)?
+            byte_sequence_has_key(crate::StackValue::ByteString(bytes.clone()), &key)?
         }
         StackItem::Buffer(buffer) => {
-            byte_sequence_has_key(neo_vm_rs::StackValue::Buffer(buffer.data()), &key)?
+            byte_sequence_has_key(crate::StackValue::Buffer(buffer.data()), &key)?
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -608,20 +608,20 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         StackItem::Map(map) => map.get(&key)?,
         StackItem::ByteString(bytes) => {
             let idx = normalize_index("PrimitiveType", &key.as_integer()?, bytes.len())?;
-            pick_byte_sequence_item(neo_vm_rs::StackValue::ByteString(bytes.clone()), idx)?
+            pick_byte_sequence_item(crate::StackValue::ByteString(bytes.clone()), idx)?
         }
         // C# Neo VM PICKITEM on PrimitiveType reads the bytewise GetSpan()
         // representation. Use neo-vm-rs conversion rules so Boolean false
         // remains a one-byte span [0], matching C# Boolean.Memory.
         item @ (StackItem::Integer(_) | StackItem::Boolean(_)) => pick_byte_sequence_item(
-            neo_vm_rs::StackValue::try_from(item)?,
+            crate::StackValue::try_from(item)?,
             key.as_integer()?
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid primitive index"))?,
         )?,
         StackItem::Buffer(buffer) => {
             let idx = normalize_index("Buffer", &key.as_integer()?, buffer.len())?;
-            pick_byte_sequence_item(neo_vm_rs::StackValue::Buffer(buffer.data()), idx)?
+            pick_byte_sequence_item(crate::StackValue::Buffer(buffer.data()), idx)?
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -722,9 +722,9 @@ fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         StackItem::ByteString(data) => data.len(),
         StackItem::Buffer(data) => data.len(),
         item @ (StackItem::Integer(_) | StackItem::Boolean(_)) => {
-            let value = neo_vm_rs::StackValue::try_from(item)?;
+            let value = crate::StackValue::try_from(item)?;
             usize::try_from(
-                neo_vm_rs::semantics::collections::size(&value)
+                crate::semantics::collections::size(&value)
                     .map_err(VmError::invalid_operation_msg)?,
             )
             .map_err(|_| VmError::invalid_operation_msg("Invalid primitive size"))?

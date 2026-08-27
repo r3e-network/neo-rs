@@ -11,8 +11,8 @@ use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
-use neo_vm_rs::ExceptionHandlingContext;
-use neo_vm_rs::Instruction;
+use crate::ExceptionHandlingContext;
+use crate::Instruction;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -535,7 +535,7 @@ impl Clone for ExecutionContext {
 mod tests {
     use super::*;
     use crate::stack_item::StackItem;
-    use neo_vm_rs::OpCode;
+    use crate::OpCode;
     use num_bigint::BigInt;
 
     #[derive(Default)]
@@ -625,8 +625,8 @@ mod tests {
         assert!(context.try_stack().is_none());
 
         // Create a try stack with one context
-        use neo_vm_rs::ExceptionHandlingContext;
-        use neo_vm_rs::ExceptionHandlingState;
+        use crate::ExceptionHandlingContext;
+        use crate::ExceptionHandlingState;
         let mut try_stack = Vec::new();
         let try_context = ExceptionHandlingContext::new(10, 20);
         try_stack.push(try_context);

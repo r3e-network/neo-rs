@@ -13,9 +13,9 @@ use crate::stack_item::buffer::Buffer as BufferItem;
 use crate::stack_item::map::Map as MapItem;
 use crate::stack_item::pointer::Pointer as PointerItem;
 use crate::stack_item::struct_item::Struct as StructItem;
-use neo_vm_rs::ExecutionEngineLimits;
-use neo_vm_rs::StackItemType;
-use neo_vm_rs::{StackValue, VmOrderedDictionary};
+use crate::ExecutionEngineLimits;
+use crate::StackItemType;
+use crate::{StackValue, VmOrderedDictionary};
 use num_bigint::BigInt;
 use std::fmt;
 use std::sync::Arc;
@@ -35,14 +35,14 @@ const VM_INTEGER_MAX_SIZE: usize = 32;
 
 #[inline]
 fn stack_value_truthy(value: StackValue) -> bool {
-    neo_vm_rs::semantics::comparison::boolean_value(&value)
+    crate::semantics::comparison::boolean_value(&value)
 }
 
-fn convert_stack_value_with_neo_vm_rs(
+fn convert_stack_value_via_semantics(
     value: StackValue,
     target_type: StackItemType,
 ) -> VmResult<StackItem> {
-    let converted = neo_vm_rs::semantics::conversion::convert_value(value, target_type.to_byte())
+    let converted = crate::semantics::conversion::convert_value(value, target_type.to_byte())
         .map_err(VmError::invalid_type_simple)?;
     StackItem::try_from(converted)
 }
@@ -355,7 +355,7 @@ impl StackItem {
             | Self::Integer(_)
             | Self::ByteString(_)
             | Self::Buffer(_) => {
-                stack_value_byte_string_bytes(neo_vm_rs::StackValue::try_from(self.clone())?)
+                stack_value_byte_string_bytes(crate::StackValue::try_from(self.clone())?)
             }
             _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
         }
@@ -371,7 +371,7 @@ impl StackItem {
             | Self::Integer(_)
             | Self::ByteString(_)
             | Self::Buffer(_)) => {
-                stack_value_byte_string_bytes(neo_vm_rs::StackValue::try_from(item)?)
+                stack_value_byte_string_bytes(crate::StackValue::try_from(item)?)
             }
             _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
         }
@@ -605,7 +605,7 @@ impl StackItem {
                         ));
                     }
                 }
-                return convert_stack_value_with_neo_vm_rs(
+                return convert_stack_value_via_semantics(
                     StackValue::try_from(self.clone())?,
                     target_type,
                 );
@@ -614,7 +614,7 @@ impl StackItem {
                 Self::Boolean(_) | Self::Integer(_) | Self::ByteString(_) | Self::Buffer(_),
                 target_type @ (StackItemType::ByteString | StackItemType::Buffer),
             ) => {
-                return convert_stack_value_with_neo_vm_rs(
+                return convert_stack_value_via_semantics(
                     StackValue::try_from(self.clone())?,
                     target_type,
                 );
@@ -749,7 +749,7 @@ impl StackItem {
     }
 }
 
-fn stack_value_byte_string_bytes(value: neo_vm_rs::StackValue) -> VmResult<Vec<u8>> {
+fn stack_value_byte_string_bytes(value: crate::StackValue) -> VmResult<Vec<u8>> {
     value
         .to_byte_string_bytes()
         .ok_or_else(|| VmError::invalid_type_simple("Cannot convert to ByteArray"))
@@ -764,43 +764,43 @@ impl PartialEq for StackItem {
 
 impl Eq for StackItem {}
 
-impl TryFrom<neo_vm_rs::StackValue> for StackItem {
+impl TryFrom<crate::StackValue> for StackItem {
     type Error = VmError;
 
-    fn try_from(value: neo_vm_rs::StackValue) -> VmResult<Self> {
+    fn try_from(value: crate::StackValue) -> VmResult<Self> {
         match value {
-            neo_vm_rs::StackValue::Integer(value) => Ok(Self::from_i64(value)),
-            neo_vm_rs::StackValue::BigInteger(bytes) => {
+            crate::StackValue::Integer(value) => Ok(Self::from_i64(value)),
+            crate::StackValue::BigInteger(bytes) => {
                 Ok(Self::from_int(BigInt::from_signed_bytes_le(&bytes)))
             }
-            neo_vm_rs::StackValue::ByteString(bytes) => Ok(Self::from_byte_string(bytes)),
-            neo_vm_rs::StackValue::Buffer(bytes) => Ok(Self::from_buffer(bytes)),
-            neo_vm_rs::StackValue::Boolean(value) => Ok(Self::from_bool(value)),
-            neo_vm_rs::StackValue::Array(items) => {
+            crate::StackValue::ByteString(bytes) => Ok(Self::from_byte_string(bytes)),
+            crate::StackValue::Buffer(bytes) => Ok(Self::from_buffer(bytes)),
+            crate::StackValue::Boolean(value) => Ok(Self::from_bool(value)),
+            crate::StackValue::Array(items) => {
                 let items = items
                     .into_iter()
                     .map(Self::try_from)
                     .collect::<VmResult<Vec<_>>>()?;
                 Ok(Self::from_array(items))
             }
-            neo_vm_rs::StackValue::Struct(items) => {
+            crate::StackValue::Struct(items) => {
                 let items = items
                     .into_iter()
                     .map(Self::try_from)
                     .collect::<VmResult<Vec<_>>>()?;
                 Ok(Self::from_struct(items))
             }
-            neo_vm_rs::StackValue::Map(entries) => {
+            crate::StackValue::Map(entries) => {
                 let mut map = VmOrderedDictionary::with_capacity(entries.len());
                 for (key, value) in entries {
                     map.insert(Self::try_from(key)?, Self::try_from(value)?);
                 }
                 Ok(Self::from_map(map))
             }
-            neo_vm_rs::StackValue::Null => Ok(Self::Null),
-            neo_vm_rs::StackValue::Pointer(_)
-            | neo_vm_rs::StackValue::Interop(_)
-            | neo_vm_rs::StackValue::Iterator(_) => Err(VmError::invalid_operation_msg(format!(
+            crate::StackValue::Null => Ok(Self::Null),
+            crate::StackValue::Pointer(_)
+            | crate::StackValue::Interop(_)
+            | crate::StackValue::Iterator(_) => Err(VmError::invalid_operation_msg(format!(
                 "Cannot convert {:?} into neo-vm StackItem without host runtime identity",
                 value
             ))),
@@ -808,7 +808,7 @@ impl TryFrom<neo_vm_rs::StackValue> for StackItem {
     }
 }
 
-impl TryFrom<StackItem> for neo_vm_rs::StackValue {
+impl TryFrom<StackItem> for crate::StackValue {
     type Error = VmError;
 
     fn try_from(value: StackItem) -> VmResult<Self> {

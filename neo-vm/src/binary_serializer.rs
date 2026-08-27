@@ -3,12 +3,12 @@
 //! BinarySerializer - aligns with `Neo.SmartContract.BinarySerializer`.
 
 use crate::reference_counter::ReferenceCounter;
-use crate::{StackItem, StackItemExt};
+use crate::StackItem;
 use neo_io_crate::var_int;
 use neo_io_crate::{IoError, MemoryReader};
-use neo_vm_rs::ExecutionEngineLimits;
-use neo_vm_rs::StackItemType;
-use neo_vm_rs::StackValue;
+use crate::ExecutionEngineLimits;
+use crate::StackItemType;
+use crate::StackValue;
 use num_bigint::BigInt;
 use std::collections::{HashSet, VecDeque};
 
@@ -219,11 +219,11 @@ impl BinarySerializer {
         Self::deserialize_stack_value_with_limits(
             data,
             Self::DEFAULT_MAX_ITEM_SIZE,
-            neo_vm_rs::DEFAULT_MAX_STACK_DEPTH,
+            crate::DEFAULT_MAX_STACK_DEPTH,
         )
     }
 
-    /// Deserialize a binary-serialized stack item into `neo_vm_rs::StackValue` with explicit limits.
+    /// Deserialize a binary-serialized stack item into `crate::StackValue` with explicit limits.
     pub fn deserialize_stack_value_with_limits(
         data: &[u8],
         max_size: usize,
@@ -243,33 +243,33 @@ impl BinarySerializer {
 
             let item_type = reader.read_byte().map_err(Self::io_error_to_string)?;
             match item_type {
-                neo_vm_rs::NEOVM_STACK_ITEM_TYPE_ANY => {
+                crate::NEOVM_STACK_ITEM_TYPE_ANY => {
                     pending.push(PendingStackValue::Value(StackValue::Null));
                 }
-                neo_vm_rs::NEOVM_STACK_ITEM_TYPE_BOOLEAN => {
+                crate::NEOVM_STACK_ITEM_TYPE_BOOLEAN => {
                     let value = reader.read_boolean().map_err(Self::io_error_to_string)?;
                     pending.push(PendingStackValue::Value(StackValue::Boolean(value)));
                 }
-                neo_vm_rs::NEOVM_STACK_ITEM_TYPE_INTEGER => {
+                crate::NEOVM_STACK_ITEM_TYPE_INTEGER => {
                     let bytes = reader
                         .read_var_bytes(Self::MAX_INTEGER_SIZE)
                         .map_err(Self::io_error_to_string)?;
                     pending.push(PendingStackValue::Value(StackValue::BigInteger(bytes)));
                 }
-                neo_vm_rs::NEOVM_STACK_ITEM_TYPE_BYTESTRING => {
+                crate::NEOVM_STACK_ITEM_TYPE_BYTESTRING => {
                     let bytes = reader
                         .read_var_bytes(max_size)
                         .map_err(Self::io_error_to_string)?;
                     pending.push(PendingStackValue::Value(StackValue::ByteString(bytes)));
                 }
-                neo_vm_rs::NEOVM_STACK_ITEM_TYPE_BUFFER => {
+                crate::NEOVM_STACK_ITEM_TYPE_BUFFER => {
                     let bytes = reader
                         .read_var_bytes(max_size)
                         .map_err(Self::io_error_to_string)?;
                     pending.push(PendingStackValue::Value(StackValue::Buffer(bytes)));
                 }
-                neo_vm_rs::NEOVM_STACK_ITEM_TYPE_ARRAY
-                | neo_vm_rs::NEOVM_STACK_ITEM_TYPE_STRUCT => {
+                crate::NEOVM_STACK_ITEM_TYPE_ARRAY
+                | crate::NEOVM_STACK_ITEM_TYPE_STRUCT => {
                     let count = reader
                         .read_var_int(max_items as u64)
                         .map_err(Self::io_error_to_string)?
@@ -277,7 +277,7 @@ impl BinarySerializer {
                     if count > max_items.saturating_sub(total_items) {
                         return Err("Too many items".to_string());
                     }
-                    let kind = if item_type == neo_vm_rs::NEOVM_STACK_ITEM_TYPE_ARRAY {
+                    let kind = if item_type == crate::NEOVM_STACK_ITEM_TYPE_ARRAY {
                         StackValueContainerKind::Array
                     } else {
                         StackValueContainerKind::Struct
@@ -292,7 +292,7 @@ impl BinarySerializer {
                         .checked_add(count)
                         .ok_or_else(|| "Too many items".to_string())?;
                 }
-                neo_vm_rs::NEOVM_STACK_ITEM_TYPE_MAP => {
+                crate::NEOVM_STACK_ITEM_TYPE_MAP => {
                     let count = reader
                         .read_var_int(max_items as u64)
                         .map_err(Self::io_error_to_string)?
@@ -500,14 +500,14 @@ impl BinarySerializer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_rs::ExecutionEngineLimits;
+    use crate::ExecutionEngineLimits;
 
     #[test]
     fn deserialize_preserves_map_entry_order_for_roundtrip_bytes() {
         let limits = ExecutionEngineLimits::default();
 
         // Serialize a map with specific insertion order: (3,30), (1,10), (2,20)
-        let mut map_items = neo_vm_rs::VmOrderedDictionary::new();
+        let mut map_items = crate::VmOrderedDictionary::new();
         map_items.insert(StackItem::Integer(3.into()), StackItem::Integer(30.into()));
         map_items.insert(StackItem::Integer(1.into()), StackItem::Integer(10.into()));
         map_items.insert(StackItem::Integer(2.into()), StackItem::Integer(20.into()));
@@ -566,7 +566,7 @@ mod tests {
 
     #[test]
     fn deserialize_stack_value_enforces_item_limits() {
-        let payload = vec![neo_vm_rs::NEOVM_STACK_ITEM_TYPE_ARRAY, 3, 0, 0, 0];
+        let payload = vec![crate::NEOVM_STACK_ITEM_TYPE_ARRAY, 3, 0, 0, 0];
 
         let err =
             BinarySerializer::deserialize_stack_value_with_limits(&payload, u16::MAX as usize, 3)

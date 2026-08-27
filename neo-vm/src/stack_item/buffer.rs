@@ -1,8 +1,8 @@
 //! Buffer stack item implementation for the Neo Virtual Machine.
 
 use crate::{VmError, VmResult};
-use neo_vm_rs::next_stack_item_id;
-use neo_vm_rs::StackItemType;
+use crate::next_stack_item_id;
+use crate::StackItemType;
 use num_bigint::BigInt;
 use parking_lot::Mutex;
 use std::sync::Arc;

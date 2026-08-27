@@ -7,7 +7,7 @@ use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::jump_table::{register_jump_handlers, JumpTable};
 use crate::stack_item::StackItem;
-use neo_vm_rs::{semantics::splice as splice_rules, Instruction, OpCode};
+use crate::{semantics::splice as splice_rules, Instruction, OpCode};
 use num_traits::ToPrimitive;
 
 /// Registers the splice operation handlers.
@@ -38,7 +38,7 @@ fn new_buffer(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid buffer size"))?;
 
     let buffer = StackItem::try_from(
-        neo_vm_rs::semantics::collections::new_buffer(size)
+        crate::semantics::collections::new_buffer(size)
             .map_err(VmError::invalid_operation_msg)?,
     )?;
 
@@ -75,7 +75,7 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid destination offset"))?;
     let dst = context.pop()?;
 
-    let src_value = neo_vm_rs::StackValue::try_from(src)
+    let src_value = crate::StackValue::try_from(src)
         .map_err(|_| VmError::invalid_type_simple("Expected ByteString or Buffer for source"))?;
 
     // Get the destination data
@@ -108,14 +108,14 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let x2 = neo_vm_rs::StackValue::try_from(context.pop()?)
+    let x2 = crate::StackValue::try_from(context.pop()?)
         .map_err(|_| VmError::invalid_type_simple("Expected GetSpan-compatible CAT operand"))?;
-    let x1 = neo_vm_rs::StackValue::try_from(context.pop()?)
+    let x1 = crate::StackValue::try_from(context.pop()?)
         .map_err(|_| VmError::invalid_type_simple("Expected GetSpan-compatible CAT operand"))?;
 
     let result = splice_rules::cat_values(&x1, &x2).map_err(VmError::invalid_operation_msg)?;
     let result_len = match &result {
-        neo_vm_rs::StackValue::Buffer(bytes) => bytes.len(),
+        crate::StackValue::Buffer(bytes) => bytes.len(),
         _ => 0,
     };
     if result_len > max_item_size {
@@ -148,7 +148,7 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid offset"))?;
     let value = context.pop()?;
-    let value = neo_vm_rs::StackValue::try_from(value)
+    let value = crate::StackValue::try_from(value)
         .map_err(|_| VmError::invalid_type_simple("Expected GetSpan-compatible SUBSTR value"))?;
     let substring = splice_rules::substr_value(&value, offset, count)
         .map_err(VmError::invalid_operation_msg)?;
@@ -171,7 +171,7 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;
-    let value = neo_vm_rs::StackValue::try_from(value)
+    let value = crate::StackValue::try_from(value)
         .map_err(|_| VmError::invalid_type_simple("Expected GetSpan-compatible LEFT value"))?;
     let left = splice_rules::left_value(&value, count).map_err(VmError::invalid_operation_msg)?;
     context.push(StackItem::try_from(left)?)?;
@@ -193,7 +193,7 @@ fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
         .to_i64()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;
-    let value = neo_vm_rs::StackValue::try_from(value)
+    let value = crate::StackValue::try_from(value)
         .map_err(|_| VmError::invalid_type_simple("Expected GetSpan-compatible RIGHT value"))?;
     let right = splice_rules::right_value(&value, count).map_err(VmError::invalid_operation_msg)?;
     context.push(StackItem::try_from(right)?)?;

@@ -19,7 +19,7 @@
 //!
 //! ```rust,ignore
 //! use neo_core::neo_vm::Script;
-//! use neo_vm_rs::OpCode;
+//! use crate::OpCode;
 //!
 //! // Create a script from bytecode
 //! let bytecode = vec![OpCode::PUSH1.byte(), OpCode::RET.byte()];
@@ -34,8 +34,8 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
-use neo_vm_rs::{instruction_jump_target, instruction_try_targets};
-use neo_vm_rs::{parse_script_instructions, Instruction};
+use crate::{instruction_jump_target, instruction_try_targets};
+use crate::{parse_script_instructions, Instruction};
 use parking_lot::RwLock;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -220,7 +220,7 @@ impl Script {
             }
         }
 
-        neo_vm_rs::validate_script(&self.script, true)
+        crate::validate_script(&self.script, true)
             .map(|_| ())
             .map_err(VmError::invalid_script_msg)
     }
@@ -438,7 +438,7 @@ impl AsRef<[u8]> for Script {
 #[allow(dead_code)]
 mod tests {
     use super::*;
-    use neo_vm_rs::OpCode;
+    use crate::OpCode;
 
     #[test]
     fn test_script_creation_and_validation() {

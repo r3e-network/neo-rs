@@ -5,8 +5,8 @@ use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
 use crate::jump_table::{register_jump_handlers, JumpTable};
 use crate::stack_item::StackItem;
-use neo_vm_rs::semantics::arithmetic;
-use neo_vm_rs::{Instruction, OpCode, StackValue};
+use crate::semantics::arithmetic;
+use crate::{Instruction, OpCode, StackValue};
 
 #[inline]
 fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionContext> {

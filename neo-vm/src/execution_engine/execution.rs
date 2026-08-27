@@ -3,7 +3,7 @@
 //
 
 use super::{ExecutionEngine, StackItem, VMState, VmError, VmResult};
-use neo_vm_rs::Instruction;
+use crate::Instruction;
 
 impl ExecutionEngine {
     /// Starts execution of the VM.

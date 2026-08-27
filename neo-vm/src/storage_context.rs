@@ -1,6 +1,5 @@
 //! StorageContext - matches C# Neo.SmartContract.StorageContext exactly
 
-use crate::stack_item::StackItemExt;
 use crate::StackItem;
 use num_traits::ToPrimitive;
 

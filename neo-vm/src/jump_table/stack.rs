@@ -7,8 +7,8 @@ use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::jump_table::{register_jump_handlers, JumpTable};
 use crate::stack_item::StackItem;
-use neo_vm_rs::Instruction;
-use neo_vm_rs::OpCode;
+use crate::Instruction;
+use crate::OpCode;
 use num_bigint::Sign;
 use num_traits::ToPrimitive;
 

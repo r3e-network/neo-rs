@@ -3,8 +3,8 @@
 //! This module provides a way to programmatically construct scripts for the Neo VM.
 
 use crate::error::{VmError, VmResult};
-use neo_vm_rs::OpCode;
-use neo_vm_rs::StackValue;
+use crate::OpCode;
+use crate::StackValue;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 
@@ -99,7 +99,7 @@ impl ScriptBuilder {
         // Match C# Neo.VM.ScriptBuilder.EmitPush(BigInteger) for integer encoding:
         // use PUSHINT8/16/32/64 with right-padding for sign extension.
         let negative = value < 0;
-        let bytes = neo_vm_rs::encode_integer(value);
+        let bytes = crate::encode_integer(value);
         let bytes_written = bytes.len();
 
         let (opcode, target_len) = match bytes_written {
@@ -164,7 +164,7 @@ impl ScriptBuilder {
 
         let mut bytes = value
             .to_i64()
-            .map_or_else(|| value.to_signed_bytes_le(), neo_vm_rs::encode_integer);
+            .map_or_else(|| value.to_signed_bytes_le(), crate::encode_integer);
         if bytes.is_empty() {
             bytes.push(0);
         }
@@ -310,7 +310,7 @@ impl ScriptBuilder {
             )));
         }
 
-        Ok(self.emit_syscall_hash(neo_vm_rs::interop_hash(api)))
+        Ok(self.emit_syscall_hash(crate::interop_hash(api)))
     }
 
     /// Emits a syscall using a precomputed hash.
@@ -499,7 +499,7 @@ mod tests {
         builder.emit_syscall(api_name).expect("emit_syscall failed");
 
         let script = builder.to_array();
-        let expected_hash = neo_vm_rs::interop_hash(api_name);
+        let expected_hash = crate::interop_hash(api_name);
         assert_eq!(script.len(), 5);
         assert_eq!(script[0], OpCode::SYSCALL.byte());
         assert_eq!(&script[1..5], &expected_hash.to_le_bytes());

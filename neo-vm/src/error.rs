@@ -681,11 +681,11 @@ impl From<neo_io_crate::IoError> for VmError {
     }
 }
 
-impl From<neo_vm_rs::InstructionError> for VmError {
-    fn from(error: neo_vm_rs::InstructionError) -> Self {
+impl From<crate::InstructionError> for VmError {
+    fn from(error: crate::InstructionError) -> Self {
         match error.kind() {
-            neo_vm_rs::InstructionErrorKind::Parse => Self::parse(error.to_string()),
-            neo_vm_rs::InstructionErrorKind::Operand => {
+            crate::InstructionErrorKind::Parse => Self::parse(error.to_string()),
+            crate::InstructionErrorKind::Operand => {
                 Self::invalid_operand_msg(error.to_string())
             }
         }
@@ -788,7 +788,7 @@ mod tests {
 
     #[test]
     fn test_resource_limit_errors() {
-        let limit = neo_vm_rs::ExecutionEngineLimits::DEFAULT.max_item_size as usize;
+        let limit = crate::ExecutionEngineLimits::DEFAULT.max_item_size as usize;
         let error = VmError::memory_limit_exceeded(2048, limit);
         // C#: ushort.MaxValue = 65535
         assert_eq!(

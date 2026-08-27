@@ -2645,12 +2645,12 @@ dependencies = [
  "neo-crypto",
  "neo-io",
  "neo-primitives",
- "neo-vm-rs",
  "num-bigint",
  "num-traits",
  "parking_lot",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.18",
 ]
 

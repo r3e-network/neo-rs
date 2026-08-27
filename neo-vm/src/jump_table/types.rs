@@ -7,9 +7,9 @@ use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::jump_table::{register_jump_handlers, JumpTable};
 use crate::stack_item::{Array, StackItem, Struct};
-use neo_vm_rs::Instruction;
-use neo_vm_rs::StackItemType;
-use neo_vm_rs::{OpCode, StackValue};
+use crate::Instruction;
+use crate::StackItemType;
+use crate::{OpCode, StackValue};
 
 /// Registers the type operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
@@ -120,7 +120,7 @@ fn is_type(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     let item = context.pop()?;
 
     let probe = stack_item_type_probe_value(item.stack_item_type());
-    let result = neo_vm_rs::semantics::conversion::is_type(&probe, item_type.to_byte());
+    let result = crate::semantics::conversion::is_type(&probe, item_type.to_byte());
 
     context.push(StackItem::from_bool(result))?;
 
@@ -156,7 +156,7 @@ fn is_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         StackItem::Null => StackValue::Null,
         _ => StackValue::Boolean(true),
     };
-    let result = neo_vm_rs::semantics::comparison::is_null(&stack_value);
+    let result = crate::semantics::comparison::is_null(&stack_value);
 
     context.push(StackItem::from_bool(result))?;
 

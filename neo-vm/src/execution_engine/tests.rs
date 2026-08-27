@@ -7,7 +7,7 @@ use super::*;
 #[allow(dead_code)]
 mod execution_engine_tests {
     use super::*;
-    use neo_vm_rs::OpCode;
+    use crate::OpCode;
 
     #[test]
     fn test_execution_engine_creation() {

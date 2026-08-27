@@ -5,7 +5,7 @@
 //! originating script identity in addition to the offset.
 
 use crate::script::Script;
-use neo_vm_rs::StackItemType;
+use crate::StackItemType;
 use num_bigint::BigInt;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};

@@ -1,7 +1,7 @@
 //! NotifyEventArgs - matches C# Neo.SmartContract.NotifyEventArgs exactly
 
 use crate::interoperable::Interoperable;
-use crate::{StackItem, StackItemExt};
+use crate::StackItem;
 use neo_primitives::{UInt160, Verifiable};
 use std::fmt;
 use std::sync::Arc;
