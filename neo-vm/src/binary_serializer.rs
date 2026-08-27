@@ -120,7 +120,7 @@ impl BinarySerializer {
                         .read_var_bytes(max_size as usize)
                         .map_err(Self::io_error_to_string)?;
                     let buffer = bytes.to_vec();
-                    pending.push(PendingItem::Value(StackItem::Buffer(buffer)));
+                    pending.push(PendingItem::Value(StackItem::from_buffer(buffer)));
                     total_items += 1;
                 }
                 StackItemType::Array | StackItemType::Struct => {
@@ -175,7 +175,7 @@ impl BinarySerializer {
                                         "Invalid serialized array data".to_string()
                                     })?);
                                 }
-                                StackItem::Array(elements)
+                                StackItem::from_array(elements)
                             }
                             StackItemType::Struct => {
                                 let mut elements = Vec::with_capacity(container.element_count);
@@ -184,7 +184,7 @@ impl BinarySerializer {
                                         "Invalid serialized struct data".to_string()
                                     })?);
                                 }
-                                StackItem::Struct(elements)
+                                StackItem::from_struct(elements)
                             }
                             StackItemType::Map => {
                                 let mut entries = Vec::with_capacity(container.element_count);
@@ -197,7 +197,7 @@ impl BinarySerializer {
                                     })?;
                                     entries.push((key, value));
                                 }
-                                StackItem::Map(entries)
+                                StackItem::from_map(entries)
                             }
                             _ => return Err("Invalid container descriptor".to_string()),
                         };
@@ -423,10 +423,10 @@ impl BinarySerializer {
                 }
                 StackItem::Integer(integer) => {
                     writer.push(StackItemType::Integer.to_byte());
-                    let bytes = if *integer == 0 {
+                    let bytes = if integer.is_zero() {
                         Vec::new()
                     } else {
-                        BigInt::from(*integer).to_signed_bytes_le()
+                        integer.to_signed_bytes_le()
                     };
                     var_int::write_var_bytes(&bytes, writer);
                 }
@@ -436,7 +436,7 @@ impl BinarySerializer {
                 }
                 StackItem::Buffer(buffer) => {
                     writer.push(StackItemType::Buffer.to_byte());
-                    var_int::write_var_bytes(buffer, writer);
+                    buffer.with_data(|data| var_int::write_var_bytes(data, writer));
                 }
                 StackItem::Array(array) => {
                     writer.push(StackItemType::Array.to_byte());
@@ -466,7 +466,7 @@ impl BinarySerializer {
                 }
                 StackItem::Map(map) => {
                     writer.push(StackItemType::Map.to_byte());
-                    let identity = (map.as_ptr() as usize, StackItemType::Map);
+                    let identity = (map.id() as usize, StackItemType::Map);
                     if !processed.insert(identity) {
                         return Err("Circular reference detected while serializing map".to_string());
                     }
