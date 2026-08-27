@@ -201,6 +201,16 @@ mod tests {
     use crate::VmOrderedDictionary;
     use serde_json::json;
 
+    fn interop_stack_item() -> StackItem {
+        #[derive(Debug)]
+        struct DummyInterop;
+        impl crate::stack_item::InteropInterface for DummyInterop {
+            fn interface_type(&self) -> &str { "dummy" }
+            fn as_any(&self) -> &dyn std::any::Any { self }
+        }
+        StackItem::from_interface(DummyInterop)
+    }
+
     #[test]
     fn renders_rpc_stack_item_type_matrix() {
         let mut map = VmOrderedDictionary::new();
@@ -228,7 +238,7 @@ mod tests {
                 json!({"type": "Buffer", "value": "AwQ="}),
             ),
             (
-                StackItem::Pointer(7),
+                StackItem::from_pointer(std::sync::Arc::new(crate::Script::new_from_bytes(Vec::new())), 7),
                 json!({"type": "Pointer", "value": 7}),
             ),
             (
@@ -251,7 +261,7 @@ mod tests {
                 }]}),
             ),
             (
-                StackItem::Interop(42),
+                interop_stack_item(),
                 json!({"type": "InteropInterface"}),
             ),
         ];
@@ -278,10 +288,9 @@ mod tests {
 
     #[test]
     fn reports_circular_reference() {
-        let mut item = StackItem::from_array(vec![StackItem::Null]);
-        if let StackItem::Array(ref mut array) = item {
-            array[0] = item.clone();
-        }
+        let array = crate::stack_item::Array::new_untracked(vec![StackItem::Null]);
+        let item = StackItem::Array(array.clone());
+        array.set(0, item.clone()).unwrap();
 
         let err = stack_item_rpc_json(&item, None).unwrap_err();
 
@@ -290,10 +299,9 @@ mod tests {
 
     #[test]
     fn deferred_size_check_preserves_rpc_circular_reference_precedence() {
-        let mut item = StackItem::from_array(vec![StackItem::Null]);
-        if let StackItem::Array(ref mut array) = item {
-            array[0] = item.clone();
-        }
+        let array = crate::stack_item::Array::new_untracked(vec![StackItem::Null]);
+        let item = StackItem::Array(array.clone());
+        array.set(0, item.clone()).unwrap();
 
         let err = stack_item_rpc_json_deferred_size_check(&item, Some(1)).unwrap_err();
 

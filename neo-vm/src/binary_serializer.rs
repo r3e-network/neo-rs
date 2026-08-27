@@ -512,7 +512,7 @@ mod tests {
         map_items.insert(StackItem::Integer(1.into()), StackItem::Integer(10.into()));
         map_items.insert(StackItem::Integer(2.into()), StackItem::Integer(20.into()));
 
-        let map = StackItem::Map(MapItem::new(map_items, None).unwrap());
+        let map = StackItem::from_map(map_items);
         let serialized = BinarySerializer::serialize(&map, &limits).unwrap();
 
         // Deserialize and verify order is preserved
