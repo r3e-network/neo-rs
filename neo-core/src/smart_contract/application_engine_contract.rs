@@ -8,6 +8,7 @@ use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::env_flags::env_flag_enabled;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
 use crate::smart_contract::native::crypto_lib::Bls12381Interop;
+use crate::smart_contract::iterators::IteratorInterop;
 use crate::UInt160;
 use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;
@@ -403,7 +404,11 @@ fn decode_native_result(
                 let iterator_id = id
                     .to_u32()
                     .ok_or_else(|| "Iterator identifier out of range".to_string())?;
-                return Ok(Some(StackItem::Iterator(iterator_id as u64)));
+                // Native model: a native-contract InteropInterface result is an
+                // iterator object presented to the VM as `StackItemType::InteropInterface`
+                // (matches a C# native method returning an `IIterator`). The actual
+                // iterator state lives in the engine `storage_iterators` table keyed by id.
+                return Ok(Some(StackItem::from_interface(IteratorInterop::new(iterator_id))));
             }
 
             Bls12381Interop::from_encoded_bytes(&result).map_err(|e| e.to_string())?;
@@ -415,12 +420,20 @@ fn decode_native_result(
 
 fn stack_item_to_interop_bytes(item: StackItem) -> Result<Vec<u8>, String> {
     match &item {
-        StackItem::Interop(handle) => {
-            // Interop handles require host-side resolution; for now, encode the handle ID
-            Ok(handle.to_le_bytes().to_vec())
+        StackItem::InteropInterface(_) => {
+            // Iterator handle on the stack: encode the u32 id (4 LE bytes), matching
+            // `decode_native_result`'s InteropInterface round-trip.
+            let interop = item.as_interface::<IteratorInterop>().map_err(|e| e.to_string())?;
+            Ok(interop.id().to_le_bytes().to_vec())
         }
-        StackItem::Iterator(id) => {
-            Ok((*id as u32).to_le_bytes().to_vec())
+        StackItem::Integer(_) => {
+            // Fallback: a raw integer iterator id pushed by a host path.
+            let id = item
+                .as_int()
+                .map_err(|e| e.to_string())?
+                .to_u32()
+                .ok_or_else(|| "Iterator identifier out of range".to_string())?;
+            Ok(id.to_le_bytes().to_vec())
         }
         StackItem::ByteString(bytes) => {
             // Validate that the bytes are a valid Bls12381Interop encoding

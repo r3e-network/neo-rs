@@ -1,5 +1,6 @@
 use super::*;
 use crate::neo_vm::StackItemExt;
+use crate::smart_contract::iterators::IteratorInterop;
 
 impl ApplicationEngine {
     pub fn get_storage_item(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>> {
@@ -93,19 +94,33 @@ impl ApplicationEngine {
 
     pub fn push_interop_container(
         &mut self,
-        _container: Arc<dyn Verifiable>,
+        container: Arc<dyn Verifiable>,
     ) -> Result<(), String> {
-        // With StackValue::Interop(u64), we push a placeholder handle.
-        // The actual object storage is handled by the interop host.
-        self.push(StackItem::Interop(0))
+        // The native `StackItem` model has no integer interop handle
+        // (`StackItem::Interop(u64)` was a neo-vm-rs concept). Interop objects are
+        // carried inline as `StackItem::InteropInterface`. For a verifiable
+        // container we project it to a structured stack item, matching
+        // `System.Runtime.GetScriptContainer`.
+        // TODO(parity-review): original pushed an opaque `Interop(0)` placeholder;
+        // no in-tree caller uses this, revisit if an opaque container handle is required.
+        use crate::smart_contract::Interoperable;
+        if let Some(transaction) = container
+            .as_any()
+            .downcast_ref::<crate::network::p2p::payloads::Transaction>()
+        {
+            self.push(transaction.to_stack_item().map_err(|e| e.to_string())?)
+        } else {
+            Err("Script container does not implement Interoperable".to_string())
+        }
     }
 
     pub fn pop_iterator_id(&mut self) -> Result<u32, String> {
         let item = self.pop()?;
-        match &item {
-            StackItem::Interop(handle) => return Ok(*handle as u32),
-            _ => {}
+        // Native iterators are `StackItem::InteropInterface(IteratorInterop { id })`.
+        if let Ok(interop) = item.as_interface::<IteratorInterop>() {
+            return Ok(interop.id());
         }
+        // Fall back to a raw integer id (used by host-side/test paths).
         let identifier = item
             .into_int()
             .map_err(|e| e.to_string())?
