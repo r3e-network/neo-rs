@@ -164,7 +164,7 @@ impl JsonSerializer {
         array: &Array,
         seen: &mut HashSet<(usize, StackItemType)>,
     ) -> Result<JsonValue, String> {
-        let identity = (array.as_ptr() as usize, StackItemType::Array);
+        let identity = (array.id() as usize, StackItemType::Array);
         if !seen.insert(identity) {
             return Err("Circular reference detected".to_string());
         }

@@ -102,7 +102,7 @@ fn render_stack_item(
             value = Some(Value::Number(JsonNumber::from(pos as u64)));
         }
         StackItem::Array(array) => {
-            let identity = (array.as_ptr() as usize, StackItemType::Array);
+            let identity = (array.id() as usize, StackItemType::Array);
             if !context.insert(identity) {
                 return Err(VmError::invalid_operation_msg("Circular reference in stack item"));
             }

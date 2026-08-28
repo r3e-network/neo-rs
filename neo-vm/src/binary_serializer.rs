@@ -440,7 +440,7 @@ impl BinarySerializer {
                 }
                 StackItem::Array(array) => {
                     writer.push(StackItemType::Array.to_byte());
-                    let identity = (array.as_ptr() as usize, StackItemType::Array);
+                    let identity = (array.id() as usize, StackItemType::Array);
                     if !processed.insert(identity) {
                         return Err(
                             "Circular reference detected while serializing array".to_string()
@@ -453,7 +453,7 @@ impl BinarySerializer {
                 }
                 StackItem::Struct(struct_item) => {
                     writer.push(StackItemType::Struct.to_byte());
-                    let identity = (struct_item.as_ptr() as usize, StackItemType::Struct);
+                    let identity = (struct_item.id() as usize, StackItemType::Struct);
                     if !processed.insert(identity) {
                         return Err(
                             "Circular reference detected while serializing struct".to_string()
