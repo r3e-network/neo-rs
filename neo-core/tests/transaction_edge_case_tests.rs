@@ -11,6 +11,7 @@ use neo_core::neo_io::Serializable;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
 use neo_core::persistence::DataCache;
+use neo_core::VerifiableExt;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::{
     Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
