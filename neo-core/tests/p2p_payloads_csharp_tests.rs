@@ -155,7 +155,7 @@ fn csharp_ut_version_payload_create_method() {
     ];
 
     let payload =
-        VersionPayload::create(&settings, nonce, user_agent.clone(), capabilities.clone());
+        VersionPayload::create(settings.network, nonce, user_agent.clone(), capabilities.clone());
 
     assert_eq!(payload.network, settings.network);
     assert_eq!(payload.version, 0);
