@@ -1,3 +1,4 @@
+use neo_core::VerifiableExt;
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_core::cryptography::bloom_filter::BloomFilter;
 use neo_core::cryptography::{Crypto, ECCurve, ECPoint};
