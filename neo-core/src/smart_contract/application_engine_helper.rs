@@ -173,8 +173,8 @@ impl ApplicationEngine {
     pub fn pop_array(&mut self) -> Result<Vec<StackItem>, String> {
         let item = self.pop()?;
         match item {
-            StackItem::Array(array) => Ok(array),
-            StackItem::Struct(struct_item) => Ok(struct_item),
+            StackItem::Array(array) => Ok(array.items()),
+            StackItem::Struct(struct_item) => Ok(struct_item.items()),
             _ => Err("Expected array".to_string()),
         }
     }
@@ -306,18 +306,28 @@ fn detect_stack_item_cycle(
     visited: &mut HashSet<CompoundKey>,
 ) -> Result<(), String> {
     match item {
-        StackItem::Array(items) | StackItem::Struct(items) => {
-            let key = CompoundKey::Array(items.as_ptr() as usize);
+        StackItem::Array(items) => {
+            let key = CompoundKey::Array(items.id() as usize);
             detect_compound_cycle(
                 key,
                 visiting,
                 visited,
-                items.clone(),
+                items.items(),
+                "Circular reference detected while serializing compound",
+            )
+        }
+        StackItem::Struct(items) => {
+            let key = CompoundKey::Array(items.id() as usize);
+            detect_compound_cycle(
+                key,
+                visiting,
+                visited,
+                items.items(),
                 "Circular reference detected while serializing compound",
             )
         }
         StackItem::Map(entries) => {
-            let key = CompoundKey::Map(entries.as_ptr() as usize);
+            let key = CompoundKey::Map(entries.id() as usize);
             if visited.contains(&key) {
                 return Ok(());
             }
@@ -325,8 +335,8 @@ fn detect_stack_item_cycle(
                 return Err("Circular reference detected while serializing map".to_string());
             }
             for (entry_key, entry_value) in entries.iter() {
-                detect_stack_item_cycle(entry_key, visiting, visited)?;
-                detect_stack_item_cycle(entry_value, visiting, visited)?;
+                detect_stack_item_cycle(&entry_key, visiting, visited)?;
+                detect_stack_item_cycle(&entry_value, visiting, visited)?;
             }
             visiting.remove(&key);
             visited.insert(key);
@@ -373,25 +383,23 @@ fn clone_stack_item_as_immutable(
     match item {
         StackItem::Null => Ok(StackItem::Null),
         StackItem::Boolean(value) => Ok(StackItem::Boolean(*value)),
-        StackItem::Integer(value) => Ok(StackItem::Integer(*value)),
-        StackItem::BigInteger(bytes) => Ok(StackItem::BigInteger(bytes.clone())),
+        StackItem::Integer(value) => Ok(StackItem::Integer(value.clone())),
         StackItem::ByteString(bytes) => Ok(StackItem::ByteString(bytes.clone())),
         StackItem::Buffer(buffer) => Ok(StackItem::Buffer(buffer.clone())),
-        StackItem::Pointer(pointer) => Ok(StackItem::Pointer(*pointer)),
-        StackItem::Interop(handle) => Ok(StackItem::Interop(*handle)),
-        StackItem::Iterator(handle) => Ok(StackItem::Iterator(*handle)),
+        StackItem::Pointer(pointer) => Ok(StackItem::Pointer(pointer.clone())),
+        StackItem::InteropInterface(iface) => Ok(StackItem::InteropInterface(iface.clone())),
         StackItem::Array(items) => {
             let key = CompoundKey::Array(item as *const _ as usize);
             if let Some(existing) = seen.get(&key) {
                 return Ok(existing.clone());
             }
             let mut cloned_items = Vec::with_capacity(items.len());
-            let cloned_item = StackItem::Array(Vec::new());
+            let cloned_item = StackItem::from_array(Vec::<StackItem>::new());
             seen.insert(key, cloned_item.clone());
-            for element in items {
-                cloned_items.push(clone_stack_item_as_immutable(element, seen)?);
+            for element in items.iter() {
+                cloned_items.push(clone_stack_item_as_immutable(&element, seen)?);
             }
-            Ok(StackItem::Array(cloned_items))
+            Ok(StackItem::from_array(cloned_items))
         }
         StackItem::Struct(items) => {
             let key = CompoundKey::Struct(item as *const _ as usize);
@@ -399,12 +407,12 @@ fn clone_stack_item_as_immutable(
                 return Ok(existing.clone());
             }
             let mut cloned_items = Vec::with_capacity(items.len());
-            let cloned_item = StackItem::Struct(Vec::new());
+            let cloned_item = StackItem::from_struct(Vec::<StackItem>::new());
             seen.insert(key, cloned_item.clone());
-            for element in items {
-                cloned_items.push(clone_stack_item_as_immutable(element, seen)?);
+            for element in items.iter() {
+                cloned_items.push(clone_stack_item_as_immutable(&element, seen)?);
             }
-            Ok(StackItem::Struct(cloned_items))
+            Ok(StackItem::from_struct(cloned_items))
         }
         StackItem::Map(entries) => {
             let key = CompoundKey::Map(item as *const _ as usize);
@@ -412,14 +420,14 @@ fn clone_stack_item_as_immutable(
                 return Ok(existing.clone());
             }
             let mut cloned_entries = Vec::with_capacity(entries.len());
-            let cloned_item = StackItem::Map(Vec::new());
+            let cloned_item = StackItem::from_map(Vec::<(StackItem, StackItem)>::new());
             seen.insert(key, cloned_item.clone());
-            for (entry_key, entry_value) in entries {
-                let cloned_key = clone_stack_item_as_immutable(entry_key, seen)?;
-                let cloned_value = clone_stack_item_as_immutable(entry_value, seen)?;
+            for (entry_key, entry_value) in entries.iter() {
+                let cloned_key = clone_stack_item_as_immutable(&entry_key, seen)?;
+                let cloned_value = clone_stack_item_as_immutable(&entry_value, seen)?;
                 cloned_entries.push((cloned_key, cloned_value));
             }
-            Ok(StackItem::Map(cloned_entries))
+            Ok(StackItem::from_map(cloned_entries))
         }
     }
 }
