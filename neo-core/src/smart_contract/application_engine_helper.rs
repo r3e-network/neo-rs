@@ -156,17 +156,14 @@ impl ApplicationEngine {
     /// Helper to pop bytes from the stack
     pub fn pop_bytes(&mut self) -> Result<Vec<u8>, String> {
         let item = self.pop()?;
-        item.as_bytes()
-            .ok_or_else(|| "Cannot convert to bytes".to_string())
-            .map(|b| b.to_vec())
+        item.as_bytes().map_err(|e| e.to_string())
     }
 
     /// Helper to pop a string from the stack
     pub fn pop_string(&mut self) -> Result<String, String> {
         let item = self.pop()?;
-        let bytes = item.as_bytes()
-            .ok_or_else(|| "Cannot convert to bytes".to_string())?;
-        String::from_utf8(bytes.to_vec()).map_err(|_| "Invalid UTF-8".to_string())
+        let bytes = item.as_bytes().map_err(|e| e.to_string())?;
+        String::from_utf8(bytes).map_err(|_| "Invalid UTF-8".to_string())
     }
 
     /// Helper to pop an array from the stack

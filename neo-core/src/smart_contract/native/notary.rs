@@ -99,7 +99,7 @@ impl Notary {
             )?;
 
         if matches!(item, StackItem::ByteString(_) | StackItem::Buffer(_)) {
-            let nested_bytes = item.as_bytes().ok_or_else(|| {
+            let nested_bytes = item.as_bytes().map_err(|_| {
                 Error::native_contract("Invalid deposit metadata: cannot convert to bytes".to_string())
             })?;
             item = BinarySerializer::deserialize(
@@ -126,12 +126,13 @@ impl Notary {
             ));
         }
 
-        let owner = if array[0].is_null() {
+        let items = array.items();
+        let owner = if items[0].is_null() {
             *default_owner
         } else {
-            let bytes = array[0]
+            let bytes = items[0]
                 .as_bytes()
-                .ok_or_else(|| Error::native_contract("Invalid deposit owner: cannot convert to bytes".to_string()))?;
+                .map_err(|_| Error::native_contract("Invalid deposit owner: cannot convert to bytes".to_string()))?;
             if bytes.len() != UInt160::LENGTH {
                 return Err(Error::native_contract(
                     "Deposit owner must be 20 bytes".to_string(),
@@ -141,7 +142,7 @@ impl Notary {
                 .map_err(|_| Error::native_contract("Invalid deposit recipient"))?
         };
 
-        let till_value = StackItemExt::as_int(&array[1]).map_err(|err| {
+        let till_value = items[1].as_int().map_err(|err| {
             Error::native_contract(format!("Invalid deposit expiration: {}", err))
         })?;
         let till = till_value

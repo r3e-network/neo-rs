@@ -704,9 +704,10 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
             if matches!(item_type, StackItemType::Any) {
                 true
             } else if matches!(item_type, StackItemType::ByteString | StackItemType::Buffer) {
-                item.as_bytes()
-                    .and_then(|bytes| StdString::from_utf8(bytes.to_vec()).ok())
-                    .is_some()
+                match item.as_bytes() {
+                    Ok(bytes) => StdString::from_utf8(bytes).is_ok(),
+                    Err(_) => false,
+                }
             } else {
                 false
             }
