@@ -199,7 +199,7 @@ fn test_inv_payload_serialization() {
 #[test]
 fn test_version_payload_creation() {
     let settings = ProtocolSettings::default();
-    let version = VersionPayload::create(&settings, 12345, "/neo-rs:0.4/".to_string(), vec![]);
+    let version = VersionPayload::create(settings.network, 12345, "/neo-rs:0.4/".to_string(), vec![]);
     assert_eq!(version.network, settings.network);
     assert!(version.user_agent.contains("neo-rs"));
     assert_eq!(version.nonce, 12345);
@@ -211,7 +211,7 @@ fn test_version_payload_capabilities() {
     use neo_core::network::p2p::capabilities::NodeCapability;
     let settings = ProtocolSettings::default();
     let version = VersionPayload::create(
-        &settings,
+        settings.network,
         67890,
         "/neo-rs:0.4/".to_string(),
         vec![NodeCapability::FullNode { start_height: 100 }],
