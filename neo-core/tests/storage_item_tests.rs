@@ -32,14 +32,14 @@ fn value_set_stores_bytes() {
 fn size_uses_var_length_encoding() {
     let mut uut = StorageItem::new();
     uut.set_value(test_byte_array(10, 0x42));
-    assert_eq!(uut.size(), 11);
+    assert_eq!(uut.serialized_size(), 11);
 }
 
 #[test]
 fn size_large_payload() {
     let mut uut = StorageItem::new();
     uut.set_value(test_byte_array(88, 0x42));
-    assert_eq!(uut.size(), 89);
+    assert_eq!(uut.serialized_size(), 89);
 }
 
 #[test]
