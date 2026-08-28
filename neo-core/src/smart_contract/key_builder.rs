@@ -101,9 +101,10 @@ mod tests {
 
     #[test]
     fn test_try_new_with_zero_max_length() {
-        let mut builder = KeyBuilder::try_new(1, 0x01, 0).expect("builder");
-        let result = builder.try_add(&[0x01]);
-        assert!(matches!(result, Err(KeyBuilderError::DataTooLarge { .. })));
+        // Authoritative semantics (neo_storage::KeyBuilder is the single source of
+        // truth): a zero max_length is rejected at construction time.
+        let result = KeyBuilder::try_new(1, 0x01, 0);
+        assert!(matches!(result, Err(KeyBuilderError::InvalidMaxLength)));
     }
 
     #[test]
