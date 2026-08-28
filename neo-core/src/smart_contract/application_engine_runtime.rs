@@ -305,6 +305,8 @@ impl ApplicationEngine {
         self.ensure_notification_size(&state)?;
         self.reserve_notification_slot()?;
 
+        // Basilisk: notification state normalizes Buffer to ByteString (C# parity).
+        let state = coerce_notify_state_basilisk(state);
         self.send_notification(script_hash, event_name, state)
     }
 
@@ -754,5 +756,23 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
             StackItemType::Any | StackItemType::InteropInterface
         ),
         _ => false,
+    }
+}
+
+/// Basilisk notify-state normalization: coerces `Buffer` stack items to
+/// `ByteString` (recursing through arrays and structs), matching C# Neo's
+/// post-`HF_Basilisk` `System.Runtime.Notify` behavior.
+fn coerce_notify_state_basilisk(items: Vec<neo_core::neo_vm::StackItem>) -> Vec<neo_core::neo_vm::StackItem> {
+    use neo_core::neo_vm::StackItem;
+    items.into_iter().map(coerce_item_basilisk).collect::<Vec<StackItem>>()
+}
+
+fn coerce_item_basilisk(item: neo_core::neo_vm::StackItem) -> neo_core::neo_vm::StackItem {
+    use neo_core::neo_vm::StackItem;
+    match item {
+        StackItem::Buffer(b) => StackItem::ByteString(b.data()),
+        StackItem::Array(a) => StackItem::from_array(a.items().into_iter().map(coerce_item_basilisk).collect::<Vec<StackItem>>()),
+        StackItem::Struct(s) => StackItem::from_struct(s.items().into_iter().map(coerce_item_basilisk).collect::<Vec<StackItem>>()),
+        other => other,
     }
 }
