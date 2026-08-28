@@ -7,6 +7,7 @@ mod common;
 
 use base64::{engine::general_purpose, Engine as _};
 use common::{test_byte_array as get_test_byte_array, test_transaction as create_test_transaction};
+use neo_core::smart_contract::StorageItemExt;
 use neo_core::BigDecimal;
 use neo_core::neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
