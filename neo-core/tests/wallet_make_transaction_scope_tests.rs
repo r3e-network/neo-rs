@@ -1,3 +1,4 @@
+use neo_core::smart_contract::StorageItemExt;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
