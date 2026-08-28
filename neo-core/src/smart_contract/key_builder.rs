@@ -131,6 +131,6 @@ mod tests {
         let point = ECPoint::decode(&point_bytes, ECCurve::secp256r1()).expect("valid point");
         let mut builder = KeyBuilder::new_with_default(1, 0x01);
         builder.add_ecpoint(&point);
-        assert_eq!(builder.len(), KeyBuilder::PREFIX_LENGTH + point.as_bytes().len());
+        assert_eq!(builder.len(), neo_storage::key_builder::KeyBuilder::PREFIX_LENGTH + point.as_bytes().len());
     }
 }

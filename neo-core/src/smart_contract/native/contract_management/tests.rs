@@ -66,7 +66,7 @@ fn contract_from_bytes(bytes: &[u8]) -> ContractState {
 
 fn assert_native_contract_error_contains(err: Error, expected: &str) {
     match err {
-        Error::NativeContractError { message } => {
+        Error::Execution { message } => {
             assert!(
                 message.contains(expected),
                 "expected native contract error containing `{expected}`, got `{message}`"
@@ -559,7 +559,7 @@ fn list_contracts_rejects_malformed_contract_payload() {
 
     let err = ContractManagement::list_contracts(snapshot.as_ref())
         .expect_err("malformed contract payload should fail");
-    assert!(matches!(err, Error::Deserialization { .. }));
+    assert!(matches!(err, Error::Codec { .. }));
 }
 
 #[test]
@@ -585,7 +585,7 @@ fn validate_snapshot_integrity_rejects_duplicate_non_native_ids() {
 
     let err = ContractManagement::validate_snapshot_integrity(snapshot.as_ref())
         .expect_err("duplicate contract ids should fail integrity check");
-    assert!(matches!(err, Error::InvalidData { .. }));
+    assert!(matches!(err, Error::Invalid { .. }));
     assert!(err
         .to_string()
         .contains("duplicate non-native contract id 1"));
@@ -617,7 +617,7 @@ fn hydrate_from_engine_rejects_duplicate_non_native_ids() {
     let err = cm
         .hydrate_from_engine(&engine)
         .expect_err("duplicate contract ids should fail hydration");
-    assert!(matches!(err, Error::InvalidData { .. }));
+    assert!(matches!(err, Error::Invalid { .. }));
 }
 
 #[test]
