@@ -88,6 +88,7 @@ pub use neo_storage::StorageError;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::CoreError;
     use crate::persistence::{StorageItem, StorageKey};
 
     // ============================================================================
@@ -251,25 +252,31 @@ mod tests {
 
     #[test]
     fn storage_error_not_found_display() {
-        let err = StorageError::NotFound;
-        assert_eq!(format!("{}", err), "key not found");
+        let err = StorageError::KeyNotFound {
+            key: "some_key".to_string(),
+        };
+        assert_eq!(format!("{}", err), "Key not found: some_key");
     }
 
     #[test]
     fn storage_error_read_only_display() {
         let err = StorageError::ReadOnly;
-        assert_eq!(format!("{}", err), "cache is read only");
+        assert_eq!(format!("{}", err), "Storage is read-only");
     }
 
     #[test]
     fn storage_error_other_display() {
-        let err = StorageError::Other("custom error".to_string());
-        assert_eq!(format!("{}", err), "custom error");
+        let err = StorageError::InvalidOperation {
+            message: "custom error".to_string(),
+        };
+        assert_eq!(format!("{}", err), "Invalid operation: custom error");
     }
 
     #[test]
     fn storage_error_converts_to_core_error() {
-        let storage_err = StorageError::NotFound;
+        let storage_err = StorageError::KeyNotFound {
+            key: "some_key".to_string(),
+        };
         let core_err: CoreError = storage_err.into();
         assert!(matches!(core_err, CoreError::InvalidOperation { .. }));
     }
