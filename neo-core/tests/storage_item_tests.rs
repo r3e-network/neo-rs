@@ -1,3 +1,4 @@
+use neo_core::smart_contract::StorageItemExt;
 use neo_core::neo_io::MemoryReader;
 use neo_core::smart_contract::StorageItem;
 
@@ -60,7 +61,7 @@ fn deserialize_reads_all_bytes() {
     let data = vec![66, 32, 32, 32, 32, 32, 32, 32, 32, 32];
     let mut uut = StorageItem::new();
     let mut reader = MemoryReader::new(&data);
-    uut.deserialize(&mut reader).expect("deserialize");
+    uut.deserialize_reader(&mut reader).expect("deserialize");
 
     let value = uut.to_value();
     assert_eq!(value, data);
