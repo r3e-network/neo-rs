@@ -1,3 +1,2 @@
-//! StorageItem now lives under `crate::persistence`.
-pub use crate::persistence::storage_item::StorageItem;
-pub use crate::persistence::storage_item::StorageItemExt;
+//! Thin re-export: storage item types live in `neo-core::persistence`.
+pub use crate::persistence::storage_item::*;

@@ -341,6 +341,9 @@ pub mod neo_io {
 
 /// Neo VM compatibility types used by core and downstream crates.
 pub mod neo_vm;
+pub mod script_builder;
+pub mod big_decimal;
+pub mod unhandled_exception_policy;
 
 // ============================================================================
 // Ledger Re-export
