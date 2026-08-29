@@ -32,6 +32,31 @@ impl ConsensusService {
             });
         }
 
+        // Verify the ExtensiblePayload witness signature for **every** commit,
+        // regardless of view. C# authenticates the payload in `OnConsensusPayload`
+        // before dispatching; doing it only for current-view commits allows any peer
+        // to forge a Commit under another validator's index. Because the per-index
+        // commit slot is first-writer-wins (`commits.contains_key` above), a forged
+        // off-view Commit permanently suppresses that validator's real Commit and
+        // can stall the round indefinitely.
+        if payload.witness.is_empty() {
+            warn!(
+                validator = payload.validator_index,
+                "Commit missing witness"
+            );
+            return Err(ConsensusError::signature_failed("Commit missing witness"));
+        }
+        let sign_data = self.dbft_sign_data(payload)?;
+        if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
+            warn!(
+                validator = payload.validator_index,
+                "Commit witness signature verification failed"
+            );
+            return Err(ConsensusError::signature_failed(
+                "Commit witness signature invalid",
+            ));
+        }
+
         let is_current_view = payload.view_number == self.context.view_number;
         if !is_current_view {
             self.context.add_commit(
@@ -39,12 +64,10 @@ impl ConsensusService {
                 payload.view_number,
                 payload.data.clone(),
             )?;
-            if !payload.witness.is_empty() {
-                self.context.commit_invocations.insert(
-                    payload.validator_index,
-                    invocation_script_from_signature(&payload.witness),
-                );
-            }
+            self.context.commit_invocations.insert(
+                payload.validator_index,
+                invocation_script_from_signature(&payload.witness),
+            );
             return Ok(());
         }
 
@@ -71,26 +94,6 @@ impl ConsensusService {
         block_sign_data.extend_from_slice(&self.network.to_le_bytes());
         block_sign_data.extend_from_slice(&block_hash.as_bytes());
 
-        // Verify ExtensiblePayload witness signature (authenticity).
-        // SECURITY: Require non-empty witness and valid signature
-        if payload.witness.is_empty() {
-            warn!(
-                validator = payload.validator_index,
-                "Commit missing witness"
-            );
-            return Err(ConsensusError::signature_failed("Commit missing witness"));
-        }
-        let sign_data = self.dbft_sign_data(payload)?;
-        if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
-            warn!(
-                validator = payload.validator_index,
-                "Commit witness signature verification failed"
-            );
-            return Err(ConsensusError::signature_failed(
-                "Commit witness signature invalid",
-            ));
-        }
-
         // Verify the commit signature over the block hash.
         // (payload.data is guaranteed to be exactly 64 bytes by the check above.)
         if !self.verify_signature(&block_sign_data, &payload.data, payload.validator_index) {
@@ -107,12 +110,11 @@ impl ConsensusService {
             payload.view_number,
             payload.data.clone(),
         )?;
-        if !payload.witness.is_empty() {
-            self.context.commit_invocations.insert(
-                payload.validator_index,
-                invocation_script_from_signature(&payload.witness),
-            );
-        }
+        // Witness is guaranteed non-empty (validated above).
+        self.context.commit_invocations.insert(
+            payload.validator_index,
+            invocation_script_from_signature(&payload.witness),
+        );
 
         self.check_commits()?;
 

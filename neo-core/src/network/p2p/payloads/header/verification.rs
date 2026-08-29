@@ -9,8 +9,7 @@ use crate::smart_contract::native::{ContractManagement, LedgerContract};
 use crate::smart_contract::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType};
 use crate::validation::{
-    validate_primary_index, validate_timestamp_bounds, validate_timestamp_progression,
-    validate_witness_scripts, BlockValidationError,
+    validate_primary_index, validate_timestamp_progression, BlockValidationError,
 };
 use crate::neo_vm::StackItemExt;
 use crate::{UInt160, UInt256};
@@ -21,25 +20,19 @@ pub(super) const HEADER_VERIFY_GAS: i64 = 300_000_000;
 
 #[derive(Debug)]
 enum HeaderSelfValidationFailure {
-    Timestamp(BlockValidationError),
     PrimaryIndex(BlockValidationError),
-    WitnessScripts(BlockValidationError),
 }
 
 impl HeaderSelfValidationFailure {
     fn name(&self) -> &'static str {
         match self {
-            Self::Timestamp(_) => "timestamp_bounds",
             Self::PrimaryIndex(_) => "primary_index",
-            Self::WitnessScripts(_) => "witness_scripts",
         }
     }
 
     fn error(&self) -> &BlockValidationError {
         match self {
-            Self::Timestamp(error) | Self::PrimaryIndex(error) | Self::WitnessScripts(error) => {
-                error
-            }
+            Self::PrimaryIndex(error) => error,
         }
     }
 }
@@ -89,11 +82,12 @@ impl Header {
         &self,
         settings: &ProtocolSettings,
     ) -> Result<(), HeaderSelfValidationFailure> {
-        validate_timestamp_bounds(self.timestamp)
-            .map_err(HeaderSelfValidationFailure::Timestamp)?;
+        // C# Header.Verify performs no wall-clock timestamp and no structural
+        // witness-script checks; the timestamp ordering is enforced against the
+        // previous header in validate_against_previous, and the witness is
+        // verified by execution (VerifyWitnesses).
         validate_primary_index(self.primary_index, settings.validators_count)
             .map_err(HeaderSelfValidationFailure::PrimaryIndex)?;
-        validate_witness_scripts(self).map_err(HeaderSelfValidationFailure::WitnessScripts)?;
         Ok(())
     }
 
@@ -357,12 +351,9 @@ impl Header {
 
     /// Verifies the header using the provided store cache.
     ///
-    /// Performs comprehensive validation including:
-    /// - Timestamp bounds (within 15 minutes of current time)
-    /// - Primary index validation
-    /// - Witness script validation
-    /// - Chain continuity checks
-    /// - Witness verification against consensus
+    /// Matches C# Header.Verify: primary index range, chain continuity
+    /// (index/hash/timestamp ordering against the previous header) and witness
+    /// verification against the previous header's next consensus address.
     pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
         if let Err(error) = self.validate_self(settings) {
             self.log_self_validation_failure(settings, &error, false);

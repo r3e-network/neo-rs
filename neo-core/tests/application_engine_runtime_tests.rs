@@ -125,7 +125,8 @@ fn big(value: &str) -> BigInt {
 
 #[test]
 fn runtime_get_random_same_block_matches_csharp() {
-    let mut settings = ProtocolSettings::default();
+    // MainNet base: the expected values are derived from the MainNet committee.
+    let mut settings = ProtocolSettings::mainnet();
     settings.hardforks.insert(Hardfork::HfAspidochelone, 0);
     let expected = vec![
         big("271339657438512451304577787170704246350"),

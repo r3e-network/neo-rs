@@ -32,9 +32,10 @@ const TEST_GAS_LIMIT: i64 = 3_000_000_000;
 const PREFIX_CURRENT_BLOCK: u8 = 12;
 
 fn protocol_settings_all_active() -> ProtocolSettings {
-    let mut settings = ProtocolSettings::default();
+    // MainNet base supplies the standby committee required by multi-sig witnesses.
+    let mut settings = ProtocolSettings::mainnet();
     let mut hardforks = HashMap::new();
-    for hardfork in HardforkManager::all() {
+    for &hardfork in HardforkManager::all() {
         hardforks.insert(hardfork, 0);
     }
     settings.hardforks = hardforks;

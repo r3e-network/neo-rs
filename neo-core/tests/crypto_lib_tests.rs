@@ -521,6 +521,20 @@ fn test_crypto_lib_methods() {
             ],
             ContractParameterType::Boolean,
             Some(Hardfork::HfCockatrice),
+            Some(Hardfork::HfGorgon),
+            &["message", "pubkey", "signature", "curveHash"],
+        ),
+        (
+            "verifyWithECDsa",
+            1 << 15,
+            &[
+                ContractParameterType::ByteArray,
+                ContractParameterType::ByteArray,
+                ContractParameterType::ByteArray,
+                ContractParameterType::Integer,
+            ],
+            ContractParameterType::Boolean,
+            Some(Hardfork::HfGorgon),
             None,
             &["message", "pubkey", "signature", "curveHash"],
         ),
@@ -534,6 +548,19 @@ fn test_crypto_lib_methods() {
             ],
             ContractParameterType::Boolean,
             Some(Hardfork::HfEchidna),
+            Some(Hardfork::HfGorgon),
+            &["message", "pubkey", "signature"],
+        ),
+        (
+            "verifyWithEd25519",
+            1 << 15,
+            &[
+                ContractParameterType::ByteArray,
+                ContractParameterType::ByteArray,
+                ContractParameterType::ByteArray,
+            ],
+            ContractParameterType::Boolean,
+            Some(Hardfork::HfGorgon),
             None,
             &["message", "pubkey", "signature"],
         ),
@@ -658,7 +685,8 @@ fn crypto_lib_verify_with_ecdsa_hardfork_metadata_selects_single_version() {
         .expect("post-Cockatrice cache lookup")
         .expect("post-Cockatrice verifyWithECDsa");
     assert_eq!(post_cockatrice.active_in, Some(Hardfork::HfCockatrice));
-    assert_eq!(post_cockatrice.deprecated_in, None);
+    // V1 carries its Gorgon retirement marker but still resolves pre-Gorgon.
+    assert_eq!(post_cockatrice.deprecated_in, Some(Hardfork::HfGorgon));
     assert_eq!(post_cockatrice.parameter_names[3], "curveHash");
 
     let pre_state = crypto
@@ -711,7 +739,7 @@ fn crypto_lib_verify_with_ecdsa_hardfork_metadata_selects_single_version() {
 fn protocol_settings_all_active() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
     let mut hardforks = HashMap::new();
-    for hardfork in HardforkManager::all() {
+    for &hardfork in HardforkManager::all() {
         hardforks.insert(hardfork, 0);
     }
     settings.hardforks = hardforks;
@@ -721,7 +749,7 @@ fn protocol_settings_all_active() -> ProtocolSettings {
 fn protocol_settings_pre_cockatrice() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
     let mut hardforks = HashMap::new();
-    for hardfork in HardforkManager::all() {
+    for &hardfork in HardforkManager::all() {
         hardforks.insert(hardfork, 1);
     }
     settings.hardforks = hardforks;

@@ -441,6 +441,7 @@ impl ConsensusActor {
                 ConsensusService::with_context(network, context, private_key.clone(), event_tx);
             service.set_signer(Some(signer.clone()));
             service.set_expected_block_time(expected_block_time);
+            service.set_prev_timestamp(prev_timestamp);
             if let Err(err) = service.resume(now, prev_hash, 0) {
                 warn!(target: "neo", %err, "failed to resume consensus from recovery log");
             }
@@ -453,6 +454,7 @@ impl ConsensusActor {
             service.set_private_key(private_key.clone());
             service.set_signer(Some(signer.clone()));
             service.set_expected_block_time(expected_block_time);
+            service.set_prev_timestamp(prev_timestamp);
             if let Err(err) = service.start(block_index, now, prev_hash, 0) {
                 warn!(target: "neo", %err, "failed to start consensus round");
             }
@@ -469,6 +471,7 @@ impl ConsensusActor {
         );
         service.set_signer(Some(signer));
         service.set_expected_block_time(expected_block_time);
+        service.set_prev_timestamp(prev_timestamp);
         if let Err(err) = service.start(block_index, now, prev_hash, 0) {
             warn!(target: "neo", %err, "failed to start consensus round");
         }

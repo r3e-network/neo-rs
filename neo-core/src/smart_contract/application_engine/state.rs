@@ -446,6 +446,15 @@ impl ApplicationEngine {
         self.native_registry.is_native(hash)
     }
 
+    /// Registers an additional native contract on this engine.
+    ///
+    /// The standard registry only contains the 11 C# v3.10.1 native contracts;
+    /// non-protocol contracts (or test doubles) can be injected here without
+    /// polluting `NativeRegistry::register_standard_contracts`.
+    pub fn register_native_contract(&mut self, contract: std::sync::Arc<dyn NativeContract>) {
+        self.native_registry.register(contract);
+    }
+
     pub fn push_log(&mut self, event: LogEventArgs) {
         if let Some(context) = self.runtime_context.as_ref() {
             context.notify_application_log(self, &event);

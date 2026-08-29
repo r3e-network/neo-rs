@@ -364,17 +364,36 @@ impl CryptoLib {
     // - The blst library handles invalid curve points gracefully by returning error codes
     //   rather than causing undefined behavior
 
+    /// Detects the compressed encoding of the point at infinity.
+    ///
+    /// C# `G1Affine`/`G2Affine.FromBytes` accept it:
+    /// `_checked = (!infinity_flag_set | (infinity_flag_set & !sort_flag_set & x.IsZero))
+    ///              & compression_flag_set`
+    /// i.e. only `0xC0 || 0x00…` is a valid compressed infinity. `blst` rejects that
+    /// encoding outright, so it must be handled before handing the bytes to blst.
+    fn is_compressed_infinity(data: &[u8]) -> bool {
+        let compression_flag_set = data[0] & 0x80 != 0;
+        let infinity_flag_set = data[0] & 0x40 != 0;
+        let sort_flag_set = data[0] & 0x20 != 0;
+        compression_flag_set && infinity_flag_set && !sort_flag_set && data[1..].iter().all(|&b| b == 0)
+    }
+
     fn deserialize_g1(&self, data: &[u8]) -> Result<blst_p1_affine> {
         let mut point = blst_p1_affine::default();
         // SAFETY: `point` is a valid mutable reference, `data.as_ptr()` points to valid memory
         // for at least 48 bytes (caller must ensure this). blst returns an error code for
         // invalid input rather than causing UB.
         unsafe {
+            if Self::is_compressed_infinity(data) {
+                // blst represents the affine point at infinity as `x == y == 0`,
+                // which is exactly `blst_p1_affine::default()`.
+                return Ok(point);
+            }
             let result = blst::blst_p1_uncompress(&mut point, data.as_ptr());
             if result != BLST_ERROR::BLST_SUCCESS {
                 return Err(Error::native_contract("Invalid G1 point"));
             }
-            if blst::blst_p1_affine_is_inf(&point) || !blst::blst_p1_affine_in_g1(&point) {
+            if !blst::blst_p1_affine_in_g1(&point) {
                 return Err(Error::native_contract(
                     "G1 point not in correct subgroup".to_string(),
                 ));
@@ -389,11 +408,14 @@ impl CryptoLib {
         // for at least 96 bytes (caller must ensure this). blst returns an error code for
         // invalid input rather than causing UB.
         unsafe {
+            if Self::is_compressed_infinity(data) {
+                return Ok(point);
+            }
             let result = blst::blst_p2_uncompress(&mut point, data.as_ptr());
             if result != BLST_ERROR::BLST_SUCCESS {
                 return Err(Error::native_contract("Invalid G2 point"));
             }
-            if blst::blst_p2_affine_is_inf(&point) || !blst::blst_p2_affine_in_g2(&point) {
+            if !blst::blst_p2_affine_in_g2(&point) {
                 return Err(Error::native_contract(
                     "G2 point not in correct subgroup".to_string(),
                 ));

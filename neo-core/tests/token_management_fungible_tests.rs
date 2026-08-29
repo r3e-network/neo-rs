@@ -8,7 +8,8 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::ScriptBuilder;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::native::{NativeContract, TokenManagement};
+use neo_core::smart_contract::native::token_management::TokenManagement;
+use neo_core::smart_contract::native::NativeContract;
 use neo_core::smart_contract::TriggerType;
 use neo_core::{UInt160, UInt256};
 use neo_vm::OpCode;
@@ -41,6 +42,8 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         None,
     )
     .expect("on persist engine");
+    on_persist
+        .register_native_contract(std::sync::Arc::new(TokenManagement::new()));
     on_persist.native_on_persist().expect("native on persist");
 
     let mut post_persist = ApplicationEngine::new(
@@ -53,6 +56,8 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         None,
     )
     .expect("post persist engine");
+    post_persist
+        .register_native_contract(std::sync::Arc::new(TokenManagement::new()));
     post_persist
         .native_post_persist()
         .expect("native post persist");
@@ -113,7 +118,7 @@ impl FungibleFixture {
         let token_mgmt = TokenManagement::new();
         let owner = sample_account(0x01);
         let block = make_block(1);
-        let engine = ApplicationEngine::new(
+        let mut engine = ApplicationEngine::new(
             TriggerType::Application,
             None,
             Arc::clone(&snapshot),
@@ -123,6 +128,9 @@ impl FungibleFixture {
             None,
         )
         .expect("engine");
+        // TokenManagement is no longer part of the standard native registry
+        // (C# v3.10.1 has no such native contract); register it explicitly.
+        engine.register_native_contract(std::sync::Arc::new(TokenManagement::new()));
 
         Self {
             token_mgmt,

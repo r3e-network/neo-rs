@@ -1,9 +1,10 @@
 use super::{Block, Header, Transaction};
-use crate::constants::{BLOCK_MAX_TX_WIRE_LIMIT, MAX_BLOCK_SIZE};
-use crate::neo_io::serializable::helper::{
-    get_var_size, get_var_size_serializable_slice, serialize_array,
-};
+use crate::constants::BLOCK_MAX_TX_WIRE_LIMIT;
+use crate::neo_io::serializable::helper::get_var_size_serializable_slice;
+use crate::neo_io::serializable::helper::serialize_array;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::UInt256;
+use std::collections::HashSet;
 
 impl Serializable for Block {
     fn size(&self) -> usize {
@@ -22,41 +23,37 @@ impl Serializable for Block {
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let header = <Header as Serializable>::deserialize(reader)?;
-        let header_size = header.size();
 
-        // Read transaction count
+        // C# Block.DeserializeTransactions: the count is capped at ushort.MaxValue
+        // and there is deliberately no byte-size cap (a >2 MiB block is valid).
         let tx_count = reader.read_var_int(BLOCK_MAX_TX_WIRE_LIMIT as u64)? as usize;
-        if tx_count > BLOCK_MAX_TX_WIRE_LIMIT {
-            return Err(IoError::invalid_data(format!(
-                "Too many transactions: {} exceeds wire limit {}",
-                tx_count, BLOCK_MAX_TX_WIRE_LIMIT
-            )));
-        }
 
-        // Track cumulative size to prevent DoS attacks
-        // MAX_BLOCK_SIZE is 4MB (4,194,304 bytes)
-        let mut cumulative_size = header_size + get_var_size(tx_count as u64);
-        if cumulative_size > MAX_BLOCK_SIZE {
-            return Err(IoError::invalid_data(format!(
-                "Block size {} exceeds maximum {}",
-                cumulative_size, MAX_BLOCK_SIZE
-            )));
-        }
-
-        let mut transactions = Vec::with_capacity(tx_count.min(512)); // Cap initial capacity
+        // C# rejects duplicate transaction hashes while deserializing.
+        let mut seen = HashSet::with_capacity(tx_count.min(1024));
+        let mut hashes = Vec::with_capacity(tx_count.min(512));
+        let mut transactions = Vec::with_capacity(tx_count.min(512));
         for _ in 0..tx_count {
             let tx = <Transaction as Serializable>::deserialize(reader)?;
-            cumulative_size += tx.size();
-
-            // Check cumulative size before accepting transaction
-            if cumulative_size > MAX_BLOCK_SIZE {
+            let hash = tx
+                .try_hash()
+                .map_err(|e| IoError::invalid_data(format!("Invalid transaction in block: {e}")))?;
+            if !seen.insert(hash) {
                 return Err(IoError::invalid_data(format!(
-                    "Block size {} exceeds maximum {}",
-                    cumulative_size, MAX_BLOCK_SIZE
+                    "Duplicate transactions on a block: {hash}"
                 )));
             }
-
+            hashes.push(hash);
             transactions.push(tx);
+        }
+
+        // C# validates the computed merkle root against the header value;
+        // MerkleTree.ComputeRoot(empty) == UInt256.Zero.
+        let computed_root = crate::cryptography::MerkleTree::compute_root(&hashes)
+            .unwrap_or_else(UInt256::default);
+        if computed_root != *header.merkle_root() {
+            return Err(IoError::invalid_data(
+                "The computed Merkle root does not match the expected value.",
+            ));
         }
 
         Ok(Self {

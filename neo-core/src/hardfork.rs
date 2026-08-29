@@ -20,7 +20,8 @@
 //! | `HfDomovoi` | Fourth hardfork - consensus improvements |
 //! | `HfEchidna` | Fifth hardfork - VM upgrades |
 //! | `HfFaun` | Sixth hardfork - additional features |
-//! | `HfGorgon` | Seventh hardfork - latest protocol |
+//! | `HfGorgon` | Seventh hardfork (Neo 3.10) |
+//! | `HfHuyao` | Eighth hardfork (Neo 3.10) |
 //!
 //! ## Usage
 //!
@@ -35,8 +36,6 @@
 //! The `Hardfork` enum is defined in [`neo_primitives`] and re-exported here.
 //! This module provides the `HardforkManager` for managing hardfork activation heights.
 
-use std::sync::LazyLock;
-use parking_lot::RwLock;
 use std::collections::HashMap;
 
 // Re-export Hardfork from neo-primitives (single source of truth)
@@ -48,12 +47,10 @@ pub struct HardforkManager {
     hardforks: HashMap<Hardfork, u32>,
 }
 
-static INSTANCE: LazyLock<RwLock<HardforkManager>> = LazyLock::new(|| RwLock::new(HardforkManager::new()));
-
 impl HardforkManager {
     /// Returns every known hardfork in declaration order.
-    pub const fn all() -> [Hardfork; 7] {
-        Hardfork::all()
+    pub fn all() -> &'static [Hardfork] {
+        &Hardfork::ALL
     }
 
     /// Creates a new HardforkManager with default hardfork heights (matches C# ProtocolSettings.Default exactly).
@@ -66,41 +63,47 @@ impl HardforkManager {
         Self { hardforks }
     }
 
-    /// Creates a new HardforkManager with MainNet hardfork heights (matches C# config.mainnet.json exactly).
+    /// Creates a new HardforkManager with MainNet hardfork heights.
+    ///
+    /// Heights come from [`neo_config::ProtocolSettings::mainnet`] — the
+    /// single source of truth for network parameters. Verified against live
+    /// MainNet nodes (`getversion`, Neo 3.10.1): Faun = 8_800_000,
+    /// Gorgon = 12_020_000.
     pub fn mainnet() -> Self {
-        let mut hardforks = HashMap::new();
-        hardforks.insert(Hardfork::HfAspidochelone, 1730000);
-        hardforks.insert(Hardfork::HfBasilisk, 4120000);
-        hardforks.insert(Hardfork::HfCockatrice, 5450000);
-        hardforks.insert(Hardfork::HfDomovoi, 5570000);
-        hardforks.insert(Hardfork::HfEchidna, 7300000);
-        hardforks.insert(Hardfork::HfFaun, 8800000);
-        // HfGorgon is defined but not activated on MainNet yet.
-        // See: https://github.com/neo-project/neo/blob/master/src/Neo/config.mainnet.json
-        Self { hardforks }
+        Self::from_heights(&neo_config::ProtocolSettings::mainnet().hardforks)
     }
 
-    /// Creates a new HardforkManager with TestNet hardfork heights (matches C# config.testnet.json exactly).
+    /// Creates a new HardforkManager with TestNet hardfork heights.
+    ///
+    /// Heights come from [`neo_config::ProtocolSettings::testnet`] — the
+    /// single source of truth for network parameters. Verified against live
+    /// TestNet nodes (`getversion`, Neo 3.10.1): Faun = 12_960_000,
+    /// Gorgon = 17_960_000.
     pub fn testnet() -> Self {
-        let mut hardforks = HashMap::new();
-        hardforks.insert(Hardfork::HfAspidochelone, 210000);
-        hardforks.insert(Hardfork::HfBasilisk, 2680000);
-        hardforks.insert(Hardfork::HfCockatrice, 3967000);
-        hardforks.insert(Hardfork::HfDomovoi, 4144000);
-        hardforks.insert(Hardfork::HfEchidna, 5870000);
-        hardforks.insert(Hardfork::HfFaun, 12960000);
-        // HfGorgon is defined but not activated on TestNet yet.
-        // See: https://github.com/neo-project/neo/blob/master/src/Neo/config.testnet.json
-        Self { hardforks }
+        Self::from_heights(&neo_config::ProtocolSettings::testnet().hardforks)
     }
 
-    /// Gets the global instance of the HardforkManager.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the global HardforkManager instance.
-    pub fn instance() -> &'static RwLock<HardforkManager> {
-        &INSTANCE
+    /// Builds a manager from the shared `HardforkHeights` configuration; an
+    /// unconfigured hardfork (None) is treated as not activated, exactly like
+    /// C# `ProtocolSettings.Hardforks`.
+    fn from_heights(heights: &neo_config::HardforkHeights) -> Self {
+        let mut hardforks = HashMap::new();
+        let pairs = [
+            (Hardfork::HfAspidochelone, heights.hf_aspidochelone),
+            (Hardfork::HfBasilisk, heights.hf_basilisk),
+            (Hardfork::HfCockatrice, heights.hf_cockatrice),
+            (Hardfork::HfDomovoi, heights.hf_domovoi),
+            (Hardfork::HfEchidna, heights.hf_echidna),
+            (Hardfork::HfFaun, heights.hf_faun),
+            (Hardfork::HfGorgon, heights.hf_gorgon),
+            (Hardfork::HfHuyao, heights.hf_huyao),
+        ];
+        for (hardfork, height) in pairs {
+            if let Some(height) = height {
+                hardforks.insert(hardfork, height);
+            }
+        }
+        Self { hardforks }
     }
 
     /// Registers a hardfork (matches C# ProtocolSettings hardfork registration exactly).
@@ -138,21 +141,6 @@ impl HardforkManager {
 
 crate::impl_default_via_new!(HardforkManager);
 
-/// Checks if a hardfork is active at the specified block height (matches C# ProtocolSettings.IsHardforkEnabled exactly).
-///
-/// # Arguments
-///
-/// * `hardfork` - The hardfork to check.
-/// * `block_height` - The block height to check.
-///
-/// # Returns
-///
-/// A boolean indicating whether the hardfork is active.
-pub fn is_hardfork_enabled(hardfork: Hardfork, block_height: u32) -> bool {
-    let manager = HardforkManager::instance().read();
-    manager.is_enabled(hardfork, block_height)
-}
-
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
@@ -172,6 +160,7 @@ mod tests {
         // Test unregistered hardfork
         assert!(!manager.is_enabled(Hardfork::HfBasilisk, 1000));
     }
+
     #[test]
     fn test_mainnet_hardforks() {
         let manager = HardforkManager::mainnet();
@@ -183,7 +172,11 @@ mod tests {
         assert!(!manager.is_enabled(Hardfork::HfEchidna, 7299999));
         assert!(manager.is_enabled(Hardfork::HfFaun, 8800000));
         assert!(!manager.is_enabled(Hardfork::HfFaun, 8799999));
+        assert!(manager.is_enabled(Hardfork::HfGorgon, 12020000));
+        assert!(!manager.is_enabled(Hardfork::HfGorgon, 12019999));
+        assert!(!manager.is_enabled(Hardfork::HfHuyao, u32::MAX));
     }
+
     #[test]
     fn test_testnet_hardforks() {
         let manager = HardforkManager::testnet();
@@ -195,17 +188,8 @@ mod tests {
         assert!(!manager.is_enabled(Hardfork::HfEchidna, 5869999));
         assert!(manager.is_enabled(Hardfork::HfFaun, 12960000));
         assert!(!manager.is_enabled(Hardfork::HfFaun, 12959999));
-    }
-    #[test]
-    fn test_global_hardfork_manager() {
-        // This test modifies the global instance, so it should be run in isolation
-        {
-            let mut manager = HardforkManager::instance().write();
-            // Register a hardfork
-            manager.register(Hardfork::HfAspidochelone, 300);
-        }
-        assert!(!is_hardfork_enabled(Hardfork::HfAspidochelone, 299));
-        assert!(is_hardfork_enabled(Hardfork::HfAspidochelone, 300));
-        assert!(is_hardfork_enabled(Hardfork::HfAspidochelone, 301));
+        assert!(manager.is_enabled(Hardfork::HfGorgon, 17960000));
+        assert!(!manager.is_enabled(Hardfork::HfGorgon, 17959999));
+        assert!(!manager.is_enabled(Hardfork::HfHuyao, u32::MAX));
     }
 }

@@ -108,6 +108,7 @@ fn test_reset_for_new_view() {
 #[test]
 fn test_timeout_calculation() {
     let validators = create_test_validators(7);
+    // my_index = None → never primary, so the backup/backoff formula applies.
     let mut ctx = ConsensusContext::new(0, validators, None, None);
 
     // View 0: base << 1 = 30s (matches C# shift by ViewNumber+1)
@@ -121,9 +122,16 @@ fn test_timeout_calculation() {
     ctx.view_number = 2;
     assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 8);
 
-    // View 4+: capped at base << 5 = 480s
+    // No clamping: the shift keeps doubling per view (saturating far beyond).
     ctx.view_number = 10;
-    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 32);
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2048);
+
+    // A primary at view 0 starts with a single block time.
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(0, validators, Some(0), None);
+    assert_eq!(ctx.primary_index(), 0);
+    ctx.view_number = 0;
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS);
 }
 
 #[test]

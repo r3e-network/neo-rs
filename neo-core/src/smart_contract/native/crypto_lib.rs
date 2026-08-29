@@ -97,9 +97,13 @@ impl CryptoLib {
         let curve_arg = &args[3];
 
         let cockatrice_enabled = engine.is_hardfork_enabled(Hardfork::HfCockatrice);
+        let gorgon_enabled = engine.is_hardfork_enabled(Hardfork::HfGorgon);
+        // C# VerifyWithECDsa versions: V0 (pre-Cockatrice) and V1 (Cockatrice
+        // ..Gorgon) degrade malformed input to `false`; V2 (Gorgon+) throws.
+        let reject_with_false = cockatrice_enabled && !gorgon_enabled;
         let curve_hash = match Self::parse_named_curve_hash(curve_arg) {
             Some(value) => value,
-            None if cockatrice_enabled => return Ok(vec![0]),
+            None if reject_with_false => return Ok(vec![0]),
             None => {
                 return Err(Error::invalid_argument(
                     "Invalid curve hash for verifyWithECDsa".to_string(),
@@ -119,6 +123,12 @@ impl CryptoLib {
         }
 
         if signature.len() != 64 || public_key.is_empty() {
+            // V2 (Gorgon+) throws on malformed signature/pubkey; V0/V1 return false.
+            if gorgon_enabled {
+                return Err(Error::invalid_argument(
+                    "Invalid signature or public key for verifyWithECDsa".to_string(),
+                ));
+            }
             return Ok(vec![0]);
         }
 
@@ -141,7 +151,14 @@ impl CryptoLib {
     }
 
     /// Verify Ed25519 signature (Echidna+).
-    fn verify_with_ed25519(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    ///
+    /// C# versions: V0 (Echidna..Gorgon) degrades malformed input to `false`;
+    /// V1 (Gorgon+) throws on bad sizes.
+    fn verify_with_ed25519(
+        &self,
+        engine: &ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.len() != 3 {
             return Err(Error::native_contract(
                 "verifyWithEd25519 requires message, public key, and signature arguments"
@@ -152,17 +169,33 @@ impl CryptoLib {
         let message = &args[0];
         let public_key = &args[1];
         let signature = &args[2];
+        let gorgon_enabled = engine.is_hardfork_enabled(Hardfork::HfGorgon);
 
         if signature.len() != 64 || public_key.len() != 32 {
+            if gorgon_enabled {
+                return Err(Error::invalid_argument(
+                    "Invalid signature or public key for verifyWithEd25519".to_string(),
+                ));
+            }
             return Ok(vec![0]);
         }
 
         let sig_bytes: [u8; 64] = match signature.as_slice().try_into() {
             Ok(bytes) => bytes,
+            Err(_) if gorgon_enabled => {
+                return Err(Error::invalid_argument(
+                    "Invalid signature for verifyWithEd25519".to_string(),
+                ))
+            }
             Err(_) => return Ok(vec![0]),
         };
         let pub_bytes: [u8; 32] = match public_key.as_slice().try_into() {
             Ok(bytes) => bytes,
+            Err(_) if gorgon_enabled => {
+                return Err(Error::invalid_argument(
+                    "Invalid public key for verifyWithEd25519".to_string(),
+                ))
+            }
             Err(_) => return Ok(vec![0]),
         };
 

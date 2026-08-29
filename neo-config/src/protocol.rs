@@ -133,6 +133,10 @@ pub struct HardforkHeights {
     /// `HF_Gorgon`
     #[serde(default)]
     pub hf_gorgon: Option<u32>,
+
+    /// `HF_Huyao` (introduced in Neo 3.10)
+    #[serde(default)]
+    pub hf_huyao: Option<u32>,
 }
 
 // Default value functions
@@ -192,10 +196,12 @@ impl ProtocolSettings {
         Self {
             network: 860833102,
             address_version: 0x35,
-            ms_per_block: 15000,
+            // Live MainNet nodes (Neo 3.10.1) run 3-second blocks and cap
+            // blocks at 200 transactions.
+            ms_per_block: 3000,
             max_valid_until_block_increment: 5760,
             validators_count: 7,
-            max_transactions_per_block: 512,
+            max_transactions_per_block: 200,
             memory_pool_max_transactions: 50000,
             max_traceable_blocks: 2_102_400,
             initial_gas_distribution: 5_200_000_000_000_000,
@@ -236,8 +242,12 @@ impl ProtocolSettings {
                 hf_cockatrice: Some(5450000),
                 hf_domovoi: Some(5570000),
                 hf_echidna: Some(7300000),
-                hf_faun: None,
-                hf_gorgon: None,
+                // Verified against live MainNet nodes (getversion, Neo 3.10.1).
+                hf_faun: Some(8800000),
+                // Verified against live MainNet nodes (getversion, Neo 3.10.1).
+                hf_gorgon: Some(12020000),
+                // Huyao is defined in Neo 3.10.1 but not yet activated on MainNet.
+                hf_huyao: None,
             },
         }
     }
@@ -248,10 +258,12 @@ impl ProtocolSettings {
         Self {
             network: 894710606,
             address_version: 0x35,
-            ms_per_block: 15000,
+            // Live TestNet nodes (Neo 3.10.1) run 3-second blocks and cap
+            // blocks at 5000 transactions.
+            ms_per_block: 3000,
             max_valid_until_block_increment: 5760,
             validators_count: 7,
-            max_transactions_per_block: 512,
+            max_transactions_per_block: 5000,
             memory_pool_max_transactions: 50000,
             max_traceable_blocks: 2_102_400,
             initial_gas_distribution: 5_200_000_000_000_000,
@@ -292,8 +304,12 @@ impl ProtocolSettings {
                 hf_cockatrice: Some(3967000),
                 hf_domovoi: Some(4144000),
                 hf_echidna: Some(5870000),
-                hf_faun: None,
-                hf_gorgon: None,
+                // Verified against a live TestNet (T5) node `getversion` (HF_Faun = 12_960_000).
+                hf_faun: Some(12960000),
+                // Verified against a live TestNet (T5) node `getversion` (Neo 3.10.1).
+                hf_gorgon: Some(17960000),
+                // Huyao is defined in Neo 3.10.1 but not yet activated on TestNet.
+                hf_huyao: None,
             },
         }
     }

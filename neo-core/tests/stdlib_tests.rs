@@ -18,6 +18,16 @@ use num_traits::ToPrimitive;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+fn stdlib_test_settings() -> ProtocolSettings {
+    // Echidna-gated StdLib methods (e.g. base64UrlEncode) must be defined in
+    // the native ABI for dispatch to find them.
+    let mut settings = ProtocolSettings::default();
+    for hardfork in Hardfork::all() {
+        settings.hardforks.insert(hardfork, 0);
+    }
+    settings
+}
+
 fn make_engine() -> ApplicationEngine {
     make_engine_with_height(None)
 }
@@ -58,7 +68,7 @@ fn make_engine_with_height(height: Option<u32>) -> ApplicationEngine {
         Some(script_container),
         Arc::new(DataCache::new(false)),
         persisting_block,
-        Default::default(),
+        stdlib_test_settings(),
         TEST_GAS_LIMIT,
         None,
     )

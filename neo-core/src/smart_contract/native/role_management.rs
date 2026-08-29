@@ -283,7 +283,7 @@ use crate::neo_vm::StackItem;
     fn settings_all_active() -> ProtocolSettings {
         let mut settings = ProtocolSettings::default();
         let mut hardforks = std::collections::HashMap::new();
-        for hardfork in HardforkManager::all() {
+        for &hardfork in HardforkManager::all() {
             hardforks.insert(hardfork, 0);
         }
         settings.hardforks = hardforks;

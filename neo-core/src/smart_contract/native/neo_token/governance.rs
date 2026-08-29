@@ -472,6 +472,15 @@ impl NeoToken {
         engine: &mut ApplicationEngine,
         pubkey: &ECPoint,
     ) -> CoreResult<bool> {
+        // C# `NeoToken.RegisterInternal` opens with this check *unconditionally*;
+        // `RegisterCandidate` only duplicates it pre-Echidna. Without it here,
+        // post-Echidna (mainnet today) anyone could register any public key as a
+        // consensus candidate without that key holder's signature.
+        let account = Contract::create_signature_contract(pubkey.clone()).script_hash();
+        if !engine.check_witness_hash(&account)? {
+            return Ok(false);
+        }
+
         let snapshot = engine.snapshot_cache();
         let mut state = self
             .get_candidate_state(snapshot.as_ref(), pubkey)?

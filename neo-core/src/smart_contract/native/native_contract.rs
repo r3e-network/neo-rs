@@ -317,10 +317,17 @@ pub fn is_active_for<T: HardforkActivable>(
     hf_checker: impl Fn(Hardfork, u32) -> bool,
     block_height: u32,
 ) -> bool {
-    (item.active_in().is_none() && item.deprecated_in().is_none())
-        || (item.deprecated_in().is_some()
-            && !hf_checker(item.deprecated_in().unwrap(), block_height))
-        || (item.active_in().is_some() && hf_checker(item.active_in().unwrap(), block_height))
+    // Interval semantics matching C# [ContractMethod(activeSince, deprecatedSince)]:
+    // active from `active_in` (inclusive) until `deprecated_in` (exclusive).
+    let activated = match item.active_in() {
+        Some(hardfork) => hf_checker(hardfork, block_height),
+        None => true,
+    };
+    let retired = match item.deprecated_in() {
+        Some(hardfork) => hf_checker(hardfork, block_height),
+        None => false,
+    };
+    activated && !retired
 }
 
 /// Base implementation for native contracts.

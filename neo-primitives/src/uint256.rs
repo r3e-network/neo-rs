@@ -29,6 +29,22 @@ impl UInt256 {
         let v4_hash = (self.value4 as i32) ^ ((self.value4 >> 32) as i32);
         v1_hash ^ v2_hash ^ v3_hash ^ v4_hash
     }
+
+    /// Nullable equality helper mirroring C# `UInt256.Equals(object?)`.
+    ///
+    /// Returns `false` when `other` is `None`.
+    #[must_use]
+    pub const fn equals(&self, other: Option<&Self>) -> bool {
+        match other {
+            None => false,
+            Some(other) => {
+                self.value1 == other.value1
+                    && self.value2 == other.value2
+                    && self.value3 == other.value3
+                    && self.value4 == other.value4
+            }
+        }
+    }
 }
 
 #[cfg(test)]

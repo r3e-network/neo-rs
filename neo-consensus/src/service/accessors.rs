@@ -30,6 +30,13 @@ impl ConsensusService {
         self.context.expected_block_time = expected_block_time_ms;
     }
 
+    /// Supplies the parent block's timestamp so `PrepareRequest` timestamps can be
+    /// validated against it (C# compares against `context.PrevHeader.Timestamp`).
+    /// Leaving it at `0` disables the lower-bound check.
+    pub fn set_prev_timestamp(&mut self, prev_timestamp_ms: u64) {
+        self.context.prev_timestamp = prev_timestamp_ms;
+    }
+
     /// Updates the private key used for signing consensus messages.
     /// The key is wrapped in `Zeroizing` so it is wiped from memory on drop.
     pub fn set_private_key(&mut self, private_key: Vec<u8>) {

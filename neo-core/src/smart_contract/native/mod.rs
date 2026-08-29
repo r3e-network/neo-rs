@@ -45,7 +45,11 @@ pub mod security_fixes;
 mod stack_value_numeric;
 /// Standard library native contract.
 pub mod std_lib;
-/// Token management (NFT) native contract.
+/// Token management (NFT) contract.
+///
+/// Not a C# neo v3.10.1 native contract and NOT registered in
+/// [`NativeRegistry::register_standard_contracts`]; kept only as standalone
+/// library code. Its `hash()` is not derived from the protocol formula.
 pub mod token_management;
 /// Transaction state for ledger.
 pub mod transaction_state;
@@ -76,7 +80,7 @@ pub use security_fixes::{
     StateValidator,
 };
 pub use std_lib::StdLib;
-pub use token_management::{TokenManagement, TokenState, TokenType};
+pub use token_management::{TokenState, TokenType};
 pub use transaction_state::TransactionState;
 pub use treasury::TreasuryContract;
 
@@ -186,8 +190,9 @@ impl NativeRegistry {
         // Register Treasury contract (active after HF_Faun)
         self.register(Arc::new(TreasuryContract::new()));
 
-        // Register TokenManagement contract (active after HF_Faun)
-        self.register(Arc::new(TokenManagement::new()));
+        // NOTE: C# neo v3.10.1 registers exactly these 11 native contracts.
+        // Do NOT register additional native contracts (e.g. TokenManagement):
+        // is_native() would accept non-protocol hashes.
     }
 }
 
@@ -243,7 +248,6 @@ mod tests {
             "OracleContract".to_string(),
             "Notary".to_string(),
             "Treasury".to_string(),
-            "TokenManagement".to_string(),
         ];
 
         assert_eq!(names, expected);

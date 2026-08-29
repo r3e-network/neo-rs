@@ -21,7 +21,7 @@ fn emit_byte_array_array(builder: &mut ScriptBuilder, items: &[Vec<u8>]) {
 #[test]
 fn contract_create_standard_account_matches_redeem_script_hash() {
     let snapshot = Arc::new(DataCache::new(false));
-    let settings = ProtocolSettings::default();
+    let settings = ProtocolSettings::mainnet();
     let public_key = settings.standby_committee[0].clone();
     let expected = Contract::create_signature_contract(public_key.clone()).script_hash();
     let pubkey_bytes = public_key.encode_point(true).expect("pubkey bytes");
@@ -63,7 +63,7 @@ fn contract_create_standard_account_matches_redeem_script_hash() {
 #[test]
 fn contract_create_multisig_account_matches_redeem_script_hash() {
     let snapshot = Arc::new(DataCache::new(false));
-    let settings = ProtocolSettings::default();
+    let settings = ProtocolSettings::mainnet();
     let public_keys = settings
         .standby_committee
         .iter()

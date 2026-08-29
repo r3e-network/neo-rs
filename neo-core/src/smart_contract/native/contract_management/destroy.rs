@@ -23,6 +23,17 @@ impl ContractManagement {
                 .ok_or_else(|| Error::invalid_operation("Contract not found"))?
         };
 
+        // C# v3.10.1 destroy has two versions: pre-Gorgon (V0) blocks the
+        // contract account *after* erasing state/storage; Gorgon+ (V1) blocks
+        // it *before* erasing, so vote-revoke side calls (onNEP17Payment)
+        // still find the contract in the snapshot.
+        let block_before_erase = engine.is_hardfork_enabled(crate::hardfork::Hardfork::HfGorgon);
+
+        if block_before_erase {
+            let _ = PolicyContract::new().block_account_internal(engine, &contract_hash)?;
+            PolicyContract::new().clean_whitelist(engine, &contract)?;
+        }
+
         // Update in-memory cache and prepare metadata snapshots
         let (next_id_bytes, min_fee_bytes) = {
             let mut storage = self.storage.write();
@@ -52,12 +63,15 @@ impl ContractManagement {
         // Clear all contract storage (would interact with persistence layer)
         engine.clear_contract_storage(&contract_hash)?;
 
-        // Block the contract hash so it cannot be redeployed without governance approval
-        let _ = PolicyContract::new().block_account_internal(engine, &contract_hash)?;
+        // Block the contract hash (pre-Gorgon ordering) so it cannot be
+        // redeployed without governance approval; skipped for Gorgon+ where
+        // blocking already happened before the erase above.
+        if !block_before_erase {
+            let _ = PolicyContract::new().block_account_internal(engine, &contract_hash)?;
 
-        // Clean whitelist entries (emit events) for the destroyed contract.
-        PolicyContract::new().clean_whitelist(engine, &contract)?;
-
+            // Clean whitelist entries (emit events) for the destroyed contract.
+            PolicyContract::new().clean_whitelist(engine, &contract)?;
+        }
         // Emit Destroy event
         engine.emit_notification(&self.hash, "Destroy", &[contract_hash.to_bytes()])?;
 

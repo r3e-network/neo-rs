@@ -9,6 +9,7 @@ use neo_io_crate::{IoError, MemoryReader};
 use crate::ExecutionEngineLimits;
 use crate::StackItemType;
 use crate::StackValue;
+use crate::MAX_ITEM_SIZE;
 use num_bigint::BigInt;
 use std::collections::{HashSet, VecDeque};
 
@@ -48,7 +49,9 @@ enum PendingStackValue {
 
 impl BinarySerializer {
     const MAX_INTEGER_SIZE: usize = 32;
-    const DEFAULT_MAX_ITEM_SIZE: usize = u16::MAX as usize;
+    /// Mirrors `ExecutionEngineLimits.MaxItemSize` (`ushort.MaxValue * 2`) so the
+    /// default path agrees with the VM's configured limits.
+    const DEFAULT_MAX_ITEM_SIZE: usize = MAX_ITEM_SIZE;
 
     /// Deserialize a [`StackItem`] from the provided buffer using VM limits.
     pub fn deserialize(

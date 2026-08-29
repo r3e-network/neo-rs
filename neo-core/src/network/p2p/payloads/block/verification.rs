@@ -1,13 +1,8 @@
 use super::Block;
-use crate::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::ledger::{HeaderCache, TransactionVerificationContext, VerifyResult};
 use crate::neo_io::Serializable;
 use crate::persistence::StoreCache;
 use crate::protocol_settings::ProtocolSettings;
-use crate::validation::{
-    validate_block_size, validate_timestamp_bounds, validate_transaction_count,
-    validate_witness_scripts,
-};
 use crate::{CoreResult, UInt256};
 
 #[derive(Clone, Copy)]
@@ -23,21 +18,16 @@ impl BlockVerifyMode<'_> {
 }
 
 impl Block {
-    /// Verifies the block using persisted state with comprehensive security checks.
+    /// Verifies the block using persisted state.
     ///
-    /// Performs the following validations (matches C# Block.Verify):
-    /// 1. Block size validation (max 4 MB)
-    /// 2. Transaction count validation (max 65535)
-    /// 3. Timestamp bounds validation (within 15 minutes of current time)
-    /// 4. Header validation (timestamp, consensus, witness, etc.)
-    /// 5. Witness script validation
-    /// 6. Merkle root validation - ensures transactions haven't been tampered
-    /// 7. Transaction uniqueness - no duplicate transaction hashes
-    /// 8. Per-transaction validation (structural + state-dependent) against ledger snapshot
+    /// Matches C# Block.Verify, which delegates entirely to Header.Verify:
+    /// chain continuity, primary index, strictly-increasing timestamp and the
+    /// header witness. Merkle root and duplicate-transaction checks are kept
+    /// here as well (C# performs them during deserialization).
     ///
-    /// # Security Note
-    /// This method includes comprehensive validation to prevent blocks with
-    /// invalid transactions, oversized data, or malicious timestamps from being accepted.
+    /// Note: there is deliberately no block byte-size, transaction-count or
+    /// wall-clock timestamp check — C# v3.10.1 has none, and extra rejections
+    /// would fork this node from the reference chain.
     pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
         self.verify_internal(settings, store_cache, BlockVerifyMode::Full)
     }
@@ -48,23 +38,7 @@ impl Block {
         store_cache: &StoreCache,
         mode: BlockVerifyMode<'_>,
     ) -> bool {
-        if !self.verify_block_size(mode.is_cached()) {
-            return false;
-        }
-
-        if !self.verify_transaction_count(mode.is_cached()) {
-            return false;
-        }
-
-        if !self.verify_timestamp_bounds(mode.is_cached()) {
-            return false;
-        }
-
         if !self.verify_header_for_mode(settings, store_cache, mode) {
-            return false;
-        }
-
-        if !self.verify_witness_scripts(mode.is_cached()) {
             return false;
         }
 
@@ -81,76 +55,6 @@ impl Block {
         self.verify_transactions(settings, store_cache)
     }
 
-    fn verify_block_size(&self, cached: bool) -> bool {
-        if validate_block_size(self).is_err() {
-            if cached {
-                tracing::warn!(
-                    target: "neo::block",
-                    block_index = self.header.index(),
-                    block_size = self.size(),
-                    max_size = MAX_BLOCK_SIZE,
-                    "Block size validation failed (cached)"
-                );
-            } else {
-                tracing::warn!(
-                    target: "neo::block",
-                    block_index = self.header.index(),
-                    block_size = self.size(),
-                    max_size = MAX_BLOCK_SIZE,
-                    "Block size validation failed"
-                );
-            }
-            return false;
-        }
-        true
-    }
-
-    fn verify_transaction_count(&self, cached: bool) -> bool {
-        if validate_transaction_count(self).is_err() {
-            if cached {
-                tracing::warn!(
-                    target: "neo::block",
-                    block_index = self.header.index(),
-                    tx_count = self.transactions.len(),
-                    max_count = MAX_TRANSACTIONS_PER_BLOCK,
-                    "Transaction count validation failed (cached)"
-                );
-            } else {
-                tracing::warn!(
-                    target: "neo::block",
-                    block_index = self.header.index(),
-                    tx_count = self.transactions.len(),
-                    max_count = MAX_TRANSACTIONS_PER_BLOCK,
-                    "Transaction count validation failed"
-                );
-            }
-            return false;
-        }
-        true
-    }
-
-    fn verify_timestamp_bounds(&self, cached: bool) -> bool {
-        if validate_timestamp_bounds(self.timestamp()).is_err() {
-            if cached {
-                tracing::warn!(
-                    target: "neo::block",
-                    block_index = self.header.index(),
-                    timestamp = self.timestamp(),
-                    "Timestamp bounds validation failed (cached)"
-                );
-            } else {
-                tracing::warn!(
-                    target: "neo::block",
-                    block_index = self.header.index(),
-                    timestamp = self.timestamp(),
-                    "Timestamp bounds validation failed"
-                );
-            }
-            return false;
-        }
-        true
-    }
-
     fn verify_header_for_mode(
         &self,
         settings: &ProtocolSettings,
@@ -164,14 +68,6 @@ impl Block {
                     .verify_with_cache(settings, store_cache, header_cache)
             }
         }
-    }
-
-    fn verify_witness_scripts(&self, cached: bool) -> bool {
-        if validate_witness_scripts(&self.header).is_err() {
-            self.log_verify_failure("Witness script validation failed", cached);
-            return false;
-        }
-        true
     }
 
     fn log_verify_failure(&self, message: &'static str, cached: bool) {

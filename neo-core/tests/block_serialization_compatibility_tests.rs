@@ -129,6 +129,9 @@ mod block_serialization_tests {
 
         block.transactions.push(tx);
 
+        // Deserialization validates the merkle root, so it must be real.
+        block.rebuild_merkle_root();
+
         let serialized = serialize_to_bytes(&block);
         let size = block.size();
 
@@ -173,6 +176,9 @@ mod block_serialization_tests {
             tx.add_witness(Witness::empty());
             block.transactions.push(tx);
         }
+
+        // Deserialization validates the merkle root, so it must be real.
+        block.rebuild_merkle_root();
 
         let serialized = serialize_to_bytes(&block);
         let size = block.size();
@@ -396,6 +402,9 @@ mod block_serialization_tests {
             tx.add_witness(Witness::empty());
             block.transactions.push(tx);
         }
+
+        // Deserialization validates the merkle root, so it must be real.
+        block.rebuild_merkle_root();
 
         // Serialize
         let serialized = serialize_to_bytes(&block);

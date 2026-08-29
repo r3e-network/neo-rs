@@ -9,7 +9,8 @@ data_dir = "./data/mainnet-stateroot"
 read_only = false
 
 [p2p]
-port = 20333
+# MainNet P2P port (20333 is TestNet).
+port = 10333
 max_connections = 50
 min_desired_connections = 10
 seed_nodes = [
@@ -23,7 +24,8 @@ enable_compression = true
 
 [rpc]
 enabled = true
-port = 20332
+# MainNet RPC port (20332 is TestNet).
+port = 10332
 bind_address = "127.0.0.1"
 cors_enabled = false
 auth_enabled = false

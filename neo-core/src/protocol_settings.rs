@@ -133,8 +133,8 @@ impl ProtocolSettings {
                 "seed4.neo.org:10333".to_string(),
                 "seed5.neo.org:10333".to_string(),
             ],
-            milliseconds_per_block: 15_000,
-            max_transactions_per_block: 512,
+            milliseconds_per_block: 3_000,
+            max_transactions_per_block: 200,
             max_block_size: constants::MAX_BLOCK_SIZE as u32,
             max_valid_until_block_increment: 5_760,
             memory_pool_max_transactions: 50_000,
@@ -185,8 +185,8 @@ impl ProtocolSettings {
                 "seed4t5.neo.org:20333".to_string(),
                 "seed5t5.neo.org:20333".to_string(),
             ],
-            milliseconds_per_block: 15_000,
-            max_transactions_per_block: 512,
+            milliseconds_per_block: 3_000,
+            max_transactions_per_block: 5_000,
             max_block_size: constants::MAX_BLOCK_SIZE as u32,
             max_valid_until_block_increment: 5_760,
             memory_pool_max_transactions: 50_000,
@@ -206,10 +206,28 @@ impl ProtocolSettings {
             .collect()
     }
 
-    /// The default protocol settings for NEO MainNet.
-    /// Matches C# Default property
+    /// The default protocol settings, matching C# `ProtocolSettings.Default`:
+    /// `Network = 0`, empty committee and seed list, `ValidatorsCount = 0` and
+    /// no hardforks enabled. MainNet/TestNet parameters must be requested
+    /// explicitly via [`ProtocolSettings::mainnet`] / [`ProtocolSettings::testnet`]
+    /// or loaded from a configuration file — a node must never silently start
+    /// with MainNet consensus parameters.
     pub fn default_settings() -> Self {
-        Self::mainnet()
+        Self {
+            network: 0,
+            address_version: constants::ADDRESS_VERSION,
+            standby_committee: Vec::new(),
+            validators_count: 0,
+            seed_list: Vec::new(),
+            milliseconds_per_block: 15_000,
+            max_transactions_per_block: 512,
+            max_block_size: constants::MAX_BLOCK_SIZE as u32,
+            max_valid_until_block_increment: 5_760,
+            memory_pool_max_transactions: 50_000,
+            max_traceable_blocks: constants::MAX_TRACEABLE_BLOCKS,
+            initial_gas_distribution: constants::INITIAL_GAS_DISTRIBUTION,
+            hardforks: HashMap::new(),
+        }
     }
 
     /// Returns whether the provided hardfork is enabled at the given block height.
@@ -303,7 +321,7 @@ impl ProtocolSettings {
     fn ensure_omitted_hardforks(hardforks: HashMap<Hardfork, u32>) -> HashMap<Hardfork, u32> {
         let mut hardforks = hardforks;
         let mut encountered_configured = false;
-        for hardfork in HardforkManager::all() {
+        for &hardfork in HardforkManager::all() {
             match hardforks.entry(hardfork) {
                 Entry::Occupied(_) => encountered_configured = true,
                 Entry::Vacant(entry) if !encountered_configured => {

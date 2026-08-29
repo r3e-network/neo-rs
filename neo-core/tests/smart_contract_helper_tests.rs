@@ -526,7 +526,18 @@ fn test_multi_sig_redeem_script_invalid_m_greater_than_n() {
 
 #[test]
 #[should_panic(expected = "Invalid multi-sig parameters")]
-fn test_multi_sig_redeem_script_invalid_n_greater_than_16() {
+fn test_multi_sig_redeem_script_invalid_n_greater_than_1024() {
+    // C# allows up to 1024 public keys in a multi-sig contract.
+    let public_keys: Vec<Vec<u8>> = (1..=1025)
+        .map(|i| make_public_key(((i % 16) + 1) as u8))
+        .collect();
+    let _script = Helper::multi_sig_redeem_script(1, &public_keys);
+}
+
+#[test]
+fn test_multi_sig_redeem_script_accepts_n_up_to_1024() {
+    // n=17 used to be rejected by the legacy 16-key limit; C# allows it.
     let public_keys: Vec<Vec<u8>> = (1..=17).map(make_public_key).collect();
-    let _script = Helper::multi_sig_redeem_script(1, &public_keys); // n=17 > 16
+    let script = Helper::multi_sig_redeem_script(1, &public_keys);
+    assert!(Helper::is_multi_sig_contract(&script));
 }

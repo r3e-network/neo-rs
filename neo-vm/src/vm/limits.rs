@@ -12,7 +12,11 @@ pub const DEFAULT_MAX_STACK_DEPTH: usize = 2048;
 pub const DEFAULT_MAX_INVOCATION_DEPTH: usize = 1024;
 
 /// Maximum size for buffers and compound values used by bounded execution.
-pub const MAX_ITEM_SIZE: usize = 1024 * 1024;
+///
+/// Matches C# `ExecutionEngineLimits.MaxItemSize` (`ushort.MaxValue * 2`).
+/// NB: this was `1024 * 1024` up to neo-vm v3.6.x and changed to `ushort.MaxValue * 2`
+/// afterwards; Neo N3 v3.9.x requires the smaller value.
+pub const MAX_ITEM_SIZE: usize = u16::MAX as usize * 2;
 
 /// Restrictions applied by the NeoVM execution engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,8 +44,10 @@ impl ExecutionEngineLimits {
     pub const DEFAULT: Self = Self {
         max_shift: 256,
         max_stack_size: DEFAULT_MAX_STACK_DEPTH as u32,
-        max_item_size: u16::MAX as u32,
-        max_comparable_size: u16::MAX as u32,
+        // C#: `MaxItemSize = ushort.MaxValue * 2` -> 131_070
+        max_item_size: u16::MAX as u32 * 2,
+        // C#: `MaxComparableSize = 65536` -> note this is `u16::MAX + 1`, not `u16::MAX`
+        max_comparable_size: u16::MAX as u32 + 1,
         max_invocation_stack_size: DEFAULT_MAX_INVOCATION_DEPTH as u32,
         max_try_nesting_depth: 16,
         catch_engine_exceptions: true,

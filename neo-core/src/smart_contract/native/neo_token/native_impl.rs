@@ -95,6 +95,10 @@ impl NativeContract for NeoToken {
                 total_supply_key,
                 StorageItem::from_bytes(Self::encode_amount(&total_supply)),
             )?;
+
+            // NOTE: C# NeoToken.InitializeAsync mints with transferNotifyEnabled
+            // = false, so the genesis mint deliberately emits NO Transfer
+            // notification. Do not add one here.
         }
 
         Ok(())
@@ -211,8 +215,21 @@ impl NativeContract for NeoToken {
 
             let context = engine.get_native_storage_context(&self.hash())?;
 
-            for (idx, (pubkey, votes)) in committee.iter().enumerate() {
+            // C# v3.10.1 (HF_Gorgon): use each committee member's *current*
+            // registered vote count from candidate storage instead of the
+            // (possibly stale) committee cache copy.
+            let gorgon_enabled = engine.is_hardfork_enabled(Hardfork::HfGorgon);
+
+            for (idx, (pubkey, cached_votes)) in committee.iter().enumerate() {
                 // Validate votes
+                let votes = if gorgon_enabled {
+                    match self.get_candidate_state(snapshot.as_ref(), pubkey) {
+                        Ok(Some(state)) => state.votes,
+                        _ => BigInt::zero(),
+                    }
+                } else {
+                    cached_votes.clone()
+                };
                 if votes.is_zero() || votes.is_negative() {
                     continue;
                 }
@@ -223,7 +240,7 @@ impl NativeContract for NeoToken {
                 let mut voter_sum_reward_per_neo =
                     SafeArithmetic::safe_mul(&BigInt::from(factor), &voter_reward_each)?;
                 voter_sum_reward_per_neo =
-                    SafeArithmetic::safe_div(&voter_sum_reward_per_neo, votes)?;
+                    SafeArithmetic::safe_div(&voter_sum_reward_per_neo, &votes)?;
 
                 let reward_key = StorageKey::create_with_bytes(
                     Self::ID,

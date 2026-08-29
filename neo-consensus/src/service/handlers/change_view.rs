@@ -57,8 +57,11 @@ impl ConsensusService {
         );
 
         // If the ChangeView targets a view we already passed, treat it as a recovery request.
+        // C# OnChangeViewMessage stops here: the stale request is not recorded and
+        // never feeds the view-change counting (which could otherwise regress the
+        // view number, e.g. 5 -> 3).
         if new_view <= self.context.view_number {
-            self.maybe_send_recovery_response(payload.validator_index)?;
+            return self.maybe_send_recovery_response(payload.validator_index);
         }
 
         let commit_sent = self
@@ -194,6 +197,16 @@ impl ConsensusService {
     /// Changes to a new view
     fn change_view(&mut self, new_view: u8, timestamp: u64) -> ConsensusResult<()> {
         let old_view = self.context.view_number;
+
+        // The view number must be monotonic; ignore any attempt to regress it.
+        if new_view <= old_view {
+            debug!(
+                block_index = self.context.block_index,
+                old_view, new_view,
+                "ignoring view change that does not advance the view number"
+            );
+            return Ok(());
+        }
 
         info!(
             block_index = self.context.block_index,

@@ -170,10 +170,16 @@ impl Secp256r1Crypto {
     }
 
     /// Signs a message with secp256r1.
+    ///
+    /// The output is normalized to low-S: with RFC 6979 deterministic nonces a
+    /// high-S result would be a fixed property of (key, message) instead of a
+    /// coin flip, so it must be normalized to keep signatures canonical.
     pub fn sign(message: &[u8], private_key: &[u8; 32]) -> CryptoResult<[u8; 64]> {
         let signing_key = SigningKey::try_from(private_key.as_slice())
             .map_err(|e| CryptoError::invalid_key(format!("Invalid private key: {e}")))?;
         let signature: Signature = signing_key.sign(message);
+        // normalize_s() returns the low-S variant (or None when already low-S).
+        let signature = signature.normalize_s().unwrap_or(signature);
         let bytes: [u8; 64] = signature.to_bytes().into();
         Ok(bytes)
     }
@@ -188,6 +194,8 @@ impl Secp256r1Crypto {
         let signature: Signature = signing_key
             .sign_prehash(message_digest)
             .map_err(|e| CryptoError::invalid_signature(format!("Failed to sign: {e}")))?;
+        // normalize_s() returns the low-S variant (or None when already low-S).
+        let signature = signature.normalize_s().unwrap_or(signature);
         Ok(signature.to_bytes().into())
     }
 
@@ -519,6 +527,47 @@ impl Crypto {
 mod tests {
     use super::{Secp256k1Crypto, Secp256r1Crypto, NEOFS_ECDSA_SHA512_PREFIX};
     use crate::{Crypto, ECCurve, HashAlgorithm};
+
+    /// Half of the secp256r1 group order; an ECDSA signature is low-S when
+    /// its s component (last 32 bytes, big-endian) is <= this value.
+    const SECP256R1_HALF_ORDER: [u8; 32] = [
+        0x7F, 0xFF, 0xFF, 0xFF, 0x80, 0x00, 0x00, 0x00, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xDE, 0x73, 0x7D, 0x56, 0xD3, 0x8B, 0xCF, 0x42, 0x79, 0xDC, 0xE5, 0x61, 0x7E, 0x31,
+        0x92, 0xA8,
+    ];
+
+    fn is_low_s(signature: &[u8; 64]) -> bool {
+        let s: &[u8] = &signature[32..];
+        let half_order: &[u8] = &SECP256R1_HALF_ORDER;
+        s <= half_order
+    }
+
+    #[test]
+    fn secp256r1_signatures_are_low_s() {
+        // RFC 6979 nonces are deterministic, so a high-S result would be a
+        // fixed property of (key, message). Sample several pairs to make the
+        // low-S guarantee explicit.
+        for seed in 0u8..16 {
+            let mut private_key = [0u8; 32];
+            private_key[0] = seed.wrapping_mul(37).wrapping_add(1);
+            private_key[31] = seed.wrapping_add(1);
+
+            let message = format!("low-s sample {seed}");
+            let signature = Secp256r1Crypto::sign(message.as_bytes(), &private_key).unwrap();
+            assert!(
+                is_low_s(&signature),
+                "sign() produced high-S for seed {seed}"
+            );
+
+            let mut digest = Crypto::sha256(message.as_bytes());
+            digest.reverse();
+            let signature = Secp256r1Crypto::sign_prehash(&digest, &private_key).unwrap();
+            assert!(
+                is_low_s(&signature),
+                "sign_prehash() produced high-S for seed {seed}"
+            );
+        }
+    }
 
     #[test]
     fn test_secp256k1_operations() {

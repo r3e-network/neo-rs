@@ -24,7 +24,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use neo_core::BigDecimal;
+//! use neo_primitives::BigDecimal;
 //! use num_bigint::BigInt;
 //!
 //! // Create a BigDecimal with 8 decimal places
@@ -180,51 +180,50 @@ impl BigDecimal {
     /// # Returns
     ///
     /// A Result containing either a new BigDecimal or an error.
+    ///
+    /// Mirrors C# `Neo.BigDecimal.TryParse` exactly. In particular the trailing
+    /// zeros are trimmed **before** the decimal point is removed, so the integer
+    /// part is never truncated (e.g. `"100.0"` -> `100.00000000`, not an error).
     pub fn parse(s: &str, decimals: u8) -> PrimitiveResult<Self> {
-        // Handle scientific notation
-        let mut e = 0i32;
+        let mut e: i32 = 0;
+        let mut s = s;
+
+        // Scientific notation. C# parses the exponent with `sbyte.TryParse`.
+        if let Some(index) = s.find(['e', 'E']) {
+            let exponent = s[index + 1..]
+                .trim()
+                .parse::<i8>()
+                .map_err(|_| PrimitiveError::InvalidFormat {
+                    message: format!("Invalid exponent in '{}'", s),
+                })?;
+            e = exponent as i32;
+            s = &s[..index];
+        }
+
         let mut s = s.to_string();
 
-        if let Some(index) = s.find(['e', 'E']) {
-            let e_str = &s[(index + 1)..];
-            e = e_str.parse::<i32>().map_err(|_| PrimitiveError::InvalidFormat {
-                message: "Invalid exponent".to_string(),
-            })?;
-            s = s[..index].to_string();
-        }
-
-        // Handle decimal point
-        let mut decimal_places = 0;
         if let Some(index) = s.find('.') {
-            decimal_places = s.len() - index - 1;
-            s = s.replace('.', "");
-
-            // Trim trailing zeros
-            while s.ends_with('0') {
-                s.pop();
-                decimal_places -= 1;
-            }
+            // `TrimEnd('0')` stops at '.', so integer-part zeros are preserved.
+            s = s.trim_end_matches('0').to_string();
+            e -= s.len() as i32 - index as i32 - 1;
+            s.remove(index);
         }
 
-        let adjusted_decimals = decimal_places as i32 - e;
-        if adjusted_decimals < 0 {
+        let ds = e + decimals as i32;
+        if ds < 0 {
             return Err(PrimitiveError::InvalidFormat {
-                message: "Negative decimals not supported".to_string(),
+                message: format!("Decimal value has more precision than {} decimals", decimals),
             });
         }
-
-        // Parse the integer part
-        let value = BigInt::from_str(&s).map_err(|_| PrimitiveError::InvalidFormat {
-            message: "Invalid number format".to_string(),
-        })?;
-
-        // Adjust to the requested number of decimals
-        let mut result = Self::new(value, adjusted_decimals as u8);
-        if adjusted_decimals as u8 != decimals {
-            result = result.change_decimals(decimals)?;
+        if ds > 0 {
+            s.push_str(&"0".repeat(ds as usize));
         }
 
-        Ok(result)
+        let value = BigInt::from_str(&s).map_err(|_| PrimitiveError::InvalidFormat {
+            message: format!("Failed to parse BigDecimal from '{s}'"),
+        })?;
+
+        Ok(Self::new(value, decimals))
     }
 }
 

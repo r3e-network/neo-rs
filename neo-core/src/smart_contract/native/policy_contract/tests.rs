@@ -99,9 +99,11 @@ fn whitelisted_contract_reads_from_neo_vm_rs_stack_value() {
 const TEST_GAS_LIMIT: i64 = 5_000_000_000;
 
 fn settings_all_active() -> ProtocolSettings {
-    let mut settings = ProtocolSettings::default();
+    // MainNet base supplies the standby committee required by committee-only
+    // methods; every hardfork is force-enabled for the tested code paths.
+    let mut settings = ProtocolSettings::mainnet();
     let mut hardforks = std::collections::HashMap::new();
-    for hardfork in HardforkManager::all() {
+    for &hardfork in HardforkManager::all() {
         hardforks.insert(hardfork, 0);
     }
     settings.hardforks = hardforks;
@@ -788,7 +790,9 @@ policy_scalar_setter_test! {
     valid: [int_arg_u32(3_000)],
     getter: "getMillisecondsPerBlock",
     getter_args: [],
-    default: 15_000,
+    // C# PolicyContract.InitializeAsync seeds the stored value from
+    // ProtocolSettings.MillisecondsPerBlock; the MainNet preset runs 3s blocks.
+    default: 3_000,
     expected: 3_000,
     invalid: [[int_arg_u32(30_001)], [int_arg_u32(0)]],
 }

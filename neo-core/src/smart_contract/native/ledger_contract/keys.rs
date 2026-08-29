@@ -5,9 +5,11 @@ use crate::{UInt160, UInt256};
 
 /// Key-building helpers shared across ledger contract call sites.
 pub(crate) fn block_hash_storage_key(contract_id: i32, index: u32) -> StorageKey {
+    // C# StorageKey.Create(id, prefix, uint) writes the index big-endian so
+    // that key order matches numeric order; keep byte-for-byte parity.
     let mut key = Vec::with_capacity(1 + std::mem::size_of::<u32>());
     key.push(PREFIX_BLOCK_HASH);
-    key.extend_from_slice(&index.to_le_bytes());
+    key.extend_from_slice(&index.to_be_bytes());
     StorageKey::new(contract_id, key)
 }
 

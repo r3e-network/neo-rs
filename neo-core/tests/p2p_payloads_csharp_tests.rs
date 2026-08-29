@@ -1053,7 +1053,8 @@ fn csharp_ut_extensible_payload_size_and_roundtrip() {
 
 #[test]
 fn csharp_ut_high_priority_attribute_parity() {
-    let settings = ProtocolSettings::default_settings();
+    // MainNet base: HighPriority verification resolves the committee address.
+    let settings = ProtocolSettings::mainnet();
     let snapshot = DataCache::new(false);
     let mut tx = Transaction::new();
 

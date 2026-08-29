@@ -29,7 +29,7 @@ mod settings;
 pub use error::{ConfigError, ConfigResult};
 pub use genesis::{GenesisConfig, GenesisValidator};
 pub use network::{NetworkConfig, NetworkType};
-pub use protocol::ProtocolSettings;
+pub use protocol::{HardforkHeights, NativeActivationHeights, ProtocolSettings};
 pub use settings::{
     ConsensusSettings, LoggingSettings, NodeSettings, RpcSettings, Settings, StorageSettings,
     TelemetrySettings,

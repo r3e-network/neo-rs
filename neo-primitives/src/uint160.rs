@@ -70,6 +70,21 @@ impl UInt160 {
         hash = hash.wrapping_mul(31).wrapping_add(v3_hash);
         hash
     }
+
+    /// Nullable equality helper mirroring C# `UInt160.Equals(object?)`.
+    ///
+    /// Returns `false` when `other` is `None`.
+    #[must_use]
+    pub const fn equals(&self, other: Option<&Self>) -> bool {
+        match other {
+            None => false,
+            Some(other) => {
+                self.value1 == other.value1
+                    && self.value2 == other.value2
+                    && self.value3 == other.value3
+            }
+        }
+    }
 }
 
 fn map_base58_check_address_error(error: AddressDecodeError) -> crate::PrimitiveError {

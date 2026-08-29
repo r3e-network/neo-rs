@@ -27,7 +27,7 @@ const TEST_GAS_LIMIT: i64 = 3_000_000_000;
 fn protocol_settings_all_active() -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
     let mut hardforks = HashMap::new();
-    for hardfork in HardforkManager::all() {
+    for &hardfork in HardforkManager::all() {
         hardforks.insert(hardfork, 0);
     }
     settings.hardforks = hardforks;

@@ -21,6 +21,15 @@ pub const BLOCK_TIME_MS: u64 = DEFAULT_BLOCK_TIME_MS;
 /// Maximum validators in dBFT
 pub const MAX_VALIDATORS: usize = 21;
 
+/// Default value of `ProtocolSettings.MaxTransactionsPerBlock` on Neo N3.
+/// Used to reject `PrepareRequest` proposals that carry more transactions than
+/// a block may hold (C# `OnPrepareRequestReceived`).
+pub const DEFAULT_MAX_TRANSACTIONS_PER_BLOCK: usize = 512;
+
+/// C# `OnPrepareRequestReceived` rejects proposals whose timestamp is more than
+/// `8 * MillisecondsPerBlock` in the future.
+pub const MAX_PREPARE_REQUEST_FUTURE_MS_FACTOR: u64 = 8;
+
 /// Maximum size of message hash cache (LRU limit for memory protection)
 /// Matches C# `DBFTPlugin`'s message caching behavior
 pub const MAX_MESSAGE_CACHE_SIZE: usize = 10_000;
@@ -122,6 +131,12 @@ pub struct ConsensusContext {
     pub version: u32,
     /// Previous block hash for the proposed block.
     pub prev_hash: UInt256,
+    /// Timestamp of the previous block header, used to reject `PrepareRequest`s
+    /// whose timestamp is not strictly greater than their parent's.
+    /// `0` means "unknown" and disables that check.
+    pub prev_timestamp: u64,
+    /// Upper bound on the number of transactions a `PrepareRequest` may propose.
+    pub max_transactions_per_block: usize,
     /// Proposed block hash (from `PrepareRequest`)
     pub proposed_block_hash: Option<UInt256>,
     /// Hash of the primary's `PrepareRequest` extensible payload (ExtensiblePayload.Hash).
@@ -192,6 +207,8 @@ impl ConsensusContext {
             expected_block_time: effective_block_time,
             version: 0,
             prev_hash: UInt256::zero(),
+            prev_timestamp: 0,
+            max_transactions_per_block: DEFAULT_MAX_TRANSACTIONS_PER_BLOCK,
             proposed_block_hash: None,
             preparation_hash: None,
             proposed_timestamp: 0,
@@ -417,14 +434,21 @@ impl ConsensusContext {
     /// Gets the timeout duration for the current view
     #[must_use]
     pub fn get_timeout(&self) -> u64 {
-        // Base timeout + exponential backoff for view changes.
         // Use configured expected_block_time when provided (mirrors C# TimePerBlock overrides).
         let base = if self.expected_block_time > 0 {
             self.expected_block_time
         } else {
             DEFAULT_BLOCK_TIME_MS
         };
-        base << (self.view_number + 1).min(5)
+        // C# dBFT InitializeConsensus: a primary at view 0 starts with a single
+        // TimePerBlock after the previous block persisted; every other case
+        // (backup, later views) uses TimePerBlock << (viewNumber + 1) with no
+        // clamping of the shift.
+        if self.is_primary() && self.view_number == 0 {
+            return base;
+        }
+        let shift = (self.view_number as u32 + 1).min(63);
+        base.saturating_mul(1u64 << shift)
     }
 
     /// Checks if the current view has timed out
@@ -696,6 +720,8 @@ impl ConsensusContext {
             expected_block_time: 0,         // Caller should update
             version: 0,
             prev_hash: UInt256::zero(),
+            prev_timestamp: 0,
+            max_transactions_per_block: DEFAULT_MAX_TRANSACTIONS_PER_BLOCK,
             proposed_block_hash: state.proposed_block_hash,
             preparation_hash: state.preparation_hash,
             proposed_timestamp: state.proposed_timestamp,

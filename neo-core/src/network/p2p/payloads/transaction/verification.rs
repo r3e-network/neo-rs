@@ -350,10 +350,11 @@ impl Transaction {
                 return false;
             }
         } else {
-            // C# Helper.cs:344-345: native contracts must use empty verification
-            // script (their verification logic is built-in); reject any non-empty
-            // verification script for native-contract signers, AND verify the
-            // script hash matches the signer hash.
+            // C# Helper.cs VerifyWitness: native contracts must use an empty
+            // verification script (their verification logic is built-in).
+            if engine.is_native_contract_hash(hash) {
+                return false;
+            }
             if witness.script_hash() != *hash {
                 return false;
             }

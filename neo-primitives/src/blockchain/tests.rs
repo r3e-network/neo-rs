@@ -105,6 +105,10 @@ impl BlockLike for MockBlock {
     fn transaction_count(&self) -> usize {
         self.tx_count
     }
+    fn size(&self) -> usize {
+        // Header fields only; the mock carries no real payload.
+        32 + 32 + 8 + 4 + self.tx_count * 32
+    }
 }
 
 /// Mock header for testing.
