@@ -4,7 +4,7 @@
 Date: 2026-03-23
 
 ## Summary
-Successfully completed comprehensive review and refactoring of neo-rs project to achieve 100% Neo N3 v3.9.1 protocol compatibility and production readiness.
+Successfully completed comprehensive review and refactoring of neo-rs project to achieve 100% Neo N3 v3.10.1 protocol compatibility and production readiness for the v0.15.0 release.
 
 ## Tasks Completed: 80/80 (100%)
 

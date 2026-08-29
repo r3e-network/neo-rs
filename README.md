@@ -112,14 +112,14 @@ NEO_RPC_USER=neo NEO_RPC_PASS='change-this' \
 
 | neo-rs Version | Neo N3 Version | C# Reference                                                                                      |
 | -------------- | -------------- | ------------------------------------------------------------------------------------------------- |
-| 0.7.x          | 3.9.1          | [`v3.9.1`](https://github.com/neo-project/neo/releases/tag/v3.9.1) (execution/vector parity validated) |
+| 0.15.x         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (protocol compliance validated) |
 | 0.4.x          | 3.8.2          | [`ede620e`](https://github.com/neo-project/neo/commit/ede620e5722c48e199a0f3f2ab482ae090c1b878) |
 
-This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.9.1) for blocks, transactions, and P2P messages. Verified with live protocol/vector parity checks against Neo v3.9.1 (C# and NeoGo reference endpoints).
+This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.10.1) for blocks, transactions, and P2P messages. Protocol behavior was validated against the v3.10.1 reference and live Neo MainNet/TestNet endpoints.
 
-### C# v3.9.1 Feature Parity
+### C# v3.10.1 Feature Parity
 
-The following C# Neo v3.9.1 features are fully implemented:
+The following C# Neo v3.10.1 features are fully implemented:
 
 | Feature | Status | Description |
 |---------|--------|-------------|
@@ -128,8 +128,6 @@ The following C# Neo v3.9.1 features are fully implemented:
 | **BIP-0032 HD Wallets** | ✅ Complete | ExtendedKey, KeyPath derivation (m/44'/888'/i'/0/0) |
 | **BIP-0039 Mnemonics** | ✅ Complete | Multi-language wordlists (10 languages) |
 | **NEP-30 Oracle/Notary/Treasury** | ✅ Complete | NEP-30 standard support for native contracts |
-| **TokenManagement Contract** | ✅ Complete | NEP-17/NEP-11 management with `_onTransfer` callbacks |
-| **TokenManagement Methods** | ✅ Complete | create, mint, burn, transfer, balanceOf, getTokenInfo, getAssetsOfOwner |
 | **NEP-11 NFT Methods** | ✅ Complete (9 tests) | mintNFT, burnNFT, transferNFT, getNFTInfo, getNFTs, getNFTsOfOwner, balanceOf |
 | **Fungible Token (NEP-17)** | ✅ Complete | Full implementation with mintable_address validation |
 | **Gas Token (NEP-17)** | ✅ Complete | Mint, burn, transfer with `onNEP17Payment` callback |
@@ -159,7 +157,6 @@ All native contract hashes match the C# reference implementation:
 | OracleContract | -9 | `0xfe924b7cfe89ddd271abaf7210a80a7e11178758` |
 | Notary | -10 | `0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b` |
 | Treasury | -11 | `0x156326f25b1b5d839a4d326aeaa75383c9563ac1` |
-| TokenManagement | -12 | `0xae00c57daeb20f9b65504f53265e4f32b9f4a8a0` |
 
 ### Test Coverage
 
@@ -168,7 +165,7 @@ All native contract hashes match the C# reference implementation:
 ✅ 520+ integration tests passed
 ✅ All C# UT_* equivalent tests converted to Rust
 ✅ JSON manifest parity with C# reference (byte-for-byte)
-✅ Contract hash verification (all 12 native contracts)
+✅ Contract hash verification (all 11 native contracts)
 ✅ NEP-17 Transfer/NEP-30 Oracle callbacks tested
 ✅ NEP-11 NFT operations (mint, burn, transfer, enumerate)
 ```

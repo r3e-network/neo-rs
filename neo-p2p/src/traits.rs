@@ -186,7 +186,7 @@ impl Default for P2PConfig {
             ping_interval: Duration::from_secs(30),
             network_magic: 0x4F454E, // "NEO" in hex
             protocol_version: 0,
-            user_agent: "/neo-rs:0.7.0/".to_string(),
+            user_agent: "/neo-rs:0.15.0/".to_string(),
         }
     }
 }

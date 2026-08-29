@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.15.0] - 2026-08-29
+
+### Compatibility
+- Aligned Neo N3 protocol behavior with the Neo v3.10.1 reference implementation.
+- Added Gorgon and Huyao hardfork metadata and updated live MainNet/TestNet parameters.
+
+### Fixed
+- Corrected Ledger storage-key endianness, Block Merkle/duplicate validation, Gorgon CryptoLib and native-contract behavior, multi-signature limits, low-S signatures, hardfork defaults, and consensus compatibility.
+- Added NefFile, JSON, and protocol regression coverage.
+
 ## [0.7.2] - 2026-02-12
 
 ### Fixed

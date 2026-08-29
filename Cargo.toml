@@ -90,7 +90,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.7.2"
+version = "0.15.0"
 edition = "2024"
 rust-version = "1.85"
 authors = [
@@ -111,30 +111,30 @@ msrv = "1.85"
 [workspace.dependencies]
 # === Internal crates ===
 # Foundation layer
-neo-primitives = { path = "neo-primitives", version = "0.7.2" }
-neo-config = { path = "neo-config", version = "0.7.2" }
-neo-crypto = { path = "neo-crypto", version = "0.7.2" }
-neo-storage = { path = "neo-storage", version = "0.7.2" }
-neo-io = { path = "neo-io", version = "0.7.2" }
-neo-json = { path = "neo-json", version = "0.7.2" }
+neo-primitives = { path = "neo-primitives", version = "0.15.0" }
+neo-config = { path = "neo-config", version = "0.15.0" }
+neo-crypto = { path = "neo-crypto", version = "0.15.0" }
+neo-storage = { path = "neo-storage", version = "0.15.0" }
+neo-io = { path = "neo-io", version = "0.15.0" }
+neo-json = { path = "neo-json", version = "0.15.0" }
 
 # Core layer
-neo-vm = { path = "neo-vm", version = "0.7.2" }
-neo-core = { path = "neo-core", version = "0.7.2" }
-neo-p2p = { path = "neo-p2p", version = "0.7.2" }
-neo-rpc = { path = "neo-rpc", version = "0.7.2" }
-neo-consensus = { path = "neo-consensus", version = "0.7.2" }
+neo-vm = { path = "neo-vm", version = "0.15.0" }
+neo-core = { path = "neo-core", version = "0.15.0" }
+neo-p2p = { path = "neo-p2p", version = "0.15.0" }
+neo-rpc = { path = "neo-rpc", version = "0.15.0" }
+neo-consensus = { path = "neo-consensus", version = "0.15.0" }
 
 # Infrastructure layer
-neo-tee = { path = "neo-tee", version = "0.7.2" }
-neo-hsm = { path = "neo-hsm", version = "0.7.2" }
+neo-tee = { path = "neo-tee", version = "0.15.0" }
+neo-hsm = { path = "neo-hsm", version = "0.15.0" }
 
 # Telemetry
-neo-telemetry = { path = "neo-telemetry", version = "0.7.2" }
+neo-telemetry = { path = "neo-telemetry", version = "0.15.0" }
 
 # Application layer
 # neo-cli removed: functionality merged into neo-node
-neo-node = { path = "neo-node", version = "0.7.2" }
+neo-node = { path = "neo-node", version = "0.15.0" }
 
 # === Core dependencies ===
 # Async runtime
