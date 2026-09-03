@@ -1,6 +1,6 @@
 [package]
 name = "neo-tests"
-version = "0.15.0"
+version = "0.16.0"
 edition = "2024"
 publish = false
 description = "Integration tests for neo-rs workspace layer boundaries and end-to-end testing"
@@ -20,7 +20,7 @@ neo-crypto = { workspace = true }
 
 # Layer 2 - Protocol
 neo-consensus = { workspace = true }
-neo-core = { workspace = true }
+neo-core = { workspace = true, features = ["runtime"] }
 neo-p2p = { workspace = true }
 
 # Layer 4 - Services
@@ -79,6 +79,10 @@ path = "tests/contract_execution.rs"
 [[test]]
 name = "no_local_neo_vm_dependency"
 path = "tests/no_local_neo_vm_dependency.rs"
+
+[[test]]
+name = "fast_sync_p2p_e2e_tests"
+path = "tests/fast_sync_p2p_e2e_tests.rs"
 
 [[bench]]
 name = "performance_benchmarks"

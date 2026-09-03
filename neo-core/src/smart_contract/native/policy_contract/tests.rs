@@ -1,6 +1,7 @@
 use super::*;
 use crate::hardfork::HardforkManager;
-use crate::ledger::{create_genesis_block, Block, BlockHeader};
+use crate::ledger::{Block, BlockHeader, create_genesis_block};
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::{Signer, Transaction, Witness, WitnessScope};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
@@ -9,15 +10,14 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract::Contract;
-use crate::smart_contract::iterators::iterator::StorageIterator;
 use crate::smart_contract::iterators::IteratorInterop;
+use crate::smart_contract::iterators::iterator::StorageIterator;
 use crate::smart_contract::native::{
     AccountState, ContractManagement, GasToken, NativeContract, NativeHelpers, NeoToken,
     TreasuryContract,
 };
 use crate::smart_contract::storage_key::StorageKey;
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::neo_vm::StackItem;
 use crate::{UInt160, UInt256, Verifiable};
 use neo_primitives::TransactionAttributeType;
 use neo_vm::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
@@ -665,9 +665,11 @@ fn check_recover_funds_complete_flow() {
         .expect("blockAccount");
     assert!(bytes_to_bool(&ret));
 
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &blocked_account)
-        .expect("is blocked"));
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &blocked_account)
+            .expect("is blocked")
+    );
 
     // Set GAS balance for blocked account.
     let gas_balance = BigInt::from(50_000) * BigInt::from(10u8).pow(u32::from(gas.decimals()));
@@ -709,9 +711,10 @@ fn check_recover_funds_complete_flow() {
     assert_eq!(recover_ret, vec![1]);
 
     let engine_snapshot = engine.snapshot_cache();
-    assert!(gas
-        .balance_of_snapshot(engine_snapshot.as_ref(), &blocked_account)
-        .is_zero());
+    assert!(
+        gas.balance_of_snapshot(engine_snapshot.as_ref(), &blocked_account)
+            .is_zero()
+    );
     let treasury_balance =
         gas.balance_of_snapshot(engine_snapshot.as_ref(), &TreasuryContract::new().hash());
     assert!(treasury_balance >= gas_balance);
@@ -844,15 +847,72 @@ fn check_block_account() {
         .expect("blockAccount");
     assert!(bytes_to_bool(&ret));
 
-    assert!(!policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &account_a)
-        .expect("is blocked"));
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &account_b)
-        .expect("is blocked"));
+    assert!(
+        !policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &account_a)
+            .expect("is blocked")
+    );
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &account_b)
+            .expect("is blocked")
+    );
+}
+
+#[test]
+fn check_block_account_faun_pre_blocked_migrates_timestamp() {
+    let settings = settings_all_active();
+    let snapshot = make_snapshot_with_genesis(&settings);
+    let block = make_block(1000, 1_000);
+    let policy = PolicyContract::new();
+    let account = UInt160::parse("0xc400ff00ff00ff00ff00ff00ff00ff00ff00ff01").expect("account");
+
+    // Simulate pre-Faun blocked account (empty value stored)
+    let storage_key = StorageKey::create_with_bytes(
+        policy.id(),
+        PolicyContract::PREFIX_BLOCKED_ACCOUNT,
+        &account.to_bytes(),
+    );
+    snapshot.add(storage_key.clone(), StorageItem::from_bytes(Vec::new()));
+
+    let committee = committee_address(&settings, snapshot.as_ref());
+    let mut engine = make_engine(
+        Arc::clone(&snapshot),
+        settings.clone(),
+        vec![Signer::new(committee, WitnessScope::GLOBAL)],
+        Some(block.clone()),
+    );
+
+    // Calling blockAccount under Faun on pre-blocked account must update timestamp and return true
+    let ret = engine
+        .call_native_contract(policy.hash(), "blockAccount", &[account.to_bytes()])
+        .expect("blockAccount");
+    assert!(
+        bytes_to_bool(&ret),
+        "first call on pre-blocked empty account must return true and update timestamp"
+    );
+
+    // Verify stored timestamp is non-empty and decodes to block timestamp (1_000)
+    let item = snapshot.try_get(&storage_key).expect("storage item exists");
+    assert!(!item.value().is_empty(), "timestamp must be non-empty");
+    let recovered_time = num_bigint::BigInt::from_signed_bytes_le(item.value())
+        .to_u64()
+        .expect("valid u64 timestamp");
+    assert_eq!(recovered_time, 1_000);
+
+    // Second call on already migrated account must return false
+    let ret2 = engine
+        .call_native_contract(policy.hash(), "blockAccount", &[account.to_bytes()])
+        .expect("blockAccount");
+    assert!(
+        !bytes_to_bool(&ret2),
+        "second call on migrated account must return false"
+    );
 }
 
 #[test]
@@ -873,9 +933,11 @@ fn check_block_unblock_account() {
     let result =
         engine.call_native_contract(policy.hash(), "blockAccount", &[UInt160::zero().to_bytes()]);
     assert!(result.is_err());
-    assert!(!policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
+    assert!(
+        !policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
 
     // Block with signature.
     let mut engine = make_engine(
@@ -888,9 +950,11 @@ fn check_block_unblock_account() {
         .call_native_contract(policy.hash(), "blockAccount", &[UInt160::zero().to_bytes()])
         .expect("blockAccount");
     assert!(bytes_to_bool(&ret));
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
 
     // Unblock without signature.
     let mut engine = make_engine(
@@ -905,9 +969,11 @@ fn check_block_unblock_account() {
         &[UInt160::zero().to_bytes()],
     );
     assert!(result.is_err());
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
 
     // Unblock with signature.
     let mut engine = make_engine(
@@ -924,9 +990,11 @@ fn check_block_unblock_account() {
         )
         .expect("unblockAccount");
     assert!(bytes_to_bool(&ret));
-    assert!(!policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
+    assert!(
+        !policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
 }
 
 #[test]
@@ -975,9 +1043,11 @@ fn test_list_blocked_accounts() {
         .expect("blockAccount");
     assert!(bytes_to_bool(&ret));
 
-    assert!(policy
-        .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
-        .expect("is blocked"));
+    assert!(
+        policy
+            .is_blocked_snapshot(snapshot.as_ref(), &UInt160::zero())
+            .expect("is blocked")
+    );
 
     let mut script = ScriptBuilder::new();
     emit_dynamic_call(&mut script, &policy.hash(), "getBlockedAccounts", &[]);

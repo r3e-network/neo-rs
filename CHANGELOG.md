@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.16.0] - 2026-09-03
+
+### Protocol Compatibility & Hardforks
+- **Full Neo N3 Protocol Alignment**: Complete 100% test-suite parity across all 11 standard native contracts (`ContractManagement`, `NeoToken`, `GasToken`, `PolicyContract`, `RoleManagement`, `OracleContract`, `Notary`, `TreasuryContract`, `LedgerContract`, `CryptoLib`, `StdLib`).
+- **Hardfork Gate Matrix**: Strict validation across all 8 hardforks (`HfAspidochelone`, `HfBasilisk`, `HfCockatrice`, `HfDomovoi`, `HfEchidna`, `HfFaun`, `HfGorgon`, `HfHuyao`).
+- **Faun Timestamp Migration (P-01)**: Aligned `PolicyContract.BlockAccount` behavior on `HF_Faun` to accurately update timestamps for pre-Faun blocked accounts, invoke `NeoToken::vote_internal` to cancel voting, and enable `recoverFund`.
+- **Syscall Parity**: Verified all 41 Interop Services (`System.Runtime.*`, `System.Contract.*`, `System.Storage.*` including Faun local storage, `System.Crypto.*`, `System.Iterator.*`) with exact CPU pricing and `CallFlags` permission gates.
+- **dBFT 2.0 Consensus**: Formalized Primary initial timer gating, monotonic `ChangeView` handling, off-view commit isolation, and three-set deduplication in compact Recovery messages.
+
+### Added
+- **Notary Node-Level Roundtrip**: Comprehensive RPC-driven deposit deduction integration test (`notary_node_level_deposit_deduction_roundtrip`) verifying deposit creation, NotaryAssisted transactions, secondary payer budget isolation, and `OnPersist` execution.
+- **Fast-Sync P2P E2E Suite**: Added `tests/fast_sync_p2p_e2e_tests.rs` covering dual-node block production, fast sync inventory exchange, and Merkle root reconstruction.
+
+### Fixed
+- **Storage Prefix Search**: Fixed `MemoryStore::find` and `MemorySnapshot::find` Forward and Backward prefix semantics to strictly match RocksDB `reverse_prefix_iterator`.
+- **StateService Reliability**: Implemented transaction staging cleanup on failures, committed root progression sequencing, and resilient blockchain actor retry loops.
+- **Architecture Single-Sourcing (A-01)**: Unified wallet multi-sig contract parsing into `ContractHelper::parse_multi_sig_contract`, enforcing Secp256r1 curve validation and up to 1024 public keys.
+
 ## [0.15.0] - 2026-08-29
 
 ### Compatibility

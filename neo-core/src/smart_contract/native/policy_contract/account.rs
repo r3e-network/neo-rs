@@ -95,9 +95,7 @@ impl PolicyContract {
             )
             .native_err()?;
 
-        let iterator_id = engine
-            .store_storage_iterator(iterator)
-            .native_err()?;
+        let iterator_id = engine.store_storage_iterator(iterator).native_err()?;
         Ok(iterator_id.to_le_bytes().to_vec())
     }
 
@@ -116,8 +114,22 @@ impl PolicyContract {
         let context = engine.get_native_storage_context(&self.hash)?;
         let key = Self::blocked_account_suffix(account);
 
-        // v3.9.1: simple existence check — timestamps are set at Faun activation.
-        if engine.get_storage_item(&context, &key).is_some() {
+        // C# PolicyContract.BlockAccount:
+        // If already blocked:
+        // - if HF_Faun is enabled and item.Value is empty (pre-Faun blocked), update timestamp and revoke votes.
+        // - otherwise, return false.
+        let existing = engine.get_storage_item(&context, &key);
+        if let Some(item_bytes) = existing {
+            if engine.is_hardfork_enabled(Hardfork::HfFaun) && item_bytes.is_empty() {
+                use crate::smart_contract::native::neo_token::NeoToken;
+                let _ = NeoToken::new().vote_internal(engine, account, None)?;
+                let timestamp = engine
+                    .get_current_block_time()
+                    .map_err(Error::invalid_operation)?;
+                let value = Self::encode_u64(timestamp);
+                engine.put_storage_item(&context, &key, &value)?;
+                return Ok(true);
+            }
             return Ok(false);
         }
 

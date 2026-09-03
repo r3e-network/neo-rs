@@ -9,41 +9,40 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use crate::Verifiable as CoreIVerifiable;
+use crate::VerifiableExt;
 use crate::neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::HEADER_SIZE;
 use crate::script_builder::ScriptBuilder;
-use crate::Verifiable as CoreIVerifiable;
-use crate::VerifiableExt;
 use crate::{
+    Transaction, UInt160,
     network::p2p,
     persistence::DataCache,
     protocol_settings::ProtocolSettings,
     smart_contract::{
+        ContractBasicMethod, ContractParameterType,
         application_engine::ApplicationEngine,
         call_flags::CallFlags,
         helper::Helper as ContractHelper,
         native::contract_management::ContractManagement,
         native::{
-            ledger_contract::LedgerContract, native_contract::NativeContract,
-            policy_contract::PolicyContract, GasToken,
+            GasToken, ledger_contract::LedgerContract, native_contract::NativeContract,
+            policy_contract::PolicyContract,
         },
         trigger_type::TriggerType,
-        ContractBasicMethod, ContractParameterType,
     },
-    wallets::{transfer_output::TransferOutput, wallet::Wallet, wallet::WalletError, KeyPair},
-    Transaction, UInt160,
+    wallets::{KeyPair, transfer_output::TransferOutput, wallet::Wallet, wallet::WalletError},
 };
-use neo_primitives::base58_check::{self, AddressDecodeError, Base58CheckDecodeError};
 use neo_primitives::UInt256;
 use neo_primitives::WitnessScope;
+use neo_primitives::base58_check::{self, AddressDecodeError, Base58CheckDecodeError};
 use neo_vm::OpCode;
-use crate::neo_vm::StackItemExt;
 use num_bigint::{BigInt, Sign};
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use std::sync::Arc;
 
 const SIGNATURE_INVOCATION_SCRIPT_LENGTH: usize = 2 + 64;
@@ -619,8 +618,9 @@ fn calculate_network_fee_impl(
                 + SIGNATURE_INVOCATION_SCRIPT_LENGTH
                 + get_var_size_bytes(&witness_script)) as i64;
             network_fee += exec_fee_factor * ContractHelper::signature_contract_cost();
-        } else if let Some((m, n)) = parse_multi_sig_contract(&witness_script) {
-            let invocation_len = SIGNATURE_INVOCATION_SCRIPT_LENGTH * m as usize;
+        } else if let Some((m, keys)) = ContractHelper::parse_multi_sig_contract(&witness_script) {
+            let n = keys.len();
+            let invocation_len = SIGNATURE_INVOCATION_SCRIPT_LENGTH * m;
             size += (get_var_size(invocation_len as u64)
                 + invocation_len
                 + get_var_size_bytes(&witness_script)) as i64;
@@ -766,61 +766,9 @@ fn reorder_signers(sender: UInt160, mut signers: Vec<Signer>) -> Vec<Signer> {
     }
 }
 
-fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, usize)> {
-    if script.len() < 43 {
-        return None;
-    }
-
-    let first = OpCode::try_from(script[0]).ok()?;
-    let first_byte = first.byte();
-    if !(OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&first_byte) {
-        return None;
-    }
-    let m = (first.byte() - OpCode::PUSH0.byte()) as usize;
-
-    let mut offset = 1;
-    let mut n = 0usize;
-    while offset < script.len() {
-        if script[offset] != OpCode::PUSHDATA1.byte() {
-            break;
-        }
-        if offset + 2 >= script.len() {
-            return None;
-        }
-        let key_len = script[offset + 1] as usize;
-        if key_len != 33 || offset + 2 + key_len > script.len() {
-            return None;
-        }
-        offset += 2 + key_len;
-        n += 1;
-    }
-
-    if n == 0 || offset >= script.len() {
-        return None;
-    }
-
-    let push_n = OpCode::try_from(script[offset]).ok()?;
-    let opcode_value = push_n.byte();
-    if !(OpCode::PUSH1.byte()..=OpCode::PUSH16.byte()).contains(&opcode_value) {
-        return None;
-    }
-    if (push_n.byte() - OpCode::PUSH0.byte()) as usize != n {
-        return None;
-    }
-    offset += 1;
-
-    if offset + 5 != script.len() {
-        return None;
-    }
-    if script[offset] != OpCode::SYSCALL.byte() {
-        return None;
-    }
-
-    Some((m, n))
-}
-
 /// Base58Check decode extension
 pub trait Base58CheckDecode {
+    /// Decodes a Base58Check-encoded string into raw bytes, verifying its checksum.
     fn base58_check_decode(&self) -> Result<Vec<u8>, String>;
 }
 
@@ -849,11 +797,16 @@ fn map_address_error(err: AddressDecodeError) -> String {
     match err {
         AddressDecodeError::Base58(err) => map_base58_check_decode_error(err),
         AddressDecodeError::InvalidLength { actual, .. } => {
-            format!("Invalid address format: expected 21 bytes after Base58Check decoding, but got {actual} bytes. The address may be corrupted or in an invalid format.")
+            format!(
+                "Invalid address format: expected 21 bytes after Base58Check decoding, but got {actual} bytes. The address may be corrupted or in an invalid format."
+            )
         }
         AddressDecodeError::InvalidVersion { expected, actual } => {
-            format!("Invalid address version: expected version {expected}, but got {actual}. The address may be for a different network.")
+            format!(
+                "Invalid address version: expected version {expected}, but got {actual}. The address may be for a different network."
+            )
         }
     }
 }
+/// Resolves the verification script bytes for an account script hash, if available.
 pub type AccountScriptResolver<'a> = dyn Fn(&UInt160) -> Option<Vec<u8>> + 'a;
