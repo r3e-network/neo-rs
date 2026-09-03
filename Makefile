@@ -9,13 +9,12 @@ DOCKER_TAG = latest
 RELEASE_DIR = target/release
 DEBUG_DIR = target/debug
 DATA_DIR = data
-CLI_BIN = neo-node
-MAINNET_CONFIG ?= config/mainnet.toml
-TESTNET_CONFIG ?= config/testnet.toml
-SERVICE_MAINNET_CONFIG ?= config/mainnet-service.toml
-SERVICE_TESTNET_CONFIG ?= config/testnet-service.toml
+CLI_BIN = neo-cli
+MAINNET_CONFIG ?= neo_mainnet_node.toml
+TESTNET_CONFIG ?= neo_production_node.toml
 CONFIG ?= $(MAINNET_CONFIG)
 BACKUP_DIR ?= backups
+ROCKSDB_PATH ?=
 
 # Color codes for output
 GREEN = \033[0;32m
@@ -35,14 +34,12 @@ help:
 	@echo "  make clean          - Clean build artifacts"
 	@echo ""
 	@echo "$(YELLOW)Running:$(NC)"
-	@echo "  make run            - Run neo-node on mainnet (uses $(MAINNET_CONFIG))"
-	@echo "  make run-testnet    - Run neo-node on testnet (uses $(TESTNET_CONFIG))"
-	@echo "  make run-mainnet    - Run neo-node on mainnet (explicit target)"
-	@echo "  make run-service-testnet - Run neo-node with the TestNet service-provider preset"
-	@echo "  make run-service-mainnet - Run neo-node with the MainNet service-provider preset"
-	@echo "  make docker-run     - Run neo-node in Docker container"
-	@echo "  make run-release    - Run neo-node in release mode"
-	@echo "  make run-daemon     - Run neo-node in background (testnet config)"
+	@echo "  make run            - Run neo-cli on mainnet (uses $(MAINNET_CONFIG))"
+	@echo "  make run-testnet    - Run neo-cli on testnet (uses $(TESTNET_CONFIG))"
+	@echo "  make run-mainnet    - Run neo-cli on mainnet (explicit target)"
+	@echo "  make docker-run     - Run neo-cli in Docker container"
+	@echo "  make run-release    - Run neo-cli in release mode"
+	@echo "  make run-daemon     - Run neo-cli in background (testnet config)"
 	@echo ""
 	@echo "$(YELLOW)Docker:$(NC)"
 	@echo "  make docker         - Build Docker image"
@@ -53,7 +50,6 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Docker Compose:$(NC)"
 	@echo "  make compose-up     - Start docker-compose stack (neo-node)"
-	@echo "  make compose-service - Start docker-compose stack with NEO_PROFILE=service"
 	@echo "  make compose-down   - Stop docker-compose stack"
 	@echo "  make compose-logs   - Tail neo-node logs from docker-compose"
 	@echo "  make compose-ps     - Show docker-compose container status"
@@ -76,6 +72,7 @@ help:
 	@echo "  make db-clean       - Clean blockchain database"
 	@echo "  make db-backup      - Backup blockchain database"
 	@echo "  make db-restore     - Restore blockchain database"
+	@echo "  make backup-rocksdb - Snapshot RocksDB dir (ROCKSDB_PATH=/path/to/db)"
 	@echo ""
 	@echo "$(YELLOW)Release:$(NC)"
 	@echo "  make release        - Create release binaries"
@@ -126,16 +123,6 @@ run-testnet: build
 run-mainnet: build-release
 	@echo "$(GREEN)Starting Neo Node on MainNet...$(NC)"
 	./$(RELEASE_DIR)/$(CLI_BIN) --config $(MAINNET_CONFIG)
-
-.PHONY: run-service-testnet
-run-service-testnet: build
-	@echo "$(GREEN)Starting Neo Node service endpoint on TestNet...$(NC)"
-	./$(DEBUG_DIR)/$(CLI_BIN) --config $(SERVICE_TESTNET_CONFIG)
-
-.PHONY: run-service-mainnet
-run-service-mainnet: build-release
-	@echo "$(GREEN)Starting Neo Node service endpoint on MainNet...$(NC)"
-	./$(RELEASE_DIR)/$(CLI_BIN) --config $(SERVICE_MAINNET_CONFIG)
 
 .PHONY: run-daemon
 run-daemon: build
@@ -269,6 +256,13 @@ db-restore:
 		echo "$(RED)Backup file not found$(NC)"; \
 	fi
 
+# RocksDB backup helper (uses scripts/backup-rocksdb.sh)
+.PHONY: backup-rocksdb
+backup-rocksdb:
+	@if [ -z "$(ROCKSDB_PATH)" ]; then echo "$(RED)Set ROCKSDB_PATH=/path/to/rocksdb$(NC)"; exit 1; fi
+	@echo "$(GREEN)Backing up RocksDB from $(ROCKSDB_PATH) -> $(BACKUP_DIR)...$(NC)"
+	./scripts/backup-rocksdb.sh "$(ROCKSDB_PATH)" "$(BACKUP_DIR)"
+
 # Release targets
 .PHONY: release
 release: build-release
@@ -306,11 +300,6 @@ testnet: run-testnet
 compose-up:
 	@echo "$(GREEN)Starting docker-compose stack...$(NC)"
 	docker compose up -d neo-node
-
-.PHONY: compose-service
-compose-service:
-	@echo "$(GREEN)Starting docker-compose service-provider stack...$(NC)"
-	NEO_PROFILE=service docker compose up -d neo-node
 
 .PHONY: compose-down
 compose-down:

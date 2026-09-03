@@ -4,22 +4,8 @@ Steps to cut a production release for `neo-rs` (Rust Neo N3 node).
 
 ## Pre-flight
 - Bump versions in `Cargo.toml` (workspace/package) and update `CHANGELOG.md` with a dated entry.
-- Update compatibility statements in `README.md` and `CHANGELOG.md` for the target Neo N3 release (currently v3.10.1).
+- Update compatibility statements in `README.md` and `CHANGELOG.md` for the target Neo N3 release (v3.10.1 for neo-rs v0.15.0).
 - Run: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`.
-- Check the three crates the `--workspace` flags above do **not** reach. Each has
-  its own manifest and lockfile, so both `cargo test --workspace` and
-  `cargo update --workspace` skip them entirely:
-
-  ```bash
-  for c in fuzz neo-gui benchmarks/bench-client; do (cd "$c" && cargo check --all-targets) || break; done
-  ```
-
-  This matters most for `fuzz/`, the only one with `path` dependencies on
-  workspace crates: its `version` pins sat at 0.11.1 through the 0.12.0 and
-  0.13.0 bumps, and cargo could not satisfy them against the bumped path
-  sources, so all three fuzz targets failed to build before fuzzing started.
-  Verify with `git ls-files '*/Cargo.toml'` against `cargo metadata --no-deps`
-  that this list is still complete when adding a crate.
 - Optionally build binaries locally: `cargo build --release --workspace`.
 
 ## Tagging

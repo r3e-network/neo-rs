@@ -1,7 +1,18 @@
-use super::hooks::{RpcClientHooks, RpcObserver, TracingRpcObserver};
-use super::{DEFAULT_HTTP_TIMEOUT, RpcClient};
-use crate::client::RpcClientError;
-use base64::{Engine as _, engine::general_purpose};
+// Copyright (C) 2015-2025 The Neo Project.
+//
+// rpc_client/builder.rs file belongs to the neo project and is free
+// software distributed under the MIT software license, see the
+// accompanying file LICENSE in the main directory of the
+// repository or http://www.opensource.org/licenses/mit-license.php
+// for more details.
+//
+// Redistribution and use in source and binary forms with or without
+// modifications are permitted.
+
+use super::hooks::RpcClientHooks;
+use super::{RpcClient, DEFAULT_HTTP_TIMEOUT};
+use crate::RpcError;
+use base64::{engine::general_purpose, Engine as _};
 use neo_config::ProtocolSettings;
 use reqwest::{Client, Url};
 use std::sync::Arc;
@@ -13,17 +24,16 @@ use zeroize::Zeroizing;
 /// # Security Note
 /// Credentials are stored using [`Zeroizing`] to ensure they are securely
 /// cleared from memory when the builder is dropped or after `build()` completes.
-pub struct RpcClientBuilder<O = TracingRpcObserver> {
+pub struct RpcClientBuilder {
     base_address: Url,
     rpc_user: Option<Zeroizing<String>>,
     rpc_pass: Option<Zeroizing<String>>,
     protocol_settings: Option<ProtocolSettings>,
     timeout: Duration,
-    hooks: RpcClientHooks<O>,
+    hooks: RpcClientHooks,
 }
 
-impl RpcClientBuilder<TracingRpcObserver> {
-    /// Create a builder for the provided RPC endpoint URL.
+impl RpcClientBuilder {
     #[must_use]
     pub fn new(base_address: Url) -> Self {
         Self {
@@ -35,12 +45,7 @@ impl RpcClientBuilder<TracingRpcObserver> {
             hooks: RpcClientHooks::default(),
         }
     }
-}
 
-impl<O> RpcClientBuilder<O>
-where
-    O: RpcObserver,
-{
     /// Applies basic-auth credentials.
     ///
     /// # Security Note
@@ -74,40 +79,12 @@ where
 
     /// Registers hooks for logging/metrics.
     #[must_use]
-    pub fn hooks<T>(self, hooks: RpcClientHooks<T>) -> RpcClientBuilder<T>
-    where
-        T: RpcObserver,
-    {
-        let Self {
-            base_address,
-            rpc_user,
-            rpc_pass,
-            protocol_settings,
-            timeout,
-            ..
-        } = self;
-
-        RpcClientBuilder {
-            base_address,
-            rpc_user,
-            rpc_pass,
-            protocol_settings,
-            timeout,
-            hooks,
-        }
+    pub fn hooks(mut self, hooks: RpcClientHooks) -> Self {
+        self.hooks = hooks;
+        self
     }
 
-    /// Registers a concrete observer called after each RPC request completes.
-    #[must_use]
-    pub fn with_observer<T>(self, observer: T) -> RpcClientBuilder<T>
-    where
-        T: RpcObserver,
-    {
-        self.hooks(RpcClientHooks::new().with_observer(observer))
-    }
-
-    /// Build the configured [`RpcClient`].
-    pub fn build(self) -> Result<RpcClient<O>, RpcClientError> {
+    pub fn build(self) -> Result<RpcClient, RpcError> {
         let mut client_builder = Client::builder().no_proxy().timeout(self.timeout);
 
         if let (Some(user), Some(pass)) = (self.rpc_user, self.rpc_pass) {

@@ -5,15 +5,14 @@
 //! This module provides the execution context implementation for the Neo VM.
 
 use super::shared_states::SharedStates;
-use crate::ExceptionHandlingContext;
-use crate::Instruction;
+use neo_crypto::Crypto;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
-use crate::execution_plan::ExecutionPlan;
-use crate::execution_profile::StackProfileHandle;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
+use crate::ExceptionHandlingContext;
+use crate::Instruction;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -25,9 +24,9 @@ pub type Slot = crate::slot::Slot;
 
 /// Represents an execution context in the Neo Virtual Machine.
 /// This matches the C# implementation's `ExecutionContext` class.
-pub struct ExecutionContext<S = ()> {
+pub struct ExecutionContext {
     /// The shared states (script, evaluation stack, static fields)
-    shared_states: SharedStates<S>,
+    shared_states: SharedStates,
 
     /// The current instruction pointer
     instruction_pointer: usize,
@@ -45,58 +44,13 @@ pub struct ExecutionContext<S = ()> {
     try_stack: Option<Vec<ExceptionHandlingContext>>,
 }
 
-impl<S: Default> ExecutionContext<S> {
+impl ExecutionContext {
     /// Creates a new execution context.
     /// This matches the C# implementation's constructor pattern.
     #[must_use]
     pub fn new(script: Script, rvcount: i32, reference_counter: &ReferenceCounter) -> Self {
-        Self::new_with_state_factory(script, rvcount, reference_counter, S::default)
-    }
-
-    /// Creates an execution context that retains an existing script allocation.
-    #[must_use]
-    pub fn new_from_script_arc(
-        script: Arc<Script>,
-        rvcount: i32,
-        reference_counter: &ReferenceCounter,
-    ) -> Self {
         Self {
-            shared_states: SharedStates::new_from_script_arc(script, reference_counter.clone()),
-            instruction_pointer: 0,
-            rvcount,
-            local_variables: None,
-            arguments: None,
-            try_stack: None,
-        }
-    }
-}
-
-impl<S> ExecutionContext<S> {
-    /// Creates a new execution context with an explicit typed state value.
-    #[must_use]
-    pub fn new_with_state(
-        script: Script,
-        rvcount: i32,
-        reference_counter: &ReferenceCounter,
-        state: S,
-    ) -> Self {
-        Self::new_with_state_factory(script, rvcount, reference_counter, || state)
-    }
-
-    /// Creates a new execution context with a typed-state factory.
-    #[must_use]
-    pub fn new_with_state_factory<F: FnOnce() -> S>(
-        script: Script,
-        rvcount: i32,
-        reference_counter: &ReferenceCounter,
-        factory: F,
-    ) -> Self {
-        Self {
-            shared_states: SharedStates::new_with_state_factory(
-                script,
-                reference_counter.clone(),
-                factory,
-            ),
+            shared_states: SharedStates::new(script, reference_counter.clone()),
             instruction_pointer: 0,
             rvcount,
             local_variables: None,
@@ -118,12 +72,6 @@ impl<S> ExecutionContext<S> {
         self.shared_states.script_arc()
     }
 
-    /// Returns the optional immutable plan selected before context loading.
-    #[must_use]
-    pub fn execution_plan(&self) -> Option<&Arc<ExecutionPlan>> {
-        self.script().execution_plan()
-    }
-
     /// Returns the reference counter associated with this context.
     #[must_use]
     pub fn reference_counter(&self) -> &ReferenceCounter {
@@ -132,10 +80,9 @@ impl<S> ExecutionContext<S> {
 
     /// Returns the script hash for this context as a 20-byte array.
     /// This mirrors the C# `Script.ToScriptHash()` behaviour (Hash160).
-    #[inline]
     #[must_use]
     pub fn script_hash(&self) -> [u8; 20] {
-        self.script().script_hash()
+        Crypto::hash160(self.script().as_bytes())
     }
 
     /// Returns the current instruction pointer.
@@ -146,19 +93,9 @@ impl<S> ExecutionContext<S> {
     }
 
     /// Sets the instruction pointer.
-    ///
-    /// Neo.VM permits the position immediately after the script so the engine
-    /// can execute its synthetic `RET`, but rejects positions beyond it.
     #[inline]
-    pub fn set_instruction_pointer(&mut self, position: usize) -> VmResult<()> {
-        if position > self.script().len() {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Instruction pointer is out of script bounds: {position}/{}",
-                self.script().len()
-            )));
-        }
+    pub fn set_instruction_pointer(&mut self, position: usize) {
         self.instruction_pointer = position;
-        Ok(())
     }
 
     /// Returns the current instruction or None if at the end of the script.
@@ -213,13 +150,6 @@ impl<S> ExecutionContext<S> {
         self.shared_states.evaluation_stack_mut()
     }
 
-    /// Attaches the shared evaluation stack to an explicitly enabled profiler.
-    pub(crate) fn set_stack_profile(&self, profile: StackProfileHandle) {
-        self.shared_states
-            .evaluation_stack_mut()
-            .set_profile(profile);
-    }
-
     /// Returns true when static fields are initialized for this context.
     #[must_use]
     pub fn has_static_fields(&self) -> bool {
@@ -250,12 +180,6 @@ impl<S> ExecutionContext<S> {
             .static_fields_ptr_eq(&other.shared_states)
     }
 
-    /// Returns true when both contexts share the same typed state.
-    #[must_use]
-    pub fn shares_state_with(&self, other: &Self) -> bool {
-        self.shared_states.state_ptr_eq(&other.shared_states)
-    }
-
     /// Clears static field references for this context.
     pub fn clear_static_fields_references(&self) {
         self.with_static_fields_mut(|static_fields| {
@@ -269,7 +193,9 @@ impl<S> ExecutionContext<S> {
     #[must_use]
     pub fn static_fields_len(&self) -> usize {
         self.with_static_fields_mut(|static_fields| {
-            static_fields.as_ref().map_or(0, crate::slot::Slot::len)
+            static_fields
+                .as_ref()
+                .map_or(0, crate::slot::Slot::len)
         })
     }
 
@@ -375,25 +301,32 @@ impl<S> ExecutionContext<S> {
         self.instruction_pointer += instruction_size;
     }
 
-    /// Returns the shared typed state for this execution context.
+    /// Gets a state value for the specified type, creating it if it doesn't exist.
+    /// Mirrors the C# ExecutionContext.GetState\<T>() helper.
     #[must_use]
-    pub fn state(&self) -> Arc<Mutex<S>> {
-        self.shared_states.state()
+    pub fn get_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
+        self.shared_states.get_state::<T>()
     }
 
-    /// Executes a closure with mutable access to the shared typed state.
-    pub fn with_state<R, F: FnOnce(&mut S) -> R>(&self, f: F) -> R {
-        self.shared_states.with_state(f)
+    /// Gets a state value for the specified type using the provided factory when absent.
+    /// Mirrors the C# ExecutionContext.GetState\<T>(Func\<T>) helper.
+    pub fn get_state_with_factory<T: 'static + Send + Sync, F: FnOnce() -> T>(
+        &self,
+        factory: F,
+    ) -> Arc<Mutex<T>> {
+        self.shared_states.get_state_with_factory(factory)
     }
 
-    /// Replaces the shared typed state value and returns the previous state.
-    pub fn replace_state(&self, state: S) -> S {
-        self.shared_states.replace_state(state)
+    /// Sets a state value by key.
+    /// This matches the C# implementation's state setting behavior.
+    pub fn set_state<T: 'static + Send + Sync>(&self, value: T) {
+        self.shared_states.set_state(value);
     }
 
     /// Push an item onto the evaluation stack
     #[inline(always)]
-    pub fn push(&mut self, item: crate::stack_item::StackItem) -> VmResult<()> {
+    pub fn push(&mut self, mut item: crate::stack_item::StackItem) -> VmResult<()> {
+        item.attach_reference_counter(self.reference_counter())?;
         self.shared_states.evaluation_stack_mut().push(item)
     }
 
@@ -425,10 +358,7 @@ impl<S> ExecutionContext<S> {
     pub fn clone_for_reference_counter(
         &self,
         reference_counter: &ReferenceCounter,
-    ) -> VmResult<Self>
-    where
-        S: Default,
-    {
+    ) -> VmResult<Self> {
         // Create a new shared states with the new reference counter
         let shared_states = SharedStates::new(self.script().clone(), reference_counter.clone());
 
@@ -457,17 +387,31 @@ impl<S> ExecutionContext<S> {
     /// Clones the context for a CALL operation.
     /// Matches C# `ExecutionContext.Clone(position)`: shared script/evaluation stack/static fields
     /// and `rvcount = 0`.
-    pub fn clone_with_position(&self, position: usize) -> VmResult<Self> {
-        let mut context = Self {
+    #[must_use]
+    pub fn clone_with_position(&self, position: usize) -> Self {
+        Self {
             shared_states: self.shared_states.clone(),
-            instruction_pointer: 0,
+            instruction_pointer: position,
             rvcount: 0,
             local_variables: None,
             arguments: None,
             try_stack: None,
-        };
-        context.set_instruction_pointer(position)?;
-        Ok(context)
+        }
+    }
+
+    /// Gets a shared state by type, creating it if it doesn't exist.
+    /// Mirrors the C# ExecutionContext.GetState\<T>() helper for shared state access.
+    #[must_use]
+    pub fn get_shared_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
+        self.shared_states.get_state::<T>()
+    }
+
+    /// Gets a shared state by type, creating it with the provided factory if it doesn't exist.
+    pub fn get_shared_state_with_factory<T: 'static + Send + Sync, F: FnOnce() -> T>(
+        &self,
+        factory: F,
+    ) -> Arc<Mutex<T>> {
+        self.shared_states.get_state_with_factory(factory)
     }
 
     /// Initializes the slots for local variables and arguments.
@@ -488,7 +432,10 @@ impl<S> ExecutionContext<S> {
     }
 
     /// Loads a value from a static field.
-    pub fn load_static_field(&self, index: usize) -> VmResult<crate::stack_item::StackItem> {
+    pub fn load_static_field(
+        &self,
+        index: usize,
+    ) -> VmResult<crate::stack_item::StackItem> {
         self.shared_states.with_static_fields_mut(|static_fields| {
             if let Some(static_fields) = static_fields.as_ref() {
                 static_fields.get(index).cloned().ok_or_else(|| {
@@ -577,19 +524,356 @@ impl<S> ExecutionContext<S> {
     }
 }
 
-impl<S> Clone for ExecutionContext<S> {
+impl Clone for ExecutionContext {
     fn clone(&self) -> Self {
-        Self {
-            shared_states: self.shared_states.clone(),
-            instruction_pointer: self.instruction_pointer,
-            rvcount: 0,
-            local_variables: None,
-            arguments: None,
-            try_stack: None,
-        }
+        self.clone_with_position(self.instruction_pointer)
     }
 }
 
 #[cfg(test)]
-#[path = "../tests/execution_context/context.rs"]
-mod tests;
+#[allow(dead_code)]
+mod tests {
+    use super::*;
+    use crate::stack_item::StackItem;
+    use crate::OpCode;
+    use num_bigint::BigInt;
+
+    #[derive(Default)]
+    struct TestFlag {
+        flag: bool,
+    }
+
+    #[test]
+    fn test_execution_context_creation() {
+        let script_bytes = vec![
+            OpCode::PUSH1.byte(),
+            OpCode::PUSH2.byte(),
+            OpCode::ADD.byte(),
+        ];
+        let script = Script::new_relaxed(script_bytes);
+        let reference_counter = ReferenceCounter::new();
+
+        let context = ExecutionContext::new(script, -1, &reference_counter);
+
+        assert_eq!(context.instruction_pointer(), 0);
+        assert_eq!(context.rvcount(), -1);
+        assert_eq!(
+            context
+                .current_instruction()
+                .expect("intermediate value should exist")
+                .opcode(),
+            OpCode::PUSH1
+        );
+        assert!(context.evaluation_stack().is_empty());
+        assert!(context.try_stack().is_none());
+    }
+
+    #[test]
+    fn test_move_next() {
+        let script_bytes = vec![
+            OpCode::PUSH1.byte(),
+            OpCode::PUSH2.byte(),
+            OpCode::ADD.byte(),
+        ];
+        let script = Script::new_relaxed(script_bytes);
+        let reference_counter = ReferenceCounter::new();
+
+        let mut context = ExecutionContext::new(script, -1, &reference_counter);
+
+        assert_eq!(
+            context
+                .current_instruction()
+                .expect("intermediate value should exist")
+                .opcode(),
+            OpCode::PUSH1
+        );
+
+        context.move_next().expect("VM operation should succeed");
+        assert_eq!(context.instruction_pointer(), 1);
+        assert_eq!(
+            context
+                .current_instruction()
+                .expect("intermediate value should exist")
+                .opcode(),
+            OpCode::PUSH2
+        );
+
+        context.move_next().expect("VM operation should succeed");
+        assert_eq!(context.instruction_pointer(), 2);
+        assert_eq!(
+            context
+                .current_instruction()
+                .expect("intermediate value should exist")
+                .opcode(),
+            OpCode::ADD
+        );
+
+        context.move_next().expect("VM operation should succeed");
+        assert_eq!(context.instruction_pointer(), 3);
+        assert!(context.current_instruction().is_err());
+    }
+
+    #[test]
+    fn test_try_stack() {
+        let script_bytes = vec![OpCode::NOP.byte()];
+        let script = Script::new_relaxed(script_bytes);
+        let reference_counter = ReferenceCounter::new();
+
+        let mut context = ExecutionContext::new(script, -1, &reference_counter);
+
+        // Initially, try_stack is None
+        assert!(context.try_stack().is_none());
+
+        // Create a try stack with one context
+        use crate::ExceptionHandlingContext;
+        use crate::ExceptionHandlingState;
+        let mut try_stack = Vec::new();
+        let try_context = ExceptionHandlingContext::new(10, 20);
+        try_stack.push(try_context);
+
+        // Set the try stack
+        context.set_try_stack(Some(try_stack));
+
+        // Check that the try stack is set
+        assert!(context.try_stack().is_some());
+        assert_eq!(
+            context
+                .try_stack()
+                .expect("intermediate value should exist")
+                .len(),
+            1
+        );
+        assert_eq!(
+            context.try_stack().expect("VM operation should succeed")[0].catch_pointer(),
+            10
+        );
+        assert_eq!(
+            context.try_stack().expect("Operation failed")[0].finally_pointer(),
+            20
+        );
+
+        // Modify the try stack
+        if let Some(stack) = context.try_stack_mut() {
+            let exception_context = &mut stack[0];
+            exception_context.set_state(ExceptionHandlingState::Catch);
+        }
+
+        // Check that the modification was applied
+        assert_eq!(
+            context.try_stack().expect("Operation failed")[0].state(),
+            ExceptionHandlingState::Catch
+        );
+    }
+
+    #[test]
+    fn test_slot() {
+        let reference_counter = ReferenceCounter::new();
+
+        let items = vec![
+            StackItem::from_int(1),
+            StackItem::from_int(2),
+            StackItem::from_int(3),
+        ];
+
+        let mut slot = Slot::with_items(items, reference_counter.clone());
+
+        assert_eq!(slot.len(), 3);
+        assert_eq!(
+            slot.get(0)
+                .expect("Index out of bounds")
+                .as_int()
+                .expect("VM operation should succeed"),
+            BigInt::from(1)
+        );
+        assert_eq!(
+            slot.get(1)
+                .expect("Index out of bounds")
+                .as_int()
+                .expect("VM operation should succeed"),
+            BigInt::from(2)
+        );
+        assert_eq!(
+            slot.get(2)
+                .expect("Index out of bounds")
+                .as_int()
+                .expect("VM operation should succeed"),
+            BigInt::from(3)
+        );
+
+        slot.set(1, StackItem::from_int(42)).unwrap();
+        assert_eq!(
+            slot.get(1)
+                .expect("Index out of bounds")
+                .as_int()
+                .expect("VM operation should succeed"),
+            BigInt::from(42)
+        );
+
+        assert!(slot.set(5, StackItem::from_int(5)).is_err());
+
+        slot.clear_references();
+        assert_eq!(slot.len(), 3);
+        assert!(slot.iter().all(|item| item.is_null()));
+    }
+
+    #[test]
+    fn test_next_instruction() {
+        let script_bytes = vec![
+            OpCode::PUSH1.byte(),
+            OpCode::PUSH2.byte(),
+            OpCode::ADD.byte(),
+            OpCode::RET.byte(),
+        ];
+
+        let script = Script::new_relaxed(script_bytes);
+        let reference_counter = ReferenceCounter::new();
+
+        let context = ExecutionContext::new(script, -1, &reference_counter);
+
+        // Test current instruction
+        let current = context
+            .current_instruction()
+            .expect("VM operation should succeed");
+        assert_eq!(current.opcode(), OpCode::PUSH1);
+
+        // Test next instruction
+        let next = context
+            .next_instruction()
+            .expect("VM operation should succeed");
+        assert_eq!(next.opcode(), OpCode::PUSH2);
+    }
+
+    #[test]
+    fn test_clone() {
+        let script_bytes = vec![
+            OpCode::PUSH1.byte(),
+            OpCode::PUSH2.byte(),
+            OpCode::ADD.byte(),
+            OpCode::RET.byte(),
+        ];
+
+        let script = Script::new_relaxed(script_bytes);
+        let reference_counter = ReferenceCounter::new();
+
+        let mut context = ExecutionContext::new(script, -1, &reference_counter);
+
+        // Push a value onto the stack
+        context
+            .push(StackItem::from_int(42))
+            .expect("push should succeed");
+
+        // Clone the context
+        let clone = context.clone();
+
+        // Clone() shares script/evaluation stack/static fields (C# semantics).
+        assert_eq!(clone.script().to_array(), context.script().to_array());
+        assert_eq!(clone.evaluation_stack().len(), 1);
+        assert!(clone.shares_evaluation_stack_with(&context));
+
+        // Check that the clone has the same instruction pointer
+        assert_eq!(clone.instruction_pointer(), context.instruction_pointer());
+
+        // C# Clone() sets rvcount = 0 for CALL.
+        assert_eq!(clone.rvcount(), 0);
+
+        // Clone with a different position
+        let clone_with_position = context.clone_with_position(2);
+
+        // Check that the clone has a different instruction pointer
+        assert_eq!(clone_with_position.instruction_pointer(), 2);
+    }
+
+    #[test]
+    fn test_get_state() -> Result<(), Box<dyn std::error::Error>> {
+        let script_bytes = vec![OpCode::NOP.byte()];
+        let script = Script::new_relaxed(script_bytes);
+        let reference_counter = ReferenceCounter::new();
+
+        let context = ExecutionContext::new(script, -1, &reference_counter);
+
+        let flag_state = context.get_state_with_factory::<TestFlag, _>(|| TestFlag { flag: true });
+        {
+            let mut flag = flag_state.lock();
+            assert!(flag.flag);
+            flag.flag = false;
+        }
+
+        let flag_state_again = context.get_state::<TestFlag>();
+        {
+            let flag = flag_state_again.lock();
+            assert!(!flag.flag);
+        }
+
+        let stack_state = context.get_state_with_factory::<Vec<i32>, _>(Vec::new);
+        {
+            let mut stack = stack_state.lock();
+            stack.push(100);
+        }
+
+        let clone = context.clone();
+        let cloned_stack_state = clone.get_state::<Vec<i32>>();
+        {
+            let mut stack = cloned_stack_state.lock();
+            assert_eq!(stack.pop(), Some(100));
+            stack.push(200);
+        }
+
+        let original_stack_state = context.get_state::<Vec<i32>>();
+        {
+            let mut stack = original_stack_state.lock();
+            assert_eq!(stack.pop(), Some(200));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_shared_state() -> Result<(), Box<dyn std::error::Error>> {
+        let script_bytes = vec![OpCode::NOP.byte()];
+        let script = Script::new_relaxed(script_bytes);
+        let reference_counter = ReferenceCounter::new();
+
+        let context = ExecutionContext::new(script, -1, &reference_counter);
+
+        let shared_vec = context.get_shared_state::<Vec<i32>>();
+        {
+            let mut vec = shared_vec.lock();
+            vec.push(100);
+        }
+
+        let shared_vec_again = context.get_shared_state::<Vec<i32>>();
+        {
+            let vec = shared_vec_again.lock();
+            assert_eq!(*vec, vec![100]);
+        }
+
+        let shared_with_factory =
+            context.get_shared_state_with_factory::<Vec<i32>, _>(|| vec![200]);
+        {
+            let vec = shared_with_factory.lock();
+            assert_eq!(*vec, vec![100]);
+        }
+
+        let clone = context.clone();
+        let clone_shared_vec = clone.get_shared_state::<Vec<i32>>();
+        {
+            let mut vec = clone_shared_vec.lock();
+            vec.push(300);
+        }
+
+        let context_shared_vec = context.get_shared_state::<Vec<i32>>();
+        {
+            let vec = context_shared_vec.lock();
+            assert_eq!(*vec, vec![100, 300]);
+        }
+
+        context.set_state(vec![1, 2, 3]);
+        let context_shared_vec_after = context.get_shared_state::<Vec<i32>>();
+
+        {
+            let vec = context_shared_vec_after.lock();
+            assert_eq!(*vec, vec![1, 2, 3]);
+        }
+
+        Ok(())
+    }
+}

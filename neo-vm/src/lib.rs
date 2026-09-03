@@ -3,75 +3,158 @@
 // Licensed under the MIT License
 // See LICENSE file for details
 
-//! # neo-vm
+#![warn(missing_docs)]
+//! # Neo Virtual Machine (`NeoVM`)
 //!
-//! NeoVM execution engine, opcode dispatch, stack items, and runtime types.
+//! An embedded Neo Virtual Machine runtime for `neo-core`.
 //!
-//! ## Boundary
+//! This crate is fully self-contained. The canonical opcode metadata,
+//! instruction parsing, and ABI-level value semantics (the shared VM core)
+//! live here as the `vm`, `abi`, `semantics`, `interpreter`, `host`, and
+//! `runtime` modules, alongside the stateful execution pieces: execution
+//! contexts, reference-counted local stack identity, gas hooks, exception
+//! handling, and the smart-contract host boundary.
 //!
-//! This VM crate owns deterministic script execution and must not own ledger
-//! persistence, network transport, or node composition.
+//! ## Architecture
 //!
-//! ## Contents
+//! The module follows an adapter-oriented architecture. Canonical opcode
+//! metadata, instruction parsing, and ABI-level value semantics live in the
+//! vendored VM modules; the crate keeps the stateful host surface needed by
+//! neo-rs.
 //!
-//! - `types`: Storage-domain types shared by store implementations.
-//! - `script_builder`: Helpers for constructing NeoVM scripts
-//!   deterministically.
-//! - `runtime`: Runtime flags, execution context state, and VM-facing support
-//!   types.
-//! - `execution_context`: NeoVM execution context frames and instruction-
-//!   pointer state.
-//! - `execution_engine`: NeoVM execution engine loop and runtime state.
-//! - `jump_table`: Opcode dispatch tables and instruction implementations.
-//! - `stack_item`: NeoVM stack item representations and operations.
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                    ExecutionEngine                               │
+//! │              (Core VM: stack, contexts, execution loop)          │
+//! ├─────────────────────────────────────────────────────────────────┤
+//! │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────────┐    │
+//! │  │ Evaluation  │  │   Context    │  │    Reference         │    │
+//! │  │   Stack     │  │   Stack      │  │    Counter           │    │
+//! │  │             │  │              │  │   (GC support)       │    │
+//! │  └─────────────┘  └──────────────┘  └──────────────────────┘    │
+//! └─────────────────────────────────────────────────────────────────┘
+//!                              │
+//!                              ▼
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                    JumpTable                                     │
+//! │      (Stateful dispatch adapters over vendored VM semantics)       │
+//! └─────────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Layer Position
+//!
+//! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
+//!
+//! ```text
+//! Layer 2 (Service): Application layer
+//!            │
+//!            ▼
+//! Layer 1 (Core):   neo_core::neo_vm embedded runtime
+//!            │
+//!            ▼
+//! Layer 0 (Foundation): neo-primitives, neo-io
+//! ```
+//!
+//! ## Key Components
+//!
+//! | Component | Purpose | Key Type |
+//! |-----------|---------|----------|
+//! | [`ExecutionEngine`] | Core VM execution loop | `ExecutionEngine` |
+//! | [`EvaluationStack`] | Operand stack | `EvaluationStack` |
+//! | [`ExecutionContext`] | Script execution context | `ExecutionContext` |
+//! | [`JumpTable`] | Stateful opcode dispatch adapters | `JumpTable` |
+//! | [`StackItem`] | VM value types | `StackItem` |
+//!
+//! ## Features
+//!
+//! - **Shared NeoVM Semantics**: Opcode metadata and ABI-level behavior come from the vendored VM core
+//! - **Stack-Based Execution**: Type-safe evaluation stack with reference counting
+//! - **Gas Metering**: Precise execution cost tracking
+//! - **Exception Handling**: Comprehensive try-catch-finally support
+//! - **Reference Counting**: Efficient memory management without GC pauses
+//!
+//! ## Quick Start
+//!
+//! ```rust,ignore
+//! use neo_core::neo_vm::{ExecutionEngine, Script, VmResult};
+//! use neo_vm::VmState as VMState;
+//! use neo_vm::OpCode;
+//!
+//! # fn example() -> VmResult<()> {
+//! // Create a script that pushes 1 + 2 and returns
+//! let script = Script::new(
+//!     vec![
+//!         OpCode::PUSH1.byte(),
+//!         OpCode::PUSH2.byte(),
+//!         OpCode::ADD.byte(),
+//!         OpCode::RET.byte(),
+//!     ],
+//!     false,
+//! )?;
+//!
+//! // Create and run the VM
+//! let mut engine = ExecutionEngine::new(None);
+//! engine.load_script(script, -1, 0)?;
+//!
+//! let state = engine.execute();
+//! assert_eq!(state, VMState::HALT);
+//!
+//! // Get the result
+//! let result = engine.result_stack().peek(0)?;
+//! println!("1 + 2 = {}", result.as_int()?);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Gas Model
+//!
+//! The VM implements precise gas metering:
+//!
+//! | Operation | Base Cost |
+//! |-----------|-----------|
+//! | Simple opcode | 1 |
+//! | PUSH int | 1 |
+//! | PUSH data (per byte) | 1 |
+//! | CALL | 1024 |
+//! | SYSCALL | 256 |
+//! | Storage read | 100 |
+//! | Storage write | 1000 |
+//!
+//! ## Error Handling
+//!
+//! All fallible operations return [`VmResult`]:
+//!
+//! ```rust,ignore
+//! use neo_core::neo_vm::{VmError, VmResult};
+//!
+//! fn may_fail() -> VmResult<i64> {
+//!     // Returns Err(VmError::StackUnderflow) if stack is empty
+//!     engine.pop()?.as_int()
+//! }
+//! ```
 
+// Documentation warnings deferred — tracked for incremental doc coverage
+#![allow(missing_docs)]
+#![warn(rustdoc::missing_crate_level_docs)]
+
+// Vendored modules use `alloc::` paths; make the crate nameable crate-wide.
 extern crate alloc;
 
 // ============================================================================
 // Core VM Modules
 // ============================================================================
 
+/// Binary serialization for VM stack items.
+pub mod binary_serializer;
+
 /// VM error types and result handling.
-mod types;
-pub use types::error;
-
-mod vm_types;
-
-mod execution_profile;
-pub use execution_profile::{
-    OpcodeClass, ScriptEntryProfile, ScriptExecutionProfile, StackOperationProfile,
-    VmExecutionProfile,
-};
-
-mod execution_plan;
-pub use execution_plan::{
-    ArgumentContract, BasicBlock, ByteExpression, ByteExpressionSegment, CallContract,
-    CandidateAuthority, CandidateContract, CandidateContractError, CandidateContractLimits,
-    CandidateContractParts, CandidateId, CandidateIdentity, CandidateVersion, ContextDependency,
-    ContextScriptHash, ContractResolutionIdentity, ContractTarget, EffectContract, ExecutionPlan,
-    ExecutionPlanBuildError, ExecutionPlanCache, ExecutionPlanCacheError, ExecutionPlanCacheLimits,
-    ExecutionPlanCacheSnapshot, ExecutionPlanKey, ExecutionPlanKeyVersion, ExecutionPlanLimits,
-    ExecutionPlanRoute, FaultClass, FaultContract, FaultEffectDisposition, GasAmount,
-    GasStepContract, HardforkPlanState, HardforkTableIdentity, HostEffectContract,
-    InstructionCount, InvocationEligibility, NativeCacheDependency, NativeCacheDomain,
-    NativeCacheScope, PlannedControlFlow, PlannedInstruction, PointStateDependency,
-    ProtocolIdentity, ProtocolVersion, RangeDirection, RangeDomain, RangeStateDependency,
-    ReadRequirement, RegistryBuildError, RegistrySnapshot, SlotContract, SlotSource,
-    SpecializationContractVersion, SpecializationMode, SpecializationRegistry,
-    SpecializationRegistryLimits, SpecializationSelection, StackEffectContract,
-    StackItemConstraint, StackItemEligibility, StackItemShape, StateDependencyContract,
-    StorageTarget, StorageWriteKind,
-};
-
-/// Script builder for programmatic VM script construction.
-pub mod script_builder;
+pub mod error;
 
 /// Type-safe evaluation stack implementation.
 ///
 /// The [`EvaluationStack`] is the primary operand stack for VM operations.
 /// It provides type-safe operations and automatic reference counting.
-mod runtime;
-pub use runtime::evaluation_stack;
+pub mod evaluation_stack;
 
 /// Script execution context with local variables.
 ///
@@ -91,78 +174,134 @@ pub mod execution_context;
 /// - Tracks gas consumption
 pub mod execution_engine;
 
+/// JSON serialization for VM stack items.
+pub mod json_serializer;
+
 /// Interoperable trait for smart contract state round-tripping.
-pub use runtime::interoperable;
+pub mod interoperable;
+
+/// NotifyEventArgs for smart contract event notifications.
+pub mod notify_event_args;
 
 /// Interop service registry.
 ///
 /// [`InteropService`] manages native contract methods accessible via SYSCALL.
-pub use runtime::interop_service;
+pub mod interop_service;
 
-/// Stateful opcode dispatch and Neo N3 instruction implementations.
+/// Stateful opcode dispatch adapters.
+///
+/// The [`JumpTable`] handles neo-rs execution state and delegates shared opcode
+/// metadata and ABI-level behavior to the vendored VM core wherever possible.
 pub mod jump_table;
 
 /// Reference counting for garbage collection.
-pub use runtime::reference_counter;
+pub mod reference_counter;
 
 /// VM script representation and validation.
-pub use types::script;
+pub mod script;
+
+/// Script builder for programmatically constructing VM scripts.
+pub mod script_builder;
 
 /// JSON-RPC envelope rendering for VM stack items.
-pub use types::rpc_json;
+pub mod rpc_json;
 
 /// Slot storage for locals, arguments, and static fields.
-pub use runtime::slot;
+pub mod slot;
 
-/// Stateful, reference-counted stack items used by the local execution engine.
+/// StorageContext for smart contract storage operations.
+pub mod storage_context;
+
+/// Native VM stack item engine.
+///
+/// [`StackItem`] is this crate's own enum with inherent constructors and
+/// conversion helpers (e.g. `true_value`, `from_i64`, `as_int`).
 pub mod stack_item;
 
 // ============================================================================
-// Canonical VM primitives
+// Vendored VM Modules (formerly the external the vendored VM core crate)
 //
-// `neo-vm` is the workspace's only VM boundary. Consumers must not couple
-// themselves to another interpreter or runtime value model.
+// These modules were vendored into `neo-vm` so the crate is fully
+// self-contained. They expose the canonical opcode metadata, ABI-level stack
+// value semantics, interpreter, and shared host/runtime helpers. The public
+// surface below mirrors the previous the vendored VM core API so downstream code keeps
+// working via `neo_vm::*`.
 // ============================================================================
 
-pub use vm_types::{
-    DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, ExceptionHandlingContext,
-    ExceptionHandlingState, ExecutionEngineLimits, FromOperand, Instruction, InstructionError,
-    InstructionErrorKind, InstructionResult, MAX_ITEM_SIZE, MAX_SCRIPT_SIZE,
-    NEOVM_STACK_ITEM_TYPE_ANY, NEOVM_STACK_ITEM_TYPE_ARRAY, NEOVM_STACK_ITEM_TYPE_BOOLEAN,
-    NEOVM_STACK_ITEM_TYPE_BUFFER, NEOVM_STACK_ITEM_TYPE_BYTESTRING, NEOVM_STACK_ITEM_TYPE_INTEGER,
-    NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE, NEOVM_STACK_ITEM_TYPE_MAP,
-    NEOVM_STACK_ITEM_TYPE_POINTER, NEOVM_STACK_ITEM_TYPE_STRUCT, OpCode, ScriptInstruction,
-    StackItemType, ValidatedScript, ValidationResult, VmOrderedDictionary, VmState, encode_integer,
-    instruction_jump_target, instruction_try_targets, interop_hash, next_stack_item_id,
-    parse_script_instructions, syscall_arg_count, validate_script, validate_strict_script,
+mod abi;
+mod host;
+mod interpreter;
+mod runtime;
+pub mod semantics;
+mod vm;
+
+// Full public re-export surface (mirrors the vendored crate's `lib.rs`).
+pub use abi::{
+    byte_sequence_bytes, byte_sequence_len, concat_splice_values, default_value_for_type_tag,
+    encode_integer, new_array_default_value_for_neovm_type_tag,
+    new_array_default_value_for_type_tag, normalize_stack_item_type_tag, pop_byte_arg,
+    slice_splice_value, stack_value_as_bool, stack_value_as_bytes, stack_value_as_fixed_bytes,
+    stack_value_as_i64, stack_value_as_string, stack_value_as_u32, stack_value_as_u8,
+    stack_value_into_items, stack_value_span_bytes, BackendKind, ExecutionResult, StackItemType,
+    StackValue, VmState, COMPACT_TAG_ARRAY, COMPACT_TAG_BIG_INTEGER, COMPACT_TAG_BOOLEAN,
+    COMPACT_TAG_BUFFER, COMPACT_TAG_BYTESTRING, COMPACT_TAG_INTEGER, COMPACT_TAG_INTEROP,
+    COMPACT_TAG_ITERATOR, COMPACT_TAG_MAP, COMPACT_TAG_NULL, COMPACT_TAG_POINTER,
+    COMPACT_TAG_STRUCT, NEOVM_STACK_ITEM_TYPE_ANY, NEOVM_STACK_ITEM_TYPE_ARRAY,
+    NEOVM_STACK_ITEM_TYPE_BOOLEAN, NEOVM_STACK_ITEM_TYPE_BUFFER, NEOVM_STACK_ITEM_TYPE_BYTESTRING,
+    NEOVM_STACK_ITEM_TYPE_INTEGER, NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE,
+    NEOVM_STACK_ITEM_TYPE_MAP, NEOVM_STACK_ITEM_TYPE_POINTER, NEOVM_STACK_ITEM_TYPE_STRUCT,
+    STACK_VALUE_CODEC_TAG_ARRAY, STACK_VALUE_CODEC_TAG_BIG_INTEGER, STACK_VALUE_CODEC_TAG_BOOLEAN,
+    STACK_VALUE_CODEC_TAG_BUFFER, STACK_VALUE_CODEC_TAG_BYTESTRING, STACK_VALUE_CODEC_TAG_INTEGER,
+    STACK_VALUE_CODEC_TAG_INTEROP, STACK_VALUE_CODEC_TAG_ITERATOR, STACK_VALUE_CODEC_TAG_MAP,
+    STACK_VALUE_CODEC_TAG_NULL, STACK_VALUE_CODEC_TAG_POINTER, STACK_VALUE_CODEC_TAG_STRUCT,
+};
+pub use abi::{callback_codec, fast_codec, result_codec};
+pub use host::{interop_hash, syscall_arg_count};
+pub use interpreter::{
+    interpret, interpret_with_stack_and_syscalls, interpret_with_stack_and_syscalls_at,
+    interpret_with_stack_and_syscalls_at_with_initializer,
+    interpret_with_stack_and_syscalls_at_with_initializer_and_result_limit,
+    interpret_with_stack_and_syscalls_at_with_result_limit, interpret_with_syscalls,
+    last_interpreter_ip, last_result_limit, last_result_stack_len, last_result_stage,
+    SyscallProvider, CALLT_MARKER, CALLT_MARKER_HI, INITIALIZER_COMPLETE_MARKER,
+};
+pub use runtime::{RuntimeStack, VmContext};
+pub use vm::{
+    instruction_jump_target, instruction_try_targets, next_stack_item_id,
+    parse_script_instructions, validate_script, validate_strict_script,
+};
+pub use vm::{
+    ExceptionHandlingContext, ExceptionHandlingState, ExecutionEngineLimits, FromOperand,
+    Instruction, InstructionError, InstructionErrorKind, InstructionResult, OpCode,
+    ScriptInstruction, Tarjan, ValidatedScript, ValidationResult, VmOrderedDictionary,
+    DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, MAX_ITEM_SIZE, MAX_SCRIPT_SIZE,
 };
 
 // ============================================================================
-// Public Re-exports from the local VM host (stateful types)
+// Public Re-exports from neo-vm (stateful host types)
 // ============================================================================
 
+pub use binary_serializer::BinarySerializer;
 pub use error::{VmError, VmResult};
+pub use evaluation_stack::EvaluationStack;
 pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
+pub use interoperable::Interoperable;
+pub use json_serializer::JsonSerializer;
+pub use notify_event_args::NotifyEventArgs;
+pub use interop_service::InteropService;
 pub use jump_table::JumpTable;
-pub use runtime::{
-    CompoundId, EvaluationStack, InteropService, Interoperable, InteroperableError,
-    ReferenceCounter, Slot,
-};
-pub use stack_item::{InteropInterface, StackItem};
-pub use types::rpc_json::StackItemRpcJson;
-pub use types::script::Script;
-
-/// Verification contract (script + parameter list + cached hash).
-pub use types::contract::Contract;
-
-#[cfg(test)]
-#[path = "tests/differential/csharp.rs"]
-mod csharp_differential_tests;
+pub use reference_counter::{CompoundParent, ReferenceCounter};
+pub use rpc_json::{stack_item_rpc_json, stack_item_rpc_json_deferred_size_check, stack_items_rpc_json_per_item};
+pub use script::Script;
+pub use script_builder::ScriptBuilder;
+pub use slot::Slot;
+pub use stack_item::{StackItem, StackItemExt};
+pub use storage_context::StorageContext;
 
 // ============================================================================
 // I/O Abstraction
 // ============================================================================
 
 /// Production I/O implementation.
-pub use neo_io as io;
+pub use neo_io_crate as io;

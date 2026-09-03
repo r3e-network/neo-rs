@@ -1,11 +1,9 @@
 //! `PrepareRequest` message - sent by the primary to propose a block.
 
 use crate::{ConsensusMessageType, ConsensusResult};
-use neo_io::{MemoryReader, Serializable};
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
-
-use super::wire::{append_uint256_array, uint256_array_encoded_len};
 
 /// `PrepareRequest` message sent by the primary (speaker) to propose a new block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,8 +28,6 @@ pub struct PrepareRequestMessage {
 
 impl PrepareRequestMessage {
     /// Creates a new `PrepareRequest` message
-    // Rationale: dBFT prepare-request fields map one-to-one to the wire
-    // message; keeping them explicit avoids hidden consensus defaults.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
@@ -67,15 +63,23 @@ impl PrepareRequestMessage {
     pub fn serialize(&self) -> Vec<u8> {
         // Matches C# DBFTPlugin PrepareRequest.Serialize (after the common message header):
         // `Version:u32, PrevHash:UInt256, Timestamp:u64, Nonce:u64, TransactionHashes: UInt256[] (varint count)`.
-        let mut bytes = Vec::with_capacity(
-            4 + 32 + 8 + 8 + uint256_array_encoded_len(&self.transaction_hashes),
-        );
-        bytes.extend_from_slice(&self.version.to_le_bytes());
-        bytes.extend_from_slice(&self.prev_hash.as_bytes());
-        bytes.extend_from_slice(&self.timestamp.to_le_bytes());
-        bytes.extend_from_slice(&self.nonce.to_le_bytes());
-        append_uint256_array(&mut bytes, &self.transaction_hashes);
-        bytes
+        let mut writer = BinaryWriter::new();
+        writer
+            .write_u32(self.version)
+            .expect("infallible: in-memory write");
+        writer
+            .write_serializable(&self.prev_hash)
+            .expect("infallible: in-memory write");
+        writer
+            .write_u64(self.timestamp)
+            .expect("infallible: in-memory write");
+        writer
+            .write_u64(self.nonce)
+            .expect("infallible: in-memory write");
+        writer
+            .write_serializable_vec(&self.transaction_hashes)
+            .expect("infallible: in-memory write");
+        writer.into_bytes()
     }
 
     /// Deserializes the message body (excluding the common header) from bytes.
@@ -85,7 +89,7 @@ impl PrepareRequestMessage {
         view_number: u8,
         validator_index: u8,
     ) -> ConsensusResult<Self> {
-        use neo_io::serializable::helper::SerializeHelper;
+        use neo_io::serializable::helper::deserialize_array;
 
         let mut reader = MemoryReader::new(data);
         let version = reader
@@ -106,9 +110,8 @@ impl PrepareRequestMessage {
             .read_u64()
             .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest nonce"))?;
 
-        let transaction_hashes =
-            SerializeHelper::deserialize_array::<UInt256>(&mut reader, u16::MAX as usize)
-                .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest tx hashes"))?;
+        let transaction_hashes = deserialize_array::<UInt256>(&mut reader, u16::MAX as usize)
+            .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest tx hashes"))?;
 
         // C# checks for duplicates.
         let mut uniq = std::collections::HashSet::with_capacity(transaction_hashes.len());
@@ -174,10 +177,9 @@ impl PrepareRequestMessage {
             .read_u64()
             .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest nonce"))?;
 
-        use neo_io::serializable::helper::SerializeHelper;
-        let transaction_hashes =
-            SerializeHelper::deserialize_array::<UInt256>(reader, u16::MAX as usize)
-                .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest tx hashes"))?;
+        use neo_io::serializable::helper::deserialize_array;
+        let transaction_hashes = deserialize_array::<UInt256>(reader, u16::MAX as usize)
+            .map_err(|_| crate::ConsensusError::invalid_proposal("PrepareRequest tx hashes"))?;
 
         let mut uniq = std::collections::HashSet::with_capacity(transaction_hashes.len());
         for h in &transaction_hashes {
@@ -201,11 +203,7 @@ impl PrepareRequestMessage {
     }
 
     /// Validates the message
-    pub fn validate(
-        &self,
-        expected_primary: u8,
-        max_transactions_per_block: u32,
-    ) -> ConsensusResult<()> {
+    pub fn validate(&self, expected_primary: u8) -> ConsensusResult<()> {
         if self.validator_index != expected_primary {
             return Err(crate::ConsensusError::InvalidPrimary {
                 expected: expected_primary,
@@ -215,12 +213,6 @@ impl PrepareRequestMessage {
         if self.version != 0 {
             return Err(crate::ConsensusError::invalid_proposal(
                 "PrepareRequest version must be 0",
-            ));
-        }
-
-        if self.transaction_hashes.len() > max_transactions_per_block as usize {
-            return Err(crate::ConsensusError::invalid_proposal(
-                "PrepareRequest exceeds MaxTransactionsPerBlock",
             ));
         }
 
@@ -238,5 +230,70 @@ impl PrepareRequestMessage {
 }
 
 #[cfg(test)]
-#[path = "../tests/messages/prepare_request.rs"]
-mod tests;
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prepare_request_new() {
+        let msg = PrepareRequestMessage::new(
+            100,
+            0,
+            0,
+            0,
+            UInt256::zero(),
+            1234567890,
+            42,
+            vec![UInt256::zero()],
+        );
+
+        assert_eq!(msg.block_index, 100);
+        assert_eq!(msg.view_number, 0);
+        assert_eq!(msg.validator_index, 0);
+        assert_eq!(msg.version, 0);
+        assert_eq!(msg.prev_hash, UInt256::zero());
+        assert_eq!(msg.timestamp, 1234567890);
+        assert_eq!(msg.nonce, 42);
+        assert_eq!(msg.transaction_hashes.len(), 1);
+    }
+
+    #[test]
+    fn test_prepare_request_serialize() {
+        let msg = PrepareRequestMessage::new(100, 0, 0, 0, UInt256::zero(), 1000, 1, vec![]);
+        let data = msg.serialize();
+
+        // version (4) + prev_hash (32) + timestamp (8) + nonce (8) + tx count (1)
+        assert_eq!(data.len(), 53);
+    }
+
+    #[test]
+    fn test_prepare_request_wire_format_bytes() {
+        let prev_hash = UInt256::from([0xAAu8; 32]);
+        let tx1 = UInt256::from([0x01u8; 32]);
+        let tx2 = UInt256::from([0x02u8; 32]);
+        let timestamp = 0x0A0B_0C0D_0102_0304u64;
+        let nonce = 0x1122_3344_5566_7788u64;
+
+        let msg =
+            PrepareRequestMessage::new(100, 0, 0, 0, prev_hash, timestamp, nonce, vec![tx1, tx2]);
+        let data = msg.serialize();
+
+        let mut expected = Vec::new();
+        expected.extend_from_slice(&0u32.to_le_bytes());
+        expected.extend_from_slice(&prev_hash.to_array());
+        expected.extend_from_slice(&timestamp.to_le_bytes());
+        expected.extend_from_slice(&nonce.to_le_bytes());
+        expected.push(0x02); // varint count
+        expected.extend_from_slice(&tx1.to_array());
+        expected.extend_from_slice(&tx2.to_array());
+
+        assert_eq!(data, expected);
+    }
+
+    #[test]
+    fn test_prepare_request_validate() {
+        let msg = PrepareRequestMessage::new(100, 0, 0, 0, UInt256::zero(), 1000, 1, vec![]);
+
+        assert!(msg.validate(0).is_ok());
+        assert!(msg.validate(1).is_err());
+    }
+}

@@ -11,63 +11,44 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-description = "Cloud-HSM-backed validator key management for Neo N3 consensus (PKCS#11, Azure Key Vault, GCP Cloud KMS)"
+description = "HSM (Hardware Security Module) support for Neo N3 blockchain"
 
 [features]
-# pkcs11 (default): generic PKCS#11 signer covering AWS CloudHSM, Azure Cloud HSM,
-# GCP via libkmsp11, and any generic HSM (SoftHSM, Luna, nCipher).
-default = []
+default = ["simulation"]
+# Simulation mode for testing without hardware
+simulation = []
+# Ledger hardware wallet support
+ledger = ["dep:hidapi", "dep:byteorder"]
+# PKCS#11 generic HSM interface
 pkcs11 = ["dep:cryptoki"]
 
-# azure: native REST signer for Azure Managed HSM / Key Vault Premium.
-# Not included by default; requires the azure_* SDK crates which are heavyweight.
-# The module compiles to a stub returning a clear "not wired" error if the
-# REST call cannot be fully implemented cleanly.
-azure = ["dep:reqwest", "dep:base64", "dep:serde_json"]
-
-# gcp: native Cloud KMS AsymmetricSign signer (ADC / Workload Identity).
-# Not included by default. Stub compiles but returns "not wired" error.
-gcp = []
-
 [dependencies]
-# Internal workspace crates
-neo-primitives = { workspace = true }
-neo-crypto     = { workspace = true }
-neo-consensus  = { workspace = true }
-neo-error      = { workspace = true }
-neo-vm         = { workspace = true }
-
-# Async trait support for ConsensusSigner impl
-
-# Async runtime (spawn_blocking for PKCS#11 HSM calls)
-tokio = { workspace = true, features = ["rt"] }
-
-# PKCS#11 v2.40 wrapper (feature-gated; all three clouds via their .so)
-cryptoki = { version = "0.12", optional = true }
-
-# DER signature decoding for GCP (which returns X9.62/ASN.1 r||s) and
-# signature normalization. Re-uses the workspace p256 = 0.13.
-# p256 is already a transitive dep via neo-crypto but we need it directly
-# for Signature::from_der and Signature::from_slice.
-p256 = { version = "0.13", features = ["ecdsa"] }
-
-# HTTP client for azure native feature (async; no blocking feature needed)
-reqwest = { version = "0.12", features = ["json"], optional = true }
-
-# base64url for Azure Key Vault REST request/response
-base64 = { workspace = true, optional = true }
-
-# JSON for Azure Key Vault REST bodies
-serde_json = { workspace = true, optional = true }
-
-# Error handling
+# Core dependencies
 thiserror = { workspace = true }
-
-# Observability
-tracing = { workspace = true }
-
-# Zero-on-drop for PIN material
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
 zeroize = { workspace = true }
+parking_lot = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+rpassword = "7.3"
 
-[lints]
-workspace = true
+# Workspace crypto primitives
+neo-crypto = { workspace = true }
+
+# Random number generation
+rand = { workspace = true }
+
+# Ledger dependencies (optional)
+hidapi = { version = "2.6", optional = true }
+byteorder = { version = "1.5", optional = true }
+
+# PKCS#11 dependencies (optional)
+cryptoki = { version = "0.6", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tempfile = { workspace = true }

@@ -2,18 +2,18 @@
 //!
 //! This module provides the stack operation handlers for the Neo VM.
 
-use crate::Instruction;
-use crate::OpCode;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers, require_context};
+use crate::jump_table::{register_jump_handlers, JumpTable};
 use crate::stack_item::StackItem;
+use crate::Instruction;
+use crate::OpCode;
 use num_bigint::Sign;
 use num_traits::ToPrimitive;
 
 /// Registers the stack operation handlers.
-pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
+pub fn register_handlers(jump_table: &mut JumpTable) {
     register_jump_handlers![
         jump_table;
         OpCode::DUP => dup,
@@ -36,7 +36,7 @@ pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
 
 /// Implements the DUP operation.
 #[inline]
-fn dup<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn dup(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Peek the top item on the stack and push a copy
     let item = engine.peek(0)?;
     engine.push(item)?;
@@ -45,16 +45,20 @@ fn dup<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResu
 
 /// Implements the SWAP operation.
 #[inline]
-fn swap<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn swap(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Swap in-place — no pop/push, no reference counter churn.
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     context.evaluation_stack_mut().swap(0, 1)
 }
 
 /// Implements the TUCK operation.
-fn tuck<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn tuck(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     if context.evaluation_stack().len() < 2 {
         return Err(VmError::stack_underflow_msg(0, 0));
@@ -69,9 +73,11 @@ fn tuck<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmRes
 }
 
 /// Implements the OVER operation.
-fn over<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn over(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     if context.evaluation_stack().len() < 2 {
         return Err(VmError::stack_underflow_msg(0, 0));
@@ -87,11 +93,13 @@ fn over<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmRes
 }
 
 /// Implements the ROT operation.
-fn rot<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn rot(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // ROT: [... a b c] → [... b c a]
     // Remove item at index 2 from top (a) and push to top.
     // 2 RC ops instead of 6.
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     if context.evaluation_stack().len() < 3 {
         return Err(VmError::stack_underflow_msg(0, 0));
@@ -102,9 +110,11 @@ fn rot<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResu
 }
 
 /// Implements the DEPTH operation.
-fn depth<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn depth(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the stack depth
     let depth = context.evaluation_stack().len();
@@ -117,16 +127,18 @@ fn depth<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmRe
 
 /// Implements the DROP operation.
 #[inline]
-fn drop<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn drop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context and pop the top item
     engine.pop()?;
     Ok(())
 }
 
 /// Implements the NIP operation.
-fn nip<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn nip(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // NIP: remove the second-to-top item. 1 RC op instead of 3.
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     if context.evaluation_stack().len() < 2 {
         return Err(VmError::stack_underflow_msg(0, 0));
@@ -137,11 +149,15 @@ fn nip<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResu
 }
 
 /// Implements the XDROP operation.
-fn xdrop<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn xdrop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // XDROP: remove the item at index n from top. 2 RC ops instead of 2n+1.
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let n = super::get_integer(context.pop()?)?
+    let n = context
+        .pop()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
 
@@ -154,9 +170,11 @@ fn xdrop<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmRe
 }
 
 /// Implements the CLEAR operation.
-fn clear<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn clear(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Clear the stack
     context.evaluation_stack_mut().clear();
@@ -165,12 +183,16 @@ fn clear<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmRe
 }
 
 /// Implements the PICK operation.
-fn pick<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn pick(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the index from the stack
-    let n = super::get_integer(context.pop()?)?
+    let n = context
+        .pop()?
+        .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
 
@@ -188,12 +210,14 @@ fn pick<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmRes
 }
 
 /// Implements the ROLL operation.
-fn roll<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // ROLL: remove the item at index n from top and push it to the top.
     // 3 RC ops instead of 2n+2.
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let n = super::get_integer(context.pop()?)?;
+    let n = context.pop()?.into_int()?;
 
     if n.sign() == Sign::Minus {
         return Err(VmError::invalid_operation_msg(format!(
@@ -218,9 +242,11 @@ fn roll<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmRes
 }
 
 /// Implements the REVERSE3 operation.
-fn reverse3<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn reverse3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     context.evaluation_stack_mut().reverse(3)?;
 
@@ -228,9 +254,11 @@ fn reverse3<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> V
 }
 
 /// Implements the REVERSE4 operation.
-fn reverse4<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn reverse4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     context.evaluation_stack_mut().reverse(4)?;
 
@@ -238,12 +266,14 @@ fn reverse4<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> V
 }
 
 /// Implements the REVERSEN operation.
-fn reversen<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn reversen(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let n = super::get_integer(context.pop()?)?;
+    let n = context.pop()?.into_int()?;
 
     if n.sign() == Sign::Minus {
         return Err(VmError::invalid_operation_msg(format!(

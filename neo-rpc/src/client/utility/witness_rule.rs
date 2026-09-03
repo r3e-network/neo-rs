@@ -1,25 +1,20 @@
 use neo_config::ProtocolSettings;
-use neo_crypto::{ECCurve, ECPoint};
-use neo_error::{CoreError, CoreResult};
-use neo_payloads::{WitnessCondition, WitnessRule};
-use neo_primitives::{WitnessRuleAction, strip_hex_prefix};
-use neo_serialization::json::{JArray, JObject};
+use neo_core::{ECCurve, ECPoint, WitnessCondition, WitnessRule, WitnessRuleAction};
+use neo_json::{JArray, JObject};
 
 pub fn rule_from_json(
     json: &JObject,
     protocol_settings: &ProtocolSettings,
-) -> CoreResult<WitnessRule> {
+) -> Result<WitnessRule, String> {
     let action_str = json
         .get("action")
-        .and_then(neo_serialization::json::JToken::as_string)
-        .ok_or_else(|| CoreError::other("WitnessRule missing action"))?;
-    let action: WitnessRuleAction = action_str
-        .parse()
-        .map_err(|e: String| CoreError::other(e))?;
+        .and_then(neo_json::JToken::as_string)
+        .ok_or_else(|| "WitnessRule missing action".to_string())?;
+    let action: WitnessRuleAction = action_str.parse()?;
     let condition_token = json
         .get("condition")
         .and_then(|value| value.as_object())
-        .ok_or_else(|| CoreError::other("WitnessRule missing condition"))?;
+        .ok_or_else(|| "WitnessRule missing condition".to_string())?;
     let condition = condition_from_json(
         condition_token,
         protocol_settings,
@@ -32,36 +27,36 @@ fn condition_from_json(
     json: &JObject,
     protocol_settings: &ProtocolSettings,
     max_depth: usize,
-) -> CoreResult<WitnessCondition> {
+) -> Result<WitnessCondition, String> {
     if max_depth == 0 {
-        return Err(CoreError::other("Max nesting depth exceeded"));
+        return Err("Max nesting depth exceeded".to_string());
     }
 
     let condition_type = json
         .get("type")
-        .and_then(neo_serialization::json::JToken::as_string)
-        .ok_or_else(|| CoreError::other("Condition type missing"))?;
+        .and_then(neo_json::JToken::as_string)
+        .ok_or_else(|| "Condition type missing".to_string())?;
 
     match condition_type.as_str() {
         "Or" => {
             let expressions = json
                 .get("expressions")
                 .and_then(|value| value.as_array())
-                .ok_or_else(|| CoreError::other("Or condition missing expressions"))?;
+                .ok_or_else(|| "Or condition missing expressions".to_string())?;
             parse_composite(expressions, protocol_settings, max_depth, true)
         }
         "And" => {
             let expressions = json
                 .get("expressions")
                 .and_then(|value| value.as_array())
-                .ok_or_else(|| CoreError::other("And condition missing expressions"))?;
+                .ok_or_else(|| "And condition missing expressions".to_string())?;
             parse_composite(expressions, protocol_settings, max_depth, false)
         }
         "Boolean" => {
             let expression = json
                 .get("expression")
                 .or_else(|| json.get("value"))
-                .ok_or_else(|| CoreError::other("Boolean condition missing expression"))?;
+                .ok_or_else(|| "Boolean condition missing expression".to_string())?;
             Ok(WitnessCondition::Boolean {
                 value: expression.as_boolean(),
             })
@@ -70,7 +65,7 @@ fn condition_from_json(
             let expression = json
                 .get("expression")
                 .and_then(|value| value.as_object())
-                .ok_or_else(|| CoreError::other("Not condition missing expression"))?;
+                .ok_or_else(|| "Not condition missing expression".to_string())?;
             let condition = condition_from_json(expression, protocol_settings, max_depth - 1)?;
             Ok(WitnessCondition::Not {
                 condition: Box::new(condition),
@@ -79,8 +74,8 @@ fn condition_from_json(
         "Group" => {
             let group = json
                 .get("group")
-                .and_then(neo_serialization::json::JToken::as_string)
-                .ok_or_else(|| CoreError::other("Group condition missing group"))?;
+                .and_then(neo_json::JToken::as_string)
+                .ok_or_else(|| "Group condition missing group".to_string())?;
             Ok(WitnessCondition::Group {
                 group: parse_group_bytes(&group)?,
             })
@@ -88,34 +83,30 @@ fn condition_from_json(
         "CalledByContract" => {
             let hash = json
                 .get("hash")
-                .and_then(neo_serialization::json::JToken::as_string)
-                .ok_or_else(|| CoreError::other("CalledByContract missing hash"))?;
-            let hash = super::RpcUtility::get_script_hash(&hash, protocol_settings)
-                .map_err(|e| CoreError::other(e.to_string()))?;
+                .and_then(neo_json::JToken::as_string)
+                .ok_or_else(|| "CalledByContract missing hash".to_string())?;
+            let hash = super::RpcUtility::get_script_hash(&hash, protocol_settings)?;
             Ok(WitnessCondition::CalledByContract { hash })
         }
         "ScriptHash" => {
             let hash = json
                 .get("hash")
-                .and_then(neo_serialization::json::JToken::as_string)
-                .ok_or_else(|| CoreError::other("ScriptHash condition missing hash"))?;
-            let hash = super::RpcUtility::get_script_hash(&hash, protocol_settings)
-                .map_err(|e| CoreError::other(e.to_string()))?;
+                .and_then(neo_json::JToken::as_string)
+                .ok_or_else(|| "ScriptHash condition missing hash".to_string())?;
+            let hash = super::RpcUtility::get_script_hash(&hash, protocol_settings)?;
             Ok(WitnessCondition::ScriptHash { hash })
         }
         "CalledByEntry" => Ok(WitnessCondition::CalledByEntry),
         "CalledByGroup" => {
             let group = json
                 .get("group")
-                .and_then(neo_serialization::json::JToken::as_string)
-                .ok_or_else(|| CoreError::other("CalledByGroup missing group"))?;
+                .and_then(neo_json::JToken::as_string)
+                .ok_or_else(|| "CalledByGroup missing group".to_string())?;
             Ok(WitnessCondition::CalledByGroup {
                 group: parse_group_bytes(&group)?,
             })
         }
-        other => Err(CoreError::other(format!(
-            "Unsupported witness condition type: {other}"
-        ))),
+        other => Err(format!("Unsupported witness condition type: {other}")),
     }
 }
 
@@ -124,16 +115,12 @@ fn parse_composite(
     protocol_settings: &ProtocolSettings,
     max_depth: usize,
     is_or: bool,
-) -> CoreResult<WitnessCondition> {
+) -> Result<WitnessCondition, String> {
     if expressions.is_empty() {
-        return Err(CoreError::other(
-            "Composite witness condition requires at least one expression",
-        ));
+        return Err("Composite witness condition requires at least one expression".to_string());
     }
     if expressions.len() > WitnessCondition::MAX_SUBITEMS {
-        return Err(CoreError::other(
-            "Composite witness condition exceeds max subitems",
-        ));
+        return Err("Composite witness condition exceeds max subitems".to_string());
     }
 
     let mut conditions = Vec::with_capacity(expressions.len());
@@ -141,7 +128,7 @@ fn parse_composite(
         let expr_obj = expr
             .as_ref()
             .and_then(|value| value.as_object())
-            .ok_or_else(|| CoreError::other("Witness condition expression must be an object"))?;
+            .ok_or_else(|| "Witness condition expression must be an object".to_string())?;
         conditions.push(condition_from_json(
             expr_obj,
             protocol_settings,
@@ -156,17 +143,97 @@ fn parse_composite(
     }
 }
 
-fn parse_group_bytes(value: &str) -> CoreResult<Vec<u8>> {
-    let value = strip_hex_prefix(value);
-    let bytes =
-        hex::decode(value).map_err(|err| CoreError::other(format!("Invalid hex string: {err}")))?;
+fn parse_group_bytes(value: &str) -> Result<Vec<u8>, String> {
+    let value = value.strip_prefix("0x").unwrap_or(value);
+    let bytes = hex::decode(value).map_err(|err| format!("Invalid hex string: {err}"))?;
     let point = ECPoint::decode(&bytes, ECCurve::secp256r1())
-        .map_err(|err| CoreError::other(format!("Invalid ECPoint: {err}")))?;
+        .map_err(|err| format!("Invalid ECPoint: {err}"))?;
     point
         .encode_point(true)
-        .map_err(|err| CoreError::other(format!("Failed to encode ECPoint: {err}")))
+        .map_err(|err| format!("Failed to encode ECPoint: {err}"))
 }
 
 #[cfg(test)]
-#[path = "../../tests/client/utility/witness_rule.rs"]
-mod tests;
+mod tests {
+    use super::*;
+    use neo_core::{KeyPair, UInt160};
+    use neo_json::JToken;
+
+    fn assert_rule_roundtrip(rule: WitnessRule) {
+        let json = rule.to_json();
+        let token = JToken::parse(&json.to_string(), 128).expect("parse rule json");
+        let obj = token.as_object().expect("rule object");
+        let parsed =
+            rule_from_json(obj, &ProtocolSettings::default_settings()).expect("rule parse");
+        assert_eq!(parsed.to_json(), json);
+    }
+
+    #[test]
+    fn rule_from_json_roundtrip_matches_csharp_cases() {
+        let action = WitnessRuleAction::Allow;
+
+        assert_rule_roundtrip(WitnessRule::new(action, WitnessCondition::CalledByEntry));
+
+        assert_rule_roundtrip(WitnessRule::new(
+            action,
+            WitnessCondition::Or {
+                conditions: vec![
+                    WitnessCondition::Boolean { value: true },
+                    WitnessCondition::Boolean { value: false },
+                ],
+            },
+        ));
+
+        assert_rule_roundtrip(WitnessRule::new(
+            action,
+            WitnessCondition::And {
+                conditions: vec![
+                    WitnessCondition::Boolean { value: true },
+                    WitnessCondition::Boolean { value: false },
+                ],
+            },
+        ));
+
+        assert_rule_roundtrip(WitnessRule::new(
+            action,
+            WitnessCondition::Boolean { value: true },
+        ));
+
+        assert_rule_roundtrip(WitnessRule::new(
+            action,
+            WitnessCondition::Not {
+                condition: Box::new(WitnessCondition::Boolean { value: true }),
+            },
+        ));
+
+        let keypair = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
+            .expect("keypair");
+        let group = keypair.compressed_public_key();
+
+        assert_rule_roundtrip(WitnessRule::new(
+            action,
+            WitnessCondition::Group {
+                group: group.clone(),
+            },
+        ));
+
+        assert_rule_roundtrip(WitnessRule::new(
+            action,
+            WitnessCondition::CalledByContract {
+                hash: UInt160::zero(),
+            },
+        ));
+
+        assert_rule_roundtrip(WitnessRule::new(
+            action,
+            WitnessCondition::ScriptHash {
+                hash: UInt160::zero(),
+            },
+        ));
+
+        assert_rule_roundtrip(WitnessRule::new(
+            action,
+            WitnessCondition::CalledByGroup { group },
+        ));
+    }
+}

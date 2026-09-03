@@ -1,14 +1,13 @@
 use super::parsing::{
-    insert_optional_string, optional_script_hash_or_address_lossy, required_address_script_hash,
-    required_bigint_string, required_script_hash_or_address, required_u16_number,
-    required_u32_number, required_u64_number, required_uint256,
+    insert_optional_string, object_array, optional_script_hash_or_address_lossy,
+    parse_object_array_lossy, required_address_script_hash, required_bigint_string,
+    required_script_hash_or_address, required_u16_number, required_u32_number, required_u64_number,
+    required_uint256,
 };
-use crate::types::json::{object_array, parse_object_array_lossy};
 use neo_config::ProtocolSettings;
-use neo_error::{CoreError, CoreResult};
+use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_json::{JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
-use neo_serialization::json::{JObject, JToken};
-use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;
 
 /// Builds the shared NEP balance container shape.
@@ -37,8 +36,8 @@ pub(crate) fn balance_list_to_json<T>(
 pub(crate) fn parse_balance_list<T>(
     json: &JObject,
     protocol_settings: &ProtocolSettings,
-    mut parse: impl FnMut(&JObject) -> CoreResult<T>,
-) -> CoreResult<(Vec<T>, UInt160)> {
+    mut parse: impl FnMut(&JObject) -> Result<T, String>,
+) -> Result<(Vec<T>, UInt160), String> {
     let balances = parse_object_array_lossy(json, "balance", |obj| parse(obj));
     let user_script_hash = required_address_script_hash(json, "address", protocol_settings)?;
     Ok((balances, user_script_hash))
@@ -75,12 +74,10 @@ pub(crate) fn insert_nep_balance_fields(json: &mut JObject, fields: NepBalanceFi
 }
 
 /// Parses shared NEP balance item fields.
-pub(crate) fn parse_nep_balance_fields(json: &JObject) -> CoreResult<NepBalanceFields> {
+pub(crate) fn parse_nep_balance_fields(json: &JObject) -> Result<NepBalanceFields, String> {
     Ok(NepBalanceFields {
-        amount: required_bigint_string(json, "amount", "amount")
-            .map_err(|e| CoreError::other(e.to_string()))?,
-        last_updated_block: required_u32_number(json, "lastupdatedblock")
-            .map_err(|e| CoreError::other(e.to_string()))?,
+        amount: required_bigint_string(json, "amount", "amount")?,
+        last_updated_block: required_u32_number(json, "lastupdatedblock")?,
     })
 }
 
@@ -115,8 +112,8 @@ pub(crate) fn transfer_lists_to_json<T>(
 pub(crate) fn parse_transfer_lists<T>(
     json: &JObject,
     protocol_settings: &ProtocolSettings,
-    mut parse: impl FnMut(&JObject, &ProtocolSettings) -> CoreResult<T>,
-) -> CoreResult<(Vec<T>, Vec<T>, UInt160)> {
+    mut parse: impl FnMut(&JObject, &ProtocolSettings) -> Result<T, String>,
+) -> Result<(Vec<T>, Vec<T>, UInt160), String> {
     let sent = parse_object_array_lossy(json, "sent", |obj| parse(obj, protocol_settings));
     let received = parse_object_array_lossy(json, "received", |obj| parse(obj, protocol_settings));
     let user_script_hash = required_address_script_hash(json, "address", protocol_settings)?;
@@ -207,32 +204,108 @@ pub(crate) fn insert_nep_transfer_fields(
 pub(crate) fn parse_nep_transfer_fields(
     json: &JObject,
     protocol_settings: &ProtocolSettings,
-) -> CoreResult<NepTransferFields> {
+) -> Result<NepTransferFields, String> {
     Ok(NepTransferFields {
-        timestamp_ms: required_u64_number(json, "timestamp")
-            .map_err(|e| CoreError::other(e.to_string()))?,
+        timestamp_ms: required_u64_number(json, "timestamp")?,
         asset_hash: required_script_hash_or_address(
             json,
             "assethash",
             protocol_settings,
             "asset hash",
-        )
-        .map_err(|e| CoreError::other(e.to_string()))?,
+        )?,
         user_script_hash: optional_script_hash_or_address_lossy(
             json,
             "transferaddress",
             protocol_settings,
         ),
-        amount: required_bigint_string(json, "amount", "amount")
-            .map_err(|e| CoreError::other(e.to_string()))?,
-        block_index: required_u32_number(json, "blockindex")
-            .map_err(|e| CoreError::other(e.to_string()))?,
-        transfer_notify_index: required_u16_number(json, "transfernotifyindex")
-            .map_err(|e| CoreError::other(e.to_string()))?,
-        tx_hash: required_uint256(json, "txhash").map_err(|e| CoreError::other(e.to_string()))?,
+        amount: required_bigint_string(json, "amount", "amount")?,
+        block_index: required_u32_number(json, "blockindex")?,
+        transfer_notify_index: required_u16_number(json, "transfernotifyindex")?,
+        tx_hash: required_uint256(json, "txhash")?,
     })
 }
 
 #[cfg(test)]
-#[path = "../../tests/client/utility/nep.rs"]
-mod tests;
+mod tests {
+    use super::*;
+
+    #[test]
+    fn balance_list_to_json_keeps_balance_before_address() {
+        let settings = ProtocolSettings::default_settings();
+        let token = balance_list_to_json(&[1_u8], &UInt160::zero(), &settings, |_| {
+            let mut item = JObject::new();
+            item.insert("value".to_string(), JToken::String("ok".to_string()));
+            item
+        });
+
+        assert_eq!(
+            token.to_string(),
+            format!(
+                r#"{{"balance":[{{"value":"ok"}}],"address":"{}"}}"#,
+                WalletHelper::to_address(&UInt160::zero(), settings.address_version)
+            )
+        );
+    }
+
+    #[test]
+    fn nep_balance_fields_preserve_string_amount_and_numeric_height() {
+        let amount = BigInt::from(42);
+        let mut json = JObject::new();
+        insert_nep_balance_fields(
+            &mut json,
+            NepBalanceFieldRefs {
+                amount: &amount,
+                last_updated_block: 7,
+            },
+        );
+
+        assert_eq!(json.to_string(), r#"{"amount":"42","lastupdatedblock":7}"#);
+
+        let parsed = parse_nep_balance_fields(&json).expect("balance fields");
+        assert_eq!(parsed.amount, amount);
+        assert_eq!(parsed.last_updated_block, 7);
+    }
+
+    #[test]
+    fn nep_balance_fields_preserve_legacy_type_errors() {
+        let mut numeric_amount = JObject::new();
+        numeric_amount.insert("amount".to_string(), JToken::Number(1.0));
+        numeric_amount.insert("lastupdatedblock".to_string(), JToken::Number(7.0));
+        assert_eq!(
+            parse_nep_balance_fields(&numeric_amount).expect_err("numeric amount"),
+            "Missing or invalid 'amount' field"
+        );
+
+        let mut string_height = JObject::new();
+        string_height.insert("amount".to_string(), JToken::String("1".to_string()));
+        string_height.insert(
+            "lastupdatedblock".to_string(),
+            JToken::String("7".to_string()),
+        );
+        assert_eq!(
+            parse_nep_balance_fields(&string_height)
+                .expect("string numeric height")
+                .last_updated_block,
+            7
+        );
+
+        let mut invalid_height = JObject::new();
+        invalid_height.insert("amount".to_string(), JToken::String("1".to_string()));
+        invalid_height.insert(
+            "lastupdatedblock".to_string(),
+            JToken::String("bad".to_string()),
+        );
+        assert_eq!(
+            parse_nep_balance_fields(&invalid_height).expect_err("invalid height"),
+            "Missing or invalid 'lastupdatedblock' field"
+        );
+
+        let mut invalid_amount = JObject::new();
+        invalid_amount.insert("amount".to_string(), JToken::String("bad".to_string()));
+        invalid_amount.insert("lastupdatedblock".to_string(), JToken::Number(7.0));
+        assert_eq!(
+            parse_nep_balance_fields(&invalid_amount).expect_err("invalid amount"),
+            "Invalid amount: bad"
+        );
+    }
+}

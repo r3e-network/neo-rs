@@ -1,19 +1,30 @@
-use neo_execution::contract_parameter::ContractParameter;
-use neo_payloads::signer::Signer;
-use neo_payloads::witness::Witness;
-use neo_primitives::UInt160;
-use neo_serialization::json::JToken;
-use serde_json::Value;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use neo_core::network::p2p::payloads::signer::Signer;
+use neo_core::network::p2p::payloads::witness::Witness;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
+use neo_core::smart_contract::NotifyEventArgs;
+use neo_core::smart_contract::ApplicationEngine;
+use neo_core::vm_runtime::rpc_json::stack_item_rpc_json_deferred_size_check;
+use neo_core::vm_runtime::StackItem;
+use neo_core::UInt160;
+use neo_json::JToken;
+use neo_vm::{StackValue, VmState};
+use num_traits::ToPrimitive;
+use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
+use crate::server::diagnostic::{Diagnostic, DiagnosticInvocation};
 use crate::server::model::signers_and_witnesses::SignersAndWitnesses;
 use crate::server::parameter_converter::{ConversionContext, ParameterConverter};
 use crate::server::rpc_exception::RpcException;
 pub(super) use crate::server::rpc_helpers::{
-    expect_string_param, expect_u32_param, expect_uint160_param_with_message, internal_error,
-    invalid_params,
+    expect_string_param, expect_u32_param, internal_error, invalid_params,
 };
 use crate::server::rpc_server::RpcServer;
+use crate::server::session::Session;
+
+const INVALID_OPERATION_CODE: i32 = -2146233079;
 
 pub(super) fn parse_contract_parameters(
     arg: Option<&Value>,
@@ -22,16 +33,19 @@ pub(super) fn parse_contract_parameters(
         None | Some(Value::Null) => Ok(Vec::new()),
         Some(Value::Array(values)) => values
             .iter()
-            .map(|value| {
-                ContractParameter::from_json(value).map_err(|e| invalid_params(e.to_string()))
-            })
+            .map(|value| ContractParameter::from_json(value).map_err(invalid_params))
             .collect(),
         Some(_) => Err(invalid_params("args must be an array")),
     }
 }
 
-// Rationale: parsing returns signer and witness vectors together because RPC
-// invoke compatibility treats them as one optional argument bundle.
+pub(super) fn final_rpc_vm_state_string(state: VmState) -> Result<String, RpcException> {
+    state
+        .final_name()
+        .map(str::to_string)
+        .ok_or_else(|| internal_error(format!("{state:?} is not a final VM state")))
+}
+
 #[allow(clippy::type_complexity)]
 pub(super) fn parse_signers_and_witnesses(
     server: &RpcServer,
@@ -57,17 +71,175 @@ pub(super) fn parse_signers_and_witnesses(
     Ok((signers, witnesses))
 }
 
-pub(super) fn expect_script_hash_param(
-    params: &[Value],
-    index: usize,
-    method: &str,
-) -> Result<UInt160, RpcException> {
-    expect_uint160_param_with_message(
-        params,
-        index,
-        format!("{} expects string parameter {}", method, index + 1),
-        "script hash",
-    )
+pub(super) fn build_dynamic_call_script(
+    script_hash: UInt160,
+    operation: &str,
+    parameters: &[ContractParameter],
+) -> Result<Vec<u8>, RpcException> {
+    let args = parameters
+        .iter()
+        .map(contract_parameter_to_stack_value)
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut builder = neo_core::ScriptBuilder::new();
+
+    if args.is_empty() {
+        builder.emit_opcode(neo_vm::OpCode::NEWARRAY0);
+    } else {
+        for item in args.iter().rev() {
+            builder
+                .emit_push_stack_value(item)
+                .map_err(|err| internal_error(err.to_string()))?;
+        }
+        builder.emit_push_int(args.len() as i64);
+        builder.emit_opcode(neo_vm::OpCode::PACK);
+    }
+
+    builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
+    builder.emit_push(operation.as_bytes());
+    builder.emit_push(script_hash.to_bytes().as_ref());
+    builder
+        .emit_syscall("System.Contract.Call")
+        .map_err(|err| internal_error(err.to_string()))?;
+
+    Ok(builder.to_array())
+}
+
+pub(super) fn contract_parameter_to_stack_value(
+    parameter: &ContractParameter,
+) -> Result<StackValue, RpcException> {
+    match &parameter.value {
+        ContractParameterValue::Any | ContractParameterValue::Void => Ok(StackValue::Null),
+        ContractParameterValue::Boolean(value) => Ok(StackValue::Boolean(*value)),
+        ContractParameterValue::Integer(value) => Ok(if let Some(value) = value.to_i64() {
+            StackValue::Integer(value)
+        } else {
+            StackValue::BigInteger(value.to_signed_bytes_le())
+        }),
+        ContractParameterValue::Hash160(value) => Ok(StackValue::ByteString(value.to_bytes())),
+        ContractParameterValue::Hash256(value) => {
+            Ok(StackValue::ByteString(value.to_array().to_vec()))
+        }
+        ContractParameterValue::ByteArray(bytes) | ContractParameterValue::Signature(bytes) => {
+            Ok(StackValue::ByteString(bytes.clone()))
+        }
+        ContractParameterValue::PublicKey(point) => Ok(StackValue::ByteString(point.encoded())),
+        ContractParameterValue::String(value) => {
+            Ok(StackValue::ByteString(value.as_bytes().to_vec()))
+        }
+        ContractParameterValue::Array(items) => {
+            let converted = items
+                .iter()
+                .map(contract_parameter_to_stack_value)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(StackValue::Array(converted))
+        }
+        ContractParameterValue::Map(entries) => {
+            let mut map = Vec::with_capacity(entries.len());
+            for (key, value) in entries {
+                map.push((
+                    contract_parameter_to_stack_value(key)?,
+                    contract_parameter_to_stack_value(value)?,
+                ));
+            }
+            Ok(StackValue::Map(map))
+        }
+        ContractParameterValue::InteropInterface => Err(invalid_params(
+            "InteropInterface parameters are not supported in invoke RPCs",
+        )),
+    }
+}
+
+pub(super) fn stack_item_to_json(
+    item: &StackItem,
+    session: Option<&mut Session>,
+) -> Result<Value, RpcException> {
+    stack_item_to_json_with_budget(item, session, None)
+}
+
+pub(super) fn stack_item_to_json_limited(
+    item: &StackItem,
+    session: Option<&mut Session>,
+    max_size: usize,
+) -> Result<Value, RpcException> {
+    stack_item_to_json_with_budget(item, session, Some(max_size))
+}
+
+fn stack_item_to_json_with_budget(
+    item: &StackItem,
+    session: Option<&mut Session>,
+    max_size: Option<usize>,
+) -> Result<Value, RpcException> {
+    let mut value = stack_item_rpc_json_deferred_size_check(item, max_size)
+        .map_err(|err| stack_item_error(err.to_string()))?;
+    if let StackItem::InteropInterface(iface) = item {
+        if let Some(session) = session {
+            if let Some(iterator_id) = session.register_iterator_interface(iface) {
+                if let Value::Object(obj) = &mut value {
+                    obj.insert(
+                        "interface".to_string(),
+                        Value::String("StorageIterator".to_string()),
+                    );
+                    obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
+                }
+            }
+        }
+    }
+    Ok(value)
+}
+
+fn stack_item_error(message: impl Into<String>) -> RpcException {
+    RpcException::new(INVALID_OPERATION_CODE, message.into())
+}
+
+pub(super) fn notification_to_json(
+    notification: &NotifyEventArgs,
+    mut session: Option<&mut Session>,
+) -> Result<Value, RpcException> {
+    let mut state = Vec::new();
+    for entry in &notification.state {
+        state.push(stack_item_to_json(entry, session.as_deref_mut())?);
+    }
+    Ok(json!({
+        "eventname": notification.event_name,
+        "contract": notification.script_hash.to_string(),
+        "state": state,
+    }))
+}
+
+pub(super) fn diagnostic_invocation_to_json(diagnostic: &Diagnostic) -> Value {
+    fn to_json_node(node: DiagnosticInvocation) -> Value {
+        let mut obj = Map::new();
+        obj.insert("hash".to_string(), Value::String(node.hash.to_string()));
+        if !node.children.is_empty() {
+            let children = node
+                .children
+                .into_iter()
+                .map(to_json_node)
+                .collect::<Vec<_>>();
+            obj.insert("call".to_string(), Value::Array(children));
+        }
+        Value::Object(obj)
+    }
+
+    match diagnostic.invocation_root() {
+        Some(root) => to_json_node(root),
+        None => Value::Null,
+    }
+}
+
+pub(super) fn diagnostic_storage_changes(engine: &ApplicationEngine) -> Value {
+    let changes = engine.snapshot_cache().tracked_items();
+    let entries = changes
+        .into_iter()
+        .map(|(key, trackable)| {
+            json!({
+                "state": format!("{:?}", trackable.state),
+                "key": BASE64_STANDARD.encode(key.to_array()),
+                "value": BASE64_STANDARD.encode(&*trackable.item.value_bytes()),
+            })
+        })
+        .collect::<Vec<_>>();
+    Value::Array(entries)
 }
 
 pub(super) fn expect_uuid_param(

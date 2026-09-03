@@ -4,12 +4,12 @@
 //!
 //! This module provides the Map stack item implementation used in the Neo VM.
 
+use crate::error::{VmError, VmResult};
+use crate::reference_counter::{CompoundParent, ReferenceCounter};
+use crate::stack_item::StackItem;
+use crate::next_stack_item_id;
 use crate::StackItemType;
 use crate::VmOrderedDictionary;
-use crate::error::{VmError, VmResult};
-use crate::next_stack_item_id;
-use crate::reference_counter::{CompoundId, ReferenceCounter};
-use crate::stack_item::StackItem;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -40,24 +40,24 @@ impl Map {
         T: Into<VmOrderedDictionary<StackItem, StackItem>>,
     {
         let mut items = items.into();
-        for (key, _) in items.iter() {
-            Self::validate_key(key)?;
-        }
         if let Some(rc) = &reference_counter {
             for (_, value) in items.iter_mut() {
                 value.attach_reference_counter(rc)?;
             }
         }
 
-        // C# v3.10.1: no reference counting on construction (see Array::new).
         let map = Self {
             inner: Arc::new(Mutex::new(MapInner {
                 items,
-                id: next_stack_item_id() as usize,
+                id: next_stack_item_id(),
                 reference_counter,
                 is_read_only: false,
             })),
         };
+
+        if let Some(rc) = map.reference_counter() {
+            map.add_reference_for_entries(&rc)?;
+        }
 
         Ok(map)
     }
@@ -67,17 +67,10 @@ impl Map {
     where
         T: Into<VmOrderedDictionary<StackItem, StackItem>>,
     {
-        Self::new_untracked_with_id(items, next_stack_item_id() as usize)
-    }
-
-    pub(crate) fn new_untracked_with_id<T>(items: T, id: usize) -> Self
-    where
-        T: Into<VmOrderedDictionary<StackItem, StackItem>>,
-    {
         Self {
             inner: Arc::new(Mutex::new(MapInner {
                 items: items.into(),
-                id,
+                id: next_stack_item_id(),
                 reference_counter: None,
                 is_read_only: false,
             })),
@@ -125,7 +118,7 @@ impl Map {
 
     /// Gets the value for the specified key.
     pub fn get(&self, key: &StackItem) -> VmResult<StackItem> {
-        Self::validate_key(key)?;
+        self.validate_key(key)?;
         self.inner.lock().items.get(key).cloned().ok_or_else(|| {
             VmError::catchable_exception_msg(format!("Key {key:?} not found in Map."))
         })
@@ -133,58 +126,43 @@ impl Map {
 
     /// Sets the value for the specified key.
     pub fn set(&self, key: StackItem, mut value: StackItem) -> VmResult<()> {
-        Self::validate_key(&key)?;
-        let (rc_opt, referenced, old_value) = {
-            let inner = self.inner.lock();
-            Self::ensure_mutable(&inner)?;
-            let rc_opt = inner.reference_counter.clone();
-            let referenced = rc_opt
-                .as_ref()
-                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Map(inner.id)));
-            (rc_opt, referenced, inner.items.get(&key).cloned())
-        };
-        if let Some(rc) = &rc_opt {
+        let mut inner = self.inner.lock();
+        Self::ensure_mutable(&inner)?;
+        self.validate_key(&key)?;
+
+        if let Some(rc) = &inner.reference_counter {
             value.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &value)?;
-        }
-        {
-            let mut inner = self.inner.lock();
-            Self::ensure_mutable(&inner)?;
-            inner.items.insert(key.clone(), value.clone());
-        }
-        if let Some(rc) = &rc_opt {
-            if referenced {
-                match old_value {
-                    None => rc.add_stack_reference(&key, 1),
-                    Some(old_value) => rc.remove_stack_reference(&old_value),
-                }
-                rc.add_stack_reference(&value, 1);
+
+            let parent = CompoundParent::Map(inner.id);
+            if let Some(old_value) = inner.items.get(&key) {
+                rc.remove_compound_reference(old_value, parent);
+            } else {
+                rc.add_compound_reference(&key, parent);
             }
+
+            rc.add_compound_reference(&value, parent);
         }
+
+        inner.items.insert(key, value);
         Ok(())
     }
 
     /// Removes the value for the specified key.
     pub fn remove(&self, key: &StackItem) -> VmResult<StackItem> {
-        Self::validate_key(key)?;
-        let (value, rc_opt, referenced) = {
-            let mut inner = self.inner.lock();
-            Self::ensure_mutable(&inner)?;
-            let value = inner
-                .items
-                .remove(key)
-                .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))?;
-            let rc_opt = inner.reference_counter.clone();
-            let referenced = rc_opt
-                .as_ref()
-                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Map(inner.id)));
-            (value, rc_opt, referenced)
-        };
-        if let Some(rc) = &rc_opt {
-            if referenced {
-                rc.remove_stack_reference(key);
-                rc.remove_stack_reference(&value);
-            }
+        let mut inner = self.inner.lock();
+        Self::ensure_mutable(&inner)?;
+        self.validate_key(key)?;
+
+        let value = inner
+            .items
+            .remove(key)
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))?;
+
+        if let Some(rc) = &inner.reference_counter {
+            let parent = CompoundParent::Map(inner.id);
+            rc.remove_compound_reference(key, parent);
+            rc.remove_compound_reference(&value, parent);
         }
 
         Ok(value)
@@ -204,40 +182,22 @@ impl Map {
 
     /// Returns true if the map contains the given key.
     pub fn contains_key(&self, key: &StackItem) -> VmResult<bool> {
-        Self::validate_key(key)?;
+        self.validate_key(key)?;
         Ok(self.inner.lock().items.contains_key(key))
     }
 
     /// Removes all items from the map.
     pub fn clear(&self) -> VmResult<()> {
-        let (rc, sub_items) = {
-            let mut inner = self.inner.lock();
-            Self::ensure_mutable(&inner)?;
-            // C# v3.10.1 CLEARITEMS snapshots `Map.SubItems`
-            // (Keys.Concat(Values)), clears first, then releases the snapshot.
-            let id = inner.id;
-            let rc = inner.reference_counter.clone();
-            let sub_items = if rc
-                .as_ref()
-                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Map(id)))
-            {
-                inner
-                    .items
-                    .keys()
-                    .cloned()
-                    .chain(inner.items.values().cloned())
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            inner.items.clear();
-            (rc, sub_items)
-        };
-        if let Some(rc) = rc {
-            for item in sub_items {
-                rc.remove_stack_reference(&item);
+        let mut inner = self.inner.lock();
+        Self::ensure_mutable(&inner)?;
+        if let Some(rc) = &inner.reference_counter {
+            let parent = CompoundParent::Map(inner.id);
+            for (key, value) in inner.items.iter() {
+                rc.remove_compound_reference(key, parent);
+                rc.remove_compound_reference(value, parent);
             }
         }
+        inner.items.clear();
         Ok(())
     }
 
@@ -289,16 +249,18 @@ impl Map {
         }
     }
 
-    fn validate_key(key: &StackItem) -> VmResult<()> {
-        if !matches!(
-            key,
-            StackItem::Boolean(_) | StackItem::Integer(_) | StackItem::ByteString(_)
-        ) {
-            return Err(VmError::invalid_type_simple(
-                "Only Boolean, Integer, and ByteString can be used as map keys",
-            ));
+    fn add_reference_for_entries(&self, rc: &ReferenceCounter) -> VmResult<()> {
+        let inner = self.inner.lock();
+        let parent = CompoundParent::Map(inner.id);
+        for (key, value) in inner.items.iter() {
+            Self::validate_compound_reference(rc, value)?;
+            rc.add_compound_reference(key, parent);
+            rc.add_compound_reference(value, parent);
         }
+        Ok(())
+    }
 
+    fn validate_key(&self, key: &StackItem) -> VmResult<()> {
         // Fast path: avoid allocation for ByteString keys (the common case).
         let len = if let Some(slice) = key.as_bytes_ref() {
             slice.len()
@@ -339,7 +301,7 @@ impl Map {
 
     /// Ensures the map and its children share the provided reference counter.
     pub(crate) fn attach_reference_counter(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        let values = {
+        {
             let mut inner = self.inner.lock();
             if let Some(existing) = &inner.reference_counter {
                 if existing.ptr_eq(rc) {
@@ -350,16 +312,14 @@ impl Map {
                 ));
             }
 
-            let values = inner.items.values().cloned().collect::<Vec<_>>();
-            inner.reference_counter = Some(rc.clone());
-            values
-        };
+            for (_, value) in inner.items.iter_mut() {
+                value.attach_reference_counter(rc)?;
+            }
 
-        for mut value in values {
-            value.attach_reference_counter(rc)?;
+            inner.reference_counter = Some(rc.clone());
         }
 
-        // No reference counting on attach (see Array::attach_reference_counter).
+        self.add_reference_for_entries(rc)?;
         Ok(())
     }
 }

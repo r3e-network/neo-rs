@@ -4,18 +4,14 @@ use super::RpcClient;
 use super::helpers::{
     parse_object_array_result, token_as_boolean, token_as_object, token_as_string,
 };
-use super::hooks::RpcObserver;
 use crate::client::utility::object_array;
-use neo_primitives::BigDecimal;
-use neo_serialization::json::{JObject, JToken};
+use neo_core::BigDecimal;
+use neo_json::{JObject, JToken};
 use num_bigint::BigInt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-impl<O> RpcClient<O>
-where
-    O: RpcObserver,
-{
+impl RpcClient {
     /// Close the wallet opened by RPC.
     /// Matches C# `CloseWalletAsync`
     pub async fn close_wallet(&self) -> Result<bool, ClientRpcError> {
@@ -39,7 +35,7 @@ where
             .rpc_send_async("importprivkey", vec![JToken::String(wif.to_string())])
             .await?;
         let obj = token_as_object(result, "importprivkey")?;
-        RpcAccount::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
+        RpcAccount::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
     }
 
     /// Validates a wallet address.
@@ -52,8 +48,7 @@ where
             .rpc_send_async("validateaddress", vec![JToken::String(address.to_string())])
             .await?;
         let obj = token_as_object(result, "validateaddress")?;
-        RpcValidateAddressResult::from_json(&obj)
-            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))
+        RpcValidateAddressResult::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
     }
 
     /// Creates a new account in the wallet opened by RPC.
@@ -75,13 +70,13 @@ where
         let obj = token_as_object(result, "getwalletbalance")?;
         let balance_str = obj
             .get("balance")
-            .and_then(neo_serialization::json::JToken::as_string)
+            .and_then(neo_json::JToken::as_string)
             .ok_or_else(|| ClientRpcError::new(-32603, "Missing balance in getwalletbalance"))?;
         let balance = BigInt::from_str(&balance_str).map_err(|_| {
             ClientRpcError::new(-32603, format!("Invalid balance value: {balance_str}"))
         })?;
         let asset_hash = RpcUtility::get_script_hash(asset_id, &self.protocol_settings)
-            .map_err(|err| ClientRpcError::new(-32603, err.to_string()))?;
+            .map_err(|err| ClientRpcError::new(-32603, err))?;
         let nep17 = Nep17Api::new(Arc::new(self.clone()));
         let decimals = nep17
             .decimals(&asset_hash)
@@ -100,7 +95,7 @@ where
             .rpc_send_async("getunclaimedgas", vec![JToken::String(address.to_string())])
             .await?;
         let obj = token_as_object(result, "getunclaimedgas")?;
-        RpcUnclaimedGas::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err.to_string()))
+        RpcUnclaimedGas::from_json(&obj).map_err(|err| ClientRpcError::new(-32603, err))
     }
 
     /// Gets the amount of unclaimed GAS in the wallet.

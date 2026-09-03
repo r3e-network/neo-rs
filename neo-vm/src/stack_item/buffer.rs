@@ -1,9 +1,8 @@
 //! Buffer stack item implementation for the Neo Virtual Machine.
 
-use crate::StackItemType;
-use crate::next_stack_item_id;
-use crate::stack_item::stack_item::decode_integer_bytes;
 use crate::{VmError, VmResult};
+use crate::next_stack_item_id;
+use crate::StackItemType;
 use num_bigint::BigInt;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -37,12 +36,11 @@ impl Buffer {
     /// Creates a new buffer with the specified data.
     #[must_use]
     pub fn new(data: Vec<u8>) -> Self {
-        Self::with_id(data, next_stack_item_id() as usize)
-    }
-
-    pub(crate) fn with_id(data: Vec<u8>, id: usize) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(BufferInner { data, id })),
+            inner: Arc::new(Mutex::new(BufferInner {
+                data,
+                id: next_stack_item_id(),
+            })),
         }
     }
 
@@ -120,7 +118,13 @@ impl Buffer {
 
     /// Converts the buffer to an integer.
     pub fn to_integer(&self) -> VmResult<BigInt> {
-        self.with_data(decode_integer_bytes)
+        self.with_data(|data| {
+            if data.is_empty() {
+                return Ok(BigInt::from(0));
+            }
+            // Matches C# `new BigInteger(byte[])`: signed little-endian two's complement.
+            Ok(BigInt::from_signed_bytes_le(data))
+        })
     }
 
     /// Converts the buffer to a boolean.
@@ -159,7 +163,3 @@ impl Ord for Buffer {
         other.with_data(|other_data| self_data.as_slice().cmp(other_data))
     }
 }
-
-#[cfg(test)]
-#[path = "../tests/stack_item/buffer.rs"]
-mod tests;

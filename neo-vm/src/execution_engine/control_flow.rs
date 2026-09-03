@@ -4,7 +4,7 @@
 
 use super::{ExecutionEngine, VmError, VmResult};
 
-impl<S> ExecutionEngine<S> {
+impl ExecutionEngine {
     /// Executes a jump to the specified absolute position in the current script.
     ///
     /// # Arguments
@@ -26,7 +26,7 @@ impl<S> ExecutionEngine<S> {
         let context = self
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-        context.set_instruction_pointer(position as usize)?;
+        context.set_instruction_pointer(position as usize);
         self.is_jumping = true;
         Ok(())
     }
@@ -47,7 +47,7 @@ impl<S> ExecutionEngine<S> {
 
         let new_position = (current_ip as i64)
             .checked_add(i64::from(offset))
-            .ok_or(VmError::InvalidJump(offset))?;
+            .ok_or_else(|| VmError::InvalidJump(offset))?;
 
         if new_position < 0 || new_position > i64::from(i32::MAX) {
             return Err(VmError::InvalidJump(offset));
@@ -67,46 +67,32 @@ impl<S> ExecutionEngine<S> {
         let context = self
             .current_context()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-        let new_context = context.clone_with_position(position)?;
+        if position >= context.script().len() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Call target out of range: {position}"
+            )));
+        }
+
+        let new_context = context.clone_with_position(position);
         self.load_context(new_context)?;
 
         Ok(())
     }
 
     /// Handles system calls. Delegates to the configured interop service when available.
-    #[inline]
     pub fn on_syscall(&mut self, descriptor: u32) -> VmResult<()> {
-        let resolved = {
-            let Some(service) = self.interop_service.as_ref() else {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Syscall {descriptor} not supported"
-                )));
-            };
-            service.resolve_by_hash(descriptor)?
-        };
-
-        if !self.has_call_flags(resolved.required_call_flags) {
+        if self.interop_service.is_none() {
             return Err(VmError::invalid_operation_msg(format!(
-                "Missing required call flags: {:?}",
-                resolved.required_call_flags
+                "Syscall {descriptor} not supported"
             )));
         }
 
-        if let Some(callback) = resolved.handler {
-            return callback(self);
-        }
-
-        if let Some(result) = self.invoke_host_syscall(descriptor) {
-            result
-        } else {
-            let name = self
-                .interop_service
-                .as_ref()
-                .and_then(|service| service.descriptor_name(descriptor))
-                .unwrap_or("<unknown>");
-            Err(VmError::invalid_operation_msg(format!(
-                "Syscall {name} requires an interop host"
-            )))
-        }
+        let mut service = self
+            .interop_service
+            .take()
+            .expect("interop service should exist");
+        let result = service.invoke_by_hash(self, descriptor);
+        self.interop_service = Some(service);
+        result
     }
 }

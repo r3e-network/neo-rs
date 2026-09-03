@@ -4,9 +4,9 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 
-use super::helpers::{internal_error, invalid_params};
-use super::request::{TerminateSessionRequest, TraverseIteratorRequest};
-use super::response::{iterator_values_to_json, stack_item_to_json, terminate_session_to_json};
+use super::helpers::{
+    expect_u32_param, expect_uuid_param, internal_error, invalid_params, stack_item_to_json,
+};
 
 pub(super) fn traverse_iterator(
     server: &RpcServer,
@@ -15,25 +15,26 @@ pub(super) fn traverse_iterator(
     if !server.session_enabled() {
         return Err(RpcException::from(RpcError::sessions_disabled()));
     }
-    let request = TraverseIteratorRequest::parse(params)?;
-    if (request.count as usize) > server.settings().max_iterator_result_items {
+    let session_id = expect_uuid_param(params, 0, "traverseiterator")?;
+    let iterator_id = expect_uuid_param(params, 1, "traverseiterator")?;
+    let count = expect_u32_param(params, 2, "traverseiterator")?;
+    if (count as usize) > server.settings().max_iterator_result_items {
         return Err(invalid_params(format!(
-            "Invalid iterator items count {}",
-            request.count
+            "Invalid iterator items count {count}"
         )));
     }
     server.purge_expired_sessions();
     let result = server
-        .with_session_mut(&request.session_id, |session| {
+        .with_session_mut(&session_id, |session| {
             session.reset_expiration();
-            match session.traverse_iterator(&request.iterator_id, request.count as usize) {
+            match session.traverse_iterator(&iterator_id, count as usize) {
                 Ok(items) => {
                     let mut session_ref = Some(session);
                     let mut values = Vec::new();
                     for item in items {
                         values.push(stack_item_to_json(&item, session_ref.as_deref_mut())?);
                     }
-                    Ok(iterator_values_to_json(values))
+                    Ok(Value::Array(values))
                 }
                 Err(message) if message == "Unknown iterator" => {
                     Err(RpcException::from(RpcError::unknown_iterator()))
@@ -53,9 +54,7 @@ pub(super) fn terminate_session(
     if !server.session_enabled() {
         return Err(RpcException::from(RpcError::sessions_disabled()));
     }
-    let request = TerminateSessionRequest::parse(params)?;
+    let session_id = expect_uuid_param(params, 0, "terminatesession")?;
     server.purge_expired_sessions();
-    Ok(terminate_session_to_json(
-        server.terminate_session(&request.session_id),
-    ))
+    Ok(Value::Bool(server.terminate_session(&session_id)))
 }

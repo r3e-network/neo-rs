@@ -1,7 +1,7 @@
 //! Recovery messages - for consensus state recovery.
 
 use crate::{ConsensusMessageType, ConsensusResult};
-use neo_io::serializable::helper::SerializeHelper;
+use neo_io::serializable::helper::{deserialize_array, get_var_size_bytes, serialize_array};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -90,7 +90,7 @@ impl Serializable for ChangeViewPayloadCompact {
     }
 
     fn size(&self) -> usize {
-        1 + 1 + 8 + SerializeHelper::get_var_size_bytes(&self.invocation_script)
+        1 + 1 + 8 + get_var_size_bytes(&self.invocation_script)
     }
 }
 
@@ -120,7 +120,7 @@ impl Serializable for PreparationPayloadCompact {
     }
 
     fn size(&self) -> usize {
-        1 + SerializeHelper::get_var_size_bytes(&self.invocation_script)
+        1 + get_var_size_bytes(&self.invocation_script)
     }
 }
 
@@ -166,7 +166,7 @@ impl Serializable for CommitPayloadCompact {
     }
 
     fn size(&self) -> usize {
-        1 + 1 + 64 + SerializeHelper::get_var_size_bytes(&self.invocation_script)
+        1 + 1 + 64 + get_var_size_bytes(&self.invocation_script)
     }
 }
 
@@ -220,36 +220,18 @@ impl RecoveryMessage {
     }
 
     /// Serializes the message body to bytes (excluding the common header).
-    ///
-    /// Returns `Err` if the underlying `BinaryWriter` fails. The in-memory
-    /// `BinaryWriter` cannot fail in practice, but the `?` propagation here
-    /// ensures that any future writer change (e.g. a streaming sink) surfaces
-    /// an `IoError` instead of silently producing a truncated/malformed
-    /// recovery message.
-    pub fn serialize(&self) -> ConsensusResult<Vec<u8>> {
+    #[must_use]
+    pub fn serialize(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
-
-        // The three compact arrays are serialized in ASCENDING validator-index
-        // order to match C# byte-for-byte (NOT a divergence): C#
-        // `MakeRecoveryMessage` builds each `Dictionary<byte, ...Compact>` from a
-        // validator-indexed payload array via
-        // `.Where(p => p != null).ToDictionary(p => p.ValidatorIndex)` — so the
-        // dictionary's insertion order is ascending validator index — and
-        // `Serialize` writes `.Values.ToArray()` in that insertion order
-        // (RecoveryMessage.cs:117/130-131, ConsensusContext.MakePayload.cs:149-165).
-        // Sorting here yields that same deterministic order regardless of our
-        // source collection's iteration order; removing it would break parity.
 
         // ChangeViewMessages (serializable array)
         let mut cvs = self.change_view_messages.clone();
         cvs.sort_by_key(|p| p.validator_index);
-        SerializeHelper::serialize_array(&cvs, &mut writer).map_err(writer_error)?;
+        let _ = serialize_array(&cvs, &mut writer);
 
         // PrepareRequestMessage presence flag + value OR PreparationHash var-bytes.
         let has_prepare_request = self.prepare_request_message.is_some();
-        writer
-            .write_bool(has_prepare_request)
-            .map_err(writer_error)?;
+        let _ = writer.write_bool(has_prepare_request);
         if let Some(ref req) = self.prepare_request_message {
             // Embedded message includes its own common header.
             let bytes = super::consensus_message_bytes(
@@ -259,26 +241,24 @@ impl RecoveryMessage {
                 req.view_number,
                 &req.serialize(),
             );
-            writer.write_bytes(&bytes).map_err(writer_error)?;
+            let _ = writer.write_bytes(&bytes);
         } else if let Some(hash) = self.preparation_hash {
-            writer
-                .write_var_bytes(&hash.to_bytes())
-                .map_err(writer_error)?;
+            let _ = writer.write_var_bytes(&hash.to_bytes());
         } else {
-            writer.write_var_int(0).map_err(writer_error)?;
+            let _ = writer.write_var_int(0);
         }
 
         // PreparationMessages (serializable array)
         let mut preps = self.preparation_messages.clone();
         preps.sort_by_key(|p| p.validator_index);
-        SerializeHelper::serialize_array(&preps, &mut writer).map_err(writer_error)?;
+        let _ = serialize_array(&preps, &mut writer);
 
         // CommitMessages (serializable array)
         let mut commits = self.commit_messages.clone();
         commits.sort_by_key(|p| p.validator_index);
-        SerializeHelper::serialize_array(&commits, &mut writer).map_err(writer_error)?;
+        let _ = serialize_array(&commits, &mut writer);
 
-        Ok(writer.into_bytes())
+        writer.into_bytes()
     }
 
     /// Deserializes a `RecoveryMessage` from bytes (body only, excluding the common header).
@@ -290,11 +270,10 @@ impl RecoveryMessage {
     ) -> ConsensusResult<Self> {
         let mut reader = MemoryReader::new(data);
 
-        let change_view_messages = SerializeHelper::deserialize_array::<ChangeViewPayloadCompact>(
-            &mut reader,
-            u8::MAX as usize,
-        )
-        .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage change views"))?;
+        let change_view_messages =
+            deserialize_array::<ChangeViewPayloadCompact>(&mut reader, u8::MAX as usize).map_err(
+                |_| crate::ConsensusError::invalid_proposal("RecoveryMessage change views"),
+            )?;
 
         let has_prepare_request = reader
             .read_bool()
@@ -321,16 +300,13 @@ impl RecoveryMessage {
             }
         };
 
-        let preparation_messages = SerializeHelper::deserialize_array::<PreparationPayloadCompact>(
-            &mut reader,
-            u8::MAX as usize,
-        )
-        .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage preparations"))?;
-        let commit_messages = SerializeHelper::deserialize_array::<CommitPayloadCompact>(
-            &mut reader,
-            u8::MAX as usize,
-        )
-        .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage commits"))?;
+        let preparation_messages =
+            deserialize_array::<PreparationPayloadCompact>(&mut reader, u8::MAX as usize).map_err(
+                |_| crate::ConsensusError::invalid_proposal("RecoveryMessage preparations"),
+            )?;
+        let commit_messages =
+            deserialize_array::<CommitPayloadCompact>(&mut reader, u8::MAX as usize)
+                .map_err(|_| crate::ConsensusError::invalid_proposal("RecoveryMessage commits"))?;
 
         Ok(Self {
             block_index,
@@ -344,77 +320,110 @@ impl RecoveryMessage {
         })
     }
 
-    /// Validates the message using C# DBFTPlugin `RecoveryMessage.Verify` rules.
-    pub fn validate(
-        &self,
-        validator_count: usize,
-        max_transactions_per_block: u32,
-    ) -> ConsensusResult<()> {
-        validate_compact_validators(
-            self.change_view_messages.iter().map(|p| p.validator_index),
-            validator_count,
-        )?;
-        validate_compact_validators(
-            self.preparation_messages.iter().map(|p| p.validator_index),
-            validator_count,
-        )?;
-        validate_compact_validators(
-            self.commit_messages.iter().map(|p| p.validator_index),
-            validator_count,
-        )?;
-
-        if let Some(request) = &self.prepare_request_message {
-            if request.validator_index as usize >= validator_count {
-                return Err(crate::ConsensusError::InvalidValidatorIndex(
-                    request.validator_index,
-                ));
-            }
-            if request.transaction_hashes.len() > max_transactions_per_block as usize {
-                return Err(crate::ConsensusError::invalid_proposal(
-                    "RecoveryMessage PrepareRequest exceeds MaxTransactionsPerBlock",
-                ));
-            }
-
-            let mut hashes =
-                std::collections::HashSet::with_capacity(request.transaction_hashes.len());
-            for hash in &request.transaction_hashes {
-                if !hashes.insert(*hash) {
-                    return Err(crate::ConsensusError::invalid_proposal(
-                        "RecoveryMessage PrepareRequest transaction hashes are duplicate",
-                    ));
-                }
+    /// Basic validation: ensures no duplicate validator indices in preparation messages.
+    pub fn validate(&self) -> ConsensusResult<()> {
+        let mut seen = std::collections::HashSet::new();
+        for p in &self.preparation_messages {
+            if !seen.insert(p.validator_index) {
+                return Err(crate::ConsensusError::DuplicateValidator(p.validator_index));
             }
         }
-
         Ok(())
     }
 }
 
-fn validate_compact_validators<I>(indices: I, validator_count: usize) -> ConsensusResult<()>
-where
-    I: IntoIterator<Item = u8>,
-{
-    let mut seen = std::collections::HashSet::new();
-    for index in indices {
-        if index as usize >= validator_count {
-            return Err(crate::ConsensusError::InvalidValidatorIndex(index));
-        }
-        if !seen.insert(index) {
-            return Err(crate::ConsensusError::DuplicateValidator(index));
-        }
-    }
-    Ok(())
-}
-
-/// Maps a `neo_io::IoError` from the in-memory `BinaryWriter` into a
-/// `ConsensusError`. The current writer writes to a `Vec<u8>` and cannot
-/// fail, so this is effectively unreachable — but it keeps `serialize`
-/// correct under a future writer change rather than silently dropping the
-/// failure the way the old `let _ = ...` pattern did.
-fn writer_error(err: neo_io::IoError) -> crate::ConsensusError {
-    crate::ConsensusError::SerializationError(format!("RecoveryMessage write failed: {err}"))
-}
-
 #[cfg(test)]
-#[path = "../tests/messages/recovery.rs"]
-mod tests;
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovery_request_serializes_timestamp_only() {
+        let msg = RecoveryRequestMessage::new(1, 0, 0, 1234);
+        let bytes = msg.serialize();
+        assert_eq!(bytes.len(), 8);
+        assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 1234);
+    }
+
+    #[test]
+    fn recovery_message_roundtrip_minimal_without_prepare_request() {
+        let mut msg = RecoveryMessage::new(100, 0, 1);
+        msg.preparation_hash = Some(UInt256::from([0xAB; 32]));
+        msg.preparation_messages.push(PreparationPayloadCompact {
+            validator_index: 0,
+            invocation_script: vec![0x0C, 0x40, 0xAA],
+        });
+        msg.commit_messages.push(CommitPayloadCompact {
+            view_number: 0,
+            validator_index: 0,
+            signature: vec![0x11; 64],
+            invocation_script: vec![0x0C, 0x40, 0xBB],
+        });
+
+        let bytes = msg.serialize();
+        let parsed = RecoveryMessage::deserialize(&bytes, 100, 0, 1).unwrap();
+        assert!(parsed.prepare_request_message.is_none());
+        assert_eq!(parsed.preparation_hash, msg.preparation_hash);
+        assert_eq!(parsed.preparation_messages.len(), 1);
+        assert_eq!(parsed.commit_messages.len(), 1);
+    }
+
+    #[test]
+    fn recovery_message_wire_format_bytes_without_prepare_request() {
+        let mut msg = RecoveryMessage::new(100, 0, 1);
+        msg.change_view_messages.push(ChangeViewPayloadCompact {
+            validator_index: 2,
+            original_view_number: 1,
+            timestamp: 0x0102_0304_0506_0708u64,
+            invocation_script: vec![0xAA, 0xBB],
+        });
+        let prep_hash = UInt256::from([0xCC; 32]);
+        msg.preparation_hash = Some(prep_hash);
+        msg.preparation_messages.push(PreparationPayloadCompact {
+            validator_index: 3,
+            invocation_script: vec![0xDD],
+        });
+        msg.commit_messages.push(CommitPayloadCompact {
+            view_number: 0,
+            validator_index: 4,
+            signature: vec![0xEE; 64],
+            invocation_script: vec![0xFF, 0x00],
+        });
+
+        let bytes = msg.serialize();
+
+        // Build expected bytes by following the C# RecoveryMessage serialization layout.
+        let mut expected = Vec::new();
+        let prep_hash_bytes = prep_hash.to_array();
+
+        // ChangeViewMessages array (count=1)
+        expected.push(0x01);
+        expected.push(2); // validator_index
+        expected.push(1); // original_view_number
+        expected.extend_from_slice(&0x0102_0304_0506_0708u64.to_le_bytes());
+        expected.push(0x02); // varbytes len
+        expected.extend_from_slice(&[0xAA, 0xBB]);
+
+        // hasPrepareRequestMessage = false
+        expected.push(0x00);
+
+        // PreparationHash as varbytes (len=32)
+        expected.push(0x20);
+        expected.extend_from_slice(&prep_hash_bytes);
+
+        // PreparationMessages array (count=1)
+        expected.push(0x01);
+        expected.push(3); // validator_index
+        expected.push(0x01); // invocation_script len
+        expected.push(0xDD);
+
+        // CommitMessages array (count=1)
+        expected.push(0x01);
+        expected.push(0x00); // view_number
+        expected.push(4); // validator_index
+        expected.extend(std::iter::repeat(0xEE).take(64));
+        expected.push(0x02); // invocation_script len
+        expected.extend_from_slice(&[0xFF, 0x00]);
+
+        assert_eq!(bytes, expected);
+    }
+}

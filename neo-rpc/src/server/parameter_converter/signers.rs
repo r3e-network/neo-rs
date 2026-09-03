@@ -1,18 +1,17 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_crypto::{ECCurve, ECPoint};
-use neo_payloads::signer::Signer;
-use neo_payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
-use neo_payloads::witness::Witness;
-use neo_payloads::witness_rule::WitnessRule;
-use neo_primitives::WitnessScope;
-use neo_primitives::hex_util;
-use neo_serialization::json::JToken;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use hex;
+use neo_core::cryptography::{ECCurve, ECPoint};
+use neo_core::network::p2p::payloads::signer::Signer;
+use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
+use neo_core::network::p2p::payloads::witness::Witness;
+use neo_core::{WitnessRule, WitnessScope};
+use neo_json::JToken;
 
 use super::super::model::SignersAndWitnesses;
 use super::super::rpc_exception::RpcException;
 use super::{
-    ConversionContext, expect_array, expect_object, expect_string, invalid_params, jtoken_to_serde,
-    parse_address, parse_uint160,
+    expect_array, expect_object, expect_string, invalid_params, jtoken_to_serde, parse_address,
+    parse_uint160, ConversionContext,
 };
 
 pub(super) fn parse_signers_and_witnesses(
@@ -84,7 +83,8 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                     let contract = item
                         .as_ref()
                         .ok_or_else(|| invalid_params("Null contract entry"))?;
-                    let text = expect_string(contract, "Allowed contract entries must be strings")?;
+                    let text =
+                        expect_string(contract, "Allowed contract entries must be strings")?;
                     parse_uint160(&text)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -102,7 +102,7 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                         .as_ref()
                         .ok_or_else(|| invalid_params("Null group entry"))?;
                     let text = expect_string(group, "Allowed group entries must be strings")?;
-                    let bytes = hex_util::decode_hex(&text)
+                    let bytes = hex::decode(text.trim_start_matches("0x"))
                         .map_err(|_| invalid_params("Invalid ECPoint"))?;
                     ECPoint::new(ECCurve::Secp256r1, bytes)
                         .map_err(|e| invalid_params(format!("Invalid ECPoint: {e}")))
@@ -178,12 +178,7 @@ pub(super) fn parse_witness_scope(text: &str) -> Result<WitnessScope, RpcExcepti
             "CustomGroups" => WitnessScope::CUSTOM_GROUPS.bits(),
             "WitnessRules" => WitnessScope::WITNESS_RULES.bits(),
             "Global" => WitnessScope::GLOBAL.bits(),
-            // C# Signer.FromJson uses Enum.Parse<WitnessScope>, which also accepts
-            // a numeric (decimal) string such as "1" or "128"; mirror that for
-            // client interop. from_byte below still validates the combination.
-            other => other
-                .parse::<u8>()
-                .map_err(|_| invalid_params(format!("Unknown witness scope: {other}")))?,
+            other => return Err(invalid_params(format!("Unknown witness scope: {other}"))),
         };
 
         if flag == WitnessScope::GLOBAL.bits() && value != 0 {
@@ -197,7 +192,3 @@ pub(super) fn parse_witness_scope(text: &str) -> Result<WitnessScope, RpcExcepti
     WitnessScope::from_byte(value)
         .ok_or_else(|| invalid_params(format!("Invalid witness scope combination: {text}")))
 }
-
-#[cfg(test)]
-#[path = "../../tests/server/parameter_converter/signers.rs"]
-mod tests;

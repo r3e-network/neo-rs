@@ -2,7 +2,7 @@
 name = "neo-rs-fuzz"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.85"
 authors = ["R3E Network <jimmy@r3e.network>"]
 license = "MIT"
 publish = false
@@ -12,15 +12,10 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-# Deliberately no `version` pins. This crate sits outside the workspace, so
-# `cargo update --workspace` does not touch it, and a `version` here would have
-# to be bumped by hand on every release -- it was left at 0.11.1 through two
-# bumps, which broke every fuzz target with an unsatisfiable requirement. The
-# field only matters when publishing, and this crate is `publish = false`.
-neo-io = { path = "../neo-io" }
-neo-network = { path = "../neo-network" }
-neo-payloads = { path = "../neo-payloads" }
-neo-vm = { path = "../neo-vm" }
+neo-core = { path = "../neo-core", version = "0.16.0" }
+neo-io = { path = "../neo-io", version = "0.16.0" }
+neo-primitives = { path = "../neo-primitives", version = "0.16.0" }
+neo-p2p = { path = "../neo-p2p", version = "0.16.0" }
 
 
 [[bin]]

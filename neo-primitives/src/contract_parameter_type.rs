@@ -1,0 +1,174 @@
+//! `ContractParameterType` - matches C# Neo.SmartContract.ContractParameterType exactly
+
+use crate::{impl_protocol_enum_from_str, protocol_enum_repr};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+protocol_enum_repr! {
+    all;
+    /// Represents the type of `ContractParameter` (matches C# `ContractParameterType`)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    pub ContractParameterType {
+        /// Indicates that the parameter can be of any type
+        #[default]
+        Any = 0x00,
+        /// Indicates that the parameter is of Boolean type
+        Boolean = 0x10,
+        /// Indicates that the parameter is an integer
+        Integer = 0x11,
+        /// Indicates that the parameter is a byte array
+        ByteArray = 0x12,
+        /// Indicates that the parameter is a string
+        String = 0x13,
+        /// Indicates that the parameter is a 160-bit hash
+        Hash160 = 0x14,
+        /// Indicates that the parameter is a 256-bit hash
+        Hash256 = 0x15,
+        /// Indicates that the parameter is a public key
+        PublicKey = 0x16,
+        /// Indicates that the parameter is a signature
+        Signature = 0x17,
+        /// Indicates that the parameter is an array
+        Array = 0x20,
+        /// Indicates that the parameter is a map
+        Map = 0x22,
+        /// Indicates that the parameter is an interoperable interface
+        InteropInterface = 0x30,
+        /// It can be only used as the return type of a method, meaning that the method has no return value
+        Void = 0xff,
+    }
+}
+
+impl ContractParameterType {
+    /// Parse from string (case-insensitive)
+    ///
+    /// # Errors
+    ///
+    /// Returns `String` error if the input string does not match any known parameter type.
+    pub fn from_string(s: &str) -> Result<Self, String> {
+        s.parse()
+    }
+
+    /// Compatibility alias for callers that still use the older helper name.
+    #[must_use]
+    pub const fn try_from_u8(value: u8) -> Option<Self> {
+        Self::from_byte(value)
+    }
+}
+
+impl_protocol_enum_from_str! {
+    ContractParameterType {
+        error = |value: &str| format!("unknown contract parameter type: {value}");
+        aliases = [
+            "bool" => Boolean,
+            "int" => Integer,
+            "bytes" => ByteArray,
+        ];
+    }
+}
+
+impl Serialize for ContractParameterType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str((*self).as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ContractParameterType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::from_string(&value).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_contract_parameter_type_values() {
+        assert_eq!(ContractParameterType::Any as u8, 0x00);
+        assert_eq!(ContractParameterType::Boolean as u8, 0x10);
+        assert_eq!(ContractParameterType::Integer as u8, 0x11);
+        assert_eq!(ContractParameterType::ByteArray as u8, 0x12);
+        assert_eq!(ContractParameterType::String as u8, 0x13);
+        assert_eq!(ContractParameterType::Hash160 as u8, 0x14);
+        assert_eq!(ContractParameterType::Hash256 as u8, 0x15);
+        assert_eq!(ContractParameterType::PublicKey as u8, 0x16);
+        assert_eq!(ContractParameterType::Signature as u8, 0x17);
+        assert_eq!(ContractParameterType::Array as u8, 0x20);
+        assert_eq!(ContractParameterType::Map as u8, 0x22);
+        assert_eq!(ContractParameterType::InteropInterface as u8, 0x30);
+        assert_eq!(ContractParameterType::Void as u8, 0xff);
+    }
+
+    #[test]
+    fn test_contract_parameter_type_as_str() {
+        assert_eq!(ContractParameterType::Any.as_str(), "Any");
+        assert_eq!(ContractParameterType::Boolean.as_str(), "Boolean");
+        assert_eq!(ContractParameterType::Hash160.as_str(), "Hash160");
+    }
+
+    #[test]
+    fn test_contract_parameter_type_all_values() {
+        assert_eq!(ContractParameterType::COUNT, 13);
+        assert_eq!(ContractParameterType::all()[0], ContractParameterType::Any);
+        assert_eq!(
+            ContractParameterType::all()[12],
+            ContractParameterType::Void
+        );
+        assert_eq!(ContractParameterType::ALL, ContractParameterType::all());
+    }
+
+    #[test]
+    fn test_contract_parameter_type_from_string() {
+        assert_eq!(
+            ContractParameterType::from_string("Boolean").unwrap(),
+            ContractParameterType::Boolean
+        );
+        assert_eq!(
+            ContractParameterType::from_string("bool").unwrap(),
+            ContractParameterType::Boolean
+        );
+        assert_eq!(
+            ContractParameterType::from_string("INT").unwrap(),
+            ContractParameterType::Integer
+        );
+        assert_eq!(
+            ContractParameterType::from_string("bytes").unwrap(),
+            ContractParameterType::ByteArray
+        );
+        assert!(ContractParameterType::from_string("Invalid").is_err());
+    }
+
+    #[test]
+    fn test_contract_parameter_type_try_from_u8() {
+        assert_eq!(
+            ContractParameterType::try_from_u8(0x10),
+            Some(ContractParameterType::Boolean)
+        );
+        assert_eq!(ContractParameterType::try_from_u8(0x99), None);
+    }
+
+    #[test]
+    fn test_contract_parameter_type_serde() {
+        let param_type = ContractParameterType::Hash160;
+        let json = serde_json::to_string(&param_type).unwrap();
+        assert_eq!(json, "\"Hash160\"");
+
+        let parsed: ContractParameterType = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, ContractParameterType::Hash160);
+
+        let alias: ContractParameterType = serde_json::from_str("\"int\"").unwrap();
+        assert_eq!(alias, ContractParameterType::Integer);
+    }
+
+    #[test]
+    fn test_contract_parameter_type_default() {
+        assert_eq!(ContractParameterType::default(), ContractParameterType::Any);
+    }
+}

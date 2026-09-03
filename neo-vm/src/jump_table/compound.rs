@@ -2,53 +2,20 @@
 //!
 //! This module provides the compound operation handlers for the Neo VM.
 
-use crate::Instruction;
-use crate::OpCode;
-use crate::StackItemType;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers, require_context};
-use crate::stack_item::{Array, Map, StackItem, Struct, VmInteger};
+use crate::jump_table::{register_jump_handlers, JumpTable};
+use crate::stack_item::{Array, Map, StackItem, Struct};
+use crate::Instruction;
+use crate::OpCode;
+use crate::StackItemType;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::collections::BTreeMap;
 
-/// Validates a NEWARRAY/NEWARRAY_T/NEWSTRUCT size operand exactly like C#:
-/// `var n = (int)Pop().GetInteger(); if (n < 0 || n > MaxStackSize) throw;`
-/// (JumpTable.Compound.cs). The `(int)` cast faults on a count outside `i32`
-/// range, and the `MaxStackSize` bound faults BEFORE allocating — so a malicious
-/// large count faults cheaply instead of triggering a multi-GB `Vec` allocation
-/// (the unbounded `to_i64` path could OOM-abort the node before the post-execute
-/// reference-counter check). For an in-range count both paths converge.
-fn collection_count(count: BigInt, max_stack_size: u32, kind: &str) -> VmResult<usize> {
-    let n = count.to_i32().ok_or_else(|| {
-        VmError::invalid_operation_msg(format!("The {kind} size is out of valid range"))
-    })?;
-    if n < 0 || n as u32 > max_stack_size {
-        return Err(VmError::invalid_operation_msg(format!(
-            "The {kind} size is out of valid range, {n}/[0, {max_stack_size}]."
-        )));
-    }
-    Ok(n as usize)
-}
-
-fn pack_count(count: BigInt, available: usize, width: usize, kind: &str) -> VmResult<usize> {
-    let count = count.to_i32().ok_or_else(|| {
-        VmError::invalid_operation_msg(format!("The {kind} size is out of valid range"))
-    })?;
-    let count = usize::try_from(count).map_err(|_| {
-        VmError::invalid_operation_msg(format!("The {kind} size is out of valid range"))
-    })?;
-    let required = count.checked_mul(width).ok_or_else(|| {
-        VmError::invalid_operation_msg(format!("The {kind} size is out of valid range"))
-    })?;
-    if required > available {
-        return Err(VmError::invalid_operation_msg(format!(
-            "The {kind} size is out of valid range, {required}/[0, {available}]."
-        )));
-    }
-    Ok(count)
+fn collection_stack_item(value: Result<crate::StackValue, String>) -> VmResult<StackItem> {
+    StackItem::try_from(value.map_err(VmError::invalid_operation_msg)?)
 }
 
 fn normalize_index(type_name: &str, index: &BigInt, length: usize) -> VmResult<usize> {
@@ -63,62 +30,31 @@ fn normalize_index(type_name: &str, index: &BigInt, length: usize) -> VmResult<u
     )))
 }
 
-/// C# `engine.Pop<PrimitiveType>()` for a collection KEY (PICKITEM, SETITEM,
-/// HASKEY, REMOVE and the PACKMAP entries).
-///
-/// The popped key must be a `PrimitiveType` — `Integer`, `Boolean` or
-/// `ByteString`. A `Buffer` is NOT a `PrimitiveType` (and neither are `Null`,
-/// `Array`, `Struct`, `Map`, pointers or interop values), so the reference VM
-/// throws `InvalidCastException` and FAULTS the VM UNCATCHABLY. This is NOT a
-/// catchable error: it must use `invalid_type_simple`, never
-/// `catchable_exception_msg` (only the in-range out-of-bounds index errors are
-/// catchable, matching C#'s `CatchableException`).
-fn require_primitive_key(key: &StackItem) -> VmResult<()> {
-    if matches!(
-        key,
-        StackItem::Integer(_) | StackItem::Boolean(_) | StackItem::ByteString(_)
-    ) {
-        Ok(())
-    } else {
-        Err(VmError::invalid_type_simple(
-            "key is not a PrimitiveType (C# Pop<PrimitiveType> faults)",
-        ))
-    }
+fn byte_sequence_key_value(key: &StackItem) -> VmResult<crate::StackValue> {
+    let index = key
+        .as_int()?
+        .to_i64()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
+    Ok(crate::StackValue::Integer(index))
 }
 
-fn integer_memory(value: &VmInteger) -> Vec<u8> {
-    if value.is_zero() {
-        Vec::new()
-    } else {
-        value.to_signed_bytes_le()
-    }
+fn byte_sequence_has_key(value: crate::StackValue, key: &StackItem) -> VmResult<bool> {
+    let key = byte_sequence_key_value(key)?;
+    crate::semantics::collections::has_key(&value, &key).map_err(VmError::invalid_operation_msg)
 }
 
-fn primitive_memory(value: &StackItem) -> VmResult<Vec<u8>> {
-    match value {
-        StackItem::Boolean(value) => Ok(vec![u8::from(*value)]),
-        StackItem::Integer(value) => Ok(integer_memory(value)),
-        StackItem::ByteString(bytes) => Ok(bytes.to_vec()),
-        _ => Err(VmError::invalid_type_simple("Expected PrimitiveType")),
-    }
+fn pick_byte_sequence_item(value: crate::StackValue, index: usize) -> VmResult<StackItem> {
+    let key = crate::StackValue::Integer(
+        i64::try_from(index).map_err(|_| VmError::invalid_operation_msg("Invalid index"))?,
+    );
+    StackItem::try_from(
+        crate::semantics::collections::pick_item(&value, &key)
+            .map_err(VmError::invalid_operation_msg)?,
+    )
 }
-
-fn pick_byte_sequence_item(bytes: &[u8], index: usize) -> VmResult<StackItem> {
-    bytes
-        .get(index)
-        .copied()
-        .map(|byte| StackItem::from_i64(i64::from(byte)))
-        .ok_or_else(|| VmError::invalid_operation_msg("Index out of range"))
-}
-
-mod before543;
-
-pub(crate) use before543::{
-    has_key_before543, pick_item_before543, remove_before543, set_item_before543,
-};
 
 /// Registers the compound operation handlers.
-pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
+pub fn register_handlers(jump_table: &mut JumpTable) {
     register_jump_handlers![
         jump_table;
         OpCode::NEWARRAY0 => new_array0,
@@ -146,39 +82,51 @@ pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
 }
 
 /// Implements the NEWARRAY0 operation.
-fn new_array0<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
-    let context = require_context(engine)?;
+fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // Get the current context
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let array = Array::new(Vec::new(), Some(context.reference_counter().clone()))?;
-    context.push(StackItem::Array(array))?;
+    let array = collection_stack_item(crate::semantics::collections::new_array(0))?;
+    context.push(array)?;
 
     Ok(())
 }
 
 /// Implements the NEWARRAY operation.
-fn new_array<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
-    let max_stack_size = engine.limits().max_stack_size;
-    let context = require_context(engine)?;
+fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // Get the current context
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // C# bounds the count by MaxStackSize and faults before allocating.
-    let count = collection_count(super::get_integer(context.pop()?)?, max_stack_size, "array")?;
+    // Pop the count from the stack
+    let count = context
+        .pop()?
+        .into_int()?
+        .to_i64()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
-    let array = Array::new(
-        vec![StackItem::Null; count],
-        Some(context.reference_counter().clone()),
-    )?;
-    context.push(StackItem::Array(array))?;
+    let array = collection_stack_item(crate::semantics::collections::new_array(count))?;
+    context.push(array)?;
 
     Ok(())
 }
 
 /// Implements the `NewarrayT` operation.
-fn new_array_t<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
-    let max_stack_size = engine.limits().max_stack_size;
-    let context = require_context(engine)?;
+fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+    // Get the current context
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // C# bounds the count by MaxStackSize and faults before reading the type/allocating.
-    let count = collection_count(super::get_integer(context.pop()?)?, max_stack_size, "array")?;
+    // Pop the count from the stack
+    let count = context
+        .pop()?
+        .into_int()?
+        .to_i64()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
     // Get the type from the instruction
     let type_byte = instruction
@@ -187,76 +135,78 @@ fn new_array_t<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) ->
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing type operand"))?;
 
-    let item_type = StackItemType::from_byte(type_byte).ok_or_else(|| {
-        VmError::invalid_instruction_msg(format!("Invalid type: {type_byte:#04x}"))
-    })?;
+    if StackItemType::from_byte(type_byte).is_none() {
+        return Err(VmError::invalid_instruction_msg(format!(
+            "Invalid type: {type_byte:#04x}"
+        )));
+    }
 
-    let default_item = match item_type {
-        StackItemType::Boolean => StackItem::false_value(),
-        StackItemType::Integer => StackItem::from_i64(0),
-        StackItemType::ByteString => StackItem::from_byte_string(Vec::new()),
-        _ => StackItem::Null,
-    };
-    let array = Array::new(
-        vec![default_item; count],
-        Some(context.reference_counter().clone()),
-    )?;
-    context.push(StackItem::Array(array))?;
+    let array = collection_stack_item(crate::semantics::collections::new_array_t(
+        count, type_byte,
+    ))?;
+    context.push(array)?;
 
     Ok(())
 }
 
 /// Implements the NEWSTRUCT0 operation.
-fn new_struct0<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
-    let context = require_context(engine)?;
+fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // Get the current context
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let structure = Struct::new(Vec::new(), Some(context.reference_counter().clone()))?;
-    context.push(StackItem::Struct(structure))?;
+    let structure = collection_stack_item(crate::semantics::collections::new_struct(0))?;
+    context.push(structure)?;
 
     Ok(())
 }
 
 /// Implements the NEWSTRUCT operation.
-fn new_struct<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
-    let max_stack_size = engine.limits().max_stack_size;
-    let context = require_context(engine)?;
+fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // Get the current context
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // C# bounds the count by MaxStackSize and faults before allocating.
-    let count = collection_count(
-        super::get_integer(context.pop()?)?,
-        max_stack_size,
-        "struct",
-    )?;
+    // Pop the count from the stack
+    let count = context
+        .pop()?
+        .into_int()?
+        .to_i64()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
-    let structure = Struct::new(
-        vec![StackItem::Null; count],
-        Some(context.reference_counter().clone()),
-    )?;
-    context.push(StackItem::Struct(structure))?;
+    let structure = collection_stack_item(crate::semantics::collections::new_struct(count))?;
+    context.push(structure)?;
 
     Ok(())
 }
 
 /// Implements the NEWMAP operation.
-fn new_map<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
-    let context = require_context(engine)?;
+fn new_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // Get the current context
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let map = Map::new(BTreeMap::new(), Some(context.reference_counter().clone()))?;
-    context.push(StackItem::Map(map))?;
+    let map_value = crate::semantics::collections::pack_map(Vec::new());
+    let map = collection_stack_item(Ok(map_value))?;
+    context.push(map)?;
 
     Ok(())
 }
 
 /// Implements the APPEND operation.
-fn append<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
-    let limits = *engine.limits();
-    let context = require_context(engine)?;
+fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     let mut item = context.pop()?;
     let collection = context.pop()?;
 
     if matches!(item, StackItem::Struct(_)) {
-        item = item.deep_copy(&limits)?;
+        item = item.deep_clone();
     }
 
     match collection {
@@ -270,7 +220,7 @@ fn append<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmR
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected Array, Struct, or Map",
-            ));
+            ))
         }
     }
 
@@ -278,9 +228,11 @@ fn append<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmR
 }
 
 /// Implements the REVERSE operation.
-fn reverse<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn reverse(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the array from the stack
     let array = context.pop()?;
@@ -307,13 +259,14 @@ fn reverse<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> Vm
 }
 
 /// Implements the REMOVE operation.
-fn remove<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the key and collection from the stack
     let key = context.pop()?;
-    require_primitive_key(&key)?;
     let collection = context.pop()?;
 
     match collection {
@@ -342,9 +295,7 @@ fn remove<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmR
             let _ = structure.remove(index)?;
         }
         StackItem::Map(map) => {
-            if map.contains_key(&key)? {
-                let _ = map.remove(&key)?;
-            }
+            let _ = map.remove(&key)?;
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -357,9 +308,11 @@ fn remove<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmR
 }
 
 /// Implements the CLEARITEMS operation.
-fn clear_items<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn clear_items(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the collection from the stack
     let collection = context.pop()?;
@@ -386,9 +339,11 @@ fn clear_items<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -
 }
 
 /// Implements the POPITEM operation.
-fn pop_item<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the collection from the stack
     let collection = context.pop()?;
@@ -409,55 +364,37 @@ fn pop_item<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> V
 }
 
 /// Implements the HASKEY operation.
-fn has_key<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
-    // C# HasKey faults when the index is out of `[0, MaxItemSize)` BEFORE
-    // comparing against the collection's actual length (VMArray/Buffer/ByteString).
-    let max_item_size = engine.limits().max_item_size as usize;
-    let context = require_context(engine)?;
+fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // Get the current context
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the key and collection from the stack
     let key = context.pop()?;
-    require_primitive_key(&key)?;
     let collection = context.pop()?;
-
-    let invalid_index = |index: &BigInt| {
-        VmError::invalid_operation_msg(format!(
-            "The index {index} is invalid for OpCode {:?}",
-            instruction.opcode()
-        ))
-    };
 
     let result = match &collection {
         StackItem::Array(array) => {
-            let index = key.as_int()?;
-            if index < BigInt::from(0_u8) || index >= BigInt::from(max_item_size) {
-                return Err(invalid_index(&index));
-            }
-            index.to_usize().is_some_and(|index| index < array.len())
+            let index = key
+                .as_int()?
+                .to_usize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
+            index < array.len()
         }
         StackItem::Struct(structure) => {
-            let index = key.as_int()?;
-            if index < BigInt::from(0_u8) || index >= BigInt::from(max_item_size) {
-                return Err(invalid_index(&index));
-            }
-            index
+            let index = key
+                .as_int()?
                 .to_usize()
-                .is_some_and(|index| index < structure.len())
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
+            index < structure.len()
         }
         StackItem::Map(map) => map.contains_key(&key)?,
         StackItem::ByteString(bytes) => {
-            let index = key.as_int()?;
-            if index < BigInt::from(0_u8) || index >= BigInt::from(max_item_size) {
-                return Err(invalid_index(&index));
-            }
-            index.to_usize().is_some_and(|index| index < bytes.len())
+            byte_sequence_has_key(crate::StackValue::ByteString(bytes.clone()), &key)?
         }
         StackItem::Buffer(buffer) => {
-            let index = key.as_int()?;
-            if index < BigInt::from(0_u8) || index >= BigInt::from(max_item_size) {
-                return Err(invalid_index(&index));
-            }
-            index.to_usize().is_some_and(|index| index < buffer.len())
+            byte_sequence_has_key(crate::StackValue::Buffer(buffer.data()), &key)?
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -472,9 +409,11 @@ fn has_key<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmR
 }
 
 /// Implements the KEYS operation.
-fn keys<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the map from the stack
     let map = context.pop()?;
@@ -494,59 +433,47 @@ fn keys<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmRes
 }
 
 /// Implements the VALUES operation.
-///
-/// C# `Values` (JumpTable.Compound.cs:343-358) accepts BOTH an Array (including a
-/// `Struct`, since `Struct : Array`) and a Map as the source, deep-clones each
-/// `Struct` element via `Struct.Clone(engine.Limits)` (which faults past the
-/// per-clone subitem limit), and adds every other element by reference. The Rust
-/// handler previously accepted only a Map and shallow-cloned its values, so a
-/// VALUES over an Array/Struct faulted and the result aliased the source Structs.
-fn values<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
-    let limits = *engine.limits();
-    let context = require_context(engine)?;
+fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // Get the current context
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let source = context.pop()?;
-    let source_items: Vec<StackItem> = match source {
-        StackItem::Array(array) => array.items(),
-        StackItem::Struct(structure) => structure.items(),
+    // Pop the map from the stack
+    let map = context.pop()?;
+
+    // Get the values from the map
+    match map {
         StackItem::Map(map) => {
-            map.with_items(|items| items.iter().map(|(_, v)| v.clone()).collect())
+            let values: Vec<StackItem> =
+                map.with_items(|items| items.iter().map(|(_, v)| v.clone()).collect());
+            let array = Array::new(values, Some(context.reference_counter().clone()))?;
+            context.push(StackItem::Array(array))?;
         }
-        _ => {
-            return Err(VmError::invalid_type_simple(
-                "Invalid type for VALUES (expected Array, Struct or Map)",
-            ));
-        }
-    };
-
-    // C#: `if (item is Struct s) newArray.Add(s.Clone(engine.Limits)); else newArray.Add(item);`
-    let mut values = Vec::with_capacity(source_items.len());
-    for item in source_items {
-        if matches!(item, StackItem::Struct(_)) {
-            values.push(item.deep_copy(&limits)?);
-        } else {
-            values.push(item);
-        }
+        _ => return Err(VmError::invalid_type_simple("Expected Map")),
     }
 
-    let array = Array::new(values, Some(context.reference_counter().clone()))?;
-    context.push(StackItem::Array(array))?;
     Ok(())
 }
 
 /// Implements the PACKMAP operation.
-fn pack_map<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
-    let context = require_context(engine)?;
+fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // Get the current context
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let count_item = context.pop()?;
-    let available = context.evaluation_stack().len();
-    let count = pack_count(super::get_integer(count_item)?, available, 2, "map")?;
+    // Pop the count from the stack
+    let count = context
+        .pop()?
+        .into_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid map size"))?;
 
     let map_item = Map::new(BTreeMap::new(), Some(context.reference_counter().clone()))?;
 
     for _ in 0..count {
         let key = context.pop()?;
-        require_primitive_key(&key)?;
         let value = context.pop()?;
         map_item.set(key, value)?;
     }
@@ -557,12 +484,18 @@ fn pack_map<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> V
 }
 
 /// Implements the PACKSTRUCT operation.
-fn pack_struct<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
-    let context = require_context(engine)?;
+fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // Get the current context
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let count_item = context.pop()?;
-    let available = context.evaluation_stack().len();
-    let count = pack_count(super::get_integer(count_item)?, available, 1, "struct")?;
+    // Pop the count from the stack
+    let count = context
+        .pop()?
+        .into_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
     let mut items = Vec::with_capacity(count);
     for _ in 0..count {
@@ -576,12 +509,18 @@ fn pack_struct<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -
 }
 
 /// Implements the PACK operation.
-fn pack<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
-    let context = require_context(engine)?;
+fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    // Get the current context
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    let count_item = context.pop()?;
-    let available = context.evaluation_stack().len();
-    let count = pack_count(super::get_integer(count_item)?, available, 1, "array")?;
+    // Pop the count from the stack
+    let count = context
+        .pop()?
+        .into_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
     // Create a new array
     let mut items = Vec::with_capacity(count);
@@ -596,9 +535,11 @@ fn pack<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmRes
 }
 
 /// Implements the UNPACK operation.
-fn unpack<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn unpack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the array from the stack
     let array = context.pop()?;
@@ -645,11 +586,12 @@ fn unpack<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmR
 }
 
 /// Implements the PICKITEM operation.
-fn pick_item<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
-    let context = require_context(engine)?;
+fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     let key = context.pop()?;
-    require_primitive_key(&key)?;
     let collection = context.pop()?;
 
     let result = match collection {
@@ -666,19 +608,20 @@ fn pick_item<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> 
         StackItem::Map(map) => map.get(&key)?,
         StackItem::ByteString(bytes) => {
             let idx = normalize_index("PrimitiveType", &key.as_integer()?, bytes.len())?;
-            pick_byte_sequence_item(&bytes, idx)?
+            pick_byte_sequence_item(crate::StackValue::ByteString(bytes.clone()), idx)?
         }
         // C# Neo VM PICKITEM on PrimitiveType reads the bytewise GetSpan()
-        // representation. Boolean false is the one-byte span [0], while
-        // Integer zero is the empty span.
-        item @ (StackItem::Integer(_) | StackItem::Boolean(_)) => {
-            let bytes = primitive_memory(&item)?;
-            let idx = normalize_index("PrimitiveType", &key.as_integer()?, bytes.len())?;
-            pick_byte_sequence_item(&bytes, idx)?
-        }
+        // representation. Use neo-vm-rs conversion rules so Boolean false
+        // remains a one-byte span [0], matching C# Boolean.Memory.
+        item @ (StackItem::Integer(_) | StackItem::Boolean(_)) => pick_byte_sequence_item(
+            crate::StackValue::try_from(item)?,
+            key.as_integer()?
+                .to_usize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid primitive index"))?,
+        )?,
         StackItem::Buffer(buffer) => {
             let idx = normalize_index("Buffer", &key.as_integer()?, buffer.len())?;
-            StackItem::from_i64(i64::from(buffer.get(idx)?))
+            pick_byte_sequence_item(crate::StackValue::Buffer(buffer.data()), idx)?
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -693,17 +636,18 @@ fn pick_item<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> 
 }
 
 /// Implements the SETITEM operation.
-fn set_item<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
-    let limits = *engine.limits();
-    let context = require_context(engine)?;
+fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     let mut value = context.pop()?;
-    if matches!(value, StackItem::Struct(_)) {
-        value = value.deep_copy(&limits)?;
-    }
     let key = context.pop()?;
-    require_primitive_key(&key)?;
     let collection = context.pop()?;
+
+    if matches!(value, StackItem::Struct(_)) {
+        value = value.deep_clone();
+    }
 
     match collection {
         StackItem::Array(array) => {
@@ -728,15 +672,7 @@ fn set_item<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> Vm
         }
         StackItem::Buffer(buffer) => {
             let idx = normalize_index("Buffer", &key.as_integer()?, buffer.len())?;
-            let byte = if matches!(
-                value,
-                StackItem::Integer(_) | StackItem::Boolean(_) | StackItem::ByteString(_)
-            ) {
-                value.as_integer()
-            } else {
-                Err(VmError::invalid_type_simple("Expected PrimitiveType"))
-            }
-            .map_err(|_| {
+            let byte = value.as_integer().map_err(|_| {
                 VmError::invalid_operation_msg(format!(
                     "Only primitive type values can be set in Buffer in {:?}.",
                     instruction.opcode()
@@ -767,9 +703,11 @@ fn set_item<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> Vm
 }
 
 /// Implements the SIZE operation.
-fn size<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
+fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = require_context(engine)?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the collection from the stack
     let collection = context.pop()?;
@@ -783,8 +721,14 @@ fn size<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmRes
         StackItem::Map(map) => map.len(),
         StackItem::ByteString(data) => data.len(),
         StackItem::Buffer(data) => data.len(),
-        StackItem::Integer(value) => integer_memory(&value).len(),
-        StackItem::Boolean(_) => 1,
+        item @ (StackItem::Integer(_) | StackItem::Boolean(_)) => {
+            let value = crate::StackValue::try_from(item)?;
+            usize::try_from(
+                crate::semantics::collections::size(&value)
+                    .map_err(VmError::invalid_operation_msg)?,
+            )
+            .map_err(|_| VmError::invalid_operation_msg("Invalid primitive size"))?
+        }
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected Array, Struct, Map, ByteString, Buffer, Integer, or Boolean",
@@ -797,90 +741,3 @@ fn size<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmRes
 
     Ok(())
 }
-
-#[cfg(test)]
-mod local_stack_item_tests {
-    use super::*;
-    use crate::script::Script;
-
-    fn engine_with_stack(items: Vec<StackItem>) -> ExecutionEngine {
-        let mut engine = ExecutionEngine::<()>::new(None);
-        engine
-            .load_script(Script::new_relaxed(vec![OpCode::RET.byte()]), -1, 0)
-            .expect("load test script");
-        let context = engine.current_context_mut().expect("current context");
-        for item in items {
-            context.push(item).expect("push test item");
-        }
-        engine
-    }
-
-    fn pop(engine: &mut ExecutionEngine) -> StackItem {
-        engine
-            .current_context_mut()
-            .expect("current context")
-            .pop()
-            .expect("result item")
-    }
-
-    #[test]
-    fn new_array_t_builds_tracked_local_defaults() {
-        let mut engine = engine_with_stack(vec![StackItem::from_i64(2)]);
-        let instruction = Instruction::new(OpCode::NEWARRAY_T, &[StackItemType::Boolean.to_byte()]);
-
-        new_array_t(&mut engine, &instruction).expect("NEWARRAY_T succeeds");
-
-        match pop(&mut engine) {
-            StackItem::Array(array) => {
-                assert!(array.reference_counter().is_some());
-                assert!(
-                    array
-                        .items()
-                        .iter()
-                        .all(|item| matches!(item, StackItem::Boolean(false)))
-                );
-            }
-            other => panic!("expected Array, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn primitive_pick_and_size_use_neovm_memory() {
-        let mut engine =
-            engine_with_stack(vec![StackItem::from_bool(false), StackItem::from_i64(0)]);
-        pick_item(&mut engine, &Instruction::new(OpCode::PICKITEM, &[]))
-            .expect("PICKITEM succeeds");
-        assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(0));
-
-        let mut engine = engine_with_stack(vec![StackItem::from_i64(0)]);
-        size(&mut engine, &Instruction::new(OpCode::SIZE, &[])).expect("SIZE succeeds");
-        assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(0));
-
-        let mut engine = engine_with_stack(vec![StackItem::from_bool(false)]);
-        size(&mut engine, &Instruction::new(OpCode::SIZE, &[])).expect("SIZE succeeds");
-        assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(1));
-    }
-
-    #[test]
-    fn pack_counts_fault_before_unbounded_allocation() {
-        assert!(pack_count(BigInt::from(i64::MAX), 0, 1, "array").is_err());
-        assert!(pack_count(BigInt::from(2), 3, 2, "map").is_err());
-        assert_eq!(pack_count(BigInt::from(2), 4, 2, "map").unwrap(), 2);
-    }
-
-    #[test]
-    fn remove_missing_map_key_is_a_noop() {
-        let map = Map::new(BTreeMap::new(), None).expect("empty map");
-        let mut engine = engine_with_stack(vec![
-            StackItem::Map(map),
-            StackItem::from_byte_string(b"missing".to_vec()),
-        ]);
-
-        remove(&mut engine, &Instruction::new(OpCode::REMOVE, &[]))
-            .expect("missing map key is ignored");
-    }
-}
-
-#[cfg(test)]
-#[path = "../tests/jump_table/compound.rs"]
-mod tests;

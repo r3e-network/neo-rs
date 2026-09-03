@@ -17,110 +17,72 @@ description = "Neo N3 blockchain node daemon"
 name = "neo-node"
 path = "src/main.rs"
 
-[[bin]]
-name = "neo-db-probe"
-path = "src/bin/neo-db-probe.rs"
-
-[[bin]]
-name = "neo-pack-verify"
-path = "src/bin/neo-pack-verify.rs"
-
-[[bin]]
-name = "neo-pack-build"
-path = "src/bin/neo-pack-build.rs"
-
-[[bin]]
-name = "neo-pack-activate"
-path = "src/bin/neo-pack-activate.rs"
-
-[[bin]]
-name = "neo-pack-marker"
-path = "src/bin/neo-pack-marker.rs"
-
-[[bin]]
-name = "neo-mdbx-rebase"
-path = "src/bin/neo-mdbx-rebase.rs"
-
 [features]
-default = []
-# Optional HSM-backed consensus signing (PKCS#11: AWS/Azure/GCP).
-hsm = ["dep:neo-hsm", "neo-hsm/pkcs11"]
+default = ["full"]
+full = ["neo-core/full"]
+# Enable TEE (Trusted Execution Environment) support
+tee = ["neo-tee"]
+# Enable TEE with SGX hardware
+tee-sgx = ["tee", "neo-tee/sgx-hw"]
+# Enable HSM (Hardware Security Module) support
+hsm = ["dep:neo-hsm", "dep:rpassword"]
+# Enable HSM with Ledger hardware wallet
+hsm-ledger = ["hsm", "neo-hsm/ledger"]
+# Enable HSM with PKCS#11 interface
+hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
 
 [dependencies]
+# Enable full neo-core features for production node (rocksdb, upnp, monitoring, parallel)
+neo-core = { path = "../neo-core", features = ["runtime"] }
+neo-consensus = { path = "../neo-consensus" }
+neo-p2p = { path = "../neo-p2p" }
+neo-crypto = { path = "../neo-crypto" }
+neo-vm = { workspace = true }
+neo-rpc = { path = "../neo-rpc", features = ["server"] }
+neo-telemetry = { workspace = true }
 
-# HSM-backed consensus signer (feature-gated)
-neo-hsm = { workspace = true, optional = true }
+# TEMPORARILY DISABLED: neo-plugins being refactored
+# neo-plugins = { path = "../neo-plugins" }
+neo-tee = { path = "../neo-tee", optional = true }
+neo-hsm = { path = "../neo-hsm", optional = true }
+
+# PIN input for HSM
+rpassword = { version = "7.3", optional = true }
 
 # Async channels
 futures = { workspace = true }
+async-trait.workspace = true
+zeroize = { workspace = true }
 
 # CLI and configuration
-clap = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-toml = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+toml.workspace = true
 prometheus = { workspace = true }
 parking_lot = { workspace = true }
-reqwest = { workspace = true }
-base64 = { workspace = true }
 
 # Async runtime
-tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio.workspace = true
 tokio-util = { workspace = true, features = ["rt"] }
-hyper = { workspace = true }
+hyper.workspace = true
 
 # Logging
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-tracing-appender = { workspace = true }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
 
 # Error handling
-anyhow = { workspace = true }
-thiserror = { workspace = true }
+anyhow.workspace = true
+thiserror.workspace = true
 
 # Utilities
-chrono = { workspace = true }
-libc = "0.2"
-sysinfo = { workspace = true }
+chrono.workspace = true
+sysinfo.workspace = true
+rand = { workspace = true }
 url = { workspace = true }
-num-bigint = { workspace = true }
-num-traits = { workspace = true }
+num_cpus = { workspace = true }
 mimalloc = { version = "0.1", default-features = false }
 
-# The node workspace crates. (neo-tokens-tracker was merged into neo-rpc; its
-# tokens_tracker module is now at neo-rpc/src/plugins/tokens_tracker/.)
-neo-consensus = { workspace = true }
-neo-crypto = { workspace = true }
-neo-rpc = { workspace = true, features = ["client", "server"] }
-neo-indexer = { workspace = true }
-neo-config = { workspace = true }
-neo-execution = { workspace = true }
-neo-io = { workspace = true }
-neo-native-contracts = { workspace = true }
-neo-network = { workspace = true }
-neo-payloads = { workspace = true }
-neo-primitives = { workspace = true }
-neo-runtime = { workspace = true }
-neo-state-packs = { workspace = true }
-neo-state-service = { workspace = true }
-neo-storage = { workspace = true }
-neo-static-files = { workspace = true }
-neo-trie = { workspace = true }
-neo-serialization = { workspace = true }
-neo-system = { workspace = true }
-neo-blockchain = { workspace = true }
-neo-manifest = { workspace = true }
-neo-vm = { workspace = true }
-hex = { workspace = true }
-neo-mempool = { workspace = true }
-
 [dev-dependencies]
-tempfile = { workspace = true }
-neo-test-fixtures = { workspace = true }
-
-[[test]]
-name = "block_assembly_test"
-path = "tests/consensus/block_assembly_test.rs"
-
-[lints]
-workspace = true
+tempfile.workspace = true

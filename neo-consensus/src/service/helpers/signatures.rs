@@ -1,35 +1,34 @@
 use super::super::ConsensusService;
 use crate::{ConsensusError, ConsensusResult};
+use neo_vm::ScriptBuilder;
 use neo_primitives::{UInt160, UInt256};
-use neo_vm::script_builder::{ScriptBuilder, signature_from_invocation};
+use neo_vm::OpCode;
 use tracing::{debug, warn};
 
-pub(in crate::service) struct InvocationScript;
-
-impl InvocationScript {
-    pub(in crate::service) fn invocation_script_from_signature(signature: &[u8]) -> Vec<u8> {
-        ScriptBuilder::new()
-            .invocation_from_signature(signature)
-            .to_array()
-    }
-
-    /// Extracts signature from invocation script.
-    ///
-    /// Returns `Option<&[u8]>` to avoid unnecessary allocation.
-    /// The signature slice is a reference into the input invocation script,
-    /// valid for the lifetime of the input.
-    ///
-    /// Delegates to the shared [`neo_vm::script_builder::signature_from_invocation`]
-    /// (ADR-029 D1) so the validation logic lives in one place.
-    pub(in crate::service) fn signature_from_invocation_script(invocation: &[u8]) -> Option<&[u8]> {
-        signature_from_invocation(invocation)
-    }
+pub(in crate::service) fn invocation_script_from_signature(signature: &[u8]) -> Vec<u8> {
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push(signature);
+    builder.to_array()
 }
 
-impl<S> ConsensusService<S>
-where
-    S: crate::ConsensusSigner,
-{
+/// Extracts signature from invocation script.
+///
+/// Returns `Option<&[u8]>` to avoid unnecessary allocation.
+/// The signature slice is a reference into the input invocation script,
+/// valid for the lifetime of the input.
+pub(in crate::service) fn signature_from_invocation_script(invocation: &[u8]) -> Option<&[u8]> {
+    if invocation.len() != 66 {
+        return None;
+    }
+    if invocation[0] != OpCode::PUSHDATA1.byte() || invocation[1] != 0x40 {
+        return None;
+    }
+    // Return a slice instead of allocating a new Vec.
+    // The caller can call .to_vec() if they need an owned copy.
+    Some(&invocation[2..66])
+}
+
+impl ConsensusService {
     fn my_script_hash(&self) -> ConsensusResult<UInt160> {
         let my_index = self.my_index()?;
         self.context
@@ -39,15 +38,11 @@ where
             .ok_or(ConsensusError::InvalidValidatorIndex(my_index))
     }
 
-    /// Signs data with the private key using secp256r1 ECDSA.
-    ///
-    /// This method is `async` because the HSM signer path (`self.signer`) may
-    /// perform blocking network/HSM round-trips. The software signer path
-    /// (local ECDSA) stays as sync work inside the async fn (< 1 ms CPU).
-    pub(in crate::service) async fn sign(&self, data: &[u8]) -> ConsensusResult<Vec<u8>> {
+    /// Signs data with the private key using secp256r1 ECDSA
+    pub(in crate::service) fn sign(&self, data: &[u8]) -> ConsensusResult<Vec<u8>> {
         if let Some(signer) = &self.signer {
             let script_hash = self.my_script_hash()?;
-            let signature = signer.sign(data, &script_hash).await?;
+            let signature = signer.sign(data, &script_hash)?;
             if signature.len() != 64 {
                 return Err(ConsensusError::InvalidSignatureLength {
                     expected: 64,
@@ -76,15 +71,12 @@ where
             })
     }
 
-    /// Signs a block hash.
-    pub(in crate::service) async fn sign_block_hash(
-        &self,
-        hash: &UInt256,
-    ) -> ConsensusResult<Vec<u8>> {
+    /// Signs a block hash
+    pub(in crate::service) fn sign_block_hash(&self, hash: &UInt256) -> ConsensusResult<Vec<u8>> {
         let mut sign_data = Vec::with_capacity(4 + 32);
         sign_data.extend_from_slice(&self.network.to_le_bytes());
         sign_data.extend_from_slice(&hash.as_bytes());
-        self.sign(&sign_data).await
+        self.sign(&sign_data)
     }
 
     /// Verifies a signature against a public key
@@ -118,10 +110,12 @@ where
         // Get public key bytes
         let pub_key_bytes = validator.public_key.encoded();
 
-        let verification = Secp256r1Crypto::verify(data, &sig_bytes, &pub_key_bytes);
-        if let Err(error) = &verification {
-            debug!(error = %error, "Signature verification failed");
+        match Secp256r1Crypto::verify(data, &sig_bytes, &pub_key_bytes) {
+            Ok(valid) => valid,
+            Err(e) => {
+                debug!(error = %e, "Signature verification failed");
+                false
+            }
         }
-        matches!(verification, Ok(true))
     }
 }

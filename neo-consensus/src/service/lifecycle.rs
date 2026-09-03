@@ -1,61 +1,16 @@
 use super::ConsensusService;
 use crate::messages::ConsensusPayload;
-use crate::service::helpers::ConsensusBlockFields;
 use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusResult};
-use neo_primitives::{UInt160, UInt256};
+use neo_primitives::UInt256;
 use tracing::{debug, info};
 
-impl<S> ConsensusService<S>
-where
-    S: crate::ConsensusSigner,
-{
+impl ConsensusService {
     /// Starts consensus for a new block
     pub fn start(
         &mut self,
         block_index: u32,
         timestamp: u64,
         prev_hash: UInt256,
-        version: u32,
-    ) -> ConsensusResult<()> {
-        self.start_with_previous_timestamp(block_index, timestamp, prev_hash, 0, version)
-    }
-
-    /// Starts consensus for a new block with the previous header timestamp.
-    ///
-    /// The previous timestamp is required for C# Neo v3.10.1 parity:
-    /// `MakePrepareRequest` clamps the proposal timestamp to at least
-    /// `PrevHeader.Timestamp + 1`.
-    pub fn start_with_previous_timestamp(
-        &mut self,
-        block_index: u32,
-        timestamp: u64,
-        prev_hash: UInt256,
-        previous_block_timestamp: u64,
-        version: u32,
-    ) -> ConsensusResult<()> {
-        let next_consensus =
-            ConsensusBlockFields::compute_next_consensus_address(&self.context.validators);
-        self.start_with_block_context(
-            block_index,
-            timestamp,
-            prev_hash,
-            previous_block_timestamp,
-            next_consensus,
-            version,
-        )
-    }
-
-    /// Starts consensus for a new block with the full header context.
-    ///
-    /// `next_consensus` is the C# `ConsensusContext.Block.Header.NextConsensus`
-    /// value computed during `Reset(0)`.
-    pub fn start_with_block_context(
-        &mut self,
-        block_index: u32,
-        timestamp: u64,
-        prev_hash: UInt256,
-        previous_block_timestamp: u64,
-        next_consensus: UInt160,
         version: u32,
     ) -> ConsensusResult<()> {
         if self.context.my_index.is_none() {
@@ -65,114 +20,24 @@ where
         info!(block_index, "Starting consensus");
         self.context.reset_for_new_block(block_index, timestamp);
         self.context.prev_hash = prev_hash;
-        self.context.previous_block_timestamp = previous_block_timestamp;
-        self.context.next_consensus = next_consensus;
         self.context.version = version;
         self.running = true;
 
+        // If we're the primary, initiate block proposal
+        if self.context.is_primary() {
+            self.initiate_proposal(timestamp)?;
+        }
+
         Ok(())
-    }
-
-    /// Attempts to resume consensus for `block_index` from the configured
-    /// recovery-log file, mirroring C# `ConsensusService.OnStart` which calls
-    /// `context.Load()` before `InitializeConsensus`.
-    ///
-    /// Returns `Ok(true)` when a matching persisted state was loaded and the
-    /// round resumed (the caller must NOT then call `start_*`). Returns
-    /// `Ok(false)` when there is no usable persisted state (no path configured,
-    /// file missing/empty/corrupt, or persisted for a different block index), in
-    /// which case the caller proceeds with a normal fresh `start_*`.
-    ///
-    /// Only a persisted state whose `block_index` matches the round being started
-    /// is resumed. A persisted state for an older block is stale (that block was
-    /// already produced) and is ignored, exactly as C# `Deserialize` rejects a
-    /// mismatched `Block.Index`.
-    pub async fn try_load_and_resume(
-        &mut self,
-        block_index: u32,
-        timestamp: u64,
-        prev_hash: UInt256,
-        next_consensus: UInt160,
-        version: u32,
-    ) -> ConsensusResult<bool> {
-        let Some(path) = self.state_path.clone() else {
-            return Ok(false);
-        };
-        if !path.exists() {
-            return Ok(false);
-        }
-
-        let validators = self.context.validators.clone();
-        let my_index = self.context.my_index;
-        let expected_block_time = self.context.expected_block_time;
-
-        let loaded = match crate::context::ConsensusContext::load(&path, validators, my_index) {
-            Ok(ctx) => ctx,
-            Err(err) => {
-                // Corrupt/unreadable recovery log: fall back to a fresh start
-                // (C# `Load()` returns false on any deserialization error).
-                info!(%err, "consensus recovery log unreadable; starting fresh");
-                return Ok(false);
-            }
-        };
-
-        // Only resume a recovery log written for THIS block round. Anything else
-        // is stale and must not override the fresh round.
-        if loaded.block_index != block_index {
-            info!(
-                persisted = loaded.block_index,
-                round = block_index,
-                "consensus recovery log is for a different block; ignoring"
-            );
-            return Ok(false);
-        }
-
-        info!(
-            block_index,
-            view = loaded.view_number,
-            commit_sent = loaded
-                .my_index
-                .is_some_and(|idx| loaded.commits.contains_key(&idx)),
-            "resuming consensus from recovery log"
-        );
-
-        self.context = loaded;
-        self.context.expected_block_time = expected_block_time;
-
-        // Restore the transient per-round header fields the recovery log does not
-        // carry, then re-enter the gated commit checks (C# `OnStart` calls
-        // `CheckPreparations()` when `CommitSent`). Because `proposed_block_hash`,
-        // `prepare_request_received` and our own commit are all restored from
-        // disk, this can only ever re-derive the SAME block — never a different
-        // one at the same (height, view).
-        self.resume_with_next_consensus(timestamp, prev_hash, next_consensus, version)
-            .await?;
-
-        Ok(true)
     }
 
     /// Resumes consensus from a recovered context.
     ///
     /// This restores transient fields that are not persisted and continues the round.
-    pub async fn resume(
+    pub fn resume(
         &mut self,
         timestamp: u64,
         prev_hash: UInt256,
-        version: u32,
-    ) -> ConsensusResult<()> {
-        let next_consensus =
-            ConsensusBlockFields::compute_next_consensus_address(&self.context.validators);
-        self.resume_with_next_consensus(timestamp, prev_hash, next_consensus, version)
-            .await
-    }
-
-    /// Resumes consensus from a recovered context with the header `NextConsensus`
-    /// supplied by the caller.
-    pub async fn resume_with_next_consensus(
-        &mut self,
-        timestamp: u64,
-        prev_hash: UInt256,
-        next_consensus: UInt160,
         version: u32,
     ) -> ConsensusResult<()> {
         if self.context.my_index.is_none() {
@@ -180,7 +45,6 @@ where
         }
 
         self.context.prev_hash = prev_hash;
-        self.context.next_consensus = next_consensus;
         self.context.version = version;
         self.context.view_start_time = timestamp;
         self.context.state = if self.context.is_primary() {
@@ -190,14 +54,18 @@ where
         };
         self.running = true;
 
-        self.check_prepare_responses().await?;
-        self.check_commits()?;
+        if self.context.is_primary() && !self.context.prepare_request_received {
+            self.initiate_proposal(timestamp)?;
+        } else {
+            self.check_prepare_responses()?;
+            self.check_commits()?;
+        }
 
         Ok(())
     }
 
     /// Processes a consensus message
-    pub async fn process_message(&mut self, payload: ConsensusPayload) -> ConsensusResult<()> {
+    pub fn process_message(&mut self, payload: ConsensusPayload) -> ConsensusResult<()> {
         if !self.running {
             return Ok(());
         }
@@ -217,6 +85,9 @@ where
             return Ok(());
         }
 
+        // Mark message as seen before processing
+        self.context.mark_message_seen(&msg_hash);
+
         // Validate block index
         if payload.block_index != self.context.block_index {
             // Message for a future block - queue or ignore per dBFT spec
@@ -234,28 +105,12 @@ where
             });
         }
 
-        if payload.witness.is_empty() {
-            return Err(ConsensusError::signature_failed(
-                "Consensus payload missing witness",
-            ));
-        }
-        let mut sign_data = Vec::with_capacity(4 + 32);
-        sign_data.extend_from_slice(&self.network.to_le_bytes());
-        sign_data.extend_from_slice(&msg_hash.as_bytes());
-        if !self.verify_signature(&sign_data, &payload.witness, payload.validator_index) {
-            return Err(ConsensusError::signature_failed(
-                "Consensus payload signature invalid",
-            ));
-        }
-
         // Update last seen message for this validator
         // This is used to track failed/lost nodes for recovery logic
         self.context
             .update_last_seen_message(payload.validator_index, payload.block_index);
 
         // Validate view number (ChangeView and Recovery messages can be for other views).
-        // Rationale: the nested branch mirrors the dBFT message-type exception
-        // order from the reference flow, where Commit is handled separately.
         #[allow(clippy::collapsible_if)]
         if !matches!(
             payload.message_type,
@@ -271,99 +126,36 @@ where
 
         match payload.message_type {
             ConsensusMessageType::PrepareRequest => {
-                self.on_prepare_request(&payload).await?;
+                self.on_prepare_request(&payload)?;
             }
             ConsensusMessageType::PrepareResponse => {
-                self.on_prepare_response(&payload).await?;
+                self.on_prepare_response(&payload)?;
             }
             ConsensusMessageType::Commit => {
-                self.on_commit(&payload).await?;
+                self.on_commit(&payload)?;
             }
             ConsensusMessageType::ChangeView => {
-                self.on_change_view(&payload).await?;
+                self.on_change_view(&payload)?;
             }
             ConsensusMessageType::RecoveryRequest => {
-                self.on_recovery_request(&payload).await?;
+                self.on_recovery_request(&payload)?;
             }
             ConsensusMessageType::RecoveryMessage => {
-                self.on_recovery_message(&payload).await?;
+                self.on_recovery_message(&payload)?;
             }
         }
-
-        // Record the payload as seen ONLY after its witness/signature has been
-        // verified by the per-type handler above. C# reaches OnConsensusPayload
-        // only for relay-verified payloads (ExtensiblePayload.VerifyWitnesses);
-        // a forged-witness payload must not poison the dedup cache and silence
-        // the genuine signed message (same unsigned bytes -> same hash).
-        self.context.mark_message_seen(&msg_hash);
 
         Ok(())
     }
 
     /// Handles timer tick for timeout detection
-    pub async fn on_timer_tick(&mut self, timestamp: u64) -> ConsensusResult<()> {
+    pub fn on_timer_tick(&mut self, timestamp: u64) -> ConsensusResult<()> {
         if !self.running {
             return Ok(());
         }
 
-        if self
-            .context
-            .my_index
-            .is_some_and(|idx| self.context.commits.contains_key(&idx))
-        {
-            let should_resend = self.context.commit_recovery_sent_at.map_or(
-                self.context.is_timed_out(timestamp),
-                |sent_at| {
-                    timestamp >= sent_at.saturating_add(self.context.commit_recovery_resend_delay())
-                },
-            );
-
-            if should_resend {
-                self.resend_recovery_message().await?;
-                self.context.commit_recovery_sent_at = Some(timestamp);
-            }
-            return Ok(());
-        }
-
-        if self.context.is_primary() {
-            let prepare_deadline = self
-                .context
-                .view_start_time
-                .saturating_add(self.context.prepare_request_delay());
-            let primary_timeout = self
-                .context
-                .transaction_request_sent_at
-                .unwrap_or(prepare_deadline)
-                .saturating_add(self.context.prepare_request_follow_up_delay());
-
-            if !self.context.prepare_request_received {
-                if timestamp >= prepare_deadline && !self.context.transaction_request_sent {
-                    self.initiate_proposal(timestamp)?;
-                    return Ok(());
-                }
-                if timestamp < primary_timeout {
-                    return Ok(());
-                }
-            } else if timestamp < primary_timeout {
-                return Ok(());
-            }
-        }
-
         if self.context.is_timed_out(timestamp) {
-            if self
-                .context
-                .change_view_retry_at
-                .is_some_and(|retry_at| timestamp < retry_at)
-            {
-                return Ok(());
-            }
-
-            let reason = if self.context.has_missing_proposed_transactions() {
-                ChangeViewReason::TxNotFound
-            } else {
-                ChangeViewReason::Timeout
-            };
-            self.request_change_view(reason, timestamp).await?;
+            self.request_change_view(ChangeViewReason::Timeout, timestamp)?;
         }
 
         Ok(())

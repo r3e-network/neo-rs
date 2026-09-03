@@ -1,9 +1,7 @@
-use super::memory_store::{MemoryStore, MemoryStoreState};
+use super::memory_store::MemoryStore;
 use crate::persistence::{
-    read_only_store::{RawReadOnlyStore, ReadOnlyStoreGeneric},
-    seek_direction::SeekDirection,
-    store_snapshot::StoreSnapshot,
-    write_store::WriteStore,
+    read_only_store::ReadOnlyStoreGeneric, store::Store, store_snapshot::StoreSnapshot,
+    write_store::WriteStore, seek_direction::SeekDirection,
 };
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
@@ -12,18 +10,19 @@ use std::sync::Arc;
 /// On-chain write operations on a snapshot cannot be concurrent.
 type WriteBatch = Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>;
 
-/// Point-in-time snapshot over an in-memory store.
-#[derive(Debug)]
 pub struct MemorySnapshot {
-    store: Arc<MemoryStore>,
+    store: Arc<dyn Store>,
     immutable_data: BTreeMap<Vec<u8>, Vec<u8>>,
     write_batch: WriteBatch,
 }
 
 impl MemorySnapshot {
     /// Creates a new MemorySnapshot.
-    pub(super) fn new(store: Arc<MemoryStore>, state: Arc<RwLock<MemoryStoreState>>) -> Self {
-        let immutable_data = state.read().data.clone();
+    pub fn new(
+        store: Arc<dyn Store>,
+        inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
+    ) -> Self {
+        let immutable_data = inner_data.read().clone();
         Self {
             store,
             immutable_data,
@@ -38,9 +37,12 @@ impl MemorySnapshot {
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
-    type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
-
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
+        // Check write batch first
+        if let Some(batch_value) = self.write_batch.read().get(key) {
+            return batch_value.clone();
+        }
+        // Then check immutable data
         self.immutable_data.get(key).cloned()
     }
 
@@ -48,28 +50,36 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
         &self,
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
-    ) -> Self::FindIterator<'_> {
-        let mut entries: Vec<_> = self
-            .immutable_data
-            .iter()
-            .filter(|(key, _)| {
-                key_prefix
-                    .map(|prefix| key.starts_with(prefix))
-                    .unwrap_or(true)
-            })
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+        // Merge immutable data with write batch
+        let mut merged = self.immutable_data.clone();
+
+        // Apply write batch changes
+        for (key, value) in self.write_batch.read().iter() {
+            if let Some(v) = value {
+                merged.insert(key.clone(), v.clone());
+            } else {
+                merged.remove(key);
+            }
+        }
+
+        let iter: Vec<_> = match (key_prefix, direction) {
+            (Some(prefix), SeekDirection::Forward) => merged
+                .range(prefix.clone()..)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            (Some(prefix), SeekDirection::Backward) => merged
+                .range(..=prefix.clone())
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            (None, _) => merged.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        };
 
         if direction == SeekDirection::Backward {
-            entries.reverse();
+            Box::new(iter.into_iter().rev())
+        } else {
+            Box::new(iter.into_iter())
         }
-        entries.into_iter()
-    }
-}
-
-impl RawReadOnlyStore for MemorySnapshot {
-    fn try_get_bytes(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.immutable_data.get(key).cloned()
     }
 }
 
@@ -86,21 +96,22 @@ impl WriteStore<Vec<u8>, Vec<u8>> for MemorySnapshot {
 }
 
 impl StoreSnapshot for MemorySnapshot {
-    type Store = MemoryStore;
-
-    fn store(&self) -> Arc<Self::Store> {
+    fn store(&self) -> Arc<dyn Store> {
         self.store.clone()
     }
 
     fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
         {
-            // Apply write batch to the store.
+            // Apply write batch to the store
             let batch = self.write_batch.read();
-            self.store.apply_batch(&batch);
+            // If the underlying store is a MemoryStore, apply batch directly.
+            if let Some(mem) = self.store.as_any().downcast_ref::<MemoryStore>() {
+                mem.apply_batch(&batch);
+            }
             // drop read guard before acquiring write lock
         }
 
-        // Only clear the write batch after the batch was successfully applied.
+        // Clear the write batch
         self.write_batch.write().clear();
 
         Ok(())

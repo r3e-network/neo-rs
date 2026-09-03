@@ -1,37 +1,88 @@
-use crate::plugins::tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
-use crate::plugins::tokens_tracker::{
-    Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService, find_range,
-};
+use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::internal_error;
-use crate::server::rpc_server::RpcServer;
-use neo_execution::application_engine::TEST_MODE_GAS;
-use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_io::Serializable;
-use neo_primitives::CallFlags;
-use neo_primitives::UInt160;
-use neo_storage::CacheRead;
-use neo_storage::persistence::providers::RuntimeStore;
+use crate::server::rpc_helpers::{internal_error, invalid_params};
+use neo_core::ScriptBuilder;
+use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
+use neo_core::smart_contract::CallFlags;
+use neo_core::tokens_tracker::{
+    find_range, Nep11TransferKey, Nep17TransferKey, TokenTransfer,
+    TokensTrackerService,
+};
+use neo_core::tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
+use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_core::UInt160;
 use neo_vm::OpCode;
 use neo_vm::VmState as VMState;
-use neo_vm::script_builder::ScriptBuilder;
 use num_traits::ToPrimitive;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::response::{nep11_transfer_entry, transfer_entries, transfer_entry};
+use super::RpcServer;
 
 pub(super) fn tracker_service(
     server: &RpcServer,
-) -> Result<Arc<TokensTrackerService<RuntimeStore>>, RpcException> {
+) -> Result<Arc<TokensTrackerService>, RpcException> {
     server
         .system()
-        .tokens_tracker_service()
-        .ok_or_else(|| internal_error("TokensTracker service not available"))
+        .get_service::<TokensTrackerService>()
+        .map_err(|err| internal_error(err.to_string()))?
+        .ok_or_else(|| RpcException::from(RpcError::method_not_found()))
+}
+
+pub(super) fn parse_address_param(
+    params: &[Value],
+    index: usize,
+    method: &str,
+    address_version: u8,
+) -> Result<UInt160, RpcException> {
+    let text = params
+        .get(index)
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| invalid_params(format!("{method} requires address parameter")))?;
+
+    let mut parsed = None;
+    if UInt160::try_parse(text, &mut parsed) {
+        if let Some(value) = parsed {
+            return Ok(value);
+        }
+    }
+
+    WalletHelper::to_script_hash(text, address_version)
+        .map_err(|_| invalid_params(format!("Invalid address: {text}")))
+}
+
+pub(super) fn parse_optional_u64(value: Option<&Value>) -> Result<u64, RpcException> {
+    let Some(value) = value else {
+        return Ok(0);
+    };
+    match value {
+        Value::Null => Ok(0),
+        Value::Number(num) => num
+            .as_u64()
+            .ok_or_else(|| invalid_params("Expected unsigned integer")),
+        Value::String(text) => text
+            .trim()
+            .parse::<u64>()
+            .map_err(|_| invalid_params("Expected unsigned integer")),
+        _ => Err(invalid_params("Expected unsigned integer")),
+    }
+}
+
+pub(super) fn parse_token_id_param(
+    params: &[Value],
+    index: usize,
+    method: &str,
+) -> Result<Vec<u8>, RpcException> {
+    let text = params
+        .get(index)
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| invalid_params(format!("{method} requires tokenId parameter")))?;
+    hex::decode(text).map_err(|_| invalid_params("Invalid tokenId"))
 }
 
 pub(super) fn collect_transfers(
-    store: &impl neo_storage::persistence::Store,
+    store: &dyn neo_core::persistence::Store,
     prefix: u8,
     script_hash: &UInt160,
     start: u64,
@@ -39,51 +90,6 @@ pub(super) fn collect_transfers(
     address_version: u8,
     max_results: usize,
 ) -> Result<Value, RpcException> {
-    collect_transfer_entries::<Nep17TransferKey, _, _>(
-        store,
-        prefix,
-        script_hash,
-        start,
-        end,
-        max_results,
-        |key, value| transfer_entry(key, value, address_version),
-    )
-}
-
-pub(super) fn collect_nep11_transfers(
-    store: &impl neo_storage::persistence::Store,
-    prefix: u8,
-    script_hash: &UInt160,
-    start: u64,
-    end: u64,
-    address_version: u8,
-    max_results: usize,
-) -> Result<Value, RpcException> {
-    collect_transfer_entries::<Nep11TransferKey, _, _>(
-        store,
-        prefix,
-        script_hash,
-        start,
-        end,
-        max_results,
-        |key, value| nep11_transfer_entry(key, value, address_version),
-    )
-}
-
-fn collect_transfer_entries<K, S, F>(
-    store: &S,
-    prefix: u8,
-    script_hash: &UInt160,
-    start: u64,
-    end: u64,
-    max_results: usize,
-    project_entry: F,
-) -> Result<Value, RpcException>
-where
-    K: Serializable + TokenTransferKeyView,
-    S: neo_storage::persistence::Store,
-    F: Fn(&K, &TokenTransfer) -> Value,
-{
     let mut prefix_bytes = Vec::with_capacity(1 + UInt160::LENGTH);
     prefix_bytes.push(prefix);
     prefix_bytes.extend_from_slice(&script_hash.to_bytes());
@@ -91,8 +97,8 @@ where
     let start_key = [prefix_bytes.as_slice(), &start.to_be_bytes()].concat();
     let end_key = [prefix_bytes.as_slice(), &end.to_be_bytes()].concat();
 
-    let pairs =
-        find_range::<_, K, TokenTransfer>(store, &start_key, &end_key).map_err(internal_error)?;
+    let pairs = find_range::<Nep17TransferKey, TokenTransfer>(store, &start_key, &end_key)
+        .map_err(internal_error)?;
 
     let mut limited = pairs
         .into_iter()
@@ -109,38 +115,104 @@ where
 
     let mut entries = Vec::new();
     for (_, (key, value)) in limited {
-        entries.push(project_entry(&key, &value));
+        let transfer_address = if value.user_script_hash == UInt160::zero() {
+            Value::Null
+        } else {
+            Value::String(WalletHelper::to_address(
+                &value.user_script_hash,
+                address_version,
+            ))
+        };
+        entries.push(json!({
+            "timestamp": key.timestamp_ms(),
+            "assethash": key.asset_script_hash().to_string(),
+            "transferaddress": transfer_address,
+            "amount": value.amount.to_string(),
+            "blockindex": value.block_index,
+            "transfernotifyindex": key.block_xfer_notification_index(),
+            "txhash": value.tx_hash.to_string(),
+        }));
     }
 
-    Ok(transfer_entries(entries))
+    Ok(Value::Array(entries))
 }
 
-pub(super) fn query_asset_metadata<P, B>(
-    snapshot: &neo_storage::persistence::DataCache<B>,
-    settings: &neo_config::ProtocolSettings,
-    native_contract_provider: Arc<P>,
+pub(super) fn collect_nep11_transfers(
+    store: &dyn neo_core::persistence::Store,
+    prefix: u8,
+    script_hash: &UInt160,
+    start: u64,
+    end: u64,
+    address_version: u8,
+    max_results: usize,
+) -> Result<Value, RpcException> {
+    let mut prefix_bytes = Vec::with_capacity(1 + UInt160::LENGTH);
+    prefix_bytes.push(prefix);
+    prefix_bytes.extend_from_slice(&script_hash.to_bytes());
+
+    let start_key = [prefix_bytes.as_slice(), &start.to_be_bytes()].concat();
+    let end_key = [prefix_bytes.as_slice(), &end.to_be_bytes()].concat();
+
+    let pairs = find_range::<Nep11TransferKey, TokenTransfer>(store, &start_key, &end_key)
+        .map_err(internal_error)?;
+
+    let mut limited = pairs
+        .into_iter()
+        .take(max_results)
+        .enumerate()
+        .collect::<Vec<_>>();
+    limited.sort_by(|(left_index, left), (right_index, right)| {
+        let left_ts = left.0.timestamp_ms();
+        let right_ts = right.0.timestamp_ms();
+        right_ts
+            .cmp(&left_ts)
+            .then_with(|| left_index.cmp(right_index))
+    });
+
+    let mut entries = Vec::new();
+    for (_, (key, value)) in limited {
+        let transfer_address = if value.user_script_hash == UInt160::zero() {
+            Value::Null
+        } else {
+            Value::String(WalletHelper::to_address(
+                &value.user_script_hash,
+                address_version,
+            ))
+        };
+        entries.push(json!({
+            "timestamp": key.timestamp_ms(),
+            "assethash": key.asset_script_hash().to_string(),
+            "transferaddress": transfer_address,
+            "amount": value.amount.to_string(),
+            "blockindex": value.block_index,
+            "transfernotifyindex": key.block_xfer_notification_index(),
+            "txhash": value.tx_hash.to_string(),
+            "tokenid": hex::encode(&key.token),
+        }));
+    }
+
+    Ok(Value::Array(entries))
+}
+
+pub(super) fn query_asset_metadata(
+    snapshot: &neo_core::persistence::DataCache,
+    settings: &neo_core::protocol_settings::ProtocolSettings,
     asset: &UInt160,
-) -> Option<(String, u32)>
-where
-    P: NativeContractProvider + 'static,
-    B: CacheRead,
-{
+) -> Option<(String, u32)> {
     let mut script = ScriptBuilder::new();
     emit_contract_call(&mut script, asset, "decimals").ok()?;
     emit_contract_call(&mut script, asset, "symbol").ok()?;
 
-    let mut engine =
-        neo_execution::ApplicationEngine::new_with_shared_block_and_native_contract_provider(
-            neo_primitives::TriggerType::Application,
-            None,
-            Arc::new(snapshot.clone()),
-            None,
-            settings.clone(),
-            TEST_MODE_GAS,
-            neo_execution::NoDiagnostic,
-            native_contract_provider,
-        )
-        .ok()?;
+    let mut engine = neo_core::smart_contract::ApplicationEngine::new(
+        neo_core::smart_contract::TriggerType::Application,
+        None,
+        Arc::new(snapshot.clone()),
+        None,
+        settings.clone(),
+        TEST_MODE_GAS,
+        None,
+    )
+    .ok()?;
     engine
         .load_script(script.to_array(), CallFlags::ALL, Some(*asset))
         .ok()?;
@@ -193,4 +265,11 @@ pub(super) fn emit_contract_call_with_arg(
         .emit_syscall("System.Contract.Call")
         .map_err(|err| internal_error(err.to_string()))?;
     Ok(())
+}
+
+pub(super) fn current_time_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }

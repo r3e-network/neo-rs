@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Neo Rust Node
 # R3E Network <jimmy@r3e.network>
 
-FROM rust:1.89-bullseye AS builder
+FROM rust:1.76-bullseye as builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y \
     cmake \
     make \
     pkg-config \
-    llvm \
-    libclang-dev \
-    clang \
+    llvm-14 \
+    libclang-14-dev \
+    clang-14 \
     libsnappy-dev \
     liblz4-dev \
     libzstd-dev \
@@ -22,52 +22,33 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# libclang for bindgen (MDBX bindings). Bullseye ships LLVM 11; the
-# libclang-dev package puts libclang.so under /usr/lib/llvm-11/lib. The ENV
-# must be set directly (not via bashrc) so it's visible to the RUN cargo build.
-ENV LIBCLANG_PATH=/usr/lib/llvm-11/lib
+# Set environment variables for libclang
+ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
 
-WORKDIR /workspace/neo-rs
+# Create app directory
+WORKDIR /app
 
 # Copy manifests and workspace crates (kept explicit for better Docker layer caching).
 COPY Cargo.toml Cargo.lock ./
 COPY neo-primitives/ neo-primitives/
-COPY neo-config/ neo-config/
 COPY neo-crypto/ neo-crypto/
-COPY neo-trie/ neo-trie/
 COPY neo-storage/ neo-storage/
-COPY neo-static-files/ neo-static-files/
-COPY neo-state-packs/ neo-state-packs/
-COPY neo-checkpoint/ neo-checkpoint/
 COPY neo-io/ neo-io/
-COPY neo-vm/ neo-vm/
-COPY neo-error/ neo-error/
-COPY neo-serialization/ neo-serialization/
-COPY neo-manifest/ neo-manifest/
-COPY neo-payloads/ neo-payloads/
-COPY neo-consensus/ neo-consensus/
-COPY neo-hsm/ neo-hsm/
-COPY neo-runtime/ neo-runtime/
-COPY neo-execution/ neo-execution/
-COPY neo-native-contracts/ neo-native-contracts/
-COPY neo-state-service/ neo-state-service/
-COPY neo-mempool/ neo-mempool/
-COPY neo-blockchain/ neo-blockchain/
-COPY neo-network/ neo-network/
-COPY neo-wallets/ neo-wallets/
-COPY neo-indexer/ neo-indexer/
-COPY neo-system/ neo-system/
+COPY neo-json/ neo-json/
+COPY neo-core/ neo-core/
+COPY neo-p2p/ neo-p2p/
 COPY neo-rpc/ neo-rpc/
-COPY neo-oracle-service/ neo-oracle-service/
+COPY neo-consensus/ neo-consensus/
+COPY neo-tee/ neo-tee/
+COPY neo-hsm/ neo-hsm/
+COPY neo-telemetry/ neo-telemetry/
+COPY neo-cli/ neo-cli/
 COPY neo-node/ neo-node/
-COPY neo-test-fixtures/ neo-test-fixtures/
-COPY tests/ tests/
-COPY benches-package/ benches-package/
 COPY scripts/ scripts/
 COPY neo_mainnet_node.toml neo_testnet_node.toml neo_production_node.toml ./
 
-# Build the node daemon.
-RUN cargo build --release --locked -p neo-node
+# Build release binaries (neo-node daemon + neo-cli client)
+RUN cargo build --release --locked -p neo-node -p neo-cli
 
 # Runtime stage
 FROM debian:bullseye-slim
@@ -83,7 +64,6 @@ RUN apt-get update && apt-get install -y \
     libbz2-1.0 \
     libssl1.1 \
     curl \
-    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Create neo user and home
@@ -94,13 +74,13 @@ RUN groupadd -r neo && useradd -r -g neo -d /home/neo neo \
 RUN mkdir -p /data /data/blocks /data/Logs /data/logs && chown -R neo:neo /data
 
 # Copy binaries from builder stage
-COPY --from=builder /workspace/neo-rs/target/release/neo-node /usr/local/bin/neo-node
+COPY --from=builder /app/target/release/neo-node /usr/local/bin/neo-node
+COPY --from=builder /app/target/release/neo-cli /usr/local/bin/neo-cli
 
 # Copy default configs and entrypoint
 COPY neo_mainnet_node.toml /etc/neo/neo_mainnet_node.toml
 COPY neo_testnet_node.toml /etc/neo/neo_testnet_node.toml
 COPY neo_production_node.toml /etc/neo/neo_production_node.toml
-COPY config/*.toml /etc/neo/config/
 COPY scripts/docker-entrypoint.sh /usr/local/bin/neo-entrypoint.sh
 RUN chmod +x /usr/local/bin/neo-entrypoint.sh && chown -R neo:neo /etc/neo
 
@@ -117,8 +97,8 @@ ENV HOME=/home/neo
 EXPOSE 20332 20333
 # MainNet ports
 EXPOSE 10332 10333
-# Telemetry / health endpoints used by service-provider presets
-EXPOSE 9090 9091
+# Private network ports
+EXPOSE 30332 30333
 
 # Health check - JSON-RPC getversion on the configured RPC port
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
@@ -126,7 +106,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Environment variables
 ENV NEO_NETWORK=testnet \
-    NEO_BACKEND=mdbx \
+    NEO_BACKEND=rocksdb \
     NEO_PLUGINS_DIR=/data/Plugins \
     RUST_LOG=info
 
@@ -136,7 +116,7 @@ CMD []
 
 # Metadata
 LABEL org.opencontainers.image.title="Neo-Rust-Node"
-LABEL org.opencontainers.image.description="Rust implementation of the Neo N3 blockchain protocol"
+LABEL org.opencontainers.image.description="Production-ready Rust implementation of the Neo N3 blockchain protocol"
 LABEL org.opencontainers.image.url="https://github.com/r3e-network/neo-rs"
 LABEL org.opencontainers.image.documentation="https://github.com/r3e-network/neo-rs/blob/master/README.md"
 LABEL org.opencontainers.image.source="https://github.com/r3e-network/neo-rs"

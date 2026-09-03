@@ -1,29 +1,9 @@
 //! `ChangeView` message - request to change the current view.
 
 use crate::{ChangeViewReason, ConsensusMessageType, ConsensusResult};
-use neo_io::MemoryReader;
-use neo_io::serializable::helper::SerializeHelper;
-use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
-use super::wire::{append_uint256_array, uint256_array_encoded_len};
-
 /// `ChangeView` message sent when a validator wants to change the view.
-///
-/// Wire format matches C# `DBFTPlugin` `ChangeView` (v3.10.1,
-/// `DBFTPlugin/Messages/ChangeView.cs`): after the common consensus-message
-/// header, the body is `Timestamp (u64 LE) + Reason (u8)`, followed —
-/// CONDITIONALLY — by `RejectedHashes` (a `UInt256[]`: var-int count then 32 raw
-/// bytes per hash) ONLY when `Reason` is `TxRejectedByPolicy` (0x3) or
-/// `TxInvalid` (0x4). For every other reason there is NO trailing array.
-///
-/// The `RejectedHashes` array is the SIGNED body for those two reasons, so it
-/// MUST be reproduced byte-for-byte or signature verification diverges from C#
-/// peers in both directions. (A prior revision incorrectly dropped this field on
-/// the belief that "no C# dBFT version carries it" — v3.10.1 does.) The array
-/// uses the same var-int-count + raw-32-bytes-each encoding as
-/// `PrepareRequest.transaction_hashes`, capped at `ushort.MaxValue` (65535) to
-/// match `ReadSerializableArray<UInt256>(ushort.MaxValue)`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChangeViewMessage {
     /// Block index
@@ -36,25 +16,17 @@ pub struct ChangeViewMessage {
     pub timestamp: u64,
     /// Reason for the view change
     pub reason: ChangeViewReason,
-    /// Rejected transaction hashes. Serialized ONLY when `reason` is
-    /// `TxRejectedByPolicy`/`TxInvalid` (C# `ChangeView.RejectedHashes`); empty
-    /// and never written for all other reasons.
-    pub rejected_hashes: Vec<UInt256>,
 }
 
 impl ChangeViewMessage {
-    /// Creates a new `ChangeView` message.
-    ///
-    /// `rejected_hashes` is only serialized when `reason` is
-    /// `TxRejectedByPolicy`/`TxInvalid`; pass `Vec::new()` for all other reasons.
+    /// Creates a new `ChangeView` message
     #[must_use]
-    pub fn new(
+    pub const fn new(
         block_index: u32,
         view_number: u8,
         validator_index: u8,
         timestamp: u64,
         reason: ChangeViewReason,
-        rejected_hashes: Vec<UInt256>,
     ) -> Self {
         Self {
             block_index,
@@ -62,17 +34,7 @@ impl ChangeViewMessage {
             validator_index,
             timestamp,
             reason,
-            rejected_hashes,
         }
-    }
-
-    /// Returns `true` when this reason carries a trailing `RejectedHashes`
-    /// `UInt256[]` in the signed body (C# `ChangeView` reasons 0x3/0x4).
-    const fn reason_carries_rejected_hashes(reason: ChangeViewReason) -> bool {
-        matches!(
-            reason,
-            ChangeViewReason::TxRejectedByPolicy | ChangeViewReason::TxInvalid
-        )
     }
 
     /// `NewViewNumber` is always `ViewNumber + 1` (matches C# `DBFTPlugin`).
@@ -88,58 +50,32 @@ impl ChangeViewMessage {
         ConsensusMessageType::ChangeView
     }
 
-    /// Serializes the message body to bytes, matching C# `DBFTPlugin`
-    /// `ChangeView.Serialize` (v3.10.1): `Timestamp (u64 LE) + Reason (u8)`,
-    /// followed by `RejectedHashes` (a `UInt256[]`: var-int count then 32 raw
-    /// bytes each) ONLY when `reason` is `TxRejectedByPolicy`/`TxInvalid`.
-    ///
-    /// The `UInt256[]` uses the SAME `write_serializable_vec` encoding as
-    /// `PrepareRequest.transaction_hashes`, so the byte layout matches C#
-    /// `writer.Write(RejectedHashes)` exactly.
+    /// Serializes the message to bytes
+    /// Neo N3 `DBFTPlugin` format: `timestamp (8) + reason (1)`.
     #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
-        let rejected_hashes_len = if Self::reason_carries_rejected_hashes(self.reason) {
-            uint256_array_encoded_len(&self.rejected_hashes)
-        } else {
-            0
-        };
-        let mut bytes = Vec::with_capacity(8 + 1 + rejected_hashes_len);
-        bytes.extend_from_slice(&self.timestamp.to_le_bytes());
-        bytes.push(self.reason.to_byte());
-        if Self::reason_carries_rejected_hashes(self.reason) {
-            append_uint256_array(&mut bytes, &self.rejected_hashes);
-        }
-        bytes
+        let mut data = Vec::new();
+        data.extend_from_slice(&self.timestamp.to_le_bytes());
+        data.push(self.reason.to_byte());
+        data
     }
 
-    /// Deserializes a `ChangeView` message body (header fields passed in),
-    /// matching C# `ChangeView.Deserialize` (v3.10.1): `Timestamp (u64 LE) +
-    /// Reason (u8)`, followed by `RejectedHashes` (`UInt256[]`, capped at
-    /// `ushort.MaxValue`) ONLY when `reason` is `TxRejectedByPolicy`/`TxInvalid`.
-    /// For all other reasons `rejected_hashes` is empty.
+    /// Deserializes a `ChangeView` message from bytes
+    /// Neo N3 `DBFTPlugin` format: `timestamp (8) + reason (1)`.
     pub fn deserialize(
         data: &[u8],
         block_index: u32,
         view_number: u8,
         validator_index: u8,
     ) -> ConsensusResult<Self> {
-        let mut reader = MemoryReader::new(data);
+        if data.len() < 9 {
+            return Err(crate::ConsensusError::invalid_proposal(
+                "ChangeView message too short",
+            ));
+        }
 
-        let timestamp = reader
-            .read_u64()
-            .map_err(|_| crate::ConsensusError::invalid_proposal("ChangeView message too short"))?;
-        let reason_byte = reader
-            .read_u8()
-            .map_err(|_| crate::ConsensusError::invalid_proposal("ChangeView message too short"))?;
-        let reason = ChangeViewReason::from_byte(reason_byte).unwrap_or(ChangeViewReason::Timeout);
-
-        let rejected_hashes = if Self::reason_carries_rejected_hashes(reason) {
-            SerializeHelper::deserialize_array::<UInt256>(&mut reader, u16::MAX as usize).map_err(
-                |_| crate::ConsensusError::invalid_proposal("ChangeView rejected hashes"),
-            )?
-        } else {
-            Vec::new()
-        };
+        let timestamp = u64::from_le_bytes(data[0..8].try_into().unwrap_or([0u8; 8]));
+        let reason = ChangeViewReason::from_byte(data[8]).unwrap_or(ChangeViewReason::Timeout);
 
         Ok(Self {
             block_index,
@@ -147,21 +83,7 @@ impl ChangeViewMessage {
             validator_index,
             timestamp,
             reason,
-            rejected_hashes,
         })
-    }
-
-    /// Encoded size of the message body (matches C# `ChangeView.Size` minus the
-    /// common header): `8 (Timestamp) + 1 (Reason)` plus, for reasons
-    /// `TxRejectedByPolicy`/`TxInvalid`, the var-size of the `RejectedHashes`
-    /// `UInt256[]`.
-    #[must_use]
-    pub fn size(&self) -> usize {
-        let mut size = 8 + 1;
-        if Self::reason_carries_rejected_hashes(self.reason) {
-            size += SerializeHelper::get_var_size_serializable_slice(&self.rejected_hashes);
-        }
-        size
     }
 
     /// Validates the message
@@ -178,5 +100,70 @@ impl ChangeViewMessage {
 }
 
 #[cfg(test)]
-#[path = "../tests/messages/change_view.rs"]
-mod tests;
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_change_view_new() {
+        let msg = ChangeViewMessage::new(100, 0, 1, 1000, ChangeViewReason::Timeout);
+
+        assert_eq!(msg.block_index, 100);
+        assert_eq!(msg.view_number, 0);
+        assert_eq!(msg.validator_index, 1);
+        assert_eq!(msg.new_view_number().unwrap(), 1);
+        assert_eq!(msg.reason, ChangeViewReason::Timeout);
+    }
+
+    #[test]
+    fn test_change_view_serialize() {
+        let msg = ChangeViewMessage::new(100, 0, 1, 1000, ChangeViewReason::Timeout);
+        let data = msg.serialize();
+
+        // 8 bytes timestamp + 1 byte reason
+        assert_eq!(data.len(), 9);
+    }
+
+    #[test]
+    fn test_change_view_wire_format_bytes() {
+        let timestamp = 0x0102_0304_0506_0708u64;
+        let msg = ChangeViewMessage::new(100, 7, 1, timestamp, ChangeViewReason::TxNotFound);
+        let data = msg.serialize();
+
+        let mut expected = Vec::new();
+        expected.extend_from_slice(&timestamp.to_le_bytes());
+        expected.push(ChangeViewReason::TxNotFound.to_byte());
+        assert_eq!(data, expected);
+    }
+
+    #[test]
+    fn test_change_view_validate() {
+        let valid = ChangeViewMessage::new(100, 0, 1, 1000, ChangeViewReason::Timeout);
+        assert!(valid.validate().is_ok());
+
+        // Overflow case cannot be constructed as valid.
+        let overflow = ChangeViewMessage::new(100, u8::MAX, 1, 1000, ChangeViewReason::Timeout);
+        assert!(overflow.validate().is_err());
+    }
+
+    #[test]
+    fn test_change_view_serialize_deserialize_roundtrip() {
+        let msg = ChangeViewMessage::new(100, 0, 1, 12345678, ChangeViewReason::TxNotFound);
+        let data = msg.serialize();
+
+        let parsed = ChangeViewMessage::deserialize(&data, 100, 0, 1).unwrap();
+
+        assert_eq!(parsed.block_index, 100);
+        assert_eq!(parsed.view_number, 0);
+        assert_eq!(parsed.validator_index, 1);
+        assert_eq!(parsed.new_view_number().unwrap(), 1);
+        assert_eq!(parsed.timestamp, 12345678);
+        assert_eq!(parsed.reason, ChangeViewReason::TxNotFound);
+    }
+
+    #[test]
+    fn test_change_view_deserialize_too_short() {
+        let data = vec![0u8; 5]; // Too short
+        let result = ChangeViewMessage::deserialize(&data, 100, 0, 1);
+        assert!(result.is_err());
+    }
+}

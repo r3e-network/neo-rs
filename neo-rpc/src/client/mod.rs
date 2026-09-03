@@ -1,61 +1,39 @@
-//! # neo-rpc::client
-//!
-//! Client-side adapters for remote services and RPC access.
-//!
-//! ## Boundary
-//!
-//! This module belongs to `neo-rpc`. This API crate owns JSON-RPC surfaces and
-//! transport adapters and must not implement consensus, VM semantics, or
-//! storage engines.
-//!
-//! ## Contents
-//!
-//! - `contract_client`: contract RPC client facade.
-//! - `contract_script`: contract script invocation helpers.
-//! - `errors`: Client transport, protocol, and conversion errors.
-//! - `nep17_api`: NEP-17 RPC client helpers.
-//! - `policy_api`: policy RPC client helpers.
-//! - `rpc_client`: HTTP JSON-RPC client implementation.
-//! - `state_api`: state RPC client helpers.
-//! - `test_helpers`: RPC client test helpers.
-//! - `transaction_manager`: transaction submission helpers.
-//! - `transaction_manager_factory`: transaction manager factory types and
-//!   helpers.
-//! - `utility`: utility RPC client helpers.
-//! - `wallet_api`: wallet RPC client helpers.
+// Copyright (C) 2015-2025 The Neo Project.
+//
+// lib.rs file belongs to the neo project and is free
+// software distributed under the MIT software license, see the
+// accompanying file LICENSE in the main directory of the
+// repository or http://www.opensource.org/licenses/mit-license.php
+// for more details.
+//
+// Redistribution and use in source and binary forms with or without
+// modifications are permitted.
 
-#[path = "contracts/contract_client.rs"]
+//! Neo RPC Client Library
+//!
+//! This crate provides a complete RPC client implementation for interacting with Neo nodes.
+//! It matches the C# RpcClient implementation exactly.
+
 mod contract_client;
-#[path = "contracts/contract_script.rs"]
 mod contract_script;
-mod errors;
+mod error;
 pub mod models;
-mod native_hashes;
-#[path = "apis/nep17_api.rs"]
 mod nep17_api;
-#[path = "apis/policy_api.rs"]
 mod policy_api;
 mod rpc_client;
-#[path = "apis/state_api.rs"]
 mod state_api;
 #[cfg(test)]
-#[path = "../tests/client/test_helpers.rs"]
 mod test_helpers;
-#[path = "transactions/transaction_manager.rs"]
 mod transaction_manager;
-#[path = "transactions/transaction_manager_factory.rs"]
 mod transaction_manager_factory;
 mod utility;
-#[path = "apis/wallet_api.rs"]
 mod wallet_api;
 
 pub use contract_client::ContractClient;
-pub use errors::{ClientRpcError, RpcClientError, RpcClientResult};
+pub use error::{ClientRpcError, RpcException};
 pub use nep17_api::Nep17Api;
 pub use policy_api::PolicyApi;
-pub use rpc_client::{
-    RpcClient, RpcClientBuilder, RpcClientHooks, RpcObserver, RpcRequestOutcome, TracingRpcObserver,
-};
+pub use rpc_client::{RpcClient, RpcClientBuilder, RpcClientHooks, RpcRequestOutcome};
 pub use state_api::StateApi;
 pub use transaction_manager::TransactionManager;
 pub use transaction_manager_factory::TransactionManagerFactory;

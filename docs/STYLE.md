@@ -1,7 +1,7 @@
 # Neo-rs Code Style Guide
 
 > **Version**: 1.0.0  
-> **Last Updated**: 2026-07-02
+> **Last Updated**: 2026-01-28
 
 This document defines the coding standards and conventions for the neo-rs project.
 
@@ -18,11 +18,6 @@ This document defines the coding standards and conventions for the neo-rs projec
 ---
 
 ## Code Organization Standards
-
-High-level orchestration code should read as business/domain flow, with detailed
-protocol, storage, RPC, and runtime mechanics hidden in lower layers. The
-canonical rules for this style are in
-[coding-design-architecture-guidance.md](./coding-design-architecture-guidance.md).
 
 ### File Structure
 
@@ -49,43 +44,43 @@ crate-name/
 
 ### Module Declaration Order
 
-The `lib.rs` header is the crate-doc comment (`//!`), not inline lint
-attributes — lints are inherited from `workspace.lints` (see `CONVENTIONS.md`).
-The doc header carries three fixed sections: a one-line summary, `## Boundary`
-(what the crate owns and must not do), and `## Contents` (one bullet per
-module). Then `#![doc(html_root_url = …)]`, then module declarations, then the
-public re-exports.
-
 ```rust
-//! # neo-crate-name
-//!
-//! One-line description of what this crate provides.
-//!
-//! ## Boundary
-//!
-//! What this crate owns, and what it must not do (persist blocks, run
-//! consensus, expose RPC transport, etc.).
-//!
-//! ## Contents
-//!
-//! - `module_a`: What this module is responsible for.
-//! - `module_b`: What this module is responsible for.
+// 1. Crate-level attributes and documentation
+#![warn(missing_docs)]
+#![warn(rustdoc::missing_crate_level_docs)]
 
-#![doc(html_root_url = "https://docs.rs/neo-crate-name/0.11.1")]
+//! # Crate Name
+//!
+//! One-line description of the crate.
+//!
+//! ## Overview
+//!
+//! Detailed description of what this crate provides.
 
-// Module declarations (private mod, then feature-gated).
-mod module_a;
-mod module_b;
+// 2. External crate imports (sorted alphabetically)
+extern crate std;
 
+// 3. Internal crate self-reference (if needed)
+extern crate self as neo_crate_name;
+
+// 4. Module declarations (grouped by category)
+// Core modules
+pub mod core_module;
+pub mod types;
+
+// Feature-gated modules
 #[cfg(feature = "runtime")]
-mod runtime;
+pub mod runtime;
 
-// Public re-exports (the crate's API surface).
-pub use module_a::{TypeA, helper_a};
-pub use module_b::{TypeB, helper_b};
+// Private modules
+mod internal;
 
-#[cfg(feature = "runtime")]
-pub use runtime::RuntimeType;
+// 5. Re-exports (public API)
+pub use types::{TypeA, TypeB};
+
+// 6. Private implementation
+#[cfg(test)]
+mod tests;
 ```
 
 ### Import Organization
@@ -115,51 +110,61 @@ use crate::types::MyType;
 
 ### Crate-Level Documentation
 
-Every crate must have concise, layer-aware crate-level documentation. Use the
-same standard format across crates:
+Every crate must have comprehensive crate-level documentation:
 
 ```rust
-//! # neo-crate-name
+//! # Neo Crate Name
 //!
 //! One-sentence summary of the crate's purpose.
 //!
-//! ## Boundary
+//! ## Features
 //!
-//! State the layer, the main downward dependencies, and the responsibilities
-//! this crate deliberately does not own.
+//! List of key features:
+//! - **Feature 1**: Description
+//! - **Feature 2**: Description
 //!
-//! ## Contents
+//! ## Architecture
 //!
-//! - `module_a`: what it owns.
-//! - `module_b`: what callers use it for.
+//! Brief overview of the internal architecture.
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_crate_name::TypeName;
+//!
+//! let instance = TypeName::new();
+//! ```
+//!
+//! ## Feature Flags
+//!
+//! - `feature-a`: Enables functionality A
+//! - `feature-b`: Enables functionality B (disabled by default)
 ```
-
-Crate docs should describe architecture role, boundary, and contents, not every
-public item. Mention deterministic bytes, C# parity, storage layout, or
-security invariants only where the crate directly owns that contract.
 
 ### Module-Level Documentation
 
 ```rust
-//! # crate::module
+//! # Module Name
 //!
 //! One-line description of the module.
 //!
-//! ## Boundary
+//! ## Purpose
 //!
-//! State what this module owns and what it intentionally leaves to sibling or
-//! lower modules.
+//! Detailed explanation of what this module does.
 //!
-//! ## Contents
+//! ## Types
 //!
 //! - [`TypeA`]: Description of TypeA
 //! - [`TypeB`]: Description of TypeB
+//!
+//! ## Example
+//!
+//! ```rust
+//! use crate::module_name::TypeA;
+//!
+//! let value = TypeA::new();
+//! ```
 ```
-
-When adding provider, queue, factory, table, or service modules, the module
-docs must state the capability boundary. For example, a typed storage table
-codec must say whether it preserves existing C# key/value bytes; an import
-queue must say whether it is preverification-only or owns ordered persistence.
 
 ### Item Documentation
 
@@ -253,7 +258,7 @@ All code examples in documentation must be testable:
 
 | Item | Convention | Example |
 |------|------------|---------|
-| Crates | `kebab-case` | `neo-runtime`, `neo-primitives` |
+| Crates | `kebab-case` | `neo-core`, `neo-primitives` |
 | Modules | `snake_case` | `smart_contract`, `block_header` |
 | Types (structs, enums, traits) | `PascalCase` | `Block`, `Transaction`, `IVerifiable` |
 | Functions | `snake_case` | `get_block`, `verify_witness` |
@@ -262,7 +267,7 @@ All code examples in documentation must be testable:
 | Static variables | `SCREAMING_SNAKE_CASE` | `GLOBAL_CONTEXT` |
 | Type parameters | `PascalCase`, single letter preferred | `T`, `K`, `V`, `Item` |
 | Lifetimes | `snake_case`, starts with `'` | `'a`, `'de`, `'static` |
-| Features | `kebab-case` or `snake_case` | `runtime`, `client`, `mdbx-storage` |
+| Features | `kebab-case` or `snake_case` | `runtime`, `client`, `rocksdb-storage` |
 
 ### C# Compatibility Exceptions
 

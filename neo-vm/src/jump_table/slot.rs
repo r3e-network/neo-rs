@@ -1,14 +1,23 @@
 //! Slot operations for the Neo Virtual Machine.
 
-use crate::Instruction;
-use crate::OpCode;
 use crate::error::VmError;
 use crate::error::VmResult;
+use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, register_jump_handlers, require_context};
+use crate::jump_table::{register_jump_handlers, JumpTable};
+use crate::Instruction;
+use crate::OpCode;
+
+/// Helper to get current context or return error.
+#[inline]
+fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionContext> {
+    engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))
+}
 
 /// Registers the slot operation handlers.
-pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
+pub fn register_handlers(jump_table: &mut JumpTable) {
     register_jump_handlers![
         jump_table;
         OpCode::INITSSLOT => init_static_slot,
@@ -68,7 +77,7 @@ pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
 // Initialization Operations
 // ============================================================================
 
-fn init_slot<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
+fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
 
     if ctx.local_variables().is_some() || ctx.arguments().is_some() {
@@ -110,7 +119,7 @@ fn init_slot<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> V
     Ok(())
 }
 
-fn init_static_slot<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
+fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
 
     let static_count = *instruction
@@ -125,17 +134,10 @@ fn init_static_slot<S>(engine: &mut ExecutionEngine<S>, instruction: &Instructio
         ));
     }
 
-    // C# `InitSSlot` faults on a zero operand (a zero-sized static slot is
-    // meaningless) AFTER the twice-guard, then installs the slot unconditionally.
-    // JumpTable.Slot.cs:31-33. The sibling INITSLOT handler already does this.
-    if static_count == 0 {
-        return Err(VmError::invalid_operation_msg(
-            "The operand is invalid for OpCode.INITSSLOT",
-        ));
+    if static_count > 0 {
+        let rc = ctx.evaluation_stack().reference_counter().clone();
+        ctx.set_static_fields(Some(crate::slot::Slot::new(static_count, rc)));
     }
-
-    let rc = ctx.evaluation_stack().reference_counter().clone();
-    ctx.set_static_fields(Some(crate::slot::Slot::new(static_count, rc)));
 
     Ok(())
 }
@@ -145,27 +147,20 @@ fn init_static_slot<S>(engine: &mut ExecutionEngine<S>, instruction: &Instructio
 // ============================================================================
 
 #[inline]
-fn load_static_field_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
+fn load_static_field_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.load_static_field(index)?;
     ctx.push(value)
 }
 
 #[inline]
-fn store_static_field_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
+fn store_static_field_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    // C# ExecuteStoreToSlot validates the destination before engine.Pop().
-    // Loading the destination performs the same slot/index checks without
-    // mutating either the slot or evaluation stack.
-    let _ = ctx.load_static_field(index)?;
     let value = ctx.pop()?;
     ctx.store_static_field(index, value)
 }
 
-fn load_static_field<S>(
-    engine: &mut ExecutionEngine<S>,
-    instruction: &Instruction,
-) -> VmResult<()> {
+fn load_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()
@@ -173,10 +168,7 @@ fn load_static_field<S>(
     load_static_field_n(engine, index)
 }
 
-fn store_static_field<S>(
-    engine: &mut ExecutionEngine<S>,
-    instruction: &Instruction,
-) -> VmResult<()> {
+fn store_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()
@@ -189,21 +181,20 @@ fn store_static_field<S>(
 // ============================================================================
 
 #[inline]
-fn load_local_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
+fn load_local_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.load_local(index)?;
     ctx.push(value)
 }
 
 #[inline]
-fn store_local_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
+fn store_local_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let _ = ctx.load_local(index)?;
     let value = ctx.pop()?;
     ctx.store_local(index, value)
 }
 
-fn load_local<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
+fn load_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()
@@ -211,7 +202,7 @@ fn load_local<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> 
     load_local_n(engine, index)
 }
 
-fn store_local<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
+fn store_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()
@@ -224,21 +215,20 @@ fn store_local<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) ->
 // ============================================================================
 
 #[inline]
-fn load_argument_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
+fn load_argument_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.load_argument(index)?;
     ctx.push(value)
 }
 
 #[inline]
-fn store_argument_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
+fn store_argument_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let _ = ctx.load_argument(index)?;
     let value = ctx.pop()?;
     ctx.store_argument(index, value)
 }
 
-fn load_argument<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
+fn load_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()
@@ -246,14 +236,10 @@ fn load_argument<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) 
     load_argument_n(engine, index)
 }
 
-fn store_argument<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
+fn store_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
     store_argument_n(engine, index)
 }
-
-#[cfg(test)]
-#[path = "../tests/jump_table/slot.rs"]
-mod tests;

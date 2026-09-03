@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Snapshot the live mainnet Ledger + StateService state every <interval> blocks.
-# Polls block height via JSON-RPC (default http://localhost:10332/).
+# Hardlink-snapshot the live mainnet chain DB + StateRoot DB every <interval>
+# blocks. Polls block height via JSON-RPC (default http://localhost:10332/).
 #
 # Snapshots are stored as:
 #   <checkpoint_root>/h<height>/mainnet/
+#   <checkpoint_root>/h<height>/StateRoot/
 #
-# MDBX snapshots use copy/reflink semantics. Mutable environment files must not
-# be hardlinked into a checkpoint.
+# Hardlink copies cost ~zero disk for SST files (immutable, shared inodes) and
+# negligible time, so the writer pause window is sub-second. Hardlinks require
+# the checkpoint dir to live on the same filesystem as the data dirs.
 #
 # Usage:
 #   scripts/checkpoint-on-height.sh <writer_pid|none> [options]
@@ -18,24 +20,16 @@ set -euo pipefail
 #   --max <K>               retain at most K checkpoints (default 10)
 #   --rpc <url>             RPC endpoint (default http://localhost:10332/)
 #   --data-dir <path>       neo-rs data root (default ./data)
-#   --chain-db <path>       explicit chain store path (default <data-dir>/mainnet)
-#   --chain-only            snapshot only the chain DB (for bounded replay DBs without StateService)
 #   --root <path>           checkpoint root (default <data-dir>/checkpoints)
 #   --once                  take a single checkpoint at current height and exit
 #   --height <N>            override RPC; use N as the height label (for --once)
-#   --restore-verified      mark snapshot as restore/probe verified
-#   --verified-height <N>   height proven by the restore/probe verification
-#   --verified-stateroot-root <HASH>
-#                           StateRoot hash proven at --verified-height
-#   --verified-against-reference
-#                           mark snapshot as checked against reference RPC state roots
 #
 # Environment overrides:
 #   NEO_CHECKPOINT_INTERVAL, NEO_CHECKPOINT_MAX, NEO_RPC_URL,
 #   NEO_DATA_DIR, NEO_CHECKPOINT_ROOT
 #
 # Pass `none` (or 0) as writer_pid when no live writer is running — STOP/CONT
-# is skipped. Otherwise the writer is paused around each snapshot copy.
+# is skipped. Otherwise the writer is paused around each hardlink copy.
 
 WRITER_PID="${1:-}"
 shift || true
@@ -45,14 +39,8 @@ MAX_CHECKPOINTS="${NEO_CHECKPOINT_MAX:-10}"
 RPC_URL="${NEO_RPC_URL:-http://localhost:10332/}"
 DATA_DIR="${NEO_DATA_DIR:-./data}"
 CHECKPOINT_ROOT="${NEO_CHECKPOINT_ROOT:-}"
-CHAIN_DB_OVERRIDE="${NEO_CHAIN_DB:-}"
 ONCE=0
 HEIGHT_OVERRIDE=""
-CHAIN_ONLY=0
-RESTORE_VERIFIED=0
-VERIFIED_HEIGHT=""
-VERIFIED_STATEROOT_ROOT=""
-VERIFIED_AGAINST_REFERENCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -60,65 +48,44 @@ while [[ $# -gt 0 ]]; do
     --max)      MAX_CHECKPOINTS="$2"; shift 2;;
     --rpc)      RPC_URL="$2"; shift 2;;
     --data-dir) DATA_DIR="$2"; shift 2;;
-    --chain-db) CHAIN_DB_OVERRIDE="$2"; shift 2;;
-    --chain-only) CHAIN_ONLY=1; shift;;
     --root)     CHECKPOINT_ROOT="$2"; shift 2;;
     --once)     ONCE=1; shift;;
     --height)   HEIGHT_OVERRIDE="$2"; shift 2;;
-    --restore-verified) RESTORE_VERIFIED=1; shift;;
-    --verified-height) VERIFIED_HEIGHT="$2"; shift 2;;
-    --verified-stateroot-root) VERIFIED_STATEROOT_ROOT="$2"; shift 2;;
-    --verified-against-reference) VERIFIED_AGAINST_REFERENCE=1; shift;;
     -h|--help)
-      sed -n '3,33p' "$0"; exit 0;;
+      sed -n '3,29p' "$0"; exit 0;;
     *) echo "unknown option: $1" >&2; exit 1;;
   esac
 done
 
 if [[ -z "$WRITER_PID" ]]; then
-  echo "Usage: $0 <writer_pid|none> [--interval N] [--max K] [--rpc URL] [--data-dir PATH] [--chain-db PATH] [--root PATH] [--once]" >&2
+  echo "Usage: $0 <writer_pid|none> [--interval N] [--max K] [--rpc URL] [--data-dir PATH] [--root PATH] [--once]" >&2
   exit 1
 fi
 
-CHAIN_DB="${CHAIN_DB_OVERRIDE:-${DATA_DIR}/mainnet}"
+CHAIN_DB="${DATA_DIR}/mainnet"
+STATEROOT_DB="${DATA_DIR}/Plugins/mainnet/StateRoot"
 CHECKPOINT_ROOT="${CHECKPOINT_ROOT:-${DATA_DIR}/checkpoints}"
 
 if [[ ! -d "$CHAIN_DB" ]]; then
   echo "chain DB not found: $CHAIN_DB" >&2; exit 1
 fi
+if [[ ! -d "$STATEROOT_DB" ]]; then
+  echo "StateRoot DB not found: $STATEROOT_DB" >&2; exit 1
+fi
 
 case "$INTERVAL_BLOCKS" in ''|*[!0-9]*) echo "--interval must be integer"; exit 1;; esac
 case "$MAX_CHECKPOINTS" in ''|*[!0-9]*) echo "--max must be integer"; exit 1;; esac
-if [[ -n "$VERIFIED_HEIGHT" ]]; then
-  case "$VERIFIED_HEIGHT" in ''|*[!0-9]*) echo "--verified-height must be integer" >&2; exit 1;; esac
-fi
 if [[ "$INTERVAL_BLOCKS" -lt 1 ]]; then echo "--interval must be >=1"; exit 1; fi
-if [[ "$MAX_CHECKPOINTS" -lt 3 ]]; then echo "--max must be >= 3" >&2; exit 1; fi
-if [[ "$RESTORE_VERIFIED" -eq 1 && -z "$VERIFIED_HEIGHT" ]]; then
-  echo "--restore-verified requires --verified-height" >&2
-  exit 1
-fi
-if [[ "$RESTORE_VERIFIED" -eq 1 && -z "$VERIFIED_STATEROOT_ROOT" ]]; then
-  echo "--restore-verified requires --verified-stateroot-root" >&2
-  exit 1
-fi
-if [[ -n "$VERIFIED_STATEROOT_ROOT" && "$RESTORE_VERIFIED" -ne 1 ]]; then
-  echo "--verified-stateroot-root requires --restore-verified" >&2
-  exit 1
-fi
-if [[ "$VERIFIED_AGAINST_REFERENCE" -eq 1 && "$RESTORE_VERIFIED" -ne 1 ]]; then
-  echo "--verified-against-reference requires --restore-verified" >&2
-  exit 1
-fi
+if [[ "$MAX_CHECKPOINTS" -lt 1 ]]; then echo "--max must be >=1"; exit 1; fi
 
 mkdir -p "$CHECKPOINT_ROOT"
 
-# Cross-filesystem reflinks fail. Detect once.
+# Cross-filesystem hardlinks fail. Detect once.
 DATA_FS=$(stat -c %m "$DATA_DIR" 2>/dev/null || echo /)
 CKPT_FS=$(stat -c %m "$CHECKPOINT_ROOT" 2>/dev/null || echo /)
 if [[ "$DATA_FS" != "$CKPT_FS" ]]; then
   echo "WARN: $CHECKPOINT_ROOT ($CKPT_FS) and $DATA_DIR ($DATA_FS) are on different filesystems." >&2
-  echo "      Reflinks will fail and full copies (slow, disk-heavy) will be used instead." >&2
+  echo "      Hardlinks will fail and full copies (slow, disk-heavy) will be used instead." >&2
 fi
 
 has_writer() {
@@ -147,52 +114,12 @@ fetch_height() {
 }
 
 # ----- snapshot operation -----
-copy_store_dir() {
-  local src="$1"
-  local dst="$2"
-  cp -a --reflink=auto "$src" "$dst" 2>/dev/null || cp -a "$src" "$dst"
-}
-
 take_snapshot() {
   local height="$1"
   local target="${CHECKPOINT_ROOT}/h${height}"
   local tmp="${target}.partial"
 
-  if [[ -n "$VERIFIED_HEIGHT" && "$VERIFIED_HEIGHT" != "$height" ]]; then
-    echo "--verified-height must match --height: verified=${VERIFIED_HEIGHT} height=${height}" >&2
-    return 1
-  fi
-
   if [[ -d "$target" ]]; then
-    if [[ "$RESTORE_VERIFIED" -eq 1 ]]; then
-      local info="${target}/CHECKPOINT_INFO"
-      local existing_restore_verified existing_verified_height
-      local existing_verified_stateroot_root existing_verified_against_reference
-      if [[ ! -f "$info" ]]; then
-        echo "checkpoint h${height} already exists but is missing CHECKPOINT_INFO" >&2
-        return 1
-      fi
-      existing_restore_verified=$(sed -n 's/^restore_verified=//p' "$info" | head -1)
-      existing_verified_height=$(sed -n 's/^verified_height=//p' "$info" | head -1)
-      existing_verified_stateroot_root=$(sed -n 's/^verified_stateroot_root=//p' "$info" | head -1)
-      existing_verified_against_reference=$(sed -n 's/^verified_against_reference=//p' "$info" | head -1)
-      if [[ "${existing_restore_verified,,}" != "true" ]]; then
-        echo "checkpoint h${height} already exists but restore_verified is not true" >&2
-        return 1
-      fi
-      if [[ "$existing_verified_height" != "$VERIFIED_HEIGHT" ]]; then
-        echo "checkpoint h${height} already exists with mismatched verified_height: existing=${existing_verified_height} requested=${VERIFIED_HEIGHT}" >&2
-        return 1
-      fi
-      if [[ "${existing_verified_stateroot_root,,}" != "${VERIFIED_STATEROOT_ROOT,,}" ]]; then
-        echo "checkpoint h${height} already exists with mismatched verified_stateroot_root: existing=${existing_verified_stateroot_root} requested=${VERIFIED_STATEROOT_ROOT}" >&2
-        return 1
-      fi
-      if [[ "$VERIFIED_AGAINST_REFERENCE" -eq 1 && "${existing_verified_against_reference,,}" != "true" ]]; then
-        echo "checkpoint h${height} already exists but verified_against_reference is not true" >&2
-        return 1
-      fi
-    fi
     echo "checkpoint h${height} already exists, skipping"; return 0
   fi
 
@@ -207,11 +134,13 @@ take_snapshot() {
 
   if has_writer; then
     kill -STOP "$WRITER_PID"; paused=1
-    # Allow in-flight syscalls (especially write()) to settle before copying.
+    # Allow in-flight syscalls (esp. write()) to settle before hardlinking
     sleep 0.2
   fi
 
-  copy_store_dir "$CHAIN_DB" "${tmp}/mainnet"
+  # cp -al = archive + hardlink. Falls back to copy if cross-FS.
+  cp -al "$CHAIN_DB" "${tmp}/mainnet" 2>/dev/null || cp -a "$CHAIN_DB" "${tmp}/mainnet"
+  cp -al "$STATEROOT_DB" "${tmp}/StateRoot" 2>/dev/null || cp -a "$STATEROOT_DB" "${tmp}/StateRoot"
 
   if has_writer; then
     kill -CONT "$WRITER_PID"; paused=0
@@ -223,26 +152,7 @@ take_snapshot() {
     echo "height=${height}"
     echo "writer_pid=${WRITER_PID}"
     echo "chain_db=${CHAIN_DB}"
-    echo "storage_provider=mdbx"
-    if [[ "$CHAIN_ONLY" -eq 0 ]]; then
-      echo "stateroot_db=${CHAIN_DB}:neo_state_service"
-      echo "state_root_layout=coordinated_mdbx"
-      echo "state_root_included=true"
-    else
-      echo "stateroot_db=none"
-      echo "state_root_layout=coordinated_mdbx"
-      echo "state_root_included=false"
-    fi
-    if [[ "$RESTORE_VERIFIED" -eq 1 ]]; then
-      echo "restore_verified=true"
-      echo "verified_height=${VERIFIED_HEIGHT}"
-      if [[ -n "$VERIFIED_STATEROOT_ROOT" ]]; then
-        echo "verified_stateroot_root=${VERIFIED_STATEROOT_ROOT}"
-      fi
-    fi
-    if [[ "$VERIFIED_AGAINST_REFERENCE" -eq 1 ]]; then
-      echo "verified_against_reference=true"
-    fi
+    echo "stateroot_db=${STATEROOT_DB}"
   } >"${tmp}/CHECKPOINT_INFO"
   rm -f "${tmp}/CHECKPOINT_IN_PROGRESS"
   mv "$tmp" "$target"
@@ -251,10 +161,7 @@ take_snapshot() {
 
 prune_old() {
   local -a dirs
-  dirs=()
-  while IFS= read -r dir; do
-    dirs+=("$dir")
-  done < <(sorted_checkpoints_for_pruning)
+  mapfile -t dirs < <(ls -1d "${CHECKPOINT_ROOT}"/h[0-9]* 2>/dev/null | sort -t h -k2,2n)
   local count="${#dirs[@]}"
   if [[ "$count" -le "$MAX_CHECKPOINTS" ]]; then return; fi
   local to_prune=$((count - MAX_CHECKPOINTS))
@@ -263,64 +170,6 @@ prune_old() {
     echo "pruning old checkpoint: ${dirs[$i]}"
     rm -rf "${dirs[$i]}"
   done
-}
-
-checkpoint_is_restore_verified() {
-  local dir="$1"
-  local info="${dir}/CHECKPOINT_INFO"
-  local restore_verified verified_height verified_stateroot_root verified_against_reference
-  local info_height storage_provider state_root_layout
-
-  [[ -d "${dir}/mainnet" ]] || return 1
-  [[ -f "$info" ]] || return 1
-  [[ ! -e "${dir}/CHECKPOINT_IN_PROGRESS" ]] || return 1
-
-  info_height=$(sed -n 's/^height=//p' "$info" | head -1)
-  storage_provider=$(sed -n 's/^storage_provider=//p' "$info" | head -1)
-  state_root_layout=$(sed -n 's/^state_root_layout=//p' "$info" | head -1)
-  [[ "${storage_provider,,}" == "mdbx" ]] || return 1
-  [[ "$state_root_layout" == "coordinated_mdbx" ]] || return 1
-  restore_verified=$(sed -n 's/^restore_verified=//p' "$info" | head -1)
-  verified_height=$(sed -n 's/^verified_height=//p' "$info" | head -1)
-  verified_stateroot_root=$(sed -n 's/^verified_stateroot_root=//p' "$info" | head -1)
-  verified_against_reference=$(sed -n 's/^verified_against_reference=//p' "$info" | head -1)
-
-  [[ -n "$info_height" ]] || return 1
-  [[ "$verified_height" == "$info_height" ]] || return 1
-  [[ -n "$verified_stateroot_root" ]] || return 1
-  [[ "${restore_verified,,}" == "true" ]] || return 1
-  [[ "${verified_against_reference,,}" == "true" ]] || return 1
-}
-
-sorted_checkpoints_for_pruning() {
-  local dir base height priority
-  find "$CHECKPOINT_ROOT" -maxdepth 1 -mindepth 1 -type d -name 'h[0-9]*' 2>/dev/null |
-    while IFS= read -r dir; do
-      base=$(basename "$dir")
-      [[ "$base" =~ ^h([0-9]+)$ ]] || continue
-      height="${BASH_REMATCH[1]}"
-      if checkpoint_is_restore_verified "$dir"; then
-        priority=1
-      else
-        priority=0
-      fi
-      printf '%s\t%s\t%s\n' "$priority" "$height" "$dir"
-    done |
-    sort -n -k1,1 -k2,2 |
-    cut -f3-
-}
-
-sorted_height_checkpoints() {
-  local dir base height
-  find "$CHECKPOINT_ROOT" -maxdepth 1 -mindepth 1 -type d -name 'h[0-9]*' 2>/dev/null |
-    while IFS= read -r dir; do
-      base=$(basename "$dir")
-      [[ "$base" =~ ^h([0-9]+)$ ]] || continue
-      height="${BASH_REMATCH[1]}"
-      printf '%s\t%s\n' "$height" "$dir"
-    done |
-    sort -n -k1,1 |
-    cut -f2-
 }
 
 # ----- main loop -----
@@ -344,7 +193,7 @@ fi
 echo "watching pid=$WRITER_PID interval=${INTERVAL_BLOCKS} blocks max=$MAX_CHECKPOINTS rpc=$RPC_URL root=$CHECKPOINT_ROOT"
 last_height=-1
 # seed last_height from highest existing checkpoint so we don't re-checkpoint h<X> immediately after restart
-if last_ckpt=$(sorted_height_checkpoints | tail -1); then
+if last_ckpt=$(ls -1d "${CHECKPOINT_ROOT}"/h[0-9]* 2>/dev/null | sort -t h -k2,2n | tail -1); then
   if [[ -n "$last_ckpt" ]]; then
     last_height=$(basename "$last_ckpt" | sed 's/^h//')
     echo "resuming after last checkpoint h${last_height}"

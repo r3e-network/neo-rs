@@ -1,7 +1,6 @@
 //! WebSocket event types and serialization
 
 use neo_primitives::UInt256;
-use neo_primitives::hex_util;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -15,7 +14,7 @@ macro_rules! ws_event_types {
                 $(#[$variant_meta:meta])*
                 $variant:ident => $wire:literal
             ),+ $(,)?
-       }
+        }
     ) => {
         $(#[$enum_meta])*
         $vis enum $name {
@@ -23,7 +22,7 @@ macro_rules! ws_event_types {
                 $(#[$variant_meta])*
                 $variant,
             )+
-       }
+        }
 
         impl $name {
             /// All event types in stable JSON-RPC/WebSocket wire order.
@@ -40,15 +39,15 @@ macro_rules! ws_event_types {
                     $(
                         Self::$variant => $wire,
                     )+
-               }
-           }
-       }
+                }
+            }
+        }
 
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(self.as_str())
-           }
-       }
+            }
+        }
 
         impl FromStr for $name {
             type Err = String;
@@ -58,14 +57,14 @@ macro_rules! ws_event_types {
                     $(
                         $wire => Ok(Self::$variant),
                     )+
-                    _ => Err(format!("unknown event type: {s}"))}
-           }
-       }
-   };
+                    _ => Err(format!("unknown event type: {s}")),
+                }
+            }
+        }
+    };
 }
 
 ws_event_types! {
-    /// WebSocket event types that clients can subscribe to.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
     #[serde(rename_all = "snake_case")]
     pub enum WsEventType {
@@ -76,11 +75,12 @@ ws_event_types! {
         /// Transaction(s) removed from mempool
         TransactionRemoved => "transaction_removed",
         /// Contract notification event
-        Notification => "notification"}
+        Notification => "notification",
+    }
 }
 
 fn prefixed_hash(hash: &UInt256) -> String {
-    format!("0x{}", hex_util::encode_hex(&hash.as_bytes()))
+    format!("0x{}", hex::encode(hash.as_bytes()))
 }
 
 /// WebSocket event payload
@@ -184,20 +184,20 @@ impl WsNotification {
     pub fn from_event(event: &WsEvent) -> Self {
         let params = match event {
             WsEvent::BlockAdded { hash, height } => {
-                serde_json::json!({"hash": hash, "height": height})
+                serde_json::json!({ "hash": hash, "height": height })
             }
             WsEvent::TransactionAdded { hash } => {
-                serde_json::json!({"hash": hash})
+                serde_json::json!({ "hash": hash })
             }
             WsEvent::TransactionRemoved { hashes, reason } => {
-                serde_json::json!({"hashes": hashes, "reason": reason})
+                serde_json::json!({ "hashes": hashes, "reason": reason })
             }
             WsEvent::Notification {
                 contract,
                 event_name,
                 state,
             } => {
-                serde_json::json!({"contract": contract, "eventname": event_name, "state": state})
+                serde_json::json!({ "contract": contract, "eventname": event_name, "state": state })
             }
         };
 
@@ -216,5 +216,31 @@ impl WsNotification {
 }
 
 #[cfg(test)]
-#[path = "../../tests/server/ws/events.rs"]
-mod tests;
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_event_type_parsing() {
+        assert_eq!(
+            "block_added".parse::<WsEventType>(),
+            Ok(WsEventType::BlockAdded)
+        );
+        assert_eq!(
+            "transaction_added".parse::<WsEventType>(),
+            Ok(WsEventType::TransactionAdded)
+        );
+        assert!("unknown".parse::<WsEventType>().is_err());
+    }
+
+    #[test]
+    fn test_notification_serialization() {
+        let event = WsEvent::BlockAdded {
+            hash: "0x1234".to_string(),
+            height: 100,
+        };
+        let notification = WsNotification::from_event(&event);
+        let json = notification.to_json();
+        assert!(json.contains("block_added"));
+        assert!(json.contains("100"));
+    }
+}

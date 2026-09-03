@@ -1,9 +1,4 @@
-## Purpose
-
-Define security gates for untrusted inputs, dependencies, and release-blocking
-audit findings.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Security audit compliance
 The system SHALL address all findings from security audit before production release.

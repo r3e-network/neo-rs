@@ -1,37 +1,70 @@
-//! # neo-storage
+//! # Neo Storage
 //!
-//! Store traits, cache overlays, isolated maintenance metadata,
-//! storage-domain types, and concrete backends.
+//! Storage traits and types for the Neo blockchain.
 //!
-//! ## Boundary
+//! ## Crate Purpose
 //!
-//! This infrastructure crate owns store mechanics and must not execute
-//! contracts, import blocks, or make RPC/network policy decisions.
+//! This crate provides the **single source of truth** for all storage-related
+//! functionality in the Neo ecosystem. It includes:
 //!
-//! ## Contents
+//! - **Storage traits**: `ReadOnlyStore`, `WriteStore`, `Store`, `StoreSnapshot`
+//! - **Storage types**: `StorageKey`, `StorageItem`, `SeekDirection`, `TrackState`
+//! - **Cache**: `DataCache`, `Trackable` for in-memory caching with tracking
+//! - **Hash utilities**: C#-compatible xxhash3 implementation for storage keys
+//! - **Key building**: Fluent API for constructing storage keys
 //!
-//! - `core`: Core reader, writer, var-int, and macro helpers for binary IO.
-//! - `errors`: Typed errors and result aliases for this crate boundary.
-//! - `persistence`: Persistence traits, snapshots, transactions, maintenance
-//!   batches, and cache overlays.
-//! - `mdbx`: Production default MDBX provider and store adapter.
-//! - `types`: Storage-domain types shared by store implementations.
+//! ## Core Components
+//!
+//! - [`ReadOnlyStore`]: Read-only storage operations (`try_get`, contains)
+//! - [`WriteStore`]: Write operations (put, delete)
+//! - [`Store`]: Combined read/write interface
+//! - [`StoreSnapshot`]: Point-in-time snapshot with seek/find operations
+//! - [`StorageKey`]: Storage key with contract ID and key suffix (C# parity)
+//! - [`StorageItem`]: Storage value with constant flag support
+//! - [`DataCache`]: In-memory cache with change tracking
+//! - [`SeekDirection`]: Forward/Backward iteration direction
+//! - [`TrackState`]: Cache tracking states (None, Added, Changed, Deleted, `NotFound`)
+//!
+//! ## Example
+//!
+//! ```rust,ignore
+//! use neo_storage::{ReadOnlyStore, StorageKey, StorageItem};
+//! use neo_primitives::UInt160;
+//!
+//! fn read_value<S: ReadOnlyStore>(store: &S, key: &StorageKey) -> Option<StorageItem> {
+//!     store.try_get(key)
+//! }
+//!
+//! // Create storage key with UInt160
+//! let hash = UInt160::zero();
+//! let key = StorageKey::create_with_uint160(-1, 0x14, &hash);
+//! ```
 
-mod core;
-mod errors;
-pub mod mdbx;
-/// Persistence traits, caches, snapshots, and in-memory store providers.
+pub mod cache;
+pub mod error;
+pub mod hash_utils;
+pub mod key_builder;
 pub mod persistence;
 pub mod types;
 
-// Canonical cache types live in `persistence::data_cache`; re-export the common
-// surface at the crate root for ergonomic access.
-pub use core::{DEFAULT_XX_HASH3_SEED, KeyBuilder, KeyBuilderError, XxHash3};
-pub use core::{hash_utils, key_builder};
-pub use errors::{StorageError, StorageResult, error};
-pub use persistence::data_cache::{
-    CacheRead, DataCache, DataCacheAtomicMergeError, DataCacheError, DataCacheReadObservationPause,
-    DataCacheReadObserver, DataCacheReadOrigin, DataCacheResult, DataCacheVersion,
-    EmptyCacheBacking, LockedDataCacheView, Trackable, TrackableEntry,
+pub use cache::{
+    ClonedCache, DataCache, DataCacheError, DataCacheResult, Trackable, TrackableEntry,
 };
-pub use types::{SeekDirection, StorageItem, StorageItemCache, StorageKey, TrackState};
+pub use error::{StorageError, StorageResult};
+pub use hash_utils::{
+    default_xx_hash3_seed, hash_code_combine_i32, xx_hash3_32, DEFAULT_XX_HASH3_SEED,
+};
+pub use key_builder::{KeyBuilder, KeyBuilderError};
+pub use types::{SeekDirection, StorageItem, StorageKey, TrackState};
+
+/// Implements `Default` for a struct by calling `Self::new()`.
+#[macro_export]
+macro_rules! impl_default_via_new {
+    ($type:ty) => {
+        impl Default for $type {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+    };
+}

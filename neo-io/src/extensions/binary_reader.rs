@@ -1,0 +1,78 @@
+use crate::var_int::read_var_int_prefix;
+use std::io::{Error, ErrorKind, Read, Result};
+
+/// Extension helpers for [`Read`] mirroring `Neo.Extensions.IO.BinaryReaderExtensions`.
+pub trait BinaryReaderExtensions: Read {
+    /// Reads exactly `N` bytes and returns them as a fixed-size array.
+    ///
+    /// This is more efficient than `read_fixed_bytes` when the size is known at compile time.
+    fn read_array<const N: usize>(&mut self) -> Result<[u8; N]>;
+
+    /// Reads exactly `size` bytes from the underlying stream.
+    fn read_fixed_bytes(&mut self, size: usize) -> Result<Vec<u8>>;
+
+    /// Reads a variable-length byte array (Neo var-bytes encoding).
+    fn read_var_bytes(&mut self, max: usize) -> Result<Vec<u8>>;
+
+    /// Reads a variable-length integer (Neo var-int encoding).
+    fn read_var_int(&mut self, max: u64) -> Result<u64>;
+}
+
+impl<T: Read> BinaryReaderExtensions for T {
+    fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> {
+        let mut buf = [0u8; N];
+        self.read_exact(&mut buf)?;
+        Ok(buf)
+    }
+
+    fn read_fixed_bytes(&mut self, size: usize) -> Result<Vec<u8>> {
+        let mut data = vec![0u8; size];
+        let mut offset = 0;
+        while offset < size {
+            let read = self.read(&mut data[offset..])?;
+            if read == 0 {
+                return Err(Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "Unexpected end of stream",
+                ));
+            }
+            offset += read;
+        }
+        Ok(data)
+    }
+
+    fn read_var_bytes(&mut self, max: usize) -> Result<Vec<u8>> {
+        let length = self.read_var_int(max as u64)? as usize;
+        if length > max {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("Var-bytes length {length} exceeds maximum {max}"),
+            ));
+        }
+        self.read_fixed_bytes(length)
+    }
+
+    fn read_var_int(&mut self, max: u64) -> Result<u64> {
+        let mut buf = [0u8; 9];
+        self.read_exact(&mut buf[..1])?;
+        let width = match buf[0] {
+            0xFD => 3,
+            0xFE => 5,
+            0xFF => 9,
+            _ => 1,
+        };
+        self.read_exact(&mut buf[1..width])?;
+
+        let (value, decoded_width) = read_var_int_prefix(&buf[..width])
+            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Invalid Neo var-int prefix"))?;
+        debug_assert_eq!(decoded_width, width);
+
+        if value > max {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("Var-int value {value} exceeds maximum {max}"),
+            ));
+        }
+        Ok(value)
+    }
+}

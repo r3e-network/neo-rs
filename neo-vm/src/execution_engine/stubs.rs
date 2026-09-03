@@ -2,13 +2,19 @@
 // Default host hooks for ExecutionEngine runs without an attached ApplicationEngine.
 //
 
-use super::{ExecutionEngine, HASH_SIZE, VmResult};
+use super::{ExecutionEngine, VmResult, HASH_SIZE};
 
-impl<S> ExecutionEngine<S> {
+impl ExecutionEngine {
     /// Returns the current script hash, if the host provides one.
     /// Standalone VM execution has no blockchain context so this returns `None`.
     #[must_use]
     pub const fn current_script_hash(&self) -> Option<&[u8]> {
+        None
+    }
+
+    /// Returns the script container, if the host provides one.
+    #[must_use]
+    pub fn get_script_container(&self) -> Option<&dyn std::any::Any> {
         None
     }
 

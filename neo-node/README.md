@@ -5,12 +5,10 @@ Standalone Neo N3 blockchain node daemon with built-in RPC server.
 ## Overview
 
 `neo-node` is a standalone daemon that runs the Neo N3 blockchain node. It:
-- Synchronizes with the Neo network over the Neo P2P protocol
+- Synchronizes with the Neo network
 - Provides a JSON-RPC API for external clients
-- Manages the blockchain database through MDBX
-- Supports built-in services (RpcServer, NeoIndexer, ApplicationLogs, TokensTracker, StateService, OracleService when enabled)
-- Consensus (dBFT 2.0) can be enabled via DBFTPlugin settings and a validator wallet
-- Optional TEE support (SGX/Nitro) and HSM-backed consensus signing
+- Manages the blockchain database
+- Supports built-in services (RpcServer, ApplicationLogs, TokensTracker, StateService when enabled). Consensus (dBFT) can be enabled via DBFTPlugin settings and a validator wallet.
 
 ## Installation
 
@@ -21,38 +19,46 @@ cargo build -p neo-node --release
 ## Usage
 
 ```bash
-# Start with the default configuration (TestNet)
-neo-node
-
-# Start with MainNet configuration
+# Start with default configuration (mainnet)
 neo-node --config neo_mainnet_node.toml
 
+# Start with testnet configuration
+neo-node --config neo_testnet_node.toml
+
+# Run in daemon mode (minimal console output)
+neo-node --config neo_mainnet_node.toml --daemon
+
 # Override storage path
-neo-node --config neo_mainnet_node.toml --storage-path ./data/chain
+neo-node --config neo_mainnet_node.toml --storage ./data/chain
 
-# Validate configuration and storage without starting P2P/RPC
-neo-node --config neo_mainnet_node.toml --check-all
+# Use RocksDB backend
+neo-node --config neo_mainnet_node.toml --backend rocksdb --storage ./data/chain
 
-# Assert the selected built-in chain's network magic
-neo-node --config neo_mainnet_node.toml --network-magic 860833102
+# Enable state root calculation/validation (alias: --stateroot)
+neo-node --config neo_mainnet_node.toml --stateroot
 ```
 
 Notes:
-- Storage backend, P2P, RPC, and consensus settings live in TOML.
-- `--storage-path` uses the configured persistent backend, defaulting to MDBX in production builds, and overrides `[storage].data_dir` / `[storage].path`.
-- Built-in MainNet and TestNet identity fields are assertions. Private/custom chains require an explicit validated `NeoChainSpec` from an embedding application.
-- When dBFT is enabled, the validator key comes from the `[consensus]` configuration.
+- When `--state-root-full-state` is disabled, `getproof`/`getstate`/`findstates` only support the current local root hash (older roots return RPC error `-606`, matching Neo's `StateService` plugin).
+- Validated state roots are only accepted when `RoleManagement` has designated `StateValidator` keys at the given index (also matches Neo's `StateService` rules).
+- When dBFT `auto_start` is disabled, open a wallet and call RPC `startconsensus` to begin consensus.
 
 ## Command-line Options
 
 | Option | Description | Default |
 |--------|-------------|--------|
-| `-c, --config <PATH>` | Path to TOML configuration file | `neo_testnet_node.toml` |
-| `--storage-path <PATH>` | Override storage path for the configured/default persistent backend | (from config) |
-| `--network-magic <N>` | Assert the selected chain's network magic | (not set) |
-| `--check-config` | Validate configuration and exit | false |
-| `--check-storage` | Validate storage can be opened and exit | false |
-| `--check-all` | Run all preflight checks and exit | false |
+| `-c, --config <PATH>` | Path to TOML configuration file | `neo_mainnet_node.toml` |
+| `--storage <PATH>` | Override storage path | (from config) |
+| `--backend <NAME>` | Storage backend (memory, rocksdb) | (from config) |
+| `--network-magic <N>` | Override network magic | (from config) |
+| `--listen-port <PORT>` | P2P listening port | (from config) |
+| `--seed <HOST:PORT>` | Seed nodes (comma separated) | (from config) |
+| `--max-connections <N>` | Maximum connections | (from config) |
+| `--min-connections <N>` | Minimum desired peers | (from config) |
+| `-d, --daemon` | Daemon mode (no console output) | false |
+| `--state-root` / `--stateroot` | Enable state root calculation & validation | false |
+| `--state-root-path <PATH>` | StateRoot DB path (defaults to `<storage>/StateRoot`) | (derived) |
+| `--state-root-full-state` | Keep full historical state (enables old-root proofs; larger DB) | false |
 
 ## Configuration
 
@@ -60,47 +66,21 @@ See `neo_mainnet_node.toml` for a full configuration example. Key sections:
 
 ```toml
 [network]
-network_type = "mainnet"  # or "testnet"
+network_type = "mainnet"  # or "testnet", "privatenet"
 
 [p2p]
-port = 10333
+listen_port = 10333
 max_connections = 40
 seed_nodes = ["seed1.neo.org:10333", "seed2.neo.org:10333"]
 
 [storage]
-data_dir = "./data/chain"
-backend = "mdbx"
-static_files_dir = "./data/chain-static"
-static_files_max_segment_mb = 4096
+path = "./data/chain"
+backend = "rocksdb"
 
 [rpc]
 enabled = true
 bind_address = "127.0.0.1"
 port = 10332
-
-[indexer]
-enabled = true
-store_path = "./data/mainnet/indexer"
-
-[application_logs]
-enabled = true
-path = "ApplicationLogs_{0}"
-
-[tokens_tracker]
-enabled = true
-db_path = "TokensTracker_{0}"
-enabled_trackers = ["NEP-17", "NEP-11"]
-
-[telemetry.metrics]
-enabled = true
-bind_address = "127.0.0.1"
-port = 9090
-path = "/metrics"
-
-[observability]
-enabled = false
-service_name = "neo-node-mainnet"
-environment = "production"
 
 [logging]
 active = true
@@ -112,37 +92,28 @@ console_output = true
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      neo-node (L7)                       │
+│                      neo-node                            │
 │  ┌─────────────────────────────────────────────────────┐│
-│  │              neo-system (L5 Composition)             ││
-│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐    ││
-│  │  │ Blockchain │  │ LocalNode  │  │ Supervisor │    ││
-│  │  │  Service   │  │  (P2P)     │  │ (Tasks)    │    ││
-│  │  └────────────┘  └────────────┘  └────────────┘    ││
+│  │                   NeoSystem                         ││
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐   ││
+│  │  │ Blockchain │  │ LocalNode  │  │TaskManager │   ││
+│  │  │   Actor    │  │   Actor    │  │   Actor    │   ││
+│  │  └────────────┘  └────────────┘  └────────────┘   ││
 │  └─────────────────────────────────────────────────────┘│
 │  ┌─────────────────────────────────────────────────────┐│
-│  │           neo-rpc + neo-oracle-service (L6)         ││
-│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐    ││
-│  │  │ RpcServer  │  │ NeoIndexer │  │ AppLogs    │    ││
-│  │  └────────────┘  └────────────┘  └────────────┘    ││
-│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐    ││
-│  │  │TokenTrack  │  │StateRoot   │  │ Oracle     │    ││
-│  │  └────────────┘  └────────────┘  └────────────┘    ││
+│  │                    Plugins                          ││
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐   ││
+│  │  │ RpcServer  │  │ AppLogs    │  │ TokenTrack │   ││
+│  │  └────────────┘  └────────────┘  └────────────┘   ││
 │  └─────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────┘
                            │
                            │ JSON-RPC
                            ▼
-                    ┌──────────────────┐
-                    │ JSON-RPC clients │
-                    └──────────────────┘
+                    ┌─────────────┐
+                    │   neo-cli   │
+                    └─────────────┘
 ```
-
-The node follows 8 ordered dependency layers and concrete static composition,
-using selected **reth** provider/storage patterns and **Polkadot/Substrate**
-bounded-context ideas as architecture references. The earlier type-state
-`NodeComponents` and `EngineApi` scaffolds were removed. See `../design.md` for
-the 45 ADRs and architecture evolution record.
 
 ## License
 

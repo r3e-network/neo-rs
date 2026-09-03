@@ -1,0 +1,101 @@
+//! Inventory payload (mirrors `Neo.Network.P2P.Payloads.InvPayload`).
+
+use neo_io::serializable::helper;
+use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_primitives::{InventoryType, UInt256};
+use serde::{Deserialize, Serialize};
+
+/// Maximum number of hashes allowed in a single payload (increased for faster sync).
+/// Maximum number of hashes in an inventory payload.
+/// Matches C# Neo: `InvPayload.MaxHashesCount = 500`
+pub const MAX_HASHES_COUNT: usize = 500;
+
+/// Maximum number of headers to request in a single batch during fast sync.
+pub const HEADER_PREFETCH_COUNT: i16 = 2000;
+
+/// Inventory relay payload containing hashes of announced objects.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InvPayload {
+    /// Type of inventory being advertised.
+    pub inventory_type: InventoryType,
+    /// Hashes carried by this message.
+    pub hashes: Vec<UInt256>,
+}
+
+impl InvPayload {
+    /// Creates a new payload from the provided hashes.
+    pub fn new<T>(inventory_type: InventoryType, hashes: T) -> Self
+    where
+        T: Into<Vec<UInt256>>,
+    {
+        let hashes_vec = hashes.into();
+        debug_assert!(hashes_vec.len() <= MAX_HASHES_COUNT);
+        Self {
+            inventory_type,
+            hashes: hashes_vec,
+        }
+    }
+
+    /// Convenience constructor (matches the C# `Create` helper).
+    pub fn create(inventory_type: InventoryType, hashes: &[UInt256]) -> Self {
+        Self::new(inventory_type, hashes.to_vec())
+    }
+
+    /// Splits an arbitrary collection of hashes into protocol-compliant payloads.
+    pub fn create_group<I>(inventory_type: InventoryType, hashes: I) -> Vec<Self>
+    where
+        I: IntoIterator<Item = UInt256>,
+    {
+        let hashes_vec: Vec<UInt256> = hashes.into_iter().collect();
+        if hashes_vec.is_empty() {
+            return Vec::new();
+        }
+
+        hashes_vec
+            .chunks(MAX_HASHES_COUNT)
+            .map(|chunk| Self::new(inventory_type, chunk.to_vec()))
+            .collect()
+    }
+
+    /// Returns `true` when no hashes are carried by the payload.
+    pub fn is_empty(&self) -> bool {
+        self.hashes.is_empty()
+    }
+
+    /// Returns the number of hashes in the payload.
+    pub fn len(&self) -> usize {
+        self.hashes.len()
+    }
+}
+
+impl Serializable for InvPayload {
+    fn size(&self) -> usize {
+        1 + helper::get_var_size_serializable_slice(&self.hashes)
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u8(self.inventory_type.to_byte())?;
+        helper::serialize_array(&self.hashes, writer)?;
+        Ok(())
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let ty = InventoryType::from_byte(reader.read_u8()?)
+            .ok_or_else(|| IoError::invalid_data("Unsupported inventory type encountered"))?;
+
+        let hashes = helper::deserialize_array::<UInt256>(reader, MAX_HASHES_COUNT)?;
+        Ok(Self {
+            inventory_type: ty,
+            hashes,
+        })
+    }
+}
+
+impl Default for InvPayload {
+    fn default() -> Self {
+        Self {
+            inventory_type: InventoryType::Transaction,
+            hashes: Vec::new(),
+        }
+    }
+}

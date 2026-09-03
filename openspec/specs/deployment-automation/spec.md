@@ -1,9 +1,4 @@
-## Purpose
-
-Define reproducible deployment artifacts and the operator documentation needed
-to run neo-rs in production environments.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Docker containerization
 The system SHALL provide production-ready Docker images with multi-stage builds.

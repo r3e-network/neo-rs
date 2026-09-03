@@ -17,20 +17,32 @@ description = "IO operations and data structures for the Neo blockchain"
 # External dependencies
 bytes = { workspace = true }
 thiserror = { workspace = true }
+lru = { workspace = true }
+hashbrown = { workspace = true }
+indexmap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true, optional = true }
+
+# Encoding
+hex = { workspace = true }
 
 # Compression
 lz4_flex = { workspace = true }
 
+
 # Internal dependencies
 # neo-primitives is a Layer 0 crate with no neo-* dependencies
-neo-primitives = { workspace = true }
+neo-primitives = { path = "../neo-primitives" }
 
 [features]
 default = []
+tracing = ["dep:tracing"]
 
-[[test]]
-name = "io"
-path = "tests/io/mod.rs"
-
-[lints]
-workspace = true
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+tempfile = { workspace = true }

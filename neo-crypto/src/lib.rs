@@ -1,53 +1,95 @@
-//! # neo-crypto
+#![warn(missing_docs)]
+//! # Neo Crypto
 //!
-//! Cryptographic hashes, curves, signatures, and filters.
+//! Cryptographic utilities for the Neo blockchain implementation.
 //!
-//! ## Boundary
+//! This crate provides cryptographic primitives required by Neo N3:
 //!
-//! This foundation crate owns cryptographic primitives and must not depend on
-//! node services, RPC, storage engines, or UI crates.
+//! ## Hash Functions
+//! - **SHA-256**: Primary hash for transaction/block IDs
+//! - **SHA-512**: Used in key derivation
+//! - **RIPEMD-160**: Script hash computation (Hash160 = RIPEMD160(SHA256(data)))
+//! - **Keccak-256**: Ethereum compatibility
+//! - **Blake2b/Blake2s**: Alternative hash functions
 //!
-//! ## Contents
+//! ## Elliptic Curve Cryptography
+//! - **secp256r1 (P-256/NIST)**: Primary curve for Neo N3 signatures
+//! - **secp256k1**: Bitcoin/Ethereum compatibility
+//! - **Ed25519**: EdDSA signatures
 //!
-//! - `curves`: Elliptic-curve adapters and point types used by Neo
-//!   cryptography.
-//! - `error`: Typed error definitions and conversions.
-//! - `filters`: Probabilistic filters and related helpers used by networking
-//!   and indexes.
-//! - `formats`: Binary and textual conversion helpers for cryptographic data.
-//! - `hashes`: Hash functions and hash-domain helpers used by protocol code.
-//! - `keys`: wallet-facing key derivation, signing, and verification helpers.
-//! - `tests`: Module-local tests and regression coverage.
+//! ## Design Principles
+//!
+//! - **Security**: All random number generation uses `OsRng` (cryptographically secure)
+//! - **Compatibility**: Matches C# Neo implementation behavior
+//! - **Performance**: Optimized for blockchain operations
+//!
+//! ## Example
+//!
+//! ```rust
+//! use neo_crypto::{Crypto, HashAlgorithm};
+//!
+//! // Compute SHA-256 hash
+//! let hash = Crypto::sha256(b"Hello, Neo!");
+//!
+//! // Compute Hash160 (RIPEMD160(SHA256(data)))
+//! let script_hash = Crypto::hash160(b"contract script");
+//! ```
 
-pub mod curves;
-#[path = "errors/error.rs"]
+/// BIP-32 helper primitives.
+pub mod bip32;
+/// Bloom filter implementation for probabilistic set membership testing.
+pub mod bloom_filter;
+/// BLS12-381 signature helpers for Neo.
+pub mod bls12381;
+/// Compatibility re-exports for cryptographic utility types.
+pub mod crypto_utils;
+/// Elliptic curve point and curve helpers.
+pub mod ecc;
+/// Encoding helpers used by Neo cryptographic APIs.
+pub mod encoding;
 pub mod error;
-pub mod filters;
-pub mod formats;
-pub mod hashes;
-pub mod keys;
-
-pub use curves::{bls12381_point, ecc};
-pub use filters::bloom_filter;
-pub use formats::encoding;
-pub use hashes::{hash, merkle_tree, murmur, named_curve_hash};
-pub use keys::{bip32, signature};
+pub mod hash;
+/// Merkle tree implementation for computing transaction and block payload roots.
+pub mod merkle_tree;
+pub mod mpt_trie;
+/// Murmur3 hash helpers used by Neo runtime and native contracts.
+pub mod murmur;
+pub mod named_curve_hash;
+/// Signature and key helpers used by Neo cryptographic APIs.
+pub mod signature;
 
 // Re-exports
 pub use bip32::Bip32Crypto;
 pub use bloom_filter::BloomFilter;
-pub use bls12381_point::Bls12381Point;
+pub use bls12381::Bls12381Crypto;
 pub use ecc::{ECCurve, ECPoint};
-pub use encoding::{base58, base64};
+pub use encoding::{Base58, Base64, Hex};
 pub use error::{CryptoError, CryptoResult};
-pub use hash::{Crypto, CtCompare, HashAlgorithm, Sha256Hasher};
+pub use hash::{Crypto, HashAlgorithm, Sha256Hasher, ct_hash_eq, ct_hash_slice_eq};
 pub use merkle_tree::MerkleTree;
+pub use mpt_trie::{
+    Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
+};
+pub use murmur::{murmur32, murmur128};
 pub use named_curve_hash::NamedCurveHash;
 pub use signature::{
     ECC, ECDsa, Ed25519Crypto, NEOFS_ECDSA_SHA512_PREFIX, NEOFS_ECDSA_SHA512_SIGNATURE_LEN,
     Secp256k1Crypto, Secp256r1Crypto,
 };
 
+/// Implements `Default` for a struct by calling `Self::new()`.
+#[macro_export]
+macro_rules! impl_default_via_new {
+    ($type:ty) => {
+        impl Default for $type {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+    };
+}
+
 #[cfg(test)]
-#[path = "tests/lib.rs"]
-mod tests;
+mod tests {
+    // Tests are inline within source files
+}

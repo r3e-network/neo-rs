@@ -2,11 +2,11 @@
 //!
 //! This module provides the Array stack item implementation used in the Neo VM.
 
-use crate::StackItemType;
 use crate::error::{VmError, VmResult};
-use crate::next_stack_item_id;
-use crate::reference_counter::{CompoundId, ReferenceCounter};
+use crate::reference_counter::{CompoundParent, ReferenceCounter};
 use crate::stack_item::StackItem;
+use crate::next_stack_item_id;
+use crate::StackItemType;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -40,17 +40,18 @@ impl Array {
             }
         }
 
-        // C# v3.10.1: constructing a compound does NOT reference-count its
-        // children — they are counted via the AddStackReference recursion only
-        // when the compound first becomes stack-referenced (e.g. on Push).
         let array = Self {
             inner: Arc::new(Mutex::new(ArrayInner {
                 items,
                 reference_counter,
-                id: next_stack_item_id() as usize,
+                id: next_stack_item_id(),
                 is_read_only: false,
             })),
         };
+
+        if let Some(rc) = array.reference_counter() {
+            array.add_reference_for_items(&rc)?;
+        }
 
         Ok(array)
     }
@@ -58,15 +59,11 @@ impl Array {
     /// Creates a new array without a reference counter.
     #[must_use]
     pub fn new_untracked(items: Vec<StackItem>) -> Self {
-        Self::new_untracked_with_id(items, next_stack_item_id() as usize)
-    }
-
-    pub(crate) fn new_untracked_with_id(items: Vec<StackItem>, id: usize) -> Self {
         Self {
             inner: Arc::new(Mutex::new(ArrayInner {
                 items,
                 reference_counter: None,
-                id,
+                id: next_stack_item_id(),
                 is_read_only: false,
             })),
         }
@@ -115,90 +112,53 @@ impl Array {
 
     /// Sets the item at the specified index.
     pub fn set(&self, index: usize, mut item: StackItem) -> VmResult<()> {
-        let (rc_opt, referenced, old_item, new_item) = {
-            let inner = self.inner.lock();
-            if index >= inner.items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {index}"
-                )));
-            }
-            Self::ensure_mutable(&inner)?;
-            let rc_opt = inner.reference_counter.clone();
-            let referenced = rc_opt
-                .as_ref()
-                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Array(inner.id)));
-            (rc_opt, referenced, inner.items[index].clone(), item.clone())
-        };
-        if let Some(rc) = &rc_opt {
+        let mut inner = self.inner.lock();
+        if index >= inner.items.len() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Index out of range: {index}"
+            )));
+        }
+
+        Self::ensure_mutable(&inner)?;
+
+        if let Some(rc) = &inner.reference_counter {
             item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
+            let parent = CompoundParent::Array(inner.id);
+            rc.remove_compound_reference(&inner.items[index], parent);
+            rc.add_compound_reference(&item, parent);
         }
-        {
-            let mut inner = self.inner.lock();
-            if index >= inner.items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {index}"
-                )));
-            }
-            Self::ensure_mutable(&inner)?;
-            inner.items[index] = item;
-        }
-        if let Some(rc) = &rc_opt {
-            if referenced {
-                rc.remove_stack_reference(&old_item);
-                rc.add_stack_reference(&new_item, 1);
-            }
-        }
+
+        inner.items[index] = item;
         Ok(())
     }
 
     /// Adds an item to the end of the array.
     pub fn push(&self, mut item: StackItem) -> VmResult<()> {
-        let (rc_opt, referenced) = {
-            let inner = self.inner.lock();
-            Self::ensure_mutable(&inner)?;
-            let rc_opt = inner.reference_counter.clone();
-            let referenced = rc_opt
-                .as_ref()
-                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Array(inner.id)));
-            (rc_opt, referenced)
-        };
-        if let Some(rc) = &rc_opt {
+        let mut inner = self.inner.lock();
+        Self::ensure_mutable(&inner)?;
+
+        if let Some(rc) = &inner.reference_counter {
             item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
+            rc.add_compound_reference(&item, CompoundParent::Array(inner.id));
         }
-        {
-            let mut inner = self.inner.lock();
-            Self::ensure_mutable(&inner)?;
-            inner.items.push(item.clone());
-        }
-        if let Some(rc) = &rc_opt {
-            if referenced {
-                rc.add_stack_reference(&item, 1);
-            }
-        }
+
+        inner.items.push(item);
         Ok(())
     }
 
     /// Removes and returns the last item in the array.
     pub fn pop(&self) -> VmResult<StackItem> {
-        let (item, rc_opt, referenced) = {
-            let mut inner = self.inner.lock();
-            Self::ensure_mutable(&inner)?;
-            let item = inner
-                .items
-                .pop()
-                .ok_or_else(|| VmError::invalid_operation_msg("Array is empty"))?;
-            let rc_opt = inner.reference_counter.clone();
-            let referenced = rc_opt
-                .as_ref()
-                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Array(inner.id)));
-            (item, rc_opt, referenced)
-        };
-        if let Some(rc) = &rc_opt {
-            if referenced {
-                rc.remove_stack_reference(&item);
-            }
+        let mut inner = self.inner.lock();
+        Self::ensure_mutable(&inner)?;
+        let item = inner
+            .items
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Array is empty"))?;
+
+        if let Some(rc) = &inner.reference_counter {
+            rc.remove_compound_reference(&item, CompoundParent::Array(inner.id));
         }
 
         Ok(item)
@@ -218,30 +178,15 @@ impl Array {
 
     /// Removes all items from the array.
     pub fn clear(&self) -> VmResult<()> {
-        let (rc, sub_items) = {
-            let mut inner = self.inner.lock();
-            Self::ensure_mutable(&inner)?;
-            // C# v3.10.1 CLEARITEMS snapshots sub-items, clears first, then
-            // releases the snapshot. Clearing first breaks self-cycles before
-            // recursive reference removal asks the same compound for SubItems.
-            let id = inner.id;
-            let rc = inner.reference_counter.clone();
-            let sub_items = if rc
-                .as_ref()
-                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Array(id)))
-            {
-                inner.items.clone()
-            } else {
-                Vec::new()
-            };
-            inner.items.clear();
-            (rc, sub_items)
-        };
-        if let Some(rc) = rc {
-            for item in sub_items {
-                rc.remove_stack_reference(&item);
+        let mut inner = self.inner.lock();
+        Self::ensure_mutable(&inner)?;
+        if let Some(rc) = &inner.reference_counter {
+            let parent = CompoundParent::Array(inner.id);
+            for item in &inner.items {
+                rc.remove_compound_reference(item, parent);
             }
         }
+        inner.items.clear();
         Ok(())
     }
 
@@ -261,64 +206,39 @@ impl Array {
 
     /// Inserts an item at the specified index.
     pub fn insert(&self, index: usize, mut item: StackItem) -> VmResult<()> {
-        let (rc_opt, referenced) = {
-            let inner = self.inner.lock();
-            if index > inner.items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {index}"
-                )));
-            }
-            Self::ensure_mutable(&inner)?;
-            let rc_opt = inner.reference_counter.clone();
-            let referenced = rc_opt
-                .as_ref()
-                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Array(inner.id)));
-            (rc_opt, referenced)
-        };
-        if let Some(rc) = &rc_opt {
+        let mut inner = self.inner.lock();
+        if index > inner.items.len() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Index out of range: {index}"
+            )));
+        }
+
+        Self::ensure_mutable(&inner)?;
+
+        if let Some(rc) = &inner.reference_counter {
             item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
+            rc.add_compound_reference(&item, CompoundParent::Array(inner.id));
         }
-        {
-            let mut inner = self.inner.lock();
-            if index > inner.items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {index}"
-                )));
-            }
-            Self::ensure_mutable(&inner)?;
-            inner.items.insert(index, item.clone());
-        }
-        if let Some(rc) = &rc_opt {
-            if referenced {
-                rc.add_stack_reference(&item, 1);
-            }
-        }
+
+        inner.items.insert(index, item);
         Ok(())
     }
 
     /// Removes the item at the specified index.
     pub fn remove(&self, index: usize) -> VmResult<StackItem> {
-        let (removed, rc_opt, referenced) = {
-            let mut inner = self.inner.lock();
-            if index >= inner.items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {index}"
-                )));
-            }
+        let mut inner = self.inner.lock();
+        if index >= inner.items.len() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Index out of range: {index}"
+            )));
+        }
 
-            Self::ensure_mutable(&inner)?;
-            let removed = inner.items.remove(index);
-            let rc_opt = inner.reference_counter.clone();
-            let referenced = rc_opt
-                .as_ref()
-                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Array(inner.id)));
-            (removed, rc_opt, referenced)
-        };
-        if let Some(rc) = &rc_opt {
-            if referenced {
-                rc.remove_stack_reference(&removed);
-            }
+        Self::ensure_mutable(&inner)?;
+        let removed = inner.items.remove(index);
+
+        if let Some(rc) = &inner.reference_counter {
+            rc.remove_compound_reference(&removed, CompoundParent::Array(inner.id));
         }
 
         Ok(removed)
@@ -365,6 +285,16 @@ impl Array {
         }
     }
 
+    fn add_reference_for_items(&self, rc: &ReferenceCounter) -> VmResult<()> {
+        let inner = self.inner.lock();
+        let parent = CompoundParent::Array(inner.id);
+        for item in &inner.items {
+            Self::validate_compound_reference(rc, item)?;
+            rc.add_compound_reference(item, parent);
+        }
+        Ok(())
+    }
+
     fn validate_compound_reference(rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
         match item {
             StackItem::Array(inner) => match inner.reference_counter() {
@@ -391,7 +321,7 @@ impl Array {
 
     /// Ensures the array and its children share the provided reference counter.
     pub(crate) fn attach_reference_counter(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        let children = {
+        {
             let mut inner = self.inner.lock();
             if let Some(existing) = &inner.reference_counter {
                 if existing.ptr_eq(rc) {
@@ -402,17 +332,14 @@ impl Array {
                 ));
             }
 
-            let children = inner.items.clone();
-            inner.reference_counter = Some(rc.clone());
-            children
-        };
+            for item in &mut inner.items {
+                item.attach_reference_counter(rc)?;
+            }
 
-        for mut item in children {
-            item.attach_reference_counter(rc)?;
+            inner.reference_counter = Some(rc.clone());
         }
 
-        // No reference counting on attach: children are counted via the
-        // AddStackReference recursion when this compound becomes stack-referenced.
+        self.add_reference_for_items(rc)?;
         Ok(())
     }
 }

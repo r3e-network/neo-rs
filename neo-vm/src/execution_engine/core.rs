@@ -3,15 +3,14 @@
 //
 
 use super::{
-    CallFlags, DEFAULT_GAS_LIMIT, EvaluationStack, ExecutionContext, ExecutionEngine,
-    ExecutionEngineLimits, InteropService, JumpTable, ReferenceCounter, StackItem, VMState,
-    VmError,
+    CallFlags, EvaluationStack, ExecutionContext, ExecutionEngine, ExecutionEngineLimits,
+    InteropService, JumpTable, ReferenceCounter, StackItem, VMState, VmError, DEFAULT_GAS_LIMIT,
 };
 
-impl<S: Default> ExecutionEngine<S> {
+impl ExecutionEngine {
     /// Creates a new execution engine with the specified jump table.
     #[must_use]
-    pub fn new(jump_table: Option<JumpTable<S>>) -> Self {
+    pub fn new(jump_table: Option<JumpTable>) -> Self {
         let reference_counter = ReferenceCounter::new();
         Self::new_with_limits(
             jump_table,
@@ -22,14 +21,14 @@ impl<S: Default> ExecutionEngine<S> {
 
     /// Creates a new execution engine with the specified reference counter and limits.
     pub fn new_with_limits(
-        jump_table: Option<JumpTable<S>>,
+        jump_table: Option<JumpTable>,
         reference_counter: ReferenceCounter,
         limits: ExecutionEngineLimits,
     ) -> Self {
         Self {
             state: VMState::BREAK,
             is_jumping: false,
-            jump_table: jump_table.unwrap_or_default(),
+            jump_table: jump_table.unwrap_or_else(JumpTable::default),
             limits,
             interop_service: Some(InteropService::new()),
             interop_host: None,
@@ -39,43 +38,9 @@ impl<S: Default> ExecutionEngine<S> {
             reference_counter,
             uncaught_exception: None,
             instructions_executed: 0,
-            execution_profile: None,
-            planned_execution_enabled: false,
             gas_consumed: 0,
             gas_limit: DEFAULT_GAS_LIMIT,
         }
-    }
-}
-
-impl<S> ExecutionEngine<S> {
-    /// Clears invocation/result stacks and counters while retaining the jump
-    /// table, interop service, limits, and reference counter identity.
-    ///
-    /// Used by ApplicationEngine transaction reuse so multi-tx blocks do not
-    /// rebuild opcode dispatch or syscall tables for every transaction.
-    pub fn reset_execution_session(&mut self) {
-        // Unload contexts in the same LIFO order as RET. A context's
-        // evaluation stack releases itself on drop, but local/argument/static
-        // slots are reference-counted explicitly and do not have a Drop hook.
-        // Dropping the vector directly therefore leaks compound references
-        // across transactions when an engine is reused.
-        while let Some(mut context) = self.invocation_stack.pop() {
-            // The normal host callback is detached between transactions. If a
-            // caller resets while a host is still attached, cleanup must still
-            // release VM-owned references; callback errors cannot leave the
-            // reusable engine in a partially reset state.
-            let _ = self.unload_context(&mut context);
-        }
-        self.result_stack.clear();
-        self.uncaught_exception = None;
-        self.is_jumping = false;
-        self.instructions_executed = 0;
-        self.gas_consumed = 0;
-        self.call_flags = CallFlags::ALL;
-        self.result_stack.clear_profile();
-        self.execution_profile = None;
-        self.planned_execution_enabled = false;
-        self.state = VMState::BREAK;
     }
 
     /// Returns the current state of the VM.
@@ -100,6 +65,8 @@ impl<S> ExecutionEngine<S> {
 
     /// Called when an exception causes the VM to enter the FAULT state.
     pub(crate) fn on_fault(&mut self, err: VmError) {
+        #[cfg(debug_assertions)]
+        println!("ExecutionEngine fault: {err:?}");
         if self.uncaught_exception.is_none() {
             let message = match &err {
                 VmError::CatchableException { message } => message.clone(),
@@ -124,48 +91,11 @@ impl<S> ExecutionEngine<S> {
         self.set_state(VMState::FAULT);
     }
 
-    /// Applies the VM's canonical uncaught-fault handling to an execution error.
-    ///
-    /// Hosts that interleave ordinary VM instructions with guarded operations
-    /// must use this entry point so fault text, instruction context, the
-    /// uncaught exception, and the final VM state remain identical to
-    /// [`Self::execute`].
-    pub fn handle_fault(&mut self, error: VmError) {
-        self.on_fault(error);
-    }
-
     /// Returns the reference counter.
     #[inline]
     #[must_use]
     pub const fn reference_counter(&self) -> &ReferenceCounter {
         &self.reference_counter
-    }
-
-    /// Enables a fresh opcode and evaluation-stack profile for this engine.
-    ///
-    /// Existing contexts are attached as well, so callers may enable profiling
-    /// either immediately before loading a script or before resuming one.
-    pub fn enable_execution_profiling(&mut self) {
-        let mut profile = Box::new(crate::execution_profile::ExecutionProfileCollector::new());
-        let stack_profile = profile.stack_handle();
-        self.result_stack.set_profile(stack_profile.clone());
-        for context in &self.invocation_stack {
-            profile.record_context_load(
-                context.script_hash(),
-                context.script().len(),
-                context.instruction_pointer(),
-            );
-            context.set_stack_profile(stack_profile.clone());
-        }
-        self.execution_profile = Some(profile);
-    }
-
-    /// Returns a point-in-time snapshot when profiling is enabled.
-    #[must_use]
-    pub fn execution_profile(&self) -> Option<crate::VmExecutionProfile> {
-        self.execution_profile
-            .as_ref()
-            .map(|profile| profile.snapshot())
     }
 
     /// Returns the execution limits configured for this engine.
@@ -175,51 +105,36 @@ impl<S> ExecutionEngine<S> {
         &self.limits
     }
 
-    /// Overrides the maximum number of instructions this engine may execute.
-    ///
-    /// The upstream `ExecutionEngineLimits::DEFAULT` carries a
-    /// `max_instructions = 1_000_000` field, but C# Neo (v3.10.1) has **no**
-    /// instruction-count cap on the execution path — bounding is done purely by
-    /// gas (`ApplicationEngine` fee consumption) plus a wall-clock timeout on the
-    /// RPC invoke path. Enforcing a 1M-instruction fault here would diverge from
-    /// C# consensus: a long, cheap-instruction script that C# HALTs would FAULT
-    /// in neo-rs. Callers on the consensus path set this to `u64::MAX` so gas is
-    /// the sole bound, matching C#.
-    #[inline]
-    pub fn set_max_instructions(&mut self, max_instructions: u64) {
-        self.limits.max_instructions = max_instructions;
-    }
-
     /// Returns the invocation stack.
     #[inline]
     #[must_use]
-    pub fn invocation_stack(&self) -> &[ExecutionContext<S>] {
+    pub fn invocation_stack(&self) -> &[ExecutionContext] {
         &self.invocation_stack
     }
 
     /// Returns a mutable handle to the invocation stack.
     #[inline]
-    pub(crate) fn invocation_stack_mut(&mut self) -> &mut Vec<ExecutionContext<S>> {
+    pub(crate) fn invocation_stack_mut(&mut self) -> &mut Vec<ExecutionContext> {
         &mut self.invocation_stack
     }
 
     /// Returns the current context, if any.
     #[inline]
     #[must_use]
-    pub fn current_context(&self) -> Option<&ExecutionContext<S>> {
+    pub fn current_context(&self) -> Option<&ExecutionContext> {
         self.invocation_stack.last()
     }
 
     /// Returns the current context (mutable), if any.
     #[inline]
-    pub fn current_context_mut(&mut self) -> Option<&mut ExecutionContext<S>> {
+    pub fn current_context_mut(&mut self) -> Option<&mut ExecutionContext> {
         self.invocation_stack.last_mut()
     }
 
     /// Returns the entry context, if any.
     #[inline]
     #[must_use]
-    pub fn entry_context(&self) -> Option<&ExecutionContext<S>> {
+    pub fn entry_context(&self) -> Option<&ExecutionContext> {
         self.invocation_stack.first()
     }
 
@@ -287,17 +202,17 @@ impl<S> ExecutionEngine<S> {
 
     /// Returns the jump table.
     #[must_use]
-    pub const fn jump_table(&self) -> &JumpTable<S> {
+    pub const fn jump_table(&self) -> &JumpTable {
         &self.jump_table
     }
 
     /// Returns the jump table (mutable).
-    pub fn jump_table_mut(&mut self) -> &mut JumpTable<S> {
+    pub fn jump_table_mut(&mut self) -> &mut JumpTable {
         &mut self.jump_table
     }
 
     /// Sets the jump table.
-    pub fn set_jump_table(&mut self, jump_table: JumpTable<S>) {
+    pub fn set_jump_table(&mut self, jump_table: JumpTable) {
         self.jump_table = jump_table;
     }
 }

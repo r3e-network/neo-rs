@@ -1,40 +1,47 @@
-//! # neo-io
-//!
-//! Deterministic binary IO primitives and serialization traits for Neo data.
-//!
-//! This crate is a Neo protocol facade over standard Rust and vetted ecosystem
-//! IO building blocks. It should delegate generic mechanics to `std::io`,
-//! `bytes`, `lz4_flex`, and similar crates, while keeping only Neo-specific
-//! rules here: compact var-int encoding, C#-compatible reader/writer method
-//! names, protocol length checks, and deterministic error mapping.
-//!
-//! ## Boundary
-//!
-//! This codec crate owns byte-level IO contracts and must not decide protocol
-//! policy, storage layout, or node orchestration. Do not introduce custom
-//! compression, buffering, endian, or stream abstractions unless an existing
-//! library cannot preserve Neo wire compatibility.
-//!
-//! ## Contents
-//!
-//! - `codec`: Deterministic byte codecs and compression helpers used by Neo
-//!   wire data.
-//! - `core`: Core reader, writer, var-int, and macro helpers for binary IO.
-//! - `serializable`: Serializable traits and compatibility helpers for Neo
-//!   binary data.
+#![warn(missing_docs)]
+//! Neo.IO - matches C# Neo.IO exactly
+//! This crate provides IO functionality matching C# Neo.IO namespace
 
-mod codec;
-pub use codec::compression;
+pub mod caching;
+pub mod compression;
+pub mod extensions;
+pub mod method_token;
+pub mod witness_rule;
 
-#[macro_use]
-mod core;
-pub use core::macros;
+mod binary_writer;
+// Core interfaces
+mod memory_reader;
 pub mod serializable;
-pub use core::var_int;
+pub mod var_int;
 
-pub use core::{BinaryWriter, IoError, IoResult, MemoryReader, OptionExt, ValidateLength};
+pub use binary_writer::BinaryWriter;
+pub use memory_reader::{IoError, IoResult, MemoryReader};
 pub use serializable::Serializable;
-pub use serializable::SerializableExtensions;
+
+// Extension traits
+pub use extensions::{
+    binary_reader::BinaryReaderExtensions,
+    binary_writer::BinaryWriterExtensions,
+    memory_reader::MemoryReaderExtensions,
+    serializable::{SerializableCollectionExtensions, SerializableExtensions},
+};
 
 // Re-export compression types
-pub use compression::{COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD, Lz4};
+pub use compression::{compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD};
+
+// Re-export method token
+pub use method_token::MethodToken;
+
+// Re-export witness rule types
+pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
+
+// Re-export caching types
+pub use caching::{
+    cache::{Cache, IoCache},
+    ec_point_cache::{ECPointCache, EncodablePoint},
+    ecdsa_cache::{ECDsaCache, ECDsaCacheItem},
+    fifo_cache::FIFOCache,
+    hashset_cache::HashSetCache,
+    lru_cache::LRUCache,
+    relay_cache::{InventoryHash, RelayCache},
+};

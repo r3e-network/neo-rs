@@ -34,15 +34,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Callable
 from urllib.parse import ParseResult, urlparse
-
-from continuous_stateroot_status import (
-    atomic_write,
-    retain_checkpoint_stage_roots,
-    timestamp,
-    write_status,
-)
 
 
 DEFAULT_LOCAL_RPC = "http://127.0.0.1:10332"
@@ -213,6 +207,10 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def timestamp() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
 def short_time() -> str:
     return datetime.now().strftime("%H:%M:%S")
 
@@ -324,6 +322,33 @@ def resolve_reference_endpoints(args: argparse.Namespace) -> list[RpcEndpoint]:
             )
         )
     return endpoints
+
+
+def atomic_write(path: str | None, payload: str) -> None:
+    if not path:
+        return
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path: str | None = None
+    try:
+        with NamedTemporaryFile(
+            "w",
+            dir=target.parent,
+            encoding="utf-8",
+            delete=False,
+        ) as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+            tmp_path = handle.name
+        os.replace(tmp_path, target)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+def save_json(path: str | None, payload: dict) -> None:
+    atomic_write(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def load_resume(path: str | None) -> int | None:
@@ -496,6 +521,98 @@ def fetch_reference_root(
     )
 
 
+def build_status_payload(
+    *,
+    local_endpoint: RpcEndpoint,
+    reference_endpoints: list[RpcEndpoint],
+    start_block: int,
+    next_block: int,
+    last_validated_block: int,
+    total_compared: int,
+    total_matched: int,
+    total_mismatched: int,
+    total_errors: int,
+    local_state_height: int | None,
+    local_validated_height: int | None,
+    local_block_count: int | None,
+    mismatches: list[dict],
+    errors: list[dict],
+    started_at: float,
+    status: str,
+    target_stop_at: int | None,
+) -> dict:
+    elapsed = max(time.time() - started_at, 0.0)
+    rate = total_compared / elapsed if elapsed > 0 else 0.0
+    return {
+        "timestamp": timestamp(),
+        "status": status,
+        "local_url": local_endpoint.url,
+        "reference_urls": [endpoint.url for endpoint in reference_endpoints],
+        "start_block": start_block,
+        "target_stop_at": target_stop_at,
+        "next_block": next_block,
+        "last_validated_block": last_validated_block,
+        "local_state_height": local_state_height,
+        "local_validated_height": local_validated_height,
+        "local_block_count": local_block_count,
+        "total_compared": total_compared,
+        "total_matched": total_matched,
+        "total_mismatched": total_mismatched,
+        "total_errors": total_errors,
+        "match_percentage": (total_matched / total_compared * 100.0)
+        if total_compared
+        else 0.0,
+        "rate_per_second": rate,
+        "elapsed_seconds": elapsed,
+        "recent_mismatches": mismatches,
+        "recent_errors": errors,
+    }
+
+
+def write_status(
+    args: argparse.Namespace,
+    local_endpoint: RpcEndpoint,
+    reference_endpoints: list[RpcEndpoint],
+    start_block: int,
+    next_block: int,
+    last_validated_block: int,
+    total_compared: int,
+    total_matched: int,
+    total_mismatched: int,
+    total_errors: int,
+    local_state_height: int | None,
+    local_validated_height: int | None,
+    local_block_count: int | None,
+    mismatches: list[dict],
+    errors: list[dict],
+    started_at: float,
+    status: str,
+    target_stop_at: int | None,
+) -> None:
+    save_json(
+        args.status_file,
+        build_status_payload(
+            local_endpoint=local_endpoint,
+            reference_endpoints=reference_endpoints,
+            start_block=start_block,
+            next_block=next_block,
+            last_validated_block=last_validated_block,
+            total_compared=total_compared,
+            total_matched=total_matched,
+            total_mismatched=total_mismatched,
+            total_errors=total_errors,
+            local_state_height=local_state_height,
+            local_validated_height=local_validated_height,
+            local_block_count=local_block_count,
+            mismatches=mismatches,
+            errors=errors,
+            started_at=started_at,
+            status=status,
+            target_stop_at=target_stop_at,
+        ),
+    )
+
+
 def main() -> int:
     args = parse_args()
     try:
@@ -543,7 +660,6 @@ def main() -> int:
     total_errors = 0
     recent_mismatches: list[dict] = []
     recent_errors: list[dict] = []
-    checkpoint_stage_roots: dict[int, str] = {}
     target_stop_at = args.stop_at
     started_at = time.time()
     one_shot_locked = False
@@ -581,7 +697,6 @@ def main() -> int:
                     started_at,
                     "WAITING_LOCAL_RPC",
                     target_stop_at,
-                    checkpoint_stage_roots,
                 )
                 time.sleep(args.poll_interval)
                 continue
@@ -625,7 +740,6 @@ def main() -> int:
                     started_at,
                     "COMPLETE" if total_mismatched == 0 else "COMPLETE_WITH_MISMATCHES",
                     target_stop_at,
-                    checkpoint_stage_roots,
                 )
                 break
 
@@ -662,7 +776,6 @@ def main() -> int:
                     started_at,
                     "WAITING_FOR_SYNC",
                     target_stop_at,
-                    checkpoint_stage_roots,
                 )
                 time.sleep(args.poll_interval)
                 continue
@@ -695,7 +808,6 @@ def main() -> int:
             blocked_index: int | None = None
             batch_matches = 0
             batch_mismatches = 0
-            batch_matched_roots: dict[int, str] = {}
 
             for index in range(next_block, compare_end + 1):
                 local_sample = local_roots[index]
@@ -748,7 +860,6 @@ def main() -> int:
                 if local_sample.root == reference_sample.root:
                     total_matched += 1
                     batch_matches += 1
-                    batch_matched_roots[index] = local_sample.root
                 else:
                     total_mismatched += 1
                     batch_mismatches += 1
@@ -792,7 +903,6 @@ def main() -> int:
                         started_at,
                         "FAIL",
                         target_stop_at,
-                        checkpoint_stage_roots,
                     )
                     print(
                         f"  aborting after {total_mismatched} mismatches "
@@ -803,12 +913,6 @@ def main() -> int:
 
             if last_validated_block >= 0:
                 save_resume(args.resume_file, last_validated_block)
-                retain_checkpoint_stage_roots(
-                    checkpoint_stage_roots,
-                    start_block=start_block,
-                    last_validated_block=last_validated_block,
-                    matched_roots=batch_matched_roots,
-                )
 
             next_block = last_validated_block + 1
 
@@ -841,7 +945,6 @@ def main() -> int:
                 started_at,
                 status if blocked_index is None else "PAUSED_ON_RPC_ERROR",
                 target_stop_at,
-                checkpoint_stage_roots,
             )
 
             if blocked_index is not None:
@@ -868,7 +971,6 @@ def main() -> int:
             started_at,
             "INTERRUPTED",
             target_stop_at,
-            checkpoint_stage_roots,
         )
         return 130
 

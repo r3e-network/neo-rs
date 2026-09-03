@@ -1,93 +1,90 @@
 [package]
 name = "neo-tests"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
+version = "0.16.0"
+edition = "2024"
 publish = false
 description = "Integration tests for neo-rs workspace layer boundaries and end-to-end testing"
 
-# This is a workspace member used only for cross-crate verification. It is not
-# linked into the running node or published as a crate.
+# This is a test-only crate, not part of the main workspace
 # Run with: cargo test -p neo-tests
 
 [dependencies]
-# Foundation
+# Layer 0 - Foundation
 neo-primitives = { workspace = true }
-
-# Infrastructure
 neo-io = { workspace = true }
-neo-serialization = { workspace = true }
+neo-json = { workspace = true }
 neo-storage = { workspace = true }
-neo-config = { workspace = true }
+
+# Layer 1 - Crypto
 neo-crypto = { workspace = true }
 
-# Protocol
+# Layer 2 - Protocol
 neo-consensus = { workspace = true }
-neo-payloads = { workspace = true }
+neo-core = { workspace = true, features = ["runtime"] }
+neo-p2p = { workspace = true }
 
-# Domain / node / RPC crates exercised by integration tests
-neo-native-contracts = { workspace = true }
-neo-blockchain = { workspace = true }
-neo-network = { workspace = true }
+# Layer 4 - Services
 neo-rpc = { workspace = true }
-
-# Canonical VM implementation
+neo-telemetry = { workspace = true }
 neo-vm = { workspace = true }
 
 # Utilities
 num-bigint = { workspace = true }
 hex = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "test-util", "time"] }
-toml = { workspace = true }
+tokio = { workspace = true, features = ["full", "test-util"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
+criterion = { workspace = true, features = ["html_reports"] }
 
 [[test]]
 name = "layer_boundary_tests"
-path = "tests/architecture/layer_boundary_tests.rs"
+path = "tests/layer_boundary_tests.rs"
 
 [[test]]
 name = "consensus_integration_tests"
-path = "tests/consensus/consensus_integration_tests.rs"
+path = "tests/consensus_integration_tests.rs"
 
 [[test]]
 name = "state_integration_tests"
-path = "tests/state/state_integration_tests.rs"
+path = "tests/state_integration_tests.rs"
 
 [[test]]
 name = "end_to_end_tests"
-path = "tests/system/end_to_end_tests.rs"
+path = "tests/end_to_end_tests.rs"
 
 [[test]]
 name = "chaos_tests"
-path = "tests/system/chaos_tests.rs"
+path = "tests/chaos_tests.rs"
 
 [[test]]
 name = "e2e_transaction_flow"
-path = "tests/transactions/e2e_transaction_flow.rs"
+path = "tests/e2e_transaction_flow.rs"
 
 [[test]]
 name = "block_persistence"
-path = "tests/storage/block_persistence.rs"
+path = "tests/block_persistence.rs"
 
 [[test]]
 name = "p2p_message_exchange"
-path = "tests/network/p2p_message_exchange.rs"
+path = "tests/p2p_message_exchange.rs"
 
 [[test]]
 name = "contract_execution"
-path = "tests/execution/contract_execution.rs"
+path = "tests/contract_execution.rs"
 
 [[test]]
-name = "csharp_compatibility_tests"
-path = "tests/protocol/csharp_compatibility_tests.rs"
+name = "no_local_neo_vm_dependency"
+path = "tests/no_local_neo_vm_dependency.rs"
+
+[[test]]
+name = "fast_sync_p2p_e2e_tests"
+path = "tests/fast_sync_p2p_e2e_tests.rs"
 
 [[bench]]
 name = "performance_benchmarks"
-path = "benches/performance/performance_benchmarks.rs"
+path = "benches/performance_benchmarks.rs"
 harness = false
-
-[lints]
-workspace = true

@@ -16,12 +16,13 @@ description = "dBFT consensus for Neo blockchain"
 [dependencies]
 # Internal crates
 neo-primitives = { workspace = true }
-neo-error = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
+neo-vm = { workspace = true }
 
 # Async runtime
-tokio = { workspace = true, features = ["macros", "rt", "sync"] }
+tokio = { workspace = true }
+async-trait = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -38,16 +39,7 @@ thiserror = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
-neo-vm = { workspace = true }
-
-
-
-neo-payloads = { workspace = true }
-
 [dev-dependencies]
 
 [features]
 default = []
-
-[lints]
-workspace = true

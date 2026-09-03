@@ -1,59 +1,75 @@
-//! # neo-primitives
+#![warn(missing_docs)]
+//! # Neo Primitives
 //!
-//! Foundational hashes, integers, addresses, and protocol primitive types.
+//! Fundamental types for the Neo blockchain implementation.
 //!
-//! ## Boundary
+//! This crate provides the core primitive types used throughout the Neo ecosystem:
+//! - `UInt160`: 160-bit unsigned integer (script hashes, addresses)
+//! - `UInt256`: 256-bit unsigned integer (transaction/block hashes)
+//! - `BigDecimal`: Arbitrary precision decimal for financial calculations
 //!
-//! This foundation crate must stay free of node-service, storage-backend, RPC,
-//! and network orchestration dependencies.
+//! ## Design Principles
 //!
-//! ## Contents
+//! - **Zero dependencies on other neo-* crates** (except neo-io for serialization traits)
+//! - **C# Neo compatibility**: Matches the behavior of Neo C# implementation
+//! - **Efficient**: Optimized for blockchain operations
 //!
-//! - `errors`: Typed errors and result aliases for this crate boundary.
-//! - `numeric`: Fixed-size numeric wrappers and byte-order conversion helpers.
-//! - `payload`: Payload-domain primitives shared by protocol and network
-//!   crates.
-//! - `protocol`: Protocol enums, versioned records, and chain-level domain
-//!   constants.
-//! - `utils`: Small utility helpers shared within the crate.
-//! - `blockchain`: Blockchain-domain primitive records used across crates.
-//! - `macros`: Crate-local macros that keep protocol declarations compact.
-//! - `tests`: Module-local tests and regression coverage.
+//! ## Example
+//!
+//! ```rust
+//! use neo_primitives::{UInt160, UInt256};
+//!
+//! // Create from bytes
+//! let hash = UInt256::zero();
+//! assert!(hash.is_zero());
+//!
+//! // Parse from hex string
+//! let address_hash = UInt160::parse("0x0000000000000000000000000000000000000001").unwrap();
+//! ```
 
 #[doc(hidden)]
 pub use bitflags;
 
-mod errors;
-mod numeric;
-mod payload;
-mod protocol;
-mod utils;
-
-pub use errors::error;
-pub(crate) use numeric::uint_hex;
-pub use numeric::{base58_check, big_decimal, hex_util, uint160, uint256};
-pub use payload::{inventory, serializable_payload, storage, verifiable};
-pub use protocol::{
-    call_flags, contains_transaction_type, contract_basic_method, contract_parameter_type,
-    contract_task, find_options, hardfork, inventory_type, log_level, node_capability_type,
-    oracle_response_code, transaction_attribute_type, transaction_removal_reason, trigger_type,
-    unhandled_exception_policy, verify_result, witness_condition_type, witness_rule_action,
-    witness_scope,
-};
-pub use utils::{constants, time};
-
+pub mod base58_check;
+pub mod big_decimal;
+pub mod call_flags;
 pub mod blockchain;
+pub mod constants;
+pub mod contains_transaction_type;
+pub mod contract_basic_method;
+pub mod contract_task;
+pub mod find_options;
+pub mod contract_parameter_type;
+pub mod error;
+pub mod hardfork;
+pub mod inventory;
+pub mod inventory_type;
+pub mod log_event_args;
+pub mod log_level;
 /// Macro helpers for compact protocol enum declarations.
-#[path = "macros/mod.rs"]
 pub mod macros;
-
-/// Re-export of the canonical hex prefix stripper (ADR-024).
-///
-/// The legacy re-export from `uint_hex` is kept for backward compatibility —
-/// `uint_hex::strip_hex_prefix` now delegates to `hex_util::strip_hex_prefix`.
-pub use hex_util::strip_hex_prefix;
+pub mod network_error;
+pub mod node_capability_type;
+pub mod oracle_response_code;
+pub mod rpc_exception;
+pub mod storage;
+pub mod transaction_attribute_type;
+pub mod transaction_removal_reason;
+pub mod trigger_type;
+pub mod verifiable;
+pub mod uint160;
+pub mod uint256;
+mod uint_hex;
+pub mod serializable_payload;
+pub mod unhandled_exception_policy;
+pub mod verification;
+pub mod verify_result;
+pub mod witness_condition_type;
+pub mod witness_rule_action;
+pub mod witness_scope;
 
 pub use big_decimal::BigDecimal;
+pub use call_flags::CallFlags;
 pub use witness_rule_action::WitnessRuleAction;
 
 #[cfg(test)]
@@ -63,33 +79,40 @@ mod tests;
 pub use tests::*;
 
 // Re-exports
-pub use call_flags::CallFlags;
 pub use constants::*;
 pub use contains_transaction_type::ContainsTransactionType;
 pub use contract_basic_method::ContractBasicMethod;
-pub use contract_parameter_type::ContractParameterType;
 pub use contract_task::ContractTask;
-pub use error::{PrimitiveError, PrimitiveResult};
 pub use find_options::FindOptions;
+pub use contract_parameter_type::ContractParameterType;
+pub use error::{PrimitiveError, PrimitiveResult};
 pub use hardfork::{Hardfork, HardforkParseError};
 pub use inventory::Inventory;
 pub use inventory_type::InventoryType;
+pub use log_event_args::LogEventArgs;
 pub use log_level::LogLevel;
+pub use network_error::{NetworkError, NetworkResult};
 pub use node_capability_type::NodeCapabilityType;
 pub use oracle_response_code::OracleResponseCode;
+pub use rpc_exception::RpcException;
 pub use transaction_attribute_type::TransactionAttributeType;
 pub use transaction_removal_reason::TransactionRemovalReason;
 pub use trigger_type::TriggerType;
-pub use uint160::{UINT160_SIZE, UInt160};
-pub use uint256::{UINT256_SIZE, UInt256};
 pub use verifiable::Verifiable;
+pub use uint160::{UInt160, UINT160_SIZE};
+pub use uint256::{UInt256, UINT256_SIZE};
 pub use verify_result::VerifyResult;
 pub use witness_condition_type::WitnessConditionType;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
-// Marker traits used to decouple higher-level crates from concrete chain types.
-pub use blockchain::BlockLike;
-pub use serializable_payload::SerializablePayload;
+// New trait re-exports for crate refactoring (Phase 1)
+pub use blockchain::{
+    BlockchainProvider, BlockLike, HeaderLike, NetworkMessage, TransactionLike, PeerId, PeerInfo, PeerRegistry,
+    RelayError, RelayResult, SendError, SendResult,
+};
 pub use storage::{StorageValue, StorageValueError, StorageValueResult};
-pub use time::{TimeProvider, TimeSource};
-pub use unhandled_exception_policy::{UnhandledExceptionPolicy, panic_message};
+pub use serializable_payload::SerializablePayload;
+pub use unhandled_exception_policy::{panic_message, UnhandledExceptionPolicy};
+pub use verification::{
+    BlockchainSnapshot, VerificationContext, Witness, VerificationError, VerificationResult,
+};

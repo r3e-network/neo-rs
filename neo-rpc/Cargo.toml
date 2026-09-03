@@ -13,87 +13,47 @@ categories.workspace = true
 readme.workspace = true
 description = "RPC server and client for Neo blockchain"
 
-# The websocket-events integration test exercises the server module, which is
-# gated behind the (non-default) `server` feature.
-[[test]]
-name = "ws_events"
-path = "tests/server/ws_events.rs"
-required-features = ["server"]
-
-[[test]]
-name = "jsonrpsee_adapter"
-path = "tests/server/jsonrpsee_adapter.rs"
-required-features = ["server"]
-
-[[test]]
-name = "rate_limiter_governor"
-path = "tests/server/rate_limiter_governor.rs"
-required-features = ["server"]
-
-[[test]]
-name = "rpc_blockchain_getrawtransaction_vmstate"
-path = "tests/server/rpc_blockchain_getrawtransaction_vmstate.rs"
-required-features = ["server"]
-
-[[test]]
-name = "rpc_handler_registration"
-path = "tests/server/rpc_handler_registration.rs"
-required-features = ["server"]
-
-[[test]]
-name = "validate_address"
-path = "tests/server/validate_address.rs"
-required-features = ["server"]
-
 [dependencies]
-# Internal crates — always needed (error/error_code modules)
+# Internal crates
 neo-primitives = { workspace = true }
-neo-error = { workspace = true }
-
-# Internal crates — needed by both client and server (serialization, models)
-neo-crypto = { workspace = true, optional = true }
-neo-io = { workspace = true, optional = true }
-neo-manifest = { workspace = true, optional = true }
-neo-native-contracts = { workspace = true, optional = true }
-neo-storage = { workspace = true, optional = true }
-neo-vm = { workspace = true, optional = true }
-neo-wallets = { workspace = true, optional = true }
-neo-serialization = { workspace = true, optional = true }
-
-# Internal crates — client feature
+neo-crypto = { workspace = true }
+neo-io = { workspace = true }
 neo-config = { workspace = true, optional = true }
-neo-execution = { workspace = true, optional = true }
-neo-payloads = { workspace = true, optional = true }
-
-# Internal crates — server feature only
-neo-runtime = { workspace = true, optional = true }
-neo-oracle-service = { workspace = true, optional = true }
-neo-indexer = { workspace = true, optional = true }
-neo-network = { workspace = true, optional = true }
-neo-state-service = { workspace = true, optional = true }
-neo-blockchain = { workspace = true, optional = true }
-neo-mempool = { workspace = true, optional = true }
+neo-core = { path = "../neo-core", optional = true, features = ["runtime"] }
+neo-json = { path = "../neo-json", optional = true }
+neo-vm = { workspace = true, optional = true }
+# neo-config merged into neo-core
 
 # Async runtime
-tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true, optional = true }
 
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_urlencoded = { version = "0.7", optional = true }
 
 # Error handling
 thiserror = { workspace = true }
+anyhow = { version = "1.0", optional = true }
 
 # Logging
 tracing = { workspace = true }
 
 # Web server (server feature)
-# jsonrpsee is the canonical JSON-RPC transport for the server.
-# The legacy HTTP routing glue has been removed; see the
-# `2026-06-13-comprehensive-refactoring` change (Phase C1) for the
-# migration history.
+warp = { version = "0.3", optional = true, features = ["compression-gzip"] }
+hyper = { workspace = true, optional = true }
+# Rust 1.85 permits jsonrpsee 0.26+; keep 0.24.10 until the server API
+# migration is audited separately from the edition change.
 jsonrpsee = { version = "0.24.10", optional = true, default-features = false, features = ["server"] }
-tower = { version = "0.4", optional = true }
+
+# TLS (server feature)
+tokio-rustls = { version = "0.24", optional = true }
+rustls = { version = "0.21", optional = true }
+rustls-native-certs = { version = "0.6", optional = true }
+p12 = { version = "0.6", optional = true }
+sha1 = { version = "0.10", optional = true }
 
 # Rate limiting (server feature)
 dashmap = { workspace = true, optional = true }
@@ -111,50 +71,32 @@ bytes = { workspace = true, optional = true }
 num-bigint = { workspace = true, optional = true }
 num-traits = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
+socket2 = { workspace = true, optional = true }
+regex = { version = "1.10", optional = true }
 
 # Cryptography (server feature)
 rand = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
-subtle = { workspace = true, optional = true }
-
+subtle = { version = "2.5", optional = true }
 
 [dev-dependencies]
-mockito = { workspace = true }
-neo-system = { workspace = true }
-neo-test-fixtures = { workspace = true }
-neo-trie = { workspace = true }
-regex = "1.10"
+tokio = { workspace = true, features = ["test-util", "macros"] }
+mockito = "1.0"
 
 [features]
 default = []
 server = [
-    "dep:jsonrpsee",
-    "dep:tower",
-    # Shared client+server deps
-    "dep:neo-crypto",
-    "dep:neo-io",
-    "dep:neo-manifest",
-    "dep:neo-native-contracts",
-    "dep:neo-storage",
-    "dep:neo-vm",
-    "dep:neo-wallets",
-    "dep:neo-serialization",
-    # Protocol and shared RPC model deps
+    "client",  # Server uses client models for JSON serialization
     "dep:neo-config",
-    "dep:neo-execution",
-    "dep:neo-payloads",
-    # Server-only deps
-    "dep:neo-runtime",
-    "dep:neo-oracle-service",
-    "dep:neo-indexer",
-    "dep:neo-network",
-    "dep:neo-state-service",
-    "dep:neo-blockchain",
-    "dep:neo-mempool",
-    # External server deps
+    "dep:neo-core",
+    "dep:neo-json",
+    "dep:neo-vm",
+    "dep:warp",
+    "dep:hyper",
     "dep:uuid",
     "dep:parking_lot",
     "dep:prometheus",
+    "dep:serde_urlencoded",
     "dep:base64",
     "dep:bytes",
     "dep:num-bigint",
@@ -165,32 +107,31 @@ server = [
     "dep:subtle",
     "dep:dashmap",
     "dep:governor",
-    # RPC-only node mode fetches canonical ledger data from a remote endpoint.
-    "dep:reqwest",
+    "dep:futures",
+    "dep:tokio-rustls",
+    "dep:rustls",
+    "dep:rustls-native-certs",
+    "dep:p12",
+    "dep:sha1",
+    "dep:socket2",
 ]
 client = [
-    # Shared client+server deps
-    "dep:neo-crypto",
-    "dep:neo-io",
-    "dep:neo-manifest",
-    "dep:neo-native-contracts",
-    "dep:neo-storage",
-    "dep:neo-vm",
-    "dep:neo-wallets",
-    "dep:neo-serialization",
-    # Client deps
     "dep:neo-config",
-    "dep:neo-payloads",
-    "dep:neo-execution",
-    # External client deps
+    "dep:neo-core",
+    "dep:neo-json",
+    "dep:neo-vm",
     "dep:reqwest",
+    "dep:hyper",
+    "dep:anyhow",
     "dep:base64",
     "dep:hex",
     "dep:num-bigint",
     "dep:num-traits",
+    "dep:regex",
     "dep:rand",
     "dep:zeroize",
 ]
-
-[lints]
-workspace = true
+jsonrpsee-server = [
+    "server",
+    "dep:jsonrpsee",
+]

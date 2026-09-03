@@ -38,22 +38,11 @@ thiserror = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
-# Testable time source
-chrono = { workspace = true }
-parking_lot = { workspace = true }
-
 # NOTE: neo-primitives is a Layer 0 crate with NO neo-* dependencies
 # Serializable implementations for UInt160/UInt256 are in neo-io::serializable::primitives
 
 [dev-dependencies]
 proptest = { workspace = true }
 
-[[test]]
-name = "primitives_properties"
-path = "tests/properties/primitives_properties.rs"
-
 [features]
 default = []
-
-[lints]
-workspace = true

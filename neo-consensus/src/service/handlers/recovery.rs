@@ -1,5 +1,6 @@
+use super::super::helpers::{invocation_script_from_signature, signature_from_invocation_script};
 use super::super::ConsensusService;
-use super::super::helpers::InvocationScript;
+use crate::context::ConsensusState;
 use crate::messages::{
     ChangeViewMessage, ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact,
     ConsensusPayload, PreparationPayloadCompact, PrepareRequestMessage, PrepareResponseMessage,
@@ -8,12 +9,9 @@ use crate::messages::{
 use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusResult};
 use tracing::{debug, info, warn};
 
-impl<S> ConsensusService<S>
-where
-    S: crate::ConsensusSigner,
-{
+impl ConsensusService {
     /// Handles `RecoveryRequest` message
-    pub(in crate::service) async fn on_recovery_request(
+    pub(in crate::service) fn on_recovery_request(
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
@@ -51,16 +49,15 @@ where
         // Build and send recovery message with current state
         let recovery = self.build_recovery_message()?;
 
-        let payload = self
-            .create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)
-            .await?;
+        let payload =
+            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
         self.broadcast(payload)?;
 
         Ok(())
     }
 
     /// Handles `RecoveryMessage`
-    pub(in crate::service) async fn on_recovery_message(
+    pub(in crate::service) fn on_recovery_message(
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
@@ -111,10 +108,7 @@ where
         )?;
 
         // Validate the recovery message
-        recovery.validate(
-            self.context.validator_count(),
-            self.max_transactions_per_block,
-        )?;
+        recovery.validate()?;
 
         info!(
             block_index = payload.block_index,
@@ -142,34 +136,16 @@ where
                 if cv.validator_index as usize >= self.context.validator_count() {
                     continue;
                 }
-                let Some(signature) =
-                    InvocationScript::signature_from_invocation_script(&cv.invocation_script)
+                let Some(signature) = signature_from_invocation_script(&cv.invocation_script)
                 else {
                     continue;
                 };
-                // Preserve the original change-view reason when reconstructing.
-                // The reason is stored in the context's change_views map alongside
-                // the view number; default to Timeout when unavailable (should
-                // not happen in normal operation, as every ChangeView entry
-                // recorded in the context carries a reason).
-                let reason = self
-                    .context
-                    .change_views
-                    .get(&cv.validator_index)
-                    .map(|&(_, r)| r)
-                    .unwrap_or(ChangeViewReason::Timeout);
-                // ChangeViewPayloadCompact (RecoveryMessage's compact form)
-                // carries no RejectedHashes — C# reconstructs the ChangeView body
-                // the same way, so an empty array here matches. The signature was
-                // already verified against the compact invocation script, not this
-                // reconstructed body.
                 let msg = ChangeViewMessage::new(
                     payload.block_index,
                     cv.original_view_number,
                     cv.validator_index,
                     cv.timestamp,
-                    reason,
-                    Vec::new(),
+                    ChangeViewReason::Timeout,
                 );
                 let recovered = ConsensusPayload {
                     network: self.network,
@@ -180,7 +156,7 @@ where
                     data: msg.serialize(),
                     witness: signature.to_vec(),
                 };
-                self.reprocess_recovery_payload(recovered).await;
+                self.reprocess_recovery_payload(recovered);
             }
 
             return Ok(());
@@ -190,8 +166,6 @@ where
             && !commit_sent
             && !self.context.not_accepting_payloads_due_to_view_changing()
         {
-            // Rationale: the nested shape follows recovery-payload validation
-            // order and keeps each optional C# recovery field guarded locally.
             #[allow(clippy::collapsible_if)]
             if !self.context.prepare_request_received {
                 if let Some(ref prep_req) = recovery.prepare_request_message {
@@ -201,9 +175,9 @@ where
                         .iter()
                         .find(|p| p.validator_index == primary_index)
                     {
-                        if let Some(signature) = InvocationScript::signature_from_invocation_script(
-                            &primary_prep.invocation_script,
-                        ) {
+                        if let Some(signature) =
+                            signature_from_invocation_script(&primary_prep.invocation_script)
+                        {
                             let recovered = ConsensusPayload {
                                 network: self.network,
                                 block_index: prep_req.block_index,
@@ -213,14 +187,12 @@ where
                                 data: prep_req.serialize(),
                                 witness: signature.to_vec(),
                             };
-                            self.reprocess_recovery_payload(recovered).await;
+                            self.reprocess_recovery_payload(recovered);
                         }
                     }
                 }
             }
 
-            // Rationale: the nested guard makes the "set once from recovery"
-            // consensus invariant explicit beside the optional payload field.
             #[allow(clippy::collapsible_if)]
             if self.context.preparation_hash.is_none() {
                 if let Some(hash) = recovery.preparation_hash {
@@ -238,8 +210,7 @@ where
                     if prep.validator_index == primary_index {
                         continue;
                     }
-                    let Some(signature) =
-                        InvocationScript::signature_from_invocation_script(&prep.invocation_script)
+                    let Some(signature) = signature_from_invocation_script(&prep.invocation_script)
                     else {
                         continue;
                     };
@@ -259,7 +230,7 @@ where
                         data: msg.serialize(),
                         witness: signature.to_vec(),
                     };
-                    self.reprocess_recovery_payload(recovered).await;
+                    self.reprocess_recovery_payload(recovered);
                 }
             }
         }
@@ -269,8 +240,7 @@ where
                 if commit.validator_index as usize >= self.context.validator_count() {
                     continue;
                 }
-                let Some(signature) =
-                    InvocationScript::signature_from_invocation_script(&commit.invocation_script)
+                let Some(signature) = signature_from_invocation_script(&commit.invocation_script)
                 else {
                     continue;
                 };
@@ -289,45 +259,69 @@ where
                     data: msg.serialize(),
                     witness: signature.to_vec(),
                 };
-                self.reprocess_recovery_payload(recovered).await;
+                self.reprocess_recovery_payload(recovered);
             }
         }
 
-        // NOTE: no commit-signing tail block here — this deliberately mirrors C#
-        // `ConsensusService.OnRecoveryMessageReceived` (ConsensusService.OnMessage.cs),
-        // which NEVER signs a Commit directly. In C# the recovered payloads are fed
-        // back through `ReverifyAndProcessPayload` -> `OnConsensusPayload` -> the
-        // normal handlers, and a Commit is emitted only through the fully-gated
-        // `CheckPreparations` / `CheckCommits` (ConsensusService.Check.cs). Those
-        // gates require a valid PrepareRequest (`RequestSentOrReceived`), M
-        // preparations, and every proposed transaction present, so the real block
-        // hash is always established first.
-        //
-        // Our `reprocess_recovery_payload` calls preserve that control flow:
-        //   - `on_prepare_response` -> `check_prepare_responses` (gated on
-        //     `prepare_request_received` + M responses + all txs present) sends the
-        //     Commit over the real `proposed_block_hash`.
-        //   - `on_commit` -> `check_commits` finalizes the block.
-        //
-        // The previously-present tail block bypassed the `prepare_request_received`
-        // gate and could sign a Commit over `proposed_block_hash.unwrap_or_default()`
-        // (a DEFAULT/ZERO hash) when a recovery message carried M PrepareResponses
-        // but no valid PrepareRequest had been (re)established. That is a P0
-        // crash-safety / equivocation hazard and diverges from C#; it has been
-        // removed.
+        // Check if we can now commit after applying recovery state
+        if self.context.has_enough_commits() && self.context.state != ConsensusState::Committed {
+            info!(
+                block_index = self.context.block_index,
+                commits = self.context.commits.len(),
+                "Recovery enabled block commit"
+            );
+            self.check_commits()?;
+        }
+        // Check if we can now send commit after applying recovery state
+        else if self.context.has_enough_prepare_responses()
+            && !self
+                .context
+                .commits
+                .contains_key(&self.context.my_index.unwrap_or(255))
+        {
+            if let Some(my_idx) = self.context.my_index {
+                info!(
+                    block_index = self.context.block_index,
+                    "Recovery enabled sending commit"
+                );
+                // Create and broadcast commit message
+                let block_hash = self.context.proposed_block_hash.unwrap_or_default();
+                let signature = self.sign_block_hash(&block_hash)?;
+
+                let commit = CommitMessage::new(
+                    self.context.block_index,
+                    self.context.view_number,
+                    my_idx,
+                    signature.clone(),
+                );
+
+                let payload =
+                    self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
+                let commit_witness = payload.witness.clone();
+                let commit_invocation = invocation_script_from_signature(&commit_witness);
+                self.broadcast(payload)?;
+                if !commit_witness.is_empty() {
+                    self.context
+                        .commit_invocations
+                        .insert(my_idx, commit_invocation);
+                }
+
+                // Add our own commit
+                self.context
+                    .add_commit(my_idx, self.context.view_number, signature)?;
+                self.check_commits()?;
+            }
+        }
 
         Ok(())
     }
 
-    pub(in crate::service) async fn reprocess_recovery_payload(
-        &mut self,
-        payload: ConsensusPayload,
-    ) {
+    pub(in crate::service) fn reprocess_recovery_payload(&mut self, payload: ConsensusPayload) {
         let result = match payload.message_type {
-            ConsensusMessageType::ChangeView => self.on_change_view(&payload).await,
-            ConsensusMessageType::PrepareRequest => self.on_prepare_request(&payload).await,
-            ConsensusMessageType::PrepareResponse => self.on_prepare_response(&payload).await,
-            ConsensusMessageType::Commit => self.on_commit(&payload).await,
+            ConsensusMessageType::ChangeView => self.on_change_view(&payload),
+            ConsensusMessageType::PrepareRequest => self.on_prepare_request(&payload),
+            ConsensusMessageType::PrepareResponse => self.on_prepare_response(&payload),
+            ConsensusMessageType::Commit => self.on_commit(&payload),
             _ => Ok(()),
         };
         if let Err(err) = result {
@@ -365,7 +359,7 @@ where
         Ok(false)
     }
 
-    pub(in crate::service) async fn maybe_send_recovery_response(
+    pub(in crate::service) fn maybe_send_recovery_response(
         &mut self,
         requester_index: u8,
     ) -> ConsensusResult<()> {
@@ -375,19 +369,8 @@ where
 
         let recovery = self.build_recovery_message()?;
 
-        let payload = self
-            .create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)
-            .await?;
-        self.broadcast(payload)?;
-        Ok(())
-    }
-
-    pub(in crate::service) async fn resend_recovery_message(&mut self) -> ConsensusResult<()> {
-        let recovery = self.build_recovery_message()?;
-
-        let payload = self
-            .create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)
-            .await?;
+        let payload =
+            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
         self.broadcast(payload)?;
         Ok(())
     }

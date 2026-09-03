@@ -16,12 +16,9 @@ description = "Storage traits and abstractions for Neo blockchain"
 [dependencies]
 # Internal crates
 neo-primitives = { workspace = true }
-neo-error = { workspace = true }
-neo-io = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
-serde_json = { workspace = true }
 
 # Math
 num-bigint = { workspace = true }
@@ -33,20 +30,21 @@ thiserror = { workspace = true }
 parking_lot = { workspace = true }
 
 # Hash functions
-sha2 = { workspace = true }
 xxhash-rust = { workspace = true }
 rand = { workspace = true }
 
 # Collections
-rustc-hash = { workspace = true }
+hashbrown = { workspace = true }
+
+# Caching
+lru = { workspace = true }
+fastbloom = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
-libmdbx = { workspace = true }
-mdbx-sys = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
+serde_json = { workspace = true }
 
-[lints]
-workspace = true
+[features]
+default = []

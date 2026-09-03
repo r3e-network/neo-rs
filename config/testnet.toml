@@ -6,19 +6,14 @@ network_type = "testnet"  # Must be set for correct genesis block
 network_magic = 0x3554334E  # TestNet magic number
 
 [storage]
-backend = "mdbx"
-data_dir = "./data/testnet"
+path = "./data/testnet"
+Engine = "rocksdb"
 read_only = false
-mdbx_geometry_upper_gb = 512
-mdbx_geometry_growth_mb = 256
-mdbx_max_readers = 4096
 
 [p2p]
 listen_port = 20333
-max_connections = 40
-min_desired_connections = 10
-max_connections_per_address = 3
-max_known_hashes = 1000
+max_connections = 50
+min_desired_connections = 5
 seed_nodes = [
     "seed1t5.neo.org:20333",
     "seed2t5.neo.org:20333",
@@ -39,62 +34,16 @@ max_gas_invoke = 50000000
 max_iterator_result_items = 100
 disabled_methods = []
 
-[indexer]
-enabled = true
-store_path = "./data/testnet/indexer"
-
-[application_logs]
-enabled = true
-path = "./data/testnet/application-logs"
-max_stack_size = 65535
-debug = false
-exception_policy = "Ignore"
-
-[tokens_tracker]
-enabled = true
-db_path = "./data/testnet/tokens"
-track_history = true
-max_results = 1000
-enabled_trackers = ["NEP-17", "NEP-11"]
-exception_policy = "StopPlugin"
-
 [dbft]
 enabled = false
 auto_start = false
 
-[telemetry]
-[telemetry.metrics]
-enabled = false
-port = 9090
-bind_address = "127.0.0.1"
-path = "/metrics"
-
-[observability]
-enabled = false
-service_name = "neo-node-testnet"
-environment = "testnet"
-capture_panics = true
-request_timeout_ms = 5000
-max_send_attempts = 3
-retry_backoff_ms = 250
-heartbeat_interval_seconds = 60
-# [[observability.error_endpoints]]
-# kind = "google_error_reporting"
-# project_id = "your-gcp-project"
-# token_env = "GOOGLE_ERROR_REPORTING_TOKEN"
-# [[observability.heartbeat_endpoints]]
-# name = "better-stack"
-# url = "https://uptime.betterstack.com/api/v1/heartbeat/your-heartbeat-id"
-# method = "GET"
-
 [logging]
 level = "info"
 format = "pretty"
-console_output = true
 file_path = "./logs/neo-node-testnet.log"
 max_file_size = "50MB"
 max_files = 5
 
 [blockchain]
-block_time = 3000  # TestNet T5 runs at 3s, unlike MainNet's 15s
-max_transactions_per_block = 5000
+block_time = 15000  # 15 seconds in milliseconds

@@ -1,30 +1,39 @@
-//! # neo-config
+//! # Neo Config
 //!
-//! Immutable chain specifications and protocol configuration for Neo N3 nodes.
+//! Configuration management for Neo N3 blockchain node.
 //!
-//! ## Boundary
+//! This crate provides:
+//! - Node settings (network, storage, logging)
+//! - Protocol parameters (block time, validators, fees)
+//! - Network configuration (`MainNet`, `TestNet`, private networks)
+//! - Genesis block configuration
 //!
-//! This crate owns immutable chain identity, deterministic genesis inputs,
-//! protocol limits, hardfork schedules, and their parsers. Operator runtime
-//! policy such as transaction-pool capacity belongs to the consuming service.
-//! This crate must not open storage, start services, or run protocol workflows.
+//! ## Example
 //!
-//! ## Contents
+//! ```rust,ignore
+//! use neo_config::{Settings, NetworkType};
 //!
-//! - `network`: chain identity, deterministic genesis data, and network
-//!   identifiers.
-//! - `settings`: protocol settings and ordered hardfork schedules.
+//! // Load from file
+//! let settings = Settings::from_file("config.toml")?;
+//!
+//! // Or use defaults for a network
+//! let settings = Settings::default_for_network(NetworkType::MainNet);
+//! ```
 
+mod error;
+mod genesis;
 mod network;
+mod protocol;
 mod settings;
 
-pub use network::chain_spec::{ChainIdentity, ChainSpecError, ChainSpecProvider, NeoChainSpec};
-pub use network::genesis::{
-    GENESIS_NONCE, GENESIS_TIMESTAMP_MS, GenesisConfig, GenesisConfigError, GenesisValidator,
-};
-pub use network::network_type::{NetworkType, NetworkTypeParseError};
-pub use network::{genesis, network_type};
+pub use error::{ConfigError, ConfigResult};
+pub use genesis::{GenesisConfig, GenesisValidator};
+pub use network::{NetworkConfig, NetworkType};
+pub use protocol::{HardforkHeights, NativeActivationHeights, ProtocolSettings};
 pub use settings::{
-    ActiveHardforks, Hardfork, HardforkParseError, HardforkSchedule, HardforkScheduleError,
-    ProtocolConfigError, ProtocolSettings, hardfork,
+    ConsensusSettings, LoggingSettings, NodeSettings, RpcSettings, Settings, StorageSettings,
+    TelemetrySettings,
 };
+
+/// Current configuration version for migration support
+pub const CONFIG_VERSION: u32 = 1;

@@ -1,95 +1,82 @@
 [workspace]
 resolver = "2"
 members = [
-    # === Foundation Layer ===
-    # Primitive value types (`UInt160`, `UInt256`, `BigDecimal`).
+    # === Foundation Layer (no neo-* dependencies) ===
+    # Primitive types (UInt160, UInt256, BigDecimal)
     "neo-primitives",
 
-    # === Infrastructure Layer ===
-    # Node and protocol configuration.
+    # Config (zero cross-module deps)
     "neo-config",
-    # Cryptography: hashing, ECC, signatures, BLS12-381.
+
+    # Cryptography (hashing, ECC, signatures)
     "neo-crypto",
-    # Neo-compatible Merkle Patricia Trie nodes, proofs, and mutation cache.
-    "neo-trie",
-    # Storage traits, `DataCache`, MDBX, and in-memory stores.
+
+    # Storage traits and abstractions
     "neo-storage",
-    # Append-only compressed static files for immutable ledger records.
-    "neo-static-files",
-    # Append-only checksummed node packs with immutable sorted index runs.
-    "neo-state-packs",
-    # Canonical verifiable checkpoint formats and dependency-light proof types.
-    "neo-checkpoint",
-    # Binary IO helpers (matches C# Neo.IO).
+
+    # IO (matches C# Neo.IO)
     "neo-io",
-    # Stateful NeoVM interpreter and host runtime.
+
+    # JSON (matches C# Neo.Json)
+    "neo-json",
+
+    # === Core Layer ===
+    # NeoVM runtime (execution engine, stack items, jump tables)
     "neo-vm",
-    # Authoritative `CoreError` / `CoreResult` vocabulary.
-    "neo-error",
-    # Compression, binary/JSON serializers, and VM-aware codecs.
-    "neo-serialization",
-    # Contract ABI, NEF, method tokens, and validator attributes.
-    "neo-manifest",
 
-    # === Protocol Layer ===
-    # Canonical Neo P2P payload types (`Block`, `Header`, `Transaction`, ...).
-    "neo-payloads",
-    # dBFT consensus payloads and protocol engine.
-    "neo-consensus",
-    # Optional HSM-backed consensus signing support.
-    "neo-hsm",
+    # Core (matches C# Neo.csproj)
+    "neo-core",
 
-    # === Domain Service Layer ===
-    # Reth-style service traits, events, and shared service errors.
-    "neo-runtime",
-    # Smart-contract execution engine.
-    "neo-execution",
-    # Native contracts (NEO, GAS, Policy, Oracle, Notary, ...).
-    "neo-native-contracts",
-    # Ledger state-root service and MPT store.
-    "neo-state-service",
-    # Transaction memory pool and admission/reverification logic.
-    "neo-mempool",
+    # P2P networking
+    "neo-p2p",
 
-    # === Node Service Layer ===
-    # Block validation, persistence, ledger context, and header cache service.
-    "neo-blockchain",
-    # P2P network host (`LocalNode`, `RemoteNode`, `TaskManager`).
-    "neo-network",
-    # Wallet/key management.
-    "neo-wallets",
-    # Read-side block, transaction, account, and notification indexing.
-    "neo-indexer",
-    # Off-chain Oracle request fulfilment over HTTPS and NeoFS.
-    "neo-oracle-service",
-
-    # === Composition Layer ===
-    # Embeddable node composition root.
-    "neo-system",
-
-    # === Plugin / RPC Boundary ===
-    # JSON-RPC server/client plus ApplicationLogs, TokensTracker, NeoIndexer, and Oracle groups.
+    # RPC server and client
     "neo-rpc",
 
+    # dBFT consensus
+    "neo-consensus",
+
+    # Extensions (matches C# Neo.Extensions)
+
+    # NOTE: C# Neo's plugin set has been inlined:
+    #   ApplicationLogs → neo-core/src/application_logs
+    #   DBFTPlugin      → neo-consensus
+    #   RpcServer       → neo-rpc/src/server
+    #   TokensTracker   → neo-core/src/tokens_tracker
+
+    # TEE (Trusted Execution Environment) support
+    # Optional feature-gated integration via neo-node (`--features tee`)
+    "neo-tee",
+
+    # HSM (Hardware Security Module) support
+    # Optional feature-gated integration via neo-node (`--features hsm`)
+    "neo-hsm",
+
+    # === Telemetry ===
+    # Observability stack
+    "neo-telemetry",
+
     # === Application Layer ===
-    # Node daemon binary.
+    # Node daemon (standalone RPC server)
     "neo-node",
 
-    # === Development-only crates ===
-    # Cross-crate integration tests.
+    # === Integration Tests ===
     "tests",
-    # Criterion benchmarks.
+
+    # === Benchmarks ===
     "benches-package",
-    # Shared test fixtures (transactions, blocks, store helpers).
-    "neo-test-fixtures",
 ]
 default-members = [
     "neo-primitives",
     "neo-config",
     "neo-crypto",
-    "neo-trie",
     "neo-storage",
     "neo-io",
+    "neo-json",
+    "neo-vm",
+    "neo-core",
+    "neo-p2p",
+    "neo-rpc",
     "neo-consensus",
     "neo-node",
 ]
@@ -100,15 +87,12 @@ exclude = [
     "examples",
     "neo_csharp",
     "fuzz",
-    # Standalone native GUI (eframe app). Built on its own; talks to the node
-    # over JSON-RPC + process control, so it stays out of the workspace graph.
-    "neo-gui",
 ]
 
 [workspace.package]
-version = "0.14.0"
+version = "0.16.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.85"
 authors = [
     "R3E Network <jimmy@r3e.network>"
 ]
@@ -122,172 +106,42 @@ readme = "README.md"
 
 [workspace.metadata]
 # Minimum supported Rust version policy
-msrv = "1.89"
-
-# Canonical crate-layer model consumed by architecture tests. Dependencies must
-# point to a lower layer unless the exact same-layer edge is recorded below.
-[workspace.metadata.architecture]
-allowed-same-layer-dependencies = [
-    # Infrastructure has an internal acyclic order while remaining one
-    # operator-independent mechanical layer.
-    "neo-config -> neo-crypto",
-    "neo-config -> neo-error",
-    "neo-crypto -> neo-error",
-    "neo-trie -> neo-crypto",
-    "neo-trie -> neo-error",
-    "neo-trie -> neo-io",
-    "neo-error -> neo-io",
-    "neo-manifest -> neo-crypto",
-    "neo-manifest -> neo-error",
-    "neo-manifest -> neo-io",
-    "neo-manifest -> neo-serialization",
-    "neo-manifest -> neo-vm",
-    "neo-serialization -> neo-error",
-    "neo-serialization -> neo-io",
-    "neo-serialization -> neo-vm",
-    "neo-storage -> neo-error",
-    "neo-storage -> neo-io",
-    "neo-vm -> neo-crypto",
-    "neo-vm -> neo-error",
-    "neo-vm -> neo-io",
-    # Protocol implementations reuse the canonical payload vocabulary.
-    "neo-consensus -> neo-payloads",
-    "neo-hsm -> neo-consensus",
-    # Domain services have explicit one-way implementation relationships.
-    "neo-execution -> neo-runtime",
-    "neo-mempool -> neo-execution",
-    "neo-mempool -> neo-native-contracts",
-    "neo-native-contracts -> neo-execution",
-    "neo-native-contracts -> neo-runtime",
-    "neo-state-service -> neo-runtime",
-    # The off-chain Oracle worker consumes the node-service wallet lifecycle.
-    "neo-oracle-service -> neo-wallets",
-]
-
-[workspace.metadata.architecture.layers]
-foundation = ["neo-primitives"]
-infrastructure = [
-    "neo-io",
-    "neo-error",
-    "neo-crypto",
-    "neo-trie",
-    "neo-storage",
-    "neo-static-files",
-    "neo-state-packs",
-    "neo-checkpoint",
-    "neo-config",
-    "neo-vm",
-    "neo-serialization",
-    "neo-manifest",
-]
-protocol = ["neo-payloads", "neo-consensus", "neo-hsm"]
-domain-services = [
-    "neo-runtime",
-    "neo-execution",
-    "neo-native-contracts",
-    "neo-state-service",
-    "neo-mempool",
-]
-node-services = [
-    "neo-blockchain",
-    "neo-network",
-    "neo-wallets",
-    "neo-indexer",
-    "neo-oracle-service",
-]
-composition = ["neo-system"]
-plugin-boundary = ["neo-rpc"]
-application = ["neo-node", "neo-gui", "neo-test-fixtures"]
-
-# Centralized lint policy. Every member opts in with `[lints] workspace = true`
-# in its own Cargo.toml, so the rules live in exactly one place (replacing the
-# per-crate `#![deny(...)]` / `#![warn(...)]` headers). Crates that genuinely
-# need unsafe for measured hot paths or unavoidable FFI keep the deny and opt
-# out per-site with `#[allow(unsafe_code)]` + a `// SAFETY:` comment.
-[workspace.lints.rust]
-unsafe_code = "deny"
-missing_docs = "warn"
-
-# Clippy policy, moved here from the inline flags in .github/workflows/ci.yml so
-# local `cargo clippy` enforces exactly what CI does. `all` is denied (priority
-# -1 so the specific allows below win); the allows are the pragmatic exceptions
-# the project has accepted.
-[workspace.lints.clippy]
-all = { level = "deny", priority = -1 }
-doc_overindented_list_items = "allow"
-doc_lazy_continuation = "allow"
-large_enum_variant = "allow"
-# Sibling of large_enum_variant: Neo's error enums are intentionally large and
-# boxing every Result's Err to shave bytes is not worth the churn.
-result_large_err = "allow"
-module_inception = "allow"
-type_complexity = "allow"
-len_zero = "allow"
-nonminimal_bool = "allow"
-# Rust 1.89 activates these style-only rewrites across legacy protocol code.
-# Keep architecture changes reviewable; modernize touched modules incrementally.
-collapsible_if = "allow"
-enum_variant_names = "allow"
-too_many_arguments = "allow"
-field_reassign_with_default = "allow"
-assertions_on_constants = "allow"
-# False-fires on test byte-vectors that happen to approximate PI.
-approx_constant = "allow"
+msrv = "1.85"
 
 [workspace.dependencies]
 # === Internal crates ===
 # Foundation layer
-neo-primitives = { path = "neo-primitives", version = "0.14.0" }
+neo-primitives = { path = "neo-primitives", version = "0.16.0" }
+neo-config = { path = "neo-config", version = "0.16.0" }
+neo-crypto = { path = "neo-crypto", version = "0.16.0" }
+neo-storage = { path = "neo-storage", version = "0.16.0" }
+neo-io = { path = "neo-io", version = "0.16.0" }
+neo-json = { path = "neo-json", version = "0.16.0" }
+
+# Core layer
+neo-vm = { path = "neo-vm", version = "0.16.0" }
+neo-core = { path = "neo-core", version = "0.16.0" }
+neo-p2p = { path = "neo-p2p", version = "0.16.0" }
+neo-rpc = { path = "neo-rpc", version = "0.16.0" }
+neo-consensus = { path = "neo-consensus", version = "0.16.0" }
 
 # Infrastructure layer
-neo-config = { path = "neo-config", version = "0.14.0" }
-neo-crypto = { path = "neo-crypto", version = "0.14.0" }
-neo-trie = { path = "neo-trie", version = "0.14.0" }
-neo-storage = { path = "neo-storage", version = "0.14.0" }
-neo-static-files = { path = "neo-static-files", version = "0.14.0" }
-neo-state-packs = { path = "neo-state-packs", version = "0.14.0" }
-neo-checkpoint = { path = "neo-checkpoint", version = "0.14.0" }
-neo-io = { path = "neo-io", version = "0.14.0" }
-neo-vm = { path = "neo-vm", version = "0.14.0" }
-neo-error = { path = "neo-error", version = "0.14.0" }
-neo-serialization = { path = "neo-serialization", version = "0.14.0" }
-neo-manifest = { path = "neo-manifest", version = "0.14.0" }
+neo-tee = { path = "neo-tee", version = "0.16.0" }
+neo-hsm = { path = "neo-hsm", version = "0.16.0" }
 
-# Protocol layer
-neo-payloads = { path = "neo-payloads", version = "0.14.0" }
-neo-consensus = { path = "neo-consensus", version = "0.14.0" }
-neo-hsm = { path = "neo-hsm", version = "0.14.0" }
-
-# Domain service layer
-neo-runtime = { path = "neo-runtime", version = "0.14.0" }
-neo-execution = { path = "neo-execution", version = "0.14.0" }
-neo-native-contracts = { path = "neo-native-contracts", version = "0.14.0" }
-neo-state-service = { path = "neo-state-service", version = "0.14.0" }
-neo-mempool = { path = "neo-mempool", version = "0.14.0" }
-
-# Node service layer
-neo-blockchain = { path = "neo-blockchain", version = "0.14.0" }
-neo-network = { path = "neo-network", version = "0.14.0" }
-neo-wallets = { path = "neo-wallets", version = "0.14.0" }
-neo-indexer = { path = "neo-indexer", version = "0.14.0" }
-neo-oracle-service = { path = "neo-oracle-service", version = "0.14.0" }
-
-# Composition layer
-neo-system = { path = "neo-system", version = "0.14.0" }
-
-# Plugin / RPC boundary
-neo-rpc = { path = "neo-rpc", version = "0.14.0" }
+# Telemetry
+neo-telemetry = { path = "neo-telemetry", version = "0.16.0" }
 
 # Application layer
-neo-node = { path = "neo-node", version = "0.14.0" }
-
-# Development-only crates
-neo-test-fixtures = { path = "neo-test-fixtures", version = "0.14.0" }
+# neo-cli removed: functionality merged into neo-node
+neo-node = { path = "neo-node", version = "0.16.0" }
 
 # === Core dependencies ===
 # Async runtime
-tokio = { version = "1.35", default-features = false }
+# TODO: Reduce tokio features per-crate for faster compilation
+tokio = { version = "1.35", features = ["full"] }
 tokio-util = "0.7"
+async-trait = "0.1"
 futures = "0.3"
 
 # Serialization
@@ -342,9 +196,8 @@ num-traits = "0.2"
 smallvec = { version = "1.13", features = ["const_new", "union"] }
 bytes = "1.5"
 hashbrown = { version = "0.14", features = ["serde"] }
-rustc-hash = "2.1"
 indexmap = { version = "=2.8.0", features = ["serde"] }
-lru = "0.16.3"
+lru = "0.12"
 fastbloom = { version = "0.17", default-features = false }
 bitflags = "2.4"
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
@@ -353,12 +206,11 @@ governor = { version = "0.10.4", default-features = false, features = ["std", "d
 memchr = "2.8"
 
 # === Storage ===
-libmdbx = { version = "0.5.3", default-features = false }
-mdbx-sys = "=12.13.2"
+rocksdb = { version = "0.21", default-features = false, features = ["snappy", "lz4", "zlib"] }
 
 # === Network ===
-# HTTP server (hyper) and HTTP client (reqwest)
-hyper = { version = "0.14", default-features = false, features = ["http1", "runtime", "server"] }
+# HTTP and JSON-RPC
+hyper = { version = "0.14", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "blocking", "stream", "gzip"] }
 # Low-level networking
 socket2 = "0.5"
@@ -377,12 +229,11 @@ mockall = "0.12"
 # === Profiling ===
 pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
 
-# Compression and metrics (always enabled).
-# >=0.11 hardens the safe decoder to return Err instead of panicking on
-# malformed input (0.10.0 panicked in sink.rs on crafted compressed payloads —
-# a peer-reachable DoS via the P2P message compression path). LZ4 block format
-# is unchanged across these versions, so cross-node/C# compatibility holds.
-lz4_flex = "=0.13.1"
+# Compression and metrics (always enabled)
+# lz4_flex 0.10.0 is affected by RUSTSEC-2026-0041 (CVSS 8.2: decompression can
+# leak uninitialized memory). 0.12.1 fixes it and keeps the same
+# compress_prepend_size / decompress_size_prepended API used by neo-io & neo-core.
+lz4_flex = "0.12.1"
 prometheus = "0.14"
 sysinfo = "0.29"
 
@@ -394,35 +245,6 @@ subtle = "2.5"
 byteorder = "1.5"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 
-# Cryptography — symmetric encryption and KDFs
-hmac = "0.12"
-aes = "0.8"
-cbc = { version = "0.1", features = ["alloc"] }
-cipher = "0.4"
-scrypt = "0.11"
-hkdf = "0.12"
-aes-gcm = "0.10"
-
-# Compression
-zstd = "0.13"
-
-# Dynamic loading
-libloading = "0.8"
-
-# URL encoding
-percent-encoding = "2.3"
-
-# Testing
-mockito = "1.0"
-
-# gRPC (NeoFS oracle transport)
-tonic = { version = "0.11", features = ["transport", "tls", "tls-roots"] }
-prost = "0.12"
-
-# Build dependencies
-tonic-build = "0.11"
-protoc-bin-vendored = "3.0"
-
 # Profiles
 [profile.release]
 opt-level = 3
@@ -431,12 +253,6 @@ codegen-units = 1
 panic = "abort"
 strip = true
 incremental = false
-
-# Release-equivalent codegen with debug symbols kept, for profiling (samply).
-[profile.profiling]
-inherits = "release"
-debug = "line-tables-only"
-strip = false
 
 [profile.dev]
 opt-level = 0
