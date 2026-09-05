@@ -3,9 +3,10 @@
 use alloc::string::{String, ToString};
 
 use crate::{
-    concat_splice_values, slice_splice_value, stack_value_span_bytes, StackValue, MAX_ITEM_SIZE,
+    MAX_ITEM_SIZE, StackValue, concat_splice_values, slice_splice_value, stack_value_span_bytes,
 };
 
+/// Concatenates two byte-oriented stack values.
 pub fn cat_values(left: &StackValue, right: &StackValue) -> Result<StackValue, String> {
     let result = concat_splice_values(left, right)
         .ok_or_else(|| "CAT: operands must expose byte memory".to_string())?;
@@ -19,6 +20,7 @@ pub fn cat_values(left: &StackValue, right: &StackValue) -> Result<StackValue, S
     Ok(result)
 }
 
+/// Returns a bounded slice of a byte-oriented stack value.
 pub fn substr_value(value: &StackValue, index: i64, count: i64) -> Result<StackValue, String> {
     let bytes = stack_value_span_bytes(value)
         .ok_or_else(|| "SUBSTR: value does not expose byte memory".to_string())?;
@@ -29,6 +31,7 @@ pub fn substr_value(value: &StackValue, index: i64, count: i64) -> Result<StackV
         .ok_or_else(|| "SUBSTR: range out of bounds".to_string())
 }
 
+/// Returns the leftmost `count` bytes.
 pub fn left_value(value: &StackValue, count: i64) -> Result<StackValue, String> {
     let len = stack_value_span_bytes(value)
         .ok_or_else(|| "LEFT: value does not expose byte memory".to_string())?
@@ -41,6 +44,7 @@ pub fn left_value(value: &StackValue, count: i64) -> Result<StackValue, String> 
     slice_splice_value(value, 0, count).ok_or_else(|| "LEFT: count exceeds length".to_string())
 }
 
+/// Returns the rightmost `count` bytes.
 pub fn right_value(value: &StackValue, count: i64) -> Result<StackValue, String> {
     let len = stack_value_span_bytes(value)
         .ok_or_else(|| "RIGHT: value does not expose byte memory".to_string())?
@@ -54,6 +58,7 @@ pub fn right_value(value: &StackValue, count: i64) -> Result<StackValue, String>
         .ok_or_else(|| "RIGHT: count exceeds length".to_string())
 }
 
+/// Copies a byte range between stack-backed memory and a destination buffer.
 pub fn memcpy_bytes(
     destination: &mut [u8],
     destination_index: i64,

@@ -1,4 +1,5 @@
-use super::{deserialize_deposit, Notary, DEFAULT_MAX_NOT_VALID_BEFORE_DELTA};
+use super::{DEFAULT_MAX_NOT_VALID_BEFORE_DELTA, Notary, deserialize_deposit};
+use crate::UInt160;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::network::p2p::payloads::{TransactionAttribute, TransactionAttributeType};
@@ -6,10 +7,9 @@ use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{
-    gas_token::GasToken, policy_contract::PolicyContract, NativeContract, NativeMethod,
+    NativeContract, NativeMethod, gas_token::GasToken, policy_contract::PolicyContract,
 };
 use crate::smart_contract::{Contract, StorageItem};
-use crate::UInt160;
 use num_bigint::BigInt;
 use num_traits::Zero;
 use std::any::Any;

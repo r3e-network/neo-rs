@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use neo_primitives::LogLevel;
-use std::sync::LazyLock;
 use parking_lot::Mutex;
+use std::sync::LazyLock;
 
 /// Log event handler delegate
 /// Matches C# LogEventHandler delegate

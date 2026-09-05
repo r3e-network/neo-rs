@@ -1,5 +1,5 @@
-use super::super::super::proto::neofs_v2;
 use super::super::super::NeoFsAuth;
+use super::super::super::proto::neofs_v2;
 
 const NEOFS_SDK_VERSION_MAJOR: u32 = 2;
 const NEOFS_SDK_VERSION_MINOR: u32 = 11;

@@ -2,14 +2,14 @@
 //!
 //! This module provides the compound operation handlers for the Neo VM.
 
-use crate::error::VmError;
-use crate::error::VmResult;
-use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{register_jump_handlers, JumpTable};
-use crate::stack_item::{Array, Map, StackItem, Struct};
 use crate::Instruction;
 use crate::OpCode;
 use crate::StackItemType;
+use crate::error::VmError;
+use crate::error::VmResult;
+use crate::execution_engine::ExecutionEngine;
+use crate::jump_table::{JumpTable, register_jump_handlers};
+use crate::stack_item::{Array, Map, StackItem, Struct};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::collections::BTreeMap;
@@ -141,9 +141,8 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
         )));
     }
 
-    let array = collection_stack_item(crate::semantics::collections::new_array_t(
-        count, type_byte,
-    ))?;
+    let array =
+        collection_stack_item(crate::semantics::collections::new_array_t(count, type_byte))?;
     context.push(array)?;
 
     Ok(())
@@ -220,7 +219,7 @@ fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected Array, Struct, or Map",
-            ))
+            ));
         }
     }
 

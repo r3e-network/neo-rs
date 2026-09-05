@@ -1,6 +1,7 @@
 use super::*;
 
 impl ApplicationEngine {
+    /// Creates a new application engine for the given trigger and script container.
     pub fn new(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
@@ -21,6 +22,7 @@ impl ApplicationEngine {
         )
     }
 
+    /// Creates a new application engine, sharing the persisting block as an `Arc`.
     pub fn new_with_shared_block(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
@@ -72,6 +74,7 @@ impl ApplicationEngine {
             runtime_context: None,
         };
 
+        app.select_hardfork_vm_semantics();
         app.attach_host();
         app.register_native_contracts();
         app.refresh_policy_settings();
@@ -88,6 +91,8 @@ impl ApplicationEngine {
         Ok(app)
     }
 
+    /// Creates a new application engine with preloaded contract states and a
+    /// shared native-contract cache (used by hosts/tests that seed state).
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_preloaded_native(
         trigger: TriggerType,
@@ -346,6 +351,19 @@ impl ApplicationEngine {
             .unwrap_or(0)
     }
 
+    /// Selects hardfork-dependent VM semantics from the protocol settings and
+    /// the block height this engine executes at. Without this, the engine used
+    /// a single shift semantic regardless of the active hardfork (report R06).
+    fn select_hardfork_vm_semantics(&mut self) {
+        let mut limits = neo_vm::ExecutionEngineLimits::DEFAULT;
+        limits.zero_shift_converts_to_integer = self
+            .protocol_settings
+            .hardforks
+            .get(&crate::hardfork::Hardfork::HfGorgon)
+            .is_some_and(|activation| self.current_block_index() >= *activation);
+        self.vm_engine.engine_mut().set_limits(limits);
+    }
+
     /// Returns the timestamp of the block currently being persisted.
     pub fn current_block_timestamp(&self) -> Result<u64, String> {
         self.persisting_block
@@ -392,6 +410,8 @@ impl ApplicationEngine {
         (self.fee_consumed + FEE_FACTOR - 1) / FEE_FACTOR
     }
 
+    /// Returns the raw execution fee factor (scaled into picoGAS units)
+    /// cached from the Policy contract.
     #[must_use]
     pub const fn exec_fee_factor_raw(&self) -> u32 {
         self.exec_fee_factor
@@ -402,10 +422,12 @@ impl ApplicationEngine {
         self.storage_price
     }
 
+    /// Returns the fault exception message if execution halted with an error.
     pub fn fault_exception(&self) -> Option<&str> {
         self.fault_exception.as_deref()
     }
 
+    /// Returns the VM result stack left after execution.
     pub fn result_stack(&self) -> &EvaluationStack {
         self.vm_engine.engine().result_stack()
     }
@@ -419,18 +441,23 @@ impl ApplicationEngine {
             .map(|ctx| ctx.evaluation_stack())
     }
 
+    /// Returns the protocol settings used by this engine.
     pub fn protocol_settings(&self) -> &ProtocolSettings {
         &self.protocol_settings
     }
 
+    /// Returns the script container being executed, if any.
     pub fn script_container(&self) -> Option<&Arc<dyn Verifiable>> {
         self.script_container.as_ref()
     }
 
+    /// Returns the VM execution limits (stack size, item size, etc.).
     pub fn execution_limits(&self) -> &ExecutionEngineLimits {
         self.vm_engine.engine().limits()
     }
 
+    /// Returns the manifest name of the contract with the given hash,
+    /// falling back to the native contract's name.
     pub fn contract_display_name(&self, hash: &UInt160) -> Option<String> {
         if let Some(contract) = self.contracts.get(hash) {
             return Some(contract.manifest.name.clone());
@@ -455,6 +482,7 @@ impl ApplicationEngine {
         self.native_registry.register(contract);
     }
 
+    /// Records a log event and notifies the attached runtime context.
     pub fn push_log(&mut self, event: LogEventArgs) {
         if let Some(context) = self.runtime_context.as_ref() {
             context.notify_application_log(self, &event);
@@ -462,6 +490,7 @@ impl ApplicationEngine {
         self.logs.push(event);
     }
 
+    /// Records a notification event and notifies the attached runtime context.
     pub fn push_notification(&mut self, event: NotifyEventArgs) {
         if let Some(context) = self.runtime_context.as_ref() {
             context.notify_application_notify(self, &event);
@@ -469,6 +498,7 @@ impl ApplicationEngine {
         self.notifications.push(event);
     }
 
+    /// Returns all notification events emitted during execution.
     pub fn notifications(&self) -> &[NotifyEventArgs] {
         &self.notifications
     }
@@ -483,6 +513,7 @@ impl ApplicationEngine {
         self.runtime_context = context;
     }
 
+    /// Returns how many times the script with the given hash has been invoked.
     pub fn get_invocation_counter(&self, script_hash: &UInt160) -> u32 {
         self.invocation_counter
             .get(script_hash)
@@ -500,10 +531,12 @@ impl ApplicationEngine {
         Arc::clone(&self.native_contract_cache)
     }
 
+    /// Returns a shareable handle to the native-contract metadata cache.
     pub fn native_contract_cache_handle(&self) -> Arc<Mutex<NativeContractsCache>> {
         Arc::clone(&self.native_contract_cache)
     }
 
+    /// Returns a snapshot (clone) of the deployed contract states known to this engine.
     pub fn contracts_snapshot(&self) -> HashMap<UInt160, ContractState> {
         self.contracts.clone()
     }

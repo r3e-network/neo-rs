@@ -1,9 +1,12 @@
 use super::*;
 use crate::neo_io::BinaryWriter;
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::persistence::providers::memory_store::MemoryStore;
-use crate::persistence::{DataCache, Store, SeekDirection, StorageItem, StoreCache};
+use crate::persistence::{DataCache, SeekDirection, StorageItem, Store, StoreCache};
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::contract_state::NefFile;
@@ -14,11 +17,9 @@ use crate::smart_contract::manifest::{
     ContractParameterDefinition, ContractPermission, WildCardContainer,
 };
 use crate::smart_contract::trigger_type::TriggerType;
-use crate::smart_contract::ContractParameterType;
-use crate::neo_vm::StackItem;
 use crate::wallets::KeyPair;
 use crate::witness::Witness;
-use crate::{Verifiable, UInt160, WitnessScope};
+use crate::{UInt160, Verifiable, WitnessScope};
 use neo_vm::OpCode;
 use std::sync::Arc;
 
@@ -107,12 +108,14 @@ fn make_engine(
         Arc::new(tx) as Arc<dyn Verifiable>
     });
 
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.clear();
     ApplicationEngine::new(
         TriggerType::Application,
         container,
         snapshot,
         None,
-        Default::default(),
+        settings,
         gas_limit,
         None,
     )
@@ -586,9 +589,10 @@ fn validate_snapshot_integrity_rejects_duplicate_non_native_ids() {
     let err = ContractManagement::validate_snapshot_integrity(snapshot.as_ref())
         .expect_err("duplicate contract ids should fail integrity check");
     assert!(matches!(err, Error::Invalid { .. }));
-    assert!(err
-        .to_string()
-        .contains("duplicate non-native contract id 1"));
+    assert!(
+        err.to_string()
+            .contains("duplicate non-native contract id 1")
+    );
 }
 
 #[test]
@@ -625,17 +629,19 @@ fn has_method_accepts_any_parameter_count() {
     let cm = ContractManagement::new();
     let mut manifest = default_manifest();
     manifest.abi = ContractAbi::new(
-        vec![ContractMethodDescriptor::new(
-            "alpha".to_string(),
-            vec![
-                ContractParameterDefinition::new("p0".to_string(), ContractParameterType::Any)
-                    .unwrap(),
-            ],
-            ContractParameterType::Void,
-            0,
-            true,
-        )
-        .unwrap()],
+        vec![
+            ContractMethodDescriptor::new(
+                "alpha".to_string(),
+                vec![
+                    ContractParameterDefinition::new("p0".to_string(), ContractParameterType::Any)
+                        .unwrap(),
+                ],
+                ContractParameterType::Void,
+                0,
+                true,
+            )
+            .unwrap(),
+        ],
         Vec::new(),
     );
 
@@ -786,10 +792,12 @@ fn destroy_removes_contract_and_storage() {
 
     let engine_snapshot = engine.snapshot_cache();
     let prefix = StorageKey::new(contract.id, Vec::new());
-    assert!(engine_snapshot
-        .find(Some(&prefix), SeekDirection::Forward)
-        .next()
-        .is_none());
+    assert!(
+        engine_snapshot
+            .find(Some(&prefix), SeekDirection::Forward)
+            .next()
+            .is_none()
+    );
 
     let contract_key = StorageKey::new(
         ContractManagement::ID,

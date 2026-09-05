@@ -233,13 +233,13 @@ impl ContractManagement {
                         id,
                         mapped.to_hex_string(),
                         hash.to_hex_string()
-                    )))
+                    )));
                 }
                 None => {
                     return Err(Error::invalid_data(format!(
                         "corrupted ContractManagement state: missing contract id mapping for id {}",
                         id
-                    )))
+                    )));
                 }
             }
         }

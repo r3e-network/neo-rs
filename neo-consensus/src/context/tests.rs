@@ -135,6 +135,29 @@ fn test_timeout_calculation() {
 }
 
 #[test]
+fn test_change_timer_and_extend_timer_by_factor() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(0, validators, None, None);
+
+    // Backup view 0 starts with 2 * block time (30 seconds).
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2);
+    ctx.change_timer(1_000, BLOCK_TIME_MS * 2);
+    assert!(!ctx.is_timed_out(31_000));
+
+    // Remaining 20 seconds + (2 * 15 seconds / M=3) = 30 seconds.
+    ctx.extend_timer_by_factor(11_000, 2);
+    assert_eq!(ctx.view_start_time, 11_000);
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2);
+    assert!(!ctx.is_timed_out(41_000));
+    assert!(ctx.is_timed_out(41_001));
+
+    // Requesting view 1 schedules the next view's 4 * block time deadline.
+    ctx.change_timer_for_view(50_000, 1);
+    assert_eq!(ctx.view_start_time, 50_000);
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 4);
+}
+
+#[test]
 fn test_save_and_load_roundtrip() {
     use std::env;
 
@@ -397,7 +420,7 @@ fn test_count_failed_empty() {
     let validators = create_test_validators(7);
     let ctx = ConsensusContext::new(100, validators, Some(0), None);
 
-    // No last_seen_messages tracked yet
+    // A context that has not started a round has no failure history yet.
     assert_eq!(ctx.count_failed(), 0);
 }
 
@@ -568,6 +591,39 @@ fn test_message_hash_caching() {
     // Marking the same hash again should be idempotent
     ctx.mark_message_seen(&hash1);
     assert!(ctx.has_seen_message(&hash1));
+}
+
+#[test]
+fn test_recovery_response_hash_cache_is_independent() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+    let hash = UInt256::from_bytes(&[7u8; 32]).unwrap();
+
+    ctx.mark_message_seen(&hash);
+    assert!(!ctx.has_sent_recovery_response(&hash));
+    ctx.mark_recovery_response_sent(&hash);
+    assert!(ctx.has_sent_recovery_response(&hash));
+
+    ctx.reset_for_new_block(101, 2000);
+    assert!(!ctx.has_seen_message(&hash));
+    assert!(!ctx.has_sent_recovery_response(&hash));
+}
+
+#[test]
+fn test_extend_timer_does_not_change_view_changing_or_commit_timer() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+    ctx.change_timer(1000, 5000);
+    ctx.change_views.insert(0, (1, ChangeViewReason::Timeout));
+    ctx.extend_timer_by_factor(2000, 4);
+    assert_eq!(ctx.view_start_time, 1000);
+    assert_eq!(ctx.get_timeout(), 5000);
+
+    ctx.change_views.clear();
+    ctx.commits.insert(0, vec![1]);
+    ctx.extend_timer_by_factor(2000, 4);
+    assert_eq!(ctx.view_start_time, 1000);
+    assert_eq!(ctx.get_timeout(), 5000);
 }
 
 #[test]

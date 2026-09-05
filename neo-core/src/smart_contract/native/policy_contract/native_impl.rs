@@ -152,7 +152,6 @@ impl NativeContract for PolicyContract {
 
         Ok(())
     }
-
 }
 
 crate::impl_default_via_new!(PolicyContract);

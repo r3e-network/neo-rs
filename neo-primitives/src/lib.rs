@@ -32,36 +32,38 @@ pub use bitflags;
 
 pub mod base58_check;
 pub mod big_decimal;
-pub mod call_flags;
 pub mod blockchain;
+pub mod call_flags;
 pub mod constants;
 pub mod contains_transaction_type;
 pub mod contract_basic_method;
-pub mod contract_task;
-pub mod find_options;
 pub mod contract_parameter_type;
+pub mod contract_task;
 pub mod error;
+pub mod find_options;
 pub mod hardfork;
 pub mod inventory;
 pub mod inventory_type;
 pub mod log_event_args;
+/// Structured log severity levels matching Neo's runtime logging.
 pub mod log_level;
 /// Macro helpers for compact protocol enum declarations.
 pub mod macros;
 pub mod network_error;
 pub mod node_capability_type;
 pub mod oracle_response_code;
+/// JSON-RPC exception type shared across the workspace.
 pub mod rpc_exception;
+pub mod serializable_payload;
 pub mod storage;
 pub mod transaction_attribute_type;
 pub mod transaction_removal_reason;
 pub mod trigger_type;
-pub mod verifiable;
 pub mod uint160;
 pub mod uint256;
 mod uint_hex;
-pub mod serializable_payload;
 pub mod unhandled_exception_policy;
+pub mod verifiable;
 pub mod verification;
 pub mod verify_result;
 pub mod witness_condition_type;
@@ -82,10 +84,10 @@ pub use tests::*;
 pub use constants::*;
 pub use contains_transaction_type::ContainsTransactionType;
 pub use contract_basic_method::ContractBasicMethod;
-pub use contract_task::ContractTask;
-pub use find_options::FindOptions;
 pub use contract_parameter_type::ContractParameterType;
+pub use contract_task::ContractTask;
 pub use error::{PrimitiveError, PrimitiveResult};
+pub use find_options::FindOptions;
 pub use hardfork::{Hardfork, HardforkParseError};
 pub use inventory::Inventory;
 pub use inventory_type::InventoryType;
@@ -98,21 +100,21 @@ pub use rpc_exception::RpcException;
 pub use transaction_attribute_type::TransactionAttributeType;
 pub use transaction_removal_reason::TransactionRemovalReason;
 pub use trigger_type::TriggerType;
+pub use uint160::{UINT160_SIZE, UInt160};
+pub use uint256::{UINT256_SIZE, UInt256};
 pub use verifiable::Verifiable;
-pub use uint160::{UInt160, UINT160_SIZE};
-pub use uint256::{UInt256, UINT256_SIZE};
 pub use verify_result::VerifyResult;
 pub use witness_condition_type::WitnessConditionType;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};
 
 // New trait re-exports for crate refactoring (Phase 1)
 pub use blockchain::{
-    BlockchainProvider, BlockLike, HeaderLike, NetworkMessage, TransactionLike, PeerId, PeerInfo, PeerRegistry,
-    RelayError, RelayResult, SendError, SendResult,
+    BlockLike, BlockchainProvider, HeaderLike, NetworkMessage, PeerId, PeerInfo, PeerRegistry,
+    RelayError, RelayResult, SendError, SendResult, TransactionLike,
 };
-pub use storage::{StorageValue, StorageValueError, StorageValueResult};
 pub use serializable_payload::SerializablePayload;
-pub use unhandled_exception_policy::{panic_message, UnhandledExceptionPolicy};
+pub use storage::{StorageValue, StorageValueError, StorageValueResult};
+pub use unhandled_exception_policy::{UnhandledExceptionPolicy, panic_message};
 pub use verification::{
-    BlockchainSnapshot, VerificationContext, Witness, VerificationError, VerificationResult,
+    BlockchainSnapshot, VerificationContext, VerificationError, VerificationResult, Witness,
 };

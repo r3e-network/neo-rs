@@ -685,9 +685,7 @@ impl From<crate::InstructionError> for VmError {
     fn from(error: crate::InstructionError) -> Self {
         match error.kind() {
             crate::InstructionErrorKind::Parse => Self::parse(error.to_string()),
-            crate::InstructionErrorKind::Operand => {
-                Self::invalid_operand_msg(error.to_string())
-            }
+            crate::InstructionErrorKind::Operand => Self::invalid_operand_msg(error.to_string()),
         }
     }
 }

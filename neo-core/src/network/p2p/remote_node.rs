@@ -127,6 +127,7 @@ impl RemoteNode {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Builds the remote-node state for one established connection.
     pub fn new(
         system: Arc<NeoSystemContext>,
         local_node: Arc<LocalNode>,
@@ -175,6 +176,7 @@ impl RemoteNode {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Builds actor `Props` spawning a `RemoteNode` for this connection.
     pub fn props(
         system: Arc<NeoSystemContext>,
         local_node: Arc<LocalNode>,
@@ -559,15 +561,33 @@ impl Actor for RemoteNode {
 /// Remote node control messages.
 #[derive(Debug, Clone)]
 pub enum RemoteNodeCommand {
+    /// Begins the version/verack handshake.
     StartProtocol,
+    /// Serializes and sends a protocol message to the peer.
     Send(NetworkMessage),
+    /// Delivers a message received from the peer.
     Inbound(NetworkMessage),
-    ConnectionError { error: NetworkError },
-    Disconnect { reason: String },
+    /// The underlying connection hit a network error.
+    ConnectionError {
+        /// The error that ended the connection.
+        error: NetworkError,
+    },
+    /// Tears the connection down with the given reason.
+    Disconnect {
+        /// Human-readable disconnect reason.
+        reason: String,
+    },
+    /// The handshake deadline elapsed without completion.
     HandshakeTimeout,
+    /// Periodic timer tick driving timeouts and queue drains.
     TimerTick,
+    /// Relays an inventory to the peer per relay policy.
     RelayInventory(super::RelayInventory),
-    SendInventory { inventory: super::RelayInventory },
+    /// Sends an inventory to the peer unconditionally.
+    SendInventory {
+        /// The inventory to send.
+        inventory: super::RelayInventory,
+    },
 }
 
 fn current_unix_timestamp() -> u64 {
@@ -580,8 +600,8 @@ fn current_unix_timestamp() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        lifecycle::HandshakeGateDecision, message_handlers, register_message_received_handler,
-        RemoteNode,
+        RemoteNode, lifecycle::HandshakeGateDecision, message_handlers,
+        register_message_received_handler,
     };
     use crate::i_event_handlers::MessageReceivedHandler;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
@@ -599,8 +619,8 @@ mod tests {
     use crate::{UInt160, WitnessScope};
     use neo_vm::OpCode;
     use std::sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     };
     fn transaction_with_script(script: Vec<u8>) -> Transaction {
         let mut tx = Transaction::new();

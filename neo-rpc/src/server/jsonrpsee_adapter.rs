@@ -3,9 +3,9 @@
 use super::routes::{invoke_rpc_handler, resolve_rpc_handler};
 use super::rpc_error::RpcError;
 use super::rpc_server::RpcServer;
+use jsonrpsee::RpcModule;
 use jsonrpsee::core::RegisterMethodError;
 use jsonrpsee::types::{ErrorObjectOwned, Params};
-use jsonrpsee::RpcModule;
 use parking_lot::RwLock;
 use serde_json::Value;
 use std::collections::HashSet;

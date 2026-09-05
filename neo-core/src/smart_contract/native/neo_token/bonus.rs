@@ -5,6 +5,7 @@
 use super::*;
 
 impl NeoToken {
+    /// Returns the GAS bonus accrued by `account` up to block `end` (C# `unclaimedGas`).
     pub fn unclaimed_gas<S>(&self, snapshot: &S, account: &UInt160, end: u32) -> CoreResult<BigInt>
     where
         S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
@@ -15,6 +16,7 @@ impl NeoToken {
         self.calculate_bonus(snapshot, &state, end)
     }
 
+    /// Returns the NEO balance of `account` read from the provided snapshot.
     pub fn balance_of_snapshot<S>(&self, snapshot: &S, account: &UInt160) -> CoreResult<BigInt>
     where
         S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
@@ -163,12 +165,12 @@ impl NeoToken {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UInt256;
     use crate::persistence::DataCache;
     use crate::smart_contract::application_engine::ApplicationEngine;
     use crate::smart_contract::binary_serializer::BinarySerializer;
     use crate::smart_contract::native::NativeContract;
     use crate::smart_contract::trigger_type::TriggerType;
-    use crate::UInt256;
     use std::sync::Arc;
 
     const PREFIX_CURRENT_BLOCK: u8 = 12;

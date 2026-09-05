@@ -7,12 +7,12 @@
 //!   - `u32` block byte length
 //!   - serialized `Block` payload bytes
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use neo_core::{
     neo_io::{MemoryReader, Serializable},
     neo_system::NeoSystem,
     network::p2p::payloads::block::Block,
-    persistence::{providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StoreCache},
+    persistence::{StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider},
     smart_contract::native::LedgerContract,
 };
 use std::{

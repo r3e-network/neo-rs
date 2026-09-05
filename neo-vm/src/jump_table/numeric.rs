@@ -3,9 +3,9 @@
 use crate::error::{VmError, VmResult};
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{register_jump_handlers, JumpTable};
-use crate::stack_item::StackItem;
+use crate::jump_table::{JumpTable, register_jump_handlers};
 use crate::semantics::{arithmetic, comparison};
+use crate::stack_item::StackItem;
 use crate::{Instruction, OpCode, StackValue};
 use num_traits::ToPrimitive;
 
@@ -184,11 +184,21 @@ fn pow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 }
 
 fn shl(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    shift(engine, arithmetic::shl_value, "Shift amount too large")
+    let op = if engine.limits().zero_shift_converts_to_integer {
+        arithmetic::shl_value
+    } else {
+        arithmetic::shl_value_pre_gorgon
+    };
+    shift(engine, op, "Shift amount too large")
 }
 
 fn shr(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    shift(engine, arithmetic::shr_value, "Shift amount too large")
+    let op = if engine.limits().zero_shift_converts_to_integer {
+        arithmetic::shr_value
+    } else {
+        arithmetic::shr_value_pre_gorgon
+    };
+    shift(engine, op, "Shift amount too large")
 }
 
 fn shift(

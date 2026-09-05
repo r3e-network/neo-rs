@@ -6,7 +6,7 @@ mod report;
 mod service;
 
 pub use report::{
-    AttestationReport, EnclaveAttributes, Quote, QuoteValidationOptions, QuoteValidationResult,
-    ReportType, MAX_REPORT_AGE_SECONDS, MIN_SECURITY_VERSION,
+    AttestationReport, EnclaveAttributes, MAX_REPORT_AGE_SECONDS, MIN_SECURITY_VERSION, Quote,
+    QuoteValidationOptions, QuoteValidationResult, ReportType,
 };
 pub use service::{AttestationConfig, AttestationService};

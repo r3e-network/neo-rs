@@ -415,9 +415,15 @@ impl AttestationService {
         })?;
 
         if evidence.report_data != report_data {
-            warn!(
-                "requested report_data differs from verified SGX quote report_data; returning quote-bound report_data in strict mode"
-            );
+            // R16: the verified quote is bound to the report data captured at
+            // enclave initialization. Returning it for a different request
+            // would present initialization evidence as if it proved THIS
+            // request (attest_key/attest_ordering payloads) — refuse instead.
+            return Err(TeeError::AttestationFailed(
+                "requested report_data does not match the verified SGX quote report_data; \
+                 strict-mode evidence cannot be reused as a proof for this request"
+                    .to_string(),
+            ));
         }
 
         Ok(AttestationReport {

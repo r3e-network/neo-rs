@@ -1,13 +1,13 @@
 use super::memory_snapshot::MemorySnapshot;
+use crate::impl_default_via_new;
 use crate::persistence::{
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
-    store::{Store, OnNewSnapshotDelegate},
+    seek_direction::SeekDirection,
+    store::{OnNewSnapshotDelegate, Store},
     store_snapshot::StoreSnapshot,
     write_store::WriteStore,
-    seek_direction::SeekDirection,
 };
-use crate::types::{storage_key::StorageKey, StorageItem};
-use crate::impl_default_via_new;
+use crate::types::{StorageItem, storage_key::StorageKey};
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -46,23 +46,24 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
         let data = self.inner_data.read();
-        let iter: Vec<_> = match (key_prefix, direction) {
-            (Some(prefix), SeekDirection::Forward) => data
-                .range(prefix.clone()..)
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            (Some(prefix), SeekDirection::Backward) => data
-                .range(..=prefix.clone())
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            (None, _) => data.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        };
+
+        // Filter by prefix, then order. The previous range-based seek was
+        // incorrect for prefixes (Backward returned nothing, Forward returned
+        // a superset); see the matching fix in MemorySnapshot::find.
+        let mut entries: Vec<_> = data
+            .iter()
+            .filter(|(key, _)| match key_prefix {
+                Some(prefix) => key.starts_with(prefix),
+                None => true,
+            })
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
 
         if direction == SeekDirection::Backward {
-            Box::new(iter.into_iter().rev()) as Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>>
-        } else {
-            Box::new(iter.into_iter()) as Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>>
+            entries.reverse();
         }
+
+        Box::new(entries.into_iter())
     }
 }
 

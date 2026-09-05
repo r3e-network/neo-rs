@@ -7,7 +7,7 @@
 // reproducers will exercise their assertions.
 
 use neo_core::persistence::StorageConfig;
-use neo_core::persistence::{store_provider::StoreProvider, providers::RocksDBStoreProvider};
+use neo_core::persistence::{providers::RocksDBStoreProvider, store_provider::StoreProvider};
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };

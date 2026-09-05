@@ -3,10 +3,15 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+/// A transaction held in the memory pool, wrapping it with bookkeeping
+/// metadata. Mirrors the C# `Neo.Ledger.PoolItem`.
 #[derive(Clone)]
 pub struct PoolItem {
+    /// The pooled transaction.
     pub transaction: Arc<Transaction>,
+    /// Time at which the transaction was added to the pool.
     pub timestamp: SystemTime,
+    /// Time of the last broadcast, used to decide when to rebroadcast.
     pub last_broadcast_timestamp: SystemTime,
 }
 
@@ -20,6 +25,8 @@ impl PoolItem {
         }
     }
 
+    /// Orders this item's transaction against another by high-priority flag,
+    /// fee per byte, network fee, and finally descending hash.
     pub fn compare_to_transaction(&self, other_tx: &Transaction) -> Ordering {
         let self_high = self
             .transaction
@@ -49,6 +56,7 @@ impl PoolItem {
         other_tx.hash().cmp(&self.transaction.hash())
     }
 
+    /// Orders this item against another pool item using the fee priority rules.
     pub fn compare_to(&self, other: &PoolItem) -> Ordering {
         self.compare_to_transaction(&other.transaction)
     }

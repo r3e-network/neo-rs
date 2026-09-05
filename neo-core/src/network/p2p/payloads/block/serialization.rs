@@ -3,7 +3,6 @@ use crate::constants::BLOCK_MAX_TX_WIRE_LIMIT;
 use crate::neo_io::serializable::helper::get_var_size_serializable_slice;
 use crate::neo_io::serializable::helper::serialize_array;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::UInt256;
 use std::collections::HashSet;
 
 impl Serializable for Block {
@@ -48,8 +47,8 @@ impl Serializable for Block {
 
         // C# validates the computed merkle root against the header value;
         // MerkleTree.ComputeRoot(empty) == UInt256.Zero.
-        let computed_root = crate::cryptography::MerkleTree::compute_root(&hashes)
-            .unwrap_or_else(UInt256::default);
+        let computed_root =
+            crate::cryptography::MerkleTree::compute_root(&hashes).unwrap_or_default();
         if computed_root != *header.merkle_root() {
             return Err(IoError::invalid_data(
                 "The computed Merkle root does not match the expected value.",

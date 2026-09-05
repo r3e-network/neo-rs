@@ -1,8 +1,8 @@
-use super::{OracleContract, PendingRequest, MAX_PENDING_PER_URL};
+use super::{MAX_PENDING_PER_URL, OracleContract, PendingRequest};
+use crate::UInt256;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::smart_contract::native::{contract_management::ContractManagement, GasToken};
-use crate::UInt256;
+use crate::smart_contract::native::{GasToken, contract_management::ContractManagement};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -24,7 +24,7 @@ impl OracleContract {
         // and as Null when caller passes StackItem.Null. Our Vec<u8> args layer can't
         // tell `Null` from `ByteString("\x00")` (both produce `[0x00]`), so we consult
         // the dispatcher-populated NativeArgNullMask to detect the Null case explicitly.
-        // See application_engine_contract.rs NativeArgNullMask.
+        // See application_engine/contract.rs NativeArgNullMask.
         let filter_was_null = engine
             .get_state::<crate::smart_contract::application_engine_contract::NativeArgNullMask>()
             .map(|m| (m.0 >> 1) & 1 == 1)
@@ -91,7 +91,12 @@ impl OracleContract {
 
         let original_tx_id = engine
             .script_container()
-            .and_then(|container| container.as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>().map(|tx| tx.hash()))
+            .and_then(|container| {
+                container
+                    .as_any()
+                    .downcast_ref::<crate::network::p2p::payloads::Transaction>()
+                    .map(|tx| tx.hash())
+            })
             .unwrap_or_else(UInt256::zero);
         let price = self.get_price_value(snapshot);
         let price_u64 = u64::try_from(price)

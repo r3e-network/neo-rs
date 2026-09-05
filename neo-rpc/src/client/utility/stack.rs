@@ -1,4 +1,4 @@
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_json::{JObject, JToken};
 use neo_vm::StackValue;
 use num_bigint::BigInt;

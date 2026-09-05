@@ -2,16 +2,15 @@ use super::{Header, Witness};
 use crate::ledger::HeaderCache;
 use crate::persistence::{DataCache, StoreCache};
 use crate::protocol_settings::ProtocolSettings;
-use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::CallFlags;
+use crate::smart_contract::TriggerType;
+use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::native::{ContractManagement, LedgerContract};
-use crate::smart_contract::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType};
 use crate::validation::{
-    validate_primary_index, validate_timestamp_progression, BlockValidationError,
+    BlockValidationError, validate_primary_index, validate_timestamp_progression,
 };
-use crate::neo_vm::StackItemExt;
 use crate::{UInt160, UInt256};
 use std::sync::Arc;
 use tracing::debug;
@@ -303,19 +302,13 @@ impl Header {
             return false;
         }
 
-        let mut result_item = if engine.result_stack().len() == 1 {
+        // C# Helper.VerifyWitness accepts exactly one item from ResultStack;
+        // evaluation-stack fallback would accept non-canonical witness execution.
+        let result_item = if engine.result_stack().len() == 1 {
             engine.result_stack().peek(0).ok().cloned()
         } else {
             None
         };
-
-        if result_item.is_none() {
-            if let Some(stack) = engine.current_evaluation_stack() {
-                if stack.len() == 1 {
-                    result_item = stack.peek(0).ok().cloned();
-                }
-            }
-        }
 
         match result_item {
             Some(item) => match item.as_bool() {

@@ -7,8 +7,8 @@ use super::token_transfer_key::TokenTransferKey;
 use crate::extensions::log_level::LogLevel;
 use crate::neo_io::{MemoryReader, Serializable, SerializableExt};
 use crate::neo_ledger::{ApplicationExecuted, Block};
-use crate::persistence::{DataCache, Store, SeekDirection, StoreSnapshot};
 use crate::neo_vm::StackItem;
+use crate::persistence::{DataCache, SeekDirection, Store, StoreSnapshot};
 use crate::{NeoSystem, UInt160};
 use num_bigint::BigInt;
 use serde_json::{Value, json};
@@ -381,11 +381,11 @@ mod tests {
     impl ReadOnlyStore for FailingStore {}
 
     impl WriteStore<Vec<u8>, Vec<u8>> for FailingStore {
-        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+        fn delete(&mut self, _key: Vec<u8>) -> Result<(), StorageError> {
             Ok(())
         }
 
-        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> Result<(), StorageError> {
             Ok(())
         }
     }
@@ -423,11 +423,11 @@ mod tests {
     }
 
     impl WriteStore<Vec<u8>, Vec<u8>> for FailingSnapshot {
-        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+        fn delete(&mut self, _key: Vec<u8>) -> Result<(), StorageError> {
             Ok(())
         }
 
-        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> Result<(), StorageError> {
             Ok(())
         }
     }

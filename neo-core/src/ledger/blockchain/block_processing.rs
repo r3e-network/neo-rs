@@ -379,9 +379,9 @@ impl Blockchain {
         settings: &ProtocolSettings,
         snapshot: &DataCache,
     ) -> std::collections::HashSet<UInt160> {
+        use crate::smart_contract::Contract;
         use crate::smart_contract::native::helpers::NativeHelpers;
         use crate::smart_contract::native::{NeoToken, Role, RoleManagement};
-        use crate::smart_contract::Contract;
 
         let current_height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
         let mut whitelist = std::collections::HashSet::new();

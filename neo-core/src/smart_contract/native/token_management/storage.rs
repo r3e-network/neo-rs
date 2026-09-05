@@ -1,15 +1,15 @@
 use super::{
-    AccountState, NFTState, TokenManagement, TokenState, ID, PREFIX_ACCOUNT_STATE,
-    PREFIX_NFT_STATE, PREFIX_TOKEN_STATE,
+    AccountState, ID, NFTState, PREFIX_ACCOUNT_STATE, PREFIX_NFT_STATE, PREFIX_TOKEN_STATE,
+    TokenManagement, TokenState,
 };
+use crate::UInt160;
 use crate::error::{CoreError, CoreResult, ToNativeError};
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
+use crate::smart_contract::StorageKey;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::helpers::serialize_stack_value_native;
 use crate::smart_contract::storage_context::StorageContext;
-use crate::smart_contract::StorageKey;
-use crate::UInt160;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackValue;
 use num_bigint::BigInt;
@@ -111,8 +111,7 @@ impl TokenManagement {
         if bytes.is_empty() {
             return Ok(None);
         }
-        let stack_value =
-            Self::deserialize_storage_stack_value(&bytes).native_err()?;
+        let stack_value = Self::deserialize_storage_stack_value(&bytes).native_err()?;
         let mut token_state = TokenState::default();
         token_state.from_stack_value(stack_value)?;
         Ok(Some(token_state))
@@ -133,8 +132,7 @@ impl TokenManagement {
         if bytes.is_empty() {
             return Ok(None);
         }
-        let stack_value =
-            Self::deserialize_storage_stack_value(&bytes).native_err()?;
+        let stack_value = Self::deserialize_storage_stack_value(&bytes).native_err()?;
         let mut account_state = AccountState::default();
         account_state.from_stack_value(stack_value)?;
         Ok(Some(account_state))

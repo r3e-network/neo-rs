@@ -1,6 +1,5 @@
 //! Shared NeoVM execution context used by host-specific runtimes.
 
-pub mod ops;
 mod pending_exception;
 mod try_frame;
 
@@ -56,50 +55,6 @@ pub trait RuntimeStack {
     /// Push a boolean result.
     fn push_bool(&mut self, value: bool) {
         self.push_value(StackValue::Boolean(value));
-    }
-}
-
-pub(crate) fn push_value_result(
-    runtime: &mut (impl RuntimeStack + ?Sized),
-    result: Result<StackValue, String>,
-) {
-    match result {
-        Ok(value) => runtime.push_value(value),
-        Err(message) => runtime.fault(&message),
-    }
-}
-
-pub(crate) fn push_i64_result(
-    runtime: &mut (impl RuntimeStack + ?Sized),
-    result: Result<i64, String>,
-) {
-    match result {
-        Ok(value) => runtime.push_i64(value),
-        Err(message) => runtime.fault(&message),
-    }
-}
-
-pub(crate) fn push_bool_result(
-    runtime: &mut (impl RuntimeStack + ?Sized),
-    result: Result<bool, String>,
-) {
-    match result {
-        Ok(value) => runtime.push_bool(value),
-        Err(message) => runtime.fault(&message),
-    }
-}
-
-pub(crate) fn push_values_result(
-    runtime: &mut (impl RuntimeStack + ?Sized),
-    result: Result<Vec<StackValue>, String>,
-) {
-    match result {
-        Ok(values) => {
-            for value in values {
-                runtime.push_value(value);
-            }
-        }
-        Err(message) => runtime.fault(&message),
     }
 }
 

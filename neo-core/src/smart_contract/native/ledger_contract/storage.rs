@@ -3,15 +3,15 @@ use super::keys::{
     transaction_conflict_storage_key, transaction_storage_key,
 };
 use super::state::{
-    deserialize_hash_index_state, deserialize_transaction_record, deserialize_trimmed_block,
-    serialize_hash_index_state, serialize_transaction_record, serialize_trimmed_block,
-    TransactionStateRecord,
+    TransactionStateRecord, deserialize_hash_index_state, deserialize_transaction_record,
+    deserialize_trimmed_block, serialize_hash_index_state, serialize_transaction_record,
+    serialize_trimmed_block,
 };
 use super::{HashOrIndex, LedgerContract, PersistedTransactionState};
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
 use crate::ledger::Block;
-use crate::persistence::{read_only_store::ReadOnlyStoreGeneric, DataCache};
+use crate::persistence::{DataCache, read_only_store::ReadOnlyStoreGeneric};
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::{policy_contract::PolicyContract, trimmed_block::TrimmedBlock};
 use crate::smart_contract::{StorageItem, StorageKey};
@@ -79,6 +79,8 @@ impl LedgerContract {
         Ok(self.try_read_transaction_state(snapshot, hash)?.is_some())
     }
 
+    /// Checks whether a conflict stub for `hash` is stored for one of `signers` and
+    /// is still within the traceable window.
     pub fn contains_conflict_hash<S>(
         &self,
         snapshot: &S,
@@ -121,6 +123,8 @@ impl LedgerContract {
         Ok(false)
     }
 
+    /// Returns the effective `MaxTraceableBlocks` limit for the current height,
+    /// applying hardfork activation and the policy contract ceiling.
     pub fn max_traceable_blocks_snapshot<S>(
         &self,
         snapshot: &S,
@@ -181,6 +185,7 @@ impl LedgerContract {
         Ok(None)
     }
 
+    /// Returns the block hash recorded for the given block index.
     pub fn get_block_hash_by_index<S>(&self, snapshot: &S, index: u32) -> Result<Option<UInt256>>
     where
         S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
@@ -188,6 +193,7 @@ impl LedgerContract {
         self.load_block_hash(snapshot, index)
     }
 
+    /// Returns the trimmed block (header plus transaction hashes) with the given hash.
     pub fn get_trimmed_block<S>(&self, snapshot: &S, hash: &UInt256) -> Result<Option<TrimmedBlock>>
     where
         S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
@@ -236,6 +242,7 @@ impl LedgerContract {
             .transpose()
     }
 
+    /// Returns the persisted on-chain state of the transaction with the given hash.
     pub fn get_transaction_state<S>(
         &self,
         snapshot: &S,
@@ -354,6 +361,8 @@ impl LedgerContract {
         }
     }
 
+    /// Rewrites the stored VM execution state (`HALT`/`FAULT`) of a transaction
+    /// after its application.
     pub fn update_transaction_vm_state(
         &self,
         snapshot: &DataCache,
@@ -392,6 +401,7 @@ impl LedgerContract {
         Ok(())
     }
 
+    /// Applies a batch of transaction VM state updates in order.
     pub fn update_transaction_vm_states(
         &self,
         snapshot: &DataCache,

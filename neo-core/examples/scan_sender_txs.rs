@@ -1,8 +1,8 @@
+use neo_core::UInt160;
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StoreCache,
+    StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
 };
 use neo_core::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
-use neo_core::UInt160;
 use std::path::PathBuf;
 
 fn parse_u32_arg(value: Option<String>, default: u32) -> Result<u32, String> {

@@ -1,8 +1,8 @@
 use super::ContractManagement;
 use crate::smart_contract::manifest::ContractEventDescriptor;
+use crate::smart_contract::native::NativeMethod;
 use crate::smart_contract::native::metadata_macros::event_descriptor;
 use crate::smart_contract::native::method_macros::neo_native_methods;
-use crate::smart_contract::native::NativeMethod;
 
 impl ContractManagement {
     pub(super) fn native_methods() -> Vec<NativeMethod> {

@@ -1,16 +1,16 @@
+use neo_core::ScriptBuilder;
 use neo_core::hardfork::Hardfork;
-use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
+use neo_core::ledger::block_header::BlockHeader;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::Witness;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::native::token_management::TokenManagement;
-use neo_core::smart_contract::native::NativeContract;
 use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
+use neo_core::smart_contract::native::NativeContract;
+use neo_core::smart_contract::native::token_management::TokenManagement;
 use neo_core::{UInt160, UInt256};
 use neo_vm::OpCode;
 use std::collections::HashMap;
@@ -42,8 +42,7 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         None,
     )
     .expect("on persist engine");
-    on_persist
-        .register_native_contract(std::sync::Arc::new(TokenManagement::new()));
+    on_persist.register_native_contract(std::sync::Arc::new(TokenManagement::new()));
     on_persist.native_on_persist().expect("native on persist");
 
     let mut post_persist = ApplicationEngine::new(
@@ -56,8 +55,7 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         None,
     )
     .expect("post persist engine");
-    post_persist
-        .register_native_contract(std::sync::Arc::new(TokenManagement::new()));
+    post_persist.register_native_contract(std::sync::Arc::new(TokenManagement::new()));
     post_persist
         .native_post_persist()
         .expect("native post persist");
@@ -235,9 +233,10 @@ fn direct_invoke_transfer_requires_data_argument() {
             ],
         )
         .expect_err("direct invoke without data should fail arity validation");
-    assert!(err
-        .to_string()
-        .contains("TokenManagement.transfer: invalid arguments"));
+    assert!(
+        err.to_string()
+            .contains("TokenManagement.transfer: invalid arguments")
+    );
 }
 
 #[test]

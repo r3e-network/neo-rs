@@ -9,12 +9,12 @@ use super::nep17_balance_key::Nep17BalanceKey;
 use super::nep17_transfer_key::Nep17TransferKey;
 use crate::extensions::log_level::LogLevel;
 use crate::neo_ledger::{ApplicationExecuted, Block};
+use crate::neo_vm::StackItem;
 use crate::persistence::DataCache;
 use crate::script_builder::ScriptBuilder;
+use crate::smart_contract::ApplicationEngine;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::native::contract_management::ContractManagement;
-use crate::smart_contract::ApplicationEngine;
-use crate::neo_vm::StackItem;
 use crate::{NeoSystem, UInt160};
 use neo_vm::OpCode;
 use neo_vm::VmState as VMState;
@@ -83,7 +83,10 @@ impl Nep17Tracker {
         }
 
         if let Some(container) = container {
-            if let Some(tx) = container.as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() {
+            if let Some(tx) = container
+                .as_any()
+                .downcast_ref::<crate::network::p2p::payloads::Transaction>()
+            {
                 self.record_transfer_history(&record, &tx.hash(), transfer_index);
             }
         }

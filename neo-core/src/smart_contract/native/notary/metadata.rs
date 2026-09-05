@@ -1,6 +1,6 @@
 use super::Notary;
-use crate::smart_contract::native::method_macros::neo_native_methods;
 use crate::smart_contract::native::NativeMethod;
+use crate::smart_contract::native::method_macros::neo_native_methods;
 
 impl Notary {
     pub(super) fn native_methods() -> Vec<NativeMethod> {

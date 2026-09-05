@@ -1,19 +1,20 @@
 use crate::network::p2p::payloads::{
-    oracle_response::OracleResponse, transaction_attribute::TransactionAttribute, Transaction,
+    Transaction, oracle_response::OracleResponse, transaction_attribute::TransactionAttribute,
 };
 use crate::persistence::DataCache;
-use crate::smart_contract::native::GasToken;
+use crate::smart_contract::native::{GasToken, NativeContract, Notary};
 use crate::{UInt160, UInt256};
 use num_bigint::BigInt;
 use num_traits::Zero;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+type Payer = (UInt160, Option<UInt160>);
 type BalanceProvider = Arc<dyn Fn(&DataCache, &UInt160) -> BigInt + Send + Sync>;
 
-/// Context used by the memory pool to track per-sender fees and oracle responses.
+/// Context used by the memory pool to track per-payer fees and oracle responses.
 pub struct TransactionVerificationContext {
-    sender_fee: HashMap<UInt160, BigInt>,
+    sender_fee: HashMap<Payer, BigInt>,
     oracle_responses: HashMap<u64, UInt256>,
     balance_provider: BalanceProvider,
 }
@@ -40,17 +41,28 @@ impl TransactionVerificationContext {
 
     /// Returns the total tracked fee for the specified sender.
     pub fn total_fee_for_sender(&self, sender: &UInt160) -> Option<&BigInt> {
-        self.sender_fee.get(sender)
+        self.sender_fee.get(&(*sender, None))
+    }
+
+    /// Returns the payer tuple used for fee tracking. Notary-sponsored
+    /// transactions charge the second signer against its Notary deposit.
+    pub(crate) fn payer(tx: &Transaction) -> Option<Payer> {
+        let primary = tx.sender()?;
+        if primary == Notary::new().hash() && tx.signers().len() >= 2 {
+            Some((primary, Some(tx.signers()[1].account)))
+        } else {
+            Some((primary, None))
+        }
     }
 
     /// Adds a verified transaction to the tracking set.
     pub fn add_transaction(&mut self, tx: &Transaction) {
-        let Some(sender) = tx.sender() else {
+        let Some(payer) = Self::payer(tx) else {
             return;
         };
         let fee = Self::fee_amount(tx);
         self.sender_fee
-            .entry(sender)
+            .entry(payer)
             .and_modify(|existing| *existing += &fee)
             .or_insert(fee);
 
@@ -61,15 +73,15 @@ impl TransactionVerificationContext {
 
     /// Removes a transaction from the context (after it leaves the pool).
     pub fn remove_transaction(&mut self, tx: &Transaction) {
-        let Some(sender) = tx.sender() else {
+        let Some(payer) = Self::payer(tx) else {
             return;
         };
         let fee = Self::fee_amount(tx);
 
-        if let Some(existing) = self.sender_fee.get_mut(&sender) {
+        if let Some(existing) = self.sender_fee.get_mut(&payer) {
             *existing -= &fee;
             if existing.is_zero() {
-                self.sender_fee.remove(&sender);
+                self.sender_fee.remove(&payer);
             }
         }
 
@@ -88,22 +100,26 @@ impl TransactionVerificationContext {
     where
         I: IntoIterator<Item = &'a Transaction>,
     {
-        let Some(sender) = tx.sender() else {
+        let Some(payer) = Self::payer(tx) else {
             return true;
         };
 
         let mut expected_fee = Self::fee_amount(tx);
-        if let Some(existing) = self.sender_fee.get(&sender) {
+        if let Some(existing) = self.sender_fee.get(&payer) {
             expected_fee += existing.clone();
         }
 
         for conflict in conflicting_txs {
-            if conflict.sender() == Some(sender) {
+            if Self::payer(conflict) == Some(payer) {
                 expected_fee -= Self::fee_amount(conflict);
             }
         }
 
-        if self.balance(snapshot, &sender) < expected_fee {
+        let balance = match payer.1 {
+            Some(secondary) => Notary::new().balance_of(snapshot, &secondary),
+            None => self.balance(snapshot, &payer.0),
+        };
+        if balance < expected_fee {
             return false;
         }
 

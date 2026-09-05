@@ -1,11 +1,13 @@
 use super::*;
 use crate::server::rpc_server::RpcHandler;
 use crate::server::rpc_server_settings::RpcServerConfig;
+use neo_core::NativeContract;
+use neo_core::UInt256;
 use neo_core::neo_io::{Serializable, SerializableExt};
 use neo_core::neo_system::NeoSystem;
-use neo_core::persistence::providers::MemoryStoreProvider;
 use neo_core::persistence::Store;
 use neo_core::persistence::StoreProvider;
+use neo_core::persistence::providers::MemoryStoreProvider;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
@@ -16,11 +18,9 @@ use neo_core::smart_contract::{
     ContractParameterType, ContractState, NefFile, StorageItem, StorageKey,
 };
 use neo_core::tokens_tracker::{
-    find_range, Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService,
-    TokensTrackerSettings,
+    Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService, TokensTrackerSettings,
+    find_range,
 };
-use neo_core::NativeContract;
-use neo_core::UInt256;
 use neo_vm::OpCode;
 use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
@@ -487,7 +487,6 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "NFT properties test needs system context - pre-existing issue"]
 async fn get_nep11_properties_returns_expected_fields() {
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let store = create_tracker_store();
@@ -503,7 +502,11 @@ async fn get_nep11_properties_returns_expected_fields() {
 
     let address =
         WalletHelper::to_address(&contract_hash, server.system().settings().address_version);
-    let params = [Value::String(address), Value::String("0x0102".to_string())];
+    // C# parity (Nep11Tracker.GetNep11Properties in neo-modules): tokenId is
+    // parsed with `params[1].AsString().HexToBytes()` - plain hex, no "0x"
+    // prefix. Responses also emit token ids via ToHexString(), so request and
+    // response share the same hex convention.
+    let params = [Value::String(address), Value::String("0102".to_string())];
     let result = (handler.callback())(&server, &params).expect("getnep11properties");
     let obj = result.as_object().expect("properties object");
     assert_eq!(obj.get("name").and_then(Value::as_str), Some("Example NFT"));

@@ -2,14 +2,14 @@
 
 //! BinarySerializer - aligns with `Neo.SmartContract.BinarySerializer`.
 
-use crate::reference_counter::ReferenceCounter;
-use crate::StackItem;
-use neo_io_crate::var_int;
-use neo_io_crate::{IoError, MemoryReader};
 use crate::ExecutionEngineLimits;
+use crate::MAX_ITEM_SIZE;
+use crate::StackItem;
 use crate::StackItemType;
 use crate::StackValue;
-use crate::MAX_ITEM_SIZE;
+use crate::reference_counter::ReferenceCounter;
+use neo_io_crate::var_int;
+use neo_io_crate::{IoError, MemoryReader};
 use num_bigint::BigInt;
 use std::collections::{HashSet, VecDeque};
 
@@ -69,11 +69,14 @@ impl BinarySerializer {
     }
 
     /// Deserialize using explicit limits (mirrors the C# overload).
+    ///
+    /// The `reference_counter` argument is accepted for signature compatibility
+    /// with the caller-supplied entry point but is not consumed during decode.
     pub fn deserialize_with_limits(
         reader: &mut MemoryReader<'_>,
         max_size: u32,
         max_items: u32,
-        reference_counter: Option<ReferenceCounter>,
+        _reference_counter: Option<ReferenceCounter>,
     ) -> Result<StackItem, String> {
         let mut pending: Vec<PendingItem> = Vec::new();
         let mut remaining = 1usize;
@@ -169,7 +172,7 @@ impl BinarySerializer {
             match item {
                 PendingItem::Value(stack_item) => constructed.push(stack_item),
                 PendingItem::Container(container) => {
-                        let result =
+                    let result =
                         match container.item_type {
                             StackItemType::Array => {
                                 let mut elements = Vec::with_capacity(container.element_count);
@@ -271,8 +274,7 @@ impl BinarySerializer {
                         .map_err(Self::io_error_to_string)?;
                     pending.push(PendingStackValue::Value(StackValue::Buffer(bytes)));
                 }
-                crate::NEOVM_STACK_ITEM_TYPE_ARRAY
-                | crate::NEOVM_STACK_ITEM_TYPE_STRUCT => {
+                crate::NEOVM_STACK_ITEM_TYPE_ARRAY | crate::NEOVM_STACK_ITEM_TYPE_STRUCT => {
                     let count = reader
                         .read_var_int(max_items as u64)
                         .map_err(Self::io_error_to_string)?
@@ -443,7 +445,7 @@ impl BinarySerializer {
                 }
                 StackItem::Array(array) => {
                     writer.push(StackItemType::Array.to_byte());
-                    let identity = (array.id() as usize, StackItemType::Array);
+                    let identity = (array.id(), StackItemType::Array);
                     if !processed.insert(identity) {
                         return Err(
                             "Circular reference detected while serializing array".to_string()
@@ -456,7 +458,7 @@ impl BinarySerializer {
                 }
                 StackItem::Struct(struct_item) => {
                     writer.push(StackItemType::Struct.to_byte());
-                    let identity = (struct_item.id() as usize, StackItemType::Struct);
+                    let identity = (struct_item.id(), StackItemType::Struct);
                     if !processed.insert(identity) {
                         return Err(
                             "Circular reference detected while serializing struct".to_string()
@@ -469,7 +471,7 @@ impl BinarySerializer {
                 }
                 StackItem::Map(map) => {
                     writer.push(StackItemType::Map.to_byte());
-                    let identity = (map.id() as usize, StackItemType::Map);
+                    let identity = (map.id(), StackItemType::Map);
                     if !processed.insert(identity) {
                         return Err("Circular reference detected while serializing map".to_string());
                     }

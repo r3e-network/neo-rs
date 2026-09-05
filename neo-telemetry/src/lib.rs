@@ -62,12 +62,12 @@ pub use metrics::{Metrics, MetricsServer};
 
 // Public exports - Node-specific (merged from neo-node)
 pub use node_health::{
-    serve_health_with_state, HealthState, NodeHealthServer, DEFAULT_MAX_HEADER_LAG,
+    DEFAULT_MAX_HEADER_LAG, HealthState, NodeHealthServer, serve_health_with_state,
 };
-pub use node_logging::{init_node_logging, LoggingGuard};
+pub use node_logging::{LoggingGuard, init_node_logging};
 pub use node_metrics::{
-    gather_prometheus, update_node_metrics, update_storage_metrics, update_timeout_metrics,
     BlockMetrics, MempoolMetrics, NetworkMetrics, NodeMetrics, StateRootMetrics, StorageMetrics,
+    gather_prometheus, update_node_metrics, update_storage_metrics, update_timeout_metrics,
 };
 
 // Public exports - System

@@ -11,8 +11,8 @@ use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::{UInt160, UInt256};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct FastSyncCaptureHandler {
     observed_len: Arc<AtomicUsize>,

@@ -92,7 +92,9 @@ exclude = [
 [workspace.package]
 version = "0.16.0"
 edition = "2024"
-rust-version = "1.85"
+# R14: the Cargo.lock pins `time 0.3.47` (via tracing-appender), whose own
+# manifest requires rustc 1.88 — 1.85 could not build the locked tree.
+rust-version = "1.88"
 authors = [
     "R3E Network <jimmy@r3e.network>"
 ]

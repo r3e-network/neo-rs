@@ -68,7 +68,7 @@ pub use hardfork_activable::HardforkActivable;
 pub use hardfork_activable::HardforkActivable as IHardforkActivable;
 pub use helpers::NativeHelpers;
 pub use ledger_contract::{LedgerContract, LedgerTransactionStates};
-pub use native_contract::{is_active_for, NativeContract, NativeContractsCache, NativeMethod};
+pub use native_contract::{NativeContract, NativeContractsCache, NativeMethod, is_active_for};
 pub use neo_token::NeoToken;
 pub use notary::{Deposit as NotaryDeposit, Notary};
 pub use oracle_contract::OracleContract;
@@ -132,6 +132,7 @@ impl NativeRegistry {
             .map(|(hash, _)| *hash)
     }
 
+    /// Removes and returns the registered native contract whose name matches (case-insensitive).
     pub fn take_contract_by_name(&mut self, name: &str) -> Option<Arc<dyn NativeContract>> {
         let hash = self.find_hash_by_name(name)?;
         self.contracts.shift_remove(&hash)

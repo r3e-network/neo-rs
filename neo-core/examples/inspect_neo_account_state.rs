@@ -1,9 +1,9 @@
+use neo_core::UInt160;
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, StoreProvider, SeekDirection, StorageConfig, StorageKey,
-    StoreCache,
+    SeekDirection, StorageConfig, StorageKey, StoreCache, StoreProvider,
+    providers::RocksDBStoreProvider,
 };
 use neo_core::smart_contract::BinarySerializer;
-use neo_core::UInt160;
 use neo_vm::StackValue;
 use num_bigint::BigInt;
 use std::path::PathBuf;

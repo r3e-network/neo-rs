@@ -3,17 +3,17 @@
 //! This module provides cryptographic key pair functionality,
 //! converted from the C# Neo KeyPair class (@neo-sharp/src/Neo/Wallets/KeyPair.cs).
 
-use crate::cryptography::{Base58, CryptoError, ECCurve, ECDsa, Secp256r1Crypto, ECC};
+use crate::UInt160;
+use crate::cryptography::{Base58, CryptoError, ECC, ECCurve, ECDsa, Secp256r1Crypto};
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_config::HASH_SIZE;
 use crate::smart_contract::helper::Helper;
 use crate::wallets::helper::Helper as WalletHelper;
-use crate::UInt160;
 use aes::Aes256;
 use base64::Engine;
 use cbc::{
-    cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
     Decryptor, Encryptor,
+    cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
 };
 use neo_vm::OpCode;
 use scrypt::Params;
@@ -239,8 +239,8 @@ impl KeyPair {
 
         // Derive key using scrypt
         let n: u32 = n;
-        let params =
-            Params::new(n.trailing_zeros() as u8, r, p, 64).map_err(|e| Error::scrypt(e.to_string()))?;
+        let params = Params::new(n.trailing_zeros() as u8, r, p, 64)
+            .map_err(|e| Error::scrypt(e.to_string()))?;
 
         // Use Zeroizing wrapper to ensure sensitive data is cleared on drop
         let mut derived_key = Zeroizing::new([0u8; 64]);
@@ -262,9 +262,8 @@ impl KeyPair {
             xor_key[i] = private_key[i] ^ derived_half1[i];
         }
 
-        let cipher =
-            Encryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16])
-                .map_err(|e| Error::aes(e.to_string()))?;
+        let cipher = Encryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16])
+            .map_err(|e| Error::aes(e.to_string()))?;
         let mut buffer = Zeroizing::new(xor_key.to_vec());
         buffer.resize(HASH_SIZE, 0); // Ensure exactly HASH_SIZE bytes
         let encrypted = cipher
@@ -309,8 +308,8 @@ impl KeyPair {
 
         // Derive key using scrypt (use Zeroizing for sensitive data)
         let n: u32 = n;
-        let params =
-            Params::new(n.trailing_zeros() as u8, r, p, 64).map_err(|e| Error::scrypt(e.to_string()))?;
+        let params = Params::new(n.trailing_zeros() as u8, r, p, 64)
+            .map_err(|e| Error::scrypt(e.to_string()))?;
 
         let mut derived_key = Zeroizing::new([0u8; 64]);
         scrypt::scrypt(
@@ -324,9 +323,8 @@ impl KeyPair {
         let derived_half1 = &derived_key[0..HASH_SIZE];
         let derived_half2 = &derived_key[32..64];
 
-        let cipher =
-            Decryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16])
-                .map_err(|e| Error::aes(e.to_string()))?;
+        let cipher = Decryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16])
+            .map_err(|e| Error::aes(e.to_string()))?;
         let mut buffer = Zeroizing::new(encrypted_data.to_vec());
         let decrypted = cipher
             .decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(buffer.as_mut_slice())

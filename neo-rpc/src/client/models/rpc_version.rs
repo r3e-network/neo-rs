@@ -290,8 +290,8 @@ impl RpcProtocol {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_fixtures::rpc_case_result;
+    use super::*;
 
     fn sample_protocol() -> RpcProtocol {
         let mut hardforks = BTreeMap::new();

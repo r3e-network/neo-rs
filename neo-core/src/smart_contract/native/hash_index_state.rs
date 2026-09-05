@@ -1,7 +1,7 @@
 //! HashIndexState - matches C# Neo.SmartContract.Native.HashIndexState exactly
 
-use crate::error::CoreError;
 use crate::UInt256;
+use crate::error::CoreError;
 use neo_vm::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;

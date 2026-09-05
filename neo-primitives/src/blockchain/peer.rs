@@ -1,4 +1,3 @@
-
 // ============ Peer Types ============
 
 /// Unique identifier for a peer connection.

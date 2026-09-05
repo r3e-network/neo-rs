@@ -7,6 +7,7 @@
 pub(crate) mod commit_handlers;
 pub mod keys;
 pub mod message_type;
+/// Metrics counters for state root ingestion from the network.
 pub mod metrics;
 pub mod root_cache;
 pub mod state_root;
@@ -22,7 +23,7 @@ pub use keys::Keys;
 pub use message_type::MessageType;
 pub use metrics::StateRootIngestStats;
 pub use root_cache::{
-    StateRootCache, StateRootCacheEntry, StateRootCacheStats, DEFAULT_ROOT_CACHE_CAPACITY,
+    DEFAULT_ROOT_CACHE_CAPACITY, StateRootCache, StateRootCacheEntry, StateRootCacheStats,
 };
 pub use state_root::StateRoot;
 pub use state_store::{StateStore, StateStoreTransaction};
@@ -31,5 +32,6 @@ pub use vote::Vote;
 /// Event published when a validated state root is persisted.
 #[derive(Debug, Clone)]
 pub struct ValidatedRootPersisted {
+    /// Block index (height) of the validated state root that was persisted.
     pub index: u32,
 }

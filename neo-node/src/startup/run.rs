@@ -2,16 +2,15 @@
 
 use super::cli::apply_cli_overrides;
 use super::config::{
-    build_feature_summary, build_state_service_settings, check_storage_access, check_storage_network,
-    select_store_provider, validate_node_config,
+    build_feature_summary, build_state_service_settings, check_storage_access,
+    check_storage_network, select_store_provider, validate_node_config,
 };
 use super::logging::{spawn_metrics_pump, start_health_endpoint_if_enabled};
 use super::services::{
     apply_mempool_policy, build_channels_config, maybe_enable_application_logs,
     maybe_enable_dbft_consensus, maybe_enable_hsm_wallet, maybe_enable_oracle_service,
-    maybe_enable_state_service_verification, maybe_enable_tokens_tracker,
-    maybe_open_wallet, setup_wallet_provider, start_rpc_server_if_enabled,
-    validate_contract_management_integrity,
+    maybe_enable_state_service_verification, maybe_enable_tokens_tracker, maybe_open_wallet,
+    setup_wallet_provider, start_rpc_server_if_enabled, validate_contract_management_integrity,
 };
 #[cfg(feature = "tee")]
 use super::services::{maybe_enable_tee_runtime, maybe_enable_tee_wallet};
@@ -20,14 +19,14 @@ use super::tasks::{BackgroundTasks, DEFAULT_BACKGROUND_TASK_SHUTDOWN};
 use crate::cli::NodeCli;
 use crate::config::NodeConfig;
 use crate::rpc_consensus::RpcServerConsensus;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use neo_core::neo_system::NeoSystem;
 use neo_core::protocol_settings::ProtocolSettings;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::info;
 #[cfg(feature = "tee")]
 use tracing::error;
+use tracing::info;
 use tracing::warn;
 
 pub(crate) async fn run(cli: NodeCli) -> Result<()> {
@@ -97,7 +96,9 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     );
 
     if read_only_storage {
-        bail!("read-only storage mode is only supported with --check-* flags; cannot start the node in read-only mode");
+        bail!(
+            "read-only storage mode is only supported with --check-* flags; cannot start the node in read-only mode"
+        );
     }
 
     let store_provider = select_store_provider(backend_name.as_deref(), storage_config)?;
@@ -142,13 +143,13 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     apply_mempool_policy(&node_config, &system);
 
     #[cfg(feature = "tee")]
-    let tee_runtime =
-        maybe_enable_tee_runtime(&cli, &node_config, &protocol_settings, &system)
-            .context("failed to initialize TEE runtime")?;
+    let tee_runtime = maybe_enable_tee_runtime(&cli, &node_config, &protocol_settings, &system)
+        .context("failed to initialize TEE runtime")?;
 
     if let Some(import_path) = cli.import_acc.as_ref() {
-        let summary = crate::import_acc::import_acc_file(&system, import_path, storage_path.as_deref())
-            .context("failed to import blocks from .acc file")?;
+        let summary =
+            crate::import_acc::import_acc_file(&system, import_path, storage_path.as_deref())
+                .context("failed to import blocks from .acc file")?;
         info!(
             target: "neo",
             declared_start = summary.declared_start,

@@ -3,23 +3,22 @@
 //! This module provides the ContractState struct which represents the state
 //! of a deployed smart contract in the Neo blockchain.
 
+use crate::UInt160;
 use crate::cryptography::Crypto;
 use crate::error::{CoreError, CoreResult};
 use crate::neo_io::serializable::helper::{
     get_var_size_bytes, get_var_size_serializable_slice, get_var_size_str,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::smart_contract::{
-    helper::Helper, interoperable::Interoperable, manifest::ContractManifest,
-    MethodToken,
-};
 use crate::neo_vm::StackItem;
-use crate::UInt160;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use crate::smart_contract::{
+    MethodToken, helper::Helper, interoperable::Interoperable, manifest::ContractManifest,
+};
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_vm::{OpCode, StackValue};
 use num_traits::ToPrimitive;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Represents the state of a deployed smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -170,6 +169,7 @@ impl ContractState {
 }
 
 impl NefFile {
+    /// NEF format magic number (`0x3346454E`, ASCII "NEF3"), matching C# `NefFile.Magic`.
     pub const MAGIC: u32 = 0x3346_454E;
     const COMPILER_LENGTH: usize = 64;
     const MAX_SOURCE_LENGTH: usize = 256;
@@ -268,7 +268,8 @@ impl Interoperable for ContractState {
                 "ContractState expects Array/Struct stack item: {error}"
             ))
         })?;
-        self.from_stack_value(sv).map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
+        self.from_stack_value(sv)
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
     fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
@@ -285,6 +286,8 @@ impl Interoperable for ContractState {
 }
 
 impl ContractState {
+    /// Converts the contract state into a VM stack value (array of id, update
+    /// counter, hash, NEF, and manifest).
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Array(vec![
             StackValue::Integer(self.id as i64),
@@ -295,6 +298,7 @@ impl ContractState {
         ])
     }
 
+    /// Restores the contract state from a stack value produced by `to_stack_value`.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let items = match stack_value {
             StackValue::Array(items) | StackValue::Struct(items) => items,

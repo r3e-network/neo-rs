@@ -1,22 +1,22 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
+use crate::UInt256;
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
 use crate::ledger::block::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
 use crate::neo_system::NeoSystem;
-use crate::persistence::{DataCache, Store, StoreSnapshot};
-use crate::smart_contract::{NotifyEventArgs, TriggerType};
-use crate::panic_message;
 use crate::neo_vm::StackItem;
+use crate::panic_message;
+use crate::persistence::{DataCache, Store, StoreSnapshot};
 use crate::rpc_json::{stack_item_rpc_json, stack_items_rpc_json_per_item};
-use crate::UInt256;
+use crate::smart_contract::{NotifyEventArgs, TriggerType};
 use neo_vm::VmState as VMState;
 use parking_lot::Mutex;
 use serde_json::{Map, Value};
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::error;
 
 use super::ApplicationLogsSettings;
@@ -337,15 +337,15 @@ fn notification_to_json(event: &NotifyEventArgs) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnhandledExceptionPolicy;
     use crate::persistence::{
+        SeekDirection,
         read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
         storage::StorageError,
         store::OnNewSnapshotDelegate,
         write_store::WriteStore,
-        SeekDirection,
     };
     use crate::smart_contract::{StorageItem, StorageKey};
-    use crate::UnhandledExceptionPolicy;
 
     #[derive(Clone)]
     struct FailingStore;
@@ -381,11 +381,11 @@ mod tests {
     impl ReadOnlyStore for FailingStore {}
 
     impl WriteStore<Vec<u8>, Vec<u8>> for FailingStore {
-        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+        fn delete(&mut self, _key: Vec<u8>) -> Result<(), StorageError> {
             Ok(())
         }
 
-        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> Result<(), StorageError> {
             Ok(())
         }
     }
@@ -423,12 +423,12 @@ mod tests {
     }
 
     impl WriteStore<Vec<u8>, Vec<u8>> for FailingSnapshot {
-        fn delete(&mut self, _key: Vec<u8>) -> crate::error::CoreResult<()> {
+        fn delete(&mut self, _key: Vec<u8>) -> Result<(), StorageError> {
             Ok(())
         }
 
-        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> crate::error::CoreResult<()> {
-            Err(crate::error::CoreError::invalid_operation(
+        fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> Result<(), StorageError> {
+            Err(StorageError::invalid_operation(
                 "injected application logs write failure",
             ))
         }

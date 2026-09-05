@@ -1,16 +1,16 @@
 #![cfg(feature = "rocksdb")]
 
+use neo_core::UInt160;
 use neo_core::ledger::{Block, BlockHeader};
 use neo_core::persistence::data_cache::{DataCache, DataCacheConfig, Trackable};
-use neo_core::persistence::{store_provider::StoreProvider, providers::RocksDBStoreProvider};
 use neo_core::persistence::{SeekDirection, StorageConfig};
+use neo_core::persistence::{providers::RocksDBStoreProvider, store_provider::StoreProvider};
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };
-use neo_core::UInt160;
 use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::Arc;

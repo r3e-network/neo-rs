@@ -180,7 +180,9 @@ impl neo_primitives::Verifiable for Header {
 
     fn hash(&self) -> PrimitiveResult<UInt256> {
         let mut clone = self.clone();
-        clone.try_hash().map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
+        clone
+            .try_hash()
+            .map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
     }
 
     fn hash_data(&self) -> Vec<u8> {

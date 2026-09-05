@@ -2,10 +2,10 @@ use super::stack_value::{
     bigint_stack_value, stack_item_to_stack_value, stack_value_to_bigint, stack_value_to_bool,
     stack_value_to_bytes, stack_value_to_stack_item,
 };
-use crate::error::CoreError;
-use crate::smart_contract::interoperable::Interoperable;
-use crate::neo_vm::StackItem;
 use crate::UInt160;
+use crate::error::CoreError;
+use crate::neo_vm::StackItem;
+use crate::smart_contract::interoperable::Interoperable;
 use neo_vm::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -74,6 +74,7 @@ impl Interoperable for TokenState {
 }
 
 impl TokenState {
+    /// Populates the state from a `Struct` stack value produced by the contract.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         if let StackValue::Struct(items) = stack_value {
             if items.len() >= 7 {
@@ -116,6 +117,7 @@ impl TokenState {
         Ok(())
     }
 
+    /// Serializes the state into a `Struct` stack value for contract interop.
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(vec![
             StackValue::Integer(self.token_type as i64),
@@ -130,18 +132,22 @@ impl TokenState {
     }
 }
 
+/// Fungible token account state holding the current balance.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AccountState {
+    /// The account's token balance.
     pub balance: BigInt,
 }
 
 impl AccountState {
+    /// Creates an account state with a zero balance.
     pub fn new() -> Self {
         Self {
             balance: BigInt::from(0),
         }
     }
 
+    /// Creates an account state with the given balance.
     pub fn with_balance(balance: BigInt) -> Self {
         Self { balance }
     }
@@ -166,6 +172,7 @@ impl Interoperable for AccountState {
 }
 
 impl AccountState {
+    /// Populates the balance from a `Struct` stack value produced by the contract.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         if let StackValue::Struct(items) = stack_value {
             if let Some(first) = items.first() {
@@ -177,19 +184,25 @@ impl AccountState {
         Ok(())
     }
 
+    /// Serializes the balance into a `Struct` stack value for contract interop.
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(vec![bigint_stack_value(&self.balance)])
     }
 }
 
+/// Non-fungible token state describing an asset, its owner, and its properties.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NFTState {
+    /// Identifier of the NFT asset (collection) the token belongs to.
     pub asset_id: UInt160,
+    /// Current owner of the token.
     pub owner: UInt160,
+    /// Key-value properties attached to the token.
     pub properties: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
 impl NFTState {
+    /// Creates an empty NFT state.
     pub fn new() -> Self {
         Self::default()
     }
@@ -214,6 +227,7 @@ impl Interoperable for NFTState {
 }
 
 impl NFTState {
+    /// Populates the state from a `Struct` stack value produced by the contract.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         if let StackValue::Struct(items) = stack_value {
             if items.len() >= 2 {
@@ -254,6 +268,7 @@ impl NFTState {
         Ok(())
     }
 
+    /// Serializes the state into a `Struct` stack value for contract interop.
     pub fn to_stack_value(&self) -> StackValue {
         let properties_items: Vec<StackValue> = self
             .properties

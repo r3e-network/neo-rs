@@ -3,7 +3,7 @@ mod call_stack;
 mod try_frame;
 mod try_stack;
 
-use super::runtime_types::{compound_id, propagate_aliases_from_sources, StackValue};
+use super::runtime_types::{StackValue, compound_id, propagate_aliases_from_sources};
 pub(super) use call_stack::CallStack;
 pub(super) use try_frame::TryFrame;
 pub(super) use try_stack::TryStack;
@@ -28,18 +28,22 @@ pub(super) fn record_interpreter_ip(ip: usize) {
     LAST_INTERPRETER_IP.store(value, Ordering::Relaxed);
 }
 
+/// Returns the most recently recorded interpreter instruction pointer.
 pub fn last_interpreter_ip() -> u32 {
     LAST_INTERPRETER_IP.load(Ordering::Relaxed)
 }
 
+/// Returns the most recently recorded result stage.
 pub fn last_result_stage() -> u32 {
     LAST_RESULT_STAGE.load(Ordering::Relaxed)
 }
 
+/// Returns the most recently recorded result stack length.
 pub fn last_result_stack_len() -> u32 {
     LAST_RESULT_STACK_LEN.load(Ordering::Relaxed)
 }
 
+/// Returns the most recently recorded result stack limit.
 pub fn last_result_limit() -> u32 {
     LAST_RESULT_LIMIT.load(Ordering::Relaxed)
 }

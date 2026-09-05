@@ -15,15 +15,15 @@ use crate::neo_io::serializable::helper::{
     get_var_size_serializable_slice, serialize_array, serialize_array_with,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::smart_contract::Interoperable;
 use crate::neo_vm::StackItem;
+use crate::smart_contract::Interoperable;
 use crate::witness_rule::{ToStackValue, WitnessRule, WitnessRuleAction};
 use crate::{
-    cryptography::{ECCurve, ECPoint},
     WitnessCondition, WitnessScope,
+    cryptography::{ECCurve, ECPoint},
 };
 use hex::{decode as hex_decode, encode as hex_encode};
-use neo_primitives::{UInt160, UINT160_SIZE};
+use neo_primitives::{UINT160_SIZE, UInt160};
 use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 // Hash and Hasher now provided by impl_hash_for_fields macro
@@ -130,9 +130,7 @@ impl Signer {
             serde_json::json!(self.scopes.to_string()),
         );
 
-        if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS)
-            && !self.allowed_contracts.is_empty()
-        {
+        if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
             let contracts: Vec<_> = self
                 .allowed_contracts
                 .iter()
@@ -144,7 +142,7 @@ impl Signer {
             );
         }
 
-        if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) && !self.allowed_groups.is_empty() {
+        if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
             let groups: Vec<_> = self
                 .allowed_groups
                 .iter()
@@ -156,7 +154,7 @@ impl Signer {
             );
         }
 
-        if self.scopes.contains(WitnessScope::WITNESS_RULES) && !self.rules.is_empty() {
+        if self.scopes.contains(WitnessScope::WITNESS_RULES) {
             let rules: Vec<_> = self.rules.iter().map(|r| r.to_json()).collect();
             json.insert("rules".to_string(), serde_json::Value::Array(rules));
         }

@@ -69,6 +69,7 @@ impl PeerManagerService for LocalNode {
 }
 
 impl LocalNode {
+    /// Protocol version advertised in the version payload.
     pub const PROTOCOL_VERSION: u32 = 0;
 
     /// Creates a new local node matching the behaviour of the C# constructor.
@@ -541,14 +542,17 @@ impl LocalNode {
         self.remote_nodes.write()
     }
 
+    /// Marks `endpoint` as having a connection attempt in flight.
     pub fn track_pending(&self, endpoint: SocketAddr) {
         self.pending_connections.write().insert(endpoint);
     }
 
+    /// Clears the in-flight marker for `endpoint`.
     pub fn clear_pending(&self, endpoint: &SocketAddr) {
         self.pending_connections.write().remove(endpoint);
     }
 
+    /// Returns true while a connection attempt to `endpoint` is in flight.
     pub fn is_pending(&self, endpoint: &SocketAddr) -> bool {
         self.pending_connections.read().contains(endpoint)
     }

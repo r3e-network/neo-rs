@@ -10,6 +10,7 @@ pub struct StateStoreSnapshot {
 }
 
 impl StateStoreSnapshot {
+    /// Wraps the given backend so the MPT trie can read and write through it.
     pub fn new(store: Arc<dyn StateStoreBackend>) -> Self {
         Self { store }
     }
@@ -41,6 +42,63 @@ pub trait StateStoreBackend: Send + Sync {
     fn delete(&self, key: &[u8]);
     /// Commit changes.
     fn commit(&self) -> Result<(), String>;
+    /// Discard uncommitted changes.
+    fn discard_pending(&self) {}
+}
+
+/// Isolated write overlay used while a blockchain transaction is still pending.
+/// Reads include the overlay, while the base backend is untouched until commit.
+pub struct StagedStateStoreBackend {
+    base: Arc<dyn StateStoreBackend>,
+    pending: Mutex<HashMap<Vec<u8>, Option<Vec<u8>>>>,
+}
+
+impl StagedStateStoreBackend {
+    /// Creates a staged backend backed by the given persistent store.
+    pub fn new(base: Arc<dyn StateStoreBackend>) -> Self {
+        Self {
+            base,
+            pending: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl StateStoreBackend for StagedStateStoreBackend {
+    fn try_get(&self, key: &[u8]) -> Option<Vec<u8>> {
+        if let Some(value) = self.pending.lock().get(key).cloned() {
+            return value;
+        }
+        self.base.try_get(key)
+    }
+
+    fn put(&self, key: Vec<u8>, value: Vec<u8>) {
+        self.pending.lock().insert(key, Some(value));
+    }
+
+    fn delete(&self, key: &[u8]) {
+        self.pending.lock().insert(key.to_vec(), None);
+    }
+
+    fn commit(&self) -> Result<(), String> {
+        let pending = self.pending.lock();
+        for (key, value) in pending.iter() {
+            match value {
+                Some(value) => self.base.put(key.clone(), value.clone()),
+                None => self.base.delete(key),
+            }
+        }
+        if let Err(error) = self.base.commit() {
+            self.base.discard_pending();
+            return Err(error);
+        }
+        drop(pending);
+        self.pending.lock().clear();
+        Ok(())
+    }
+
+    fn discard_pending(&self) {
+        self.pending.lock().clear();
+    }
 }
 
 /// Minimal transactional wrapper over a `StateStoreBackend`.
@@ -91,6 +149,7 @@ pub struct MemoryStateStoreBackend {
 }
 
 impl MemoryStateStoreBackend {
+    /// Creates an empty in-memory backend, primarily for testing.
     pub fn new() -> Self {
         Self::default()
     }
@@ -129,6 +188,10 @@ impl StateStoreBackend for MemoryStateStoreBackend {
         }
         Ok(())
     }
+
+    fn discard_pending(&self) {
+        self.pending.write().clear();
+    }
 }
 
 /// Snapshot-backed backend that persists through the core `Store`.
@@ -138,6 +201,7 @@ pub struct SnapshotBackedStateStoreBackend {
 }
 
 impl SnapshotBackedStateStoreBackend {
+    /// Creates a backend that reads through and commits to snapshots of `store`.
     pub fn new(store: Arc<dyn Store>) -> Self {
         Self {
             store,
@@ -188,5 +252,9 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
             .map_err(|e| format!("state service commit failed: {e}"))?;
         pending.clear();
         Ok(())
+    }
+
+    fn discard_pending(&self) {
+        self.pending.lock().clear();
     }
 }

@@ -272,8 +272,7 @@ impl NeoToken {
                 continue;
             };
 
-            let state =
-                CandidateState::from_storage_item(&item).native_err()?;
+            let state = CandidateState::from_storage_item(&item).native_err()?;
             if !state.registered {
                 continue;
             }
@@ -298,6 +297,8 @@ impl NeoToken {
             .collect::<Vec<_>>())
     }
 
+    /// Computes the next block validators from the voted committee, returning the
+    /// top `validators_count` public keys sorted by point.
     pub fn compute_next_block_validators_snapshot<S>(
         &self,
         snapshot: &S,
@@ -317,6 +318,8 @@ impl NeoToken {
         Ok(validators)
     }
 
+    /// Returns the next block validators as the highest-voted committee members,
+    /// limited to `validators_count`.
     pub fn get_next_block_validators_snapshot<S>(
         &self,
         snapshot: &S,

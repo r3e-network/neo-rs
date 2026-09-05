@@ -1,5 +1,5 @@
 pub(crate) use super::runtime_types::{
-    into_abi_value, structurally_equal, to_abi_stack, to_abi_value, CompoundIds, StackValue,
+    CompoundIds, StackValue, into_abi_value, structurally_equal, to_abi_stack, to_abi_value,
 };
 use crate::{
     STACK_VALUE_CODEC_TAG_ARRAY, STACK_VALUE_CODEC_TAG_BIG_INTEGER, STACK_VALUE_CODEC_TAG_BOOLEAN,
@@ -25,11 +25,11 @@ impl RetainedPrefixBuffer {
 
     #[allow(clippy::mut_from_ref)]
     pub(crate) unsafe fn as_mut_slice(&self) -> &mut [u8] {
-        &mut *self.0.get()
+        unsafe { &mut *self.0.get() }
     }
 
     pub(crate) unsafe fn as_slice(&self, len: usize) -> &[u8] {
-        &(&*self.0.get())[..len]
+        unsafe { &(&*self.0.get())[..len] }
     }
 }
 

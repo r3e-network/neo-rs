@@ -35,10 +35,15 @@ pub struct PeerTimer;
 /// Tracks per-peer connection metadata for currently connected nodes.
 #[derive(Clone, Debug)]
 pub struct ConnectedPeer {
+    /// The remote node's actor.
     pub actor: ActorRef,
+    /// Local endpoint the connection uses.
     pub endpoint: SocketAddr,
+    /// The peer's remote endpoint.
     pub remote_endpoint: SocketAddr,
+    /// Whether the peer bypasses connection limits (seed/trusted).
     pub is_trusted: bool,
+    /// When the connection was established.
     pub established_at: Instant,
 }
 
@@ -391,6 +396,8 @@ impl PeerState {
         1_000
     }
 
+    /// Returns how many concurrent connection attempts are allowed:
+    /// 4× the desired minimum, capped at `max_connections` when set.
     pub fn connecting_capacity(&self) -> usize {
         let mut allowed = self.config.min_desired_connections * 4;
         if self.config.max_connections > 0 && allowed > self.config.max_connections {
@@ -460,29 +467,50 @@ impl PeerState {
 pub enum PeerCommand {
     /// Applies the runtime configuration and starts the listener (equivalent to
     /// sending `ChannelsConfig` in C#).
-    Configure { config: ChannelsConfig },
+    Configure {
+        /// Channel/timeout configuration to install.
+        config: ChannelsConfig,
+    },
     /// Adds more endpoints to the unconnected pool.
-    AddPeers { endpoints: Vec<SocketAddr> },
+    AddPeers {
+        /// Endpoints to remember for later connection attempts.
+        endpoints: Vec<SocketAddr>,
+    },
     /// Attempts to connect to the supplied endpoint.
     Connect {
+        /// The endpoint to dial.
         endpoint: SocketAddr,
+        /// Whether the endpoint bypasses connection limits.
         is_trusted: bool,
     },
     /// Registers a fully established remote node.
     ConnectionEstablished {
+        /// The remote node's actor.
         actor: ActorRef,
+        /// Snapshot of the remote node's handshake state.
         snapshot: RemoteNodeSnapshot,
+        /// Whether the peer bypasses connection limits.
         is_trusted: bool,
+        /// Whether the connection was initiated by the peer.
         inbound: bool,
+        /// The peer's advertised version.
         version: VersionPayload,
+        /// Receives whether the connection was accepted.
         reply: oneshot::Sender<bool>,
     },
     /// Removes the connecting flag after a failure.
-    ConnectionFailed { endpoint: SocketAddr },
+    ConnectionFailed {
+        /// The endpoint whose attempt failed.
+        endpoint: SocketAddr,
+    },
     /// Handles termination of a remote actor.
-    ConnectionTerminated { actor: ActorRef },
+    ConnectionTerminated {
+        /// The actor that terminated.
+        actor: ActorRef,
+    },
     /// Returns the endpoints currently queued for connection.
     QueryConnectingPeers {
+        /// Receives the currently connecting endpoints.
         reply: oneshot::Sender<Vec<SocketAddr>>,
     },
 }

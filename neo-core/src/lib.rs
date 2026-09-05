@@ -78,8 +78,9 @@
 //! }
 //! ```
 
-// Documentation warnings deferred — tracked for incremental doc coverage
-#![allow(missing_docs)]
+// Public API documentation is covered incrementally; keep rustdoc warnings
+// visible without allowing this crate to hide newly introduced lint failures.
+#![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 
 // Self-reference for macro exports
@@ -110,7 +111,11 @@ pub mod script_validation;
 /// Network magic numbers, port defaults, fee constants, and size limits.
 pub mod constants;
 
-/// Transaction containment type enumeration.
+/// Compatibility module for the historical transaction containment path.
+pub mod contains_transaction_type {
+    pub use neo_primitives::contains_transaction_type::*;
+}
+
 /// Transaction type containment checking.
 ///
 /// Provides utilities for checking if a transaction contains specific types.
@@ -268,8 +273,6 @@ pub mod tokens_tracker;
 // ============================================================================
 
 // Core types
-pub use neo_primitives::{BigDecimal, ContainsTransactionType, UnhandledExceptionPolicy, panic_message};
-pub use neo_vm::{ScriptBuilder, rpc_json};
 pub use builders::{
     AndConditionBuilder, OrConditionBuilder, SignerBuilder, TransactionAttributesBuilder,
     TransactionBuilder, WitnessBuilder, WitnessConditionBuilder, WitnessRuleBuilder,
@@ -280,11 +283,15 @@ pub use events::{EventHandler, EventManager};
 pub use hardfork::Hardfork;
 pub use ledger::{Block, BlockHeader};
 pub use neo_primitives::{
-    InvalidWitnessScopeError, UInt160, UInt256, WitnessScope, UINT160_SIZE, UINT256_SIZE,
+    BigDecimal, ContainsTransactionType, UnhandledExceptionPolicy, panic_message,
 };
+pub use neo_primitives::{
+    InvalidWitnessScopeError, UINT160_SIZE, UINT256_SIZE, UInt160, UInt256, WitnessScope,
+};
+pub use neo_vm::{ScriptBuilder, rpc_json};
 pub use network::p2p::payloads::{
-    InventoryType, OracleResponseCode, Signer, Transaction, TransactionAttribute,
-    TransactionAttributeType, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
+    HEADER_SIZE, InventoryType, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
+    OracleResponseCode, Signer, Transaction, TransactionAttribute, TransactionAttributeType,
 };
 pub use protocol_settings::ProtocolSettings;
 pub use rpc::RpcException;
@@ -294,7 +301,9 @@ pub use time_provider::TimeProvider;
 
 pub use wallets::{KeyPair, Wallet};
 pub use witness::Witness;
-pub use witness_rule::{ToStackItem, WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
+pub use witness_rule::{
+    ToStackItem, WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction,
+};
 
 // Runtime types (requires `runtime` feature)
 #[cfg(feature = "runtime")]
@@ -329,9 +338,8 @@ pub use network::{NetworkError, NetworkResult};
 pub mod neo_io {
     pub use crate::extensions::io::SerializableExtensions as SerializableExt;
     pub use ::neo_io_crate::{
-        impl_serializable,
+        BinaryWriter, IoError, IoResult, MemoryReader, Serializable, impl_serializable,
         serializable::{self, helper},
-        BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
     };
 }
 
@@ -339,10 +347,10 @@ pub mod neo_io {
 // VM Compatibility Surface
 // ============================================================================
 
+pub mod big_decimal;
 /// Neo VM compatibility types used by core and downstream crates.
 pub mod neo_vm;
 pub mod script_builder;
-pub mod big_decimal;
 pub mod unhandled_exception_policy;
 
 // ============================================================================
@@ -363,7 +371,7 @@ pub mod neo_ledger {
 // ============================================================================
 
 /// Re-exports from [`neo_crypto`] crate.
-pub use neo_crypto::{ct_hash_eq, ct_hash_slice_eq, Crypto, CryptoError, HashAlgorithm, ECC};
+pub use neo_crypto::{Crypto, CryptoError, ECC, HashAlgorithm, ct_hash_eq, ct_hash_slice_eq};
 
 /// Re-exports from [`neo_storage`] crate.
 pub use neo_storage::{StorageItem, StorageKey};
@@ -385,10 +393,8 @@ pub use neo_primitives::Verifiable;
 /// - [`Header`](ledger::BlockHeader)
 pub trait VerifiableExt: Verifiable {
     /// Gets the script hashes that should be verified for this container.
-    fn script_hashes_for_verifying(
-        &self,
-        snapshot: &crate::persistence::DataCache,
-    ) -> Vec<UInt160>;
+    fn script_hashes_for_verifying(&self, snapshot: &crate::persistence::DataCache)
+    -> Vec<UInt160>;
 
     /// Gets the witnesses associated with this container.
     fn witnesses(&self) -> Vec<&Witness>;

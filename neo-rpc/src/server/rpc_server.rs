@@ -2,11 +2,11 @@ use futures::stream;
 use hyper::server::accept::from_stream;
 use hyper::service::{Service, make_service_fn, service_fn};
 use neo_core::{neo_system::NeoSystem, services::RpcService, wallets::Wallet};
-use std::sync::LazyLock;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use prometheus::Counter;
 use rustls::ServerConfig;
 use serde_json::Value;
+use std::sync::LazyLock;
 use tokio::{
     net::TcpListener,
     sync::{Semaphore, oneshot},
@@ -289,10 +289,15 @@ impl RpcServer {
 
             let tls_acceptor = TlsAcceptor::from(tls_config);
             let keepalive = self.settings.keep_alive_timeout_duration();
-            let incoming = stream::unfold(listener, move |listener| {
-                let tls_acceptor = tls_acceptor.clone();
-                let connection_limiter = connection_limiter.clone();
-                async move {
+            // R12: handshakes run on detached tasks with a deadline so one
+            // stalled client (TCP connect without ClientHello) cannot block
+            // the accept loop and every other client behind it.
+            const TLS_HANDSHAKE_DEADLINE: Duration = Duration::from_secs(10);
+            let (conn_tx, conn_rx) =
+                futures::channel::mpsc::unbounded::<Result<TlsConnection, io::Error>>();
+            let accept_loop = {
+                let conn_tx = conn_tx.clone();
+                tokio::spawn(async move {
                     loop {
                         match listener.accept().await {
                             Ok((stream, remote_addr)) => {
@@ -308,34 +313,47 @@ impl RpcServer {
                                     );
                                     continue;
                                 };
-                                match tls_acceptor.accept(stream).await {
-                                    Ok(tls_stream) => {
-                                        let conn =
-                                            TlsConnection::new(tls_stream, remote_addr, permit);
-                                        return Some((
-                                            Ok::<TlsConnection, io::Error>(conn),
-                                            listener,
-                                        ));
+                                let tls_acceptor = tls_acceptor.clone();
+                                let conn_tx = conn_tx.clone();
+                                tokio::spawn(async move {
+                                    match tokio::time::timeout(
+                                        TLS_HANDSHAKE_DEADLINE,
+                                        tls_acceptor.accept(stream),
+                                    )
+                                    .await
+                                    {
+                                        Ok(Ok(tls_stream)) => {
+                                            let conn =
+                                                TlsConnection::new(tls_stream, remote_addr, permit);
+                                            // If the receiver is gone (server shutting
+                                            // down) `conn` drops here, releasing the permit.
+                                            let _ = conn_tx.unbounded_send(Ok(conn));
+                                        }
+                                        Ok(Err(err)) => {
+                                            warn!(
+                                                "RPC TLS handshake failed for {}: {}",
+                                                remote_addr, err
+                                            );
+                                        }
+                                        Err(_) => {
+                                            debug!(
+                                                "RPC TLS handshake timed out for {}",
+                                                remote_addr
+                                            );
+                                        }
                                     }
-                                    Err(err) => {
-                                        warn!(
-                                            "RPC TLS handshake failed for {}: {}",
-                                            remote_addr, err
-                                        );
-                                        continue;
-                                    }
-                                }
+                                });
                             }
                             Err(err) => {
                                 error!("RPC TLS accept error: {}", err);
                                 sleep(Duration::from_millis(250)).await;
-                                continue;
                             }
                         }
                     }
-                }
-            });
-            let incoming = from_stream(incoming);
+                })
+            };
+            drop(conn_tx);
+            let incoming = from_stream(conn_rx);
             let svc = svc;
             let make_svc = make_service_fn(move |conn: &TlsConnection| {
                 let remote_addr = conn.remote_addr();
@@ -359,6 +377,8 @@ impl RpcServer {
             let server = builder.serve(make_svc);
             let server = server.with_graceful_shutdown(async move {
                 let _ = shutdown_rx.await;
+                // Stop the detached TLS accept loop with the server.
+                accept_loop.abort();
             });
             let task = tokio::spawn(async move {
                 if let Err(err) = server.await {

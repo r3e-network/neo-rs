@@ -107,6 +107,16 @@ impl PersistCompletedHarness {
         std::mem::take(&mut self.events)
     }
 
+    pub(super) fn fire_initial_timers(&mut self) -> ConsensusResult<()> {
+        for service in &mut self.services {
+            if service.context().is_primary() {
+                let deadline = service.context().view_start_time + service.context().get_timeout();
+                service.on_timer_tick(deadline.saturating_add(1))?;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) async fn drive_until_idle(&mut self, max_iters: usize) -> ConsensusResult<()> {
         for _ in 0..max_iters {
             if !self.drive_once()? {
@@ -153,7 +163,11 @@ impl PersistCompletedHarness {
                     if idx == sender_index {
                         continue;
                     }
-                    service.process_message(payload.clone())?;
+                    if let Err(err) = service.process_message(payload.clone()) {
+                        if !matches!(err, crate::ConsensusError::AlreadyReceived(_)) {
+                            return Err(err);
+                        }
+                    }
                     if let Some(ref prepare) = maybe_prepare {
                         service.on_transactions_received(prepare.transaction_hashes.clone())?;
                     }

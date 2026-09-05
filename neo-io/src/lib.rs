@@ -2,10 +2,15 @@
 //! Neo.IO - matches C# Neo.IO exactly
 //! This crate provides IO functionality matching C# Neo.IO namespace
 
+/// In-memory cache structures used by the network and storage layers.
 pub mod caching;
+/// Compression helpers for network payloads.
 pub mod compression;
+/// Extension traits for readers and writers.
 pub mod extensions;
+/// VM method-token payload type.
 pub mod method_token;
+/// Conditional witness-rule evaluation (matches C# `WitnessCondition`/`WitnessRule`).
 pub mod witness_rule;
 
 mod binary_writer;
@@ -27,7 +32,7 @@ pub use extensions::{
 };
 
 // Re-export compression types
-pub use compression::{compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD};
+pub use compression::{COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD, compress_lz4, decompress_lz4};
 
 // Re-export method token
 pub use method_token::MethodToken;

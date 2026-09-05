@@ -190,12 +190,13 @@ impl BigDecimal {
 
         // Scientific notation. C# parses the exponent with `sbyte.TryParse`.
         if let Some(index) = s.find(['e', 'E']) {
-            let exponent = s[index + 1..]
-                .trim()
-                .parse::<i8>()
-                .map_err(|_| PrimitiveError::InvalidFormat {
-                    message: format!("Invalid exponent in '{}'", s),
-                })?;
+            let exponent =
+                s[index + 1..]
+                    .trim()
+                    .parse::<i8>()
+                    .map_err(|_| PrimitiveError::InvalidFormat {
+                        message: format!("Invalid exponent in '{}'", s),
+                    })?;
             e = exponent as i32;
             s = &s[..index];
         }
@@ -212,7 +213,10 @@ impl BigDecimal {
         let ds = e + decimals as i32;
         if ds < 0 {
             return Err(PrimitiveError::InvalidFormat {
-                message: format!("Decimal value has more precision than {} decimals", decimals),
+                message: format!(
+                    "Decimal value has more precision than {} decimals",
+                    decimals
+                ),
             });
         }
         if ds > 0 {

@@ -4,8 +4,8 @@
 //! including block height, peer count, mempool size, and storage status.
 
 use hyper::{
-    service::{make_service_fn, service_fn},
     Body, Request, Response, Server, StatusCode,
+    service::{make_service_fn, service_fn},
 };
 use serde::Serialize;
 use std::future::Future;
@@ -94,11 +94,13 @@ impl NodeHealthServer {
     /// Start the health server
     pub async fn start(self) -> anyhow::Result<()> {
         serve_health(
-            self.port,
-            self.max_header_lag,
-            self.storage_path,
-            self.storage_version,
-            self.rpc_enabled,
+            ServeHealthConfig {
+                port: self.port,
+                max_header_lag: self.max_header_lag,
+                storage_path: self.storage_path,
+                storage_version: self.storage_version,
+                rpc_enabled: self.rpc_enabled,
+            },
             self.state,
             true,
             std::future::pending(),
@@ -121,11 +123,13 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     serve_health(
-        port,
-        max_header_lag,
-        storage_path,
-        storage_version,
-        rpc_enabled,
+        ServeHealthConfig {
+            port,
+            max_header_lag,
+            storage_path,
+            storage_version,
+            rpc_enabled,
+        },
         health_state,
         false,
         shutdown,
@@ -133,12 +137,17 @@ where
     .await
 }
 
-async fn serve_health<F>(
+/// Configuration for the health endpoint server.
+struct ServeHealthConfig {
     port: u16,
     max_header_lag: u32,
     storage_path: Option<String>,
     storage_version: String,
     rpc_enabled: bool,
+}
+
+async fn serve_health<F>(
+    config: ServeHealthConfig,
     health_state: Arc<RwLock<HealthState>>,
     expose_root: bool,
     shutdown: F,
@@ -146,6 +155,13 @@ async fn serve_health<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
+    let ServeHealthConfig {
+        port,
+        max_header_lag,
+        storage_path,
+        storage_version,
+        rpc_enabled,
+    } = config;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
     let make_svc = make_service_fn(move |_conn| {

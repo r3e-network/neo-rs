@@ -8,6 +8,13 @@ use neo_crypto::MerkleTree;
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
 
+fn fire_initial_primary_timer(service: &mut ConsensusService) {
+    let timeout_at = service.context().view_start_time + service.context().get_timeout() + 1;
+    service
+        .on_timer_tick(timeout_at)
+        .expect("initial primary timer");
+}
+
 use super::super::helpers::{
     compute_header_hash, compute_merkle_root, compute_next_consensus_address,
 };
@@ -40,6 +47,7 @@ async fn consensus_round_emits_block_committed() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    fire_initial_primary_timer(&mut service);
     service.on_transactions_received(Vec::new()).unwrap();
 
     let mut prepare_payload = None;
@@ -71,6 +79,12 @@ async fn consensus_round_emits_block_committed() {
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
         service.process_message(payload).unwrap();
     }
+
+    // Sending our Commit starts the C# recovery window at one block interval (T).
+    assert_eq!(
+        service.context().get_timeout(),
+        service.context().expected_block_time
+    );
 
     let block_hash = service.context().proposed_block_hash.expect("block hash");
 
@@ -133,6 +147,7 @@ async fn prepare_response_rejects_mismatched_hash() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    fire_initial_primary_timer(&mut service);
     service.on_transactions_received(Vec::new()).unwrap();
 
     let wrong_hash = UInt256::from_bytes(&[0x22; 32]).expect("hash");
@@ -152,16 +167,16 @@ async fn prepare_response_rejects_mismatched_hash() {
 }
 
 #[tokio::test]
-async fn prepare_response_with_wrong_view_ignored() {
+async fn prepare_response_with_future_view_can_be_reprocessed_after_view_change() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);
-    let (validators, _keys) = create_validators_with_keys(4);
-    let mut service = ConsensusService::new(network, validators, Some(0), vec![], tx);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
     let response = PrepareResponseMessage::new(0, 1, 1, UInt256::zero());
-    let payload = ConsensusPayload::new(
+    let mut payload = ConsensusPayload::new(
         network,
         0,
         1,
@@ -169,10 +184,34 @@ async fn prepare_response_with_wrong_view_ignored() {
         ConsensusMessageType::PrepareResponse,
         response.serialize(),
     );
+    sign_payload(&service, &mut payload, &keys[1]);
+    let msg_hash = service.dbft_payload_hash(&payload).expect("payload hash");
 
-    let result = service.process_message(payload);
-    assert!(result.is_ok());
+    // A future-view message is routed away before handler validation and must
+    // remain eligible for processing once that view becomes active.
+    assert!(service.process_message(payload.clone()).is_ok());
+    assert!(!service.context().has_seen_message(&msg_hash));
     assert!(service.context().prepare_responses.is_empty());
+
+    service.context.reset_for_new_view(1, 2_000);
+    assert!(service.process_message(payload).is_ok());
+    assert!(service.context().has_seen_message(&msg_hash));
+    assert!(service.context().prepare_responses.contains_key(&1));
+
+    // A successfully accepted message remains deduplicated.
+    assert!(
+        service
+            .process_message(ConsensusPayload::new(
+                network,
+                0,
+                1,
+                1,
+                ConsensusMessageType::PrepareResponse,
+                response.serialize(),
+            ))
+            .is_ok()
+    );
+    assert_eq!(service.context().prepare_responses.len(), 1);
 }
 
 #[tokio::test]
@@ -183,6 +222,7 @@ async fn prepare_response_duplicate_from_same_validator_rejected() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    fire_initial_primary_timer(&mut service);
     service.on_transactions_received(Vec::new()).unwrap();
 
     let preparation_hash = service
@@ -227,6 +267,7 @@ async fn byzantine_conflicting_prepare_responses_do_not_replace_first() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    fire_initial_primary_timer(&mut service);
     service.on_transactions_received(Vec::new()).unwrap();
 
     let preparation_hash = service
@@ -285,8 +326,10 @@ async fn prepare_response_with_wrong_block_rejected() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
+    let msg_hash = service.dbft_payload_hash(&payload).expect("payload hash");
     let result = service.process_message(payload);
     assert!(matches!(result, Err(ConsensusError::WrongBlock { .. })));
+    assert!(!service.context().has_seen_message(&msg_hash));
 }
 
 #[tokio::test]
@@ -322,6 +365,7 @@ async fn primary_broadcasts_prepare_request_with_transactions() {
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     while rx.try_recv().is_ok() {}
+    fire_initial_primary_timer(&mut service);
 
     let tx_hashes = vec![UInt256::from([0x11; 32]), UInt256::from([0x22; 32])];
     service.on_transactions_received(tx_hashes.clone()).unwrap();
@@ -373,6 +417,76 @@ async fn primary_broadcasts_prepare_request_with_transactions() {
 }
 
 #[tokio::test]
+async fn primary_proposal_waits_for_initial_timer_and_is_one_shot() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    let initial_deadline = service.context().view_start_time + service.context().get_timeout();
+    service
+        .on_transactions_received(vec![UInt256::from([0xA1; 32])])
+        .unwrap();
+    assert!(rx.try_recv().is_err());
+    assert!(!service.context().proposal_requested());
+
+    service.on_timer_tick(initial_deadline + 1).unwrap();
+    assert!(rx.try_recv().is_ok(), "timer must request transactions");
+    assert!(service.context().proposal_requested());
+    assert_eq!(
+        service.context().get_timeout(),
+        service.context().expected_block_time
+    );
+
+    service.on_transactions_received(Vec::new()).unwrap();
+    service
+        .on_transactions_received(vec![UInt256::from([0xA2; 32])])
+        .unwrap();
+    let mut prepare_count = 0;
+    while let Ok(event) = rx.try_recv() {
+        if matches!(event, ConsensusEvent::BroadcastMessage(ref payload) if payload.message_type == ConsensusMessageType::PrepareRequest)
+        {
+            prepare_count += 1;
+        }
+    }
+    assert_eq!(prepare_count, 1);
+}
+
+#[tokio::test]
+async fn primary_prepare_request_timeout_is_explicit_per_view() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    assert_eq!(
+        service.context().get_timeout(),
+        crate::context::BLOCK_TIME_MS
+    );
+    fire_initial_primary_timer(&mut service);
+    service.on_transactions_received(Vec::new()).unwrap();
+    assert_eq!(
+        service.context().get_timeout(),
+        crate::context::BLOCK_TIME_MS
+    );
+
+    service.context.my_index = Some(3);
+    service.context.reset_for_new_view(1, 2_000);
+    assert_eq!(
+        service.context().get_timeout(),
+        crate::context::BLOCK_TIME_MS * 4
+    );
+    fire_initial_primary_timer(&mut service);
+    service.on_transactions_received(Vec::new()).unwrap();
+    assert_eq!(
+        service.context().get_timeout(),
+        crate::context::BLOCK_TIME_MS * 4
+    );
+}
+
+#[tokio::test]
 async fn multi_round_prepare_requests_rotate_primary() {
     let network = 0x4E454F;
     let (validators, keys) = create_validators_with_keys(4);
@@ -382,6 +496,7 @@ async fn multi_round_prepare_requests_rotate_primary() {
 
     service0.start(0, 1_000, UInt256::zero(), 0).unwrap();
     while rx0.try_recv().is_ok() {}
+    fire_initial_primary_timer(&mut service0);
 
     let first_txs = vec![UInt256::from([0x10; 32])];
     service0
@@ -414,6 +529,7 @@ async fn multi_round_prepare_requests_rotate_primary() {
     let mut service1 = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx1);
     service1.start(1, 2_000, UInt256::zero(), 0).unwrap();
     while rx1.try_recv().is_ok() {}
+    fire_initial_primary_timer(&mut service1);
 
     let second_txs = vec![UInt256::from([0x20; 32])];
     service1
@@ -452,6 +568,7 @@ async fn prepare_responses_trigger_commit_broadcast() {
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     while rx.try_recv().is_ok() {}
+    fire_initial_primary_timer(&mut service);
 
     service.on_transactions_received(Vec::new()).unwrap();
 
@@ -512,6 +629,7 @@ async fn commits_reach_threshold_emit_block_committed() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    fire_initial_primary_timer(&mut service);
     service.on_transactions_received(Vec::new()).unwrap();
 
     let mut prepare_payload = None;
@@ -543,6 +661,12 @@ async fn commits_reach_threshold_emit_block_committed() {
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
         service.process_message(payload).unwrap();
     }
+
+    // Sending our Commit starts the C# recovery window at one block interval (T).
+    assert_eq!(
+        service.context().get_timeout(),
+        service.context().expected_block_time
+    );
 
     let block_hash = service.context().proposed_block_hash.expect("block hash");
 

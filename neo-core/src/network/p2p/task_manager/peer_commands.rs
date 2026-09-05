@@ -1,11 +1,11 @@
+use crate::UInt256;
 use crate::network::p2p::{
-    payloads::{
-        get_block_by_index_payload::GetBlockByIndexPayload, inv_payload::InvPayload, InventoryType,
-    },
     NetworkMessage, ProtocolMessage, RemoteNodeCommand,
+    payloads::{
+        InventoryType, get_block_by_index_payload::GetBlockByIndexPayload, inv_payload::InvPayload,
+    },
 };
 use crate::runtime::{ActorRef, ActorRuntimeResult};
-use crate::UInt256;
 use tracing::warn;
 
 pub(super) fn send_get_data_groups<I>(

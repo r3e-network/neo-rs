@@ -1,17 +1,19 @@
 //! Ledger contract state types and serialization helpers.
+use crate::UInt256;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use crate::network::p2p::payloads::transaction::{Transaction, MAX_TRANSACTION_SIZE};
+use crate::network::p2p::payloads::transaction::{MAX_TRANSACTION_SIZE, Transaction};
 use crate::smart_contract::native::{
     hash_index_state::HashIndexState, trimmed_block::TrimmedBlock,
 };
-use crate::UInt256;
 use neo_vm::VmState as VMState;
 use serde::{Deserialize, Serialize};
 
 const RECORD_KIND_TRANSACTION: u8 = 0x01;
 const RECORD_KIND_CONFLICT_STUB: u8 = 0x02;
 
+/// A transaction persisted on-chain together with its containing block index and
+/// VM execution state (C# `TransactionState`).
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PersistedTransactionState {
     block_index: u32,
@@ -20,6 +22,7 @@ pub struct PersistedTransactionState {
 }
 
 impl PersistedTransactionState {
+    /// Creates a persisted state for `tx` recorded in the block at `block_index`.
     pub fn new(tx: &Transaction, block_index: u32) -> Self {
         Self {
             block_index,
@@ -28,54 +31,66 @@ impl PersistedTransactionState {
         }
     }
 
+    /// Returns the index of the block containing the transaction.
     pub fn block_index(&self) -> u32 {
         self.block_index
     }
 
+    /// Returns the raw VM state byte stored on-chain.
     pub fn vm_state_raw(&self) -> u8 {
         self.vm_state
     }
 
+    /// Returns the VM execution state (`HALT`/`FAULT`) of the transaction.
     pub fn vm_state(&self) -> VMState {
         VMState::from_byte(self.vm_state)
     }
 
+    /// Updates the persisted VM execution state of the transaction.
     pub fn set_vm_state(&mut self, vm_state: VMState) {
         self.vm_state = vm_state.to_byte();
     }
 
+    /// Returns a reference to the stored transaction.
     pub fn transaction(&self) -> &Transaction {
         &self.transaction
     }
 
+    /// Returns a mutable reference to the stored transaction.
     pub fn transaction_mut(&mut self) -> &mut Transaction {
         &mut self.transaction
     }
 
+    /// Returns the transaction hash, panicking if it cannot be computed.
     pub fn transaction_hash(&self) -> UInt256 {
         self.try_transaction_hash()
             .expect("persisted transaction hash must be serializable")
     }
 
+    /// Returns the transaction hash, or an error if it cannot be computed.
     pub fn try_transaction_hash(&self) -> Result<UInt256> {
         self.transaction.try_hash()
     }
 }
 
+/// An ordered collection of persisted transaction states for a block.
 #[derive(Clone, Default)]
 pub struct LedgerTransactionStates {
     states: Vec<PersistedTransactionState>,
 }
 
 impl LedgerTransactionStates {
+    /// Creates a collection from the given transaction states.
     pub fn new(states: Vec<PersistedTransactionState>) -> Self {
         Self { states }
     }
 
+    /// Returns the contained transaction states in order.
     pub fn states(&self) -> &[PersistedTransactionState] {
         &self.states
     }
 
+    /// Sets the VM state of the transaction with `hash`, returning whether a match was found.
     pub fn mark_vm_state(&mut self, hash: &UInt256, vm_state: VMState) -> bool {
         for state in &mut self.states {
             match state.try_transaction_hash() {
@@ -97,11 +112,13 @@ impl LedgerTransactionStates {
         false
     }
 
+    /// Consumes the collection into `(hash, VM state)` pairs, panicking if any hash cannot be computed.
     pub fn into_updates(self) -> Vec<(UInt256, VMState)> {
         self.try_into_updates()
             .expect("persisted transaction hashes must be serializable")
     }
 
+    /// Consumes the collection into `(hash, VM state)` pairs, failing if any hash cannot be computed.
     pub fn try_into_updates(self) -> Result<Vec<(UInt256, VMState)>> {
         self.states
             .into_iter()

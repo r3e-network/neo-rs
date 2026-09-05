@@ -20,7 +20,7 @@ Steps to cut a production release for `neo-rs` (Rust Neo N3 node).
 - For manual runs, use the workflow dispatch with custom `image_tag` if desired.
 
 ## Artifacts (optional)
-- If you need tarballs/zip distributions, add an extra job to build and upload `neo-cli` and sample configs from `dist/`.
+- If you need tarballs/zip distributions, add an extra job to build and upload `neo-node` and sample configs from `dist/`.
 
 ## Post-release
 - Announce release notes (summarize CHANGELOG).

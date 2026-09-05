@@ -3,15 +3,15 @@
 use crate::cryptography::Crypto;
 use crate::hardfork::Hardfork;
 // Old wrapper types removed - StackValue compounds are flat Vecs now
-use crate::neo_vm::{StackItem, StackItemExt};
+use crate::UInt160;
+use crate::neo_vm::StackItem;
+use crate::smart_contract::BinarySerializer;
+use crate::smart_contract::NotifyEventArgs;
+use crate::smart_contract::TriggerType;
 use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE,
 };
-use crate::smart_contract::BinarySerializer;
 use crate::smart_contract::interoperable::Interoperable;
-use crate::smart_contract::NotifyEventArgs;
-use crate::smart_contract::TriggerType;
-use crate::UInt160;
 use neo_vm::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
@@ -270,7 +270,7 @@ impl ApplicationEngine {
         let limits = self.execution_limits();
         let mut result = Vec::new();
         for notification in self.notifications() {
-            if hash.map_or(true, |expected| notification.script_hash == expected) {
+            if hash.is_none_or(|expected| notification.script_hash == expected) {
                 result.push(notification.to_stack_item().map_err(|e| e.to_string())?);
                 if result.len() > limits.max_stack_size as usize {
                     return Err("Too many notifications".to_string());
@@ -304,7 +304,7 @@ fn detect_stack_item_cycle(
 ) -> Result<(), String> {
     match item {
         StackItem::Array(items) => {
-            let key = CompoundKey::Array(items.id() as usize);
+            let key = CompoundKey::Array(items.id());
             detect_compound_cycle(
                 key,
                 visiting,
@@ -314,7 +314,7 @@ fn detect_stack_item_cycle(
             )
         }
         StackItem::Struct(items) => {
-            let key = CompoundKey::Array(items.id() as usize);
+            let key = CompoundKey::Array(items.id());
             detect_compound_cycle(
                 key,
                 visiting,
@@ -324,7 +324,7 @@ fn detect_stack_item_cycle(
             )
         }
         StackItem::Map(entries) => {
-            let key = CompoundKey::Map(entries.id() as usize);
+            let key = CompoundKey::Map(entries.id());
             if visited.contains(&key) {
                 return Ok(());
             }

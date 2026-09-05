@@ -1,7 +1,7 @@
 use super::{StateRootVerificationResult, StateStore};
+use crate::UInt256;
 use crate::error::{CoreError, CoreResult};
 use crate::state_service::StateRoot;
-use crate::UInt256;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::debug;
 

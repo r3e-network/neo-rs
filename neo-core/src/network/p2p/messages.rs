@@ -115,31 +115,57 @@ impl neo_primitives::NetworkMessage for NetworkMessage {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum ProtocolMessage {
+    /// Version handshake payload exchanged when a connection is established.
     Version(VersionPayload),
+    /// Acknowledgement of a peer's version handshake.
     Verack,
+    /// Request for the peer's known node addresses.
     GetAddr,
+    /// Response carrying a batch of node addresses.
     Addr(AddrPayload),
+    /// Latency probe sent to a connected peer.
     Ping(PingPayload),
+    /// Reply to a `Ping` latency probe.
     Pong(PingPayload),
+    /// Request for block headers starting at a given height.
     GetHeaders(GetBlockByIndexPayload),
+    /// Response carrying a batch of block headers.
     Headers(HeadersPayload),
+    /// Request for full blocks identified by hash.
     GetBlocks(GetBlocksPayload),
+    /// Request for the contents of the peer's memory pool.
     Mempool,
+    /// Inventory announcement of known blocks or transactions.
     Inv(InvPayload),
+    /// Request for payloads advertised by an inventory message.
     GetData(InvPayload),
+    /// Request for a single block identified by index.
     GetBlockByIndex(GetBlockByIndexPayload),
+    /// Notice that one or more requested payloads are unavailable.
     NotFound(InvPayload),
+    /// A transaction broadcast across the network.
     Transaction(Transaction),
+    /// A consensus-approved block.
     Block(Block),
+    /// Extensible payload carrying consensus or plugin data.
     Extensible(ExtensiblePayload),
+    /// Bloom filter configuration applied to a peer connection.
     FilterLoad(FilterLoadPayload),
+    /// Entry added to the peer's bloom filter.
     FilterAdd(FilterAddPayload),
+    /// Request to clear the peer's bloom filter.
     FilterClear,
+    /// Filtered block containing only the matching transactions.
     MerkleBlock(MerkleBlockPayload),
+    /// Deprecated administrative alert message (raw bytes).
     Alert(Vec<u8>),
+    /// Deprecated rejection notice for refused messages (raw bytes).
     Reject(Vec<u8>),
+    /// Unrecognized message preserved for diagnostics or forwarding.
     Unknown {
+        /// Command observed on the wire.
         command: MessageCommand,
+        /// Raw bytes of the unrecognized payload.
         bytes: Vec<u8>,
     },
 }

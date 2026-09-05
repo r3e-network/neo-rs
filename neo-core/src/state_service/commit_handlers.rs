@@ -6,16 +6,15 @@
 //! - On `Committed`: persist the staged trie changes and advance the current local root index
 
 use std::any::Any;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread::JoinHandle;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::error::{CoreError, CoreResult};
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
 use crate::ledger::{block::Block, blockchain_application_executed::ApplicationExecuted};
 use crate::persistence::data_cache::DataCache;
 use crate::state_service::StateStore;
-use crate::unhandled_exception_policy::{panic_message, UnhandledExceptionPolicy};
+use crate::unhandled_exception_policy::{UnhandledExceptionPolicy, panic_message};
 use tracing::error;
 
 /// Handlers for wiring state root calculation into block persistence.
@@ -23,8 +22,6 @@ pub struct StateServiceCommitHandlers {
     state_store: Arc<StateStore>,
     exception_policy: UnhandledExceptionPolicy,
     disabled: AtomicBool,
-    /// Handle to the background thread computing the previous block's MPT state root.
-    pending_task: parking_lot::Mutex<Option<JoinHandle<Result<(), String>>>>,
 }
 
 impl StateServiceCommitHandlers {
@@ -35,7 +32,6 @@ impl StateServiceCommitHandlers {
             state_store,
             exception_policy,
             disabled: AtomicBool::new(false),
-            pending_task: parking_lot::Mutex::new(None),
         }
     }
 
@@ -62,40 +58,6 @@ impl StateServiceCommitHandlers {
     fn apply_exception_policy(&self) {
         self.exception_policy
             .apply(|| self.disabled.store(true, Ordering::SeqCst));
-    }
-
-    fn join_pending(&self, phase: &'static str) -> CoreResult<()> {
-        let Some(handle) = self.pending_task.lock().take() else {
-            return Ok(());
-        };
-
-        match handle.join() {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(err)) => Err(CoreError::system(format!(
-                "state service commit handler failed during {phase}: {err}"
-            ))),
-            Err(payload) => {
-                let message = panic_message(payload.as_ref(), "unknown panic payload");
-                self.handle_panic(payload, phase);
-                Err(CoreError::system(format!(
-                    "state service commit handler panicked during {phase}: {message}"
-                )))
-            }
-        }
-    }
-
-    /// Blocks until any pending background MPT computation completes.
-    #[allow(dead_code)]
-    pub fn flush(&self) -> CoreResult<()> {
-        self.join_pending("flush")
-    }
-}
-
-impl Drop for StateServiceCommitHandlers {
-    fn drop(&mut self) {
-        if let Some(handle) = self.pending_task.lock().take() {
-            let _ = handle.join();
-        }
     }
 }
 
@@ -134,9 +96,6 @@ impl CommittingHandler for StateServiceCommitHandlers {
             ));
         }
 
-        // Wait for previous block's MPT to finish before starting this one.
-        self.join_pending("committing previous block")?;
-
         // Collect tracked items NOW while snapshot is still alive.
         let height = block.index();
         let changes: Vec<_> = snapshot
@@ -145,29 +104,47 @@ impl CommittingHandler for StateServiceCommitHandlers {
             .map(|(key, trackable)| (key, trackable.item, trackable.state))
             .collect();
 
-        // Spawn background MPT computation.
+        // Compute and stage the root synchronously. The previous
+        // implementation spawned a thread and immediately joined it, paying
+        // a thread-creation cost per block without overlapping any work
+        // (review §5.1). Panics are contained exactly as the old join() path
+        // contained them, and the staging/error gate is unchanged: only
+        // compute and stage the root here — persisting it before the block
+        // transaction commits would advance the state root on failed blocks.
         let state_store = Arc::clone(&self.state_store);
-        let disabled = self.disabled.load(Ordering::Relaxed);
-        if disabled {
-            return Err(CoreError::system(
-                "state service committing handler is disabled after a previous failure",
-            ));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            state_store.update_local_state_root_snapshot(height, changes.into_iter())
+        }));
+
+        match result {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(err)) => Err(CoreError::system(format!(
+                "state service commit handler failed during committing: {err}"
+            ))),
+            Err(payload) => {
+                let message = panic_message(payload.as_ref(), "unknown panic payload");
+                self.handle_panic(payload, "committing");
+                Err(CoreError::system(format!(
+                    "state service commit handler panicked during committing: {message}"
+                )))
+            }
         }
-
-        let handle = std::thread::spawn(move || {
-            state_store.update_local_state_root_snapshot(height, changes.into_iter())?;
-            state_store.update_local_state_root(height)
-        });
-
-        *self.pending_task.lock() = Some(handle);
-        self.join_pending("committing current block")
     }
 }
 
 impl CommittedHandler for StateServiceCommitHandlers {
-    fn blockchain_committed_handler(&self, _system: &dyn Any, _block: &Block) {
-        // MPT persist is now handled by the background thread spawned in
-        // blockchain_committing_handler. No work needed here.
+    fn blockchain_committed_handler(&self, _system: &dyn Any, block: &Block) {
+        if self.disabled.load(Ordering::Relaxed) {
+            return;
+        }
+
+        let height = block.index();
+        if let Err(err) = self.state_store.update_local_state_root(height) {
+            let error = CoreError::system(format!(
+                "state service commit failed for block {height}: {err}"
+            ));
+            self.handle_error(&error, "committed");
+        }
     }
 }
 
@@ -224,19 +201,19 @@ mod tests {
     }
 
     #[test]
-    fn try_committing_handler_returns_err_when_current_state_root_commit_fails() {
-        let handler = StateServiceCommitHandlers::new(state_store_with_policy(
-            UnhandledExceptionPolicy::StopPlugin,
-        ));
+    fn committing_stages_root_without_advancing_until_block_is_committed() {
+        let state_store = state_store_with_policy(UnhandledExceptionPolicy::StopPlugin);
+        let handler = StateServiceCommitHandlers::new(Arc::clone(&state_store));
         let snapshot = DataCache::new(false);
 
-        let err = handler
+        handler
             .try_blockchain_committing_handler(&(), &test_block(1), &snapshot, &[])
-            .expect_err("state root commit failure should stop block commit");
+            .expect("staging must not commit the state backend");
+        assert_eq!(state_store.local_root_index(), None);
 
-        assert!(err
-            .to_string()
-            .contains("injected state root commit failure"));
+        handler.blockchain_committed_handler(&(), &test_block(1));
+        assert!(handler.disabled.load(Ordering::Relaxed));
+        assert_eq!(state_store.local_root_index(), None);
     }
 
     #[test]
@@ -246,15 +223,19 @@ mod tests {
         ));
         let snapshot = DataCache::new(false);
 
-        handler.blockchain_committing_handler(&(), &test_block(1), &snapshot, &[]);
+        handler
+            .try_blockchain_committing_handler(&(), &test_block(1), &snapshot, &[])
+            .expect("state root should be staged");
+        handler.blockchain_committed_handler(&(), &test_block(1));
 
         let err = handler
             .try_blockchain_committing_handler(&(), &test_block(2), &snapshot, &[])
             .expect_err("stop-plugin policy should disable future state root commits");
 
-        assert!(err
-            .to_string()
-            .contains("disabled after a previous failure"));
+        assert!(
+            err.to_string()
+                .contains("disabled after a previous failure")
+        );
     }
 
     #[test]
@@ -264,15 +245,20 @@ mod tests {
         ));
         let snapshot = DataCache::new(false);
 
-        handler.blockchain_committing_handler(&(), &test_block(1), &snapshot, &[]);
+        handler
+            .try_blockchain_committing_handler(&(), &test_block(1), &snapshot, &[])
+            .expect("state root should be staged");
+        handler.blockchain_committed_handler(&(), &test_block(1));
 
-        let err = handler
+        handler
             .try_blockchain_committing_handler(&(), &test_block(2), &snapshot, &[])
-            .expect_err("continue policy should leave handler enabled");
+            .expect("continue policy should keep staging available");
+        handler.blockchain_committed_handler(&(), &test_block(2));
+        assert!(!handler.disabled.load(Ordering::Relaxed));
 
-        assert!(err
-            .to_string()
-            .contains("injected state root commit failure"));
+        handler
+            .try_blockchain_committing_handler(&(), &test_block(3), &snapshot, &[])
+            .expect("continue policy should allow subsequent staging");
     }
 
     #[test]
@@ -287,8 +273,10 @@ mod tests {
 
         handler
             .try_blockchain_committing_handler(&(), &test_block(1), &snapshot, &[])
-            .expect("state root commit");
+            .expect("state root should be staged");
 
+        assert_eq!(state_store.local_root_index(), None);
+        handler.blockchain_committed_handler(&(), &test_block(1));
         assert_eq!(state_store.local_root_index(), Some(1));
     }
 }

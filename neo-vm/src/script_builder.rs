@@ -2,9 +2,9 @@
 //!
 //! This module provides a way to programmatically construct scripts for the Neo VM.
 
-use crate::error::{VmError, VmResult};
 use crate::OpCode;
 use crate::StackValue;
+use crate::error::{VmError, VmResult};
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 
@@ -199,7 +199,7 @@ impl ScriptBuilder {
             _ => {
                 return Err(VmError::invalid_operation_msg(format!(
                     "Invalid integer size for push: {target_len}"
-                )))
+                )));
             }
         };
 

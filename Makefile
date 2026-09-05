@@ -9,7 +9,7 @@ DOCKER_TAG = latest
 RELEASE_DIR = target/release
 DEBUG_DIR = target/debug
 DATA_DIR = data
-CLI_BIN = neo-cli
+CLI_BIN = neo-node
 MAINNET_CONFIG ?= neo_mainnet_node.toml
 TESTNET_CONFIG ?= neo_production_node.toml
 CONFIG ?= $(MAINNET_CONFIG)
@@ -34,12 +34,12 @@ help:
 	@echo "  make clean          - Clean build artifacts"
 	@echo ""
 	@echo "$(YELLOW)Running:$(NC)"
-	@echo "  make run            - Run neo-cli on mainnet (uses $(MAINNET_CONFIG))"
-	@echo "  make run-testnet    - Run neo-cli on testnet (uses $(TESTNET_CONFIG))"
-	@echo "  make run-mainnet    - Run neo-cli on mainnet (explicit target)"
-	@echo "  make docker-run     - Run neo-cli in Docker container"
-	@echo "  make run-release    - Run neo-cli in release mode"
-	@echo "  make run-daemon     - Run neo-cli in background (testnet config)"
+	@echo "  make run            - Run neo-node on mainnet (uses $(MAINNET_CONFIG))"
+	@echo "  make run-testnet    - Run neo-node on testnet (uses $(TESTNET_CONFIG))"
+	@echo "  make run-mainnet    - Run neo-node on mainnet (explicit target)"
+	@echo "  make docker-run     - Run neo-node in Docker container"
+	@echo "  make run-release    - Run neo-node in release mode"
+	@echo "  make run-daemon     - Run neo-node in background (testnet config)"
 	@echo ""
 	@echo "$(YELLOW)Docker:$(NC)"
 	@echo "  make docker         - Build Docker image"

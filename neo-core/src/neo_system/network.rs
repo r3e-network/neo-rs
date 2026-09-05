@@ -6,8 +6,8 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use super::helpers::to_core_error;
 use super::NeoSystem;
+use super::helpers::to_core_error;
 use crate::error::CoreResult;
 use crate::network::p2p::local_node::RelayInventory;
 use crate::network::p2p::{ChannelsConfig, LocalNode, RemoteNodeSnapshot};
@@ -66,10 +66,7 @@ impl NeoSystem {
 
     /// Returns the number of peers currently tracked by the local node actor.
     pub async fn peer_count(&self) -> CoreResult<usize> {
-        self.local_node
-            .peer_count()
-            .await
-            .map_err(to_core_error)
+        self.local_node.peer_count().await.map_err(to_core_error)
     }
 
     /// Returns the number of queued unconnected peers.
@@ -90,10 +87,7 @@ impl NeoSystem {
 
     /// Returns the socket addresses for each connected peer.
     pub async fn peers(&self) -> CoreResult<Vec<SocketAddr>> {
-        self.local_node
-            .peers()
-            .await
-            .map_err(to_core_error)
+        self.local_node.peers().await.map_err(to_core_error)
     }
 
     /// Returns detailed snapshots for the connected peers.

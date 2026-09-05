@@ -5,9 +5,9 @@
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{register_jump_handlers, JumpTable};
+use crate::jump_table::{JumpTable, register_jump_handlers};
 use crate::stack_item::StackItem;
-use crate::{semantics::splice as splice_rules, Instruction, OpCode};
+use crate::{Instruction, OpCode, semantics::splice as splice_rules};
 use num_traits::ToPrimitive;
 
 /// Registers the splice operation handlers.
@@ -38,8 +38,7 @@ fn new_buffer(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid buffer size"))?;
 
     let buffer = StackItem::try_from(
-        crate::semantics::collections::new_buffer(size)
-            .map_err(VmError::invalid_operation_msg)?,
+        crate::semantics::collections::new_buffer(size).map_err(VmError::invalid_operation_msg)?,
     )?;
 
     // Push the buffer onto the stack

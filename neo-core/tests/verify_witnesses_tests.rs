@@ -4,14 +4,14 @@ use neo_core::network::p2p::payloads::header::Header;
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::ContractBasicMethod;
+use neo_core::smart_contract::ContractParameterType;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::helper::Helper;
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
 };
 use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
-use neo_core::smart_contract::ContractParameterType;
-use neo_core::{Verifiable, UInt160, UInt256, Witness};
+use neo_core::{UInt160, UInt256, Verifiable, Witness};
 use neo_vm::OpCode;
 
 const CONTRACT_MANAGEMENT_ID: i32 = -1;
@@ -224,11 +224,10 @@ fn verify_witnesses_succeeds_with_manual_verifiable() {
     let snapshot = DataCache::new(false);
     let contract_hash = contract_hash(4);
 
-    let parameters = vec![ContractParameterDefinition::new(
-        "signature".to_string(),
-        ContractParameterType::Signature,
-    )
-    .expect("parameter")];
+    let parameters = vec![
+        ContractParameterDefinition::new("signature".to_string(), ContractParameterType::Signature)
+            .expect("parameter"),
+    ];
     let method = ContractMethodDescriptor::new(
         ContractBasicMethod::VERIFY.to_string(),
         parameters,

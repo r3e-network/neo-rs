@@ -1,13 +1,11 @@
-use crate::{
-    error::{CoreError, CoreResult},
-    persistence::{
-        read_cache::ReadCacheConfig,
-        storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
-        store::Store,
-        store_provider::StoreProvider,
-        write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig},
-    },
+use crate::persistence::{
+    read_cache::ReadCacheConfig,
+    storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
+    store::Store,
+    store_provider::StoreProvider,
+    write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig},
 };
+use neo_storage::{StorageError, StorageResult};
 use rocksdb::{
     BlockBasedOptions, Cache, DB, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
     PrefixRange, ReadOptions, Snapshot as DbSnapshot,
@@ -21,6 +19,7 @@ pub use crate::persistence::write_batch_buffer::{
     WriteBatchStatsSnapshot as BatchCommitStatsSnapshot,
 };
 
+/// Commits buffered writes to RocksDB in batches; exposes aggregate stats.
 pub struct BatchCommitter {
     pub(crate) buffer: WriteBatchBuffer,
 }
@@ -48,6 +47,7 @@ pub struct RocksDBStoreProvider {
 }
 
 impl RocksDBStoreProvider {
+    /// Creates a provider with balanced batching and the default read cache.
     pub fn new(base_config: StorageConfig) -> Self {
         Self {
             base_config,
@@ -59,31 +59,37 @@ impl RocksDBStoreProvider {
         }
     }
 
+    /// Overrides the write-batching configuration.
     pub fn with_batch_config(mut self, config: BatchCommitConfig) -> Self {
         self.batch_config = config;
         self
     }
 
+    /// Installs a point read cache with the given configuration.
     pub fn with_read_cache(mut self, config: ReadCacheConfig) -> Self {
         self.read_cache_config = Some(config);
         self
     }
 
+    /// Disables the point read cache.
     pub fn without_read_cache(mut self) -> Self {
         self.read_cache_config = None;
         self
     }
 
+    /// Enables or disables SST bloom filters.
     pub fn with_bloom_filters(mut self, enable: bool) -> Self {
         self.enable_bloom_filters = enable;
         self
     }
 
+    /// Enables or disables read-ahead for sequential scans.
     pub fn with_read_ahead(mut self, enable: bool) -> Self {
         self.enable_read_ahead = enable;
         self
     }
 
+    /// Returns a shared handle to the batch commit statistics.
     pub fn batch_stats(&self) -> Arc<BatchCommitStats> {
         Arc::clone(&self.batch_stats)
     }
@@ -102,7 +108,7 @@ impl StoreProvider for RocksDBStoreProvider {
         "RocksDBStore"
     }
 
-    fn get_store(&self, path: &str) -> CoreResult<Arc<dyn Store>> {
+    fn get_store(&self, path: &str) -> StorageResult<Arc<dyn Store>> {
         let resolved = self.resolved_path(path);
         let config = StorageConfig {
             path: resolved,
@@ -115,7 +121,7 @@ impl StoreProvider for RocksDBStoreProvider {
             self.enable_bloom_filters,
             self.enable_read_ahead,
         )
-        .map_err(|err| CoreError::Io {
+        .map_err(|err| StorageError::Io {
             message: format!(
                 "failed to open RocksDB store at {}: {err}",
                 config.path.display()

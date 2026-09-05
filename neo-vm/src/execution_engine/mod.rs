@@ -60,6 +60,7 @@
 //! - `Array`, `Struct`, `Map` (compound types)
 //! - `Pointer`, `InteropInterface` (special types)
 
+use crate::Instruction;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
@@ -70,7 +71,6 @@ use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::StackItem;
 use neo_primitives::CallFlags;
-use crate::Instruction;
 
 use std::convert::TryFrom;
 

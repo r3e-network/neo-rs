@@ -1,8 +1,8 @@
-use super::peer_commands::send_get_data_groups;
 use super::TaskManager;
-use crate::network::p2p::payloads::{inv_payload::InvPayload, InventoryType};
-use crate::runtime::ActorRef;
+use super::peer_commands::send_get_data_groups;
 use crate::UInt256;
+use crate::network::p2p::payloads::{InventoryType, inv_payload::InvPayload};
+use crate::runtime::ActorRef;
 use tracing::trace;
 
 impl TaskManager {
@@ -33,11 +33,7 @@ impl TaskManager {
         });
     }
 
-    pub(super) fn on_restart_tasks(
-        &mut self,
-        actor: &ActorRef,
-        payload: InvPayload,
-    ) {
+    pub(super) fn on_restart_tasks(&mut self, actor: &ActorRef, payload: InvPayload) {
         let inventory_type = payload.inventory_type;
         let hashes: Vec<UInt256> = payload.hashes.clone();
         let path = actor.path().to_string();

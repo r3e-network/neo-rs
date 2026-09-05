@@ -4,6 +4,8 @@
 //!
 //! This module provides the stack item implementations used in the Neo VM.
 
+use crate::ExecutionEngineLimits;
+use crate::StackItemType;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
@@ -13,14 +15,12 @@ use crate::stack_item::buffer::Buffer as BufferItem;
 use crate::stack_item::map::Map as MapItem;
 use crate::stack_item::pointer::Pointer as PointerItem;
 use crate::stack_item::struct_item::Struct as StructItem;
-use crate::ExecutionEngineLimits;
-use crate::StackItemType;
 use crate::{StackValue, VmOrderedDictionary};
 use num_bigint::BigInt;
 use std::fmt;
 use std::sync::Arc;
 
-use super::vm_integer::{vm_integer_stack_value, VmInteger};
+use super::vm_integer::{VmInteger, vm_integer_stack_value};
 
 /// A trait for interop interfaces that can be wrapped by a stack item.
 pub trait InteropInterface: fmt::Debug + Send + Sync {
@@ -370,9 +370,7 @@ impl StackItem {
             | Self::Boolean(_)
             | Self::Integer(_)
             | Self::ByteString(_)
-            | Self::Buffer(_)) => {
-                stack_value_byte_string_bytes(crate::StackValue::try_from(item)?)
-            }
+            | Self::Buffer(_)) => stack_value_byte_string_bytes(crate::StackValue::try_from(item)?),
             _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
         }
     }
@@ -620,7 +618,7 @@ impl StackItem {
                 );
             }
             (Self::Null, StackItemType::ByteString) => {
-                return Ok(Self::ByteString(self.as_bytes()?))
+                return Ok(Self::ByteString(self.as_bytes()?));
             }
             (Self::Null, StackItemType::Buffer) => {
                 return Ok(Self::Buffer(BufferItem::new(self.as_bytes()?)));

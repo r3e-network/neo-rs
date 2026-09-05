@@ -1,8 +1,8 @@
-use neo_io_crate::witness_rule::helpers::{encode_hex, parse_group_bytes};
 use super::*;
+use crate::UInt160;
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_vm::StackItem;
-use crate::UInt160;
+use neo_io_crate::witness_rule::helpers::{encode_hex, parse_group_bytes};
 
 #[test]
 fn test_witness_rule_action_values() {
@@ -117,9 +117,7 @@ fn witness_rule_projects_to_neo_vm_rs_stack_value() {
                 neo_vm::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
                 neo_vm::StackValue::Array(vec![
                     neo_vm::StackValue::Array(vec![
-                        neo_vm::StackValue::Integer(
-                            WitnessConditionType::Boolean.to_byte().into()
-                        ),
+                        neo_vm::StackValue::Integer(WitnessConditionType::Boolean.to_byte().into()),
                         neo_vm::StackValue::Boolean(true),
                     ]),
                     neo_vm::StackValue::Array(vec![

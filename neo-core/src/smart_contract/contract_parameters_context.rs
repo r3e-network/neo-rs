@@ -1,17 +1,17 @@
 //! ContractParametersContext - matches C# Neo.SmartContract.ContractParametersContext exactly
 
-use crate::cryptography::{ECPoint, Crypto};
+use crate::ScriptBuilder;
+use crate::cryptography::{Crypto, ECPoint};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::network::p2p::payloads::{transaction::Transaction, witness::Witness};
 use crate::persistence::DataCache;
-use crate::ScriptBuilder;
+use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::contract_parameter::ContractParameter;
 use crate::smart_contract::contract_parameter::ContractParameterValue;
-use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::helper::Helper as ContractHelper;
-use crate::{Verifiable, VerifiableExt, UInt160, UInt256};
-use base64::{engine::general_purpose, Engine as _};
+use crate::{UInt160, UInt256, VerifiableExt};
+use base64::{Engine as _, engine::general_purpose};
 use neo_vm::OpCode;
 use num_traits::ToPrimitive;
 use std::collections::HashMap;

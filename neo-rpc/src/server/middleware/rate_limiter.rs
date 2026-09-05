@@ -203,26 +203,39 @@ pub struct GovernorRateLimiter {
 
 impl GovernorRateLimiter {
     /// Create a new rate limiter with the given configuration
+    ///
+    /// The caller's config IS the Standard tier; the other tiers keep the
+    /// preset ratios relative to it (Cheap ×2, Expensive ÷5, Write ÷10).
+    /// R19: the previous implementation ignored the caller's `burst` and
+    /// rescaled the presets by `max_rps/100`, so `max_rps=100, burst=1`
+    /// silently produced a Standard burst of 200.
     #[must_use]
     pub fn new(config: RateLimitConfig) -> Self {
         let enabled = config.max_rps > 0;
         let mut tier_configs = HashMap::new();
 
-        // Initialize tier configs based on default, scaled relative to the default config
-        let scale_factor = if config.max_rps > 0 {
-            config.max_rps as f64 / 100.0 // 100 is the default standard RPS
-        } else {
-            1.0
-        };
-
-        for tier in RATE_LIMIT_TIERS {
-            let default_tier_config = tier.default_config();
-            let tier_config = RateLimitConfig {
-                max_rps: ((default_tier_config.max_rps as f64) * scale_factor) as u32,
-                burst: ((default_tier_config.burst as f64) * scale_factor) as u32,
-            };
-            tier_configs.insert(tier, tier_config);
-        }
+        tier_configs.insert(
+            RateLimitTier::Cheap,
+            RateLimitConfig {
+                max_rps: config.max_rps.saturating_mul(2),
+                burst: config.burst.saturating_mul(2),
+            },
+        );
+        tier_configs.insert(RateLimitTier::Standard, config.clone());
+        tier_configs.insert(
+            RateLimitTier::Expensive,
+            RateLimitConfig {
+                max_rps: config.max_rps / 5,
+                burst: config.burst / 5,
+            },
+        );
+        tier_configs.insert(
+            RateLimitTier::Write,
+            RateLimitConfig {
+                max_rps: config.max_rps / 10,
+                burst: config.burst / 10,
+            },
+        );
 
         let tier_limiters = build_tier_limiters(&config, &tier_configs);
         Self {

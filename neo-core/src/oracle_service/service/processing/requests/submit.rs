@@ -4,6 +4,8 @@ use crate::cryptography::ECPoint;
 use crate::smart_contract::native::{OracleContract, Role, RoleManagement};
 
 impl OracleService {
+    /// Records a validator's response signatures for `request_id` and
+    /// submits the response transaction once enough signatures accumulate.
     pub fn submit_oracle_response(
         &self,
         oracle_pub: ECPoint,

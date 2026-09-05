@@ -35,7 +35,16 @@ pub struct ExecutionEngineLimits {
     pub max_try_nesting_depth: u32,
     /// Whether engine-generated exceptions can be caught by smart contracts.
     pub catch_engine_exceptions: bool,
+    /// Whether a zero-bit SHL/SHR converts the operand to `Integer` before
+    /// pushing it (Gorgon hardfork semantics). When `false`, a zero shift
+    /// preserves the operand's original stack item type (pre-Gorgon).
+    pub zero_shift_converts_to_integer: bool,
     /// Maximum number of instructions that can be executed.
+    ///
+    /// The C# reference `ExecutionEngineLimits` has no instruction-count limit:
+    /// on-chain execution is bounded by protocol gas, not by a local budget.
+    /// `DEFAULT` therefore disables the limit (`u64::MAX`); callers that need a
+    /// service-level budget (RPC admission, probes) may set a lower value.
     pub max_instructions: u64,
 }
 
@@ -51,7 +60,14 @@ impl ExecutionEngineLimits {
         max_invocation_stack_size: DEFAULT_MAX_INVOCATION_DEPTH as u32,
         max_try_nesting_depth: 16,
         catch_engine_exceptions: true,
-        max_instructions: 1_000_000,
+        // C# ExecutionEngineLimits has no instruction-count cap; gas is the
+        // protocol resource bound. A local 1,000,000 cap here turned a
+        // service-level budget into a consensus validity rule (FAULT) that the
+        // reference implementation does not have.
+        max_instructions: u64::MAX,
+        // Neo N3 v3.10.1 targets activate the Gorgon hardfork; pre-Gorgon
+        // replay must clear this flag (see ApplicationEngine construction).
+        zero_shift_converts_to_integer: true,
     };
 
     /// Ensures the provided item size does not exceed the configured limit.
@@ -77,5 +93,25 @@ impl ExecutionEngineLimits {
 impl Default for ExecutionEngineLimits {
     fn default() -> Self {
         Self::DEFAULT
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_limits_do_not_cap_instructions() {
+        // R05: the C# reference ExecutionEngineLimits has no instruction-count
+        // cap — gas is the protocol resource bound. A local 1,000,000 cap
+        // turned a service-level budget into a consensus validity rule.
+        assert_eq!(ExecutionEngineLimits::DEFAULT.max_instructions, u64::MAX);
+    }
+
+    #[test]
+    fn default_limits_use_gorgon_shift_semantics() {
+        // R06: the shipped default targets Neo N3 v3.10.1 where Gorgon is
+        // active; pre-Gorgon replay opts out via ApplicationEngine.
+        assert!(ExecutionEngineLimits::DEFAULT.zero_shift_converts_to_integer);
     }
 }

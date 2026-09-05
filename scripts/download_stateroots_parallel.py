@@ -18,10 +18,13 @@ import urllib.request
 import gzip
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from ops_safety import safe_output_path, validate_rpc_url
+
 SEEDS = [f"http://seed{i}.neo.org:10332" for i in (1, 2, 3, 4, 5)]
 
 
 def rpc_state_root(url, height, timeout=15, retries=5):
+    url = validate_rpc_url(url)
     payload = json.dumps({
         "jsonrpc": "2.0", "id": 1, "method": "getstateroot", "params": [height]
     }).encode()
@@ -49,7 +52,7 @@ def rpc_state_root(url, height, timeout=15, retries=5):
 
 def worker_for_seed(seed_url, heights, out_path, workers, progress):
     """Fetch state roots for `heights` from `seed_url`. Stream to out_path."""
-    with open(out_path, "a", buffering=1) as out:
+    with safe_output_path(out_path).open("a", buffering=1) as out:
         with ThreadPoolExecutor(max_workers=workers) as ex:
             futs = {ex.submit(rpc_state_root, seed_url, h): h for h in heights}
             for fut in as_completed(futs):
@@ -92,11 +95,11 @@ def merge_into_canonical(canonical, per_seed_paths):
                     by_height[rec["height"]] = rec["roothash"]
                 except Exception:
                     pass
-    tmp = canonical + ".tmp"
-    with open(tmp, "w") as f:
+    tmp = safe_output_path(canonical)
+    with tmp.with_suffix(tmp.suffix + ".tmp").open("w") as f:
         for h in sorted(by_height):
             f.write(json.dumps({"height": h, "roothash": by_height[h]}) + "\n")
-    os.replace(tmp, canonical)
+    os.replace(tmp.with_suffix(tmp.suffix + ".tmp"), tmp)
     print(f"merged {len(by_height)} unique heights → {canonical}")
 
 

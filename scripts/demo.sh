@@ -13,8 +13,8 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Check if binaries exist
-if [ ! -f "./target/release/neo-node" ] || [ ! -f "./target/release/neo-cli" ]; then
+# Check if the node binary exists
+if [ ! -f "./target/release/neo-node" ]; then
     echo -e "${RED}❌ Binaries not found. Building...${NC}"
     cargo build --release
 fi
@@ -75,18 +75,18 @@ while true; do
             fi
             ;;
         6)
-            echo -e "${BLUE}🔧 CLI Operations Demo:${NC}"
+            echo -e "${BLUE}🔧 RPC Operations Demo:${NC}"
             echo ""
-            echo "Available CLI commands:"
-            echo "• neo-cli node status      - Get node status"
-            echo "• neo-cli node version     - Get node version"
-            echo "• neo-cli blockchain height - Get block height"
-            echo "• neo-cli blockchain block 1000 - Get block info"
-            echo "• neo-cli network peers    - Get peer info"
+            echo "Available queries (requires a running node on :10332):"
+            echo "• getblockcount - Get block height"
+            echo "• getblock       - Get block info"
+            echo "• getpeers      - Get peer info"
             echo ""
-            echo "Example usage (requires running node):"
-            echo "./target/release/neo-cli node version"
-            echo "./target/release/neo-cli --rpc-url http://127.0.0.1:20332 blockchain height"
+            echo "Example usage (curl against the node's JSON-RPC):"
+            echo "curl -s http://127.0.0.1:10332 -H 'Content-Type: application/json' \\"
+            echo "  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getblockcount\",\"params\":[]}'"
+            echo "curl -s http://127.0.0.1:10332 -H 'Content-Type: application/json' \\"
+            echo "  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getblock\",\"params\":[1000,1]}'"
             ;;
         7)
             echo -e "${BLUE}🐳 Docker Demo:${NC}"

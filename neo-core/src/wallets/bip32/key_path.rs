@@ -2,22 +2,26 @@
 
 use std::fmt;
 
+/// A parsed BIP-32 key derivation path, such as `m/44'/888'/0'/0/0`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyPath {
     indices: Vec<u32>,
 }
 
 impl KeyPath {
+    /// Creates the master key path (`m`) with no derivation indices.
     pub fn master() -> Self {
         Self {
             indices: Vec::new(),
         }
     }
 
+    /// Returns the derivation indices of this path, with the hardening bit set on hardened indices.
     pub fn indices(&self) -> &[u32] {
         &self.indices
     }
 
+    /// Returns a new path extended by the given child index.
     pub fn derive(&self, index: u32) -> Self {
         let mut new_indices = self.indices.clone();
         new_indices.push(index);
@@ -26,6 +30,7 @@ impl KeyPath {
         }
     }
 
+    /// Parses a BIP-32 path string such as `m/44'/0'/0'`; hardened components are suffixed with `'`.
     pub fn parse(path: &str) -> Result<Self, String> {
         let trimmed = path.trim();
         if trimmed.is_empty() {

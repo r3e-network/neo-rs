@@ -1,12 +1,12 @@
 use super::cors::{apply_cors, verify_basic_auth};
 use super::{
-    build_http_response, error_response, exceeds_max_depth, success_response, RequestOutcome,
-    RpcFilters, RpcQueryParams, MAX_PARAMS_DEPTH,
+    MAX_PARAMS_DEPTH, RequestOutcome, RpcFilters, RpcQueryParams, build_http_response,
+    error_response, exceeds_max_depth, success_response,
 };
 use crate::server::rpc_error::RpcError;
-use crate::server::rpc_server::{RpcHandler, RpcServer, RPC_ERR_TOTAL, RPC_REQ_TOTAL};
+use crate::server::rpc_server::{RPC_ERR_TOTAL, RPC_REQ_TOTAL, RpcHandler, RpcServer};
 use crate::server::rpc_server_settings::{RpcServerSettings, UnhandledExceptionPolicy};
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use bytes::Bytes;
 use parking_lot::RwLock;
 use serde_json::{Map, Value};
@@ -68,24 +68,17 @@ pub(super) async fn handle_get_request(
         .map(|addr| addr.ip())
         .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
-    if let Some(limiter) = filters.rate_limiter.as_ref() {
-        let check_result = limiter.check(client_ip);
-        if check_result.is_blocked() {
-            let mut response = build_http_response(
-                Some(error_response(None, RpcError::too_many_requests())),
-                false,
-                false,
-            );
-            apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
-            return Ok(response);
-        }
-    }
-
     let method_from_query = query_to_request_value(&raw_query)
         .and_then(|v| v.get("method").and_then(|m| m.as_str()).map(String::from));
 
-    if let (Some(limiter), Some(ref method)) = (filters.rate_limiter.as_ref(), method_from_query) {
-        let check_result = limiter.check_for_method(client_ip, method);
+    // R19: charge the request exactly once — at the method's tier when the
+    // method is known, otherwise at the Standard tier. Charging both made the
+    // same method cost twice as much over GET as over POST.
+    if let Some(limiter) = filters.rate_limiter.as_ref() {
+        let check_result = match method_from_query.as_deref() {
+            Some(method) => limiter.check_for_method(client_ip, method),
+            None => limiter.check(client_ip),
+        };
         if check_result.is_blocked() {
             let mut response = build_http_response(
                 Some(error_response(None, RpcError::too_many_requests())),
@@ -291,7 +284,8 @@ pub(in crate::server) fn resolve_rpc_handler(
     };
 
     let Some(handler) = lookup_rpc_handler(&server_arc, &method_key) else {
-        return Err(RpcError::method_not_found().with_data(method));
+        return Err(RpcError::method_not_found()
+            .with_data(format!("The method '{method}' doesn't exists.")));
     };
 
     Ok((server_arc, handler))

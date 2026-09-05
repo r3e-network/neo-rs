@@ -4,11 +4,11 @@
 //! computing their hashes, and dispatching execution either to built-in handlers
 //! or to the host environment (e.g. `ApplicationEngine`).
 
+use crate::Instruction;
 use crate::error::{VmError, VmResult};
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
 use neo_primitives::CallFlags;
-use crate::Instruction;
 use std::collections::HashMap;
 use std::str;
 

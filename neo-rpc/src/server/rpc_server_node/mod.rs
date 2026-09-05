@@ -7,14 +7,13 @@ use crate::server::rpc_helpers::{
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 #[cfg(test)]
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use hex;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_core::hardfork::Hardfork;
 use neo_core::ledger::BlockchainCommand;
 use neo_core::neo_io::{MemoryReader, Serializable};
 use neo_core::network::p2p::local_node::LocalNode;
 use neo_core::network::p2p::payloads::{block::Block, transaction::Transaction};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::runtime::{Handle, Runtime};
@@ -148,20 +147,6 @@ impl RpcServerNode {
                 .collect();
             protocol_info.insert("hardforks".to_string(), Value::Array(hardforks));
 
-            let committee: Vec<Value> = protocol
-                .standby_committee
-                .iter()
-                .map(|point| Value::String(Self::format_public_key(point.as_bytes())))
-                .collect();
-            protocol_info.insert("standbycommittee".to_string(), Value::Array(committee));
-
-            let seeds: Vec<Value> = protocol
-                .seed_list
-                .iter()
-                .map(|seed| Value::String(seed.clone()))
-                .collect();
-            protocol_info.insert("seedlist".to_string(), Value::Array(seeds));
-
             let mut json = Map::new();
             json.insert("tcpport".to_string(), json!(node.port()));
             json.insert("nonce".to_string(), json!(node.nonce));
@@ -251,10 +236,6 @@ impl RpcServerNode {
 
     fn format_hardfork(fork: Hardfork) -> String {
         format!("{fork:?}").trim_start_matches("Hf").to_string()
-    }
-
-    fn format_public_key(bytes: &[u8]) -> String {
-        hex::encode(bytes)
     }
 
     #[allow(dead_code)]

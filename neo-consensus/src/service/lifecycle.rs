@@ -23,11 +23,8 @@ impl ConsensusService {
         self.context.version = version;
         self.running = true;
 
-        // If we're the primary, initiate block proposal
-        if self.context.is_primary() {
-            self.initiate_proposal(timestamp)?;
-        }
-
+        // Primary proposals are dispatched by the initial timer. This preserves
+        // the C# delay after the previous block was persisted.
         Ok(())
     }
 
@@ -46,7 +43,8 @@ impl ConsensusService {
 
         self.context.prev_hash = prev_hash;
         self.context.version = version;
-        self.context.view_start_time = timestamp;
+        let timeout = self.context.get_timeout();
+        self.context.change_timer(timestamp, timeout);
         self.context.state = if self.context.is_primary() {
             crate::context::ConsensusState::Primary
         } else {
@@ -54,7 +52,10 @@ impl ConsensusService {
         };
         self.running = true;
 
-        if self.context.is_primary() && !self.context.prepare_request_received {
+        if self.context.is_primary()
+            && !self.context.prepare_request_received
+            && self.context.proposal_requested()
+        {
             self.initiate_proposal(timestamp)?;
         } else {
             self.check_prepare_responses()?;
@@ -85,9 +86,6 @@ impl ConsensusService {
             return Ok(());
         }
 
-        // Mark message as seen before processing
-        self.context.mark_message_seen(&msg_hash);
-
         // Validate block index
         if payload.block_index != self.context.block_index {
             // Message for a future block - queue or ignore per dBFT spec
@@ -105,11 +103,6 @@ impl ConsensusService {
             });
         }
 
-        // Update last seen message for this validator
-        // This is used to track failed/lost nodes for recovery logic
-        self.context
-            .update_last_seen_message(payload.validator_index, payload.block_index);
-
         // Validate view number (ChangeView and Recovery messages can be for other views).
         #[allow(clippy::collapsible_if)]
         if !matches!(
@@ -119,9 +112,10 @@ impl ConsensusService {
                 | ConsensusMessageType::RecoveryMessage
         ) && payload.view_number != self.context.view_number
         {
-            if payload.message_type != ConsensusMessageType::Commit {
-                return Ok(());
-            }
+            // Off-view messages are not accepted by the current round. Leave
+            // them unmarked so a retransmission can be handled after a view
+            // transition (RecoveryMessage is the explicit cross-view path).
+            return Ok(());
         }
 
         match payload.message_type {
@@ -145,17 +139,58 @@ impl ConsensusService {
             }
         }
 
+        // Record liveness only after routing and handler validation succeed.
+        self.context
+            .update_last_seen_message(payload.validator_index, payload.block_index);
+        // Cache only messages that passed routing and handler validation.
+        self.context.mark_message_seen(&msg_hash);
         Ok(())
     }
 
-    /// Handles timer tick for timeout detection
+    /// Handles timer tick for timeout detection.
     pub fn on_timer_tick(&mut self, timestamp: u64) -> ConsensusResult<()> {
+        self.on_timer_tick_with_reason(timestamp, ChangeViewReason::Timeout)
+    }
+
+    /// Handles timer tick while preserving a node-level transaction timeout reason.
+    pub fn on_timer_tick_with_reason(
+        &mut self,
+        timestamp: u64,
+        reason: ChangeViewReason,
+    ) -> ConsensusResult<()> {
         if !self.running {
             return Ok(());
         }
 
         if self.context.is_timed_out(timestamp) {
-            self.request_change_view(ChangeViewReason::Timeout, timestamp)?;
+            if self.context.is_primary()
+                && !self.context.proposal_requested()
+                && !self.context.prepare_request_received
+            {
+                self.context.mark_proposal_requested();
+                self.context
+                    .change_timer(timestamp, self.context.prepare_request_timeout());
+                self.initiate_proposal(timestamp)?;
+                return Ok(());
+            }
+
+            let commit_sent = self
+                .context
+                .my_index
+                .and_then(|index| self.context.commits.get(&index))
+                .is_some();
+            if commit_sent {
+                // C# resends a RecoveryMessage after CommitSent instead of
+                // initiating another view change, then gives the network 2T.
+                let recovery = self.build_recovery_message()?;
+                let payload = self
+                    .create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
+                self.broadcast(payload)?;
+                let two_block_times = self.context.expected_block_time.saturating_mul(2);
+                self.context.change_timer(timestamp, two_block_times);
+            } else {
+                self.request_change_view(reason, timestamp)?;
+            }
         }
 
         Ok(())

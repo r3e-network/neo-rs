@@ -1,3 +1,4 @@
+use neo_core::ScriptBuilder;
 use neo_core::hardfork::Hardfork;
 use neo_core::ledger::{Block, BlockHeader};
 use neo_core::neo_vm::stack_item::{Array, Pointer};
@@ -6,18 +7,17 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::ContractParameterType;
+use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractEventDescriptor, ContractManifest, ContractParameterDefinition,
     ContractPermission, WildCardContainer,
 };
-use neo_core::smart_contract::TriggerType;
 use neo_core::witness::Witness;
-use neo_core::{Verifiable, UInt160, WitnessScope};
+use neo_core::{UInt160, Verifiable, WitnessScope};
 use neo_vm::OpCode;
 use neo_vm::StackItemType;
 use num_bigint::BigInt;

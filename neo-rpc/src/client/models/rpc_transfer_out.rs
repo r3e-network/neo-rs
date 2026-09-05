@@ -90,8 +90,8 @@ impl RpcTransferOut {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_fixtures::rpc_case_params;
+    use super::*;
     use neo_json::JArray;
 
     #[test]

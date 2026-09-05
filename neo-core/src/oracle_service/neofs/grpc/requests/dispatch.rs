@@ -1,8 +1,8 @@
 use super::super::super::{NeoFsAuth, NeoFsCommand, NeoFsRequest, OracleNeoFsProtocol};
 use super::super::auth::build_neofs_grpc_address;
 use super::super::client::neofs_grpc_client;
-use crate::network::p2p::payloads::oracle_response::MAX_RESULT_SIZE;
 use crate::network::p2p::payloads::OracleResponseCode;
+use crate::network::p2p::payloads::oracle_response::MAX_RESULT_SIZE;
 use crate::wallets::KeyPair;
 
 impl OracleNeoFsProtocol {

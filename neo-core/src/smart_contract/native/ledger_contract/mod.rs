@@ -27,6 +27,7 @@ pub struct LedgerContract {
 }
 
 impl LedgerContract {
+    /// Native contract identifier for LedgerContract (-4).
     pub const ID: i32 = -4;
 
     /// Creates a new LedgerContract instance
@@ -45,7 +46,9 @@ impl LedgerContract {
 
 /// Hash or index parameter for block queries
 pub enum HashOrIndex {
+    /// Queries by block hash.
     Hash(UInt256),
+    /// Queries by block index.
     Index(u32),
 }
 
@@ -54,13 +57,13 @@ pub enum HashOrIndex {
 mod tests {
     use self::keys::{block_hash_storage_key, block_storage_key, transaction_storage_key};
     use super::*;
-    use crate::ledger::{Block, BlockHeader};
-    use crate::network::p2p::payloads::signer::Signer;
-    use crate::network::p2p::payloads::witness::Witness;
-    use crate::network::p2p::payloads::Transaction;
-    use crate::persistence::DataCache;
     use crate::UInt160;
     use crate::WitnessScope;
+    use crate::ledger::{Block, BlockHeader};
+    use crate::network::p2p::payloads::Transaction;
+    use crate::network::p2p::payloads::signer::Signer;
+    use crate::network::p2p::payloads::witness::Witness;
+    use crate::persistence::DataCache;
     use neo_vm::OpCode;
     use neo_vm::VmState as VMState;
 
@@ -180,20 +183,28 @@ mod tests {
         let block = Block::new(BlockHeader::default(), vec![tx.clone()]);
         let tx_states = vec![PersistedTransactionState::new(&tx, block.index())];
 
-        assert!(ledger
-            .store_block_state(&snapshot, &block, &tx_states)
-            .is_err());
+        assert!(
+            ledger
+                .store_block_state(&snapshot, &block, &tx_states)
+                .is_err()
+        );
 
         let block_hash = block.hash();
-        assert!(snapshot
-            .get(&block_hash_storage_key(ledger.id, block.index()))
-            .is_none());
-        assert!(snapshot
-            .get(&block_storage_key(ledger.id, &block_hash))
-            .is_none());
-        assert!(snapshot
-            .get(&transaction_storage_key(ledger.id, &UInt256::zero()))
-            .is_none());
+        assert!(
+            snapshot
+                .get(&block_hash_storage_key(ledger.id, block.index()))
+                .is_none()
+        );
+        assert!(
+            snapshot
+                .get(&block_storage_key(ledger.id, &block_hash))
+                .is_none()
+        );
+        assert!(
+            snapshot
+                .get(&transaction_storage_key(ledger.id, &UInt256::zero()))
+                .is_none()
+        );
         assert!(snapshot.tracked_items().is_empty());
     }
 
@@ -229,31 +240,41 @@ mod tests {
             .persist_conflict_stub(&snapshot, &conflict_hash, 95, &[signer])
             .expect("persist conflict stub");
 
-        assert!(ledger
-            .contains_conflict_hash(&snapshot, &conflict_hash, &[signer], 10)
-            .expect("matching signer"));
-        assert!(!ledger
-            .contains_conflict_hash(&snapshot, &conflict_hash, &[other_signer], 10)
-            .expect("different signer"));
-        assert!(!ledger
-            .contains_conflict_hash(&snapshot, &conflict_hash, &[], 10)
-            .expect("empty signers"));
+        assert!(
+            ledger
+                .contains_conflict_hash(&snapshot, &conflict_hash, &[signer], 10)
+                .expect("matching signer")
+        );
+        assert!(
+            !ledger
+                .contains_conflict_hash(&snapshot, &conflict_hash, &[other_signer], 10)
+                .expect("different signer")
+        );
+        assert!(
+            !ledger
+                .contains_conflict_hash(&snapshot, &conflict_hash, &[], 10)
+                .expect("empty signers")
+        );
 
         let stale_conflict = UInt256::from_bytes(&[0xCD; 32]).unwrap();
         ledger
             .persist_conflict_stub(&snapshot, &stale_conflict, 90, &[signer])
             .expect("persist stale conflict stub");
-        assert!(!ledger
-            .contains_conflict_hash(&snapshot, &stale_conflict, &[signer], 10)
-            .expect("stale conflict"));
+        assert!(
+            !ledger
+                .contains_conflict_hash(&snapshot, &stale_conflict, &[signer], 10)
+                .expect("stale conflict")
+        );
 
         let base_only_conflict = UInt256::from_bytes(&[0xEF; 32]).unwrap();
         ledger
             .persist_conflict_stub(&snapshot, &base_only_conflict, 95, &[])
             .expect("persist base-only conflict stub");
-        assert!(!ledger
-            .contains_conflict_hash(&snapshot, &base_only_conflict, &[signer], 10)
-            .expect("base-only conflict"));
+        assert!(
+            !ledger
+                .contains_conflict_hash(&snapshot, &base_only_conflict, &[signer], 10)
+                .expect("base-only conflict")
+        );
     }
 }
 

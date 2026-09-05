@@ -1,10 +1,10 @@
-use super::{TokenManagement, ID, PREFIX_NFT_UNIQUE_ID_SEED};
+use super::{ID, PREFIX_NFT_UNIQUE_ID_SEED, TokenManagement};
+use crate::UInt160;
 use crate::cryptography::Crypto;
 use crate::error::{CoreError, CoreResult};
+use crate::smart_contract::StorageKey;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::NativeContract;
-use crate::smart_contract::StorageKey;
-use crate::UInt160;
 use num_bigint::BigInt;
 
 impl TokenManagement {
@@ -51,6 +51,7 @@ impl TokenManagement {
         bytes
     }
 
+    /// Derives a deterministic NFT asset identifier as `HASH160(owner || name)`.
     pub fn get_asset_id(owner: &UInt160, name: &str) -> UInt160 {
         let name_bytes = name.as_bytes();
         let mut buffer = Vec::with_capacity(20 + name_bytes.len());

@@ -1,4 +1,4 @@
-use super::{decode_raw_base58, NeoFsCommand, NeoFsRange, NeoFsRequest};
+use super::{NeoFsCommand, NeoFsRange, NeoFsRequest, decode_raw_base58};
 
 pub(super) fn parse_neofs_request(url: &str) -> Result<NeoFsRequest, String> {
     let (_, suffix) = url

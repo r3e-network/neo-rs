@@ -3,10 +3,11 @@ use super::{WitnessCondition, WitnessRule, WitnessRuleAction};
 use neo_primitives::UInt160;
 use serde::de::Error as SerdeDeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::str::FromStr;
 
 impl WitnessCondition {
+    /// Serializes this condition to a JSON value.
     pub fn to_json(&self) -> Value {
         match self {
             WitnessCondition::Boolean { value } => json!({
@@ -47,10 +48,12 @@ impl WitnessCondition {
         }
     }
 
+    /// Parses a condition from a JSON value at the default maximum nesting depth.
     pub fn from_json(json: &Value) -> Result<Self, String> {
         Self::from_json_with_depth(json, Self::MAX_NESTING_DEPTH)
     }
 
+    /// Parses a condition from a JSON value, enforcing a maximum nesting depth.
     pub fn from_json_with_depth(json: &Value, max_depth: usize) -> Result<Self, String> {
         if max_depth == 0 {
             return Err("Max nesting depth exceeded".to_string());
@@ -157,6 +160,7 @@ impl WitnessCondition {
 }
 
 impl WitnessRule {
+    /// Serializes this rule to a JSON value.
     pub fn to_json(&self) -> Value {
         json!({
             "action": self.action.to_string(),
@@ -164,10 +168,12 @@ impl WitnessRule {
         })
     }
 
+    /// Parses a rule from a JSON value at the default maximum nesting depth.
     pub fn from_json(value: &Value) -> Result<Self, String> {
         Self::from_json_with_depth(value, WitnessCondition::MAX_NESTING_DEPTH)
     }
 
+    /// Parses a rule from a JSON value, enforcing a maximum nesting depth.
     pub fn from_json_with_depth(value: &Value, max_depth: usize) -> Result<Self, String> {
         let action_str = value
             .get("action")

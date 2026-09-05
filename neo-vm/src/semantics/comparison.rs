@@ -5,7 +5,7 @@ use alloc::string::{String, ToString};
 use num_bigint::BigInt;
 use num_traits::Zero;
 
-use crate::{semantics::numeric, StackValue};
+use crate::{StackValue, semantics::numeric};
 
 /// Return NeoVM equality for public ABI values.
 #[must_use]

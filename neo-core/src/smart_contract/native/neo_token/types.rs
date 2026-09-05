@@ -90,7 +90,7 @@ impl NeoAccountState {
                             return Err(format!(
                                 "vote target must be byte array, found {:?}",
                                 other.compact_type_tag()
-                            ))
+                            ));
                         }
                     };
                     Some(
@@ -178,7 +178,7 @@ impl CandidateState {
                 return Ok(Self {
                     registered: votes >= 0,
                     votes: BigInt::from(votes).max(BigInt::zero()),
-                })
+                });
             }
             StackValue::BigInteger(bytes) => {
                 let votes = BigInt::from_signed_bytes_le(&bytes);
@@ -192,7 +192,7 @@ impl CandidateState {
                 return Err(format!(
                     "expected CandidateState struct, found {:?}",
                     other.compact_type_tag()
-                ))
+                ));
             }
         };
 

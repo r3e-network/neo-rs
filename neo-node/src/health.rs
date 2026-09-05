@@ -3,7 +3,7 @@
 //! The HTTP implementation lives in `neo-telemetry`; neo-node only binds the
 //! node storage-version policy to that shared endpoint.
 
-pub use neo_telemetry::{HealthState, DEFAULT_MAX_HEADER_LAG};
+pub use neo_telemetry::{DEFAULT_MAX_HEADER_LAG, HealthState};
 
 use std::future::Future;
 use std::sync::Arc;
@@ -39,7 +39,7 @@ mod tests {
     use hyper::{Client, StatusCode, Uri};
     use std::net::TcpListener;
     use tokio::sync::oneshot;
-    use tokio::time::{sleep, timeout, Duration};
+    use tokio::time::{Duration, sleep, timeout};
 
     #[tokio::test]
     async fn health_server_exits_on_shutdown_signal() {

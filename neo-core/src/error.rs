@@ -93,9 +93,7 @@ pub enum CoreError {
     },
 
     /// Buffer overflow or underflow
-    #[error(
-        "Buffer overflow: attempted to read {requested} bytes, but only {available} available"
-    )]
+    #[error("Buffer overflow: attempted to read {requested} bytes, but only {available} available")]
     BufferOverflow {
         /// Amount of space requested
         requested: usize,
@@ -342,6 +340,7 @@ impl CoreError {
         }
     }
 
+    /// Create a new validation failure error
     pub fn validation_failed<S: Into<String>>(reason: S) -> Self {
         Self::ValidationFailed {
             reason: reason.into(),
@@ -435,6 +434,8 @@ pub type Result<T, E = CoreError> = std::result::Result<T, E>;
 /// This eliminates the repetitive `.map_err(CoreError::native_contract)?`
 /// pattern found throughout native contract implementations.
 pub trait ToNativeError<T> {
+    /// Converts this result into a `CoreResult`, mapping any error via
+    /// [`CoreError::native_contract`].
     fn native_err(self) -> CoreResult<T>;
 }
 

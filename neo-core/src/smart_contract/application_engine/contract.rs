@@ -1,15 +1,15 @@
 //! ApplicationEngine.Contract - ports Neo.SmartContract.ApplicationEngine.Contract.cs
 
-use crate::neo_vm::{ExecutionEngine, StackItem, StackItemExt, VmError, VmResult};
-use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::UInt160;
+use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use crate::smart_contract::BinarySerializer;
 use crate::smart_contract::CallFlags;
 use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::env_flags::env_flag_enabled;
 use crate::smart_contract::execution_context_state::ExecutionContextState;
-use crate::smart_contract::native::crypto_lib::Bls12381Interop;
 use crate::smart_contract::iterators::IteratorInterop;
-use crate::UInt160;
+use crate::smart_contract::native::crypto_lib::Bls12381Interop;
 use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
@@ -408,7 +408,9 @@ fn decode_native_result(
                 // iterator object presented to the VM as `StackItemType::InteropInterface`
                 // (matches a C# native method returning an `IIterator`). The actual
                 // iterator state lives in the engine `storage_iterators` table keyed by id.
-                return Ok(Some(StackItem::from_interface(IteratorInterop::new(iterator_id))));
+                return Ok(Some(StackItem::from_interface(IteratorInterop::new(
+                    iterator_id,
+                ))));
             }
 
             Bls12381Interop::from_encoded_bytes(&result).map_err(|e| e.to_string())?;
@@ -423,7 +425,9 @@ fn stack_item_to_interop_bytes(item: StackItem) -> Result<Vec<u8>, String> {
         StackItem::InteropInterface(_) => {
             // Iterator handle on the stack: encode the u32 id (4 LE bytes), matching
             // `decode_native_result`'s InteropInterface round-trip.
-            let interop = item.as_interface::<IteratorInterop>().map_err(|e| e.to_string())?;
+            let interop = item
+                .as_interface::<IteratorInterop>()
+                .map_err(|e| e.to_string())?;
             Ok(interop.id().to_le_bytes().to_vec())
         }
         StackItem::Integer(_) => {

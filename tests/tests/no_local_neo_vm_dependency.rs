@@ -41,7 +41,8 @@ fn workspace_vendors_neo_vm_as_the_canonical_local_crate() {
         }
         let manifest_text = fs::read_to_string(&manifest).unwrap();
         assert!(
-            !manifest_text.contains("name = \"neo-vm\"") && !manifest_text.contains("name = 'neo-vm'"),
+            !manifest_text.contains("name = \"neo-vm\"")
+                && !manifest_text.contains("name = 'neo-vm'"),
             "{} must not re-declare a second local neo-vm crate",
             manifest.display()
         );
@@ -396,10 +397,8 @@ fn exception_handling_facades_are_removed() {
     let context_path = workspace.join("neo-core/src/neo_vm/exception_handling_context.rs");
     let state_path = workspace.join("neo-core/src/neo_vm/exception_handling_state.rs");
     let vm_module = read_source(workspace.join("neo-vm/src/lib.rs"));
-    let execution_context =
-        read_source(workspace.join("neo-vm/src/execution_context/context.rs"));
-    let exception_runtime =
-        read_source(workspace.join("neo-vm/src/execution_engine/exception.rs"));
+    let execution_context = read_source(workspace.join("neo-vm/src/execution_context/context.rs"));
+    let exception_runtime = read_source(workspace.join("neo-vm/src/execution_engine/exception.rs"));
     let mut context = ExceptionHandlingContext::new(-1, 42);
 
     assert!(
@@ -432,11 +431,9 @@ fn neo_core_ordered_dictionary_facade_is_removed() {
     let dictionary_path = workspace.join("neo-core/src/neo_vm/collections/ordered_dictionary.rs");
     let collections_module_path = workspace.join("neo-core/src/neo_vm/collections/mod.rs");
     let vm_module = read_source(workspace.join("neo-vm/src/lib.rs"));
-    let map_source = read_source(workspace.join("neo-vm/src/stack_item/map.rs"));
-    let stack_item_source =
-        read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
+    let stack_item_source = read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
     let helper_source =
-        read_source(workspace.join("neo-core/src/smart_contract/application_engine_helper.rs"));
+        read_source(workspace.join("neo-core/src/smart_contract/application_engine/helper.rs"));
     let serializer_source =
         read_source(workspace.join("neo-core/src/smart_contract/binary_serializer.rs"));
 
@@ -589,11 +586,11 @@ fn native_contract_static_syscall_hash_uses_neo_vm_rs_directly() {
 #[test]
 fn interop_service_hashes_syscalls_with_neo_vm_rs_directly() {
     let workspace = workspace_root();
-    let interop_service =
-        read_source(workspace.join("neo-vm/src/interop_service.rs"));
+    let interop_service = read_source(workspace.join("neo-vm/src/interop_service.rs"));
 
     assert!(
-        interop_service.contains("crate::interop_hash(") || interop_service.contains("neo_vm::interop_hash"),
+        interop_service.contains("crate::interop_hash(")
+            || interop_service.contains("neo_vm::interop_hash"),
         "InteropService should compute syscall hashes with the crate's interop_hash directly"
     );
     assert!(
@@ -606,8 +603,7 @@ fn interop_service_hashes_syscalls_with_neo_vm_rs_directly() {
 #[test]
 fn smart_contract_helper_hashes_syscalls_with_neo_vm_rs_directly() {
     let workspace = workspace_root();
-    let helper =
-        read_source(workspace.join("neo-core/src/smart_contract/helper.rs"));
+    let helper = read_source(workspace.join("neo-core/src/smart_contract/helper.rs"));
 
     assert!(
         helper.contains("neo_vm::interop_hash(name).to_le_bytes()"),
@@ -998,10 +994,8 @@ fn non_vm_layers_import_shared_vm_scalars_directly() {
 #[test]
 fn vm_dispatch_uses_neo_vm_rs_opcode_byte_metadata() {
     let workspace = workspace_root();
-    let jump_table =
-        read_source(workspace.join("neo-vm/src/jump_table/mod.rs"));
-    let execution =
-        read_source(workspace.join("neo-vm/src/execution_engine/execution.rs"));
+    let jump_table = read_source(workspace.join("neo-vm/src/jump_table/mod.rs"));
+    let execution = read_source(workspace.join("neo-vm/src/execution_engine/execution.rs"));
 
     assert!(
         jump_table.contains("usize::from(opcode.byte())"),
@@ -1023,7 +1017,8 @@ fn script_builder_emit_syscall_hashes_with_neo_vm_rs_directly() {
     let script_builder = read_source(workspace.join("neo-vm/src/script_builder.rs"));
 
     assert!(
-        script_builder.contains("crate::interop_hash(api)") || script_builder.contains("neo_vm::interop_hash(api)"),
+        script_builder.contains("crate::interop_hash(api)")
+            || script_builder.contains("neo_vm::interop_hash(api)"),
         "ScriptBuilder::emit_syscall should hash with the crate's interop_hash directly"
     );
     assert!(
@@ -1038,8 +1033,7 @@ fn script_builder_emit_syscall_hashes_with_neo_vm_rs_directly() {
 #[test]
 fn script_builder_does_not_accept_local_stackitem_bridge() {
     let workspace = workspace_root();
-    let script_builder =
-        read_source(workspace.join("neo-core/src/script_builder.rs"));
+    let script_builder = read_source(workspace.join("neo-core/src/script_builder.rs"));
 
     assert!(
         !script_builder.contains("use crate::neo_vm::stack_item::StackItem")
@@ -1140,8 +1134,7 @@ fn witness_rules_project_through_neo_vm_rs_stack_value() {
 #[test]
 fn signer_stack_projection_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    let signer =
-        read_source(workspace.join("neo-core/src/network/p2p/payloads/signer.rs"));
+    let signer = read_source(workspace.join("neo-core/src/network/p2p/payloads/signer.rs"));
 
     assert!(
         signer.contains("use neo_vm::StackValue;"),
@@ -2266,8 +2259,7 @@ fn role_management_designated_nodes_storage_uses_neo_vm_rs_stack_value() {
 #[test]
 fn script_builder_does_not_return_local_script_objects() {
     let workspace = workspace_root();
-    let script_builder =
-        read_source(workspace.join("neo-core/src/script_builder.rs"));
+    let script_builder = read_source(workspace.join("neo-core/src/script_builder.rs"));
 
     assert!(
         !script_builder.contains("use crate::neo_vm::script::Script")
@@ -2281,8 +2273,7 @@ fn script_builder_does_not_return_local_script_objects() {
 #[test]
 fn script_builder_does_not_use_local_vm_error_types() {
     let workspace = workspace_root();
-    let script_builder =
-        read_source(workspace.join("neo-core/src/script_builder.rs"));
+    let script_builder = read_source(workspace.join("neo-core/src/script_builder.rs"));
 
     assert!(
         !script_builder.contains("VmError")
@@ -2462,8 +2453,7 @@ fn neo_vm_module_docs_do_not_claim_local_canonical_opcode_semantics() {
 #[test]
 fn newbuffer_reuses_neo_vm_rs_collection_semantics() {
     let workspace = workspace_root();
-    let splice =
-        read_source(workspace.join("neo-vm/src/jump_table/splice.rs"));
+    let splice = read_source(workspace.join("neo-vm/src/jump_table/splice.rs"));
 
     assert!(
         splice.contains("crate::semantics::collections::new_buffer"),
@@ -2479,8 +2469,7 @@ fn newbuffer_reuses_neo_vm_rs_collection_semantics() {
 #[test]
 fn array_and_struct_constructors_reuse_neo_vm_rs_collection_semantics() {
     let workspace = workspace_root();
-    let compound =
-        read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
+    let compound = read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
 
     assert!(
         compound.contains("crate::semantics::collections::new_array("),
@@ -2509,8 +2498,7 @@ fn array_and_struct_constructors_reuse_neo_vm_rs_collection_semantics() {
 #[test]
 fn newmap_reuses_neo_vm_rs_map_semantics() {
     let workspace = workspace_root();
-    let compound =
-        read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
+    let compound = read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
 
     assert!(
         compound.contains("crate::semantics::collections::pack_map(Vec::new())"),
@@ -2528,8 +2516,7 @@ fn newmap_reuses_neo_vm_rs_map_semantics() {
 #[test]
 fn stack_item_byte_conversion_reuses_neo_vm_rs_stack_value_rules() {
     let workspace = workspace_root();
-    let stack_item =
-        read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
+    let stack_item = read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
 
     assert!(
         stack_item.contains("to_byte_string_bytes()"),
@@ -2552,8 +2539,7 @@ fn stack_item_byte_conversion_reuses_neo_vm_rs_stack_value_rules() {
 #[test]
 fn stack_item_primitive_truthiness_reuses_neo_vm_rs_rules() {
     let workspace = workspace_root();
-    let stack_item =
-        read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
+    let stack_item = read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
 
     assert!(
         stack_item.contains("crate::semantics::comparison::boolean_value"),
@@ -2576,8 +2562,7 @@ fn stack_item_primitive_truthiness_reuses_neo_vm_rs_rules() {
 #[test]
 fn stack_item_convert_to_byte_targets_reuses_neo_vm_rs_conversion_semantics() {
     let workspace = workspace_root();
-    let stack_item =
-        read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
+    let stack_item = read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
 
     assert!(
         stack_item.contains("crate::semantics::conversion::convert_value"),
@@ -2604,8 +2589,7 @@ fn stack_item_convert_to_byte_targets_reuses_neo_vm_rs_conversion_semantics() {
 #[test]
 fn stack_item_convert_to_boolean_reuses_neo_vm_rs_for_safe_sources_only() {
     let workspace = workspace_root();
-    let stack_item =
-        read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
+    let stack_item = read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
 
     assert!(
         stack_item.contains("target_type @ StackItemType::Boolean"),
@@ -2628,13 +2612,11 @@ fn stack_item_convert_to_boolean_reuses_neo_vm_rs_for_safe_sources_only() {
 fn stack_item_type_facade_is_removed_and_byte_tags_use_neo_vm_rs() {
     let workspace = workspace_root();
     let stack_item_type_path = workspace.join("neo-core/src/neo_vm/stack_item/stack_item_type.rs");
-    let stack_item_mod =
-        read_source(workspace.join("neo-vm/src/stack_item/mod.rs"));
+    let stack_item_mod = read_source(workspace.join("neo-vm/src/stack_item/mod.rs"));
     let neo_vm_mod = read_source(workspace.join("neo-vm/src/lib.rs"));
     let serializer =
         read_source(workspace.join("neo-core/src/smart_contract/binary_serializer.rs"));
-    let stack_item =
-        read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
+    let stack_item = read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
 
     assert!(
         !stack_item_type_path.exists(),
@@ -2674,8 +2656,7 @@ fn stack_item_type_facade_is_removed_and_byte_tags_use_neo_vm_rs() {
 #[test]
 fn size_primitive_lengths_reuse_neo_vm_rs_byte_string_rules() {
     let workspace = workspace_root();
-    let compound =
-        read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
+    let compound = read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
 
     assert!(
         compound.contains("crate::semantics::collections::size(&value)"),
@@ -2695,8 +2676,7 @@ fn size_primitive_lengths_reuse_neo_vm_rs_byte_string_rules() {
 #[test]
 fn boolean_numeric_opcodes_reuse_neo_vm_rs_comparison_semantics() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     assert!(
         numeric.contains("comparison::not_value(&value)"),
@@ -2727,8 +2707,7 @@ fn boolean_numeric_opcodes_reuse_neo_vm_rs_comparison_semantics() {
 #[test]
 fn nz_reuses_neo_vm_rs_truthiness_semantics() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     assert!(
         numeric.contains("comparison::nz_value(&value)"),
@@ -2747,8 +2726,7 @@ fn nz_reuses_neo_vm_rs_truthiness_semantics() {
 #[test]
 fn sign_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     assert!(
         numeric.contains("unary_numeric(engine, arithmetic::sign_value)"),
@@ -2776,8 +2754,7 @@ fn sign_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
 #[test]
 fn sqrt_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     assert!(
         numeric.contains("unary_numeric(engine, arithmetic::sqrt_value)"),
@@ -2810,8 +2787,7 @@ fn sqrt_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
 #[test]
 fn checked_unary_arithmetic_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     for helper in ["inc_value", "dec_value", "negate_value", "abs_value"] {
         assert!(
@@ -2885,8 +2861,7 @@ fn checked_unary_arithmetic_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback(
 #[test]
 fn checked_binary_arithmetic_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     for helper in [
         "add_values",
@@ -2987,8 +2962,7 @@ fn checked_binary_arithmetic_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback
 #[test]
 fn pow_and_modmul_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     for helper in ["pow_values", "modmul_values"] {
         assert!(
@@ -3044,8 +3018,7 @@ fn pow_and_modmul_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
 #[test]
 fn modpow_reuses_neo_vm_rs_i64_semantics_with_bigint_and_inverse_fallback() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     assert!(
         numeric.contains("ternary_numeric(engine, arithmetic::modpow_values)"),
@@ -3099,8 +3072,7 @@ fn modpow_reuses_neo_vm_rs_i64_semantics_with_bigint_and_inverse_fallback() {
 #[test]
 fn shift_opcodes_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     for helper in ["shl_value", "shr_value"] {
         assert!(
@@ -3154,8 +3126,7 @@ fn shift_opcodes_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
 #[test]
 fn min_max_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     assert!(
         numeric.contains("binary_numeric(engine, arithmetic::min_values)"),
@@ -3212,8 +3183,7 @@ fn min_max_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
 #[test]
 fn within_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     assert!(
         numeric.contains("arithmetic::within_values(value, lower, upper)"),
@@ -3254,8 +3224,7 @@ fn within_reuses_neo_vm_rs_i64_semantics_with_bigint_fallback() {
 #[test]
 fn numeric_comparisons_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let workspace = workspace_root();
-    let numeric =
-        read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
+    let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     for helper in [
         "less_than_values",
@@ -3344,8 +3313,7 @@ fn numeric_comparisons_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
 #[test]
 fn bitwise_opcodes_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let workspace = workspace_root();
-    let bitwise =
-        read_source(workspace.join("neo-vm/src/jump_table/bitwisee.rs"));
+    let bitwise = read_source(workspace.join("neo-vm/src/jump_table/bitwisee.rs"));
 
     for helper in [
         "invert_value",
@@ -3428,8 +3396,7 @@ fn isnull_reuses_neo_vm_rs_null_predicate() {
 #[test]
 fn istype_reuses_neo_vm_rs_type_semantics_with_shallow_adapter() {
     let workspace = workspace_root();
-    let types =
-        read_source(workspace.join("neo-vm/src/jump_table/types.rs"));
+    let types = read_source(workspace.join("neo-vm/src/jump_table/types.rs"));
 
     assert!(
         types.contains("crate::semantics::conversion::is_type"),
@@ -3520,8 +3487,7 @@ fn convert_opcode_primitive_targets_reuse_stack_item_conversion_boundary() {
 #[test]
 fn memcpy_source_reuses_neo_vm_rs_byte_sequence_semantics() {
     let workspace = workspace_root();
-    let splice =
-        read_source(workspace.join("neo-vm/src/jump_table/splice.rs"));
+    let splice = read_source(workspace.join("neo-vm/src/jump_table/splice.rs"));
 
     assert!(
         splice.contains("splice_rules::memcpy_bytes"),
@@ -3536,8 +3502,7 @@ fn memcpy_source_reuses_neo_vm_rs_byte_sequence_semantics() {
 #[test]
 fn splice_byte_sequence_ops_reuse_neo_vm_rs_helpers() {
     let workspace = workspace_root();
-    let splice =
-        read_source(workspace.join("neo-vm/src/jump_table/splice.rs"));
+    let splice = read_source(workspace.join("neo-vm/src/jump_table/splice.rs"));
 
     assert!(
         splice.contains("splice_rules::cat_values"),
@@ -3595,8 +3560,7 @@ fn splice_byte_sequence_ops_reuse_neo_vm_rs_helpers() {
 #[test]
 fn compound_byte_sequence_reads_reuse_neo_vm_rs_collection_semantics() {
     let workspace = workspace_root();
-    let compound =
-        read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
+    let compound = read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
 
     assert!(
         compound.contains("crate::semantics::collections::has_key"),
@@ -3637,14 +3601,13 @@ fn compound_byte_sequence_reads_reuse_neo_vm_rs_collection_semantics() {
 fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     let workspace = workspace_root();
     let root_manifest = fs::read_to_string(workspace.join("Cargo.toml")).unwrap();
-    let compound =
-        read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
+    let compound = read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
     let manifest = fs::read_to_string(
         workspace.join("neo-core/src/smart_contract/manifest/contract_manifest.rs"),
     )
     .unwrap();
     let oracle_contract =
-        read_source(workspace.join("neo-core/src/smart_contract/native/oracle_contract.rs"));
+        read_source(workspace.join("neo-core/src/smart_contract/native/oracle_contract/mod.rs"));
     let oracle_storage = read_source(
         workspace.join("neo-core/src/smart_contract/native/oracle_contract/storage.rs"),
     );
@@ -3657,10 +3620,10 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     let oracle_request = read_source(
         workspace.join("neo-core/src/smart_contract/native/oracle_contract/request.rs"),
     );
-    let oracle_contract_sources =
-        format!("{oracle_contract}\n{oracle_storage}\n{oracle_post_persist}\n{oracle_pricing}\n{oracle_request}");
-    let notary =
-        read_source(workspace.join("neo-core/src/smart_contract/native/notary.rs"));
+    let oracle_contract_sources = format!(
+        "{oracle_contract}\n{oracle_storage}\n{oracle_post_persist}\n{oracle_pricing}\n{oracle_request}"
+    );
+    let notary = read_source(workspace.join("neo-core/src/smart_contract/native/notary/mod.rs"));
     let notary_native_impl =
         read_source(workspace.join("neo-core/src/smart_contract/native/notary/native_impl.rs"));
     let notary_sources = format!("{notary}\n{notary_native_impl}");
@@ -3890,12 +3853,21 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
             .contains("get_designated_by_role_at(snapshot, Role::Oracle, index)"),
         "Oracle post-persist rewards must use RoleManagement's typed BinarySerializer decoder"
     );
+    // Modernized guard: Block::verify now delegates entirely to Header::verify
+    // (C# Block.Verify parity), so the block path performs no transaction-level
+    // state-dependent verification at all. The invariant this tripwire protects
+    // — every state-dependent expiry check must go through the explicit-height
+    // API, never through current_index (current_index=0 fast-sync regressions) —
+    // is enforced by (a) the height-explicit entry point existing and (b) the
+    // non-height entry delegating to it, and by (c) block verification not
+    // reintroducing any non-height state-dependent verification.
     assert!(
         transaction_verification.contains("pub fn verify_state_dependent_at_height(")
             && transaction_verification.contains("self.verify_state_dependent_at_height(")
-            && block_verification.contains("verify_state_dependent_at_height("),
-        "Block verification must use explicit height to avoid current_index=0 fast-sync expiry \
-         regressions"
+            && !block_verification.contains("verify_state_dependent("),
+        "State-dependent transaction verification must route through the explicit-height API \
+         only; block verification delegates to Header.Verify (C# parity) and must not \
+         reintroduce current_index-based expiry checks (current_index=0 fast-sync regressions)"
     );
 }
 
@@ -4038,7 +4010,7 @@ fn smart_contract_support_modules_use_vm_runtime_boundary() {
     for relative in [
         "neo-core/src/smart_contract/diagnostic.rs",
         "neo-core/src/smart_contract/execution_context_state.rs",
-        "neo-core/src/smart_contract/application_engine_iterator.rs",
+        "neo-core/src/smart_contract/application_engine/iterator.rs",
         "neo-core/src/smart_contract/iterators/iterator_interop.rs",
         "neo-core/src/smart_contract/iterators/storage_iterator.rs",
         "neo-core/src/smart_contract/storage_context.rs",
@@ -4168,12 +4140,12 @@ fn native_contract_modules_use_vm_runtime_stack_items() {
         "neo-core/src/smart_contract/native/interoperable_list.rs",
         "neo-core/src/smart_contract/native/ledger_contract/native_impl.rs",
         "neo-core/src/smart_contract/native/neo_token/mod.rs",
-        "neo-core/src/smart_contract/native/notary.rs",
+        "neo-core/src/smart_contract/native/notary/mod.rs",
         "neo-core/src/smart_contract/native/oracle_contract/response.rs",
         "neo-core/src/smart_contract/native/oracle_contract/storage.rs",
         "neo-core/src/smart_contract/native/policy_contract/mod.rs",
         "neo-core/src/smart_contract/native/policy_contract/tests.rs",
-        "neo-core/src/smart_contract/native/role_management.rs",
+        "neo-core/src/smart_contract/native/role_management/mod.rs",
         "neo-core/src/smart_contract/native/std_lib/helpers.rs",
         "neo-core/src/smart_contract/native/std_lib/strings.rs",
     ] {
@@ -4188,8 +4160,7 @@ fn native_contract_modules_use_vm_runtime_stack_items() {
 #[test]
 fn fuzz_script_parser_uses_direct_script_validation() {
     let workspace = workspace_root();
-    let target =
-        read_source(workspace.join("fuzz/fuzz_targets/fuzz_script_parse.rs"));
+    let target = read_source(workspace.join("fuzz/fuzz_targets/fuzz_script_parse.rs"));
 
     assert!(
         target.contains("neo_core::script_validation::validate_script"),
@@ -4248,8 +4219,7 @@ fn storage_inspection_examples_use_neo_vm_rs_stackvalue_boundary() {
     // BinarySerializer lives in the neo-vm crate; neo-core only keeps a shim.
     let serializer = read_source(workspace.join("neo-vm/src/binary_serializer.rs"));
     assert!(
-        serializer.contains("pub fn deserialize_stack_value")
-            && serializer.contains("StackValue"),
+        serializer.contains("pub fn deserialize_stack_value") && serializer.contains("StackValue"),
         "BinarySerializer should expose a StackValue deserialization boundary for \
          non-runtime storage inspectors"
     );
@@ -4260,8 +4230,7 @@ fn storage_inspection_examples_use_neo_vm_rs_stackvalue_boundary() {
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
-            source.contains("deserialize_stack_value")
-                && source.contains("use neo_vm::StackValue"),
+            source.contains("deserialize_stack_value") && source.contains("use neo_vm::StackValue"),
             "{relative} should deserialize storage payloads directly into \
              neo_vm::StackValue"
         );
@@ -4472,8 +4441,7 @@ fn local_vm_facade_does_not_keep_unused_exception_wrapper_modules() {
 fn local_vm_reference_counter_does_not_keep_unused_trait_shim() {
     let workspace = workspace_root();
     let vm_module = read_source(workspace.join("neo-vm/src/lib.rs"));
-    let reference_counter =
-        read_source(workspace.join("neo-vm/src/reference_counter.rs"));
+    let reference_counter = read_source(workspace.join("neo-vm/src/reference_counter.rs"));
 
     assert!(
         !workspace
@@ -4522,14 +4490,13 @@ fn reference_graph_helpers_are_owned_by_neo_vm_rs() {
         "ReferenceCounter should use the crate's shared Tarjan implementation directly"
     );
 
-    for relative in ["neo-vm/src/stack_item/map.rs"] {
-        let source = read_source(workspace.join(relative));
-        assert!(
-            source.contains("next_stack_item_id")
-                && !source.contains("stack_item_vertex::next_stack_item_id"),
-            "{relative} should allocate compound ids through the crate helper directly"
-        );
-    }
+    let relative = "neo-vm/src/stack_item/map.rs";
+    let source = read_source(workspace.join(relative));
+    assert!(
+        source.contains("next_stack_item_id")
+            && !source.contains("stack_item_vertex::next_stack_item_id"),
+        "{relative} should allocate compound ids through the crate helper directly"
+    );
 
     let mut shared_tarjan = neo_vm::Tarjan::new();
     shared_tarjan.add_edge(1, 2);
@@ -4541,8 +4508,7 @@ fn reference_graph_helpers_are_owned_by_neo_vm_rs() {
 fn local_stack_item_view_shims_are_removed() {
     let workspace = workspace_root();
     let stack_item_module = read_source(workspace.join("neo-vm/src/stack_item/mod.rs"));
-    let compound_jump_table =
-        read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
+    let compound_jump_table = read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
 
     for relative in [
         "neo-core/src/neo_vm/stack_item/primitive_type.rs",
@@ -4768,8 +4734,7 @@ fn rpc_final_state_models_use_neo_vm_rs_vmstate_directly() {
         );
     }
 
-    let helper =
-        read_source(workspace.join("neo-rpc/src/client/models/vm_state_utils.rs"));
+    let helper = read_source(workspace.join("neo-rpc/src/client/models/vm_state_utils.rs"));
     assert!(
         helper.contains("pub fn vm_state_to_string(state: VmState)"),
         "RPC VM-state formatting should accept neo_vm::VmState directly"
@@ -4794,8 +4759,7 @@ fn rpc_final_state_models_use_neo_vm_rs_vmstate_directly() {
 #[test]
 fn rpc_server_final_state_formatting_uses_neo_vm_rs_boundary() {
     let workspace = workspace_root();
-    let helper =
-        read_source(workspace.join("neo-rpc/src/server/smart_contract/helpers.rs"));
+    let helper = read_source(workspace.join("neo-rpc/src/server/smart_contract/helpers.rs"));
 
     assert!(
         helper.contains(".final_name()"),
@@ -4831,8 +4795,7 @@ fn rpc_server_final_state_formatting_uses_neo_vm_rs_boundary() {
 #[test]
 fn rpc_server_blockchain_tests_seed_native_state_through_stack_value() {
     let workspace = workspace_root();
-    let source =
-        read_source(workspace.join("neo-rpc/src/server/rpc_server_blockchain/tests.rs"));
+    let source = read_source(workspace.join("neo-rpc/src/server/rpc_server_blockchain/tests.rs"));
 
     assert!(
         source.contains("use neo_vm::{OpCode, StackValue};")
@@ -4885,7 +4848,10 @@ fn rpc_client_stack_models_use_neo_vm_rs_stackvalue_directly() {
 }
 
 #[test]
-fn rpc_server_imports_host_runtime_through_vm_runtime_boundary() {
+fn rpc_server_imports_host_runtime_through_neo_vm_boundary() {
+    // `neo_core::vm_runtime` was removed as part of the VM facade simplification;
+    // `neo_core::neo_vm` is now the single glob re-export boundary that keeps
+    // neo-core's VM surface in sync with the self-contained `neo-vm` crate.
     let workspace = workspace_root();
     for relative in [
         "neo-rpc/src/server/diagnostic.rs",
@@ -4897,14 +4863,13 @@ fn rpc_server_imports_host_runtime_through_vm_runtime_boundary() {
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
-            source.contains("neo_core::vm_runtime"),
+            source.contains("neo_core::neo_vm"),
             "{relative} should import host-runtime-only local VM types through the \
-             vm_runtime boundary"
+             neo_vm boundary"
         );
         assert!(
-            !source.contains("neo_core::neo_vm"),
-            "{relative} should not import host-runtime-only local VM types through the \
-             neo_vm implementation tree"
+            !source.contains("neo_core::vm_runtime"),
+            "{relative} should not import through the removed vm_runtime facade"
         );
     }
 }
@@ -4936,8 +4901,7 @@ fn rpc_server_invoke_arguments_push_neo_vm_rs_stackvalue_directly() {
          longer need local StackItem identity"
     );
 
-    let helpers =
-        read_source(workspace.join("neo-rpc/src/server/smart_contract/helpers.rs"));
+    let helpers = read_source(workspace.join("neo-rpc/src/server/smart_contract/helpers.rs"));
     assert!(
         helpers.contains("contract_parameter_to_stack_value")
             && helpers.contains("emit_push_stack_value(item)"),

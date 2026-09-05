@@ -18,7 +18,7 @@ name = "neo-node"
 path = "src/main.rs"
 
 [features]
-default = ["full"]
+default = []
 full = ["neo-core/full"]
 # Enable TEE (Trusted Execution Environment) support
 tee = ["neo-tee"]

@@ -18,7 +18,7 @@ mod import_acc;
 #[cfg(not(feature = "full"))]
 #[allow(missing_docs)]
 mod import_acc {
-    use anyhow::{bail, Result};
+    use anyhow::{Result, bail};
     use neo_core::neo_system::NeoSystem;
     use std::{path::Path, sync::Arc};
 
@@ -111,11 +111,11 @@ mod tests {
         i_event_handlers::WalletChangedHandler,
         neo_system::NeoSystem,
         protocol_settings::ProtocolSettings,
-        wallets::{WalletProvider, Wallet as CoreWallet},
+        wallets::{Wallet as CoreWallet, WalletProvider},
     };
     use std::any::Any;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     #[cfg(feature = "tee")]
     use tempfile::NamedTempFile;
 
@@ -142,9 +142,8 @@ mod tests {
             .register_wallet_changed_handler(probe.clone())
             .expect("register probe");
 
-        let provider =
-            crate::startup::services::setup_wallet_provider(&None, &system, true)
-                .expect("setup provider");
+        let provider = crate::startup::services::setup_wallet_provider(&None, &system, true)
+            .expect("setup provider");
 
         assert!(provider.is_some());
         assert!(
@@ -167,16 +166,18 @@ mod tests {
         node_config.unlock_wallet.password = Some("password".to_string());
 
         let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("neo system");
-        let provider =
-            crate::startup::services::setup_wallet_provider(&None, &system, true)
-                .expect("setup provider")
-                .expect("provider");
+        let provider = crate::startup::services::setup_wallet_provider(&None, &system, true)
+            .expect("setup provider")
+            .expect("provider");
 
-        let err =
-            crate::startup::services::maybe_open_wallet(
-                &cli, &node_config, &None, Some(&provider), &system,
-            )
-            .expect_err("missing wallet file should fail");
+        let err = crate::startup::services::maybe_open_wallet(
+            &cli,
+            &node_config,
+            &None,
+            Some(&provider),
+            &system,
+        )
+        .expect_err("missing wallet file should fail");
         assert!(
             err.to_string().contains("wallet file not found"),
             "unexpected error: {err}"
@@ -220,11 +221,13 @@ mod tests {
         let protocol_settings = node_config.protocol_settings();
         let system = NeoSystem::new(protocol_settings.clone(), None, None).expect("neo system");
 
-        let runtime =
-            crate::startup::services::maybe_enable_tee_runtime(
-                &cli, &node_config, &protocol_settings, &system,
-            )
-            .expect("tee-auto should fall back to non-TEE mode");
+        let runtime = crate::startup::services::maybe_enable_tee_runtime(
+            &cli,
+            &node_config,
+            &protocol_settings,
+            &system,
+        )
+        .expect("tee-auto should fall back to non-TEE mode");
         assert!(runtime.is_none(), "tee-auto should continue without TEE");
 
         system.shutdown().await.expect("shutdown");
@@ -246,10 +249,12 @@ mod tests {
         let protocol_settings = node_config.protocol_settings();
         let system = NeoSystem::new(protocol_settings.clone(), None, None).expect("neo system");
 
-        let result =
-            crate::startup::services::maybe_enable_tee_runtime(
-                &cli, &node_config, &protocol_settings, &system,
-            );
+        let result = crate::startup::services::maybe_enable_tee_runtime(
+            &cli,
+            &node_config,
+            &protocol_settings,
+            &system,
+        );
         assert!(
             result.is_err(),
             "strict tee mode should fail when TEE startup fails"

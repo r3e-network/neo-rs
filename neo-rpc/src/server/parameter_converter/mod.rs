@@ -1,7 +1,7 @@
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use neo_core::UInt160;
 use neo_core::smart_contract::contract_parameter::ContractParameter;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::UInt160;
 use neo_json::{JArray, JObject, JToken, MAX_SAFE_INTEGER};
 use std::str::FromStr;
 use uuid::Uuid;
@@ -14,7 +14,6 @@ mod signers;
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-
 
 /// Context supplied when converting RPC parameters.
 #[derive(Debug, Clone, Copy)]

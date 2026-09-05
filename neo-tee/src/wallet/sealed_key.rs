@@ -1,6 +1,6 @@
 //! Sealed key storage for TEE wallet
 
-use crate::enclave::{seal_data, unseal_data, SealedData, TeeEnclave};
+use crate::enclave::{SealedData, TeeEnclave, seal_data, unseal_data};
 use crate::error::{TeeError, TeeResult};
 use neo_crypto::Base58;
 use serde::{Deserialize, Serialize};
@@ -73,10 +73,16 @@ impl SealedKey {
             ));
         }
 
+        // R16: enforce the counter floor recorded in the sealed blob instead
+        // of passing `None`. With the counter now covered by the AEAD tag
+        // (sealing.rs) this check verifies against a tamper-evident value.
+        // Full rollback detection still requires a trusted monotonic counter
+        // source — the host-side counter file alone cannot detect a coherent
+        // rollback of the whole data directory.
         Ok(Zeroizing::new(unseal_data(
             &self.sealed_data,
             &sealing_key,
-            None,
+            Some(self.sealed_data.counter),
         )?))
     }
 

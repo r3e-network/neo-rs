@@ -1,18 +1,18 @@
 # Operations Runbook
 
-Practical checks and routines for running `neo-cli` in production.
+Practical checks and routines for running the `neo-node` daemon in production.
 
 ## Daily/regular checks
 - Verify RPC health: `curl -sf -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","id":1,"method":"getversion","params":[]}' http://127.0.0.1:20332`
 - When piping RPC output to `jq`, prefer `curl --compressed` so gzipped responses are decoded correctly.
-- Check sync status: `neo-cli show block` and compare header height to trusted explorers/seeds.
-- Inspect peers: `neo-cli show node` for connected peer counts and penalties/timeouts.
-- Review logs: `journalctl -u neo-cli -p warning..alert --since "1 hour ago"` (or tail `Logs/neo-cli-*.log` / `/data/Logs/neo-cli.log` depending on your config).
+- Check sync status with RPC `getblockcount` and compare header height to trusted explorers/seeds.
+- Inspect peers with RPC `getpeers` for connected peer counts and connection churn.
+- Review logs: `journalctl -u neo-node -p warning..alert --since "1 hour ago"` (or tail the configured `neo-node` log path).
 
 ## Service control (systemd example)
-- Restart: `sudo systemctl restart neo-cli`
-- Status: `sudo systemctl status neo-cli`
-- Logs: `journalctl -u neo-cli -f`
+- Restart: `sudo systemctl restart neo-node`
+- Status: `sudo systemctl status neo-node`
+- Logs: `journalctl -u neo-node -f`
 
 ## Data and storage
 - Location: see `--storage` or TOML `storage.path` (`/var/neo/...` recommended; `/data/...` in Docker).
@@ -115,7 +115,7 @@ The shell wrapper logs every mismatch (first one is kept in `FIRST_MISMATCH` and
 - If startup fails with a ContractManagement integrity error, do not keep restarting the same data directory. Move the corrupted directory aside, restore a backup, or re-bootstrap/resync.
 - If RPC is overloaded: raise `rpc.max_connections` / `NEO_RPC_PORT` and place a reverse proxy with rate limits; consider moving RPC to a dedicated instance.
 - If disk is full: expand the volume, prune old backups/logs, and keep RocksDB on fast, durable storage.
-- If plugin state looks off: use `neo-cli plugins active` (local) to see loaded plugins. The `listplugins` RPC is disabled by default in production; only enable it behind auth/proxy if you need remote visibility.
+- If plugin state looks off: check loaded plugins via the `listplugins` RPC (enable it behind auth/proxy only when you need remote visibility; it is disabled by default in production).
 
 ## Upgrades
 - Backup data and configs.

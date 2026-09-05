@@ -5,10 +5,10 @@
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_config::ADDRESS_SIZE;
-use crate::smart_contract::interoperable::Interoperable;
 use crate::neo_vm::StackItem;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::{ECCurve, ECPoint};
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use std::convert::TryFrom;
 // Removed neo_cryptography dependency - using external crypto crates directly
 use neo_vm::StackValue;
@@ -175,15 +175,20 @@ impl Serialize for ContractGroup {
 }
 
 impl Interoperable for ContractGroup {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), crate::neo_vm::VmError> {
+    fn from_stack_item(
+        &mut self,
+        stack_item: StackItem,
+    ) -> std::result::Result<(), crate::neo_vm::VmError> {
         match StackValue::try_from(stack_item)
             .map_err(|error| {
                 crate::neo_vm::VmError::invalid_operation_msg(format!(
                     "Failed to convert ContractGroup StackItem to StackValue: {error}"
                 ))
             })
-            .and_then(|sv| Self::try_from_stack_value(sv).map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string())))
-        {
+            .and_then(|sv| {
+                Self::try_from_stack_value(sv)
+                    .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
+            }) {
             Ok(group) => *self = group,
             Err(e) => {
                 tracing::error!("Failed to parse ContractGroup from stack item: {}", e);

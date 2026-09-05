@@ -3,11 +3,11 @@ use super::super::opcodes::*;
 use super::super::runtime_types::StackValue;
 use super::control::Dispatch;
 use crate::{
+    StackValue as AbiStackValue,
     semantics::{
         arithmetic as arithmetic_rules, comparison as comparison_rules,
         stack_shape::{self, ValueStack},
     },
-    StackValue as AbiStackValue,
 };
 use alloc::{
     string::{String, ToString},
@@ -91,10 +91,8 @@ fn shift_value(
 ) -> Result<(), String> {
     let shift = stack.pop_shift_count()?;
     let value = stack.pop_interpreter_value()?;
-    if shift == 0 {
-        stack.push_interpreter_value(value);
-        return Ok(());
-    }
+    // No zero-shift shortcut: `shl_value`/`shr_value` implement Gorgon
+    // semantics, converting the operand to `Integer` even at shift 0.
     stack.push_abi_value(op(into_abi_value(value), shift)?)
 }
 
@@ -150,7 +148,7 @@ impl ValueStack for InterpreterValueStack<'_> {
             | AbiStackValue::Map(_)
             | AbiStackValue::Interop(_)
             | AbiStackValue::Iterator(_) => {
-                return Err("semantic numeric opcode produced a compound result".to_string())
+                return Err("semantic numeric opcode produced a compound result".to_string());
             }
         });
         Ok(())

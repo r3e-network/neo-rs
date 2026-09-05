@@ -1,9 +1,9 @@
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use neo_core::UInt256;
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StoreCache,
+    StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
 };
 use neo_core::smart_contract::native::ledger_contract::LedgerContract;
-use neo_core::UInt256;
 use std::path::PathBuf;
 
 // Dump all tx fields in a copy-pasteable form for use in a reproducer.
@@ -46,8 +46,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for s in tx.signers() {
         println!(
             "    Signer {{ account={}, scopes={:?}, allowed_contracts={:?}, allowed_groups_count={}, rules_count={} }},",
-            s.account, s.scopes,
-            s.allowed_contracts.iter().map(|h| h.to_string()).collect::<Vec<_>>(),
+            s.account,
+            s.scopes,
+            s.allowed_contracts
+                .iter()
+                .map(|h| h.to_string())
+                .collect::<Vec<_>>(),
             s.allowed_groups.len(),
             s.rules.len()
         );

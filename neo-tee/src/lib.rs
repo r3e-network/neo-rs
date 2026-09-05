@@ -5,6 +5,15 @@
 //! - Fair transaction ordering to prevent MEV (Miner Extractable Value)
 //! - Remote attestation for verifiable TEE execution
 //!
+//! # SGX hardware support status (R16)
+//!
+//! The `sgx-hw` feature currently provides **quote evidence verification**
+//! (DCAP-style checks of MRENCLAVE/MRSIGNER/attributes) and **experimental**
+//! host-side sealing. The sealing key and the monotonic counter are managed
+//! by the host process; private-key operations execute in the host process.
+//! This is NOT hardware-enforced execution and NOT hardware-backed
+//! anti-rollback — deployments must not represent it as such.
+//!
 //! # Features
 //!
 //! - `simulation` (default): Run in simulation mode without real SGX hardware

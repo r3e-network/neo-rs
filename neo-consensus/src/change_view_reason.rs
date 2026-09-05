@@ -6,12 +6,18 @@ protocol_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
     /// Change view reason enum matching C# `ChangeViewReason` exactly
     pub ChangeViewReason {
+        /// The view timed out without a committed block.
         #[default]
         Timeout = 0x0,
+        /// A different view was agreed upon by the validators.
         ChangeAgreement = 0x1,
+        /// A proposed block referenced a transaction that is not available.
         TxNotFound = 0x2,
+        /// A proposed transaction was rejected by policy.
         TxRejectedByPolicy = 0x3,
+        /// A proposed transaction was invalid.
         TxInvalid = 0x4,
+        /// A proposed block was rejected by policy.
         BlockRejectedByPolicy = 0x5,
     }
 }

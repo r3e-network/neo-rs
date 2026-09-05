@@ -9,7 +9,7 @@ use super::{
     message_command::MessageCommand, message_flags::MessageFlags, messages::ProtocolMessage,
 };
 use crate::compression::{
-    compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD,
+    COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD, compress_lz4, decompress_lz4,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::{NetworkError, NetworkResult as Result};

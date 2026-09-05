@@ -8,7 +8,7 @@
 use crate::enclave::TeeEnclave;
 use crate::error::{TeeError, TeeResult};
 use crate::mempool::fair_ordering::{
-    compute_ordering_key, FairOrderingPolicy, OrderingKey, TransactionTiming,
+    FairOrderingPolicy, OrderingKey, TransactionTiming, compute_ordering_key,
 };
 use neo_crypto::{Crypto, Secp256r1Crypto};
 use parking_lot::RwLock;

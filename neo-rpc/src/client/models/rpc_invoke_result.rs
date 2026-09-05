@@ -138,10 +138,10 @@ impl RpcStack {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_fixtures::rpc_case_result;
+    use super::*;
     use neo_json::{JArray, JToken};
-    use neo_vm::{stack_value_as_bytes, StackValue, VmState};
+    use neo_vm::{StackValue, VmState, stack_value_as_bytes};
 
     #[test]
     fn invoke_result_roundtrip() {
@@ -275,10 +275,11 @@ mod tests {
         };
 
         let json = result.to_json();
-        assert!(json
-            .get("stack")
-            .and_then(|token| token.as_array())
-            .is_some());
+        assert!(
+            json.get("stack")
+                .and_then(|token| token.as_array())
+                .is_some()
+        );
     }
 
     #[test]

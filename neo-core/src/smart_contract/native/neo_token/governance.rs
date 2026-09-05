@@ -111,8 +111,7 @@ impl NeoToken {
                 continue;
             };
 
-            let state =
-                CandidateState::from_storage_item(&item).native_err()?;
+            let state = CandidateState::from_storage_item(&item).native_err()?;
             if !state.registered {
                 continue;
             }
@@ -131,9 +130,7 @@ impl NeoToken {
         let options =
             FindOptions::RemovePrefix | FindOptions::DeserializeValues | FindOptions::PickField1;
         let iterator = StorageIterator::new(entries, 1, options);
-        let iterator_id = engine
-            .store_storage_iterator(iterator)
-            .native_err()?;
+        let iterator_id = engine.store_storage_iterator(iterator).native_err()?;
 
         Ok(iterator_id.to_le_bytes().to_vec())
     }
@@ -224,9 +221,7 @@ impl NeoToken {
             return Ok(());
         }
 
-        let bytes = serialize_stack_value_native(
-            &state.to_stack_value(),
-        )?;
+        let bytes = serialize_stack_value_native(&state.to_stack_value())?;
         engine.put_storage_item(context, &candidate_suffix, &bytes)?;
         Ok(())
     }
@@ -258,8 +253,7 @@ impl NeoToken {
                 continue;
             };
 
-            let state =
-                CandidateState::from_storage_item(&item).native_err()?;
+            let state = CandidateState::from_storage_item(&item).native_err()?;
             if !state.registered {
                 continue;
             }

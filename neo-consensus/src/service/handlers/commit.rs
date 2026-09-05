@@ -1,4 +1,4 @@
-use super::super::helpers::invocation_script_from_signature;
+use super::super::helpers::{current_timestamp, invocation_script_from_signature};
 use super::super::{BlockData, ConsensusEvent, ConsensusService};
 use crate::context::ConsensusState;
 use crate::messages::ConsensusPayload;
@@ -11,8 +11,15 @@ impl ConsensusService {
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
-        // Check if we already have this commit
-        if self.context.commits.contains_key(&payload.validator_index) {
+        // A validator has one commit slot per view. Commits retained from an
+        // earlier view are recovery evidence and must not block this view.
+        if self
+            .context
+            .commit_view_numbers
+            .get(&payload.validator_index)
+            .copied()
+            == Some(self.context.view_number)
+        {
             return Err(ConsensusError::AlreadyReceived(payload.validator_index));
         }
 
@@ -58,16 +65,14 @@ impl ConsensusService {
         }
 
         let is_current_view = payload.view_number == self.context.view_number;
+        if is_current_view {
+            // C# extends the timer after a valid current-view Commit is accepted.
+            self.context.extend_timer_by_factor(current_timestamp(), 4);
+        }
         if !is_current_view {
-            self.context.add_commit(
-                payload.validator_index,
-                payload.view_number,
-                payload.data.clone(),
-            )?;
-            self.context.commit_invocations.insert(
-                payload.validator_index,
-                invocation_script_from_signature(&payload.witness),
-            );
+            // An off-view Commit is authenticated above but cannot occupy the
+            // current view's validator slot. Recovery carries these messages
+            // separately and replays them only when their view is admissible.
             return Ok(());
         }
 

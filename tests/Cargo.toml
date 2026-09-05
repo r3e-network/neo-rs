@@ -65,10 +65,6 @@ name = "e2e_transaction_flow"
 path = "tests/e2e_transaction_flow.rs"
 
 [[test]]
-name = "block_persistence"
-path = "tests/block_persistence.rs"
-
-[[test]]
 name = "p2p_message_exchange"
 path = "tests/p2p_message_exchange.rs"
 

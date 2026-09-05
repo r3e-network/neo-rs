@@ -7,7 +7,7 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, serialize_to_base64};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
 use neo_core::ledger::{
     block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
@@ -17,19 +17,17 @@ use neo_core::network::p2p::payloads::{
     block::Block, header::Header, witness::Witness as PayloadWitness,
 };
 use neo_core::persistence::SeekDirection;
-use neo_core::persistence::ReadOnlyStoreGeneric;
+use neo_core::smart_contract::StorageKey;
 use neo_core::smart_contract::contract_state::ContractState;
 use neo_core::smart_contract::native::{
+    NativeRegistry,
     contract_management::ContractManagement,
     ledger_contract::{HashOrIndex, LedgerContract},
-    NativeRegistry,
 };
-use neo_core::smart_contract::StorageKey;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness};
-use neo_vm::VmState as VMState;
 use num_traits::ToPrimitive;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::str::FromStr;
 
 pub struct RpcServerBlockchain;
@@ -185,13 +183,13 @@ impl RpcServerBlockchain {
                     return Err(RpcException::from(
                         RpcError::invalid_params()
                             .with_data("shouldGetUnverified must be a boolean"),
-                    ))
+                    ));
                 }
             },
             _ => {
                 return Err(RpcException::from(
                     RpcError::invalid_params().with_data("shouldGetUnverified must be a boolean"),
-                ))
+                ));
             }
         };
 
@@ -263,17 +261,6 @@ impl RpcServerBlockchain {
             let current_index = ledger.current_index(&store).map_err(internal_error)?;
             let confirmations = current_index.saturating_sub(block_index).saturating_add(1);
             obj.insert("confirmations".to_string(), json!(confirmations));
-
-            let vmstate_str = match state.vm_state() {
-                VMState::HALT => "HALT",
-                VMState::FAULT => "FAULT",
-                VMState::BREAK => "BREAK",
-                VMState::NONE => "NONE",
-            };
-            obj.insert(
-                "vmstate".to_string(),
-                Value::String(vmstate_str.to_string()),
-            );
 
             if let Some(block_hash) = ledger
                 .get_block_hash_by_index(&store, block_index)
@@ -355,7 +342,7 @@ impl RpcServerBlockchain {
                 return Err(RpcException::from(
                     RpcError::invalid_params()
                         .with_data("start index must be a non-negative integer"),
-                ))
+                ));
             }
         };
 

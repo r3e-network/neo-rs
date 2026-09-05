@@ -59,8 +59,11 @@ impl Transaction {
         let max_increment = policy
             .get_max_valid_until_block_increment_snapshot(snapshot, settings)
             .unwrap_or(settings.max_valid_until_block_increment);
-        if self.valid_until_block <= height || self.valid_until_block > height + max_increment {
+        if self.valid_until_block <= height {
             return VerifyResult::Expired;
+        }
+        if self.valid_until_block > height.saturating_add(max_increment) {
+            return VerifyResult::NotYetValid;
         }
 
         let hashes = self.script_hashes_for_verifying(snapshot);
@@ -203,7 +206,11 @@ impl Transaction {
             let Some(signature) =
                 Self::parse_single_signature_invocation(&witness.invocation_script)
             else {
-                return Err(VerifyResult::Invalid);
+                // Standard verification script with a non-quick-format
+                // invocation (e.g. `PUSHDATA2` encoding of a valid signature):
+                // fall back to VM verification like the reference
+                // implementation instead of rejecting the witness (R04).
+                return Ok(StandardWitnessVerification::NonStandard);
             };
 
             let mut signature_bytes = [0u8; 64];
@@ -232,7 +239,9 @@ impl Transaction {
 
         let Some(signatures) = Helper::parse_multi_sig_invocation(&witness.invocation_script, m)
         else {
-            return Err(VerifyResult::Invalid);
+            // Invocation not in the quick-check format: defer to the generic
+            // VM verification path (R04).
+            return Ok(StandardWitnessVerification::NonStandard);
         };
 
         if public_keys.is_empty() || signatures.len() != m {

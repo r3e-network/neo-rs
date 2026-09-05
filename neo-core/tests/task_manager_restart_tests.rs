@@ -192,7 +192,7 @@ async fn new_extensible_tasks_from_registered_peer_request_getdata() {
         .expect("peer actor");
 
     let version = VersionPayload::create(
-        &neo_core::protocol_settings::ProtocolSettings::default(),
+        neo_core::protocol_settings::ProtocolSettings::default().network,
         42,
         "/peer".to_string(),
         vec![],
@@ -247,7 +247,7 @@ async fn register_peer_requests_headers_with_default_count_sentinel() {
         .expect("peer actor");
 
     let version = VersionPayload::create(
-        &neo_core::protocol_settings::ProtocolSettings::default(),
+        neo_core::protocol_settings::ProtocolSettings::default().network,
         77,
         "/peer".to_string(),
         vec![neo_core::network::p2p::capabilities::NodeCapability::FullNode { start_height: 5 }],

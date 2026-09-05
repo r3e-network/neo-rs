@@ -1,21 +1,20 @@
 //! Helper - matches C# Neo.SmartContract.Helper exactly
 
+use crate::ScriptBuilder;
 use crate::cryptography::ECPoint;
 use crate::error::{CoreError, CoreResult};
 use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
-use crate::ScriptBuilder;
-use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::CallFlags;
-use crate::smart_contract::contract::Contract;
 use crate::smart_contract::ContractBasicMethod;
-use crate::smart_contract::native::contract_management::ContractManagement;
-use crate::smart_contract::native::NativeRegistry;
-use crate::smart_contract::TriggerType;
 use crate::smart_contract::ContractParameterType;
-use crate::neo_vm::StackItemExt;
-use crate::{Verifiable, VerifiableExt, UInt160, UInt256};
+use crate::smart_contract::TriggerType;
+use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::contract::Contract;
+use crate::smart_contract::native::NativeRegistry;
+use crate::smart_contract::native::contract_management::ContractManagement;
+use crate::{UInt160, UInt256, Verifiable, VerifiableExt};
 use neo_vm::OpCode;
 use neo_vm::VmState as VMState;
 use std::any::Any;
@@ -383,7 +382,9 @@ impl Helper {
 
         // Create verification engine
         let cloned_snapshot = Arc::new(snapshot.clone_cache());
-        let container_hash = verifiable.hash().map_err(|e| CoreError::invalid_operation(e.to_string()))?;
+        let container_hash = verifiable
+            .hash()
+            .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
         let container: Arc<dyn Verifiable> = if let Some(transaction) = verifiable.as_transaction()
         {
             Arc::new(transaction.clone())

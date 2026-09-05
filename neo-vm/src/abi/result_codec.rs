@@ -7,8 +7,9 @@ use alloc::{
 };
 
 use super::cursor::Cursor;
-use crate::{fast_codec, ExecutionResult, VmState};
+use crate::{ExecutionResult, VmState, fast_codec};
 
+/// Encodes an execution result into its binary wire form.
 #[inline]
 pub fn encode_execution_result(result: &Result<ExecutionResult, String>) -> Vec<u8> {
     match result {
@@ -70,6 +71,7 @@ fn encode_error_payload(message: &str) -> Vec<u8> {
     out
 }
 
+/// Decodes an execution result from its binary wire form.
 pub fn decode_execution_result(bytes: &[u8]) -> Result<Result<ExecutionResult, String>, String> {
     let mut cursor = Cursor::new(bytes);
     match cursor.read_u8()? {

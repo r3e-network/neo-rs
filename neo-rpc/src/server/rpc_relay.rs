@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use neo_core::ledger::{RelayResult, VerifyResult};
 use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, ActorSystem, Props};
 use parking_lot::Mutex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::any::Any;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,6 +23,12 @@ pub(super) fn map_relay_result(result: RelayResult) -> Result<Value, RpcExceptio
         VerifyResult::InvalidSignature => Err(RpcException::from(RpcError::invalid_signature())),
         VerifyResult::OverSize => Err(RpcException::from(RpcError::invalid_size())),
         VerifyResult::Expired => Err(RpcException::from(RpcError::expired_transaction())),
+        // `NotYetValid` means `ValidUntilBlock` is beyond the policy increment, the
+        // mirror image of `Expired`. It has no dedicated RPC code, so it is reported
+        // as a verification failure tagged with the verification result.
+        VerifyResult::NotYetValid => Err(RpcException::from(
+            RpcError::verification_failed().with_data("NotYetValid"),
+        )),
         VerifyResult::InsufficientFunds => Err(RpcException::from(RpcError::insufficient_funds())),
         VerifyResult::PolicyFail => Err(RpcException::from(RpcError::policy_failed())),
         VerifyResult::UnableToVerify => Err(RpcException::from(

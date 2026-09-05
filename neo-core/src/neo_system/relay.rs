@@ -3,8 +3,8 @@
 //! This module provides types for caching and managing extensible payloads
 //! during network relay operations.
 
-use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
 use crate::CoreResult;
+use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
 use neo_io_crate::{InventoryHash, RelayCache};
 use neo_primitives::UInt256;
 

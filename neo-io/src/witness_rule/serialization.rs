@@ -1,4 +1,4 @@
-use super::helpers::{read_group_bytes, ECPOINT_COMPRESSED_SIZE};
+use super::helpers::{ECPOINT_COMPRESSED_SIZE, read_group_bytes};
 use super::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
 use crate::serializable::helper::{deserialize_array_with, serialize_array};
 use crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
@@ -76,6 +76,7 @@ impl WitnessCondition {
         Ok(bytes)
     }
 
+    /// Deserializes a witness condition, enforcing a maximum nesting depth.
     pub fn deserialize_with_depth(reader: &mut MemoryReader, max_depth: usize) -> IoResult<Self> {
         if max_depth == 0 {
             return Err(IoError::invalid_data("Max nesting depth exceeded"));

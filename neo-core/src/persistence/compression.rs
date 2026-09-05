@@ -29,7 +29,9 @@ pub fn decompress(
 ) -> crate::Result<Vec<u8>> {
     match algorithm {
         CompressionAlgorithm::None => Ok(Vec::from(compressed_data)),
-        CompressionAlgorithm::Lz4 => decompress_lz4(compressed_data, MAX_PERSISTENCE_LZ4_OUTPUT_SIZE),
+        CompressionAlgorithm::Lz4 => {
+            decompress_lz4(compressed_data, MAX_PERSISTENCE_LZ4_OUTPUT_SIZE)
+        }
         CompressionAlgorithm::Zstd => zstd::stream::decode_all(Cursor::new(compressed_data))
             .map_err(|e| CoreError::io(format!("ZSTD decompression failed: {e}"))),
     }
@@ -115,9 +117,10 @@ mod tests {
     #[test]
     fn decompress_lz4_missing_length_prefix_fails() {
         let err = decompress(&[1, 2, 3], CompressionAlgorithm::Lz4).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("compressed data missing length prefix"));
+        assert!(
+            err.to_string()
+                .contains("compressed data missing length prefix")
+        );
     }
 
     #[test]

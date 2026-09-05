@@ -90,8 +90,8 @@ impl RpcRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_fixtures::rpc_case_request;
+    use super::*;
     use neo_json::JArray;
 
     #[test]

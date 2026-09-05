@@ -1,7 +1,7 @@
 use super::memory_store::MemoryStore;
 use crate::persistence::{
-    read_only_store::ReadOnlyStoreGeneric, store::Store, store_snapshot::StoreSnapshot,
-    write_store::WriteStore, seek_direction::SeekDirection,
+    read_only_store::ReadOnlyStoreGeneric, seek_direction::SeekDirection, store::Store,
+    store_snapshot::StoreSnapshot, write_store::WriteStore,
 };
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
@@ -18,10 +18,7 @@ pub struct MemorySnapshot {
 
 impl MemorySnapshot {
     /// Creates a new MemorySnapshot.
-    pub fn new(
-        store: Arc<dyn Store>,
-        inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
-    ) -> Self {
+    pub fn new(store: Arc<dyn Store>, inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>) -> Self {
         let immutable_data = inner_data.read().clone();
         Self {
             store,
@@ -63,23 +60,26 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
             }
         }
 
-        let iter: Vec<_> = match (key_prefix, direction) {
-            (Some(prefix), SeekDirection::Forward) => merged
-                .range(prefix.clone()..)
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            (Some(prefix), SeekDirection::Backward) => merged
-                .range(..=prefix.clone())
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            (None, _) => merged.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        };
+        // Filter by prefix, then order. The previous range-based seek was
+        // incorrect for prefixes: keys that start with `prefix` are strictly
+        // GREATER than `prefix` itself in byte order, so `range(..=prefix)`
+        // (Backward) never returned any prefix match, and `range(prefix..)`
+        // (Forward) returned an unfiltered superset. This mirrors the RocksDB
+        // provider, which uses a dedicated reverse prefix iterator.
+        let mut entries: Vec<_> = merged
+            .iter()
+            .filter(|(key, _)| match key_prefix {
+                Some(prefix) => key.starts_with(prefix),
+                None => true,
+            })
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
 
         if direction == SeekDirection::Backward {
-            Box::new(iter.into_iter().rev())
-        } else {
-            Box::new(iter.into_iter())
+            entries.reverse();
         }
+
+        Box::new(entries.into_iter())
     }
 }
 

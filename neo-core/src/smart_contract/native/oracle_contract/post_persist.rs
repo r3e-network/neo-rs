@@ -1,11 +1,11 @@
 use super::OracleContract;
+use crate::UInt160;
 use crate::cryptography::Crypto;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::native::{GasToken, Role, RoleManagement};
-use crate::UInt160;
 use num_bigint::BigInt;
 use std::collections::HashMap;
 

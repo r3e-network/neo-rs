@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::error::CoreError;
-use neo_primitives::error::PrimitiveResult;
 use neo_primitives::SerializablePayload;
+use neo_primitives::error::PrimitiveResult;
 use neo_vm::StackValue;
 
 impl SerializablePayload for Transaction {
@@ -87,7 +87,8 @@ impl neo_primitives::Verifiable for Transaction {
     }
 
     fn hash(&self) -> PrimitiveResult<UInt256> {
-        Transaction::try_hash(self).map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
+        Transaction::try_hash(self)
+            .map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
     }
 
     fn hash_data(&self) -> Vec<u8> {
@@ -146,7 +147,9 @@ impl Interoperable for Transaction {
     }
 
     fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {
-        let sv = self.to_stack_value().map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))?;
+        let sv = self
+            .to_stack_value()
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))?;
         StackItem::try_from(sv).map_err(|error| {
             crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "Failed to convert transaction StackValue to StackItem: {error}"

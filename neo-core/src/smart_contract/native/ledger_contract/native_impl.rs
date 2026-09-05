@@ -1,18 +1,18 @@
 use super::{
-    storage::max_traceable_blocks_from_snapshot, HashOrIndex, LedgerContract,
-    LedgerTransactionStates, PersistedTransactionState,
+    HashOrIndex, LedgerContract, LedgerTransactionStates, PersistedTransactionState,
+    storage::max_traceable_blocks_from_snapshot,
 };
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::hardfork::Hardfork;
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::{
-    policy_contract::PolicyContract, NativeContract, NativeMethod,
+    NativeContract, NativeMethod, policy_contract::PolicyContract,
 };
 use crate::smart_contract::{Interoperable, StorageItem, StorageKey};
-use crate::neo_vm::{StackItem, StackItemExt};
 use crate::{UInt160, UInt256};
 use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;

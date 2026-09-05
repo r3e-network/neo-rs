@@ -8,19 +8,20 @@ use crate::error::CoreResult;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::services::SystemContext;
+use crate::smart_contract::Contract;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::NeoToken;
-use crate::smart_contract::Contract;
 use crate::{UInt160, UInt256};
 use neo_vm::StackValue;
-use std::sync::LazyLock;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use std::sync::LazyLock;
 
 /// Parses a `UInt160` from a raw byte argument, returning a descriptive
 /// native-contract error when the bytes are invalid.
 pub(crate) fn parse_uint160_arg(arg: &[u8], label: &str) -> crate::CoreResult<UInt160> {
-    UInt160::from_bytes(arg).map_err(|_| crate::CoreError::native_contract(format!("Invalid {label}")))
+    UInt160::from_bytes(arg)
+        .map_err(|_| crate::CoreError::native_contract(format!("Invalid {label}")))
 }
 
 /// Serializes a [`StackValue`] to bytes using default engine limits,
@@ -55,11 +56,13 @@ impl NativeHelpers {
         *SYSTEM_CONTEXT.write() = Some(context);
     }
 
+    /// Clears the attached system context; used by tests to reset global state.
     #[cfg(test)]
     pub fn clear_system_context() {
         *SYSTEM_CONTEXT.write() = None;
     }
 
+    /// Returns the attached system context, if one has been set.
     pub fn context() -> Option<Arc<dyn SystemContext>> {
         SYSTEM_CONTEXT.read().clone()
     }

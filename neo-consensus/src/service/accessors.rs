@@ -30,6 +30,11 @@ impl ConsensusService {
         self.context.expected_block_time = expected_block_time_ms;
     }
 
+    /// Sets the protocol limit for transactions in a proposed block.
+    pub fn set_max_transactions_per_block(&mut self, max_transactions: usize) {
+        self.context.max_transactions_per_block = max_transactions;
+    }
+
     /// Supplies the parent block's timestamp so `PrepareRequest` timestamps can be
     /// validated against it (C# compares against `context.PrevHeader.Timestamp`).
     /// Leaving it at `0` disables the lower-bound check.
@@ -63,5 +68,11 @@ impl ConsensusService {
     #[must_use]
     pub const fn is_running(&self) -> bool {
         self.running
+    }
+
+    /// Returns whether a RecoveryMessage is currently being replayed.
+    #[must_use]
+    pub const fn is_recovering(&self) -> bool {
+        self.is_recovering
     }
 }

@@ -1,0 +1,128 @@
+name: Neo v3.10.1 Consistency
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  push:
+    branches:
+    - main
+    - master
+    paths:
+    - .github/workflows/compatibility-v3101.yml
+    - scripts/validate-v3101-consistency.sh
+    - neo-core/**
+    - neo-node/**
+    - neo-rpc/**
+    - neo-p2p/**
+    - neo-vm/**
+    - neo-config/**
+    - neo-consensus/**
+    - neo-primitives/**
+    - neo-crypto/**
+    - neo-io/**
+    - neo-storage/**
+  pull_request:
+    branches:
+    - main
+    - master
+    paths:
+    - .github/workflows/compatibility-v3101.yml
+    - scripts/validate-v3101-consistency.sh
+    - neo-core/**
+    - neo-node/**
+    - neo-rpc/**
+    - neo-p2p/**
+    - neo-vm/**
+    - neo-config/**
+    - neo-consensus/**
+    - neo-primitives/**
+    - neo-crypto/**
+    - neo-io/**
+    - neo-storage/**
+  schedule:
+  - cron: 0 */12 * * *
+  workflow_dispatch:
+    inputs:
+      network:
+        description: Network to validate
+        required: false
+        type: choice
+        options:
+        - all
+        - mainnet
+        - testnet
+        default: all
+      skip_baseline:
+        description: Skip C# vs NeoGo baseline check
+        required: false
+        type: boolean
+        default: false
+      profile:
+        description: Cargo profile
+        required: false
+        type: choice
+        options:
+        - dev
+        - release
+        default: dev
+      vector_gas_tolerance:
+        # Review §4.3.4: the scheduled/PR lanes keep the environment
+        # tolerance for online probes. Dispatch with `0` to run the
+        # exact-vector mode — per-unit gas equality, no tolerance — which
+        # is the gate conformance claims must be measured against.
+        description: Max allowed gas delta per vector (0 = exact match)
+        required: false
+        type: string
+        default: "1000000"
+jobs:
+  consistency:
+    name: ${{ matrix.network }} consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        network:
+        - mainnet
+        - testnet
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Install system dependencies
+      run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
+        \n  build-essential \\\n  clang \\\n  cmake \\\n  curl \\\n  jq \\\n  libbz2-dev\
+        \ \\\n  libclang-dev \\\n  liblz4-dev \\\n  librocksdb-dev \\\n  libsnappy-dev\
+        \ \\\n  libssl-dev \\\n  libzstd-dev \\\n  pkg-config \\\n  python3 \\\n \
+        \ python3-pip \\\n  python3-venv \\\n  zlib1g-dev\n"
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+    - name: Run Neo v3.10.1 consistency validation
+      env:
+        TARGET_NETWORK: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.network
+          || 'all' }}
+        PROFILE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.profile
+          || 'dev' }}
+        SKIP_BASELINE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_baseline
+          || 'false' }}
+        VECTOR_GAS_TOLERANCE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.vector_gas_tolerance
+          || '1000000' }}
+        # Pin this to the reviewed v3.10.1 execution-specs commit/tag.
+        NEO_EXECUTION_SPECS_REF: ${{ vars.NEO_EXECUTION_SPECS_REF }}
+        ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH: 'false'
+      run: "if [ \"$TARGET_NETWORK\" != \"all\" ] && [ \"$TARGET_NETWORK\" != \"${{\
+        \ matrix.network }}\" ]; then\n  echo \"Skipping matrix lane '${{ matrix.network\
+        \ }}' for requested network '$TARGET_NETWORK'\"\n  exit 0\nfi\n\nargs=(--network\
+        \ \"${{ matrix.network }}\" --profile \"$PROFILE\")\nif [ \"$SKIP_BASELINE\"\
+        \ = \"true\" ]; then\n  args+=(--skip-baseline)\nfi\n\nbash scripts/validate-v3101-consistency.sh\
+        \ \"${args[@]}\"\n"
+    - name: Upload consistency artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: v3101-consistency-${{ matrix.network }}
+        path: reports/compat-v3101/**
+        retention-days: 14

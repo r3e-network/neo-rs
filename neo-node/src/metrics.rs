@@ -5,9 +5,9 @@
 
 use neo_core::network::p2p::timeouts::TimeoutStats;
 use neo_core::telemetry::Telemetry;
+use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 use sysinfo::{DiskExt, System, SystemExt};
 
 /// Global telemetry instance for the node.

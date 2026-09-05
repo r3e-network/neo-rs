@@ -8,8 +8,8 @@ use crate::persistence::seek_direction::SeekDirection;
 use crate::types::{StorageItem, StorageKey, TrackState};
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashSet};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tracing::{debug, trace, warn};
 
 /// Delegate for storage entries
@@ -108,8 +108,7 @@ impl DataCache {
     /// Attempt to add an item to the cache, returning an error when read-only.
     pub fn try_add(&self, key: StorageKey, value: StorageItem) -> DataCacheResult {
         self.ensure_writable()?;
-        self.add_writable(key, value);
-        Ok(())
+        self.add_writable(key, value)
     }
 
     /// Attempt to update an item in the cache, returning an error when read-only.
@@ -275,8 +274,7 @@ impl DataCache {
         {
             let state = self.state.read();
             if let Some(trackable) = state.dictionary.get(key) {
-                if trackable.state != TrackState::Deleted
-                    && trackable.state != TrackState::NotFound
+                if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound
                 {
                     log_watched_storage_event(
                         "get",
@@ -345,9 +343,10 @@ impl DataCache {
         }
         let mut state = self.state.write();
         if state.dictionary.len() < self.config.max_entries {
-            state.dictionary.entry(key.clone()).or_insert_with(|| {
-                Trackable::new(item.clone(), TrackState::None)
-            });
+            state
+                .dictionary
+                .entry(key.clone())
+                .or_insert_with(|| Trackable::new(item.clone(), TrackState::None));
         }
     }
 
@@ -357,8 +356,7 @@ impl DataCache {
         {
             let state = self.state.read();
             if let Some(trackable) = state.dictionary.get(key) {
-                if trackable.state != TrackState::Deleted
-                    && trackable.state != TrackState::NotFound
+                if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound
                 {
                     return Some(trackable.item.clone());
                 }
@@ -374,37 +372,47 @@ impl DataCache {
         }
     }
 
-    fn add_writable(&self, key: StorageKey, value: StorageItem) {
+    fn add_writable(&self, key: StorageKey, value: StorageItem) -> DataCacheResult {
         if let Some(ref cache) = self.read_cache {
             cache.remove(&key);
         }
 
-        self.apply_add(&key, value.clone());
+        self.apply_add(&key, value.clone())?;
         for handler in self.on_update.read().iter() {
             handler(self, &key, &value);
         }
+        Ok(())
     }
 
-    fn apply_add(&self, key: &StorageKey, value: StorageItem) {
+    fn apply_add(&self, key: &StorageKey, value: StorageItem) -> DataCacheResult {
         let mut state = self.state.write();
         let prev_state = state
             .dictionary
             .get(key)
             .map(|t| t.state)
             .unwrap_or(TrackState::NotFound);
+        let new_state = match prev_state {
+            TrackState::Deleted => TrackState::Changed,
+            TrackState::NotFound => TrackState::Added,
+            TrackState::None | TrackState::Added | TrackState::Changed => {
+                return Err(DataCacheError::InvalidState(format!(
+                    "Add is invalid for existing state {prev_state:?}"
+                )));
+            }
+        };
         log_watched_storage_event(
             "add",
             "apply_add",
             key,
             Some(prev_state),
-            Some(TrackState::Added),
+            Some(new_state),
             Some(&value),
         );
-        state.dictionary.insert(
-            key.clone(),
-            Trackable::new(value, TrackState::Added),
-        );
+        state
+            .dictionary
+            .insert(key.clone(), Trackable::new(value, new_state));
         state.change_set.insert(key.clone());
+        Ok(())
     }
 
     /// Updates an item in the cache.
@@ -496,10 +504,7 @@ impl DataCache {
                 let mut state = self.state.write();
                 state.dictionary.insert(
                     key.clone(),
-                    Trackable::new(
-                        StorageItem::default(),
-                        TrackState::Deleted,
-                    ),
+                    Trackable::new(StorageItem::default(), TrackState::Deleted),
                 );
                 state.change_set.insert(key.clone());
                 log_watched_storage_event(
@@ -557,10 +562,7 @@ impl DataCache {
                     TrackState::Changed | TrackState::None | TrackState::NotFound => {
                         state.dictionary.insert(
                             key.clone(),
-                            Trackable::new(
-                                StorageItem::default(),
-                                TrackState::Deleted,
-                            ),
+                            Trackable::new(StorageItem::default(), TrackState::Deleted),
                         );
                         state.change_set.insert(key.clone());
                         log_watched_storage_event(

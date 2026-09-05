@@ -3,12 +3,12 @@
 //! This module provides the base wallet trait and functionality,
 //! converted from the C# Neo Wallet class (@neo-sharp/src/Neo/Wallets/Wallet.cs).
 
+use crate::Transaction;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::contract::Contract;
 use crate::wallets::{
-    wallet_factory::WalletFactory, key_pair::KeyPair, wallet_account::WalletAccount, Version,
+    Version, key_pair::KeyPair, wallet_account::WalletAccount, wallet_factory::WalletFactory,
 };
-use crate::Transaction;
 use crate::{UInt160, UInt256};
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -19,39 +19,51 @@ pub type WalletResult<T> = std::result::Result<T, WalletError>;
 /// Wallet-specific errors
 #[derive(thiserror::Error, Debug)]
 pub enum WalletError {
+    /// The supplied password is incorrect.
     #[error("Invalid password")]
     InvalidPassword,
 
+    /// The requested account does not exist in the wallet.
     #[error("Account not found: {0}")]
     AccountNotFound(UInt160),
 
+    /// No wallet file exists at the given path.
     #[error("Wallet file not found: {0}")]
     WalletFileNotFound(String),
 
+    /// The wallet file is not a valid NEP-6 document.
     #[error("Invalid wallet format")]
     InvalidWalletFormat,
 
+    /// The wallet is locked and must be unlocked first.
     #[error("Wallet is locked")]
     WalletLocked,
 
+    /// The account is locked and its key is unavailable.
     #[error("Account is locked")]
     AccountLocked,
 
+    /// The wallet lacks sufficient balance for the operation.
     #[error("Insufficient funds")]
     InsufficientFunds,
 
+    /// Building the transaction failed.
     #[error("Transaction creation failed: {0}")]
     TransactionCreationFailed(String),
 
+    /// Signing the data failed.
     #[error("Signing failed: {0}")]
     SigningFailed(String),
 
+    /// An underlying core error.
     #[error("Core error: {0}")]
     Core(#[from] crate::error::CoreError),
 
+    /// An I/O error occurred during a wallet operation.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Any other wallet error.
     #[error("Other error: {0}")]
     Other(String),
 }

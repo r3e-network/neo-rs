@@ -3,13 +3,13 @@
 //! Benchmarks for storage read/write operations, caching, and database
 //! operations used in the Neo blockchain.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use neo_core::persistence::{
-    read_only_store::ReadOnlyStoreGeneric, write_store::WriteStore, providers::MemoryStore,
-    seek_direction::SeekDirection,
+    providers::MemoryStore, read_only_store::ReadOnlyStoreGeneric, seek_direction::SeekDirection,
+    write_store::WriteStore,
 };
 use neo_core::smart_contract::{StorageItem, StorageKey};
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 
 // Generate random bytes
 fn random_bytes(size: usize) -> Vec<u8> {

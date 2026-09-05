@@ -9,7 +9,7 @@ use std::{
     path::Path,
 };
 use tracing_appender::{non_blocking, non_blocking::WorkerGuard};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 /// Handles for logging resources that need to be kept alive.
 pub struct LoggingHandles {

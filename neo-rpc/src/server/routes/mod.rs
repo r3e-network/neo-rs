@@ -5,15 +5,15 @@ use super::rpc_server_settings::RpcServerConfig;
 
 use parking_lot::RwLock;
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::HashSet;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
-use warp::http::header::{HeaderValue, CONTENT_TYPE, WWW_AUTHENTICATE};
-use warp::http::StatusCode;
-use warp::reply::Response as HttpResponse;
 use warp::Filter;
+use warp::http::StatusCode;
+use warp::http::header::{CONTENT_TYPE, HeaderValue, WWW_AUTHENTICATE};
+use warp::reply::Response as HttpResponse;
 
 mod cors;
 mod handlers;
@@ -22,7 +22,7 @@ mod handlers;
 mod tests;
 
 pub use cors::BasicAuth;
-use cors::{apply_cors, CorsConfig};
+use cors::{CorsConfig, apply_cors};
 use handlers::handle_post_request;
 #[cfg(feature = "jsonrpsee-server")]
 pub(in crate::server) use handlers::{invoke_rpc_handler, resolve_rpc_handler};

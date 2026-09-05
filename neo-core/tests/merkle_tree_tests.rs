@@ -1,9 +1,9 @@
+use neo_core::UInt256;
 use neo_core::cryptography::Crypto;
 use neo_core::cryptography::MerkleTree;
 use neo_core::network::p2p::payloads::{
     block::Block, merkle_block_payload::MerkleBlockPayload, transaction::Transaction,
 };
-use neo_core::UInt256;
 
 fn make_uint256(value: u8) -> UInt256 {
     let mut bytes = [0u8; 32];

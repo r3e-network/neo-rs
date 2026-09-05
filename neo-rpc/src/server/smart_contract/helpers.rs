@@ -1,17 +1,17 @@
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use neo_core::UInt160;
+use neo_core::neo_vm::StackItem;
+use neo_core::neo_vm::rpc_json::stack_item_rpc_json_deferred_size_check;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
-use neo_core::smart_contract::NotifyEventArgs;
 use neo_core::smart_contract::ApplicationEngine;
-use neo_core::vm_runtime::rpc_json::stack_item_rpc_json_deferred_size_check;
-use neo_core::vm_runtime::StackItem;
-use neo_core::UInt160;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::NotifyEventArgs;
+use neo_core::smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
 use neo_json::JToken;
 use neo_vm::{StackValue, VmState};
 use num_traits::ToPrimitive;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 use crate::server::diagnostic::{Diagnostic, DiagnosticInvocation};
@@ -40,10 +40,13 @@ pub(super) fn parse_contract_parameters(
 }
 
 pub(super) fn final_rpc_vm_state_string(state: VmState) -> Result<String, RpcException> {
-    state
-        .final_name()
-        .map(str::to_string)
-        .ok_or_else(|| internal_error(format!("{state:?} is not a final VM state")))
+    let name = match state {
+        VmState::HALT => "HALT",
+        VmState::FAULT => "FAULT",
+        VmState::BREAK => "BREAK",
+        VmState::NONE => "NONE",
+    };
+    Ok(name.to_string())
 }
 
 #[allow(clippy::type_complexity)]
@@ -177,7 +180,7 @@ fn stack_item_to_json_with_budget(
                 if let Value::Object(obj) = &mut value {
                     obj.insert(
                         "interface".to_string(),
-                        Value::String("StorageIterator".to_string()),
+                        Value::String("IIterator".to_string()),
                     );
                     obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
                 }

@@ -3,13 +3,13 @@
 //! and access their methods.
 
 use super::{ContractManifest, ContractPermissionDescriptor, WildCardContainer};
+use crate::ECPoint;
+use crate::UInt160;
 use crate::error::CoreError;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult;
-use crate::smart_contract::interoperable::Interoperable;
 use crate::neo_vm::StackItem;
-use crate::ECPoint;
-use crate::UInt160;
+use crate::smart_contract::interoperable::Interoperable;
 // Removed neo_cryptography dependency - using external crypto crates directly
 use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
@@ -157,13 +157,17 @@ impl ContractPermission {
 }
 
 impl Interoperable for ContractPermission {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), crate::neo_vm::VmError> {
+    fn from_stack_item(
+        &mut self,
+        stack_item: StackItem,
+    ) -> std::result::Result<(), crate::neo_vm::VmError> {
         let sv = StackValue::try_from(stack_item).map_err(|error| {
             crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "Failed to convert ContractPermission StackItem to StackValue: {error}"
             ))
         })?;
-        self.from_stack_value(sv).map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
+        self.from_stack_value(sv)
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
     fn to_stack_item(&self) -> std::result::Result<StackItem, crate::neo_vm::VmError> {

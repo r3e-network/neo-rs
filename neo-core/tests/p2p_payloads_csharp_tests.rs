@@ -1,5 +1,5 @@
-use neo_core::VerifiableExt;
 use hex::{decode as hex_decode, encode as hex_encode};
+use neo_core::VerifiableExt;
 use neo_core::cryptography::bloom_filter::BloomFilter;
 use neo_core::cryptography::{Crypto, ECCurve, ECPoint};
 use neo_core::ledger::create_genesis_block;
@@ -154,8 +154,12 @@ fn csharp_ut_version_payload_create_method() {
         NodeCapability::full_node(1),
     ];
 
-    let payload =
-        VersionPayload::create(settings.network, nonce, user_agent.clone(), capabilities.clone());
+    let payload = VersionPayload::create(
+        settings.network,
+        nonce,
+        user_agent.clone(),
+        capabilities.clone(),
+    );
 
     assert_eq!(payload.network, settings.network);
     assert_eq!(payload.version, 0);

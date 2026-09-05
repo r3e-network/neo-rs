@@ -1,5 +1,7 @@
-use super::super::helpers::{invocation_script_from_signature, signature_from_invocation_script};
 use super::super::ConsensusService;
+use super::super::helpers::{
+    current_timestamp, invocation_script_from_signature, signature_from_invocation_script,
+};
 use crate::context::ConsensusState;
 use crate::messages::{
     ChangeViewMessage, ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact,
@@ -56,11 +58,18 @@ impl ConsensusService {
         Ok(())
     }
 
-    /// Handles `RecoveryMessage`
+    /// Handles `RecoveryMessage` with a scoped recovery-replay guard.
     pub(in crate::service) fn on_recovery_message(
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
+        self.is_recovering = true;
+        let result = self.on_recovery_message_inner(payload);
+        self.is_recovering = false;
+        result
+    }
+
+    fn on_recovery_message_inner(&mut self, payload: &ConsensusPayload) -> ConsensusResult<()> {
         // Verify the payload signature
         // SECURITY: Require non-empty witness and valid signature
         if payload.witness.is_empty() {
@@ -159,7 +168,14 @@ impl ConsensusService {
                 self.reprocess_recovery_payload(recovered);
             }
 
-            return Ok(());
+            // R20: the change views above may have advanced us to
+            // `message_view`. Fall through and consume the rest of this
+            // package (prepare request/responses, commits) instead of
+            // dropping it — the dedup cache would otherwise refuse a
+            // retransmission carrying the same content.
+            if self.context.view_number < message_view {
+                return Ok(());
+            }
         }
 
         if message_view == self.context.view_number
@@ -309,6 +325,10 @@ impl ConsensusService {
                 // Add our own commit
                 self.context
                     .add_commit(my_idx, self.context.view_number, signature)?;
+                // Match C# CheckPreparations: once our Commit is sent, allow one
+                // block interval before retrying via RecoveryMessage.
+                self.context
+                    .change_timer(current_timestamp(), self.context.expected_block_time);
                 self.check_commits()?;
             }
         }
@@ -361,17 +381,21 @@ impl ConsensusService {
 
     pub(in crate::service) fn maybe_send_recovery_response(
         &mut self,
-        requester_index: u8,
+        request_payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
-        if !self.should_send_recovery_response(requester_index)? {
+        let request_hash = self.dbft_payload_hash(request_payload)?;
+        if self.context.has_sent_recovery_response(&request_hash) {
+            return Ok(());
+        }
+        if !self.should_send_recovery_response(request_payload.validator_index)? {
             return Ok(());
         }
 
         let recovery = self.build_recovery_message()?;
-
         let payload =
             self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
         self.broadcast(payload)?;
+        self.context.mark_recovery_response_sent(&request_hash);
         Ok(())
     }
 

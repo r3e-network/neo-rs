@@ -10,10 +10,10 @@
 // modifications are permitted.
 
 use parking_lot::Mutex;
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use reqwest::blocking::{Client, Response};
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};

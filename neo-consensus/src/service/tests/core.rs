@@ -1,6 +1,6 @@
-use super::helpers::{create_test_validators, create_validators_with_keys};
-use crate::messages::{ConsensusPayload, PrepareRequestMessage};
+use super::helpers::{create_test_validators, create_validators_with_keys, sign_payload};
 use crate::ConsensusService;
+use crate::messages::{ConsensusPayload, PrepareRequestMessage};
 use crate::{ConsensusError, ConsensusMessageType};
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
@@ -51,37 +51,59 @@ async fn test_primary_calculation() {
 }
 
 #[tokio::test]
-#[ignore = "Requires valid witness/signatures on ConsensusPayload — needs test helper that signs payloads with validator keys (see create_validators_with_keys)"]
 async fn test_message_deduplication() {
+    let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
-    let validators = create_test_validators(7);
-    let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
+    let (validators, keys) = create_validators_with_keys(7);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(100, 1000, UInt256::zero(), 0).unwrap();
 
+    // Primary for block 100, view 0 is `(100 - 0) % 7 == 2`.
+    assert_eq!(service.context().primary_index(), 2);
+
     let msg = PrepareRequestMessage::new(100, 0, 2, 0, UInt256::zero(), 1234, 5678, vec![]);
-    let payload = ConsensusPayload::new(
-        0x4E454F,
+    let mut payload = ConsensusPayload::new(
+        network,
         100,
         2,
         0,
         ConsensusMessageType::PrepareRequest,
         msg.serialize(),
     );
+    sign_payload(&service, &mut payload, &keys[2]);
+    let msg_hash = service.dbft_payload_hash(&payload).expect("payload hash");
 
-    let result1 = service.process_message(payload.clone());
-    if let Err(ref e) = result1 {
-        eprintln!("First message processing failed: {:?}", e);
+    // First delivery is accepted, cached, and answered with our PrepareResponse.
+    service
+        .process_message(payload.clone())
+        .expect("first delivery accepted");
+    assert!(service.context().has_seen_message(&msg_hash));
+    assert!(service.context().prepare_request_received);
+    assert!(!drain_events(&mut rx).is_empty());
+
+    // Re-delivery of the identical payload is dropped before handler dispatch:
+    // it is not an error, and it must not emit a second PrepareResponse.
+    service
+        .process_message(payload)
+        .expect("duplicate is ignored, not rejected");
+    let replayed = drain_events(&mut rx);
+    assert!(
+        replayed.is_empty(),
+        "duplicate message must not produce new events, got {}",
+        replayed.len()
+    );
+
+    // Our own PrepareResponse was recorded exactly once.
+    assert_eq!(service.context().prepare_responses.len(), 1);
+}
+
+fn drain_events(rx: &mut mpsc::Receiver<crate::ConsensusEvent>) -> Vec<crate::ConsensusEvent> {
+    let mut events = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        events.push(event);
     }
-
-    let _result2 = service.process_message(payload.clone());
-
-    drop(service);
-    let mut event_count = 0;
-    while rx.try_recv().is_ok() {
-        event_count += 1;
-    }
-    assert!(event_count >= 1);
+    events
 }
 
 #[tokio::test]
@@ -132,13 +154,13 @@ async fn test_replay_attack_prevention() {
 
     let _ = service.process_message(payload.clone());
 
-    assert!(service.context().has_seen_message(&msg_hash));
+    // Malformed payloads are not marked seen until handler validation succeeds.
+    assert!(!service.context().has_seen_message(&msg_hash));
 
     let result = service.process_message(payload);
 
-    assert!(result.is_ok());
-
-    assert!(service.context().has_seen_message(&msg_hash));
+    assert!(result.is_err());
+    assert!(!service.context().has_seen_message(&msg_hash));
 }
 
 #[tokio::test]

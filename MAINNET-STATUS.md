@@ -1,5 +1,11 @@
 # Neo-RS Mainnet Node Status
 
+> **⚠ Point-in-time snapshot (2026-03-23).** This document records a single
+> deployment from March 2026 and is preserved for history only. It does NOT
+> describe the current state of any node and must not be cited as evidence of
+> current MainNet operation. For current status, run the node and query its
+> RPC health endpoints directly.
+
 ## Deployment Information
 
 - **Server**: 89.167.120.122

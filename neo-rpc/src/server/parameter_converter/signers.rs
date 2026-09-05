@@ -1,4 +1,4 @@
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
 use neo_core::cryptography::{ECCurve, ECPoint};
 use neo_core::network::p2p::payloads::signer::Signer;
@@ -10,8 +10,8 @@ use neo_json::JToken;
 use super::super::model::SignersAndWitnesses;
 use super::super::rpc_exception::RpcException;
 use super::{
-    expect_array, expect_object, expect_string, invalid_params, jtoken_to_serde, parse_address,
-    parse_uint160, ConversionContext,
+    ConversionContext, expect_array, expect_object, expect_string, invalid_params, jtoken_to_serde,
+    parse_address, parse_uint160,
 };
 
 pub(super) fn parse_signers_and_witnesses(
@@ -83,8 +83,7 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                     let contract = item
                         .as_ref()
                         .ok_or_else(|| invalid_params("Null contract entry"))?;
-                    let text =
-                        expect_string(contract, "Allowed contract entries must be strings")?;
+                    let text = expect_string(contract, "Allowed contract entries must be strings")?;
                     parse_uint160(&text)
                 })
                 .collect::<Result<Vec<_>, _>>()?;

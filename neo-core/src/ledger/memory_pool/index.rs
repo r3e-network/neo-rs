@@ -1,3 +1,5 @@
+#![allow(clippy::mutable_key_type)] // key is logically immutable once inserted
+
 use super::PoolItem;
 use crate::UInt256;
 use crate::network::p2p::payloads::Transaction;

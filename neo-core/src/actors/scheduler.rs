@@ -6,6 +6,7 @@ use tokio::task;
 use tokio::time;
 use tokio_util::sync::{CancellationToken, DropGuard};
 
+/// Delivers delayed and recurring messages to actors on the runtime.
 #[derive(Clone)]
 pub struct Scheduler {
     runtime: Handle,
@@ -16,6 +17,7 @@ impl Scheduler {
         Self { runtime }
     }
 
+    /// Sends `message` to `target` once after `delay`.
     pub fn schedule_tell_once<M>(
         &self,
         delay: Duration,
@@ -50,6 +52,8 @@ impl Scheduler {
         ScheduleHandle::new(token)
     }
 
+    /// Sends `message` to `target` repeatedly every `interval`, starting
+    /// after `initial_delay`.
     pub fn schedule_tell_repeatedly<M>(
         &self,
         initial_delay: Duration,
@@ -103,6 +107,7 @@ impl Scheduler {
 pub type Cancelable = ScheduleHandle;
 
 #[must_use = "scheduled messages are cancelled when the handle is dropped"]
+/// Cancels a scheduled send on `cancel` or when the last handle drops.
 pub struct ScheduleHandle {
     token: CancellationToken,
     _drop_guard: DropGuard,
@@ -117,10 +122,12 @@ impl ScheduleHandle {
         }
     }
 
+    /// Cancels the scheduled send; pending deliveries are skipped.
     pub fn cancel(&self) {
         self.token.cancel();
     }
 
+    /// Returns true once the schedule has been cancelled.
     pub fn is_cancelled(&self) -> bool {
         self.token.is_cancelled()
     }

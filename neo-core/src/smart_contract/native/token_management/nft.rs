@@ -359,9 +359,7 @@ impl TokenManagement {
         let filtered = Self::collect_nft_index_entries(engine, index_prefix, target);
         let options = FindOptions::KeysOnly | FindOptions::RemovePrefix;
         let iterator = StorageIterator::new(filtered, NFT_INDEX_LOOKUP_PREFIX_LEN, options);
-        let iterator_id = engine
-            .store_storage_iterator(iterator)
-            .native_err()?;
+        let iterator_id = engine.store_storage_iterator(iterator).native_err()?;
 
         Ok(iterator_id.to_le_bytes().to_vec())
     }

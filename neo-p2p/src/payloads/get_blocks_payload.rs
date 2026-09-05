@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms, with or without
 // modifications are permitted.
 
-use neo_io::{impl_serializable, IoError};
+use neo_io::{IoError, impl_serializable};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 

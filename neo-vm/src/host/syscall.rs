@@ -123,7 +123,7 @@ pub fn interop_hash(name: &str) -> u32 {
 mod tests {
     use sha2::{Digest, Sha256};
 
-    use super::{interop_hash, syscall_arg_count, KNOWN_SYSCALLS};
+    use super::{KNOWN_SYSCALLS, interop_hash, syscall_arg_count};
 
     fn canonical_hash(name: &str) -> u32 {
         let digest = Sha256::digest(name.as_bytes());

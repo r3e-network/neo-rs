@@ -2,7 +2,7 @@
 name = "neo-rs-fuzz"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 authors = ["R3E Network <jimmy@r3e.network>"]
 license = "MIT"
 publish = false

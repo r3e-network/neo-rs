@@ -56,6 +56,9 @@ mod tests {
         assert_eq!(MessageFlags::default(), MessageFlags::NONE);
         assert_eq!(MessageFlags::NONE.to_string(), "None");
         assert_eq!(MessageFlags::COMPRESSED.to_string(), "Compressed");
-        assert_eq!(MessageFlags::from_byte(0x80).unwrap().to_string(), "Flags(0x80)");
+        assert_eq!(
+            MessageFlags::from_byte(0x80).unwrap().to_string(),
+            "Flags(0x80)"
+        );
     }
 }

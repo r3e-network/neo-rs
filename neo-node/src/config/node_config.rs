@@ -3,7 +3,7 @@
 //! This module contains the impl block for NodeConfig (load, save, protocol_settings, etc.)
 //! along with free utility functions.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use neo_core::{
     application_logs::ApplicationLogsSettings,
     constants::{MAINNET_MAGIC, TESTNET_MAGIC},
@@ -14,7 +14,7 @@ use neo_core::{
     state_service::state_store::StateServiceSettings,
     tokens_tracker::TokensTrackerSettings,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     fs,
     fs::OpenOptions,

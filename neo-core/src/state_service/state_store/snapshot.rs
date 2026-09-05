@@ -1,9 +1,9 @@
 use super::{StateServiceSettings, StateStoreBackend, StateStoreSnapshot};
+use crate::UInt256;
 use crate::cryptography::mpt_trie::Trie;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use crate::state_service::keys::Keys;
 use crate::state_service::StateRoot;
-use crate::UInt256;
+use crate::state_service::keys::Keys;
 use std::sync::Arc;
 
 /// Snapshot of the state store for atomic operations.
@@ -126,11 +126,21 @@ impl StateSnapshot {
         Some(state_root.root_hash)
     }
 
-    /// Commits all pending changes.
-    pub fn commit(&mut self) -> Result<(), String> {
+    /// Stages trie cache changes without committing the backend.
+    pub fn stage_commit(&mut self) -> Result<(), String> {
         self.trie
             .commit()
-            .map_err(|e| format!("Trie commit failed: {:?}", e))?;
+            .map_err(|e| format!("Trie commit failed: {:?}", e))
+    }
+
+    /// Discards all pending changes in the backing overlay.
+    pub fn discard_pending(&self) {
+        self.store.discard_pending();
+    }
+
+    /// Commits all pending changes.
+    pub fn commit(&mut self) -> Result<(), String> {
+        self.stage_commit()?;
 
         // Flush pending trie updates and any staged root/index updates.
         self.store.commit()?;

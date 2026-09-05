@@ -1,21 +1,21 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{internal_error, invalid_params};
+use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
+use neo_core::UInt160;
+use neo_core::neo_vm::StackItem;
 use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
 use neo_core::smart_contract::native::contract_management::ContractManagement;
 use neo_core::smart_contract::{ApplicationEngine, TriggerType};
 use neo_core::tokens_tracker::{
-    find_prefix, Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey, Nep17Tracker, TokenBalance,
+    Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey, Nep17Tracker, TokenBalance, find_prefix,
 };
-use neo_core::vm_runtime::StackItem;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::UInt160;
 use neo_vm::VmState as VMState;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -137,16 +137,11 @@ impl RpcServerTokensTracker {
         let script_hash = parse_address_param(params, 0, "getnep11transfers", address_version)?;
 
         let now_ms = current_time_millis();
-        let start_time = parse_optional_u64(params.get(1))?;
-        let end_time = parse_optional_u64(params.get(2))?;
-        let start = if start_time == 0 {
-            now_ms.saturating_sub(7 * 24 * 60 * 60 * 1000)
-        } else {
-            start_time
-        };
-        let end = if end_time == 0 { now_ms } else { end_time };
+        let start = parse_optional_u64_field(params.get(1))?
+            .unwrap_or_else(|| now_ms.saturating_sub(7 * 24 * 60 * 60 * 1000));
+        let end = parse_optional_u64_field(params.get(2))?.unwrap_or(now_ms);
         if end < start {
-            return Err(invalid_params("endTime must be >= startTime"));
+            return Err(RpcException::from(RpcError::invalid_params()));
         }
 
         let (_, sent_prefix, received_prefix) = Nep11Tracker::rpc_prefixes();
@@ -339,16 +334,11 @@ impl RpcServerTokensTracker {
         let script_hash = parse_address_param(params, 0, "getnep17transfers", address_version)?;
 
         let now_ms = current_time_millis();
-        let start_time = parse_optional_u64(params.get(1))?;
-        let end_time = parse_optional_u64(params.get(2))?;
-        let start = if start_time == 0 {
-            now_ms.saturating_sub(7 * 24 * 60 * 60 * 1000)
-        } else {
-            start_time
-        };
-        let end = if end_time == 0 { now_ms } else { end_time };
+        let start = parse_optional_u64_field(params.get(1))?
+            .unwrap_or_else(|| now_ms.saturating_sub(7 * 24 * 60 * 60 * 1000));
+        let end = parse_optional_u64_field(params.get(2))?.unwrap_or(now_ms);
         if end < start {
-            return Err(invalid_params("endTime must be >= startTime"));
+            return Err(RpcException::from(RpcError::invalid_params()));
         }
 
         let (_, sent_prefix, received_prefix) = Nep17Tracker::rpc_prefixes();

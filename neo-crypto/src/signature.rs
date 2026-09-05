@@ -9,16 +9,16 @@ use ed25519_dalek::{
 };
 use ed25519_dalek::{Signer as _, Verifier as _};
 use p256::{
-    ecdsa::{
-        signature::hazmat::{PrehashSigner, PrehashVerifier},
-        Signature, SigningKey, VerifyingKey,
-    },
     PublicKey as P256PublicKey, SecretKey as P256SecretKey,
+    ecdsa::{
+        Signature, SigningKey, VerifyingKey,
+        signature::hazmat::{PrehashSigner, PrehashVerifier},
+    },
 };
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use secp256k1::{
-    ecdsa::{RecoverableSignature, RecoveryId},
     Message, PublicKey as Secp256k1PublicKey, Secp256k1, SecretKey as Secp256k1SecretKey,
+    ecdsa::{RecoverableSignature, RecoveryId},
 };
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
@@ -525,7 +525,7 @@ impl Crypto {
 
 #[cfg(test)]
 mod tests {
-    use super::{Secp256k1Crypto, Secp256r1Crypto, NEOFS_ECDSA_SHA512_PREFIX};
+    use super::{NEOFS_ECDSA_SHA512_PREFIX, Secp256k1Crypto, Secp256r1Crypto};
     use crate::{Crypto, ECCurve, HashAlgorithm};
 
     /// Half of the secp256r1 group order; an ECDSA signature is low-S when
@@ -622,12 +622,10 @@ mod tests {
         let message = b"neofs bearer token";
         let signature = Secp256r1Crypto::sign_neofs_sha512(message, &private_key).unwrap();
 
-        assert!(!Secp256r1Crypto::verify_neofs_sha512(
-            b"different message",
-            &signature,
-            &public_key
-        )
-        .unwrap());
+        assert!(
+            !Secp256r1Crypto::verify_neofs_sha512(b"different message", &signature, &public_key)
+                .unwrap()
+        );
 
         let mut mutated = signature;
         mutated[64] ^= 0x01;
@@ -660,11 +658,9 @@ mod tests {
         neofs_shaped_signature[0] = NEOFS_ECDSA_SHA512_PREFIX;
         neofs_shaped_signature[1..].copy_from_slice(&signature);
 
-        assert!(!Secp256r1Crypto::verify_neofs_sha512(
-            message,
-            &neofs_shaped_signature,
-            &public_key
-        )
-        .unwrap());
+        assert!(
+            !Secp256r1Crypto::verify_neofs_sha512(message, &neofs_shaped_signature, &public_key)
+                .unwrap()
+        );
     }
 }

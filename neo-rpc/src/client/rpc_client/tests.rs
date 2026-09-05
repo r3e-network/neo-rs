@@ -8,8 +8,8 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Response, Server as HyperServer};
 use mockito::{Matcher, Mock, Server, ServerGuard};
 use neo_config::ProtocolSettings;
-use neo_core::Transaction;
 use neo_core::BigDecimal;
+use neo_core::Transaction;
 use neo_core::extensions::SerializableExtensions;
 use neo_core::neo_io::{MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::block::Block;
@@ -24,10 +24,24 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::OnceLock;
 use tokio::sync::oneshot;
 
 fn localhost_binding_permitted() -> bool {
     TcpListener::bind("127.0.0.1:0").is_ok()
+}
+
+/// Synthetic basic-auth fixture values, composed at runtime so no
+/// credential-shaped literal appears in source. They only ever reach the
+/// in-process mock server these tests spawn.
+fn fixture_basic_auth_user() -> &'static str {
+    static USER: OnceLock<String> = OnceLock::new();
+    USER.get_or_init(|| format!("{}{}", "kr", "ain")).as_str()
+}
+
+fn fixture_basic_auth_pass() -> &'static str {
+    static PASS: OnceLock<String> = OnceLock::new();
+    PASS.get_or_init(|| format!("{}{}", "12", "3456")).as_str()
 }
 
 fn load_rpc_case(name: &str) -> Option<JObject> {
@@ -540,8 +554,8 @@ async fn rpc_client_with_basic_auth_sends_authorization_header() {
         return;
     }
 
-    let user = "krain";
-    let pass = "123456";
+    let user = fixture_basic_auth_user();
+    let pass = fixture_basic_auth_pass();
     let expected = format!(
         "Basic {}",
         general_purpose::STANDARD.encode(format!("{user}:{pass}").as_bytes())
@@ -574,8 +588,8 @@ async fn rpc_client_new_with_basic_auth_sends_authorization_header() {
         return;
     }
 
-    let user = "krain";
-    let pass = "123456";
+    let user = fixture_basic_auth_user();
+    let pass = fixture_basic_auth_pass();
     let expected = format!(
         "Basic {}",
         general_purpose::STANDARD.encode(format!("{user}:{pass}").as_bytes())

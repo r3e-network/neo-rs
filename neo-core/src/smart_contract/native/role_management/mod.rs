@@ -3,14 +3,14 @@
 //! Mirrors the behaviour of `Neo.SmartContract.Native.RoleManagement` by
 //! persisting designated nodes per role and enforcing committee authorization.
 
+use crate::UInt160;
 use crate::error::{CoreError as Error, CoreResult as Result, ToNativeError};
 use crate::hardfork::Hardfork;
 use crate::impl_native_contract;
+use crate::neo_vm::StackItem;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::{LedgerContract, NativeContract, NativeMethod, Role};
-use crate::neo_vm::StackItem;
-use crate::UInt160;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -249,6 +249,7 @@ mod tests {
     use crate::cryptography::Secp256r1Crypto;
     use crate::hardfork::HardforkManager;
     use crate::ledger::{Block, BlockHeader};
+    use crate::neo_vm::StackItem;
     use crate::network::p2p::payloads::{signer::Signer, transaction::Transaction};
     use crate::persistence::DataCache;
     use crate::protocol_settings::ProtocolSettings;
@@ -257,8 +258,7 @@ mod tests {
     use crate::smart_contract::call_flags::CallFlags;
     use crate::smart_contract::storage_key::StorageKey;
     use crate::smart_contract::trigger_type::TriggerType;
-    use crate::smart_contract::{native::NativeHelpers, StorageItem};
-use crate::neo_vm::StackItem;
+    use crate::smart_contract::{StorageItem, native::NativeHelpers};
     use crate::witness::Witness;
     use crate::{ECCurve, ECPoint, UInt256, Verifiable, WitnessScope};
     use neo_vm::OpCode;

@@ -1,6 +1,6 @@
-use super::super::runtime_types::{to_abi_stack, StackValue};
+use super::super::runtime_types::{StackValue, to_abi_stack};
 use super::super::state::{
-    PendingException, LAST_RESULT_LIMIT, LAST_RESULT_STACK_LEN, LAST_RESULT_STAGE,
+    LAST_RESULT_LIMIT, LAST_RESULT_STACK_LEN, LAST_RESULT_STAGE, PendingException,
 };
 use crate::{ExecutionResult, VmState};
 use alloc::{string::String, vec::Vec};

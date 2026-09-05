@@ -10,11 +10,12 @@ use super::{
     scheduler::Scheduler,
 };
 use async_trait::async_trait;
-use dashmap::{mapref::entry::Entry, DashMap};
+use dashmap::{DashMap, mapref::entry::Entry};
 use std::{any::Any, fmt, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio_util::task::TaskTracker;
 
+/// Hierarchical address of an actor: system name plus path segments.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ActorPath {
     system: String,
@@ -22,6 +23,7 @@ pub struct ActorPath {
 }
 
 impl ActorPath {
+    /// Builds a path from a system name and explicit segments.
     pub fn new(system: impl Into<String>, segments: Vec<String>) -> Self {
         Self {
             system: system.into(),
@@ -29,6 +31,7 @@ impl ActorPath {
         }
     }
 
+    /// Builds a single-segment root path, e.g. `/user`.
     pub fn root(system: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             system: system.into(),
@@ -36,6 +39,7 @@ impl ActorPath {
         }
     }
 
+    /// Returns a path for a child of this actor named `name`.
     pub fn child(&self, name: impl Into<String>) -> Self {
         let mut segments = self.segments.clone();
         segments.push(name.into());
@@ -45,10 +49,12 @@ impl ActorPath {
         }
     }
 
+    /// Returns the path segments below the system name.
     pub fn segments(&self) -> &[String] {
         &self.segments
     }
 
+    /// Parses a `/system/seg/seg` path; returns `None` when malformed.
     pub fn parse(path: &str) -> Option<Self> {
         let mut parts = path.split('/').filter(|p| !p.is_empty());
         let system = parts.next()?.to_string();
@@ -209,6 +215,7 @@ pub struct ActorSystem {
 }
 
 impl ActorSystem {
+    /// Creates a named system with its `/user` guardian actor.
     pub fn new(name: impl Into<String>) -> ActorRuntimeResult<Self> {
         let name = name.into();
         let inner = ActorSystemInner::new(name.clone())?;
@@ -221,16 +228,19 @@ impl ActorSystem {
         })
     }
 
+    /// Returns the system name.
     pub fn name(&self) -> &str {
         self.inner.name()
     }
 
+    /// Spawns a top-level actor under the user guardian.
     pub fn actor_of(&self, props: Props, name: impl Into<String>) -> ActorRuntimeResult<ActorRef> {
         self.inner
             .clone()
             .spawn_child(self.user_guardian.clone(), props, Some(name.into()))
     }
 
+    /// Resolves an actor by `/system/...` path, if it belongs to this system.
     pub fn actor_selection(&self, path: &str) -> Option<ActorRef> {
         let parsed = ActorPath::parse(path)?;
         if parsed.system != self.name() {
@@ -239,26 +249,32 @@ impl ActorSystem {
         self.inner.clone().resolve(&parsed)
     }
 
+    /// Stops the given actor.
     pub fn stop(&self, actor: &ActorRef) -> ActorRuntimeResult<()> {
         actor.stop()
     }
 
+    /// Returns the system's message scheduler.
     pub fn scheduler(&self) -> Scheduler {
         self.inner.scheduler()
     }
 
+    /// Returns the system's typed event stream.
     pub fn event_stream(&self) -> EventStreamHandle {
         self.inner.event_stream()
     }
 
+    /// Returns a clonable handle keeping the system alive.
     pub fn handle(&self) -> ActorSystemHandle {
         ActorSystemHandle::new(self.inner.clone())
     }
 
+    /// Stops all actors and waits for their tasks to finish.
     pub async fn shutdown(&self) -> ActorRuntimeResult<()> {
         self.inner.shutdown().await
     }
 
+    /// Returns a reference to the user guardian actor.
     pub fn guardian(&self) -> ActorRef {
         self.user_guardian.clone()
     }
@@ -412,6 +428,7 @@ impl Actor for Guardian {
     }
 }
 
+/// Clonable handle to a running actor system; keeps it alive while held.
 #[derive(Clone)]
 pub struct ActorSystemHandle {
     inner: Arc<ActorSystemInner>,
@@ -422,14 +439,17 @@ impl ActorSystemHandle {
         Self { inner }
     }
 
+    /// Returns the system name.
     pub fn name(&self) -> &str {
         self.inner.name()
     }
 
+    /// Returns the system's message scheduler.
     pub fn scheduler(&self) -> Scheduler {
         self.inner.scheduler()
     }
 
+    /// Returns the system's typed event stream.
     pub fn event_stream(&self) -> EventStreamHandle {
         self.inner.event_stream()
     }

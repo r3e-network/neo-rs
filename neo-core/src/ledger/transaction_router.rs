@@ -10,8 +10,11 @@ use serde::{Deserialize, Serialize};
 /// public record PreverifyCompleted(Transaction Transaction, bool Relay, VerifyResult Result);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreverifyCompleted {
+    /// The transaction that was verified.
     pub transaction: Transaction,
+    /// Whether the transaction should be relayed to the network after verification.
     pub relay: bool,
+    /// The outcome of the state-independent verification.
     pub result: VerifyResult,
 }
 

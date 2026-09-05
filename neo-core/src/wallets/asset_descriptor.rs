@@ -27,9 +27,13 @@ use std::sync::Arc;
 
 /// Represents the descriptor of an asset (matches C# `AssetDescriptor`).
 pub struct AssetDescriptor {
+    /// The script hash of the asset's token contract.
     pub asset_id: UInt160,
+    /// The full asset name taken from the token contract manifest.
     pub asset_name: String,
+    /// The ticker symbol of the asset.
     pub symbol: String,
+    /// The number of decimal places supported by the asset.
     pub decimals: u8,
 }
 
@@ -37,6 +41,7 @@ impl AssetDescriptor {
     /// GAS budget for querying decimals/symbol (matches C# 0.3 GAS).
     pub const QUERY_GAS: i64 = 30_000_000;
 
+    /// Creates a descriptor by querying the asset's name, symbol, and decimals from its deployed contract.
     pub fn new(
         snapshot: &DataCache,
         settings: &ProtocolSettings,

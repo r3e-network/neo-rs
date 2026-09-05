@@ -1,9 +1,9 @@
+use neo_core::UInt256;
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StoreCache,
+    StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
 };
 use neo_core::script_validation::{parse_script_instructions, validate_script};
 use neo_core::smart_contract::native::ledger_contract::LedgerContract;
-use neo_core::UInt256;
 use neo_vm::OpCode;
 use std::path::PathBuf;
 

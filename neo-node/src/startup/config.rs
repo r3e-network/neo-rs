@@ -1,17 +1,15 @@
 //! Startup configuration, storage provider selection, and validation.
 
 use crate::cli::NodeCli;
-use crate::config::{infer_magic_from_type, NodeConfig};
-use anyhow::{bail, Context, Result};
+use crate::config::{NodeConfig, infer_magic_from_type};
+use anyhow::{Context, Result, bail};
 #[cfg(feature = "full")]
-use neo_core::persistence::providers::{
-    rocksdb::BatchCommitConfig, RocksDBStoreProvider,
-};
+use neo_core::persistence::providers::{RocksDBStoreProvider, rocksdb::BatchCommitConfig};
 use neo_core::{
-    persistence::{storage::StorageConfig, StoreProvider},
+    UnhandledExceptionPolicy,
+    persistence::{StoreProvider, storage::StorageConfig},
     protocol_settings::ProtocolSettings,
     state_service::state_store::StateServiceSettings,
-    UnhandledExceptionPolicy,
 };
 use std::{
     fs,
@@ -403,8 +401,8 @@ pub(crate) fn build_state_service_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
-#[cfg(test)]
-use zeroize::Zeroizing;
+    #[cfg(test)]
+    use zeroize::Zeroizing;
 
     #[test]
     fn validate_requires_storage_path_for_rocksdb() {

@@ -74,7 +74,7 @@ impl InteropHost for ApplicationEngine {
         // instance). Using script_hash equality here would incorrectly skip the dynamic-call
         // null placeholder push for self-calls, causing stack underflow at the caller's
         // post-SYSCALL DROP.
-        let is_cross_contract_unload = engine.current_context().map_or(true, |current_ctx| {
+        let is_cross_contract_unload = engine.current_context().is_none_or(|current_ctx| {
             !std::sync::Arc::ptr_eq(&current_ctx.script_arc(), &context.script_arc())
         });
         let _ = unloaded_script_hash;
@@ -89,7 +89,16 @@ impl InteropHost for ApplicationEngine {
 
             if engine.uncaught_exception().is_none() {
                 if let Some(snapshot) = snapshot_cache {
-                    snapshot.commit();
+                    // Commit errors must not be swallowed: continuing as if
+                    // the callee's state changes were persisted would make
+                    // the engine's visible state diverge from storage. The
+                    // failed call faults the engine like any other host
+                    // failure (review §4.2).
+                    snapshot.try_commit().map_err(|error| {
+                        VmError::invalid_operation_msg(format!(
+                            "cross-contract snapshot commit failed: {error}"
+                        ))
+                    })?;
                 }
 
                 if let Some(current_ctx) = engine.current_context() {

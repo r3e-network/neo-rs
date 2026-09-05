@@ -1,6 +1,6 @@
-use base64::{engine::general_purpose, Engine as _};
-use neo_core::network::p2p::payloads::witness::Witness as PayloadWitness;
+use base64::{Engine as _, engine::general_purpose};
 use neo_core::Witness;
+use neo_core::network::p2p::payloads::witness::Witness as PayloadWitness;
 use neo_json::JObject;
 
 use super::parsing::parse_base64_token;

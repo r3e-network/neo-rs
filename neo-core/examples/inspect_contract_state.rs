@@ -1,11 +1,11 @@
+use neo_core::UInt160;
 use neo_core::neo_io::{MemoryReader, Serializable};
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, StoreProvider, SeekDirection, StorageConfig, StorageKey,
-    StoreCache,
+    SeekDirection, StorageConfig, StorageKey, StoreCache, StoreProvider,
+    providers::RocksDBStoreProvider,
 };
 use neo_core::smart_contract::contract_state::ContractState;
 use neo_core::smart_contract::native::ContractManagement;
-use neo_core::UInt160;
 use num_bigint::BigInt;
 use std::collections::BTreeMap;
 use std::path::PathBuf;

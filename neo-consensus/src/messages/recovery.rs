@@ -320,12 +320,32 @@ impl RecoveryMessage {
         })
     }
 
-    /// Basic validation: ensures no duplicate validator indices in preparation messages.
+    /// Validates that each compact validator set contains no duplicates.
     pub fn validate(&self) -> ConsensusResult<()> {
-        let mut seen = std::collections::HashSet::new();
-        for p in &self.preparation_messages {
-            if !seen.insert(p.validator_index) {
-                return Err(crate::ConsensusError::DuplicateValidator(p.validator_index));
+        let mut seen_change_views = std::collections::HashSet::new();
+        for message in &self.change_view_messages {
+            if !seen_change_views.insert(message.validator_index) {
+                return Err(crate::ConsensusError::DuplicateValidator(
+                    message.validator_index,
+                ));
+            }
+        }
+
+        let mut seen_preparations = std::collections::HashSet::new();
+        for message in &self.preparation_messages {
+            if !seen_preparations.insert(message.validator_index) {
+                return Err(crate::ConsensusError::DuplicateValidator(
+                    message.validator_index,
+                ));
+            }
+        }
+
+        let mut seen_commits = std::collections::HashSet::new();
+        for message in &self.commit_messages {
+            if !seen_commits.insert(message.validator_index) {
+                return Err(crate::ConsensusError::DuplicateValidator(
+                    message.validator_index,
+                ));
             }
         }
         Ok(())
@@ -420,7 +440,7 @@ mod tests {
         expected.push(0x01);
         expected.push(0x00); // view_number
         expected.push(4); // validator_index
-        expected.extend(std::iter::repeat(0xEE).take(64));
+        expected.extend_from_slice(&[0xEE; 64]);
         expected.push(0x02); // invocation_script len
         expected.extend_from_slice(&[0xFF, 0x00]);
 

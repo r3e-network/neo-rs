@@ -7,6 +7,7 @@ use super::key_path::KeyPath;
 use crate::cryptography::{Bip32Crypto, CryptoError, ECC, ECCurve, ECPoint};
 use zeroize::Zeroize;
 
+/// A BIP-32 extended key holding a private key, its public key, and a chain code.
 #[derive(Clone, Zeroize)]
 #[zeroize(drop)]
 pub struct ExtendedKey {
@@ -45,6 +46,7 @@ impl ExtendedKey {
         &self.chain_code
     }
 
+    /// Creates the master extended key from a seed (BIP-32 root key).
     pub fn create(seed: &[u8], curve: Option<ECCurve>) -> Result<Self, String> {
         let curve = curve.unwrap_or(ECCurve::Secp256r1);
         if matches!(curve, ECCurve::Ed25519) {
@@ -66,6 +68,7 @@ impl ExtendedKey {
         })
     }
 
+    /// Creates a master key from the seed and derives the given BIP-32 path from it.
     pub fn create_with_path(
         seed: &[u8],
         path: &str,
@@ -79,6 +82,7 @@ impl ExtendedKey {
         Ok(ext_key)
     }
 
+    /// Derives a child extended key for the given index (hardened when bit 31 is set).
     pub fn derive(&self, index: u32) -> Result<Self, String> {
         let mut data = [0u8; 37];
         if index >= 0x8000_0000 {

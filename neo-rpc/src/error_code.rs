@@ -74,23 +74,23 @@ rpc_error_codes! {
     InternalError = -32603 => "Internal error", standard = true;
 
     /// Unknown block.
-    UnknownBlock = -100 => "Unknown block", standard = false;
+    UnknownBlock = -101 => "Unknown block", standard = false;
     /// Unknown contract.
-    UnknownContract = -101 => "Unknown contract", standard = false;
+    UnknownContract = -102 => "Unknown contract", standard = false;
     /// Unknown transaction.
-    UnknownTransaction = -102 => "Unknown transaction", standard = false;
+    UnknownTransaction = -103 => "Unknown transaction", standard = false;
     /// Unknown storage item.
-    UnknownStorageItem = -103 => "Unknown storage item", standard = false;
+    UnknownStorageItem = -104 => "Unknown storage item", standard = false;
     /// Unknown script container.
-    UnknownScriptContainer = -104 => "Unknown script container", standard = false;
+    UnknownScriptContainer = -105 => "Unknown script container", standard = false;
     /// Unknown state root.
-    UnknownStateRoot = -105 => "Unknown state root", standard = false;
+    UnknownStateRoot = -106 => "Unknown state root", standard = false;
     /// Unknown session.
-    UnknownSession = -106 => "Unknown session", standard = false;
+    UnknownSession = -107 => "Unknown session", standard = false;
     /// Unknown iterator.
-    UnknownIterator = -107 => "Unknown iterator", standard = false;
+    UnknownIterator = -108 => "Unknown iterator", standard = false;
     /// Unknown height.
-    UnknownHeight = -108 => "Unknown height", standard = false;
+    UnknownHeight = -109 => "Unknown height", standard = false;
 
     /// Insufficient funds for transfer.
     InsufficientFunds = -300 => "Insufficient funds", standard = false;
@@ -101,30 +101,30 @@ rpc_error_codes! {
     /// Invalid wallet password.
     InvalidWalletPassword = -303 => "Invalid wallet password", standard = false;
 
+    /// Inventory verification failed.
+    VerificationFailed = -500 => "Inventory verification failed", standard = false;
     /// Inventory already exists.
-    AlreadyExists = -500 => "Already exists", standard = false;
+    AlreadyExists = -501 => "Inventory already exists", standard = false;
     /// Memory pool is full.
-    MempoolCapReached = -501 => "Memory pool capacity reached", standard = false;
+    MempoolCapReached = -502 => "Memory pool capacity reached", standard = false;
     /// Already in pool.
-    AlreadyInPool = -502 => "Already in pool", standard = false;
+    AlreadyInPool = -503 => "Already in pool", standard = false;
     /// Insufficient network fee.
-    InsufficientNetworkFee = -503 => "Insufficient network fee", standard = false;
+    InsufficientNetworkFee = -504 => "Insufficient network fee", standard = false;
     /// Policy check failed.
-    PolicyFailed = -504 => "Policy check failed", standard = false;
-    /// Invalid script.
-    InvalidScript = -505 => "Invalid script", standard = false;
+    PolicyFailed = -505 => "Policy check failed", standard = false;
     /// Invalid attribute.
-    InvalidAttribute = -506 => "Invalid attribute", standard = false;
+    InvalidAttribute = -507 => "Invalid attribute", standard = false;
     /// Invalid signature.
-    InvalidSignature = -507 => "Invalid signature", standard = false;
-    /// Invalid size.
-    InvalidSize = -508 => "Invalid size", standard = false;
+    InvalidSignature = -508 => "Invalid signature", standard = false;
+    /// Invalid script and legacy invalid-size errors use -509 in C#.
+    InvalidScript = -509 => "Invalid transaction script", standard = false;
     /// Expired transaction.
-    ExpiredTransaction = -509 => "Expired transaction", standard = false;
-    /// Insufficient funds.
-    InsufficientFundsForFee = -510 => "Insufficient funds for fee", standard = false;
-    /// Invalid verification script.
-    InvalidVerificationScript = -511 => "Invalid verification script", standard = false;
+    ExpiredTransaction = -510 => "Expired transaction", standard = false;
+    /// Insufficient funds for fees.
+    InsufficientFundsForFee = -511 => "Insufficient funds for fee", standard = false;
+    /// Invalid contract verification function.
+    InvalidVerificationScript = -512 => "Invalid contract verification function", standard = false;
 
     /// Access denied.
     AccessDenied = -600 => "Access denied", standard = false;
@@ -164,10 +164,10 @@ mod tests {
 
     #[test]
     fn test_neo_error_codes() {
-        assert_eq!(RpcErrorCode::UnknownBlock.code(), -100);
-        assert_eq!(RpcErrorCode::UnknownContract.code(), -101);
+        assert_eq!(RpcErrorCode::UnknownBlock.code(), -101);
+        assert_eq!(RpcErrorCode::UnknownContract.code(), -102);
         assert_eq!(RpcErrorCode::InsufficientFunds.code(), -300);
-        assert_eq!(RpcErrorCode::AlreadyExists.code(), -500);
+        assert_eq!(RpcErrorCode::AlreadyExists.code(), -501);
         assert_eq!(RpcErrorCode::AccessDenied.code(), -600);
     }
 
@@ -178,7 +178,7 @@ mod tests {
             Some(RpcErrorCode::ParseError)
         );
         assert_eq!(
-            RpcErrorCode::from_code(-100),
+            RpcErrorCode::from_code(-101),
             Some(RpcErrorCode::UnknownBlock)
         );
         assert_eq!(RpcErrorCode::from_code(-999), None);

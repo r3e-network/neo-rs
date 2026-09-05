@@ -2,7 +2,7 @@
 
 use crate::device::{HsmDeviceInfo, HsmDeviceType};
 use crate::error::{HsmError, HsmResult};
-use crate::signer::{normalize_public_key, script_hash_from_public_key, HsmKeyInfo, HsmSigner};
+use crate::signer::{HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key};
 use async_trait::async_trait;
 use parking_lot::RwLock;
 
@@ -77,16 +77,12 @@ impl LedgerSigner {
 
         Ok(HsmDeviceInfo {
             device_type: HsmDeviceType::Ledger,
-            manufacturer: device
-                .manufacturer_string()
-                .unwrap_or(Some("Ledger"))
-                .unwrap_or("Ledger")
-                .to_string(),
-            model: device
-                .product_string()
-                .unwrap_or(Some("Unknown"))
-                .unwrap_or("Unknown")
-                .to_string(),
+            // hidapi's manufacturer_string()/product_string() return Option<&str>;
+            // unwrap_or takes the inner &str directly (the previous double
+            // unwrap_or(Some(..)) did not compile - this module is
+            // feature-gated behind `ledger` and had never been compiled).
+            manufacturer: device.manufacturer_string().unwrap_or("Ledger").to_string(),
+            model: device.product_string().unwrap_or("Unknown").to_string(),
             serial_number: device.serial_number().map(|s| s.to_string()),
             firmware_version: None,
             is_connected: true,
@@ -94,8 +90,32 @@ impl LedgerSigner {
         })
     }
 
-    /// Send an APDU command to the Ledger
+    /// Send an APDU command to the Ledger.
+    ///
+    /// Implements the Ledger HID chunked transport: requests longer than one
+    /// report are split across continuation frames with increasing sequence
+    /// numbers, and responses are reassembled the same way. (R17: the
+    /// previous single-report write truncated real signing payloads — the
+    /// 36-byte network+hash input plus the 21-byte path exceeds the 57-byte
+    /// first-frame capacity — and only the first response report was read,
+    /// although DER signatures usually span several.)
     fn send_apdu(&self, cla: u8, ins: u8, p1: u8, p2: u8, data: &[u8]) -> HsmResult<Vec<u8>> {
+        /// HID report channel used by the Ledger transport.
+        const CHANNEL: [u8; 2] = [0x01, 0x01];
+        /// Framing tag for U2F-style HID messages.
+        const TAG: u8 = 0x05;
+        /// Payload capacity of the first frame (7-byte header + payload).
+        const FIRST_FRAME_PAYLOAD: usize = 57;
+        /// Payload capacity of continuation frames (5-byte header).
+        const CONT_FRAME_PAYLOAD: usize = 64;
+
+        if data.len() > u8::MAX as usize {
+            return Err(HsmError::DeviceError(format!(
+                "APDU data too long: {} bytes (max 255)",
+                data.len()
+            )));
+        }
+
         let devices: Vec<_> = self
             .hid_api
             .device_list()
@@ -117,50 +137,110 @@ impl LedgerSigner {
             apdu.extend_from_slice(data);
         }
 
-        // Wrap in HID report (Ledger uses 64-byte reports)
-        let mut report = vec![0x00]; // Report ID
-        report.push(0x01); // Channel
-        report.push(0x01);
-        report.push(0x05); // Tag
-        report.push(0x00); // Sequence high
-        report.push(0x00); // Sequence low
-        report.push((apdu.len() >> 8) as u8);
-        report.push((apdu.len() & 0xff) as u8);
-        report.extend_from_slice(&apdu);
-        report.resize(65, 0x00);
+        // Send with chunking
+        let mut offset = 0usize;
+        let mut sequence: u16 = 0;
+        while offset < apdu.len() || sequence == 0 {
+            let mut report = vec![0x00]; // Report ID
+            report.extend_from_slice(&CHANNEL);
+            report.push(TAG);
+            report.extend_from_slice(&sequence.to_be_bytes());
+            if sequence == 0 {
+                report.extend_from_slice(&(apdu.len() as u16).to_be_bytes());
+                let take = apdu.len().min(FIRST_FRAME_PAYLOAD);
+                report.extend_from_slice(&apdu[..take]);
+                offset += take;
+            } else {
+                let take = (apdu.len() - offset).min(CONT_FRAME_PAYLOAD);
+                report.extend_from_slice(&apdu[offset..offset + take]);
+                offset += take;
+            }
+            report.resize(65, 0x00);
 
-        // Send
-        device
-            .write(&report)
-            .map_err(|e| HsmError::DeviceError(format!("Write failed: {}", e)))?;
-
-        // Read response
-        let mut response = vec![0u8; 65];
-        let len = device
-            .read_timeout(&mut response, 30000)
-            .map_err(|e| HsmError::DeviceError(format!("Read failed: {}", e)))?;
-
-        if len < 9 {
-            return Err(HsmError::DeviceError("Invalid response length".to_string()));
+            device
+                .write(&report)
+                .map_err(|e| HsmError::DeviceError(format!("Write failed: {}", e)))?;
+            sequence = sequence.wrapping_add(1);
         }
 
-        // Parse response (skip HID header)
-        let data_len = ((response[5] as usize) << 8) | (response[6] as usize);
-        let data = response[7..7 + data_len.min(response.len() - 7)].to_vec();
+        // Read and reassemble the response
+        let mut payload: Vec<u8> = Vec::new();
+        let mut expected_len: Option<usize> = None;
+        let mut expected_sequence: u16 = 0;
+        let mut buf = [0u8; 65];
+        loop {
+            let read_len = device
+                .read_timeout(&mut buf, 30000)
+                .map_err(|e| HsmError::DeviceError(format!("Read failed: {}", e)))?;
+
+            // Platform-dependent layouts: some hidapi backends deliver the
+            // report-id slot, others start directly with the channel bytes.
+            let (header_start, read_len) = if buf[0] == CHANNEL[0] && buf[1] == CHANNEL[1] {
+                (0usize, read_len)
+            } else if buf[1] == CHANNEL[0] && buf[2] == CHANNEL[1] {
+                (1usize, read_len)
+            } else {
+                return Err(HsmError::DeviceError(
+                    "Invalid response framing".to_string(),
+                ));
+            };
+            let frame = buf
+                .get(header_start..read_len.min(buf.len()))
+                .ok_or_else(|| HsmError::DeviceError("Invalid response framing".to_string()))?;
+            if frame.len() < 5 || frame[2] != TAG {
+                return Err(HsmError::DeviceError(
+                    "Invalid response framing".to_string(),
+                ));
+            }
+            let seq = ((frame[3] as u16) << 8) | frame[4] as u16;
+            if seq != expected_sequence {
+                return Err(HsmError::DeviceError(format!(
+                    "Unexpected response sequence {} (expected {})",
+                    seq, expected_sequence
+                )));
+            }
+
+            let header_end = if expected_sequence == 0 {
+                if frame.len() < 7 {
+                    return Err(HsmError::DeviceError("Invalid response length".to_string()));
+                }
+                let total = ((frame[5] as usize) << 8) | frame[6] as usize;
+                expected_len = Some(total);
+                7
+            } else {
+                5
+            };
+
+            let mut chunk = &frame[header_end.min(frame.len())..];
+            if let Some(total) = expected_len {
+                let remaining = total.saturating_sub(payload.len());
+                if chunk.len() > remaining {
+                    chunk = &chunk[..remaining];
+                }
+            }
+            payload.extend_from_slice(chunk);
+            expected_sequence = expected_sequence.wrapping_add(1);
+
+            if expected_len.map_or(true, |total| payload.len() >= total) {
+                break;
+            }
+        }
+        if let Some(total) = expected_len {
+            payload.truncate(total);
+        }
 
         // Check status word (last 2 bytes)
-        if data.len() >= 2 {
-            let sw = ((data[data.len() - 2] as u16) << 8) | (data[data.len() - 1] as u16);
-            match sw {
-                0x9000 => Ok(data[..data.len() - 2].to_vec()),
-                0x6985 => Err(HsmError::UserRejected),
-                0x6982 => Err(HsmError::PinLocked),
-                0x6700 => Err(HsmError::LedgerError("Invalid data length".to_string())),
-                0x6E00 => Err(HsmError::LedgerError("Neo app not open".to_string())),
-                _ => Err(HsmError::LedgerError(format!("Status: 0x{:04X}", sw))),
-            }
-        } else {
-            Err(HsmError::DeviceError("Response too short".to_string()))
+        if payload.len() < 2 {
+            return Err(HsmError::DeviceError("Response too short".to_string()));
+        }
+        let sw = ((payload[payload.len() - 2] as u16) << 8) | payload[payload.len() - 1] as u16;
+        match sw {
+            0x9000 => Ok(payload[..payload.len() - 2].to_vec()),
+            0x6985 => Err(HsmError::UserRejected),
+            0x6982 => Err(HsmError::PinLocked),
+            0x6700 => Err(HsmError::LedgerError("Invalid data length".to_string())),
+            0x6E00 => Err(HsmError::LedgerError("Neo app not open".to_string())),
+            _ => Err(HsmError::LedgerError(format!("Status: 0x{:04X}", sw))),
         }
     }
 
@@ -311,42 +391,67 @@ impl HsmSigner for LedgerSigner {
 }
 
 impl LedgerSigner {
-    /// Convert DER-encoded signature to raw r||s format
+    /// Convert DER-encoded signature to raw r||s format.
+    ///
+    /// All indices are bounds-checked: a malformed (or hostile) device
+    /// response must produce an error, never a panic (R17).
     fn der_to_raw(&self, der: &[u8]) -> HsmResult<Vec<u8>> {
-        // DER format: 0x30 len 0x02 r_len r... 0x02 s_len s...
-        if der.len() < 8 || der[0] != 0x30 {
+        const TRUNCATED: &str = "Truncated DER signature";
+
+        if der.len() < 8 {
+            return Err(HsmError::SigningFailed(TRUNCATED.to_string()));
+        }
+        if der[0] != 0x30 {
             return Err(HsmError::SigningFailed("Invalid DER signature".to_string()));
         }
 
-        let mut pos = 2; // Skip 0x30 and length
+        let byte_at = |index: usize| -> HsmResult<u8> {
+            der.get(index)
+                .copied()
+                .ok_or_else(|| HsmError::SigningFailed(TRUNCATED.to_string()))
+        };
 
         // Parse r
-        if der[pos] != 0x02 {
+        let mut pos = 2; // Skip 0x30 and length
+        if byte_at(pos)? != 0x02 {
             return Err(HsmError::SigningFailed("Invalid r marker".to_string()));
         }
         pos += 1;
-        let r_len = der[pos] as usize;
+        let r_len = byte_at(pos)? as usize;
         pos += 1;
-        let r_start = if der[pos] == 0x00 { pos + 1 } else { pos };
-        let r = &der[r_start..pos + r_len];
-        pos += r_len;
+        let r_start = if byte_at(pos)? == 0x00 { pos + 1 } else { pos };
+        let r_end = pos + r_len;
+        if r_end > der.len() || r_start > r_end {
+            return Err(HsmError::SigningFailed(TRUNCATED.to_string()));
+        }
+        let r = &der[r_start..r_end];
+        pos = r_end;
 
         // Parse s
-        if der[pos] != 0x02 {
+        if byte_at(pos)? != 0x02 {
             return Err(HsmError::SigningFailed("Invalid s marker".to_string()));
         }
         pos += 1;
-        let s_len = der[pos] as usize;
+        let s_len = byte_at(pos)? as usize;
         pos += 1;
-        let s_start = if der[pos] == 0x00 { pos + 1 } else { pos };
-        let s = &der[s_start..pos + s_len];
+        let s_start = if byte_at(pos)? == 0x00 { pos + 1 } else { pos };
+        let s_end = pos + s_len;
+        if s_end > der.len() || s_start > s_end {
+            return Err(HsmError::SigningFailed(TRUNCATED.to_string()));
+        }
+        let s = &der[s_start..s_end];
 
-        // Pad to 32 bytes each
+        if r.is_empty() || s.is_empty() {
+            return Err(HsmError::SigningFailed("Empty DER component".to_string()));
+        }
+
+        // Right-align each big-endian component into 32 bytes, truncating
+        // excess high bytes.
         let mut raw = vec![0u8; 64];
-        let r_offset = 32 - r.len().min(32);
-        let s_offset = 32 - s.len().min(32);
-        raw[r_offset..32].copy_from_slice(&r[r.len().saturating_sub(32)..]);
-        raw[32 + s_offset..64].copy_from_slice(&s[s.len().saturating_sub(32)..]);
+        let r_src = r.len().saturating_sub(32);
+        raw[32 - (r.len() - r_src)..32].copy_from_slice(&r[r_src..]);
+        let s_src = s.len().saturating_sub(32);
+        raw[64 - (s.len() - s_src)..64].copy_from_slice(&s[s_src..]);
 
         Ok(raw)
     }

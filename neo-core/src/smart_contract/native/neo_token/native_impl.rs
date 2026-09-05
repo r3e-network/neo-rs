@@ -3,9 +3,9 @@
 //
 
 use super::*;
+use crate::error::ToNativeError;
 use crate::impl_native_contract;
 use crate::smart_contract::native::security_fixes::{SafeArithmetic, StateValidator};
-use crate::error::ToNativeError;
 
 impl NativeContract for NeoToken {
     impl_native_contract!(*NEO_HASH, Self::NAME, methods);

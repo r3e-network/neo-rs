@@ -17,6 +17,7 @@ pub struct JsonSerializer;
 impl JsonSerializer {
     /// Maximum safe integer representable without loss in JSON.
     pub const MAX_SAFE_INTEGER: i64 = 9007199254740991;
+    /// Minimum safe integer representable without loss in JSON.
     pub const MIN_SAFE_INTEGER: i64 = -9007199254740991;
 
     /// Serializes a [`StackItem`] to a UTF-8 JSON byte vector.
@@ -136,7 +137,10 @@ impl JsonSerializer {
             StackItem::Null => Ok(JsonValue::Null),
             StackItem::Boolean(value) => Ok(JsonValue::Bool(*value)),
             StackItem::Integer(integer) => {
-                let int_value = integer.to_bigint().to_i64().ok_or_else(|| "Integer out of safe JSON range".to_string())?;
+                let int_value = integer
+                    .to_bigint()
+                    .to_i64()
+                    .ok_or_else(|| "Integer out of safe JSON range".to_string())?;
                 if !(Self::MIN_SAFE_INTEGER..=Self::MAX_SAFE_INTEGER).contains(&int_value) {
                     return Err("Integer out of safe JSON range".to_string());
                 }
@@ -164,7 +168,7 @@ impl JsonSerializer {
         array: &Array,
         seen: &mut HashSet<(usize, StackItemType)>,
     ) -> Result<JsonValue, String> {
-        let identity = (array.id() as usize, StackItemType::Array);
+        let identity = (array.id(), StackItemType::Array);
         if !seen.insert(identity) {
             return Err("Circular reference detected".to_string());
         }
@@ -182,7 +186,7 @@ impl JsonSerializer {
         structure: &Struct,
         seen: &mut HashSet<(usize, StackItemType)>,
     ) -> Result<JsonValue, String> {
-        let identity = (structure.id() as usize, StackItemType::Struct);
+        let identity = (structure.id(), StackItemType::Struct);
         if !seen.insert(identity) {
             return Err("Circular reference detected".to_string());
         }
@@ -200,7 +204,7 @@ impl JsonSerializer {
         map: &Map,
         seen: &mut HashSet<(usize, StackItemType)>,
     ) -> Result<JsonValue, String> {
-        let identity = (map.id() as usize, StackItemType::Map);
+        let identity = (map.id(), StackItemType::Map);
         if !seen.insert(identity) {
             return Err("Circular reference detected".to_string());
         }

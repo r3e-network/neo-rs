@@ -1,18 +1,21 @@
-use neo_core::cryptography::{ECCurve, ECPoint, Crypto, Secp256r1Crypto};
+use neo_core::ScriptBuilder;
+use neo_core::cryptography::{Crypto, ECCurve, ECPoint, Secp256r1Crypto};
 use neo_core::ledger::{block::Block, block_header::BlockHeader};
 use neo_core::neo_io::BinaryWriter;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{
-    oracle_response::OracleResponse, oracle_response_code::OracleResponseCode,
+    oracle_response::OracleResponse, oracle_response_code::OracleResponseCode, signer::Signer,
     transaction::Transaction, transaction_attribute::TransactionAttribute,
 };
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::application_engine_contract::NativeArgNullMask;
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::StorageItem;
+use neo_core::smart_contract::StorageKey;
+use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
+use neo_core::smart_contract::application_engine_contract::NativeArgNullMask;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractEventDescriptor, ContractManifest, ContractMethodDescriptor,
@@ -21,11 +24,8 @@ use neo_core::smart_contract::manifest::{
 use neo_core::smart_contract::native::{
     GasToken, LedgerContract, NativeContract, NativeHelpers, OracleContract, Role, RoleManagement,
 };
-use neo_core::smart_contract::StorageItem;
-use neo_core::smart_contract::StorageKey;
-use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{Contract, ContractParameterType};
-use neo_core::{Verifiable, UInt160};
+use neo_core::{UInt160, Verifiable, WitnessScope};
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::OpCode;
 use num_bigint::BigInt;
@@ -55,15 +55,16 @@ fn serialize_nodes(nodes: &[ECPoint]) -> Vec<u8> {
 #[test]
 fn oracle_method_and_event_metadata_snapshot() {
     let oracle = OracleContract::new();
-    let expected_methods: &[(
-        &str,
+    type ExpectedOracleMethod = (
+        &'static str,
         i64,
         bool,
         u8,
-        &[ContractParameterType],
+        &'static [ContractParameterType],
         ContractParameterType,
-        &[&str],
-    )] = &[
+        &'static [&'static str],
+    );
+    let expected_methods: &[ExpectedOracleMethod] = &[
         (
             "request",
             0,
@@ -489,8 +490,29 @@ fn oracle_verify_returns_false_without_transaction_container() {
 #[test]
 fn oracle_verify_accepts_fixed_oracle_response_transaction() {
     let oracle = OracleContract::new();
-    let tx = make_response_transaction(0, OracleResponseCode::Success, Vec::new());
-    let mut engine = make_response_engine(Arc::new(DataCache::new(false)), tx);
+    let snapshot = Arc::new(DataCache::new(false));
+    seed_ledger_current_index(&snapshot, 7);
+    let callback_contract = make_callback_contract(1, "oracleCallback");
+    let snapshot = seed_pending_request(
+        Arc::clone(&snapshot),
+        &callback_contract,
+        "https://oracle.test/verify",
+        StackItem::from_byte_string(b"payload".to_vec()),
+    );
+    let oracle_node = sample_point(0xAC);
+    let role = RoleManagement::new();
+    let mut suffix = vec![Role::Oracle as u8];
+    suffix.extend_from_slice(&8u32.to_be_bytes());
+    snapshot.add(
+        StorageKey::new(role.id(), suffix),
+        StorageItem::from_bytes(serialize_nodes(std::slice::from_ref(&oracle_node))),
+    );
+
+    let oracle_account = NativeHelpers::get_bft_address(std::slice::from_ref(&oracle_node));
+    let mut tx = make_response_transaction(0, OracleResponseCode::Success, Vec::new());
+    tx.set_system_fee(10_000_000);
+    tx.set_signers(vec![Signer::new(oracle_account, WitnessScope::NONE)]);
+    let mut engine = make_response_engine(snapshot, tx);
 
     let result = oracle
         .invoke_method(&mut engine, "verify", &[])
@@ -1093,4 +1115,51 @@ fn seed_ledger_current_index(snapshot: &Arc<DataCache>, index: u32) {
     let mut bytes = vec![0u8; 32];
     bytes.extend_from_slice(&index.to_le_bytes());
     snapshot.add(key, StorageItem::from_bytes(bytes));
+}
+
+#[test]
+fn oracle_response_verify_requires_request_fee_and_designated_oracle() {
+    let snapshot = Arc::new(DataCache::new(false));
+    seed_ledger_current_index(&snapshot, 7);
+    let callback_contract = make_callback_contract(1, "oracleCallback");
+    let snapshot = seed_pending_request(
+        Arc::clone(&snapshot),
+        &callback_contract,
+        "https://oracle.test/request",
+        StackItem::from_byte_string(b"payload".to_vec()),
+    );
+
+    let oracle_node = sample_point(0xAB);
+    let role = RoleManagement::new();
+    let mut suffix = vec![Role::Oracle as u8];
+    suffix.extend_from_slice(&8u32.to_be_bytes());
+    snapshot.add(
+        StorageKey::new(role.id(), suffix),
+        StorageItem::from_bytes(serialize_nodes(std::slice::from_ref(&oracle_node))),
+    );
+
+    let response = TransactionAttribute::OracleResponse(OracleResponse::new(
+        0,
+        OracleResponseCode::Success,
+        Vec::new(),
+    ));
+    let oracle_account = NativeHelpers::get_bft_address(std::slice::from_ref(&oracle_node));
+    let mut tx = make_response_transaction(0, OracleResponseCode::Success, Vec::new());
+    tx.set_system_fee(10_000_000);
+    tx.set_signers(vec![Signer::new(oracle_account, WitnessScope::NONE)]);
+    assert!(response.verify(&ProtocolSettings::default_settings(), &snapshot, &tx));
+
+    tx.set_system_fee(9_999_999);
+    assert!(!response.verify(&ProtocolSettings::default_settings(), &snapshot, &tx));
+    tx.set_system_fee(10_000_000);
+    let response_bad_id = TransactionAttribute::OracleResponse(OracleResponse::new(
+        99,
+        OracleResponseCode::Success,
+        Vec::new(),
+    ));
+    tx.set_attributes(vec![response_bad_id.clone()]);
+    assert!(!response_bad_id.verify(&ProtocolSettings::default_settings(), &snapshot, &tx,));
+    tx.set_attributes(vec![response]);
+    tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
+    assert!(!tx.attributes()[0].verify(&ProtocolSettings::default_settings(), &snapshot, &tx));
 }

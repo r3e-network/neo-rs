@@ -4,9 +4,9 @@ use alloc::{format, string::String};
 
 use crate::semantics::{arithmetic, comparison, numeric};
 use crate::{
-    normalize_stack_item_type_tag, StackValue, COMPACT_TAG_ARRAY, COMPACT_TAG_BIG_INTEGER,
-    COMPACT_TAG_BOOLEAN, COMPACT_TAG_BUFFER, COMPACT_TAG_BYTESTRING, COMPACT_TAG_INTEGER,
-    COMPACT_TAG_STRUCT,
+    COMPACT_TAG_ARRAY, COMPACT_TAG_BIG_INTEGER, COMPACT_TAG_BOOLEAN, COMPACT_TAG_BUFFER,
+    COMPACT_TAG_BYTESTRING, COMPACT_TAG_INTEGER, COMPACT_TAG_STRUCT, StackValue,
+    normalize_stack_item_type_tag,
 };
 
 /// Return whether a value has the requested compact or NeoVM stack item type.

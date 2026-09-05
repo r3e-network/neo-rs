@@ -1,5 +1,4 @@
 use super::*;
-use crate::neo_vm::StackItemExt;
 use crate::VerifiableExt;
 
 impl ApplicationEngine {
@@ -16,7 +15,10 @@ impl ApplicationEngine {
         };
 
         // 2. Transaction container path (witness rules and scopes).
-        if let Some(tx) = container.as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() {
+        if let Some(tx) = container
+            .as_any()
+            .downcast_ref::<crate::network::p2p::payloads::Transaction>()
+        {
             let mut signers: Vec<_> = tx.signers().to_vec();
 
             // OracleResponse transactions inherit signers from the original request.
@@ -61,7 +63,8 @@ impl ApplicationEngine {
         }
 
         // Downcast to concrete types to call VerifiableExt::script_hashes_for_verifying
-        let hashes = script_hashes_for_verifying_dyn(container.as_ref(), self.snapshot_cache.as_ref());
+        let hashes =
+            script_hashes_for_verifying_dyn(container.as_ref(), self.snapshot_cache.as_ref());
         Ok(hashes.contains(hash))
     }
 
@@ -411,6 +414,8 @@ impl ApplicationEngine {
         ))
     }
 
+    /// Creates the script hash of a single-key (signature) account, charging the
+    /// CheckSig fee (`System.Contract.CreateStandardAccount`).
     pub fn create_standard_account(&mut self, public_key: &[u8]) -> Result<UInt160> {
         if public_key.len() != 33 {
             return Err(Error::invalid_operation(
@@ -433,6 +438,8 @@ impl ApplicationEngine {
         Ok(hash)
     }
 
+    /// Creates the script hash of an m-of-n multisig account
+    /// (`System.Contract.CreateMultisigAccount`).
     pub fn create_multisig_account(
         &mut self,
         required_signatures: i32,
@@ -571,18 +578,20 @@ impl ApplicationEngine {
             }
 
             if let Err(error) = contract.initialize(self) {
-                if let Some(container) = &self.script_container {
-                    let log_event = LogEventArgs::new(
-                        Arc::clone(container),
-                        hash,
-                        format!(
-                            "Native contract {} initialization error: {}",
-                            contract.name(),
-                            error
-                        ),
-                    );
-                    self.emit_log_event(log_event);
-                }
+                // C# parity: ApplicationEngine.Log fires only for the
+                // System.Runtime.Log syscall (RuntimeService.Log). Native
+                // contract initialization failures surface as exceptions
+                // during genesis persisting in C#, never as LogEventArgs.
+                // Emitting an engine log here polluted `logs()` for every
+                // height-0 engine carrying a script container (RPC invoke
+                // against a fresh chain included), so keep the diagnostic on
+                // the tracing channel instead.
+                tracing::warn!(
+                    target: "neo::engine",
+                    contract = contract.name(),
+                    error = %error,
+                    "Native contract initialization failed"
+                );
             }
         }
     }

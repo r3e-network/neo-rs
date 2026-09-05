@@ -86,7 +86,7 @@ impl HardforkManager {
     /// Builds a manager from the shared `HardforkHeights` configuration; an
     /// unconfigured hardfork (None) is treated as not activated, exactly like
     /// C# `ProtocolSettings.Hardforks`.
-    fn from_heights(heights: &neo_config::HardforkHeights) -> Self {
+    pub(crate) fn from_heights(heights: &neo_config::HardforkHeights) -> Self {
         let mut hardforks = HashMap::new();
         let pairs = [
             (Hardfork::HfAspidochelone, heights.hf_aspidochelone),

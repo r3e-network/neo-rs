@@ -1,8 +1,8 @@
+use neo_core::UInt256;
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StoreCache,
+    StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
 };
 use neo_core::smart_contract::native::ledger_contract::LedgerContract;
-use neo_core::UInt256;
 use std::path::PathBuf;
 
 // Print the script bytes of a tx as hex.

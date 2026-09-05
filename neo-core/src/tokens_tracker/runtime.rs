@@ -7,16 +7,16 @@ use super::settings::TokensTrackerSettings;
 use super::trackers::nep_11::Nep11Tracker;
 use super::trackers::nep_17::Nep17Tracker;
 use super::trackers::tracker_base::Tracker;
+use crate::NeoSystem;
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
 use crate::neo_ledger::{ApplicationExecuted, Block};
 use crate::persistence::{DataCache, Store};
 use crate::unhandled_exception_policy::panic_message;
-use crate::NeoSystem;
 use parking_lot::RwLock;
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::error;
 
 /// Runtime handler for token balance/transfer tracking.

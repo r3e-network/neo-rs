@@ -1,6 +1,6 @@
 //! Shared RPC serialization helpers for Neo wire-compatible payloads.
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_io::{BinaryWriter, IoResult, Serializable};
 
 pub(crate) fn serializable_to_bytes<T>(value: &T) -> IoResult<Vec<u8>>

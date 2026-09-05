@@ -24,8 +24,8 @@ pub(crate) use nep::{
     insert_nep_transfer_fields, parse_balance_list, parse_nep_balance_fields,
     parse_nep_transfer_fields, parse_transfer_lists, transfer_lists_to_json,
 };
-pub(crate) use parsing::{base64_string_token, optional_base64_field_lossy};
 pub use parsing::optional_string;
+pub(crate) use parsing::{base64_string_token, optional_base64_field_lossy};
 #[allow(unused_imports)]
 pub use parsing::{
     cloned_token_array, empty_array, insert_optional_string, jtoken_to_serde, object_array,
@@ -342,12 +342,12 @@ pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::engine::general_purpose::STANDARD as BASE64;
     use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64;
     use neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode;
     use neo_core::{Signer, TransactionAttribute, WitnessCondition};
     use neo_json::JArray;
-    use neo_primitives::{UInt256, WitnessScope, ADDRESS_SIZE};
+    use neo_primitives::{ADDRESS_SIZE, UInt256, WitnessScope};
 
     #[test]
     fn to_script_hash_accepts_address() {
@@ -590,11 +590,9 @@ mod tests {
             let mut json = JObject::new();
             json.insert(field.to_string(), JToken::Array(entries));
 
-            let err = RpcUtility::transaction_from_json(
-                &json,
-                &ProtocolSettings::default_settings(),
-            )
-            .expect_err("empty array slot should fail");
+            let err =
+                RpcUtility::transaction_from_json(&json, &ProtocolSettings::default_settings())
+                    .expect_err("empty array slot should fail");
             assert_eq!(err, expected);
         }
     }
@@ -649,7 +647,10 @@ mod tests {
             JToken::String(UInt256::zero().to_string()),
         );
         json.insert("time".to_string(), JToken::Number(123.0));
-        json.insert("nonce".to_string(), JToken::String(format!("{:016X}", 42u64)));
+        json.insert(
+            "nonce".to_string(),
+            JToken::String(format!("{:016X}", 42u64)),
+        );
         json.insert("index".to_string(), JToken::Number(5.0));
         json.insert("primary".to_string(), JToken::Number(0.0));
         json.insert(
@@ -695,9 +696,11 @@ mod tests {
         assert_eq!(parsed.signers().len(), 1);
         let parsed_signer = &parsed.signers()[0];
         assert_eq!(parsed_signer.account, signer.account);
-        assert!(parsed_signer
-            .scopes
-            .contains(WitnessScope::CUSTOM_CONTRACTS));
+        assert!(
+            parsed_signer
+                .scopes
+                .contains(WitnessScope::CUSTOM_CONTRACTS)
+        );
         assert_eq!(parsed_signer.allowed_contracts, signer.allowed_contracts);
         assert_eq!(parsed_signer.allowed_groups.len(), 1);
         assert_eq!(parsed_signer.rules.len(), 1);

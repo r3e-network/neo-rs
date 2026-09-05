@@ -7,7 +7,10 @@ import gzip
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from ops_safety import safe_output_path, validate_rpc_url
+
 def rpc_call(url: str, method: str, params: list, timeout=30, retries=10):
+    url = validate_rpc_url(url)
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
     for attempt in range(retries):
@@ -94,7 +97,7 @@ def main():
 
     print(f"Comparing up to {args.target} blocks between Rust ({args.rust}) and C# ({args.csharp})")
 
-    state_file = ".compare_state"
+    state_file = safe_output_path(".compare_state")
     last_checked = -1
 
     # We saw in the previous log that it made it to 13449. So we can just resume from 13449.
@@ -142,7 +145,7 @@ def main():
                     return 1
 
         last_checked = end_batch
-        with open(state_file, "w") as f:
+        with state_file.open("w") as f:
             f.write(str(last_checked))
 
         print(f"\rValidated up to {last_checked} blocks successfully (Local node height: {current_height})", end="", flush=True)

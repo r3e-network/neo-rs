@@ -104,3 +104,108 @@ jobs:
       run: cargo nextest run --workspace --no-fail-fast
     - name: Run doctests
       run: cargo test --workspace --doc
+  windows-msvc:
+    name: Windows MSVC Build
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ci-windows-msvc
+    - name: Build neo-node
+      run: cargo build --release --locked -p neo-node
+  node-full:
+    name: Node Full-Feature Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+    - name: Reclaim runner disk space
+      run: 'sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+
+        sudo docker image prune -af || true
+
+        '
+    - name: Cache APT packages
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
+          libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
+        version: 1.0
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Cache cargo registry & git
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ci-node-full
+    # R21: the full-node feature set (RocksDB provider included) must stay
+    # compilable and tested; the default-feature test job never builds it.
+    - name: Check neo-node with full features
+      run: cargo check --locked -p neo-node --features full
+    - name: Test neo-core with full features
+      run: cargo test --locked -p neo-core --features full --lib
+  msrv:
+    name: MSRV (1.88)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+    - name: Reclaim runner disk space
+      run: 'sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+
+        sudo docker image prune -af || true
+
+        '
+    - name: Cache APT packages
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
+          libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
+        version: 1.0
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "1.88"
+    - name: Cache cargo registry & git
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ci-msrv
+    # R14: enforce the declared rust-version with a dedicated lane; stable-only
+    # CI hides lockfile/dependency MSRV breakage.
+    - name: Check workspace with declared MSRV
+      run: cargo check --locked --workspace
+  features:
+    name: Feature Matrix (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Review §4.3.3: optional production capabilities must stay
+        # compilable; default-feature CI alone never builds them.
+        features:
+        - "neo-node --features tee"
+        - "neo-node --features hsm"
+        - "neo-node --features full,tee,hsm"
+    steps:
+    - uses: actions/checkout@v4
+    - name: Reclaim runner disk space
+      run: 'sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+
+        sudo docker image prune -af || true
+
+        '
+    - name: Cache APT packages
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
+          libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
+        version: 1.0
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Cache cargo registry & git
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ci-features
+    - name: Check optional feature set
+      run: cargo check --locked -p ${{ matrix.features }}

@@ -82,8 +82,8 @@ impl RpcPlugin {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_fixtures::rpc_case_result_array;
+    use super::*;
     use neo_json::{JArray, JToken};
 
     #[test]

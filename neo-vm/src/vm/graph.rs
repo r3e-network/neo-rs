@@ -217,9 +217,11 @@ mod tests {
         assert!(components.iter().any(|component| component.len() == 2
             && component.contains(&4)
             && component.contains(&5)));
-        assert!(components
-            .iter()
-            .any(|component| component.as_slice() == [6]));
+        assert!(
+            components
+                .iter()
+                .any(|component| component.as_slice() == [6])
+        );
     }
 
     #[test]

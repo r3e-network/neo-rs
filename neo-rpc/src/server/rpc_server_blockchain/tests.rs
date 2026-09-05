@@ -1,10 +1,10 @@
 use super::*;
 use crate::client::models::RpcRawMemPool;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::extensions::io::serializable::SerializableExtensions;
+use neo_core::ledger::VerifyResult;
 use neo_core::ledger::block::Block as LedgerBlock;
 use neo_core::ledger::block_header::BlockHeader as LedgerBlockHeader;
-use neo_core::ledger::VerifyResult;
+use neo_core::neo_io::SerializableExt;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::block::Block;
@@ -12,15 +12,15 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
 use neo_core::smart_contract::native::GasToken;
 use neo_core::smart_contract::native::LedgerContract;
-use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
 use neo_core::smart_contract::{BinarySerializer, ContractManifest, ContractState, NefFile};
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
-use neo_core::{Verifiable, NeoSystem, UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
+use neo_core::{NeoSystem, UInt160, UInt256, Verifiable, Witness as LedgerWitness, WitnessScope};
 use neo_json::JToken;
 use neo_vm::{ExecutionEngineLimits, VmState as VMState};
 use neo_vm::{OpCode, StackValue};
@@ -155,7 +155,10 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
 
     let mut hash_key_bytes = Vec::with_capacity(1 + 4);
     hash_key_bytes.push(PREFIX_BLOCK_HASH);
-    hash_key_bytes.extend_from_slice(&index.to_le_bytes());
+    // The production key builder (LedgerContract block_hash_storage_key)
+    // writes the index big-endian so key order matches numeric order; the
+    // fixture must match byte-for-byte or the handler reads a different key.
+    hash_key_bytes.extend_from_slice(&index.to_be_bytes());
     let hash_key = StorageKey::new(LedgerContract::ID, hash_key_bytes);
     store.add(hash_key, StorageItem::from_bytes(hash.to_bytes().to_vec()));
 
@@ -312,6 +315,25 @@ fn store_blocked_account(store: &mut neo_core::persistence::StoreCache, account:
     let key = StorageKey::create_with_uint160(policy_id, PREFIX_BLOCKED_ACCOUNT, account);
     store.add(key, StorageItem::from_bytes(vec![1u8]));
     store.commit();
+}
+
+/// Builds settings with a deterministic standby committee so tests that read
+/// committee/validator state do not panic on the empty `ProtocolSettings::default()`
+/// standby list (real deployments always provide one via protocol.json).
+fn settings_with_standby_committee(size: usize) -> ProtocolSettings {
+    let mut settings = ProtocolSettings::default();
+    let mut committee = Vec::with_capacity(size);
+    for index in 0..size {
+        let mut seed = [0u8; 32];
+        seed[0] = 0x50 + index as u8;
+        let keypair = KeyPair::from_private_key(&seed).expect("keypair");
+        committee.push(keypair.get_public_key_point().expect("public point"));
+    }
+    settings.standby_committee = committee;
+    if settings.validators_count == 0 {
+        settings.validators_count = 1;
+    }
+    settings
 }
 
 fn make_contract_state(id: i32, hash: UInt160, name: &str) -> ContractState {
@@ -505,7 +527,6 @@ async fn get_block_sys_fee_reports_unknown_height() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "Store isolation issue - snapshot cache commits not visible to store_cache reads"]
 async fn get_block_hash_reports_hash_for_height() {
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
@@ -1166,10 +1187,11 @@ async fn find_storage_paginates_results() {
     ];
     let result = (handler.callback())(&server, &params).expect("find storage page1");
     let obj = result.as_object().expect("object");
-    assert!(obj
-        .get("truncated")
-        .and_then(Value::as_bool)
-        .unwrap_or(false));
+    assert!(
+        obj.get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    );
     assert_eq!(
         obj.get("results")
             .and_then(Value::as_array)
@@ -1188,10 +1210,11 @@ async fn find_storage_paginates_results() {
     let result = (handler.callback())(&server, &params).expect("find storage page2");
     let obj = result.as_object().expect("object");
     println!("page2 result: {}", result);
-    assert!(!obj
-        .get("truncated")
-        .and_then(Value::as_bool)
-        .unwrap_or(true));
+    assert!(
+        !obj.get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    );
     assert_eq!(
         obj.get("results")
             .and_then(Value::as_array)
@@ -1232,10 +1255,11 @@ async fn find_storage_returns_empty_page_at_end() {
     ];
     let result = (handler.callback())(&server, &params).expect("find storage page1");
     let obj = result.as_object().expect("object");
-    assert!(!obj
-        .get("truncated")
-        .and_then(Value::as_bool)
-        .unwrap_or(true));
+    assert!(
+        !obj.get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    );
     let results = obj
         .get("results")
         .and_then(Value::as_array)
@@ -1251,10 +1275,11 @@ async fn find_storage_returns_empty_page_at_end() {
     ];
     let result = (handler.callback())(&server, &params).expect("find storage page2");
     let obj = result.as_object().expect("object");
-    assert!(!obj
-        .get("truncated")
-        .and_then(Value::as_bool)
-        .unwrap_or(true));
+    assert!(
+        !obj.get("truncated")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    );
     let results = obj
         .get("results")
         .and_then(Value::as_array)
@@ -1401,7 +1426,7 @@ async fn get_next_block_validators_returns_standby() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_next_block_validators_reports_candidate_votes() {
-    let settings = ProtocolSettings::default();
+    let settings = settings_with_standby_committee(1);
     let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerBlockchain::register_handlers();
@@ -1437,7 +1462,7 @@ async fn get_next_block_validators_reports_candidate_votes() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_next_block_validators_reports_unregistered_as_negative_one() {
-    let settings = ProtocolSettings::default();
+    let settings = settings_with_standby_committee(1);
     let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerBlockchain::register_handlers();
@@ -1473,7 +1498,7 @@ async fn get_next_block_validators_reports_unregistered_as_negative_one() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_candidates_reports_registered_candidate() {
-    let settings = ProtocolSettings::default();
+    let settings = settings_with_standby_committee(1);
     let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerBlockchain::register_handlers();
@@ -1505,15 +1530,17 @@ async fn get_candidates_reports_registered_candidate() {
             .unwrap_or_default(),
         "10000"
     );
-    assert!(entry
-        .get("active")
-        .and_then(Value::as_bool)
-        .unwrap_or(false));
+    assert!(
+        entry
+            .get("active")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_candidates_skips_blocked_and_unregistered() {
-    let settings = ProtocolSettings::default();
+    let settings = settings_with_standby_committee(3);
     let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerBlockchain::register_handlers();
@@ -1563,7 +1590,7 @@ async fn get_candidates_skips_blocked_and_unregistered() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_candidates_reports_internal_error_on_invalid_state() {
-    let settings = ProtocolSettings::default();
+    let settings = settings_with_standby_committee(1);
     let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerBlockchain::register_handlers();
@@ -1586,7 +1613,10 @@ async fn get_candidates_reports_internal_error_on_invalid_state() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_committee_returns_snapshot_members() {
-    let settings = ProtocolSettings::default();
+    // A non-empty standby list is required: `store_committee` persists exactly
+    // these members, and an empty array would deserialize back as
+    // "committee cache empty" (the production decode rejects empty caches).
+    let settings = settings_with_standby_committee(1);
     let system = NeoSystem::new(settings.clone(), None, None).expect("system to start");
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerBlockchain::register_handlers();

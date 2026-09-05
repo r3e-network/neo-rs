@@ -39,6 +39,7 @@ pub mod transaction_removal_reason;
 pub mod transaction_removed_event_args;
 /// Transaction routing logic.
 pub mod transaction_router;
+/// Verification context tracking per-sender fees and conflict state for pooled transactions.
 pub mod transaction_verification_context;
 pub mod verify_result;
 

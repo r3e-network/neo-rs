@@ -10,8 +10,8 @@ use tracing::debug;
 
 use super::context::NeoSystemContext;
 use crate::ledger::blockchain::BlockchainHandle;
-use crate::network::p2p::local_node::RelayInventory;
 use crate::network::p2p::LocalNodeHandle;
+use crate::network::p2p::local_node::RelayInventory;
 use crate::network::p2p::payloads::transaction::Transaction;
 
 /// Attaches callbacks to the mempool to surface events and relay transactions.

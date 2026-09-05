@@ -1,6 +1,6 @@
 #![cfg(feature = "server")]
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_core::ledger::{
     block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
 };
@@ -8,8 +8,8 @@ use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt
 use neo_core::network::p2p::payloads::{
     signer::Signer, transaction::Transaction, witness::Witness as PayloadWitness,
 };
-use neo_core::smart_contract::native::{trimmed_block::TrimmedBlock, LedgerContract};
 use neo_core::smart_contract::StorageKey;
+use neo_core::smart_contract::native::{LedgerContract, trimmed_block::TrimmedBlock};
 use neo_core::{UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
 use neo_rpc::server::{RpcHandler, RpcServer, RpcServerBlockchain, RpcServerConfig};
 use neo_vm::VmState as VMState;
@@ -82,7 +82,9 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
 
     let mut hash_key_bytes = Vec::with_capacity(1 + 4);
     hash_key_bytes.push(PREFIX_BLOCK_HASH);
-    hash_key_bytes.extend_from_slice(&index.to_le_bytes());
+    // C# parity: production block_hash_storage_key encodes the index big-endian
+    // (same fixture bug as the lib-side store_block fixed in the A-group triage).
+    hash_key_bytes.extend_from_slice(&index.to_be_bytes());
     let hash_key = StorageKey::new(LedgerContract::ID, hash_key_bytes);
     store.add(
         hash_key,
@@ -131,7 +133,7 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn get_raw_transaction_verbose_confirmed_includes_vmstate() {
+async fn get_raw_transaction_verbose_confirmed_matches_csharp() {
     let system = neo_core::neo_system::NeoSystem::new(
         neo_core::protocol_settings::ProtocolSettings::default(),
         None,
@@ -157,11 +159,10 @@ async fn get_raw_transaction_verbose_confirmed_includes_vmstate() {
             .unwrap_or_default(),
         block_hash.to_string()
     );
-    assert_eq!(
-        obj.get("vmstate")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-        "HALT"
+    assert_eq!(obj.get("confirmations").and_then(Value::as_u64), Some(1));
+    assert!(
+        obj.get("vmstate").is_none(),
+        "C# v3.10.1 getrawtransaction verbose must not output vmstate"
     );
 
     let bytes = BASE64_STANDARD

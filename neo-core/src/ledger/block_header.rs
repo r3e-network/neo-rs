@@ -5,16 +5,26 @@ use crate::{CoreResult, UInt160, UInt256, Witness};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
+/// The header of a Neo block, matching the C# `Neo.Ledger.BlockHeader`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BlockHeader {
+    /// Header format version (currently 0).
     pub version: u32,
+    /// Hash of the previous block in the chain.
     pub previous_hash: UInt256,
+    /// Merkle root computed over the block's transactions.
     pub merkle_root: UInt256,
+    /// Block creation time in milliseconds since the Unix epoch.
     pub timestamp: u64,
+    /// Consensus nonce used by the primary node when proposing the block.
     pub nonce: u64,
+    /// Height of the block in the chain (the genesis block is at index 0).
     pub index: u32,
+    /// Index of the primary consensus node that proposed this block.
     pub primary_index: u8,
+    /// Script hash of the consensus nodes expected to sign the next block.
     pub next_consensus: UInt160,
+    /// Validation witnesses, typically the multi-signature of the consensus nodes.
     pub witnesses: Vec<Witness>,
     /// Cached hash (computed lazily, skipped in serialization).
     /// Internal cache field -- do not set manually.
@@ -56,6 +66,7 @@ impl PartialEq for BlockHeader {
 impl Eq for BlockHeader {}
 
 impl BlockHeader {
+    /// Creates a block header with every field explicitly specified.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         version: u32,

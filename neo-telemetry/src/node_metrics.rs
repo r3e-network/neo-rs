@@ -7,8 +7,8 @@
 //! - State root metrics
 //! - Storage metrics (disk usage)
 
-use std::sync::LazyLock;
 use prometheus::{Counter, Encoder, Gauge, TextEncoder};
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Current block height

@@ -5,6 +5,10 @@
 use super::*;
 
 impl Blockchain {
+    fn has_header_backlog(&self, context: &NeoSystemContext) -> bool {
+        context.header_cache().count() > 0 || self.ledger.has_future_headers()
+    }
+
     fn find_tip_in_store(
         ledger_contract: &LedgerContract,
         store_cache: &StoreCache,
@@ -129,19 +133,16 @@ impl Blockchain {
             let store_cache = context.store_cache();
             let snapshot = store_cache.data_cache();
             let settings = context.settings();
-            let header_backlog_present = context.header_cache().count() > 0;
-            // Skip mempool updates during fast sync for better performance
-            if !context.is_fast_sync_mode() {
-                context
-                    .memory_pool()
-                    .lock()
-                    .update_pool_for_block_persisted(
-                        &block,
-                        snapshot,
-                        settings.as_ref(),
-                        header_backlog_present,
-                    );
-            }
+            let header_backlog_present = self.has_header_backlog(context);
+            context
+                .memory_pool()
+                .lock()
+                .update_pool_for_block_persisted(
+                    &block,
+                    snapshot,
+                    settings.as_ref(),
+                    header_backlog_present,
+                );
         }
 
         if let Some(context) = &self.system_context {
@@ -499,8 +500,7 @@ impl Blockchain {
             let store_cache = system_context.store_cache();
             let settings = system_context.settings();
             let snapshot = store_cache.data_cache();
-            let header_backlog =
-                system_context.header_cache().count() > 0 || self.ledger.has_future_headers();
+            let header_backlog = self.has_header_backlog(system_context);
             let more_pending = system_context
                 .memory_pool()
                 .lock()

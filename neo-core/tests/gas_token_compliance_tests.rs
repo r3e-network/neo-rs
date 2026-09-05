@@ -2,9 +2,9 @@
 
 #[cfg(test)]
 mod tests {
+    use neo_core::UInt160;
     use neo_core::persistence::DataCache;
     use neo_core::smart_contract::native::{GasToken, NativeContract};
-    use neo_core::UInt160;
     use num_bigint::BigInt;
     use std::sync::Arc;
 

@@ -10,15 +10,18 @@
 // modifications are permitted.
 
 use super::oracle_response_code::OracleResponseCode;
+use crate::ScriptBuilder;
+use crate::WitnessScope;
 use crate::macros::{OptionExt, ValidateLength};
 use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
-use crate::ScriptBuilder;
 use crate::smart_contract::CallFlags;
-use crate::smart_contract::native::{oracle_contract::OracleContract, NativeContract};
-use crate::WitnessScope;
+use crate::smart_contract::native::{
+    LedgerContract, NativeContract, NativeHelpers, Role, RoleManagement,
+    oracle_contract::OracleContract,
+};
 use neo_vm::OpCode;
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -82,9 +85,37 @@ impl OracleResponse {
             return false;
         }
 
-        // Additional verification would check the oracle request exists
-        // and matches the response
-        true
+        let oracle = OracleContract::new();
+        let request = match oracle.get_request(_snapshot, self.id) {
+            Ok(Some(request)) => request,
+            _ => return false,
+        };
+
+        // The response transaction must consume exactly the GAS reserved by the request.
+        let Some(total_fee) = tx.network_fee().checked_add(tx.system_fee()) else {
+            return false;
+        };
+        if total_fee != request.gas_for_response {
+            return false;
+        }
+
+        // Oracle responses are authorized by the BFT address of the designated oracle
+        // nodes for the next block (the same height used by the C# implementation).
+        let ledger = LedgerContract::new();
+        let current_index = match ledger.current_index(_snapshot) {
+            Ok(index) => index,
+            Err(_) => return false,
+        };
+        let designated = match RoleManagement::new().get_designated_by_role_at(
+            _snapshot,
+            Role::Oracle,
+            current_index.saturating_add(1),
+        ) {
+            Ok(nodes) if !nodes.is_empty() => nodes,
+            _ => return false,
+        };
+        let oracle_account = NativeHelpers::get_bft_address(&designated);
+        tx.signers().iter().any(|s| s.account == oracle_account)
     }
 
     /// Serialize without type byte.

@@ -75,13 +75,21 @@ impl Contract {
     ) -> Result<Vec<u8>, CoreError> {
         let n = public_keys.len();
         if n == 0 {
-            return Err(CoreError::invalid_operation("No public keys provided for multi-sig contract"));
+            return Err(CoreError::invalid_operation(
+                "No public keys provided for multi-sig contract",
+            ));
         }
         if n > 1024 {
-            return Err(CoreError::invalid_operation(format!("Too many public keys: {} (max 1024)", n)));
+            return Err(CoreError::invalid_operation(format!(
+                "Too many public keys: {} (max 1024)",
+                n
+            )));
         }
         if !(1..=n).contains(&m) {
-            return Err(CoreError::invalid_operation(format!("Invalid multi-sig parameters: m={}, n={}", m, n)));
+            return Err(CoreError::invalid_operation(format!(
+                "Invalid multi-sig parameters: m={}, n={}",
+                m, n
+            )));
         }
 
         let mut builder = ScriptBuilder::new();
@@ -97,7 +105,9 @@ impl Contract {
         builder.emit_push_int(n as i64);
         builder
             .emit_syscall("System.Crypto.CheckMultisig")
-            .map_err(|err| CoreError::invalid_operation(format!("Failed to build contract script: {}", err)))?;
+            .map_err(|err| {
+                CoreError::invalid_operation(format!("Failed to build contract script: {}", err))
+            })?;
 
         Ok(builder.to_array())
     }

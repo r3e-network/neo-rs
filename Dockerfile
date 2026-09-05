@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Neo Rust Node
 # R3E Network <jimmy@r3e.network>
 
-FROM rust:1.76-bullseye as builder
+FROM rust:1.88-bookworm AS builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
@@ -31,10 +31,12 @@ WORKDIR /app
 # Copy manifests and workspace crates (kept explicit for better Docker layer caching).
 COPY Cargo.toml Cargo.lock ./
 COPY neo-primitives/ neo-primitives/
+COPY neo-config/ neo-config/
 COPY neo-crypto/ neo-crypto/
 COPY neo-storage/ neo-storage/
 COPY neo-io/ neo-io/
 COPY neo-json/ neo-json/
+COPY neo-vm/ neo-vm/
 COPY neo-core/ neo-core/
 COPY neo-p2p/ neo-p2p/
 COPY neo-rpc/ neo-rpc/
@@ -42,16 +44,19 @@ COPY neo-consensus/ neo-consensus/
 COPY neo-tee/ neo-tee/
 COPY neo-hsm/ neo-hsm/
 COPY neo-telemetry/ neo-telemetry/
-COPY neo-cli/ neo-cli/
 COPY neo-node/ neo-node/
+COPY tests/ tests/
+COPY benches-package/ benches-package/
 COPY scripts/ scripts/
 COPY neo_mainnet_node.toml neo_testnet_node.toml neo_production_node.toml ./
 
-# Build release binaries (neo-node daemon + neo-cli client)
-RUN cargo build --release --locked -p neo-node -p neo-cli
+# Build the node daemon. The container's default storage backend is RocksDB,
+# so the image MUST be built with the `full` feature set — without it the node
+# refuses to start with its own shipped configuration (R13).
+RUN cargo build --release --locked -p neo-node --features full
 
 # Runtime stage
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
@@ -62,7 +67,7 @@ RUN apt-get update && apt-get install -y \
     libzstd1 \
     zlib1g \
     libbz2-1.0 \
-    libssl1.1 \
+    libssl3 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -75,7 +80,6 @@ RUN mkdir -p /data /data/blocks /data/Logs /data/logs && chown -R neo:neo /data
 
 # Copy binaries from builder stage
 COPY --from=builder /app/target/release/neo-node /usr/local/bin/neo-node
-COPY --from=builder /app/target/release/neo-cli /usr/local/bin/neo-cli
 
 # Copy default configs and entrypoint
 COPY neo_mainnet_node.toml /etc/neo/neo_mainnet_node.toml
@@ -110,7 +114,7 @@ ENV NEO_NETWORK=testnet \
     NEO_PLUGINS_DIR=/data/Plugins \
     RUST_LOG=info
 
-# Default command for neo-cli (configurable via env)
+# Default command for neo-node (configurable via env)
 ENTRYPOINT ["/usr/local/bin/neo-entrypoint.sh"]
 CMD []
 

@@ -4,9 +4,9 @@
 
 use super::*;
 use crate::persistence::{ReadOnlyStoreGeneric, SeekDirection};
+use crate::smart_contract::StorageItem;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::storage_iterator::StorageIterator;
-use crate::smart_contract::StorageItem;
 use std::collections::HashMap;
 
 impl ContractManagement {
@@ -130,6 +130,8 @@ impl ContractManagement {
         Ok(ids.into_iter().map(|(_, hash)| hash).collect())
     }
 
+    /// Registers a storage iterator over all deployed contract hashes with the engine
+    /// and returns the iterator id (C# ContractManagement contract-hash iterator).
     pub fn get_contract_hashes_iterator(&self, engine: &mut ApplicationEngine) -> Result<u32> {
         let context = engine.get_native_storage_context(&self.hash)?;
         let search_key = StorageKey::new(context.id, vec![PREFIX_CONTRACT_HASH]);
@@ -154,9 +156,7 @@ impl ContractManagement {
             .collect();
 
         let iterator = StorageIterator::new(filtered, 1, FindOptions::RemovePrefix);
-        let iterator_id = engine
-            .store_storage_iterator(iterator)
-            .native_err()?;
+        let iterator_id = engine.store_storage_iterator(iterator).native_err()?;
         Ok(iterator_id)
     }
 

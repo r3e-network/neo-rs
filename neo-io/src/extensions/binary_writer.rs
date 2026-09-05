@@ -1,16 +1,21 @@
-use crate::{serializable::helper, BinaryWriter, IoError, IoResult, Serializable};
+use crate::{BinaryWriter, IoError, IoResult, Serializable, serializable::helper};
 
 /// Extension helpers for [`BinaryWriter`] mirroring
 /// `Neo.Extensions.IO.BinaryWriterExtensions`.
 pub trait BinaryWriterExtensions {
+    /// Writes a `Serializable` value.
     fn write_serializable<T: Serializable>(&mut self, value: &T) -> IoResult<()>;
 
+    /// Writes a slice of `Serializable` values.
     fn write_serializable_collection<T: Serializable>(&mut self, value: &[T]) -> IoResult<()>;
 
+    /// Writes an array of optional `Serializable` values (each may be absent).
     fn write_nullable_array<T: Serializable>(&mut self, value: &[Option<T>]) -> IoResult<()>;
 
+    /// Writes a fixed-length, space-padded string.
     fn write_fixed_string(&mut self, value: &str, length: usize) -> IoResult<()>;
 
+    /// Writes a variable-length string.
     fn write_var_string(&mut self, value: &str) -> IoResult<()>;
 }
 

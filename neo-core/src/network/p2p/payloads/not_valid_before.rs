@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{impl_serializable, BinaryWriter, IoResult, Serializable};
+use crate::neo_io::{BinaryWriter, IoResult, Serializable, impl_serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;

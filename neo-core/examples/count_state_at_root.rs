@@ -2,15 +2,15 @@
 //! Usage: count_state_at_root <state_root_db_path> <root_hash_hex> <contract_id> [prefix_byte]
 
 #[cfg(feature = "rocksdb")]
+use neo_core::UInt256;
+#[cfg(feature = "rocksdb")]
 use neo_core::persistence::providers::RocksDBStoreProvider;
 #[cfg(feature = "rocksdb")]
-use neo_core::persistence::{store_provider::StoreProvider, StorageConfig};
+use neo_core::persistence::{StorageConfig, store_provider::StoreProvider};
 #[cfg(feature = "rocksdb")]
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };
-#[cfg(feature = "rocksdb")]
-use neo_core::UInt256;
 #[cfg(feature = "rocksdb")]
 use std::path::PathBuf;
 #[cfg(feature = "rocksdb")]

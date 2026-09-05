@@ -53,16 +53,16 @@ use super::keys::Keys;
 use super::metrics;
 use super::root_cache::StateRootCache;
 use super::state_root::StateRoot;
+use crate::UInt256;
 use crate::error::CoreResult;
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::persistence::{
-    seek_direction::SeekDirection, store::Store, store_provider::StoreProvider, TrackState,
+    TrackState, seek_direction::SeekDirection, store::Store, store_provider::StoreProvider,
 };
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
-use crate::UInt256;
 use parking_lot::RwLock;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -78,8 +78,8 @@ mod verification_ops;
 mod verification_result;
 mod verifier;
 pub use backend::{
-    MemoryStateStoreBackend, SnapshotBackedStateStoreBackend, StateStoreBackend,
-    StateStoreSnapshot, StateStoreTransaction,
+    MemoryStateStoreBackend, SnapshotBackedStateStoreBackend, StagedStateStoreBackend,
+    StateStoreBackend, StateStoreSnapshot, StateStoreTransaction,
 };
 pub use settings::StateServiceSettings;
 pub use snapshot::StateSnapshot;
@@ -512,7 +512,10 @@ impl StateStore {
             }
         }
 
-        let mut snapshot = self.snapshot();
+        // Keep all writes in an isolated overlay until the blockchain transaction commits.
+        // The overlay is applied to the base backend only from update_local_state_root.
+        let staged_backend = Arc::new(StagedStateStoreBackend::new(self.store.clone()));
+        let mut snapshot = StateSnapshot::new(staged_backend, self.settings.clone());
         let mut put_count: u32 = 0;
         let mut del_count: u32 = 0;
         let mut _skip_count: u32 = 0;
@@ -609,15 +612,25 @@ impl StateStore {
         // Commit and dispose snapshot
         {
             let mut state_snap = self.state_snapshot.write();
-            if let Some(ref mut snapshot) = *state_snap {
-                snapshot.commit()?;
+            if let Some(mut snapshot) = state_snap.take() {
+                if let Err(error) = snapshot.commit() {
+                    snapshot.discard_pending();
+                    return Err(error);
+                }
             }
-            *state_snap = None;
         }
 
         self.update_current_snapshot();
         self.check_validated_state_root(height);
         Ok(())
+    }
+
+    /// Discards a staged local root when the enclosing blockchain transaction fails.
+    pub fn discard_staged_local_state_root(&self) {
+        let mut state_snap = self.state_snapshot.write();
+        if let Some(snapshot) = state_snap.take() {
+            snapshot.discard_pending();
+        }
     }
 
     /// Checks if we have a cached validated state root for this height.

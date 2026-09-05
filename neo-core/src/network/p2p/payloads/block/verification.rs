@@ -1,157 +1,17 @@
 use super::Block;
-use crate::ledger::{HeaderCache, TransactionVerificationContext, VerifyResult};
-use crate::neo_io::Serializable;
+use crate::ledger::HeaderCache;
 use crate::persistence::StoreCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::{CoreResult, UInt256};
 
-#[derive(Clone, Copy)]
-enum BlockVerifyMode<'a> {
-    Full,
-    Cached(&'a HeaderCache),
-}
-
-impl BlockVerifyMode<'_> {
-    fn is_cached(self) -> bool {
-        matches!(self, Self::Cached(_))
-    }
-}
-
 impl Block {
     /// Verifies the block using persisted state.
     ///
-    /// Matches C# Block.Verify, which delegates entirely to Header.Verify:
-    /// chain continuity, primary index, strictly-increasing timestamp and the
-    /// header witness. Merkle root and duplicate-transaction checks are kept
-    /// here as well (C# performs them during deserialization).
-    ///
-    /// Note: there is deliberately no block byte-size, transaction-count or
-    /// wall-clock timestamp check — C# v3.10.1 has none, and extra rejections
-    /// would fork this node from the reference chain.
+    /// Matches C# Block.Verify, which delegates entirely to Header.Verify.
+    /// Transaction Merkle-root and duplicate checks are performed while
+    /// deserializing a block, not by this method.
     pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
-        self.verify_internal(settings, store_cache, BlockVerifyMode::Full)
-    }
-
-    fn verify_internal(
-        &self,
-        settings: &ProtocolSettings,
-        store_cache: &StoreCache,
-        mode: BlockVerifyMode<'_>,
-    ) -> bool {
-        if !self.verify_header_for_mode(settings, store_cache, mode) {
-            return false;
-        }
-
-        if !self.verify_merkle_root() {
-            self.log_verify_failure("Merkle root validation failed", mode.is_cached());
-            return false;
-        }
-
-        if !self.verify_no_duplicate_transactions() {
-            self.log_verify_failure("Duplicate transaction check failed", mode.is_cached());
-            return false;
-        }
-
-        self.verify_transactions(settings, store_cache)
-    }
-
-    fn verify_header_for_mode(
-        &self,
-        settings: &ProtocolSettings,
-        store_cache: &StoreCache,
-        mode: BlockVerifyMode<'_>,
-    ) -> bool {
-        match mode {
-            BlockVerifyMode::Full => self.header.verify(settings, store_cache),
-            BlockVerifyMode::Cached(header_cache) => {
-                self.header
-                    .verify_with_cache(settings, store_cache, header_cache)
-            }
-        }
-    }
-
-    fn log_verify_failure(&self, message: &'static str, cached: bool) {
-        if cached {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                "{} (cached)",
-                message
-            );
-        } else {
-            tracing::warn!(
-                target: "neo::block",
-                block_index = self.header.index(),
-                "{}",
-                message
-            );
-        }
-    }
-
-    /// Verifies all transactions in the block using full validation (state-independent
-    /// and state-dependent) against the current ledger snapshot.
-    fn verify_transactions(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
-        use rayon::prelude::*;
-
-        // Phase 1: parallel state-independent verification (includes signatures).
-        // This is pure computation with no shared mutable state.
-        let block_index = self.header.index();
-        let failed = self
-            .transactions
-            .par_iter()
-            .enumerate()
-            .find_map_any(|(index, tx)| {
-                let result = tx.verify_state_independent(settings);
-                (result != VerifyResult::Succeed).then_some((index, tx, result))
-            });
-
-        if let Some((index, tx, result)) = failed {
-            tracing::warn!(
-                target: "neo::block",
-                block_index,
-                tx_index = index,
-                tx_hash = %Self::transaction_hash_for_log(tx),
-                result = ?result,
-                "Transaction failed state-independent verification"
-            );
-            return false;
-        }
-
-        // Phase 2: sequential state-dependent verification (needs shared context).
-        // Pass `block.index() - 1` as the explicit current_height to avoid the
-        // fast-sync snapshot bug where `Ledger.current_index(snapshot)` spuriously
-        // returns 0, wrongly rejecting valid txs as Expired.
-        let snapshot = store_cache.data_cache();
-        let block_height_for_expiry = self.header.index().saturating_sub(1);
-        let mut context = TransactionVerificationContext::new();
-        for (index, tx) in self.transactions.iter().enumerate() {
-            let result = tx.verify_state_dependent_at_height(
-                settings,
-                snapshot,
-                block_height_for_expiry,
-                Some(&context),
-                &[],
-            );
-            if result != VerifyResult::Succeed {
-                tracing::warn!(
-                    target: "neo::block",
-                    block_index,
-                    tx_index = index,
-                    tx_hash = %Self::transaction_hash_for_log(tx),
-                    result = ?result,
-                    "Transaction failed state-dependent verification"
-                );
-                return false;
-            }
-            context.add_transaction(tx);
-        }
-        true
-    }
-
-    fn transaction_hash_for_log(tx: &super::super::transaction::Transaction) -> String {
-        tx.try_hash()
-            .map(|hash| hash.to_string())
-            .unwrap_or_else(|error| format!("<unhashable: {error}>"))
+        self.header.verify(settings, store_cache)
     }
 
     /// Verifies that the merkle root in the header matches the computed merkle root of transactions.
@@ -219,13 +79,14 @@ impl Block {
 
     /// Verifies the block using persisted state and cached headers.
     ///
-    /// Performs the same validations as `verify` but uses the header cache for efficiency.
+    /// Matches C# Block.Verify's cached overload by delegating to Header.Verify.
     pub fn verify_with_cache(
         &self,
         settings: &ProtocolSettings,
         store_cache: &StoreCache,
         header_cache: &HeaderCache,
     ) -> bool {
-        self.verify_internal(settings, store_cache, BlockVerifyMode::Cached(header_cache))
+        self.header
+            .verify_with_cache(settings, store_cache, header_cache)
     }
 }

@@ -20,7 +20,7 @@ impl ConsensusService {
         // Request transactions from mempool
         self.send_event(ConsensusEvent::RequestTransactions {
             block_index: self.context.block_index,
-            max_count: 500, // Max transactions per block
+            max_count: self.context.max_transactions_per_block,
         })?;
 
         Ok(())
@@ -30,6 +30,14 @@ impl ConsensusService {
     pub fn on_transactions_received(&mut self, tx_hashes: Vec<UInt256>) -> ConsensusResult<()> {
         if !self.running {
             return Ok(());
+        }
+        if self.context.is_primary() {
+            // A mempool callback is one-shot for each primary/view. Once the
+            // PrepareRequest has been broadcast, later callbacks must not
+            // replace the proposal or broadcast a second request.
+            if self.context.prepare_request_received || !self.context.proposal_requested() {
+                return Ok(());
+            }
         }
         if self.context.not_accepting_payloads_due_to_view_changing() {
             return Ok(());
@@ -87,8 +95,11 @@ impl ConsensusService {
 
             self.broadcast(payload)?;
 
-            // Mark that we've sent the prepare request
+            // Mark that we've sent the prepare request and keep the post-request
+            // timer specified by C# ConsensusService.
             self.context.prepare_request_received = true;
+            self.context
+                .change_timer(current_timestamp(), self.context.prepare_request_timeout());
 
             return Ok(());
         }

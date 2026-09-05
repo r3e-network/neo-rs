@@ -164,11 +164,13 @@ fn persist_completed_disconnects_mismatched_cached_block() {
     manager.on_persist_completed(&persisted);
 
     assert!(rx.try_recv().is_ok());
-    assert!(manager
-        .sessions
-        .get(&path)
-        .expect("session")
-        .session
-        .received_block
-        .is_empty());
+    assert!(
+        manager
+            .sessions
+            .get(&path)
+            .expect("session")
+            .session
+            .received_block
+            .is_empty()
+    );
 }

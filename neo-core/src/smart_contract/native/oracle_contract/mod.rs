@@ -29,6 +29,23 @@ const PREFIX_ID_LIST: u8 = 0x06;
 const PREFIX_REQUEST_ID: u8 = 0x09;
 const MAX_PENDING_PER_URL: usize = 256;
 
+/// Maximum request URL length, in bytes (C# `OracleContract.MaxUrlLength`).
+pub(super) const MAX_URL_LENGTH: usize = 256;
+/// Maximum filter length, in bytes (C# `OracleContract.MaxFilterLength`).
+pub(super) const MAX_FILTER_LENGTH: usize = 128;
+/// Maximum callback method length, in bytes (C# `OracleContract.MaxCallbackLength`).
+pub(super) const MAX_CALLBACK_LENGTH: usize = 32;
+/// Maximum serialized user-data length, in bytes (C# `OracleContract.MaxUserDataLength`).
+///
+/// C# enforces this against the *serialized* `StackItem`
+/// (`BinarySerializer.Serialize(userData, MaxUserDataLength, ...)`), so a
+/// `ByteString` payload's usable maximum is 512 minus the type byte and the
+/// variable-length size prefix. Enforcing it against the raw payload keeps us
+/// within one varint-prefix of the reference behaviour instead of the previous
+/// 128x-too-permissive `BLOCK_MAX_TX_WIRE_LIMIT` (65_535), which let this node
+/// accept Oracle requests every C# node rejects.
+pub(super) const MAX_USER_DATA_LENGTH: usize = 512;
+
 #[derive(Debug, Clone)]
 struct PendingRequest {
     id: u64,
@@ -67,6 +84,7 @@ impl OracleContract {
         }
     }
 
+    /// Dispatches an Oracle native contract method invocation.
     pub fn invoke_method(
         &self,
         engine: &mut ApplicationEngine,
@@ -107,10 +125,10 @@ mod tests {
     use super::*;
     use crate::persistence::DataCache;
     use crate::protocol_settings::ProtocolSettings;
+    use crate::smart_contract::ContractParameterType;
     use crate::smart_contract::call_flags::CallFlags;
     use crate::smart_contract::native::NativeContract;
     use crate::smart_contract::trigger_type::TriggerType;
-    use crate::smart_contract::ContractParameterType;
     use std::sync::Arc;
 
     fn application_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {

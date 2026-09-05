@@ -2,7 +2,7 @@ use super::CryptoLib;
 use crate::error::{CoreError as Error, CoreResult as Result};
 
 use blst::{
-    blst_fp, blst_fp12, blst_p1, blst_p1_affine, blst_p2, blst_p2_affine, blst_scalar, BLST_ERROR,
+    BLST_ERROR, blst_fp, blst_fp12, blst_p1, blst_p1_affine, blst_p2, blst_p2_affine, blst_scalar,
 };
 
 const BLS_INTEROP_G1_AFFINE: u8 = 0x01;
@@ -62,16 +62,6 @@ impl Bls12381Kind {
             Self::G1Affine | Self::G1Projective => 48,
             Self::G2Affine | Self::G2Projective => 96,
             Self::Gt => 576,
-        }
-    }
-
-    fn interface_type(self) -> &'static str {
-        match self {
-            Self::G1Affine => "Bls12381G1Affine",
-            Self::G1Projective => "Bls12381G1Projective",
-            Self::G2Affine => "Bls12381G2Affine",
-            Self::G2Projective => "Bls12381G2Projective",
-            Self::Gt => "Bls12381Gt",
         }
     }
 }
@@ -346,7 +336,7 @@ impl CryptoLib {
             _ => {
                 return Err(Error::native_contract(
                     "Invalid BLS12-381 serialized point size".to_string(),
-                ))
+                ));
             }
         };
 
@@ -375,7 +365,10 @@ impl CryptoLib {
         let compression_flag_set = data[0] & 0x80 != 0;
         let infinity_flag_set = data[0] & 0x40 != 0;
         let sort_flag_set = data[0] & 0x20 != 0;
-        compression_flag_set && infinity_flag_set && !sort_flag_set && data[1..].iter().all(|&b| b == 0)
+        compression_flag_set
+            && infinity_flag_set
+            && !sort_flag_set
+            && data[1..].iter().all(|&b| b == 0)
     }
 
     fn deserialize_g1(&self, data: &[u8]) -> Result<blst_p1_affine> {

@@ -60,6 +60,9 @@ fn resolve_time_per_block(snapshot: &DataCache, settings: &ProtocolSettings) -> 
         .unwrap_or_else(|| settings.time_per_block())
 }
 
+/// In-memory pool of transactions awaiting inclusion in a block, mirroring the
+/// C# `Neo.Ledger.MemoryPool`. It maintains verified and unverified queues,
+/// tracks conflicting transactions, and enforces capacity and sender policies.
 pub struct MemoryPool {
     /// Callback invoked to validate a new transaction before adding it to the pool.
     pub new_transaction: Option<Box<NewTransactionCallback>>,
@@ -82,6 +85,7 @@ pub struct MemoryPool {
 
     verification_context: TransactionVerificationContext,
 
+    /// Maximum number of transactions the pool accepts at once.
     pub capacity: usize,
     max_transactions_per_sender: Option<usize>,
 }
@@ -149,9 +153,12 @@ impl MemoryPool {
     fn check_conflicts(&self, tx: &Transaction) -> Result<Vec<PoolItem>, VerifyResult> {
         let mut to_remove = Vec::new();
         let mut total_conflict_fee = 0i64;
-        let Some(sender) = tx.sender() else {
+        if tx.sender().is_none() {
             return Ok(to_remove);
-        };
+        }
+        let payer =
+            TransactionVerificationContext::payer(tx).expect("sender exists implies payer exists");
+        let author = payer.1.unwrap_or(payer.0);
 
         let mut push_unique = |item: &PoolItem| {
             let item_hash = item.transaction.hash();
@@ -170,7 +177,7 @@ impl MemoryPool {
                         .transaction
                         .signers()
                         .iter()
-                        .any(|signer| signer.account == sender)
+                        .any(|signer| signer.account == author)
                     {
                         total_conflict_fee += conflict_item.transaction.network_fee();
                     }
@@ -340,7 +347,7 @@ impl MemoryPool {
                         self,
                         &TransactionRemovedEventArgs {
                             transactions: removed_conflicts,
-                            reason: TransactionRemovalReason::Conflict,
+                            reason: TransactionRemovalReason::CapacityExceeded,
                         },
                     );
                 }
@@ -386,10 +393,7 @@ impl MemoryPool {
 
         for tx in &block.transactions {
             persisted.insert(tx.hash());
-            if let Some(item) = self.try_remove_verified(tx.hash()) {
-                self.verification_context
-                    .remove_transaction(&item.transaction);
-            } else {
+            if self.try_remove_verified(tx.hash()).is_none() {
                 let _ = self.try_remove_unverified(tx.hash());
             }
 
@@ -525,13 +529,7 @@ impl MemoryPool {
             return !self.unverified.is_empty();
         }
 
-        let verify_count = if self.verified.len() > settings.max_transactions_per_block as usize {
-            1usize
-        } else {
-            max_to_verify
-        };
-
-        let verify_count = verify_count.min(self.unverified.sorted_len());
+        let verify_count = max_to_verify.min(self.unverified.sorted_len());
         if verify_count == 0 {
             return !self.unverified.is_empty();
         }
@@ -671,10 +669,6 @@ impl MemoryPool {
     }
 
     fn invalidate_verified_transactions(&mut self) {
-        if self.verified.is_empty() {
-            return;
-        }
-
         for item in self.verified.drain_by_priority() {
             let hash = item.transaction.hash();
             self.unverified.insert(hash, item);

@@ -5,17 +5,17 @@
 //! Represents the manifest of a smart contract which declares the features
 //! and permissions it will use when deployed.
 
+use crate::UInt160;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_config::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use crate::neo_io::serializable::helper::{get_var_size, get_var_size_str};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::neo_vm::StackItem;
 use crate::smart_contract::interoperable::Interoperable;
 use crate::smart_contract::manifest::{
     ContractAbi, ContractGroup, ContractPermission, ContractPermissionDescriptor, WildCardContainer,
 };
-use crate::neo_vm::StackItem;
-use crate::UInt160;
 use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
@@ -465,13 +465,17 @@ impl Serializable for ContractManifest {
 }
 
 impl Interoperable for ContractManifest {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> std::result::Result<(), crate::neo_vm::VmError> {
+    fn from_stack_item(
+        &mut self,
+        stack_item: StackItem,
+    ) -> std::result::Result<(), crate::neo_vm::VmError> {
         let sv = StackValue::try_from(stack_item).map_err(|error| {
             crate::neo_vm::VmError::invalid_operation_msg(format!(
                 "ContractManifest expects Struct stack item: {error}"
             ))
         })?;
-        self.from_stack_value(sv).map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
+        self.from_stack_value(sv)
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
     fn to_stack_item(&self) -> std::result::Result<StackItem, crate::neo_vm::VmError> {
@@ -488,6 +492,9 @@ impl Interoperable for ContractManifest {
 }
 
 impl ContractManifest {
+    /// Converts the manifest into a VM stack-value struct matching the
+    /// C# `ContractManifest` stack layout (name, groups, features, standards,
+    /// ABI, permissions, trusts, extra).
     pub fn to_stack_value(&self) -> StackValue {
         let group_items = self
             .groups
@@ -498,9 +505,7 @@ impl ContractManifest {
         let mut feature_entries = Vec::with_capacity(self.features.len());
         for (key, value) in &self.features {
             let json_bytes =
-                crate::smart_contract::JsonSerializer::encode_value_csharp_compatible(
-                    value,
-                );
+                crate::smart_contract::JsonSerializer::encode_value_csharp_compatible(value);
             feature_entries.push((
                 StackValue::ByteString(key.as_bytes().to_vec()),
                 StackValue::ByteString(json_bytes),
@@ -535,9 +540,7 @@ impl ContractManifest {
 
         let extra_bytes = match &self.extra {
             Some(extra) => {
-                crate::smart_contract::JsonSerializer::encode_value_csharp_compatible(
-                    extra,
-                )
+                crate::smart_contract::JsonSerializer::encode_value_csharp_compatible(extra)
             }
             None => b"null".to_vec(),
         };
@@ -554,6 +557,7 @@ impl ContractManifest {
         ])
     }
 
+    /// Restores the manifest from a stack value produced by `to_stack_value`.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> std::result::Result<(), Error> {
         let StackValue::Struct(items) = stack_value else {
             return Err(Error::invalid_format(

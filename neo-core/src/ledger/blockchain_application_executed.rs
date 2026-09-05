@@ -1,17 +1,27 @@
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::Transaction;
 use crate::smart_contract::{ApplicationEngine, LogEventArgs, NotifyEventArgs, TriggerType};
-use crate::neo_vm::StackItem;
 use neo_vm::VmState as VMState;
 
+/// Result of executing a script in the application engine, matching the C#
+/// `Neo.SmartContract.ApplicationExecuted` notification.
 #[derive(Clone)]
 pub struct ApplicationExecuted {
+    /// The transaction that triggered the execution, if any.
     pub transaction: Option<Transaction>,
+    /// The trigger that caused the execution (e.g. application or verification).
     pub trigger: TriggerType,
+    /// Final Neo VM state after execution (HALT, FAULT, etc.).
     pub vm_state: VMState,
+    /// The fault exception message if execution failed.
     pub exception: Option<String>,
+    /// Total GAS consumed by the execution.
     pub gas_consumed: i64,
+    /// Result stack items remaining on the evaluation stack.
     pub stack: Vec<StackItem>,
+    /// Notifications emitted via `System.Runtime.Notify` during execution.
     pub notifications: Vec<NotifyEventArgs>,
+    /// Log messages emitted via `System.Runtime.Log` during execution.
     pub logs: Vec<LogEventArgs>,
 }
 
@@ -20,9 +30,12 @@ impl ApplicationExecuted {
     /// Reserved for block execution pipeline integration.
     #[allow(dead_code)]
     pub(crate) fn new(engine: &mut ApplicationEngine) -> Self {
-        let transaction = engine
-            .script_container()
-            .and_then(|c| c.as_ref().as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>().cloned());
+        let transaction = engine.script_container().and_then(|c| {
+            c.as_ref()
+                .as_any()
+                .downcast_ref::<crate::network::p2p::payloads::Transaction>()
+                .cloned()
+        });
 
         if let Some(tx) = transaction.as_ref() {
             let hash = tx.hash();
@@ -45,16 +58,16 @@ impl ApplicationExecuted {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UInt160;
+    use crate::WitnessScope;
     use crate::ledger::{Block, BlockHeader};
     use crate::network::p2p::payloads::signer::Signer;
     use crate::network::p2p::payloads::witness::Witness;
     use crate::persistence::data_cache::DataCache;
     use crate::protocol_settings::ProtocolSettings;
+    use crate::smart_contract::TriggerType;
     use crate::smart_contract::application_engine::TEST_MODE_GAS;
     use crate::smart_contract::native::{LedgerContract, NativeContract};
-    use crate::smart_contract::TriggerType;
-    use crate::UInt160;
-    use crate::WitnessScope;
     use std::sync::Arc;
 
     fn signed_transaction() -> Transaction {

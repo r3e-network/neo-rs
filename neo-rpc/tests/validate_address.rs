@@ -1,8 +1,8 @@
 #![cfg(feature = "server")]
 
+use neo_core::UInt160;
 use neo_core::neo_system::NeoSystem;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::UInt160;
 use neo_rpc::{RpcServer, RpcServerConfig};
 use serde_json::Value;
 

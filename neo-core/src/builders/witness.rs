@@ -1,6 +1,6 @@
+use crate::ScriptBuilder;
 use crate::error::CoreError;
 use crate::network::p2p::payloads::Witness;
-use crate::ScriptBuilder;
 
 /// Builder for `Witness` instances.
 #[derive(Default)]
@@ -48,6 +48,7 @@ impl WitnessBuilder {
         Ok(self)
     }
 
+    /// Builds an invocation script with a [`ScriptBuilder`] callback and adds it (mutable reference).
     pub fn add_invocation_with_builder<F>(&mut self, config: F) -> Result<&mut Self, CoreError>
     where
         F: FnOnce(&mut ScriptBuilder),
@@ -56,6 +57,7 @@ impl WitnessBuilder {
         self.add_invocation(script)
     }
 
+    /// Builds a verification script with a [`ScriptBuilder`] callback and adds it (mutable reference).
     pub fn add_verification_with_builder<F>(&mut self, config: F) -> Result<&mut Self, CoreError>
     where
         F: FnOnce(&mut ScriptBuilder),
@@ -64,6 +66,7 @@ impl WitnessBuilder {
         self.add_verification(script)
     }
 
+    /// Builds the witness, returning an empty witness when no scripts were set.
     pub fn build(&self) -> Witness {
         if self.invocation.is_empty() && self.verification.is_empty() {
             Witness::new()

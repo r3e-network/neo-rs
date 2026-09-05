@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use super::{
-    inventory::Inventory, signer::Signer, transaction_attribute::TransactionAttribute,
-    witness::Witness, InventoryType, TransactionAttributeType,
+    InventoryType, TransactionAttributeType, inventory::Inventory, signer::Signer,
+    transaction_attribute::TransactionAttribute, witness::Witness,
 };
 use crate::cryptography::{Crypto, Secp256r1Crypto};
 use crate::hardfork::Hardfork;
@@ -20,23 +20,23 @@ use crate::neo_io::serializable::helper::{
     get_var_size_serializable_slice, serialize_array,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::neo_vm::StackItem;
 use crate::network::p2p::helper;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
-use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::CallFlags;
+use crate::smart_contract::TriggerType;
+use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::native::{ContractManagement, LedgerContract, PolicyContract};
-use crate::smart_contract::TriggerType;
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType, Interoperable};
-use crate::neo_vm::StackItem;
 use crate::wallets::helper::Helper as WalletHelper;
-use crate::{ledger::VerifyResult, CoreResult, UInt160, UInt256, Verifiable, VerifiableExt};
-use base64::{engine::general_purpose, Engine as _};
+use crate::{CoreResult, UInt160, UInt256, VerifiableExt, ledger::VerifyResult};
+use base64::{Engine as _, engine::general_purpose};
 use neo_vm::OpCode;
 use parking_lot::Mutex;
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashSet;

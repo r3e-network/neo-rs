@@ -1,8 +1,8 @@
 use super::{StateStore, StateStoreSnapshot};
+use crate::UInt256;
 use crate::cryptography::mpt_trie::Trie;
 use crate::neo_io::{BinaryWriter, MemoryReader};
 use crate::smart_contract::StorageKey;
-use crate::UInt256;
 use std::collections::HashSet;
 use std::sync::Arc;
 

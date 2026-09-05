@@ -28,10 +28,10 @@ pub use neo_p2p::payloads::get_block_by_index_payload;
 pub use neo_p2p::payloads::get_blocks_payload;
 /// Inventory payload for announcements.
 pub use neo_p2p::payloads::inv_payload;
-/// Node capability descriptors.
-pub use neo_p2p::payloads::node_capability;
 /// Network address with timestamp.
 pub use neo_p2p::payloads::network_address_with_time;
+/// Node capability descriptors.
+pub use neo_p2p::payloads::node_capability;
 /// Ping/pong payload for keepalive.
 pub use neo_p2p::payloads::ping_payload;
 /// Version payload for handshake.
@@ -39,10 +39,10 @@ pub use neo_p2p::payloads::version_payload;
 
 // ── Local modules (neo-core dependencies) ─────────────────────────────
 
-/// Witness conditions for transaction verification.
-pub mod conditions;
 /// Block structure and serialization.
 pub mod block;
+/// Witness conditions for transaction verification.
+pub mod conditions;
 /// Conflicts transaction attribute.
 pub mod conflicts;
 /// Extensible payload for consensus.
