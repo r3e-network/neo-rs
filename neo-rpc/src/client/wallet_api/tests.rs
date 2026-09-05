@@ -1,6 +1,6 @@
 use super::*;
 use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use mockito::{Matcher, Server};
 use neo_config::ProtocolSettings;
 use neo_core::ScriptBuilder;

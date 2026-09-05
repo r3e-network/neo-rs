@@ -1,5 +1,6 @@
+use super::{MAX_CALLBACK_LENGTH, MAX_FILTER_LENGTH, MAX_URL_LENGTH, MAX_USER_DATA_LENGTH};
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::neo_config::{BLOCK_MAX_TX_WIRE_LIMIT, HASH_SIZE, MAX_SCRIPT_SIZE};
+use crate::neo_config::MAX_SCRIPT_SIZE;
 
 /// Oracle configuration parameters.
 #[derive(Debug, Clone)]
@@ -32,10 +33,10 @@ pub struct OracleConfig {
 impl Default for OracleConfig {
     fn default() -> Self {
         Self {
-            max_url_length: 256,
-            max_filter_length: 128,
-            max_callback_length: HASH_SIZE,
-            max_user_data_length: BLOCK_MAX_TX_WIRE_LIMIT,
+            max_url_length: MAX_URL_LENGTH,
+            max_filter_length: MAX_FILTER_LENGTH,
+            max_callback_length: MAX_CALLBACK_LENGTH,
+            max_user_data_length: MAX_USER_DATA_LENGTH,
             max_response_length: MAX_SCRIPT_SIZE,
             request_timeout: 144, // ~24 hours at 10 second blocks
             min_response_gas: 10_000_000,
@@ -139,3 +140,39 @@ impl OracleConfigBuilder {
 }
 
 crate::impl_default_via_new!(OracleConfigBuilder);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pins the Oracle request limits to Neo N3 v3.10.1 `OracleContract`.
+    ///
+    /// These are consensus-relevant: a node that accepts a request the rest of
+    /// the network rejects diverges the Oracle contract's on-chain state.
+    #[test]
+    fn default_limits_match_csharp_oracle_contract() {
+        let c = OracleConfig::default();
+        assert_eq!(c.max_url_length, 256, "C# OracleContract.MaxUrlLength");
+        assert_eq!(
+            c.max_filter_length, 128,
+            "C# OracleContract.MaxFilterLength"
+        );
+        assert_eq!(
+            c.max_callback_length, 32,
+            "C# OracleContract.MaxCallbackLength"
+        );
+        assert_eq!(
+            c.max_user_data_length, 512,
+            "C# OracleContract.MaxUserDataLength"
+        );
+        // C# `MinGasForResponse = 0_10000000` (0.1 GAS in datoshi).
+        assert_eq!(c.min_response_gas, 10_000_000, "C# MinGasForResponse");
+    }
+
+    #[test]
+    fn user_data_limit_is_not_the_wire_tx_limit() {
+        // Regression guard: this was previously wired to
+        // `BLOCK_MAX_TX_WIRE_LIMIT` (65_535), 128x more permissive than C#.
+        assert_ne!(OracleConfig::default().max_user_data_length, 65_535);
+    }
+}

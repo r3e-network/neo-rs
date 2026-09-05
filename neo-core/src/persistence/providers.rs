@@ -7,6 +7,7 @@ pub use memory_store::MemoryStore;
 pub use memory_store_provider::MemoryStoreProvider;
 
 #[cfg(feature = "rocksdb")]
+/// RocksDB-backed persistence provider (feature `rocksdb`/`full`).
 pub mod rocksdb;
 
 #[cfg(feature = "rocksdb")]

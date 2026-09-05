@@ -127,6 +127,7 @@ pub struct Blockchain {
 }
 
 impl Blockchain {
+    /// Creates the blockchain actor over the given ledger context.
     pub fn new(ledger: Arc<LedgerContext>) -> Self {
         Self {
             ledger,
@@ -142,6 +143,7 @@ impl Blockchain {
         }
     }
 
+    /// Builds actor `Props` that spawn a `Blockchain` over `ledger`.
     pub fn props(ledger: Arc<LedgerContext>) -> Props {
         Props::new(move || Self::new(ledger.clone()))
     }

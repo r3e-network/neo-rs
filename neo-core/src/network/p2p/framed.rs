@@ -99,10 +99,18 @@ where
 /// Runtime framing configuration to keep read behaviour consistent across the stack.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FrameConfig {
+    /// Read timeout applied while the connection handshake is in progress.
     pub read_timeout_handshake: Duration,
+    /// Read timeout applied once the peer connection is active.
     pub read_timeout_active: Duration,
+    /// Timeout applied to frame writes.
     pub write_timeout: Duration,
+    /// Timeout applied when draining and shutting down a connection.
     pub shutdown_timeout: Duration,
+    /// Upper bound a single underlying read may hold the connection lock
+    /// during a stepwise receive. Short steps create lock windows so writers
+    /// are not starved by a silent peer for the whole active read timeout.
+    pub read_step_timeout: Duration,
     /// Enable vectored I/O for writes (reduces syscalls for multi-buffer writes).
     pub use_vectored_io: bool,
     /// Buffer small writes to reduce syscall overhead.
@@ -116,6 +124,7 @@ impl From<&ChannelsConfig> for FrameConfig {
             read_timeout_active: cfg.read_timeout_active,
             write_timeout: cfg.write_timeout,
             shutdown_timeout: cfg.shutdown_timeout,
+            read_step_timeout: Duration::from_millis(500),
             use_vectored_io: true,
             buffer_small_writes: true,
         }
@@ -242,6 +251,59 @@ impl FrameReader {
             }
         }
     }
+
+    /// Performs one bounded read step: decode a buffered frame if one is
+    /// complete, otherwise issue a single short-timeout read. Partial frames
+    /// stay in the internal buffer so callers can release the connection lock
+    /// between steps without losing progress.
+    pub(crate) async fn read_step(
+        &mut self,
+        stream: &mut TcpStream,
+        cfg: &FrameConfig,
+        handshake_complete: bool,
+    ) -> NetworkResult<FrameReadStep> {
+        if let Some(frame) = self.codec.decode(&mut self.buffer)? {
+            return Ok(FrameReadStep::Frame(frame));
+        }
+
+        let timeout_duration = if handshake_complete {
+            cfg.read_step_timeout
+        } else {
+            // The handshake read deadline must stay tight; use the smaller of
+            // the handshake timeout and a single step so a silent peer is
+            // noticed promptly.
+            cfg.read_step_timeout.min(cfg.read_timeout_handshake)
+        };
+
+        let read = timeout(timeout_duration, stream.read_buf(&mut self.buffer)).await;
+        let bytes_read = match read {
+            // Step deadline elapsed with no data: an idle step, not fatal.
+            Err(_elapsed) => return Ok(FrameReadStep::Idle),
+            Ok(Err(err)) => {
+                return Err(NetworkError::ConnectionError(format!(
+                    "Failed to read frame: {err}"
+                )));
+            }
+            Ok(Ok(n)) => n,
+        };
+
+        if bytes_read == 0 {
+            return Ok(FrameReadStep::Closed);
+        }
+        Ok(FrameReadStep::Pending)
+    }
+}
+
+/// Result of a single stepwise frame read.
+pub(crate) enum FrameReadStep {
+    /// A complete frame was decoded.
+    Frame(Vec<u8>),
+    /// Bytes arrived without completing a frame.
+    Pending,
+    /// The step deadline elapsed without any data.
+    Idle,
+    /// The peer closed the connection.
+    Closed,
 }
 
 crate::impl_default_via_new!(FrameReader);
@@ -345,6 +407,7 @@ mod tests {
             read_timeout_active,
             write_timeout: Duration::from_secs(1),
             shutdown_timeout: Duration::from_secs(1),
+            read_step_timeout: Duration::from_millis(100),
             use_vectored_io: true,
             buffer_small_writes: true,
         }

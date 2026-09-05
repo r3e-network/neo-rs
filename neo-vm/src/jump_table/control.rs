@@ -1,19 +1,19 @@
 //! `JumpTable` Control operations implementation matching C# Neo.VM.JumpTable.Control
 
-use crate::error::{VmError, VmResult};
-use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{register_jump_handlers, JumpTable};
 use crate::Instruction;
 use crate::OpCode;
 use crate::VmState as VMState;
+use crate::error::{VmError, VmResult};
+use crate::execution_engine::ExecutionEngine;
+use crate::jump_table::{JumpTable, register_jump_handlers};
 
 /// Register all control handlers
 pub fn register_handlers(jump_table: &mut JumpTable) {
     use OpCode::{
-        ABORT, ABORTMSG, ASSERT, ASSERTMSG, CALL, CALLA, CALLT, CALL_L, ENDFINALLY, ENDTRY,
-        ENDTRY_L, JMP, JMPEQ, JMPEQ_L, JMPGE, JMPGE_L, JMPGT, JMPGT_L, JMPIF, JMPIFNOT, JMPIFNOT_L,
-        JMPIF_L, JMPLE, JMPLE_L, JMPLT, JMPLT_L, JMPNE, JMPNE_L, JMP_L, NOP, RET, SYSCALL, THROW,
-        TRY, TRY_L,
+        ABORT, ABORTMSG, ASSERT, ASSERTMSG, CALL, CALL_L, CALLA, CALLT, ENDFINALLY, ENDTRY,
+        ENDTRY_L, JMP, JMP_L, JMPEQ, JMPEQ_L, JMPGE, JMPGE_L, JMPGT, JMPGT_L, JMPIF, JMPIF_L,
+        JMPIFNOT, JMPIFNOT_L, JMPLE, JMPLE_L, JMPLT, JMPLT_L, JMPNE, JMPNE_L, NOP, RET, SYSCALL,
+        THROW, TRY, TRY_L,
     };
 
     register_jump_handlers![
@@ -463,9 +463,9 @@ pub fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 /// Compatibility module exposing the exception-handling ops with explicit names,
 /// matching the helper layout used in the C# test suite.
 pub mod exception_handling {
+    use crate::Instruction;
     use crate::error::VmResult;
     use crate::execution_engine::ExecutionEngine;
-    use crate::Instruction;
 
     /// Executes the TRY opcode for exception handling.
     pub fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {

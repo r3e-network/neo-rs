@@ -1,12 +1,12 @@
 //! ContractEventDescriptor - matches C# Neo.SmartContract.Manifest.ContractEventDescriptor exactly
 
 use crate::error::CoreError;
+use crate::neo_vm::StackItem;
 use crate::smart_contract::interoperable::Interoperable;
+use crate::smart_contract::manifest::ContractParameterDefinition;
 use crate::smart_contract::manifest::stack_value_helpers::{
     decode_stack_value_objects, required_struct_fields,
 };
-use crate::smart_contract::manifest::ContractParameterDefinition;
-use crate::neo_vm::StackItem;
 use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 
@@ -92,10 +92,10 @@ impl ContractEventDescriptor {
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let items = required_struct_fields(stack_value, "ContractEventDescriptor", 2)?;
 
-        if let Some(bytes) = items[0].to_byte_string_bytes() {
-            if let Ok(name) = String::from_utf8(bytes) {
-                self.name = name;
-            }
+        if let Some(bytes) = items[0].to_byte_string_bytes()
+            && let Ok(name) = String::from_utf8(bytes)
+        {
+            self.name = name;
         }
 
         if let Some(parameters) = decode_stack_value_objects(
@@ -116,7 +116,8 @@ impl Interoperable for ContractEventDescriptor {
                 "Failed to convert ContractEventDescriptor StackItem to StackValue: {error}"
             ))
         })?;
-        self.from_stack_value(sv).map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
+        self.from_stack_value(sv)
+            .map_err(|e| crate::neo_vm::VmError::invalid_operation_msg(e.to_string()))
     }
 
     fn to_stack_item(&self) -> Result<StackItem, crate::neo_vm::VmError> {

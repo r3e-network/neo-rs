@@ -3,6 +3,7 @@
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_core::BigDecimal;
+use neo_core::ScriptBuilder;
 use neo_core::cryptography::{ECCurve, ECPoint};
 use neo_core::network::p2p::payloads::conflicts::Conflicts;
 use neo_core::network::p2p::payloads::signer::Signer;
@@ -10,16 +11,15 @@ use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use neo_core::persistence::DataCache;
 use neo_core::prelude::Serializable;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::contract_parameters_context::ContractParametersContext;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::native::{
     GasToken, LedgerContract, NativeContract, NeoToken, PolicyContract,
 };
-use neo_core::smart_contract::TriggerType;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::wallets::{
     AssetDescriptor, Helper, KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet,
@@ -788,15 +788,15 @@ impl RpcServerWallet {
             if let Some(account) = wallet.get_account(&signer_account) {
                 let mut contract_opt = account.contract().cloned();
                 let key_opt = account.get_key();
-                if contract_opt.is_none() {
-                    if let Some(ref key) = key_opt {
-                        let pub_point = key
-                            .get_public_key_point()
-                            .ok()
-                            .and_then(|p| ECPoint::from_bytes(&p.to_bytes()).ok());
-                        if let Some(point) = pub_point {
-                            contract_opt = Some(Contract::create_signature_contract(point));
-                        }
+                if contract_opt.is_none()
+                    && let Some(ref key) = key_opt
+                {
+                    let pub_point = key
+                        .get_public_key_point()
+                        .ok()
+                        .and_then(|p| ECPoint::from_bytes(&p.to_bytes()).ok());
+                    if let Some(point) = pub_point {
+                        contract_opt = Some(Contract::create_signature_contract(point));
                     }
                 }
 
@@ -886,10 +886,10 @@ impl RpcServerWallet {
                     Some("Neo.Network.P2P.Payloads.Transaction".to_string()),
                 );
                 for signer in tx.signers() {
-                    if let Some(account) = wallet.get_account(&signer.account) {
-                        if let Some(contract) = account.contract() {
-                            context.add_contract(contract.clone());
-                        }
+                    if let Some(account) = wallet.get_account(&signer.account)
+                        && let Some(contract) = account.contract()
+                    {
+                        context.add_contract(contract.clone());
                     }
                 }
                 let mut json = context.to_json();

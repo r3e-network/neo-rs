@@ -112,6 +112,7 @@ pub struct TaskManager {
 }
 
 impl TaskManager {
+    /// Creates empty task-manager state; call [`Self::props`] for actors.
     pub fn new() -> Self {
         Self {
             system: None,
@@ -126,6 +127,7 @@ impl TaskManager {
         }
     }
 
+    /// Builds actor `Props` spawning a `TaskManagerActor`.
     pub fn props() -> Props {
         Props::new(|| TaskManagerActor::new(Self::new()))
     }
@@ -172,6 +174,7 @@ impl TaskManagerMessage {
 }
 
 impl TaskManagerActor {
+    /// Wraps `state` into the actor shell.
     pub fn new(state: TaskManager) -> Self {
         Self { state, timer: None }
     }
@@ -232,6 +235,9 @@ impl TaskManagerActor {
                 }
                 TaskManagerCommand::Headers { peer } => {
                     self.state.on_headers(&peer);
+                }
+                TaskManagerCommand::ForgetHash { hash } => {
+                    self.state.forget_hash(&hash);
                 }
             },
             TaskManagerMessage::PersistCompleted(persist) => {
@@ -295,36 +301,64 @@ impl Actor for TaskManagerActor {
 /// Message variants handled by [`TaskManagerActor`].
 #[derive(Debug, Clone)]
 pub enum TaskManagerCommand {
+    /// Binds the manager to the node's system context.
     AttachSystem {
+        /// Shared system context with ledger and protocol settings.
         context: Arc<NeoSystemContext>,
     },
+    /// Registers a peer after handshake with its advertised version.
     Register {
+        /// The peer actor.
         peer: ActorRef,
+        /// The peer's version payload.
         version: VersionPayload,
     },
+    /// Updates a peer's advertised last block index.
     Update {
+        /// The peer actor.
         peer: ActorRef,
+        /// The peer's latest block index.
         last_block_index: u32,
     },
+    /// Requests task scheduling for inventories announced by a peer.
     NewTasks {
+        /// The announcing peer.
         peer: ActorRef,
+        /// The announced inventory payload.
         payload: InvPayload,
     },
+    /// Re-requests inventories from one peer (e.g. after a timeout).
     RestartTasks {
+        /// The peer to re-request from.
         peer: ActorRef,
+        /// The inventory payload to restart.
         payload: InvPayload,
     },
+    /// Re-requests inventories from every connected peer.
     BroadcastRestartTasks {
+        /// The inventory payload to restart.
         payload: InvPayload,
     },
+    /// Reports a fetched inventory item as processed.
     InventoryCompleted {
+        /// The peer that delivered the item.
         peer: ActorRef,
+        /// The item's hash.
         hash: UInt256,
+        /// The fetched block, if the inventory was a block.
         block: Box<Option<Block>>,
+        /// The block index, when known.
         block_index: Option<u32>,
     },
+    /// Triggers a headers sync toward a peer.
     Headers {
+        /// The peer to request headers from.
         peer: ActorRef,
+    },
+    /// Forgets an inventory hash after processing failed before acceptance.
+    ForgetHash {
+        /// The hash to forget.
+        hash: UInt256,
     },
 }
 

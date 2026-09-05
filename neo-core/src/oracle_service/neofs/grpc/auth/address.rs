@@ -1,6 +1,6 @@
+use super::super::super::NeoFsRequest;
 use super::super::super::decode_raw_base58;
 use super::super::super::proto::neofs_v2;
-use super::super::super::NeoFsRequest;
 
 pub(crate) fn build_neofs_grpc_address(
     request: &NeoFsRequest,

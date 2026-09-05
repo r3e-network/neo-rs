@@ -3,6 +3,7 @@
 use neo_core::ScriptBuilder;
 use neo_core::wallets::{WalletError, WalletResult};
 
+#[allow(dead_code)]
 pub(crate) fn signature_invocation(signature: &[u8]) -> WalletResult<Vec<u8>> {
     if signature.len() != 64 {
         return Err(WalletError::SigningFailed(

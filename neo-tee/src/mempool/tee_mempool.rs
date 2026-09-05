@@ -8,7 +8,7 @@
 use crate::enclave::TeeEnclave;
 use crate::error::{TeeError, TeeResult};
 use crate::mempool::fair_ordering::{
-    compute_ordering_key, FairOrderingPolicy, OrderingKey, TransactionTiming,
+    FairOrderingPolicy, OrderingKey, TransactionTiming, compute_ordering_key,
 };
 use neo_crypto::{Crypto, Secp256r1Crypto};
 use parking_lot::RwLock;
@@ -177,14 +177,14 @@ impl TeeMempool {
         }
 
         transactions.insert(tx_hash, entry);
-        if let Some(replaced_hash) = ordered.insert(ordering_key, tx_hash) {
-            if replaced_hash != tx_hash {
-                // Roll back on unexpected index collision.
-                transactions.remove(&tx_hash);
-                return Err(TeeError::Other(
-                    "Ordering index collision while inserting transaction".to_string(),
-                ));
-            }
+        if let Some(replaced_hash) = ordered.insert(ordering_key, tx_hash)
+            && replaced_hash != tx_hash
+        {
+            // Roll back on unexpected index collision.
+            transactions.remove(&tx_hash);
+            return Err(TeeError::Other(
+                "Ordering index collision while inserting transaction".to_string(),
+            ));
         }
 
         debug!(

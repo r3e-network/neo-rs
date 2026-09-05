@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use neo_core::wallets::Helper as WalletHelper;
 
@@ -161,9 +161,9 @@ mod tests {
     use super::*;
     use crate::server::rpc_server::RpcHandler;
     use crate::server::rpc_server_settings::RpcServerConfig;
+    use neo_core::UInt160;
     use neo_core::neo_system::NeoSystem;
     use neo_core::protocol_settings::ProtocolSettings;
-    use neo_core::UInt160;
 
     fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
         handlers

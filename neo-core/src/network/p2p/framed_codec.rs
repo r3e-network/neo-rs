@@ -14,6 +14,7 @@ pub struct NeoMessageCodec {
 }
 
 impl NeoMessageCodec {
+    /// Creates a codec that rejects frames whose payload exceeds `max_payload_size` bytes.
     pub fn new(max_payload_size: usize) -> Self {
         Self { max_payload_size }
     }
@@ -84,8 +85,8 @@ impl<'a> Encoder<&'a [u8]> for NeoMessageCodec {
 mod tests {
     use super::*;
     use crate::network::p2p::{
-        payloads::{PingPayload, VersionPayload},
         NetworkMessage, ProtocolMessage,
+        payloads::{PingPayload, VersionPayload},
     };
     use futures::{SinkExt, StreamExt};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

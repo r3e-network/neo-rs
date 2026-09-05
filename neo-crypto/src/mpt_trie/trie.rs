@@ -1,11 +1,11 @@
+use super::MptCache;
 use super::cache::MptStoreSnapshot;
 use super::error::{MptError, MptResult};
-use super::node::{Node, BRANCH_CHILD_COUNT, BRANCH_VALUE_INDEX, MAX_KEY_LENGTH, MAX_VALUE_LENGTH};
+use super::node::{BRANCH_CHILD_COUNT, BRANCH_VALUE_INDEX, MAX_KEY_LENGTH, MAX_VALUE_LENGTH, Node};
 use super::node_type::NodeType;
-use super::MptCache;
 use crate::Crypto;
-use neo_primitives::UInt256;
 use neo_primitives::UINT256_SIZE;
+use neo_primitives::UInt256;
 use parking_lot::Mutex;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -98,43 +98,43 @@ where
 
     /// Enumerates key/value pairs under the supplied prefix, optionally resuming from `from`.
     pub fn find(&mut self, prefix: &[u8], from: Option<&[u8]>) -> MptResult<Vec<TrieEntry>> {
-        if let Some(from_bytes) = from {
-            if !from_bytes.starts_with(prefix) {
-                return Err(MptError::invalid(
-                    "`from` parameter must start with the supplied prefix",
-                ));
-            }
+        if let Some(from_bytes) = from
+            && !from_bytes.starts_with(prefix)
+        {
+            return Err(MptError::invalid(
+                "`from` parameter must start with the supplied prefix",
+            ));
         }
 
         let path = Self::ensure_prefix(prefix)?;
         let from_path = from.map(Self::ensure_prefix).transpose()?;
 
-        if let Some(ref from_vec) = from_path {
-            if from_vec.len() > MAX_KEY_LENGTH {
-                return Err(MptError::key(
-                    "`from` key length exceeds maximum".to_string(),
-                ));
-            }
+        if let Some(ref from_vec) = from_path
+            && from_vec.len() > MAX_KEY_LENGTH
+        {
+            return Err(MptError::key(
+                "`from` key length exceeds maximum".to_string(),
+            ));
         }
 
         let (resolved_path, start) = Self::seek_node(&mut self.cache, &mut self.root, &path)?;
 
         let mut offset = 0;
-        if let Some(ref from_vec) = from_path {
-            if !from_vec.is_empty() {
-                let limit = resolved_path.len().min(from_vec.len());
-                for i in 0..limit {
-                    if resolved_path[i] < from_vec[i] {
-                        return Ok(Vec::new());
-                    }
-                    if resolved_path[i] > from_vec[i] {
-                        offset = from_vec.len();
-                        break;
-                    }
+        if let Some(ref from_vec) = from_path
+            && !from_vec.is_empty()
+        {
+            let limit = resolved_path.len().min(from_vec.len());
+            for i in 0..limit {
+                if resolved_path[i] < from_vec[i] {
+                    return Ok(Vec::new());
                 }
-                if offset == 0 {
-                    offset = resolved_path.len().min(from_vec.len());
+                if resolved_path[i] > from_vec[i] {
+                    offset = from_vec.len();
+                    break;
                 }
+            }
+            if offset == 0 {
+                offset = resolved_path.len().min(from_vec.len());
             }
         }
 
@@ -438,7 +438,7 @@ where
                     }
 
                     // Check if next is now empty
-                    let next_is_empty = node.next.as_ref().map_or(true, |n| n.is_empty());
+                    let next_is_empty = node.next.as_ref().is_none_or(|n| n.is_empty());
                     if next_is_empty {
                         let next = node.take_next().unwrap_or_default();
                         *node = next;
@@ -834,7 +834,7 @@ where
     }
 
     fn from_nibbles(path: &[u8]) -> MptResult<Vec<u8>> {
-        if path.len() % 2 != 0 {
+        if !path.len().is_multiple_of(2) {
             return Err(MptError::invalid("nibble path must have even length"));
         }
         let mut key = Vec::with_capacity(path.len() / 2);

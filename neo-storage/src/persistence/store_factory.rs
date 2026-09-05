@@ -1,12 +1,12 @@
 use super::{
-    store::Store, store_provider::StoreProvider,
-    providers::memory_store_provider::MemoryStoreProvider,
+    providers::memory_store_provider::MemoryStoreProvider, store::Store,
+    store_provider::StoreProvider,
 };
 use crate::error::{StorageError, StorageResult};
 use hashbrown::HashMap;
-use std::sync::LazyLock;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use std::sync::LazyLock;
 
 /// Global registry of store providers.
 static PROVIDERS: LazyLock<RwLock<HashMap<String, Arc<dyn StoreProvider>>>> = LazyLock::new(|| {

@@ -64,13 +64,19 @@ fn test_json_path_wildcard() {
     let tokens = JPathToken::parse("$.letters[*]").unwrap();
     let results = JPathToken::evaluate(&tokens, &json).unwrap();
     assert_eq!(results.len(), 3);
-    assert!(results
-        .iter()
-        .any(|value| **value == JToken::String("a".to_string())));
-    assert!(results
-        .iter()
-        .any(|value| **value == JToken::String("b".to_string())));
-    assert!(results
-        .iter()
-        .any(|value| **value == JToken::String("c".to_string())));
+    assert!(
+        results
+            .iter()
+            .any(|value| **value == JToken::String("a".to_string()))
+    );
+    assert!(
+        results
+            .iter()
+            .any(|value| **value == JToken::String("b".to_string()))
+    );
+    assert!(
+        results
+            .iter()
+            .any(|value| **value == JToken::String("c".to_string()))
+    );
 }

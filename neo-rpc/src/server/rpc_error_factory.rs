@@ -7,9 +7,9 @@ use neo_core::UInt160;
 
 use super::rpc_error::RpcError;
 
-pub fn invalid_contract_verification_hash(contract_hash: &UInt160, pcount: i32) -> RpcError {
+pub fn invalid_contract_verification_hash(contract_hash: &UInt160) -> RpcError {
     RpcError::invalid_contract_verification().with_data(format!(
-        "The smart contract {contract_hash} haven't got verify method with {pcount} input parameters."
+        "The smart contract {contract_hash} haven't got verify method."
     ))
 }
 

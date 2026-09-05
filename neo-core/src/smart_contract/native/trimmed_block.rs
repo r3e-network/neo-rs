@@ -1,8 +1,7 @@
-use crate::error::CoreError;
-use crate::ledger::{block_header::BlockHeader, Block};
+use crate::ledger::{Block, block_header::BlockHeader};
 use crate::neo_io::impl_serializable;
-use crate::smart_contract::interoperable::Interoperable;
 use crate::neo_vm::StackItem;
+use crate::smart_contract::interoperable::Interoperable;
 use crate::{CoreResult, UInt256};
 use neo_vm::StackValue;
 use num_bigint::BigInt;
@@ -10,7 +9,9 @@ use num_bigint::BigInt;
 /// A trimmed block containing only the header and transaction hashes (matches C# TrimmedBlock)
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TrimmedBlock {
+    /// The block header retained after trimming.
     pub header: BlockHeader,
+    /// The hashes of the block's transactions.
     pub hashes: Vec<UInt256>,
 }
 

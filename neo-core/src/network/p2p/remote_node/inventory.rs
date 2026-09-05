@@ -1,8 +1,8 @@
 //! Inventory handling (inv announcements, getdata, mempool, blocks) for `RemoteNode`.
 use super::RemoteNode;
+use crate::ContainsTransactionType;
 use crate::UInt160;
 use crate::UInt256;
-use crate::ContainsTransactionType;
 use crate::ledger::blockchain::BlockchainCommand;
 use crate::neo_io::Serializable;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
@@ -195,6 +195,17 @@ impl RemoteNode {
             .enqueue_preverify_from(transaction, true, Some(ctx.self_ref()))
             .await
         {
+            // The transaction was not accepted by the preverification worker. Remove
+            // both deduplication records so a later announcement can be retried.
+            self.known_hashes.remove(&hash);
+            if let Err(forget_error) = self.system.task_manager.forget_hash(hash) {
+                warn!(
+                    target: "neo",
+                    %hash,
+                    error = %forget_error,
+                    "failed to forget transaction hash after preverification enqueue failure"
+                );
+            }
             warn!(
                 target: "neo",
                 %hash,

@@ -12,11 +12,11 @@ pub mod splice; // Matches JumpTable.Splice.cs
 pub mod stack; // Matches JumpTable.Stack.cs
 pub mod types; // Matches JumpTable.Types.cs
 
+use crate::Instruction;
+use crate::OpCode;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use crate::Instruction;
-use crate::OpCode;
 
 /// A handler for a VM instruction.
 pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> VmResult<()>;

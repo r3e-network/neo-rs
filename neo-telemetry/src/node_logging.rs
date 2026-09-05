@@ -15,7 +15,7 @@ use std::{
     path::Path,
 };
 use tracing_appender::{non_blocking, non_blocking::WorkerGuard};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 /// Guard for logging resources
 ///
@@ -119,11 +119,11 @@ fn create_file_writer(path: &str) -> AnyhowResult<(non_blocking::NonBlocking, Wo
         provided.join(default_log_name())
     };
 
-    if let Some(parent) = file_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create log directory {}", parent.display()))?;
-        }
+    if let Some(parent) = file_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create log directory {}", parent.display()))?;
     }
 
     let file = OpenOptions::new()

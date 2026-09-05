@@ -31,15 +31,17 @@ protocol_enum! {
         OverSize = 9,
         /// The inventory has expired.
         Expired = 10,
+        /// The transaction is not yet valid at the current height.
+        NotYetValid = 11,
         /// The sender has insufficient funds.
-        InsufficientFunds = 11,
+        InsufficientFunds = 12,
         /// Policy validation failed.
-        PolicyFail = 12,
+        PolicyFail = 13,
         /// The transaction conflicts with another transaction.
-        HasConflicts = 13,
+        HasConflicts = 14,
         #[default]
         /// The verification result is unknown.
-        Unknown = 14,
+        Unknown = 15,
     }
 }
 
@@ -76,24 +78,29 @@ mod tests {
         assert_eq!(VerifyResult::InvalidSignature.to_byte(), 8);
         assert_eq!(VerifyResult::OverSize.to_byte(), 9);
         assert_eq!(VerifyResult::Expired.to_byte(), 10);
-        assert_eq!(VerifyResult::InsufficientFunds.to_byte(), 11);
-        assert_eq!(VerifyResult::PolicyFail.to_byte(), 12);
-        assert_eq!(VerifyResult::HasConflicts.to_byte(), 13);
-        assert_eq!(VerifyResult::Unknown.to_byte(), 14);
+        assert_eq!(VerifyResult::NotYetValid.to_byte(), 11);
+        assert_eq!(VerifyResult::InsufficientFunds.to_byte(), 12);
+        assert_eq!(VerifyResult::PolicyFail.to_byte(), 13);
+        assert_eq!(VerifyResult::HasConflicts.to_byte(), 14);
+        assert_eq!(VerifyResult::Unknown.to_byte(), 15);
     }
 
     #[test]
     fn test_verify_result_from_byte() {
         assert_eq!(VerifyResult::from_byte(0), Some(VerifyResult::Succeed));
         assert_eq!(VerifyResult::from_byte(5), Some(VerifyResult::Invalid));
-        assert_eq!(VerifyResult::from_byte(14), Some(VerifyResult::Unknown));
-        assert_eq!(VerifyResult::from_byte(15), None);
+        assert_eq!(
+            VerifyResult::from_byte(14),
+            Some(VerifyResult::HasConflicts)
+        );
+        assert_eq!(VerifyResult::from_byte(15), Some(VerifyResult::Unknown));
+        assert_eq!(VerifyResult::from_byte(16), None);
         assert_eq!(VerifyResult::from_byte(255), None);
     }
 
     #[test]
     fn test_verify_result_roundtrip() {
-        for i in 0..=14u8 {
+        for i in 0..=15u8 {
             let result = VerifyResult::from_byte(i).unwrap();
             assert_eq!(result.to_byte(), i);
         }
@@ -134,9 +141,13 @@ mod tests {
     fn protocol_enum_guard_rejects_unknown_verify_result_serde_bytes() {
         assert_eq!(
             serde_json::from_str::<VerifyResult>("14").unwrap(),
+            VerifyResult::HasConflicts
+        );
+        assert_eq!(
+            serde_json::from_str::<VerifyResult>("15").unwrap(),
             VerifyResult::Unknown
         );
-        assert!(serde_json::from_str::<VerifyResult>("15").is_err());
+        assert!(serde_json::from_str::<VerifyResult>("16").is_err());
         assert!(serde_json::from_str::<VerifyResult>("255").is_err());
     }
 

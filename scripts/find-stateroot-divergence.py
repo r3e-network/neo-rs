@@ -25,6 +25,8 @@ import sys
 import time
 from urllib.parse import urlparse
 
+from ops_safety import safe_output_path
+
 
 LOCAL_RPC = "http://127.0.0.1:20332"
 REFERENCE_RPC = "http://seed1.neo.org:10332"
@@ -314,8 +316,8 @@ def main():
             print(f"\nLocal state height info: {json.dumps(result)}")
 
         # Write result
-        result_file = os.path.join(repo_dir, "divergence_result.json")
-        with open(result_file, "w") as f:
+        result_file = safe_output_path(os.path.join(repo_dir, "divergence_result.json"))
+        with result_file.open("w") as f:
             json.dump({
                 "first_divergent_block": 0,
                 "details": details,
@@ -424,8 +426,8 @@ def main():
         print(f"{d['block']:>8}  {m:>5}  {lr:>66}  {rr:>66}{marker}")
 
     # Write result to file
-    result_file = os.path.join(repo_dir, "divergence_result.json")
-    with open(result_file, "w") as f:
+    result_file = safe_output_path(os.path.join(repo_dir, "divergence_result.json"))
+    with result_file.open("w") as f:
         json.dump({
             "first_divergent_block": diverge_block,
             "details": details,

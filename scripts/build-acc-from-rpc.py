@@ -8,12 +8,15 @@ import time
 import urllib.error
 import urllib.request
 
+from ops_safety import safe_output_path, validate_rpc_url
+
 
 def eprint(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
 def rpc_post(url: str, payload, timeout: float):
+    url = validate_rpc_url(url)
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -80,7 +83,8 @@ def build_acc(url: str, start: int, end: int, output_path: str, batch_size: int,
     written = 0
     started_at = time.time()
 
-    with open(output_path, "wb") as f:
+    out_path = safe_output_path(output_path)
+    with out_path.open("wb") as f:
         f.write(struct.pack("<I", start))
         f.write(struct.pack("<I", total))
 

@@ -4,6 +4,7 @@
 //! Also provides lightweight `PluginEvent` for internal event broadcasting,
 //! replacing the removed plugin system with simple logging.
 
+/// Event handler traits for blockchain, remote node, and wallet events.
 pub mod handlers;
 
 use parking_lot::RwLock;
@@ -24,22 +25,38 @@ pub enum PluginEvent {
     NodeStopping,
     /// A block was received
     BlockReceived {
+        /// The hash of the received block.
         block_hash: String,
+        /// The height of the received block.
         block_height: u32,
     },
-    /// A transaction was received
-    TransactionReceived { tx_hash: String },
-    /// Transaction added to mempool
-    MempoolTransactionAdded { tx_hash: String },
+    /// A transaction was received from the network.
+    TransactionReceived {
+        /// The hash of the received transaction.
+        tx_hash: String,
+    },
+    /// Transaction added to mempool.
+    MempoolTransactionAdded {
+        /// The hash of the added transaction.
+        tx_hash: String,
+    },
     /// Transactions removed from mempool
     MempoolTransactionRemoved {
+        /// The hashes of the removed transactions.
         tx_hashes: Vec<String>,
+        /// The reason the transactions were removed.
         reason: String,
     },
-    /// A service was added
-    ServiceAdded { service_name: String },
-    /// Wallet changed
-    WalletChanged { wallet_name: String },
+    /// A service was added.
+    ServiceAdded {
+        /// The name of the added service.
+        service_name: String,
+    },
+    /// The active wallet changed.
+    WalletChanged {
+        /// The name of the new wallet.
+        wallet_name: String,
+    },
 }
 
 impl std::fmt::Debug for PluginEvent {
@@ -121,6 +138,7 @@ pub fn broadcast_plugin_event(event: &PluginEvent) {
 /// C# `EventHandler` interface where handlers are invoked with a sender and
 /// arbitrary arguments.
 pub trait EventHandler: Send + Sync + 'static {
+    /// Handles the event, given the sender and event arguments.
     fn handle(&self, sender: &dyn Any, args: &dyn Any);
 }
 

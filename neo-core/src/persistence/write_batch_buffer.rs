@@ -19,7 +19,7 @@ use tracing::{debug, error, trace};
 use crate::{CoreError, CoreResult};
 
 #[cfg(feature = "rocksdb")]
-use rocksdb::{WriteBatch, WriteOptions, DB};
+use rocksdb::{DB, WriteBatch, WriteOptions};
 
 /// Statistics for write batch operations.
 #[derive(Debug, Default)]
@@ -81,11 +81,17 @@ impl WriteBatchStats {
 /// Snapshot of write batch statistics.
 #[derive(Debug, Clone, Copy)]
 pub struct WriteBatchStatsSnapshot {
+    /// Total number of batches flushed so far.
     pub batches_flushed: u64,
+    /// Total number of operations written across all flushes.
     pub operations_written: u64,
+    /// Total bytes written across all flushes.
     pub bytes_written: u64,
+    /// Cumulative flush duration in milliseconds.
     pub total_flush_duration_ms: u64,
+    /// Number of flushes triggered by the delay timeout.
     pub flush_timeouts: u64,
+    /// Operations currently buffered and not yet flushed.
     pub pending_operations: usize,
 }
 

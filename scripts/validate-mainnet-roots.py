@@ -12,6 +12,8 @@ import time
 from datetime import datetime
 from urllib.parse import urlparse
 
+from ops_safety import safe_output_path
+
 LOCAL_RPC = "http://127.0.0.1:20332"
 SEEDS = [
     "http://seed1.neo.org:10332",
@@ -96,8 +98,8 @@ def load_resume():
 
 
 def save(block, stats):
-    open(RESUME_FILE, "w").write(str(block))
-    open(STATUS_FILE, "w").write(json.dumps(stats, indent=2))
+    safe_output_path(RESUME_FILE).open("w").write(str(block))
+    safe_output_path(STATUS_FILE).open("w").write(json.dumps(stats, indent=2))
 
 
 def ts():

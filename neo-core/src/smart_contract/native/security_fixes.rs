@@ -330,13 +330,13 @@ impl StateValidator {
                 "Total supply cannot be negative".to_string(),
             ));
         }
-        if let Some(max) = max_supply {
-            if total_supply > max {
-                return Err(CoreError::native_contract(format!(
-                    "Total supply {} exceeds maximum {}",
-                    total_supply, max
-                )));
-            }
+        if let Some(max) = max_supply
+            && total_supply > max
+        {
+            return Err(CoreError::native_contract(format!(
+                "Total supply {} exceeds maximum {}",
+                total_supply, max
+            )));
         }
         Ok(())
     }
@@ -484,16 +484,14 @@ mod tests {
 
         // Test total supply validation
         assert!(StateValidator::validate_total_supply(&BigInt::from(100), None).is_ok());
-        assert!(StateValidator::validate_total_supply(
-            &BigInt::from(100),
-            Some(&BigInt::from(1000))
-        )
-        .is_ok());
+        assert!(
+            StateValidator::validate_total_supply(&BigInt::from(100), Some(&BigInt::from(1000)))
+                .is_ok()
+        );
         assert!(StateValidator::validate_total_supply(&BigInt::from(-100), None).is_err());
-        assert!(StateValidator::validate_total_supply(
-            &BigInt::from(1000),
-            Some(&BigInt::from(100))
-        )
-        .is_err());
+        assert!(
+            StateValidator::validate_total_supply(&BigInt::from(1000), Some(&BigInt::from(100)))
+                .is_err()
+        );
     }
 }

@@ -1,7 +1,14 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+//! Benchmarks header/transaction serialization and hashing only.
+//!
+//! Scope note (review §4.3.5): this suite does NOT benchmark end-to-end block
+//! processing (validation, execution, persistence). Results must not be
+//! reported as block-processing throughput. Full-block benchmarks require a
+//! replay harness with real state.
+
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use neo_core::Transaction;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::Header;
-use neo_core::Transaction;
 
 /// Create a sample header with deterministic data for benchmarking.
 fn make_sample_header() -> Header {

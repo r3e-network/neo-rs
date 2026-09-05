@@ -1,7 +1,7 @@
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use neo_core::UInt160;
 use neo_core::smart_contract::contract_parameter::ContractParameter;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::UInt160;
 use neo_json::{JArray, JObject, JToken, MAX_SAFE_INTEGER};
 use std::str::FromStr;
 use uuid::Uuid;
@@ -14,7 +14,6 @@ mod signers;
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-
 
 /// Context supplied when converting RPC parameters.
 #[derive(Debug, Clone, Copy)]
@@ -227,10 +226,10 @@ impl RpcConvertible for Vec<ContractParameter> {
 
 pub(super) fn parse_address(text: &str, address_version: u8) -> Result<Address, RpcException> {
     let mut result = None;
-    if UInt160::try_parse(text, &mut result) {
-        if let Some(hash) = result {
-            return Ok(Address::new(hash, address_version));
-        }
+    if UInt160::try_parse(text, &mut result)
+        && let Some(hash) = result
+    {
+        return Ok(Address::new(hash, address_version));
     }
 
     WalletHelper::to_script_hash(text, address_version)
@@ -240,10 +239,10 @@ pub(super) fn parse_address(text: &str, address_version: u8) -> Result<Address, 
 
 pub(super) fn parse_uint160(text: &str) -> Result<UInt160, RpcException> {
     let mut result = None;
-    if UInt160::try_parse(text, &mut result) {
-        if let Some(value) = result {
-            return Ok(value);
-        }
+    if UInt160::try_parse(text, &mut result)
+        && let Some(value) = result
+    {
+        return Ok(value);
     }
     Err(invalid_params(format!("Invalid UInt160 value: {text}")))
 }

@@ -21,6 +21,7 @@
 - PolicyContract.BlockAccount Faun 状态迁移对齐（P-01）：在 `HF_Faun` 激活后，对 Faun 前已封禁（存储值为空字节）的账户再次调用 `blockAccount` 时，严格对齐 C# `PolicyContract.cs` 写入当前区块时间戳、调用 `NEO.VoteInternal` 撤销投票并返回 `true`（单测 `check_block_account_faun_pre_blocked_migrates_timestamp` 验证通过）。
 - 钱包多签合约解析单源化与死代码清洗（A-01）：移除 `neo-core/src/wallets/helper.rs` 中私有冗余且未做公钥曲线解码校验的旧版 `parse_multi_sig_contract`，统一导向 `ContractHelper::parse_multi_sig_contract` 规范实现（支持 1024 密钥上限与 Secp256r1 解码），13 项钱包单测全绿。
 - **发布新版本 v0.16.0（2026-09-03）**：全仓 17 个 Crate 版本统一升级至 `0.16.0`，完整记录 `CHANGELOG.md`，全仓类型检查 (`cargo check --workspace`) 与格式检查 (`cargo fmt --all -- --check`) 100% 绿灯。
+- **合并至远端主分支 `main`**：通过快进合并提交 `17ca683a` 将 `protocol-v3.10.1-compliance` (v0.16.0) 完整合并入 `origin/main`，主分支代码树已与最新 v0.16.0 完全同步。
 
 ## 已验证
 

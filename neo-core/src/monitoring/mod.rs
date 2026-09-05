@@ -9,8 +9,8 @@ use reqwest::Client;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
@@ -131,7 +131,10 @@ impl MonitoringSystem {
                 );
                 exporter.build_payload(&self.version, &health, &perf)
             }
-            other => Err(CoreError::invalid_operation(format!("Unsupported export format: {}", other))),
+            other => Err(CoreError::invalid_operation(format!(
+                "Unsupported export format: {}",
+                other
+            ))),
         }
     }
 
@@ -239,6 +242,7 @@ pub struct HealthMonitor {
 }
 
 impl HealthMonitor {
+    /// Creates a monitor reporting the given node version, with a 1s health cache.
     pub fn new(version: String) -> Self {
         Self {
             version,
@@ -248,6 +252,8 @@ impl HealthMonitor {
         }
     }
 
+    /// Produces a health report (cached for the cache TTL) from every
+    /// registered component check.
     pub async fn check_health(&self) -> MonitoringResult<HealthReport> {
         if let Some(report) = self.cached_report().await {
             return Ok(report);
@@ -358,6 +364,7 @@ pub struct PerformanceStats {
 }
 
 impl PerformanceStats {
+    /// Records one sample, updating count/sum/min/max and the windowed mean.
     pub fn record(&mut self, value: f64) {
         if self.count == 0 {
             self.min = value;
@@ -399,10 +406,12 @@ pub struct PerformanceMonitor {
 }
 
 impl PerformanceMonitor {
+    /// Creates an empty performance monitor.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Registers a named metric with a bounded sample window.
     pub async fn register_metric(&self, name: String, _window: usize) {
         let mut metrics = self.metrics.write().await;
         metrics
@@ -410,6 +419,8 @@ impl PerformanceMonitor {
             .or_insert_with(PerformanceStats::default);
     }
 
+    /// Records one sample for a metric, evaluating thresholds and firing
+    /// alert callbacks when a bound is crossed.
     pub async fn record(&self, metric: &str, value: f64) -> MonitoringResult<()> {
         {
             let mut metrics = self.metrics.write().await;
@@ -423,6 +434,7 @@ impl PerformanceMonitor {
         Ok(())
     }
 
+    /// Returns the aggregate statistics for one metric.
     pub async fn get_stats(&self, metric: &str) -> MonitoringResult<PerformanceStats> {
         let metrics = self.metrics.read().await;
         metrics
@@ -431,15 +443,18 @@ impl PerformanceMonitor {
             .ok_or_else(|| CoreError::not_found(format!("Metric: {}", metric)))
     }
 
+    /// Returns a snapshot of the statistics for every registered metric.
     pub async fn get_all_stats(&self) -> HashMap<String, PerformanceStats> {
         self.metrics.read().await.clone()
     }
 
+    /// Installs or replaces a performance threshold used by `record`.
     pub async fn set_threshold(&self, threshold: PerformanceThreshold) {
         let mut thresholds = self.thresholds.write().await;
         thresholds.insert(threshold.metric.clone(), threshold);
     }
 
+    /// Registers a callback invoked when a threshold violation fires.
     pub async fn register_alert_callback<F>(&self, callback: F)
     where
         F: Fn(Alert) + Send + Sync + 'static,
@@ -497,6 +512,7 @@ pub struct Profiler {
 }
 
 impl Profiler {
+    /// Starts a profiler bound to a named metric on the given monitor.
     pub fn start_with_monitor(metric: &str, monitor: Arc<PerformanceMonitor>) -> Self {
         Self {
             metric: metric.to_string(),
@@ -505,6 +521,7 @@ impl Profiler {
         }
     }
 
+    /// Stops the profiler and records the elapsed duration into its metric.
     pub async fn stop_and_record(self) -> MonitoringResult<()> {
         let elapsed = self.started.elapsed().as_secs_f64();
         self.monitor.record(&self.metric, elapsed).await
@@ -513,6 +530,7 @@ impl Profiler {
 
 /// Trait describing an exporter implementation.
 pub trait Exporter: Send + Sync {
+    /// The HTTP content type of this exporter's payload encoding.
     fn content_type(&self) -> &'static str;
 }
 
@@ -539,6 +557,7 @@ impl Exporter for OtlpExporter {
 }
 
 impl OtlpExporter {
+    /// Creates an OTLP/HTTP exporter posting to `endpoint` for `service_name`.
     pub fn new(endpoint: String, service_name: String) -> Self {
         Self {
             endpoint,
@@ -546,14 +565,17 @@ impl OtlpExporter {
         }
     }
 
+    /// Returns the configured collector endpoint.
     pub fn endpoint(&self) -> &str {
         &self.endpoint
     }
 
+    /// Returns the configured service name reported with every payload.
     pub fn service_name(&self) -> &str {
         &self.service_name
     }
 
+    /// Encodes the accumulated metric snapshots as an OTLP/JSON payload.
     pub fn build_payload(
         &self,
         version: &str,
@@ -624,6 +646,7 @@ impl OtlpExporter {
         serde_json::to_string(&payload).map_err(|e| CoreError::invalid_operation(e.to_string()))
     }
 
+    /// POSTs a pre-encoded payload to the configured collector endpoint.
     pub async fn send(&self, payload: String) -> MonitoringResult<()> {
         let client = Client::builder()
             .no_proxy()
@@ -651,6 +674,7 @@ impl OtlpExporter {
 pub struct ExporterFactory;
 
 impl ExporterFactory {
+    /// Builds the exporter named by `format` (e.g. `"otlp"`), if supported.
     pub fn create(format: &str) -> Option<Box<dyn Exporter>> {
         match format {
             "prometheus" => Some(Box::new(SimpleExporter {
@@ -666,6 +690,7 @@ impl ExporterFactory {
         }
     }
 
+    /// Builds an OTLP exporter for the given endpoint and service name.
     pub fn create_otlp(endpoint: String, service_name: String) -> Box<dyn Exporter> {
         Box::new(OtlpExporter::new(endpoint, service_name))
     }

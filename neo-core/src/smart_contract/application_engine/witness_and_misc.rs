@@ -1,5 +1,4 @@
 use super::*;
-use crate::neo_vm::StackItemExt;
 use crate::VerifiableExt;
 
 impl ApplicationEngine {
@@ -16,7 +15,10 @@ impl ApplicationEngine {
         };
 
         // 2. Transaction container path (witness rules and scopes).
-        if let Some(tx) = container.as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() {
+        if let Some(tx) = container
+            .as_any()
+            .downcast_ref::<crate::network::p2p::payloads::Transaction>()
+        {
             let mut signers: Vec<_> = tx.signers().to_vec();
 
             // OracleResponse transactions inherit signers from the original request.
@@ -61,7 +63,8 @@ impl ApplicationEngine {
         }
 
         // Downcast to concrete types to call VerifiableExt::script_hashes_for_verifying
-        let hashes = script_hashes_for_verifying_dyn(container.as_ref(), self.snapshot_cache.as_ref());
+        let hashes =
+            script_hashes_for_verifying_dyn(container.as_ref(), self.snapshot_cache.as_ref());
         Ok(hashes.contains(hash))
     }
 
@@ -392,10 +395,10 @@ impl ApplicationEngine {
 
     /// Gets a storage item by key (legacy API for native contracts).
     pub fn get_storage_item_legacy(&self, key: &[u8]) -> Option<Vec<u8>> {
-        if let Some(current_hash) = &self.current_script_hash {
-            if let Ok(context) = self.get_native_storage_context(current_hash) {
-                return self.get_storage_item(&context, key);
-            }
+        if let Some(current_hash) = &self.current_script_hash
+            && let Ok(context) = self.get_native_storage_context(current_hash)
+        {
+            return self.get_storage_item(&context, key);
         }
         None
     }
@@ -411,6 +414,8 @@ impl ApplicationEngine {
         ))
     }
 
+    /// Creates the script hash of a single-key (signature) account, charging the
+    /// CheckSig fee (`System.Contract.CreateStandardAccount`).
     pub fn create_standard_account(&mut self, public_key: &[u8]) -> Result<UInt160> {
         if public_key.len() != 33 {
             return Err(Error::invalid_operation(
@@ -433,6 +438,8 @@ impl ApplicationEngine {
         Ok(hash)
     }
 
+    /// Creates the script hash of an m-of-n multisig account
+    /// (`System.Contract.CreateMultisigAccount`).
     pub fn create_multisig_account(
         &mut self,
         required_signatures: i32,
@@ -563,26 +570,27 @@ impl ApplicationEngine {
             }
 
             let hash = contract.hash();
-            if !self.contracts.contains_key(&hash) {
-                if let Some(state) = contract.contract_state(&self.protocol_settings, block_height)
-                {
-                    self.contracts.insert(hash, state);
-                }
+            if !self.contracts.contains_key(&hash)
+                && let Some(state) = contract.contract_state(&self.protocol_settings, block_height)
+            {
+                self.contracts.insert(hash, state);
             }
 
             if let Err(error) = contract.initialize(self) {
-                if let Some(container) = &self.script_container {
-                    let log_event = LogEventArgs::new(
-                        Arc::clone(container),
-                        hash,
-                        format!(
-                            "Native contract {} initialization error: {}",
-                            contract.name(),
-                            error
-                        ),
-                    );
-                    self.emit_log_event(log_event);
-                }
+                // C# parity: ApplicationEngine.Log fires only for the
+                // System.Runtime.Log syscall (RuntimeService.Log). Native
+                // contract initialization failures surface as exceptions
+                // during genesis persisting in C#, never as LogEventArgs.
+                // Emitting an engine log here polluted `logs()` for every
+                // height-0 engine carrying a script container (RPC invoke
+                // against a fresh chain included), so keep the diagnostic on
+                // the tracing channel instead.
+                tracing::warn!(
+                    target: "neo::engine",
+                    contract = contract.name(),
+                    error = %error,
+                    "Native contract initialization failed"
+                );
             }
         }
     }
@@ -593,27 +601,26 @@ impl ApplicationEngine {
             let block_height = self.current_block_index();
             // Native contract method getExecPicoFeeFactor exists since activeIn Hardfork::HfFaun
             // But we should check if hardfork is enabled to call it safely/logically.
-            if self.is_hardfork_enabled(Hardfork::HfFaun) {
-                if let Ok(raw) = policy.invoke(self, "getExecPicoFeeFactor", &[]) {
-                    if !raw.is_empty() {
-                        let mut buffer = [0u8; 4];
-                        let len = raw.len().min(4);
-                        buffer[..len].copy_from_slice(&raw[..len]);
-                        self.exec_fee_factor = u32::from_le_bytes(buffer);
-                        got_pico = true;
-                    }
-                }
+            if self.is_hardfork_enabled(Hardfork::HfFaun)
+                && let Ok(raw) = policy.invoke(self, "getExecPicoFeeFactor", &[])
+                && !raw.is_empty()
+            {
+                let mut buffer = [0u8; 4];
+                let len = raw.len().min(4);
+                buffer[..len].copy_from_slice(&raw[..len]);
+                self.exec_fee_factor = u32::from_le_bytes(buffer);
+                got_pico = true;
             }
 
             if !got_pico {
-                if let Ok(raw) = policy.invoke(self, "getExecFeeFactor", &[]) {
-                    if !raw.is_empty() {
-                        let mut buffer = [0u8; 4];
-                        let len = raw.len().min(4);
-                        buffer[..len].copy_from_slice(&raw[..len]);
-                        let val = u32::from_le_bytes(buffer);
-                        self.exec_fee_factor = val * (FEE_FACTOR as u32);
-                    }
+                if let Ok(raw) = policy.invoke(self, "getExecFeeFactor", &[])
+                    && !raw.is_empty()
+                {
+                    let mut buffer = [0u8; 4];
+                    let len = raw.len().min(4);
+                    buffer[..len].copy_from_slice(&raw[..len]);
+                    let val = u32::from_le_bytes(buffer);
+                    self.exec_fee_factor = val * (FEE_FACTOR as u32);
                 }
             } else if self.trigger == TriggerType::OnPersist
                 && block_height > 0
@@ -624,13 +631,13 @@ impl ApplicationEngine {
                 self.exec_fee_factor = self.exec_fee_factor.saturating_mul(FEE_FACTOR as u32);
             }
 
-            if let Ok(raw) = policy.invoke(self, "getStoragePrice", &[]) {
-                if !raw.is_empty() {
-                    let mut buffer = [0u8; 4];
-                    let len = raw.len().min(4);
-                    buffer[..len].copy_from_slice(&raw[..len]);
-                    self.storage_price = u32::from_le_bytes(buffer);
-                }
+            if let Ok(raw) = policy.invoke(self, "getStoragePrice", &[])
+                && !raw.is_empty()
+            {
+                let mut buffer = [0u8; 4];
+                let len = raw.len().min(4);
+                buffer[..len].copy_from_slice(&raw[..len]);
+                self.storage_price = u32::from_le_bytes(buffer);
             }
         }
     }
@@ -641,11 +648,11 @@ impl ApplicationEngine {
     ) -> [u8; 16] {
         let mut data = [0u8; 16];
 
-        if let Some(container) = container {
-            if let Some(transaction) = container.as_any().downcast_ref::<Transaction>() {
-                let hash_bytes = transaction.hash().to_bytes();
-                data.copy_from_slice(&hash_bytes[..16]);
-            }
+        if let Some(container) = container
+            && let Some(transaction) = container.as_any().downcast_ref::<Transaction>()
+        {
+            let hash_bytes = transaction.hash().to_bytes();
+            data.copy_from_slice(&hash_bytes[..16]);
         }
 
         if let Some(block) = persisting_block {

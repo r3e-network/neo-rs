@@ -190,21 +190,13 @@ impl Histogram {
     /// Returns the minimum observed value.
     pub fn min(&self) -> f64 {
         let min = f64::from_bits(self.min.load(Ordering::Relaxed));
-        if min == f64::MAX {
-            0.0
-        } else {
-            min
-        }
+        if min == f64::MAX { 0.0 } else { min }
     }
 
     /// Returns the maximum observed value.
     pub fn max(&self) -> f64 {
         let max = f64::from_bits(self.max.load(Ordering::Relaxed));
-        if max == f64::MIN {
-            0.0
-        } else {
-            max
-        }
+        if max == f64::MIN { 0.0 } else { max }
     }
 
     /// Returns the average of all observations.
@@ -221,13 +213,21 @@ impl Histogram {
 /// Enum representing different metric values.
 #[derive(Debug, Clone)]
 pub enum MetricValue {
+    /// A monotonically increasing counter.
     Counter(u64),
+    /// A point-in-time scalar value.
     Gauge(f64),
+    /// Aggregated histogram statistics.
     Histogram {
+        /// The number of observations.
         count: u64,
+        /// The sum of all observations.
         sum: f64,
+        /// The smallest observed value.
         min: f64,
+        /// The largest observed value.
         max: f64,
+        /// The mean of all observations.
         avg: f64,
     },
 }

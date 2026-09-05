@@ -1,8 +1,8 @@
 //! Script validation re-exported from neo-vm.
 
 pub use neo_vm::{
-    parse_script_instructions, validate_script, validate_strict_script, ScriptInstruction,
-    ValidatedScript, ValidationResult,
+    ScriptInstruction, ValidatedScript, ValidationResult, parse_script_instructions,
+    validate_script, validate_strict_script,
 };
 
 #[cfg(test)]
@@ -41,12 +41,14 @@ mod tests {
 
     #[test]
     fn rejects_any_type_for_convert() {
-        assert!(validate_strict_script(&[
-            OpCode::CONVERT.byte(),
-            neo_vm::NEOVM_STACK_ITEM_TYPE_ANY,
-            OpCode::RET.byte()
-        ])
-        .is_err());
+        assert!(
+            validate_strict_script(&[
+                OpCode::CONVERT.byte(),
+                neo_vm::NEOVM_STACK_ITEM_TYPE_ANY,
+                OpCode::RET.byte()
+            ])
+            .is_err()
+        );
     }
 
     #[test]

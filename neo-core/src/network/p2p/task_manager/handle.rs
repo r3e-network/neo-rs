@@ -80,6 +80,11 @@ impl TaskManagerHandle {
     pub fn headers(&self, peer: ActorRef) -> ActorRuntimeResult<()> {
         self.tell(TaskManagerCommand::Headers { peer })
     }
+
+    /// Forgets a hash whose inventory processing failed before acceptance.
+    pub fn forget_hash(&self, hash: UInt256) -> ActorRuntimeResult<()> {
+        self.tell(TaskManagerCommand::ForgetHash { hash })
+    }
 }
 
 impl From<ActorRef> for TaskManagerHandle {

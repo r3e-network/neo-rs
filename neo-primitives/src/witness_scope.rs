@@ -239,7 +239,7 @@ impl fmt::Display for WitnessScope {
         if parts.is_empty() {
             write!(f, "None")
         } else {
-            write!(f, "{}", parts.join(" | "))
+            write!(f, "{}", parts.join(", "))
         }
     }
 }
@@ -381,7 +381,7 @@ mod tests {
                 "{}",
                 WitnessScope::CALLED_BY_ENTRY | WitnessScope::CUSTOM_CONTRACTS
             ),
-            "CalledByEntry | CustomContracts"
+            "CalledByEntry, CustomContracts"
         );
     }
 

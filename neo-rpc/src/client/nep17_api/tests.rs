@@ -1,10 +1,10 @@
 use super::*;
 use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use mockito::{Matcher, Server};
+use neo_core::NativeContract;
 use neo_core::ScriptBuilder;
 use neo_core::smart_contract::native::GasToken;
-use neo_core::NativeContract;
 use neo_json::{JArray, JObject, JToken};
 use neo_vm::OpCode;
 use regex::escape;

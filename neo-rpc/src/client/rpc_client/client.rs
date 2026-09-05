@@ -132,10 +132,10 @@ impl RpcClient {
 
         response.raw_response = Some(content.to_string());
 
-        if let Some(ref error) = response.error {
-            if throw_on_error {
-                return Err(ClientRpcError::new(error.code, error.message.clone()));
-            }
+        if let Some(ref error) = response.error
+            && throw_on_error
+        {
+            return Err(ClientRpcError::new(error.code, error.message.clone()));
         }
 
         Ok(response)

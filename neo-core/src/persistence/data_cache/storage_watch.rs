@@ -1,3 +1,15 @@
+//! Opt-in storage tracing for a single GAS balance account.
+//!
+//! Enabled at runtime by setting `NEO_GAS_WATCH_ACCOUNT`; with the variable
+//! unset every helper is inert. The context setters and the event logger are
+//! exported for the persisting pipeline but are not wired into `DataCache`
+//! yet, so several items are unreachable in the current build. They are kept
+//! deliberately as the tracing plumbing for that wiring — the same
+//! convention as the operational API in `providers/rocksdb/store.rs` — hence
+//! the file-scoped dead-code allowance instead of deleting the facility.
+#![allow(dead_code)]
+
+use crate::persistence::storage_item::StorageItemExt;
 use crate::persistence::track_state::TrackState;
 use crate::smart_contract::{StorageItem, StorageKey};
 

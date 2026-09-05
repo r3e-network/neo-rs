@@ -1,10 +1,11 @@
-use super::{OracleContract, PendingRequest, PREFIX_REQUEST};
+use super::{OracleContract, PREFIX_REQUEST, PendingRequest};
 use crate::error::CoreResult as Result;
-use crate::persistence::{seek_direction::SeekDirection, DataCache};
+use crate::persistence::{DataCache, seek_direction::SeekDirection};
 use crate::smart_contract::native::oracle_request::OracleRequest;
 use crate::smart_contract::storage_key::StorageKey;
 
 impl OracleContract {
+    /// Returns the oracle request stored under `id`, if any.
     pub fn get_request(&self, snapshot: &DataCache, id: u64) -> Result<Option<OracleRequest>> {
         Ok(self
             .read_request(snapshot, id)?
@@ -23,6 +24,7 @@ impl OracleContract {
         )
     }
 
+    /// Returns every stored oracle request together with its id.
     pub fn get_requests(&self, snapshot: &DataCache) -> Result<Vec<(u64, OracleRequest)>> {
         let prefix = StorageKey::create(Self::ID, PREFIX_REQUEST);
         let mut results = Vec::new();
@@ -37,6 +39,7 @@ impl OracleContract {
         Ok(results)
     }
 
+    /// Returns all oracle requests recorded for the given URL.
     pub fn get_requests_by_url(
         &self,
         snapshot: &DataCache,
@@ -52,6 +55,7 @@ impl OracleContract {
         Ok(results)
     }
 
+    /// Returns the current oracle response price in GAS (C# `getPrice`).
     pub fn get_price(&self, snapshot: &DataCache) -> i64 {
         self.get_price_value(snapshot)
     }

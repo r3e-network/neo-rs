@@ -1,8 +1,13 @@
-# CLI Architecture and Wallet Operations
+# CLI Architecture and Wallet Operations (Historical Design)
 
-## Current Design
+> **Status:** Historical design document. The standalone `neo-cli`, `neo-chain`,
+> `neo-mempool`, and `neo-state` crates are not part of neo-rs v0.15.0.
+> Current deployments use `neo-node` and its JSON-RPC API. The examples below
+> are retained for architectural history and are not executable commands.
 
-The `neo-cli` and `neo-node` follow a **client-server architecture**:
+## Historical Design (neo-cli client)
+
+The planned `neo-cli` client and `neo-node` followed a **client-server architecture**:
 
 ```
 ┌─────────────┐                  ┌─────────────────┐

@@ -3,8 +3,9 @@
 //
 
 use super::{
-    CallFlags, EvaluationStack, ExecutionContext, ExecutionEngine, ExecutionEngineLimits,
-    InteropService, JumpTable, ReferenceCounter, StackItem, VMState, VmError, DEFAULT_GAS_LIMIT,
+    CallFlags, DEFAULT_GAS_LIMIT, EvaluationStack, ExecutionContext, ExecutionEngine,
+    ExecutionEngineLimits, InteropService, JumpTable, ReferenceCounter, StackItem, VMState,
+    VmError,
 };
 
 impl ExecutionEngine {
@@ -103,6 +104,13 @@ impl ExecutionEngine {
     #[must_use]
     pub const fn limits(&self) -> &ExecutionEngineLimits {
         &self.limits
+    }
+
+    /// Replaces the execution limits (e.g. to select hardfork-dependent
+    /// semantics before execution begins). Must not be called mid-execution.
+    #[inline]
+    pub fn set_limits(&mut self, limits: ExecutionEngineLimits) {
+        self.limits = limits;
     }
 
     /// Returns the invocation stack.

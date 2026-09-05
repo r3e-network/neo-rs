@@ -134,15 +134,14 @@ pub async fn ws_handler(
             event = event_rx.recv() => {
                 match event {
                     Ok(ws_event) => {
-                        if let Some(subscription) = &subscription {
-                            if subscription.is_subscribed(ws_event.event_type()) {
+                        if let Some(subscription) = &subscription
+                            && subscription.is_subscribed(ws_event.event_type()) {
                                 let notification = WsNotification::from_event(&ws_event);
                                 if let Err(e) = tx.send(Message::text(notification.to_json())).await {
                                     warn!("Failed to send event notification: {}", e);
                                     break;
                                 }
                             }
-                        }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         warn!("WebSocket client lagged by {} events", n);
@@ -261,56 +260,56 @@ fn handle_unsubscribe(
     };
 
     // Check if specific event types to unsubscribe from
-    if let Some(params) = req.params.as_deref() {
-        if !params.is_empty() {
-            if params.len() == 1 {
-                if let Some(id) = parse_subscription_id(&params[0]) {
-                    if id == subscription.id() {
-                        *current_subscription = None;
-                        return WsResponse::success(
-                            req.id.clone(),
-                            serde_json::json!({ "unsubscribed": true }),
-                        );
-                    }
-
-                    return WsResponse::error(
-                        req.id.clone(),
-                        -32602,
-                        "Invalid params: subscription id does not match active subscription",
-                    );
-                }
-            }
-
-            let event_types = parse_event_types(params);
-
-            if !event_types.is_empty() {
-                subscription.remove_events(&event_types);
-
-                // Check if any events remain
-                if subscription.is_empty() {
-                    *current_subscription = None;
-                    return WsResponse::success(
-                        req.id.clone(),
-                        serde_json::json!({ "unsubscribed": true }),
-                    );
-                }
-
-                let remaining_names = event_type_names(subscription.subscribed_events());
+    if let Some(params) = req.params.as_deref()
+        && !params.is_empty()
+    {
+        if params.len() == 1
+            && let Some(id) = parse_subscription_id(&params[0])
+        {
+            if id == subscription.id() {
+                *current_subscription = None;
                 return WsResponse::success(
                     req.id.clone(),
-                    serde_json::json!({
-                        "unsubscribed": event_type_names(event_types),
-                        "remaining": remaining_names,
-                    }),
+                    serde_json::json!({ "unsubscribed": true }),
                 );
             }
 
             return WsResponse::error(
                 req.id.clone(),
                 -32602,
-                "Invalid params: no valid event types or subscription id provided",
+                "Invalid params: subscription id does not match active subscription",
             );
         }
+
+        let event_types = parse_event_types(params);
+
+        if !event_types.is_empty() {
+            subscription.remove_events(&event_types);
+
+            // Check if any events remain
+            if subscription.is_empty() {
+                *current_subscription = None;
+                return WsResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "unsubscribed": true }),
+                );
+            }
+
+            let remaining_names = event_type_names(subscription.subscribed_events());
+            return WsResponse::success(
+                req.id.clone(),
+                serde_json::json!({
+                    "unsubscribed": event_type_names(event_types),
+                    "remaining": remaining_names,
+                }),
+            );
+        }
+
+        return WsResponse::error(
+            req.id.clone(),
+            -32602,
+            "Invalid params: no valid event types or subscription id provided",
+        );
     }
 
     // Unsubscribe from everything

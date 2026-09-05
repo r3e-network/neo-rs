@@ -23,6 +23,7 @@ const TAG_OK_POINTER: u8 = 10;
 const TAG_OK_BUFFER: u8 = 11;
 
 #[inline]
+/// Encodes a callback stack-frame result into its binary wire form.
 pub fn encode_stack_result(result: &Result<Vec<StackValue>, String>) -> Vec<u8> {
     let capacity = match result {
         Ok(stack) => 1 + 4 + stack.len() * 16,
@@ -84,6 +85,7 @@ pub fn encode_stack_result(result: &Result<Vec<StackValue>, String>) -> Vec<u8> 
 const MAX_DECODE_DEPTH: usize = 64;
 const MAX_COLLECTION_LEN: usize = 4096;
 
+/// Decodes a callback stack-frame result into the provided stack vector.
 pub fn decode_stack_result_into(
     bytes: &[u8],
     stack: &mut Vec<StackValue>,
@@ -163,6 +165,7 @@ pub fn decode_stack_result_into(
     Ok(value)
 }
 
+/// Decodes a callback stack-frame result into a fresh stack vector.
 pub fn decode_stack_result(bytes: &[u8]) -> Result<Result<Vec<StackValue>, String>, String> {
     let mut cursor = Cursor::new(bytes);
     let tag = cursor.read_u8()?;

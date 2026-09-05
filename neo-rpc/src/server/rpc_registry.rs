@@ -1,8 +1,8 @@
 use super::rpc_server::RpcServer;
-use std::sync::LazyLock;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use tracing::{info, warn};
 
 pub static SERVERS: LazyLock<RwLock<HashMap<u32, Arc<RwLock<RpcServer>>>>> =

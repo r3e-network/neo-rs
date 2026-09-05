@@ -1,6 +1,6 @@
 # Monitoring & Alerting
 
-Guidance for observing a `neo-cli` deployment.
+Guidance for observing a `neo-node` deployment.
 
 ## Key signals
 - Liveness: RPC `getversion` (already used by the Docker health check).
@@ -15,7 +15,7 @@ Guidance for observing a `neo-cli` deployment.
 - RPC polling: scrape `getblockcount`/`getpeers` periodically; export to Prometheus/Influx via a lightweight sidecar or Telegraf HTTP input.
 - Health/metrics: enable `--health-port` to expose `/healthz`, `/readyz` (JSON) and `/metrics` (Prometheus text) on localhost; proxy/scrape as needed.
 - Host/container metrics: run `node_exporter`/`cAdvisor` or your preferred host agent; include filesystem metrics for the RocksDB volume and process FD counts.
-- Logs: ship `/data/Logs/neo-cli.log` (or your configured log path) to your log stack with alerts on errors/timeouts/restarts.
+- Logs: ship `/data/Logs/neo-node.log` (or your configured log path) to your log stack with alerts on errors/timeouts/restarts.
 
 ## Alerts to start with
 - Height lag > N blocks vs. reference for M minutes.

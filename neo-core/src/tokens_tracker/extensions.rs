@@ -4,7 +4,7 @@
 
 use crate::neo_io::serializable::helper::get_var_size_bytes;
 use crate::neo_io::{MemoryReader, Serializable};
-use crate::persistence::{Store, SeekDirection};
+use crate::persistence::{SeekDirection, Store};
 use base64::Engine;
 use num_bigint::BigInt;
 
@@ -63,13 +63,31 @@ where
     TKey: Serializable,
     TValue: Serializable,
 {
-    let start_vec = start_key.to_vec();
     let mut results = Vec::new();
 
+    // `find` only exposes prefix semantics: it returns keys that start with
+    // the given prefix. Scanning from `start_key` itself (a full lower-bound
+    // key that embeds a timestamp) would return nothing unless some record
+    // starts with those exact bytes. The former store implementation leaked a
+    // superset for forward seeks (every key >= start_key), which this helper
+    // silently relied on to emulate a range scan; with correct prefix
+    // semantics we derive the longest common prefix of both bounds instead,
+    // so the scan covers every record that can fall inside the range, then
+    // filter by the bounds explicitly.
+    let common_len = start_key
+        .iter()
+        .zip(end_key.iter())
+        .take_while(|(left, right)| left == right)
+        .count();
+    let scan_prefix = start_key[..common_len].to_vec();
+
     let snapshot = db.snapshot();
-    for (key_bytes, value_bytes) in snapshot.find(Some(&start_vec), SeekDirection::Forward) {
+    for (key_bytes, value_bytes) in snapshot.find(Some(&scan_prefix), SeekDirection::Forward) {
         if key_bytes.as_slice() > end_key {
             break;
+        }
+        if key_bytes.as_slice() < start_key {
+            continue;
         }
 
         let mut key_reader = MemoryReader::new(&key_bytes[1..]);

@@ -6,8 +6,8 @@ use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::ContractParameterType;
+use neo_core::smart_contract::contract::Contract;
 use neo_core::wallets::wallet_account::WalletAccount;
 use neo_core::wallets::{KeyPair, Version, Wallet, WalletError, WalletResult};
 use neo_core::{UInt160, UInt256};
@@ -15,8 +15,8 @@ use neo_tee::{SealedKey, TeeError, TeeWallet as EnclaveWallet};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::wallet_scripts::signature_invocation;
 
@@ -572,9 +572,9 @@ fn map_tee_error(err: TeeError) -> WalletError {
 #[cfg(all(test, not(feature = "tee-sgx")))]
 mod tests {
     use super::*;
+    use neo_core::WitnessScope;
     use neo_core::network::p2p::payloads::signer::Signer;
     use neo_core::smart_contract::helper::Helper as ContractHelper;
-    use neo_core::WitnessScope;
     use neo_crypto::Secp256r1Crypto;
     use neo_vm::OpCode;
     use tempfile::tempdir;

@@ -1,5 +1,5 @@
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StoreCache,
+    StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
 };
 use neo_core::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
 use std::path::PathBuf;
@@ -86,7 +86,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 vm_state_raw,
                 tx.system_fee(),
                 tx.network_fee(),
-                tx.sender().map(|sender| sender.to_string()).unwrap_or_else(|| "<none>".to_string())
+                tx.sender()
+                    .map(|sender| sender.to_string())
+                    .unwrap_or_else(|| "<none>".to_string())
             );
             hits += 1;
         }

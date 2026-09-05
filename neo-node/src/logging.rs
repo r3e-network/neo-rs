@@ -9,7 +9,7 @@ use std::{
     path::Path,
 };
 use tracing_appender::{non_blocking, non_blocking::WorkerGuard};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 /// Handles for logging resources that need to be kept alive.
 pub struct LoggingHandles {
@@ -92,11 +92,11 @@ fn create_file_writer(path: &str) -> Result<(non_blocking::NonBlocking, WorkerGu
         provided.join(default_log_name())
     };
 
-    if let Some(parent) = file_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create log directory {}", parent.display()))?;
-        }
+    if let Some(parent) = file_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create log directory {}", parent.display()))?;
     }
 
     let file = OpenOptions::new()

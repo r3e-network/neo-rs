@@ -1,11 +1,10 @@
 use super::*;
-use crate::neo_vm::StackItemExt;
 use crate::smart_contract::env_flags::env_flag_enabled;
 use parking_lot::Mutex;
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use tracing::info;
 
@@ -47,10 +46,10 @@ impl ApplicationEngine {
 
     /// Adds picoGAS to `FeeConsumed` / `GasConsumed`.
     fn add_fee_pico(&mut self, pico_gas: i64) -> Result<()> {
-        if let Ok(state_arc) = self.current_execution_state() {
-            if state_arc.lock().whitelisted {
-                return Ok(());
-            }
+        if let Ok(state_arc) = self.current_execution_state()
+            && state_arc.lock().whitelisted
+        {
+            return Ok(());
         }
 
         if pico_gas < 0 {
@@ -97,6 +96,7 @@ impl ApplicationEngine {
         self.add_fee_pico(pico_gas)
     }
 
+    /// Charges an execution fee expressed directly in datoshi.
     pub fn charge_execution_fee(&mut self, fee: u64) -> Result<()> {
         self.add_fee_datoshi(
             i64::try_from(fee)
@@ -289,6 +289,8 @@ impl ApplicationEngine {
         Ok(result)
     }
 
+    /// Runs `onPersist` for every active native contract
+    /// (`System.Contract.NativeOnPersist`); only valid under the OnPersist trigger.
     pub fn native_on_persist(&mut self) -> Result<()> {
         if self.trigger != TriggerType::OnPersist {
             return Err(Error::invalid_operation(
@@ -326,7 +328,7 @@ impl ApplicationEngine {
         if profiling {
             let stats = native_on_persist_perf_stats();
             let blocks = stats.blocks.fetch_add(1, Ordering::Relaxed) + 1;
-            if blocks % 1000 == 0 {
+            if blocks.is_multiple_of(1000) {
                 let blocks_f = blocks as f64;
                 let mut top = {
                     let totals = stats.total_ns_by_contract.lock();
@@ -354,6 +356,8 @@ impl ApplicationEngine {
         Ok(())
     }
 
+    /// Runs `postPersist` for every active native contract
+    /// (`System.Contract.NativePostPersist`); only valid under the PostPersist trigger.
     pub fn native_post_persist(&mut self) -> Result<()> {
         if self.trigger != TriggerType::PostPersist {
             return Err(Error::invalid_operation(
@@ -380,6 +384,8 @@ impl ApplicationEngine {
         Ok(())
     }
 
+    /// Consumes the given amount of GAS (in datoshi), failing if it exceeds
+    /// the engine's configured fee amount.
     pub fn consume_gas(&mut self, gas: i64) -> Result<()> {
         if gas < 0 {
             return Err(Error::invalid_operation(

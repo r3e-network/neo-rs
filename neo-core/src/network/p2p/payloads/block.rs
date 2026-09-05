@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{
-    header::Header, inventory::Inventory, transaction::Transaction, witness::Witness, InventoryType,
+    InventoryType, header::Header, inventory::Inventory, transaction::Transaction, witness::Witness,
 };
 use crate::neo_io::Serializable;
 use crate::persistence::DataCache;
@@ -211,7 +211,9 @@ impl neo_primitives::Verifiable for Block {
 
     fn hash(&self) -> PrimitiveResult<UInt256> {
         let mut clone = self.clone();
-        clone.try_hash().map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
+        clone
+            .try_hash()
+            .map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
     }
 
     fn hash_data(&self) -> Vec<u8> {
@@ -244,7 +246,11 @@ impl neo_primitives::SerializablePayload for Block {
 
     fn witness_count(&self) -> usize {
         // Header witness + all transaction witnesses
-        1 + self.transactions.iter().map(|t| t.witness_count()).sum::<usize>()
+        1 + self
+            .transactions
+            .iter()
+            .map(|t| t.witness_count())
+            .sum::<usize>()
     }
 
     fn invocation_script(&self, index: usize) -> &[u8] {
@@ -286,7 +292,14 @@ mod tests {
     use super::super::signer::Signer;
     use super::*;
     use crate::WitnessScope;
+    use crate::ledger::HeaderCache;
+    use crate::persistence::StoreCache;
+    use crate::persistence::providers::memory_store::MemoryStore;
+    use crate::persistence::store::Store;
+    use crate::protocol_settings::ProtocolSettings;
+    use crate::validation::MIN_TIMESTAMP_MS;
     use neo_vm::OpCode;
+    use std::sync::Arc;
 
     fn sample_header() -> Header {
         let mut header = Header::new();
@@ -379,5 +392,49 @@ mod tests {
         block.transactions.push(transaction_with_oversized_script());
 
         assert!(!block.verify_no_duplicate_transactions());
+    }
+
+    #[test]
+    fn verify_with_cache_delegates_to_header_without_transaction_checks() {
+        let deterministic_witness =
+            Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSHT.byte(), OpCode::RET.byte()]);
+        let consensus = deterministic_witness.script_hash();
+
+        let mut previous = Header::new();
+        previous.set_version(0);
+        previous.set_index(0);
+        previous.set_timestamp(MIN_TIMESTAMP_MS + 1_000);
+        previous.set_primary_index(0);
+        previous.witness = deterministic_witness.clone();
+        previous.set_next_consensus(consensus);
+        let mut previous_for_hash = previous.clone();
+        let previous_hash = previous_for_hash.hash();
+
+        let mut header = Header::new();
+        header.set_version(0);
+        header.set_prev_hash(previous_hash);
+        header.set_index(1);
+        header.set_timestamp(MIN_TIMESTAMP_MS + 2_000);
+        header.set_primary_index(0);
+        header.witness = deterministic_witness;
+        header.set_merkle_root(UInt256::from([0xabu8; 32]));
+
+        let block = Block {
+            header,
+            transactions: Vec::new(),
+        };
+        let header_cache = HeaderCache::new();
+        header_cache.add(previous);
+        let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+        let store_cache = StoreCache::new_from_store(store, false);
+        let mut settings = ProtocolSettings::default_settings();
+        settings.validators_count = 7;
+
+        assert!(
+            block
+                .header
+                .verify_with_cache(&settings, &store_cache, &header_cache)
+        );
+        assert!(block.verify_with_cache(&settings, &store_cache, &header_cache));
     }
 }

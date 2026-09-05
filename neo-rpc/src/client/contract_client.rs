@@ -15,8 +15,8 @@ use crate::{RpcClient, RpcError};
 use neo_core::ScriptBuilder;
 use neo_core::smart_contract::native::ContractManagement;
 use neo_core::{
-    smart_contract::call_flags::CallFlags, ContractManifest, KeyPair, Signer, Transaction,
-    WitnessScope,
+    ContractManifest, KeyPair, Signer, Transaction, WitnessScope,
+    smart_contract::call_flags::CallFlags,
 };
 use neo_primitives::UInt160;
 use std::sync::Arc;
@@ -116,7 +116,7 @@ impl ContractClient {
 mod tests {
     use super::*;
     use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     use mockito::{Matcher, Server};
     use neo_config::ProtocolSettings;
     use neo_core::ScriptBuilder;

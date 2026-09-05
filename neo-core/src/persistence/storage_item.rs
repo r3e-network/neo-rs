@@ -47,10 +47,8 @@ impl CacheProvider for StorageCache {
                 bytes
             }
             StorageCache::Interoperable(interoperable) => match interoperable.to_stack_item() {
-                Ok(item) => {
-                    BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
-                        .unwrap_or_default()
-                }
+                Ok(item) => BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+                    .unwrap_or_default(),
                 Err(_) => Vec::new(),
             },
         }
@@ -112,12 +110,11 @@ impl StorageItemExt for StorageItem {
 
     fn to_bigint(&self) -> BigInt {
         // Try to recover a cached BigInteger.
-        if let Some(cache) = self.cache() {
-            if let Some(sc) = cache.as_any().downcast_ref::<StorageCache>() {
-                if let StorageCache::BigInteger(v) = sc {
-                    return v.clone();
-                }
-            }
+        if let Some(cache) = self.cache()
+            && let Some(sc) = cache.as_any().downcast_ref::<StorageCache>()
+            && let StorageCache::BigInteger(v) = sc
+        {
+            return v.clone();
         }
         // Fallback: decode from bytes.
         let bytes = self.value_bytes();

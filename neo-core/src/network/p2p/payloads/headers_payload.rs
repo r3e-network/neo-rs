@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::header::Header;
-use crate::neo_io::{impl_serializable, IoError};
+use crate::neo_io::{IoError, impl_serializable};
 use serde::{Deserialize, Serialize};
 
 /// Indicates the maximum number of headers sent each time.

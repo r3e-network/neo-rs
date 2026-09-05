@@ -81,11 +81,11 @@ pub use message_command::MessageCommand;
 pub use message_flags::MessageFlags;
 pub use messages::{MessageHeader, NetworkMessage, ProtocolMessage};
 #[cfg(feature = "runtime")]
-pub use peer::{ConnectedPeer, PeerCommand, PeerState, PeerTimer, MAX_COUNT_FROM_SEED_LIST};
+pub use peer::{ConnectedPeer, MAX_COUNT_FROM_SEED_LIST, PeerCommand, PeerState, PeerTimer};
 #[cfg(feature = "runtime")]
 pub use remote_node::{
-    register_message_received_handler, unregister_message_received_handler,
-    MessageHandlerSubscription, RemoteNode, RemoteNodeCommand,
+    MessageHandlerSubscription, RemoteNode, RemoteNodeCommand, register_message_received_handler,
+    unregister_message_received_handler,
 };
 #[cfg(feature = "runtime")]
 pub use task_manager::{TaskManager, TaskManagerActor, TaskManagerCommand, TaskManagerHandle};
@@ -121,7 +121,7 @@ pub mod reputation {
 }
 
 use governor::{
-    middleware::StateInformationMiddleware, DefaultDirectRateLimiter, Quota, RateLimiter,
+    DefaultDirectRateLimiter, Quota, RateLimiter, middleware::StateInformationMiddleware,
 };
 use std::net::IpAddr;
 use std::num::NonZeroU32;
@@ -455,10 +455,10 @@ pub fn validate_peer_endpoint(endpoint: &std::net::SocketAddr) -> Result<(), &'s
     }
 
     // Reject broadcast addresses (255.255.255.255)
-    if let IpAddr::V4(v4) = ip {
-        if v4.octets() == [255, 255, 255, 255] {
-            return Err("broadcast address not allowed");
-        }
+    if let IpAddr::V4(v4) = ip
+        && v4.octets() == [255, 255, 255, 255]
+    {
+        return Err("broadcast address not allowed");
     }
 
     // Reject port 0

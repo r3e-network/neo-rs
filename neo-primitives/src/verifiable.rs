@@ -4,8 +4,8 @@
 //! Neo-core extends it with additional methods that depend on DataCache,
 //! ProtocolSettings, and the smart contract execution engine.
 
-use crate::error::{PrimitiveError, PrimitiveResult};
 use crate::UInt256;
+use crate::error::PrimitiveResult;
 
 /// Base trait for verifiable blockchain objects.
 ///

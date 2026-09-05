@@ -121,10 +121,16 @@ pub struct ConsensusContext {
     pub my_index: Option<u8>,
     /// Current consensus state
     pub state: ConsensusState,
-    /// Timestamp when this view started
+    /// Timestamp when the current timer started.
     pub view_start_time: u64,
     /// Expected block time
     pub expected_block_time: u64,
+    /// Explicit timer duration, when the timer was changed independently of the view.
+    /// This is transient and is intentionally not persisted with consensus state.
+    timer_timeout: Option<u64>,
+    /// Whether the primary's initial timer has fired and transactions were requested.
+    /// This is transient and prevents a mempool callback from sending early.
+    proposal_requested: bool,
 
     // Proposal data
     /// Block version (must be 0 for Neo N3)
@@ -179,6 +185,9 @@ pub struct ConsensusContext {
     // Message deduplication (replay attack prevention)
     /// Cache of seen message hashes to prevent duplicate processing
     seen_message_hashes: LruCache<UInt256, ()>,
+    /// Payload hashes for which this node already sent a recovery response.
+    /// C# keeps these hashes for the whole block, including stale ChangeView payloads.
+    recovery_response_hashes: LruCache<UInt256, ()>,
 }
 
 impl ConsensusContext {
@@ -205,6 +214,8 @@ impl ConsensusContext {
             state: ConsensusState::Initial,
             view_start_time: 0,
             expected_block_time: effective_block_time,
+            timer_timeout: None,
+            proposal_requested: false,
             version: 0,
             prev_hash: UInt256::zero(),
             prev_timestamp: 0,
@@ -226,6 +237,7 @@ impl ConsensusContext {
             last_change_view_timestamps: HashMap::new(),
             last_seen_messages: HashMap::new(),
             seen_message_hashes: Self::new_seen_message_cache(),
+            recovery_response_hashes: Self::new_seen_message_cache(),
         }
     }
 
@@ -285,9 +297,28 @@ impl ConsensusContext {
     /// Returns true if we have enough prepare responses (M signatures)
     #[must_use]
     pub fn has_enough_prepare_responses(&self) -> bool {
-        // Count: primary's implicit response + explicit responses
-        let count = usize::from(self.prepare_request_received) + self.prepare_responses.len();
+        // The primary holds exactly one preparation vote: its PrepareRequest
+        // is the implicit vote, and an explicit PrepareResponse from the
+        // primary occupies the same validator slot (R01 — a malicious primary
+        // must not double-count by sending both).
+        let primary_index = self.primary_index();
+        let primary_in_responses = self.prepare_responses.contains_key(&primary_index);
+        let primary_voted = self.prepare_request_received || primary_in_responses;
+        let count = usize::from(primary_voted) + self.prepare_responses.len()
+            - usize::from(primary_in_responses);
         count >= self.m()
+    }
+
+    /// Returns true if this node has verified a proposal and may sign a
+    /// `Commit` for it.
+    ///
+    /// R02: a Commit binds this validator's signature to a specific block
+    /// hash. Signing with a default/zero hash when the PrepareRequest has
+    /// not been seen and verified would let this node legitimize an
+    /// unverified proposal.
+    #[must_use]
+    pub fn can_sign_commit(&self) -> bool {
+        self.proposed_block_hash.is_some() && self.preparation_hash.is_some()
     }
 
     /// Returns true if we have enough commits (M signatures)
@@ -323,6 +354,8 @@ impl ConsensusContext {
     pub fn reset_for_new_view(&mut self, new_view: u8, timestamp: u64) {
         self.view_number = new_view;
         self.view_start_time = timestamp;
+        self.timer_timeout = None;
+        self.proposal_requested = false;
         self.state = if self.is_primary() {
             ConsensusState::Primary
         } else {
@@ -349,6 +382,8 @@ impl ConsensusContext {
         self.block_index = block_index;
         self.view_number = 0;
         self.view_start_time = timestamp;
+        self.timer_timeout = None;
+        self.proposal_requested = false;
         self.state = if self.is_primary() {
             ConsensusState::Primary
         } else {
@@ -373,10 +408,19 @@ impl ConsensusContext {
         self.change_view_invocations.clear();
         self.commit_invocations.clear();
         self.last_change_view_timestamps.clear();
-        self.last_seen_messages.clear();
+        // Preserve C# LastSeenMessage history across blocks. On first setup,
+        // initialize every validator to the previous block so they are not
+        // treated as failed before the round has received any messages.
+        let previous_block = block_index.saturating_sub(1);
+        for validator in &self.validators {
+            self.last_seen_messages
+                .entry(validator.index)
+                .or_insert(previous_block);
+        }
 
-        // Clear message hash cache to prevent memory growth
+        // Clear message hash caches at the block boundary.
         self.seen_message_hashes.clear();
+        self.recovery_response_hashes.clear();
     }
 
     /// Adds a prepare response invocation script
@@ -407,6 +451,11 @@ impl ConsensusContext {
         if validator_index as usize >= self.validator_count() {
             return Err(ConsensusError::InvalidValidatorIndex(validator_index));
         }
+        if let Some(existing_view) = self.commit_view_numbers.get(&validator_index)
+            && *existing_view == self.view_number
+        {
+            return Err(ConsensusError::AlreadyReceived(validator_index));
+        }
         self.commits.insert(validator_index, signature);
         self.commit_view_numbers
             .insert(validator_index, view_number);
@@ -431,9 +480,89 @@ impl ConsensusContext {
         Ok(())
     }
 
-    /// Gets the timeout duration for the current view
+    /// Gets the timeout duration for the current view.
     #[must_use]
     pub fn get_timeout(&self) -> u64 {
+        self.timer_timeout.unwrap_or_else(|| self.base_timeout())
+    }
+
+    /// Changes the active timer, matching C# `ChangeTimer`.
+    ///
+    /// The timer is represented by its start timestamp and duration so callers
+    /// can deterministically reschedule it without relying on wall-clock state.
+    pub fn change_timer(&mut self, timestamp: u64, timeout: u64) {
+        self.view_start_time = timestamp;
+        self.timer_timeout = Some(timeout);
+    }
+
+    /// Marks the primary proposal request as dispatched after the initial timer.
+    pub fn mark_proposal_requested(&mut self) {
+        self.proposal_requested = true;
+    }
+
+    /// Returns whether the primary proposal request was dispatched.
+    #[must_use]
+    pub fn proposal_requested(&self) -> bool {
+        self.proposal_requested
+    }
+
+    /// Returns the timeout used after a primary sends `PrepareRequest`.
+    #[must_use]
+    pub fn prepare_request_timeout(&self) -> u64 {
+        let base = if self.expected_block_time > 0 {
+            self.expected_block_time
+        } else {
+            DEFAULT_BLOCK_TIME_MS
+        };
+        let shift = (u32::from(self.view_number) + 1).min(63);
+        let timeout = base.saturating_mul(1u64 << shift);
+        timeout.saturating_sub(if self.view_number == 0 { base } else { 0 })
+    }
+
+    /// Reschedules the timer for a prospective view during a view change.
+    pub fn change_timer_for_view(&mut self, timestamp: u64, view_number: u8) {
+        let base = if self.expected_block_time > 0 {
+            self.expected_block_time
+        } else {
+            DEFAULT_BLOCK_TIME_MS
+        };
+        let shift = (u32::from(view_number) + 1).min(63);
+        self.change_timer(timestamp, base.saturating_mul(1u64 << shift));
+    }
+
+    /// Extends the active timer by a fraction of a block interval.
+    ///
+    /// This matches C# `ExtendTimerByFactor`: elapsed time is removed from the
+    /// existing delay, then `factor * block_time / M` is added. A timer is never
+    /// shortened by this operation.
+    pub fn extend_timer_by_factor(&mut self, current_time: u64, factor: u64) {
+        // C# only extends an active normal-round timer. Once this node has
+        // requested a view change or sent Commit, the deadline is governed by
+        // the recovery/view-change path and must remain unchanged.
+        if self.view_changing()
+            || self
+                .my_index
+                .is_some_and(|idx| self.commits.contains_key(&idx))
+        {
+            return;
+        }
+        let elapsed = current_time.saturating_sub(self.view_start_time);
+        let current_timeout = self.get_timeout();
+        let extension = self
+            .expected_block_time
+            .saturating_mul(factor)
+            .checked_div(self.m().max(1) as u64)
+            .unwrap_or(0);
+        // Keep the original deadline and move it forward by the extension.
+        // If that deadline has already elapsed, C# leaves the timer untouched.
+        let next_deadline = current_timeout.saturating_add(extension);
+        if next_deadline > elapsed {
+            self.change_timer(current_time, next_deadline - elapsed);
+        }
+    }
+
+    /// Gets the timeout before any explicit timer rescheduling.
+    fn base_timeout(&self) -> u64 {
         // Use configured expected_block_time when provided (mirrors C# TimePerBlock overrides).
         let base = if self.expected_block_time > 0 {
             self.expected_block_time
@@ -442,8 +571,7 @@ impl ConsensusContext {
         };
         // C# dBFT InitializeConsensus: a primary at view 0 starts with a single
         // TimePerBlock after the previous block persisted; every other case
-        // (backup, later views) uses TimePerBlock << (viewNumber + 1) with no
-        // clamping of the shift.
+        // (backup, later views) uses TimePerBlock << (viewNumber + 1).
         if self.is_primary() && self.view_number == 0 {
             return base;
         }
@@ -451,10 +579,10 @@ impl ConsensusContext {
         base.saturating_mul(1u64 << shift)
     }
 
-    /// Checks if the current view has timed out
+    /// Checks if the current view has timed out.
     #[must_use]
     pub fn is_timed_out(&self, current_time: u64) -> bool {
-        current_time > self.view_start_time + self.get_timeout()
+        current_time > self.view_start_time.saturating_add(self.get_timeout())
     }
 
     /// Collects all commit signatures for block finalization
@@ -511,6 +639,17 @@ impl ConsensusContext {
         self.seen_message_hashes.put(*hash, ());
     }
 
+    /// Returns whether a recovery response was already sent for this payload.
+    #[must_use]
+    pub fn has_sent_recovery_response(&self, hash: &UInt256) -> bool {
+        self.recovery_response_hashes.contains(hash)
+    }
+
+    /// Records a recovery response for this request payload.
+    pub fn mark_recovery_response_sent(&mut self, hash: &UInt256) {
+        self.recovery_response_hashes.put(*hash, ());
+    }
+
     /// Returns the number of validators that have committed (sent Commit messages)
     #[must_use]
     pub fn count_committed(&self) -> usize {
@@ -529,10 +668,11 @@ impl ConsensusContext {
     /// ```
     #[must_use]
     pub fn count_failed(&self) -> usize {
+        // A newly constructed context has not started a consensus round yet;
+        // once a round has populated this map, missing validators count as failed.
         if self.last_seen_messages.is_empty() {
             return 0;
         }
-
         let threshold = self.block_index.saturating_sub(1);
         self.validators
             .iter()
@@ -718,6 +858,8 @@ impl ConsensusContext {
             state: ConsensusState::Initial, // Caller should update based on role
             view_start_time: 0,             // Caller should update to current time
             expected_block_time: 0,         // Caller should update
+            timer_timeout: None,
+            proposal_requested: state.prepare_request_received,
             version: 0,
             prev_hash: UInt256::zero(),
             prev_timestamp: 0,
@@ -739,6 +881,7 @@ impl ConsensusContext {
             last_change_view_timestamps: state.change_view_timestamps,
             last_seen_messages: HashMap::new(), // Not persisted
             seen_message_hashes: Self::new_seen_message_cache(), // Not persisted
+            recovery_response_hashes: Self::new_seen_message_cache(), // Not persisted
         })
     }
 

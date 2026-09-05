@@ -10,8 +10,8 @@
 //! - Signature verification
 
 use neo_consensus::{
-    messages::RecoveryMessage, ConsensusEvent, ConsensusMessageType, ConsensusPayload,
-    ConsensusService, ValidatorInfo,
+    ConsensusContext, ConsensusEvent, ConsensusMessageType, ConsensusPayload, ConsensusService,
+    ValidatorInfo, messages::RecoveryMessage,
 };
 use neo_crypto::{ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};
@@ -133,23 +133,28 @@ async fn test_consensus_wrong_block_index_rejected() {
 }
 
 #[tokio::test]
-#[ignore = "Consensus view test needs investigation - pre-existing issue"]
-async fn test_consensus_wrong_view_rejected() {
+async fn test_consensus_wrong_view_ignored_without_state_pollution() {
     let (mut service, _rx) = create_consensus_service(Some(1), 7);
     service.start(100, 1000, UInt256::zero(), 0).unwrap();
+    let last_seen_before = service.context().last_seen_messages.clone();
 
-    // Create payload for wrong view
+    // PrepareResponse from another view is an admissible network message but
+    // must be ignored by the current round before handler/state mutation.
     let payload = ConsensusPayload::new(
         0x4E454F,
         100,
         0,
-        5, // Wrong view number
+        5, // Future/off-view number relative to the current view 0
         ConsensusMessageType::PrepareResponse,
         vec![],
     );
 
-    let result = service.process_message(payload);
-    assert!(result.is_err());
+    assert!(service.process_message(payload.clone()).is_ok());
+    assert!(service.process_message(payload).is_ok());
+    assert_eq!(service.context().view_number, 0);
+    assert!(service.context().prepare_responses.is_empty());
+    assert!(service.context().prepare_response_hashes.is_empty());
+    assert_eq!(service.context().last_seen_messages, last_seen_before);
 }
 
 #[tokio::test]
@@ -183,6 +188,9 @@ async fn test_primary_requests_transactions_on_start() {
     // Start consensus for block 0 where validator 0 is primary
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
+    // The primary proposal is dispatched by the initial timer, not by start().
+    service.on_timer_tick(16_001).unwrap();
+
     // Primary should request transactions
     let event = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv())
         .await
@@ -206,7 +214,10 @@ async fn test_transactions_received_triggers_prepare_request() {
     let (mut service, mut rx) = create_consensus_service(Some(0), 7);
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
-    // Drain the RequestTransactions event
+    // Advance past the initial primary timer before draining the request.
+    service.on_timer_tick(16_001).unwrap();
+
+    // Drain the RequestTransactions event emitted after the timer fires
     let _ = rx.recv().await;
 
     // Simulate receiving transactions
@@ -357,6 +368,9 @@ async fn test_consensus_handles_empty_transaction_list() {
     let (mut service, mut rx) = create_consensus_service(Some(0), 7);
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
+    // The primary asks for transactions only after the initial timer expires.
+    service.on_timer_tick(16_001).unwrap();
+
     // Drain RequestTransactions
     let _ = rx.recv().await;
 
@@ -369,6 +383,9 @@ async fn test_consensus_handles_empty_transaction_list() {
 async fn test_consensus_single_validator_network() {
     let (mut service, mut rx) = create_consensus_service(Some(0), 1);
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
+
+    // The single validator still follows the initial primary timer gate.
+    service.on_timer_tick(16_001).unwrap();
 
     // Single validator is always primary
     assert!(service.context().is_primary());
@@ -402,4 +419,68 @@ async fn test_consensus_message_type_variants() {
             }
         }
     }
+}
+
+// ============================================================================
+// R01/R02 Regression Tests (systematic review 2026-09-05)
+// ============================================================================
+
+/// R01: the primary's PrepareRequest and a PrepareResponse signed by the
+/// primary occupy ONE preparation slot. Before the fix, request + primary
+/// response + one backup response reached M with only two distinct voters,
+/// letting a malicious primary equivocate backups into different blocks.
+#[tokio::test]
+async fn r01_primary_request_and_response_share_one_vote_slot() {
+    let validators = create_test_validators(4); // M = 3
+    let mut ctx = ConsensusContext::new(100, validators, Some(1), None);
+    // Block 100, view 0 -> primary is validator 0.
+    assert_eq!(ctx.primary_index(), 0);
+
+    ctx.prepare_request_received = true;
+    // The primary's extra response must occupy its existing slot, adding no
+    // second vote.
+    ctx.add_prepare_response(0, vec![], None).unwrap();
+    assert!(!ctx.has_enough_prepare_responses());
+
+    ctx.add_prepare_response(2, vec![], None).unwrap();
+    // Old counting: request (1) + responses (2) = 3 >= M -> wrongly enough.
+    assert!(!ctx.has_enough_prepare_responses());
+
+    ctx.add_prepare_response(3, vec![], None).unwrap();
+    assert!(ctx.has_enough_prepare_responses());
+}
+
+/// R01: without a seen PrepareRequest, the primary's response IS its vote.
+#[tokio::test]
+async fn r01_primary_response_counts_once_without_request() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(1), None);
+
+    ctx.add_prepare_response(0, vec![], None).unwrap(); // primary's vote
+    ctx.add_prepare_response(1, vec![], None).unwrap();
+    assert!(!ctx.has_enough_prepare_responses());
+
+    ctx.add_prepare_response(3, vec![], None).unwrap();
+    assert!(ctx.has_enough_prepare_responses());
+}
+
+/// R02: a Commit must never be signed without a verified proposal — both
+/// the proposed block hash and the preparation hash must be present.
+#[tokio::test]
+async fn r02_commit_gate_requires_verified_proposal() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(1), None);
+    assert!(!ctx.can_sign_commit());
+
+    // A block hash alone (no verified preparation) is not enough.
+    ctx.proposed_block_hash = Some(UInt256::zero());
+    assert!(!ctx.can_sign_commit());
+
+    // A preparation hash alone (no block hash) is not enough either.
+    ctx.proposed_block_hash = None;
+    ctx.preparation_hash = Some(UInt256::zero());
+    assert!(!ctx.can_sign_commit());
+
+    ctx.proposed_block_hash = Some(UInt256::zero());
+    assert!(ctx.can_sign_commit());
 }

@@ -193,6 +193,7 @@ impl OrConditionBuilder {
 
     impl_witness_condition_builder_methods!();
 
+    /// Builds and returns the OR condition.
     pub fn build(self) -> WitnessCondition {
         WitnessCondition::Or {
             conditions: self.conditions,

@@ -1,5 +1,7 @@
-use super::super::helpers::{invocation_script_from_signature, signature_from_invocation_script};
 use super::super::ConsensusService;
+use super::super::helpers::{
+    current_timestamp, invocation_script_from_signature, signature_from_invocation_script,
+};
 use crate::context::ConsensusState;
 use crate::messages::{
     ChangeViewMessage, ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact,
@@ -56,11 +58,18 @@ impl ConsensusService {
         Ok(())
     }
 
-    /// Handles `RecoveryMessage`
+    /// Handles `RecoveryMessage` with a scoped recovery-replay guard.
     pub(in crate::service) fn on_recovery_message(
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
+        self.is_recovering = true;
+        let result = self.on_recovery_message_inner(payload);
+        self.is_recovering = false;
+        result
+    }
+
+    fn on_recovery_message_inner(&mut self, payload: &ConsensusPayload) -> ConsensusResult<()> {
         // Verify the payload signature
         // SECURITY: Require non-empty witness and valid signature
         if payload.witness.is_empty() {
@@ -159,7 +168,14 @@ impl ConsensusService {
                 self.reprocess_recovery_payload(recovered);
             }
 
-            return Ok(());
+            // R20: the change views above may have advanced us to
+            // `message_view`. Fall through and consume the rest of this
+            // package (prepare request/responses, commits) instead of
+            // dropping it — the dedup cache would otherwise refuse a
+            // retransmission carrying the same content.
+            if self.context.view_number < message_view {
+                return Ok(());
+            }
         }
 
         if message_view == self.context.view_number
@@ -278,39 +294,41 @@ impl ConsensusService {
                 .context
                 .commits
                 .contains_key(&self.context.my_index.unwrap_or(255))
+            && let Some(my_idx) = self.context.my_index
         {
-            if let Some(my_idx) = self.context.my_index {
-                info!(
-                    block_index = self.context.block_index,
-                    "Recovery enabled sending commit"
-                );
-                // Create and broadcast commit message
-                let block_hash = self.context.proposed_block_hash.unwrap_or_default();
-                let signature = self.sign_block_hash(&block_hash)?;
+            info!(
+                block_index = self.context.block_index,
+                "Recovery enabled sending commit"
+            );
+            // Create and broadcast commit message
+            let block_hash = self.context.proposed_block_hash.unwrap_or_default();
+            let signature = self.sign_block_hash(&block_hash)?;
 
-                let commit = CommitMessage::new(
-                    self.context.block_index,
-                    self.context.view_number,
-                    my_idx,
-                    signature.clone(),
-                );
+            let commit = CommitMessage::new(
+                self.context.block_index,
+                self.context.view_number,
+                my_idx,
+                signature.clone(),
+            );
 
-                let payload =
-                    self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
-                let commit_witness = payload.witness.clone();
-                let commit_invocation = invocation_script_from_signature(&commit_witness);
-                self.broadcast(payload)?;
-                if !commit_witness.is_empty() {
-                    self.context
-                        .commit_invocations
-                        .insert(my_idx, commit_invocation);
-                }
-
-                // Add our own commit
+            let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
+            let commit_witness = payload.witness.clone();
+            let commit_invocation = invocation_script_from_signature(&commit_witness);
+            self.broadcast(payload)?;
+            if !commit_witness.is_empty() {
                 self.context
-                    .add_commit(my_idx, self.context.view_number, signature)?;
-                self.check_commits()?;
+                    .commit_invocations
+                    .insert(my_idx, commit_invocation);
             }
+
+            // Add our own commit
+            self.context
+                .add_commit(my_idx, self.context.view_number, signature)?;
+            // Match C# CheckPreparations: once our Commit is sent, allow one
+            // block interval before retrying via RecoveryMessage.
+            self.context
+                .change_timer(current_timestamp(), self.context.expected_block_time);
+            self.check_commits()?;
         }
 
         Ok(())
@@ -361,17 +379,21 @@ impl ConsensusService {
 
     pub(in crate::service) fn maybe_send_recovery_response(
         &mut self,
-        requester_index: u8,
+        request_payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
-        if !self.should_send_recovery_response(requester_index)? {
+        let request_hash = self.dbft_payload_hash(request_payload)?;
+        if self.context.has_sent_recovery_response(&request_hash) {
+            return Ok(());
+        }
+        if !self.should_send_recovery_response(request_payload.validator_index)? {
             return Ok(());
         }
 
         let recovery = self.build_recovery_message()?;
-
         let payload =
             self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
         self.broadcast(payload)?;
+        self.context.mark_recovery_response_sent(&request_hash);
         Ok(())
     }
 

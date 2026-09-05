@@ -1,20 +1,20 @@
+use neo_core::ScriptBuilder;
 use neo_core::hardfork::{Hardfork, HardforkManager};
-use neo_core::ledger::{create_genesis_block, Block, BlockHeader};
+use neo_core::ledger::{Block, BlockHeader, create_genesis_block};
 use neo_core::network::p2p::payloads::Witness;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::ContractParameterType;
+use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::contract_state::ContractState;
 use neo_core::smart_contract::interoperable::Interoperable;
 use neo_core::smart_contract::native::{
-    is_active_for, ContractManagement, CryptoLib, FungibleToken, GasToken, HardforkActivable,
-    LedgerContract, NativeContract, NativeRegistry, NeoToken, Notary, OracleContract,
-    PolicyContract, RoleManagement, StdLib, TreasuryContract,
+    ContractManagement, CryptoLib, FungibleToken, GasToken, HardforkActivable, LedgerContract,
+    NativeContract, NativeRegistry, NeoToken, Notary, OracleContract, PolicyContract,
+    RoleManagement, StdLib, TreasuryContract, is_active_for,
 };
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::ContractParameterType;
 use neo_core::{UInt160, UInt256};
 use neo_vm::OpCode;
 use neo_vm::VmState as VMState;
@@ -241,14 +241,15 @@ fn test_active_deprecated_in_role_management() {
 #[test]
 fn test_role_management_method_metadata_matches_protocol() {
     let role_mgmt = RoleManagement::new();
-    let expected_methods: &[(
-        &str,
+    type ExpectedRoleMethod = (
+        &'static str,
         bool,
         u8,
-        &[ContractParameterType],
+        &'static [ContractParameterType],
         ContractParameterType,
-        &[&str],
-    )] = &[
+        &'static [&'static str],
+    );
+    let expected_methods: &[ExpectedRoleMethod] = &[
         (
             "getDesignatedByRole",
             true,
@@ -466,17 +467,18 @@ fn test_neo_token_method_metadata_matches_protocol() {
     let neo = NeoToken::new();
     let expected_nep17 = <NeoToken as FungibleToken>::ft_nep17_methods();
     let nep17_len = expected_nep17.len();
-    let expected_methods: &[(
-        &str,
+    type ExpectedNeoTokenMethod = (
+        &'static str,
         i64,
         bool,
         u8,
-        &[ContractParameterType],
+        &'static [ContractParameterType],
         ContractParameterType,
         Option<Hardfork>,
         Option<Hardfork>,
-        &[&str],
-    )] = &[
+        &'static [&'static str],
+    );
+    let expected_methods: &[ExpectedNeoTokenMethod] = &[
         (
             "unclaimedGas",
             1 << 17,
@@ -840,17 +842,18 @@ fn assert_nep17_helper_raw_metadata(methods: &[neo_core::smart_contract::native:
 }
 
 fn neo_token_metadata_settings() -> ProtocolSettings {
-    let mut settings = ProtocolSettings::default();
-    settings.hardforks = HashMap::from([
-        (Hardfork::HfAspidochelone, 0),
-        (Hardfork::HfBasilisk, 0),
-        (Hardfork::HfCockatrice, 20),
-        (Hardfork::HfDomovoi, 30),
-        (Hardfork::HfEchidna, 40),
-        (Hardfork::HfFaun, 60),
-        (Hardfork::HfGorgon, 80),
-    ]);
-    settings
+    ProtocolSettings {
+        hardforks: HashMap::from([
+            (Hardfork::HfAspidochelone, 0),
+            (Hardfork::HfBasilisk, 0),
+            (Hardfork::HfCockatrice, 20),
+            (Hardfork::HfDomovoi, 30),
+            (Hardfork::HfEchidna, 40),
+            (Hardfork::HfFaun, 60),
+            (Hardfork::HfGorgon, 80),
+        ]),
+        ..ProtocolSettings::default()
+    }
 }
 
 fn assert_event_descriptors(

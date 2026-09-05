@@ -3,19 +3,19 @@
 //! This module provides the ContractManagement native contract which manages
 //! all deployed smart contracts on the Neo blockchain.
 
+use crate::UInt160;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::error::ToNativeError;
 use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_vm::StackItem;
 use crate::persistence::{DataCache, StoreCache};
+use crate::smart_contract::StorageKey;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::contract_state::{ContractState, NefFile};
 use crate::smart_contract::manifest::ContractManifest;
 use crate::smart_contract::native::{NativeContract, NativeMethod, PolicyContract};
-use crate::smart_contract::StorageKey;
-use crate::neo_vm::{StackItem, StackItemExt};
-use crate::UInt160;
 use neo_vm::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -63,6 +63,7 @@ pub struct ContractManagement {
 impl ContractManagement {
     const ID: i32 = -1;
 
+    /// Returns the well-known script hash of the ContractManagement native contract.
     pub fn contract_hash() -> UInt160 {
         UInt160::parse("0xfffdc93764dbaddd97c48f252a53ea4643faa3fd")
             .expect("Valid ContractManagement contract hash")
@@ -169,6 +170,8 @@ impl ContractManagement {
             .map_err(|e| Error::serialization(format!("Failed to serialize contract state: {e}")))
     }
 
+    /// Deserializes stored contract state bytes, preferring the binary serializer
+    /// stack-value layout and falling back to the legacy `Serializable` format.
     pub fn deserialize_contract_state(bytes: &[u8]) -> Result<ContractState> {
         if bytes.is_empty() {
             return Err(Error::deserialization(

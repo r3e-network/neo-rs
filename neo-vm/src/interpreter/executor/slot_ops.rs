@@ -1,6 +1,6 @@
 use super::super::helpers::{
-    decode_retained_prefix_into, encode_retained_value_to_slice, ensure_retained_capacity,
-    pop_item, RETAINED_ARGS_BUF,
+    RETAINED_ARGS_BUF, decode_retained_prefix_into, encode_retained_value_to_slice,
+    ensure_retained_capacity, pop_item,
 };
 use super::super::opcodes::*;
 use super::super::runtime_types::{CompoundIds, StackValue};

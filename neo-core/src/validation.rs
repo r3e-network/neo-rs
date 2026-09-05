@@ -15,12 +15,12 @@
 //! attack vectors including oversized blocks, timestamp manipulation,
 //! and merkle root tampering.
 
+use crate::UInt256;
 use crate::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::cryptography::MerkleTree;
 use crate::network::p2p::payloads::header::Header;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::time_provider::TimeProvider;
-use crate::UInt256;
 use thiserror::Error;
 
 /// Maximum allowed timestamp drift from current time (15 minutes in milliseconds)
@@ -37,23 +37,50 @@ const MAX_WITNESS_SCRIPT_SIZE: usize = 1024;
 pub enum BlockValidationError {
     /// Block exceeds maximum size
     #[error("Block size {size} exceeds maximum {max_size}")]
-    BlockTooLarge { size: usize, max_size: usize },
+    BlockTooLarge {
+        /// Actual serialized size of the block in bytes.
+        size: usize,
+        /// Maximum size permitted for a block in bytes.
+        max_size: usize,
+    },
     /// Too many transactions in block
     #[error("Transaction count {count} exceeds maximum {max_count}")]
-    TooManyTransactions { count: usize, max_count: usize },
+    TooManyTransactions {
+        /// Number of transactions found in the block.
+        count: usize,
+        /// Maximum number of transactions permitted per block.
+        max_count: usize,
+    },
     /// Timestamp is in the future beyond allowed drift
     #[error("Timestamp {timestamp} is too far in future (current: {current})")]
-    TimestampTooFarInFuture { timestamp: u64, current: u64 },
+    TimestampTooFarInFuture {
+        /// Block timestamp in milliseconds.
+        timestamp: u64,
+        /// Current network time in milliseconds.
+        current: u64,
+    },
     /// Timestamp is too old (before genesis)
     #[error("Timestamp {timestamp} is before minimum {min}")]
-    TimestampTooOld { timestamp: u64, min: u64 },
+    TimestampTooOld {
+        /// Block timestamp in milliseconds.
+        timestamp: u64,
+        /// Minimum accepted timestamp (genesis time) in milliseconds.
+        min: u64,
+    },
     /// Timestamp is not strictly increasing from previous
     #[error("Timestamp {timestamp} must be greater than previous {prev_timestamp}")]
-    TimestampNotIncreasing { timestamp: u64, prev_timestamp: u64 },
+    TimestampNotIncreasing {
+        /// Block timestamp in milliseconds.
+        timestamp: u64,
+        /// Timestamp of the preceding block in milliseconds.
+        prev_timestamp: u64,
+    },
     /// Merkle root does not match computed root
     #[error("Merkle root mismatch: expected {expected}, computed {computed}")]
     InvalidMerkleRoot {
+        /// Merkle root declared in the block header.
         expected: UInt256,
+        /// Merkle root recomputed from the block transactions.
         computed: UInt256,
     },
     /// Duplicate transaction hashes found
@@ -61,22 +88,41 @@ pub enum BlockValidationError {
     DuplicateTransactions,
     /// Transaction verification failed
     #[error("Transaction {hash} at index {index} failed verification")]
-    TransactionVerificationFailed { index: usize, hash: UInt256 },
+    TransactionVerificationFailed {
+        /// Zero-based position of the failing transaction in the block.
+        index: usize,
+        /// Hash of the transaction that failed verification.
+        hash: UInt256,
+    },
     /// Witness script validation failed
     #[error("Invalid witness script: {reason}")]
-    InvalidWitnessScript { reason: String },
+    InvalidWitnessScript {
+        /// Description of why the witness script was rejected.
+        reason: String,
+    },
     /// Empty block when transactions expected
     #[error("Block has empty transaction list")]
     EmptyTransactionList,
     /// Block version not supported
     #[error("Block version {version} is not supported")]
-    UnsupportedVersion { version: u32 },
+    UnsupportedVersion {
+        /// Block version number that was rejected.
+        version: u32,
+    },
     /// Primary index out of range
     #[error("Primary index {index} exceeds maximum validator count {max}")]
-    InvalidPrimaryIndex { index: u8, max: i32 },
+    InvalidPrimaryIndex {
+        /// Primary (consensus) index carried by the block header.
+        index: u8,
+        /// Maximum index derived from the active validator count.
+        max: i32,
+    },
     /// Header validation failed
     #[error("Header validation failed: {reason}")]
-    HeaderValidationFailed { reason: String },
+    HeaderValidationFailed {
+        /// Description of the header validation failure.
+        reason: String,
+    },
 }
 
 /// Validates block size against maximum allowed size.

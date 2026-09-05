@@ -4,8 +4,8 @@
 //! core-specific helpers (e.g. `add_ecpoint`). All buffer construction and
 //! error types live in `neo-storage` as the single source of truth.
 
-use crate::cryptography::ECPoint;
 use crate::CoreError;
+use crate::cryptography::ECPoint;
 use std::ops::{Deref, DerefMut};
 
 pub use neo_storage::KeyBuilderError;
@@ -132,6 +132,9 @@ mod tests {
         let point = ECPoint::decode(&point_bytes, ECCurve::secp256r1()).expect("valid point");
         let mut builder = KeyBuilder::new_with_default(1, 0x01);
         builder.add_ecpoint(&point);
-        assert_eq!(builder.len(), neo_storage::key_builder::KeyBuilder::PREFIX_LENGTH + point.as_bytes().len());
+        assert_eq!(
+            builder.len(),
+            neo_storage::key_builder::KeyBuilder::PREFIX_LENGTH + point.as_bytes().len()
+        );
     }
 }

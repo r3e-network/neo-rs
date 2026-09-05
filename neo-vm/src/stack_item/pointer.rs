@@ -4,8 +4,8 @@
 //! the instruction position. Pointer equality therefore depends on the
 //! originating script identity in addition to the offset.
 
-use crate::script::Script;
 use crate::StackItemType;
+use crate::script::Script;
 use num_bigint::BigInt;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};

@@ -1,4 +1,5 @@
 use hex::{decode as hex_decode, encode as hex_encode};
+use neo_core::ScriptBuilder;
 use neo_core::cryptography::Secp256r1Crypto;
 use neo_core::ledger::Block;
 use neo_core::ledger::block_header::BlockHeader;
@@ -7,16 +8,15 @@ use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::ContractParameterType;
+use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractEventDescriptor, ContractManifest, ContractMethodDescriptor,
     ContractParameterDefinition, ContractPermission, WildCardContainer,
 };
-use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
 use neo_core::{UInt160, UInt256};
@@ -24,6 +24,12 @@ use neo_vm::OpCode;
 use neo_vm::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
+
+fn legacy_test_settings() -> ProtocolSettings {
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.clear();
+    settings
+}
 
 #[test]
 fn runtime_load_script_passes_args_in_reverse_order() {
@@ -33,7 +39,7 @@ fn runtime_load_script_passes_args_in_reverse_order() {
         None,
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -86,7 +92,7 @@ fn runtime_current_signers_returns_transaction_signers() {
         Some(container),
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -149,7 +155,7 @@ fn runtime_current_signers_returns_null_without_container() {
         None,
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -183,7 +189,7 @@ fn runtime_get_script_container_returns_stack_item() {
         Some(container),
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -220,7 +226,7 @@ fn runtime_get_script_container_faults_without_container() {
         None,
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -247,7 +253,7 @@ fn runtime_get_trigger_returns_application() {
         None,
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -294,7 +300,7 @@ fn runtime_get_time_returns_block_timestamp() {
         None,
         snapshot,
         Some(block),
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -332,7 +338,7 @@ fn runtime_log_emits_event() {
         Some(container),
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -361,7 +367,7 @@ fn runtime_log_syscall_allows_notify() {
         Some(container),
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -391,7 +397,7 @@ fn runtime_platform_returns_neo() {
         None,
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -495,7 +501,7 @@ fn runtime_get_invocation_counter_returns_one() {
         None,
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -530,7 +536,7 @@ fn runtime_check_witness_returns_false_without_container() {
         None,
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -577,7 +583,7 @@ fn runtime_check_witness_accepts_valid_signer() {
         Some(container),
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -632,7 +638,7 @@ fn runtime_check_witness_returns_false_without_matching_signer() {
         Some(container),
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -691,14 +697,18 @@ fn runtime_check_witness_oracle_response_inherits_original_custom_group_signer()
     persist_transaction_state(snapshot.as_ref(), &original_tx, 7);
     persist_oracle_request(snapshot.as_ref(), 42, original_tx.hash());
 
-    assert!(neo_core::smart_contract::native::LedgerContract::new()
-        .get_transaction_state(snapshot.as_ref(), &original_tx.hash())
-        .expect("read original tx")
-        .is_some());
-    assert!(neo_core::smart_contract::native::OracleContract::new()
-        .get_request(snapshot.as_ref(), 42)
-        .expect("read oracle request")
-        .is_some());
+    assert!(
+        neo_core::smart_contract::native::LedgerContract::new()
+            .get_transaction_state(snapshot.as_ref(), &original_tx.hash())
+            .expect("read original tx")
+            .is_some()
+    );
+    assert!(
+        neo_core::smart_contract::native::OracleContract::new()
+            .get_request(snapshot.as_ref(), 42)
+            .expect("read oracle request")
+            .is_some()
+    );
 
     let make_response_tx = || {
         let mut tx = Transaction::new();
@@ -762,14 +772,18 @@ fn runtime_check_witness_oracle_response_inherits_original_called_by_group_rule(
     persist_transaction_state(snapshot.as_ref(), &original_tx, 9);
     persist_oracle_request(snapshot.as_ref(), 43, original_tx.hash());
 
-    assert!(neo_core::smart_contract::native::LedgerContract::new()
-        .get_transaction_state(snapshot.as_ref(), &original_tx.hash())
-        .expect("read original tx")
-        .is_some());
-    assert!(neo_core::smart_contract::native::OracleContract::new()
-        .get_request(snapshot.as_ref(), 43)
-        .expect("read oracle request")
-        .is_some());
+    assert!(
+        neo_core::smart_contract::native::LedgerContract::new()
+            .get_transaction_state(snapshot.as_ref(), &original_tx.hash())
+            .expect("read original tx")
+            .is_some()
+    );
+    assert!(
+        neo_core::smart_contract::native::OracleContract::new()
+            .get_request(snapshot.as_ref(), 43)
+            .expect("read oracle request")
+            .is_some()
+    );
 
     let make_response_tx = || {
         let mut tx = Transaction::new();
@@ -837,7 +851,7 @@ fn make_runtime_engine(snapshot: Arc<DataCache>, tx: Transaction) -> Application
         Some(container),
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -1016,7 +1030,7 @@ fn runtime_get_calling_script_hash_returns_null_for_entry_context() {
         None,
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -1045,7 +1059,7 @@ fn contract_create_standard_account_matches_csharp() {
         None,
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -1070,7 +1084,7 @@ fn runtime_get_executing_and_entry_script_hash_match_entry() {
         None,
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -1142,7 +1156,7 @@ fn runtime_get_calling_script_hash_matches_dynamic_caller() {
         None,
         Arc::clone(&snapshot),
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -1204,7 +1218,7 @@ fn runtime_dynamic_void_call_with_initialize_leaves_null_placeholder() {
         None,
         Arc::clone(&snapshot),
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -1240,7 +1254,7 @@ fn runtime_check_witness_rejects_invalid_length() {
         None,
         snapshot,
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )
@@ -1329,7 +1343,7 @@ fn runtime_get_notifications_reports_all_and_filtered() {
         None,
         Arc::clone(&snapshot),
         None,
-        Default::default(),
+        legacy_test_settings(),
         400_000_000,
         None,
     )

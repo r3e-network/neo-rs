@@ -1,13 +1,13 @@
-use super::{OracleContract, DEFAULT_PRICE};
+use super::{DEFAULT_PRICE, OracleContract};
 use crate::error::CoreResult as Result;
-use crate::impl_native_contract;
 use crate::hardfork::Hardfork;
+use crate::impl_native_contract;
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::StorageItem;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::NativeContract;
-use crate::smart_contract::StorageItem;
 use num_bigint::BigInt;
 
 impl NativeContract for OracleContract {

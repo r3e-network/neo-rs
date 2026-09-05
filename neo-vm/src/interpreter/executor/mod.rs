@@ -9,10 +9,10 @@ mod slot_ops;
 mod stack_ops;
 use super::helpers::*;
 use super::opcodes::*;
-use super::runtime_types::{to_abi_value, CompoundIds, StackValue};
+use super::runtime_types::{CompoundIds, StackValue, to_abi_value};
 use super::state::*;
 use crate::{
-    semantics::comparison as comparison_rules, ExecutionResult, StackValue as AbiStackValue,
+    ExecutionResult, StackValue as AbiStackValue, semantics::comparison as comparison_rules,
 };
 use alloc::{
     format,

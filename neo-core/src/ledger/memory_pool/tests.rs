@@ -1,4 +1,5 @@
 use super::*;
+use crate::WitnessScope;
 use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::block::Block;
 use crate::network::p2p::payloads::conflicts::Conflicts;
@@ -7,20 +8,19 @@ use crate::network::p2p::payloads::transaction::Transaction;
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use crate::network::p2p::payloads::witness::Witness;
 use crate::smart_contract::BinarySerializer;
+use crate::smart_contract::native::AccountState;
 use crate::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
 use crate::smart_contract::native::gas_token::GasToken;
 use crate::smart_contract::native::native_contract::NativeContract;
-use crate::smart_contract::native::AccountState;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::wallets::KeyPair;
-use crate::WitnessScope;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::OpCode;
 use num_bigint::BigInt;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 
 fn test_balance_pool(settings: &ProtocolSettings) -> MemoryPool {
     let mut pool = MemoryPool::new(settings);
@@ -58,11 +58,29 @@ fn build_signed_transaction(
     system_fee: i64,
     attributes: Vec<TransactionAttribute>,
 ) -> Transaction {
+    build_signed_transaction_with_valid_until(
+        settings,
+        private_key,
+        network_fee,
+        system_fee,
+        attributes,
+        1,
+    )
+}
+
+fn build_signed_transaction_with_valid_until(
+    settings: &ProtocolSettings,
+    private_key: [u8; 32],
+    network_fee: i64,
+    system_fee: i64,
+    attributes: Vec<TransactionAttribute>,
+    valid_until_block: u32,
+) -> Transaction {
     let keypair = KeyPair::from_private_key(&private_key).expect("keypair");
     let mut tx = Transaction::new();
     tx.set_network_fee(network_fee);
     tx.set_system_fee(system_fee);
-    tx.set_valid_until_block(1);
+    tx.set_valid_until_block(valid_until_block);
     tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_signers(vec![Signer::new(
         keypair.get_script_hash(),
@@ -296,6 +314,43 @@ fn max_transactions_per_sender_allows_conflict_replacement() {
     assert!(!pool.contains_key(&tx1.hash()));
     assert!(pool.contains_key(&tx2.hash()));
     assert_eq!(pool.sender_transaction_count(&sender), 1);
+}
+
+#[test]
+fn conflict_replacement_emits_capacity_exceeded_reason() {
+    let settings = ProtocolSettings {
+        memory_pool_max_transactions: 10,
+        ..Default::default()
+    };
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let removed = Arc::new(StdMutex::new(Vec::new()));
+    let removed_ref = Arc::clone(&removed);
+    pool.transaction_removed = Some(Box::new(move |_sender, args| {
+        removed_ref.lock().unwrap().push((
+            args.reason,
+            args.transactions
+                .iter()
+                .map(|tx| tx.hash())
+                .collect::<Vec<_>>(),
+        ));
+    }));
+
+    let original = signed_tx(&settings, 103, 1_0000_0000);
+    let replacement = build_signed_transaction(
+        &settings,
+        [103u8; 32],
+        2_0000_0000,
+        0,
+        vec![conflict_attribute(&original)],
+    );
+    add_succeed(&mut pool, original.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, replacement, &snapshot, &settings);
+
+    let removed = removed.lock().unwrap();
+    assert_eq!(removed.len(), 1);
+    assert_eq!(removed[0].0, TransactionRemovalReason::CapacityExceeded);
+    assert_eq!(removed[0].1, vec![original.hash()]);
 }
 
 #[test]
@@ -741,6 +796,59 @@ fn conflict_chain_allows_nonexistent_conflict_replacement() {
 }
 
 #[test]
+fn block_persist_removes_one_same_payer_fee_only_once() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let private_key = [201u8; 32];
+
+    let tx1 = build_signed_transaction_with_valid_until(
+        &settings,
+        private_key,
+        1_0000_0000,
+        0,
+        Vec::new(),
+        100,
+    );
+    let tx2 = build_signed_transaction_with_valid_until(
+        &settings,
+        private_key,
+        2_0000_0000,
+        0,
+        Vec::new(),
+        100,
+    );
+    let sender = tx1.sender().expect("sender");
+    assert_eq!(tx2.sender(), Some(sender));
+    set_gas_balance(&snapshot, sender, 50_0000_0000);
+
+    add_succeed(&mut pool, tx1.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, tx2.clone(), &snapshot, &settings);
+    assert_eq!(
+        pool.verification_context
+            .total_fee_for_sender(&sender)
+            .cloned(),
+        Some(BigInt::from(3_0000_0000i64))
+    );
+
+    let mut block = Block::new();
+    block.header.set_index(1);
+    block.transactions = vec![tx1.clone()];
+
+    pool.update_pool_for_block_persisted(&block, &snapshot, &settings, false);
+
+    assert_eq!(pool.verified_count(), 1);
+    assert_eq!(pool.unverified_count(), 0);
+    assert_eq!(
+        pool.verification_context
+            .total_fee_for_sender(&sender)
+            .cloned(),
+        Some(BigInt::from(2_0000_0000i64))
+    );
+    assert!(pool.contains_key(&tx2.hash()));
+}
+
+#[test]
 fn block_persist_moves_to_unverified_and_reverify() {
     let settings = ProtocolSettings::default();
     let mut pool = MemoryPool::new(&settings);
@@ -858,7 +966,7 @@ fn verified_transactions_vec_returns_only_verified() {
 }
 
 #[test]
-fn reverify_limits_when_verified_exceeds_max_per_block() {
+fn reverify_uses_requested_count_when_verified_exceeds_max_per_block() {
     let settings = ProtocolSettings {
         max_transactions_per_block: 2,
         memory_pool_max_transactions: 10,
@@ -881,9 +989,40 @@ fn reverify_limits_when_verified_exceeds_max_per_block() {
     assert_eq!(pool.unverified_count(), 2);
 
     let still_pending = pool.reverify_top_unverified_transactions(2, &snapshot, &settings, false);
-    assert!(still_pending);
-    assert_eq!(pool.verified_count(), 4);
-    assert_eq!(pool.unverified_count(), 1);
+    assert!(!still_pending);
+    assert_eq!(pool.verified_count(), 5);
+    assert_eq!(pool.unverified_count(), 0);
+}
+
+#[test]
+fn invalidate_verified_resets_state_even_when_verified_is_empty() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let tx = signed_tx(&settings, 82, 1_0000_0000);
+    let hash = tx.hash();
+    let sender = tx.sender().expect("sender");
+    let conflicting_hash = signed_tx(&settings, 83, 2_0000_0000).hash();
+
+    pool.conflicts
+        .insert(hash, HashSet::from([conflicting_hash]));
+    pool.verification_context.add_transaction(&tx);
+
+    assert_eq!(pool.verified_count(), 0);
+    assert!(pool.conflicts.contains_key(&hash));
+    assert!(
+        pool.verification_context
+            .total_fee_for_sender(&sender)
+            .is_some()
+    );
+
+    pool.invalidate_verified_transactions();
+
+    assert!(pool.conflicts.is_empty());
+    assert!(
+        pool.verification_context
+            .total_fee_for_sender(&sender)
+            .is_none()
+    );
 }
 
 #[test]

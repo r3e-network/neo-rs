@@ -173,12 +173,12 @@ impl ExecutionEngine {
         match result {
             Ok(()) => {}
             Err(err) => {
-                if self.limits.catch_engine_exceptions {
-                    if let VmError::CatchableException { message } = &err {
-                        let exception = StackItem::from_byte_string(message.clone().into_bytes());
-                        self.execute_throw(Some(exception))?;
-                        return Ok(());
-                    }
+                if self.limits.catch_engine_exceptions
+                    && let VmError::CatchableException { message } = &err
+                {
+                    let exception = StackItem::from_byte_string(message.clone().into_bytes());
+                    self.execute_throw(Some(exception))?;
+                    return Ok(());
                 }
                 return Err(err);
             }
@@ -186,10 +186,10 @@ impl ExecutionEngine {
 
         self.post_execute_instruction(&instruction)?;
 
-        if !self.is_jumping {
-            if let Some(context) = self.invocation_stack.get_mut(context_index) {
-                context.advance_ip(instruction_size);
-            }
+        if !self.is_jumping
+            && let Some(context) = self.invocation_stack.get_mut(context_index)
+        {
+            context.advance_ip(instruction_size);
         }
         self.is_jumping = false;
 

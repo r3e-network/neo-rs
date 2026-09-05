@@ -2,9 +2,9 @@
 //!
 //! Tests for block sync functionality including validation and merkle root verification.
 
+use neo_core::UInt256;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::{Block, Header};
-use neo_core::UInt256;
 
 /// Tests block creation and serialization roundtrip
 #[test]

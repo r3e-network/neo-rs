@@ -12,6 +12,7 @@ pub struct TransactionAttributesBuilder {
 crate::impl_default_via_new!(TransactionAttributesBuilder);
 
 impl TransactionAttributesBuilder {
+    /// Creates a new builder that starts with no attributes.
     pub fn new() -> Self {
         Self {
             attributes: Vec::new(),

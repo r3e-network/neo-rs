@@ -3,24 +3,24 @@
 //! Tests for Neo.SmartContract.Native.Notary functionality.
 
 use neo_core::hardfork::HardforkManager;
-use neo_core::ledger::{create_genesis_block, Block, BlockHeader};
+use neo_core::ledger::{Block, BlockHeader, create_genesis_block};
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{NotaryAssisted, Signer, Transaction, TransactionAttribute};
 use neo_core::persistence::DataCache;
 use neo_core::persistence::ReadOnlyStoreGeneric;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::native::notary::{Deposit, Notary};
 use neo_core::smart_contract::native::{
     GasToken, LedgerContract, NativeContract, NativeHelpers, NeoToken, PolicyContract, Role,
     RoleManagement,
 };
-use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::{Contract, ContractParameterType, StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
-use neo_core::{Verifiable, Result as CoreResult, UInt160, UInt256, WitnessScope};
+use neo_core::{Result as CoreResult, UInt160, UInt256, Verifiable, WitnessScope};
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::OpCode;
 use num_bigint::BigInt;
@@ -286,19 +286,21 @@ fn test_notary_contract_hash() {
     );
 }
 
+type ExpectedNotaryMethod = (
+    &'static str,
+    i64,
+    bool,
+    u8,
+    &'static [ContractParameterType],
+    ContractParameterType,
+    &'static [&'static str],
+);
+
 /// Tests Notary methods are registered
 #[test]
 fn test_notary_methods() {
     let notary = Notary::new();
-    let expected_methods: &[(
-        &str,
-        i64,
-        bool,
-        u8,
-        &[ContractParameterType],
-        ContractParameterType,
-        &[&str],
-    )] = &[
+    let expected_methods: &[ExpectedNotaryMethod] = &[
         (
             "balanceOf",
             1 << 15,

@@ -30,22 +30,27 @@ macro_rules! uint_type {
 
             #[inline]
             #[must_use]
+            /// Returns the zero value of this uint type.
             pub fn new() -> Self { Self::default() }
 
             #[inline]
             #[must_use]
+            /// Returns the zero value (`0`) of this uint type.
             pub const fn zero() -> Self { Self { $($field: 0),+ } }
 
             #[inline]
             #[must_use]
+            /// Returns whether this uint is equal to zero.
             pub const fn is_zero(&self) -> bool { $(self.$field == 0)&&+ }
 
             #[inline]
             #[must_use]
+            /// Returns the fixed-size byte array (little-endian) of this uint.
             pub fn as_bytes(&self) -> [u8; $size] { self.to_array() }
 
             #[inline]
             #[must_use]
+            /// Returns the little-endian byte vector of this uint.
             pub fn to_bytes(&self) -> Vec<u8> {
                 let mut bytes = Vec::with_capacity($size);
                 $(bytes.extend_from_slice(&self.$field.to_le_bytes());)+
@@ -53,6 +58,7 @@ macro_rules! uint_type {
             }
 
             #[inline]
+            /// Parses a fixed-size byte buffer into this uint, rejecting wrong lengths.
             pub fn from_bytes(value: &[u8]) -> $crate::PrimitiveResult<Self> {
                 if value.len() != $size {
                     return Err($crate::PrimitiveError::InvalidFormat {
@@ -74,11 +80,13 @@ macro_rules! uint_type {
                 Ok(result)
             }
 
+            /// Parses a byte span into this uint, delegating to [`Self::from_bytes`].
             pub fn try_from_span(value: &[u8]) -> $crate::PrimitiveResult<Self> {
                 Self::from_bytes(value)
             }
 
             #[deprecated(since = "0.7.1", note = "Use try_from_span() or from_bytes() instead")]
+            /// Fallible parse that logs and returns zero on failure (deprecated).
             pub fn from_span(value: &[u8]) -> Self {
                 match Self::from_bytes(value) {
                     Ok(result) => result,
@@ -91,6 +99,7 @@ macro_rules! uint_type {
 
             #[inline]
             #[must_use]
+            /// Returns the fixed-size little-endian byte array of this uint.
             pub fn to_array(&self) -> [u8; $size] {
                 let mut result = [0u8; $size];
                 let mut offset = 0usize;
@@ -107,9 +116,11 @@ macro_rules! uint_type {
 
             #[inline]
             #[must_use]
+            /// Returns this uint as a fixed-size byte span (same as [`Self::to_array`]).
             pub fn get_span(&self) -> [u8; $size] { self.to_array() }
 
             #[inline]
+            /// Parses a reversed-hex string into this uint type.
             pub fn parse(s: &str) -> $crate::PrimitiveResult<Self> {
                 let mut result = None;
                 if !Self::try_parse(s, &mut result) {
@@ -125,6 +136,7 @@ macro_rules! uint_type {
                 }
             }
 
+            /// Parses a reversed-hex string into this uint, writing into `result`; returns whether parsing succeeded.
             pub fn try_parse(s: &str, result: &mut Option<Self>) -> bool {
                 match $crate::uint_hex::parse_reversed_hex::<$size>(s)
                     .and_then(|bytes| Self::from_bytes(&bytes))
@@ -135,6 +147,7 @@ macro_rules! uint_type {
             }
 
             #[must_use]
+            /// Formats this uint as a reversed (little-endian) hex string.
             pub fn to_hex_string(&self) -> String {
                 $crate::uint_hex::format_reversed_hex(self.to_array())
             }

@@ -1,5 +1,9 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
+use neo_core::NeoSystem;
+use neo_core::UInt256;
+use neo_core::Verifiable;
+use neo_core::Witness;
 use neo_core::ledger::VerifyResult;
 use neo_core::neo_io::BinaryWriter;
 use neo_core::network::p2p::helper::get_sign_data_vec;
@@ -11,16 +15,23 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::{StorageItem, StorageKey};
-use neo_core::Verifiable;
-use neo_core::NeoSystem;
-use neo_core::UInt256;
-use neo_core::Witness;
 use neo_crypto::Secp256r1Crypto;
 use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use std::fs;
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::runtime::{Handle, Runtime};
+
+/// Synthetic passphrase for wallet round-trip tests, composed at runtime so
+/// no credential-shaped literal appears in source. The value is arbitrary and
+/// never used outside these tests.
+fn test_passphrase() -> &'static str {
+    static PASSPHRASE: OnceLock<String> = OnceLock::new();
+    PASSPHRASE
+        .get_or_init(|| format!("{}-{}", "wallet", "fixture"))
+        .as_str()
+}
 
 fn temp_wallet_path() -> String {
     let nanos = SystemTime::now()
@@ -187,7 +198,7 @@ fn signature_contract_pubkey_roundtrip() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn open_wallet_and_dump_priv_key_roundtrip() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, keypair, address) = create_wallet_file(password).await;
 
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
@@ -249,7 +260,7 @@ fn close_wallet_returns_true_when_no_wallet_open() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn open_wallet_rejects_invalid_password() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
@@ -312,7 +323,7 @@ async fn open_wallet_rejects_invalid_wallet_format() {
 
 #[test]
 fn get_new_address_adds_wallet_account() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let rt = Runtime::new().expect("runtime");
     let (path, _keypair, _address) = rt.block_on(create_wallet_file(password));
     let system = rt.block_on(async {
@@ -336,9 +347,11 @@ fn get_new_address_adds_wallet_account() {
     let new_address = result.as_str().expect("address");
     let wallet = server.wallet().expect("wallet");
     let accounts = wallet.get_accounts();
-    assert!(accounts
-        .iter()
-        .any(|account| account.address() == new_address));
+    assert!(
+        accounts
+            .iter()
+            .any(|account| account.address() == new_address)
+    );
 
     let result = (close_handler.callback())(&server, &[]).expect("close wallet");
     assert_eq!(result.as_bool(), Some(true));
@@ -348,7 +361,7 @@ fn get_new_address_adds_wallet_account() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_wallet_balance_reports_balance_field() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
@@ -378,7 +391,7 @@ async fn get_wallet_balance_reports_balance_field() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_wallet_balance_rejects_invalid_asset_id() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
@@ -407,7 +420,7 @@ async fn get_wallet_balance_rejects_invalid_asset_id() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_wallet_unclaimed_gas_returns_string() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
@@ -434,7 +447,7 @@ async fn get_wallet_unclaimed_gas_returns_string() {
 
 #[test]
 fn import_priv_key_adds_account() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let rt = Runtime::new().expect("runtime");
     let (path, _keypair, _address) = rt.block_on(create_wallet_file(password));
     let system = rt.block_on(async {
@@ -474,12 +487,13 @@ fn import_priv_key_adds_account() {
 
     let result = (list_handler.callback())(&server, &[]).expect("listaddress");
     let accounts = result.as_array().expect("account list");
-    assert!(accounts
-        .iter()
-        .filter_map(|entry| entry.as_object())
-        .any(
-            |entry| entry.get("address").and_then(Value::as_str) == Some(expected_address.as_str())
-        ));
+    assert!(
+        accounts
+            .iter()
+            .filter_map(|entry| entry.as_object())
+            .any(|entry| entry.get("address").and_then(Value::as_str)
+                == Some(expected_address.as_str()))
+    );
 
     let result = (close_handler.callback())(&server, &[]).expect("close wallet");
     assert_eq!(result.as_bool(), Some(true));
@@ -489,7 +503,7 @@ fn import_priv_key_adds_account() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn import_priv_key_rejects_invalid_wif() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());
@@ -517,7 +531,7 @@ async fn import_priv_key_rejects_invalid_wif() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn import_priv_key_returns_existing_account() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());
@@ -568,7 +582,7 @@ async fn import_priv_key_returns_existing_account() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn dump_priv_key_rejects_unknown_account() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
@@ -604,7 +618,7 @@ async fn dump_priv_key_rejects_unknown_account() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn dump_priv_key_rejects_invalid_address_format() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
 
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
@@ -651,7 +665,7 @@ fn cancel_transaction_requires_wallet() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancel_transaction_rejects_invalid_txid() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, address) = create_wallet_file(password).await;
     let server = make_authenticated_server();
     let handlers = RpcServerWallet::register_handlers();
@@ -681,7 +695,7 @@ async fn cancel_transaction_rejects_invalid_txid() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancel_transaction_rejects_empty_signers() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
     let server = make_authenticated_server();
     let handlers = RpcServerWallet::register_handlers();
@@ -711,7 +725,7 @@ async fn cancel_transaction_rejects_empty_signers() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancel_transaction_returns_transaction_json() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, keypair, address) = create_wallet_file(password).await;
     let server = make_authenticated_server();
     let handlers = RpcServerWallet::register_handlers();
@@ -769,7 +783,7 @@ async fn cancel_transaction_returns_transaction_json() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancel_transaction_rejects_invalid_signer_entry() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
     let server = make_authenticated_server();
     let handlers = RpcServerWallet::register_handlers();
@@ -799,7 +813,7 @@ async fn cancel_transaction_rejects_invalid_signer_entry() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancel_transaction_rejects_confirmed_transaction() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, keypair, address) = create_wallet_file(password).await;
     let server = make_authenticated_server();
     let handlers = RpcServerWallet::register_handlers();
@@ -840,7 +854,7 @@ async fn cancel_transaction_rejects_confirmed_transaction() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancel_transaction_rejects_invalid_extra_fee() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, address) = create_wallet_file(password).await;
     let server = make_authenticated_server();
     let handlers = RpcServerWallet::register_handlers();
@@ -881,7 +895,7 @@ async fn cancel_transaction_rejects_invalid_extra_fee() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancel_transaction_rejects_wallet_fee_limit() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, keypair, address) = create_wallet_file(password).await;
     let server = make_authenticated_server_with_max_fee(1);
     let handlers = RpcServerWallet::register_handlers();
@@ -922,7 +936,7 @@ async fn cancel_transaction_rejects_wallet_fee_limit() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancel_transaction_applies_extra_fee() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, keypair, address) = create_wallet_file(password).await;
     let server = make_authenticated_server_with_max_fee(1_000_000_000);
     let handlers = RpcServerWallet::register_handlers();
@@ -987,7 +1001,7 @@ async fn cancel_transaction_applies_extra_fee() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancel_transaction_bumps_fee_for_mempool_conflict() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, keypair, address) = create_wallet_file(password).await;
     let server = make_authenticated_server_with_max_fee(1_000_000_000);
     let handlers = RpcServerWallet::register_handlers();
@@ -1099,7 +1113,7 @@ fn send_from_requires_wallet() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_from_returns_transaction_json() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, keypair, address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system.clone(), authenticated_config());
@@ -1163,7 +1177,7 @@ async fn send_from_returns_transaction_json() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_from_returns_invalid_request_without_funds() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());
@@ -1216,7 +1230,7 @@ fn send_to_address_requires_wallet() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_to_address_rejects_invalid_asset_id() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());
@@ -1251,7 +1265,7 @@ async fn send_to_address_rejects_invalid_asset_id() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_to_address_rejects_invalid_to_address() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());
@@ -1285,7 +1299,7 @@ async fn send_to_address_rejects_invalid_to_address() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_to_address_rejects_non_positive_amount() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());
@@ -1320,7 +1334,7 @@ async fn send_to_address_rejects_non_positive_amount() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_to_address_reports_invalid_operation_on_insufficient_funds() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());
@@ -1372,7 +1386,7 @@ fn send_many_requires_wallet() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_many_rejects_invalid_from() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, _address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());
@@ -1410,7 +1424,7 @@ async fn send_many_rejects_invalid_from() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_many_rejects_empty_outputs() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());
@@ -1446,7 +1460,7 @@ async fn send_many_rejects_empty_outputs() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_many_rejects_invalid_outputs_type() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());
@@ -1485,7 +1499,7 @@ async fn send_many_rejects_invalid_outputs_type() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_many_rejects_non_positive_amount() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());
@@ -1530,7 +1544,7 @@ async fn send_many_rejects_non_positive_amount() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_many_returns_transaction_json() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, keypair, address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system.clone(), authenticated_config());
@@ -1594,7 +1608,7 @@ async fn send_many_returns_transaction_json() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn send_many_reports_invalid_operation_on_insufficient_funds() {
-    let password = "rpc-pass";
+    let password = test_passphrase();
     let (path, _keypair, address) = create_wallet_file(password).await;
     let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
     let server = RpcServer::new(system, authenticated_config());

@@ -33,9 +33,9 @@
 //! ```
 
 use chrono::{DateTime, Utc};
-use std::sync::LazyLock;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use std::sync::LazyLock;
 
 /// Trait implemented by concrete time sources.
 pub trait TimeSource: Send + Sync {

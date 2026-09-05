@@ -1,6 +1,6 @@
 [package]
 name = "neo-benches"
-version = "0.16.0"
+version = "0.17.0"
 edition = "2024"
 
 [dependencies]
@@ -12,12 +12,16 @@ neo-primitives = { workspace = true }
 neo-vm = { workspace = true }
 hex = { workspace = true }
 
+# Bench names match what is actually measured (review §4.3.5); the file
+# names are kept for history.
 [[bench]]
-name = "block_processing"
+name = "payload_serialization"
+path = "benches/block_processing.rs"
 harness = false
 
 [[bench]]
-name = "state_root"
+name = "hashing"
+path = "benches/state_root.rs"
 harness = false
 
 [[bench]]

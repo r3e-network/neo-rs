@@ -7,9 +7,9 @@
 pub(crate) mod cli;
 mod config;
 mod logging;
+mod run;
 pub(crate) mod services;
 mod signal;
-mod run;
 mod tasks;
 
 pub(crate) use config::STORAGE_VERSION;

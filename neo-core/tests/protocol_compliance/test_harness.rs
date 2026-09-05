@@ -1,6 +1,6 @@
 //! Test harness for running protocol compliance tests
 
-use super::{test_vectors::TestVector, ComplianceResult};
+use super::{ComplianceResult, test_vectors::TestVector};
 
 /// Test harness for protocol compliance testing
 pub struct ProtocolTestHarness {

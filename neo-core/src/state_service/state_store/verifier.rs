@@ -11,6 +11,7 @@ pub struct StateRootVerifier {
 }
 
 impl StateRootVerifier {
+    /// Creates a verifier from protocol settings and a state snapshot provider.
     pub fn new(
         settings: Arc<ProtocolSettings>,
         snapshot_provider: Arc<dyn Fn() -> DataCache + Send + Sync>,

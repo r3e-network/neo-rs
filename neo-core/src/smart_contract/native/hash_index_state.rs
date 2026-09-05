@@ -1,7 +1,7 @@
 //! HashIndexState - matches C# Neo.SmartContract.Native.HashIndexState exactly
 
-use crate::error::CoreError;
 use crate::UInt256;
+use crate::error::CoreError;
 use neo_vm::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -49,12 +49,11 @@ impl HashIndexState {
                 return Ok(());
             }
 
-            if let Some(bytes) = items[0].to_byte_string_bytes() {
-                if bytes.len() == 32 {
-                    if let Ok(hash) = UInt256::from_bytes(&bytes) {
-                        self.hash = hash;
-                    }
-                }
+            if let Some(bytes) = items[0].to_byte_string_bytes()
+                && bytes.len() == 32
+                && let Ok(hash) = UInt256::from_bytes(&bytes)
+            {
+                self.hash = hash;
             }
 
             if let Some(index) = Self::stack_value_to_u32(&items[1]) {

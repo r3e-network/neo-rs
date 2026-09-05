@@ -9,7 +9,7 @@
 use super::{
     channels_config::ChannelsConfig,
     framed::{
-        FrameConfig, FrameReader, WriteBuffer, flush_write_buffer, write_frame,
+        FrameConfig, FrameReadStep, FrameReader, WriteBuffer, flush_write_buffer, write_frame,
         write_frame_vectored,
     },
 };
@@ -19,6 +19,18 @@ use crate::network::{
 };
 use std::net::SocketAddr;
 use tokio::{io::AsyncWriteExt, net::TcpStream};
+
+/// Result of one stepwise receive attempt (see [`PeerConnection::receive_message_step`]).
+#[derive(Debug)]
+pub enum ReceiveStep {
+    /// A complete message was decoded.
+    Message(NetworkMessage),
+    /// No complete message yet; call again.
+    Pending,
+    /// The step deadline elapsed without data; the overall read deadline has
+    /// not been exceeded yet.
+    Idle,
+}
 
 /// Connection state (matches C# Neo RemoteNode state exactly)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +138,10 @@ pub struct PeerConnection {
     /// Persistent frame reader so buffered TCP bytes remain available across receive calls.
     frame_reader: FrameReader,
 
+    /// Last time a stepwise read made progress (data or frame). Used to
+    /// enforce the active read timeout across short read steps.
+    read_progress: std::time::Instant,
+
     /// Statistics for monitoring I/O performance.
     stats: ConnectionStats,
 }
@@ -169,6 +185,7 @@ impl PeerConnection {
             connected_at: now,
             write_buffer: WriteBuffer::default(),
             frame_reader: FrameReader::new(),
+            read_progress: now,
             stats: ConnectionStats::default(),
         }
     }
@@ -348,6 +365,58 @@ impl PeerConnection {
         );
 
         Ok(message)
+    }
+
+    /// Performs one bounded read step toward a complete message.
+    ///
+    /// Unlike [`Self::receive_message`], a call spans at most one short read
+    /// step (`FrameConfig::read_step_timeout`), so callers can release the
+    /// connection lock between steps and let writers proceed while a peer is
+    /// silent (R11). The active read timeout is still enforced across steps
+    /// via the last-progress timestamp.
+    pub async fn receive_message_step(
+        &mut self,
+        handshake_complete: bool,
+    ) -> NetworkResult<ReceiveStep> {
+        if !self.state.is_active() {
+            return Err(NetworkError::ConnectionError(
+                "Connection not active".to_string(),
+            ));
+        }
+
+        match self
+            .frame_reader
+            .read_step(&mut self.stream, &self.frame_config, handshake_complete)
+            .await?
+        {
+            FrameReadStep::Frame(bytes) => {
+                let message = NetworkMessage::from_bytes(&bytes)?;
+                self.stats.messages_received += 1;
+                self.stats.bytes_received += bytes.len() as u64;
+                self.update_activity();
+                self.read_progress = std::time::Instant::now();
+                Ok(ReceiveStep::Message(message))
+            }
+            FrameReadStep::Pending => {
+                self.read_progress = std::time::Instant::now();
+                Ok(ReceiveStep::Pending)
+            }
+            FrameReadStep::Idle => {
+                let active_timeout = if handshake_complete {
+                    self.frame_config.read_timeout_active
+                } else {
+                    self.frame_config.read_timeout_handshake
+                };
+                if self.read_progress.elapsed() >= active_timeout {
+                    Err(NetworkError::Timeout)
+                } else {
+                    Ok(ReceiveStep::Idle)
+                }
+            }
+            FrameReadStep::Closed => Err(NetworkError::ConnectionError(
+                "Connection closed while reading frame".to_string(),
+            )),
+        }
     }
 
     /// Closes the connection gracefully

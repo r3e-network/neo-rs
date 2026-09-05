@@ -2,12 +2,12 @@
 
 use crate::cli::NodeCli;
 use crate::config::{
-    resolve_application_logs_store_path, resolve_tokens_tracker_store_path, DbftSettings,
-    NodeConfig,
+    DbftSettings, NodeConfig, resolve_application_logs_store_path,
+    resolve_tokens_tracker_store_path,
 };
 use crate::consensus::DbftConsensusController;
 use crate::wallet_provider::NodeWalletProvider;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use neo_core::{
     application_logs::ApplicationLogsService,
     i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler},
@@ -16,12 +16,9 @@ use neo_core::{
     oracle_service::OracleService,
     protocol_settings::ProtocolSettings,
     smart_contract::native::ContractManagement,
-    state_service::{
-        state_store::StateServiceSettings,
-        verification::StateServiceVerification,
-    },
+    state_service::{state_store::StateServiceSettings, verification::StateServiceVerification},
     tokens_tracker::{TokensTracker, TokensTrackerService},
-    wallets::{WalletProvider, Nep6Wallet, Wallet as CoreWallet},
+    wallets::{Nep6Wallet, Wallet as CoreWallet, WalletProvider},
 };
 use neo_rpc::server::{
     RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode, RpcServerOracle,
@@ -672,10 +669,12 @@ pub(crate) async fn maybe_enable_hsm_wallet(
                 .await
                 .context("failed to initialize HSM")?;
         crate::hsm_integration::print_hsm_status(&runtime);
-        let wallet =
-            crate::hsm_wallet::HsmWallet::from_runtime(runtime, Arc::new(system.settings().clone()))
-                .await
-                .context("failed to build HSM wallet")?;
+        let wallet = crate::hsm_wallet::HsmWallet::from_runtime(
+            runtime,
+            Arc::new(system.settings().clone()),
+        )
+        .await
+        .context("failed to build HSM wallet")?;
         server.write().set_wallet(Some(Arc::new(wallet)));
         return Ok(true);
     }

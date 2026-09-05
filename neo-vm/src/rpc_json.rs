@@ -1,9 +1,9 @@
 //! JSON-RPC envelope rendering for host VM stack items.
 
-use crate::error::VmError;
 use crate::StackItem;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use crate::StackItemType;
+use crate::error::VmError;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use serde_json::{Map, Number as JsonNumber, Value};
 use std::collections::HashSet;
 
@@ -19,10 +19,7 @@ struct RenderBudget {
 }
 
 /// Renders a single stack item as the Neo JSON-RPC stack envelope.
-pub fn stack_item_rpc_json(
-    item: &StackItem,
-    max_size: Option<usize>,
-) -> Result<Value, VmError> {
+pub fn stack_item_rpc_json(item: &StackItem, max_size: Option<usize>) -> Result<Value, VmError> {
     render_stack_item_with_size_check(item, max_size, SizeCheck::Immediate)
 }
 
@@ -102,9 +99,11 @@ fn render_stack_item(
             value = Some(Value::Number(JsonNumber::from(pos as u64)));
         }
         StackItem::Array(array) => {
-            let identity = (array.id() as usize, StackItemType::Array);
+            let identity = (array.id(), StackItemType::Array);
             if !context.insert(identity) {
-                return Err(VmError::invalid_operation_msg("Circular reference in stack item"));
+                return Err(VmError::invalid_operation_msg(
+                    "Circular reference in stack item",
+                ));
             }
             budget.subtract(2 + array.len().saturating_sub(1) as isize)?;
             let values = array
@@ -115,9 +114,11 @@ fn render_stack_item(
             value = Some(Value::Array(values));
         }
         StackItem::Struct(structure) => {
-            let identity = (structure.id() as usize, StackItemType::Struct);
+            let identity = (structure.id(), StackItemType::Struct);
             if !context.insert(identity) {
-                return Err(VmError::invalid_operation_msg("Circular reference in stack item"));
+                return Err(VmError::invalid_operation_msg(
+                    "Circular reference in stack item",
+                ));
             }
             budget.subtract(2 + structure.len().saturating_sub(1) as isize)?;
             let values = structure
@@ -128,9 +129,11 @@ fn render_stack_item(
             value = Some(Value::Array(values));
         }
         StackItem::Map(map) => {
-            let identity = (map.id() as usize, StackItemType::Map);
+            let identity = (map.id(), StackItemType::Map);
             if !context.insert(identity) {
-                return Err(VmError::invalid_operation_msg("Circular reference in stack item"));
+                return Err(VmError::invalid_operation_msg(
+                    "Circular reference in stack item",
+                ));
             }
             budget.subtract(2 + map.len().saturating_sub(1) as isize)?;
             let values = map
@@ -194,8 +197,7 @@ impl RenderBudget {
 #[cfg(test)]
 mod tests {
     use super::{
-        stack_item_rpc_json, stack_item_rpc_json_deferred_size_check,
-        stack_items_rpc_json_per_item,
+        stack_item_rpc_json, stack_item_rpc_json_deferred_size_check, stack_items_rpc_json_per_item,
     };
     use crate::StackItem;
     use crate::VmOrderedDictionary;
@@ -205,8 +207,12 @@ mod tests {
         #[derive(Debug)]
         struct DummyInterop;
         impl crate::stack_item::InteropInterface for DummyInterop {
-            fn interface_type(&self) -> &str { "dummy" }
-            fn as_any(&self) -> &dyn std::any::Any { self }
+            fn interface_type(&self) -> &str {
+                "dummy"
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
         }
         StackItem::from_interface(DummyInterop)
     }
@@ -238,7 +244,10 @@ mod tests {
                 json!({"type": "Buffer", "value": "AwQ="}),
             ),
             (
-                StackItem::from_pointer(std::sync::Arc::new(crate::Script::new_from_bytes(Vec::new())), 7),
+                StackItem::from_pointer(
+                    std::sync::Arc::new(crate::Script::new_from_bytes(Vec::new())),
+                    7,
+                ),
                 json!({"type": "Pointer", "value": 7}),
             ),
             (
@@ -260,10 +269,7 @@ mod tests {
                     "value": {"type": "Integer", "value": "9"}
                 }]}),
             ),
-            (
-                interop_stack_item(),
-                json!({"type": "InteropInterface"}),
-            ),
+            (interop_stack_item(), json!({"type": "InteropInterface"})),
         ];
 
         for (item, expected) in cases {

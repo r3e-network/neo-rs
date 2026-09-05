@@ -10,7 +10,7 @@ use std::str::FromStr;
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 /// Creates an RpcException for invalid parameters.
 #[inline]
@@ -28,7 +28,7 @@ pub fn internal_error(message: impl ToString) -> RpcException {
 #[inline]
 pub fn serialize_to_base64<T>(value: &T) -> Result<String, RpcException>
 where
-    T: Serializable + ?Sized,
+    T: Serializable,
 {
     crate::serialization::serializable_to_base64(value).map_err(internal_error)
 }
@@ -184,7 +184,7 @@ pub fn expect_hash_param(
     // Try hex first, then base64
     UInt256::from_str(&text)
         .or_else(|_| {
-            use base64::{engine::general_purpose::STANDARD, Engine};
+            use base64::{Engine, engine::general_purpose::STANDARD};
             STANDARD
                 .decode(&text)
                 .ok()

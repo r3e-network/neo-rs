@@ -7,6 +7,7 @@ pub struct Props {
 }
 
 impl Props {
+    /// Creates props from a factory invoked once per spawned instance.
     pub fn new<F, A>(factory: F) -> Self
     where
         F: Fn() -> A + Send + Sync + 'static,

@@ -11,13 +11,18 @@ pub type ActorResult = ActorRuntimeResult<()>;
 /// Directives returned by supervision strategies when an actor fails.
 #[derive(Debug, Clone)]
 pub enum SupervisorDirective {
+    /// Stop the failed actor; further messages are dropped.
     Stop(String),
+    /// Resume processing; the failure is logged and skipped.
     Resume,
+    /// Restart the actor with fresh state.
     Restart,
+    /// Escalate the failure to the actor's supervisor.
     Escalate,
 }
 
 impl SupervisorDirective {
+    /// Builds a `Stop` directive from any displayable reason.
     pub fn stop<E: ToString>(reason: E) -> Self {
         SupervisorDirective::Stop(reason.to_string())
     }
@@ -33,7 +38,7 @@ pub trait Actor: Send + 'static {
 
     /// Handles a single incoming message.
     async fn handle(&mut self, message: Box<dyn Any + Send>, ctx: &mut ActorContext)
-        -> ActorResult;
+    -> ActorResult;
 
     /// Invoked before the actor is permanently stopped.
     async fn post_stop(&mut self, _ctx: &mut ActorContext) -> ActorResult {

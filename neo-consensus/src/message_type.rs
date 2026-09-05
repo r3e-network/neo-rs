@@ -6,11 +6,17 @@ protocol_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     /// Consensus message type enum matching C# `ConsensusMessageType` exactly
     pub ConsensusMessageType {
+        /// A request to change the current view.
         ChangeView = 0x00,
+        /// Primary's block proposal for the current view.
         PrepareRequest = 0x20,
+        /// Backup node's acceptance of a proposed block.
         PrepareResponse = 0x21,
+        /// A validator's commitment to the proposed block.
         Commit = 0x30,
+        /// Request for recovery state after a view change.
         RecoveryRequest = 0x40,
+        /// Full recovery payload sent in response to a recovery request.
         RecoveryMessage = 0x41,
     }
 }

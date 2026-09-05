@@ -3,16 +3,16 @@ use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::persistence::DataCache;
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::Interoperable;
+use neo_core::smart_contract::StorageContext;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractPermission, WildCardContainer,
 };
 use neo_core::smart_contract::native::ContractManagement;
-use neo_core::smart_contract::StorageContext;
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::Interoperable;
 use neo_core::witness::Witness;
-use neo_core::{Verifiable, NativeContract, UInt160, WitnessScope};
+use neo_core::{NativeContract, UInt160, Verifiable, WitnessScope};
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::OpCode;
 use std::sync::Arc;

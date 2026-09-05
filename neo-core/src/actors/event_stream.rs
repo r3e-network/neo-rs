@@ -51,28 +51,34 @@ impl EventStream {
     }
 }
 
+/// Clonable handle for publishing and subscribing to typed actor events.
 #[derive(Clone)]
 pub struct EventStreamHandle {
     inner: Arc<EventStream>,
 }
 
 impl EventStreamHandle {
+    /// Wraps the shared event stream.
     pub fn new(inner: Arc<EventStream>) -> Self {
         Self { inner }
     }
 
+    /// Subscribes `actor` to events of type `T`.
     pub fn subscribe<T: Send + 'static>(&self, actor: ActorRef) {
         self.inner.subscribe::<T>(actor);
     }
 
+    /// Removes `actor` from the subscriber list for events of type `T`.
     pub fn unsubscribe<T: Send + 'static>(&self, actor: &ActorRef) {
         self.inner.unsubscribe::<T>(actor);
     }
 
+    /// Removes `actor` from every subscriber list.
     pub fn unsubscribe_all(&self, actor: &ActorRef) {
         self.inner.unsubscribe_all(actor);
     }
 
+    /// Publishes `message` to every subscriber of its type.
     pub fn publish<T>(&self, message: T)
     where
         T: Clone + Send + 'static,

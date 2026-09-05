@@ -1,9 +1,9 @@
 //! Timer scheduling and periodic upkeep for `RemoteNode` (pings and cache pruning).
-use super::pending_known_hashes::PENDING_KNOWN_HASH_TTL;
 use super::RemoteNode;
+use super::pending_known_hashes::PENDING_KNOWN_HASH_TTL;
+use crate::network::p2p::ProtocolMessage;
 use crate::network::p2p::messages::NetworkMessage;
 use crate::network::p2p::payloads::ping_payload::PingPayload;
-use crate::network::p2p::ProtocolMessage;
 use std::time::{Duration, Instant};
 use tracing::trace;
 

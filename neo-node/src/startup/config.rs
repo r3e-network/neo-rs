@@ -1,17 +1,15 @@
 //! Startup configuration, storage provider selection, and validation.
 
 use crate::cli::NodeCli;
-use crate::config::{infer_magic_from_type, NodeConfig};
-use anyhow::{bail, Context, Result};
+use crate::config::{NodeConfig, infer_magic_from_type};
+use anyhow::{Context, Result, bail};
 #[cfg(feature = "full")]
-use neo_core::persistence::providers::{
-    rocksdb::BatchCommitConfig, RocksDBStoreProvider,
-};
+use neo_core::persistence::providers::{RocksDBStoreProvider, rocksdb::BatchCommitConfig};
 use neo_core::{
-    persistence::{storage::StorageConfig, StoreProvider},
+    UnhandledExceptionPolicy,
+    persistence::{StoreProvider, storage::StorageConfig},
     protocol_settings::ProtocolSettings,
     state_service::state_store::StateServiceSettings,
-    UnhandledExceptionPolicy,
 };
 use std::{
     fs,
@@ -183,26 +181,26 @@ pub(crate) fn validate_node_config(
         bail!("rpc.auth_enabled requires both rpc_user and rpc_pass");
     }
 
-    if node_config.rpc.enabled && node_config.rpc.auth_enabled {
-        if let (Some(user), Some(pass)) = (&node_config.rpc.rpc_user, &node_config.rpc.rpc_pass) {
-            if has_default_rpc_credentials(user, pass) {
-                let bind = node_config
-                    .rpc
-                    .bind_address
-                    .as_deref()
-                    .unwrap_or("127.0.0.1");
-                if is_public_bind(bind) {
-                    bail!(
-                        "default rpc credentials are not allowed on public bind addresses; set unique rpc_user and rpc_pass"
-                    );
-                }
-                warn!(
-                    target: "neo",
-                    bind_address = bind,
-                    "RPC is using template credentials on loopback; change rpc_user/rpc_pass before exposing RPC"
-                );
-            }
+    if node_config.rpc.enabled
+        && node_config.rpc.auth_enabled
+        && let (Some(user), Some(pass)) = (&node_config.rpc.rpc_user, &node_config.rpc.rpc_pass)
+        && has_default_rpc_credentials(user, pass)
+    {
+        let bind = node_config
+            .rpc
+            .bind_address
+            .as_deref()
+            .unwrap_or("127.0.0.1");
+        if is_public_bind(bind) {
+            bail!(
+                "default rpc credentials are not allowed on public bind addresses; set unique rpc_user and rpc_pass"
+            );
         }
+        warn!(
+            target: "neo",
+            bind_address = bind,
+            "RPC is using template credentials on loopback; change rpc_user/rpc_pass before exposing RPC"
+        );
     }
 
     if node_config
@@ -219,10 +217,9 @@ pub(crate) fn validate_node_config(
         .mempool
         .as_ref()
         .and_then(|m| m.max_transactions_per_sender)
+        && limit == 0
     {
-        if limit == 0 {
-            bail!("mempool.max_transactions_per_sender must be greater than zero");
-        }
+        bail!("mempool.max_transactions_per_sender must be greater than zero");
     }
 
     if rpc_hardened && (node_config.rpc.rpc_user.is_none() || node_config.rpc.rpc_pass.is_none()) {
@@ -276,16 +273,15 @@ pub(crate) fn validate_node_config(
         .network_type
         .as_deref()
         .and_then(infer_magic_from_type)
+        && canonical != protocol_settings.network
     {
-        if canonical != protocol_settings.network {
-            warn!(
-                target: "neo",
-                network_type = ?node_config.network.network_type,
-                configured_magic = format_args!("0x{:08x}", protocol_settings.network),
-                canonical_magic = format_args!("0x{:08x}", canonical),
-                "network type and magic differ; ensure this is intentional"
-            );
-        }
+        warn!(
+            target: "neo",
+            network_type = ?node_config.network.network_type,
+            configured_magic = format_args!("0x{:08x}", protocol_settings.network),
+            canonical_magic = format_args!("0x{:08x}", canonical),
+            "network type and magic differ; ensure this is intentional"
+        );
     }
 
     let _ = node_config.oracle_service_settings(protocol_settings)?;
@@ -403,8 +399,8 @@ pub(crate) fn build_state_service_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
-#[cfg(test)]
-use zeroize::Zeroizing;
+    #[cfg(test)]
+    use zeroize::Zeroizing;
 
     #[test]
     fn validate_requires_storage_path_for_rocksdb() {

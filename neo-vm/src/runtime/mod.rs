@@ -1,6 +1,5 @@
 //! Shared NeoVM execution context used by host-specific runtimes.
 
-pub mod ops;
 mod pending_exception;
 mod try_frame;
 
@@ -56,50 +55,6 @@ pub trait RuntimeStack {
     /// Push a boolean result.
     fn push_bool(&mut self, value: bool) {
         self.push_value(StackValue::Boolean(value));
-    }
-}
-
-pub(crate) fn push_value_result(
-    runtime: &mut (impl RuntimeStack + ?Sized),
-    result: Result<StackValue, String>,
-) {
-    match result {
-        Ok(value) => runtime.push_value(value),
-        Err(message) => runtime.fault(&message),
-    }
-}
-
-pub(crate) fn push_i64_result(
-    runtime: &mut (impl RuntimeStack + ?Sized),
-    result: Result<i64, String>,
-) {
-    match result {
-        Ok(value) => runtime.push_i64(value),
-        Err(message) => runtime.fault(&message),
-    }
-}
-
-pub(crate) fn push_bool_result(
-    runtime: &mut (impl RuntimeStack + ?Sized),
-    result: Result<bool, String>,
-) {
-    match result {
-        Ok(value) => runtime.push_bool(value),
-        Err(message) => runtime.fault(&message),
-    }
-}
-
-pub(crate) fn push_values_result(
-    runtime: &mut (impl RuntimeStack + ?Sized),
-    result: Result<Vec<StackValue>, String>,
-) {
-    match result {
-        Ok(values) => {
-            for value in values {
-                runtime.push_value(value);
-            }
-        }
-        Err(message) => runtime.fault(&message),
     }
 }
 
@@ -343,12 +298,13 @@ impl VmContext {
     /// Ends a try/catch block and returns the next program counter.
     #[must_use]
     pub fn end_try(&mut self, target_pc: i32) -> i32 {
-        if let Some(frame) = self.try_stack.last_mut() {
-            if frame.finally_pc != 0 && !frame.in_finally {
-                frame.end_pc = target_pc;
-                frame.in_finally = true;
-                return frame.finally_pc;
-            }
+        if let Some(frame) = self.try_stack.last_mut()
+            && frame.finally_pc != 0
+            && !frame.in_finally
+        {
+            frame.end_pc = target_pc;
+            frame.in_finally = true;
+            return frame.finally_pc;
         }
         self.try_stack.pop();
         target_pc
@@ -357,14 +313,14 @@ impl VmContext {
     /// Ends a finally block and returns the continuation program counter.
     #[must_use]
     pub fn end_finally(&mut self) -> i32 {
-        if let Some(frame) = self.try_stack.pop() {
-            if frame.in_finally {
-                if self.pending_error.is_some() {
-                    return -1;
-                }
-                if frame.end_pc != 0 {
-                    return frame.end_pc;
-                }
+        if let Some(frame) = self.try_stack.pop()
+            && frame.in_finally
+        {
+            if self.pending_error.is_some() {
+                return -1;
+            }
+            if frame.end_pc != 0 {
+                return frame.end_pc;
             }
         }
         self.fault("ENDFINALLY without matching finally context");

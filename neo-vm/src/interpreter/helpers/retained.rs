@@ -391,8 +391,8 @@ fn ensure_retained_input(bytes: &[u8], pos: usize, needed: usize) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_retained_prefix, encode_retained_prefix_to_slice, StackValue,
-        MAX_RETAINED_COLLECTION_LEN,
+        MAX_RETAINED_COLLECTION_LEN, StackValue, decode_retained_prefix,
+        encode_retained_prefix_to_slice,
     };
     use alloc::vec;
 

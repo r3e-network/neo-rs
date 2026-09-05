@@ -611,10 +611,10 @@ impl StateServiceVerification {
 
     fn stop(&self) {
         let mut guard = self.actor.lock();
-        if let Some(actor) = guard.take() {
-            if let Err(err) = self.system.actor_system().stop(&actor) {
-                warn!(target: "state", %err, "failed to stop state verification actor");
-            }
+        if let Some(actor) = guard.take()
+            && let Err(err) = self.system.actor_system().stop(&actor)
+        {
+            warn!(target: "state", %err, "failed to stop state verification actor");
         }
     }
 }

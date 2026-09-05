@@ -6,6 +6,7 @@
 
 macro_rules! composite_condition_module {
     ($module:ident, $variant:ident) => {
+        #[doc = concat!("Witness condition helpers for the `", stringify!($variant), "` composite condition.")]
         pub mod $module {
             use crate::witness_rule::WitnessCondition;
 
@@ -27,6 +28,7 @@ macro_rules! composite_condition_module {
 
 macro_rules! group_condition_module {
     ($module:ident, $variant:ident) => {
+        #[doc = concat!("Witness condition helpers for the `", stringify!($variant), "` group condition.")]
         pub mod $module {
             use crate::witness_rule::WitnessCondition;
 
@@ -48,6 +50,7 @@ macro_rules! group_condition_module {
 
 macro_rules! hash_condition_module {
     ($module:ident, $variant:ident) => {
+        #[doc = concat!("Witness condition helpers for the `", stringify!($variant), "` script hash condition.")]
         pub mod $module {
             use crate::witness_rule::WitnessCondition;
             use neo_primitives::UInt160;
@@ -75,6 +78,7 @@ group_condition_module!(called_by_group_condition, CalledByGroup);
 hash_condition_module!(called_by_contract_condition, CalledByContract);
 hash_condition_module!(script_hash_condition, ScriptHash);
 
+/// Helpers for the `Boolean` witness condition.
 pub mod boolean_condition {
     use crate::witness_rule::WitnessCondition;
 
@@ -92,6 +96,7 @@ pub mod boolean_condition {
     }
 }
 
+/// Helpers for the `CalledByEntry` witness condition.
 pub mod called_by_entry_condition {
     use crate::witness_rule::WitnessCondition;
 
@@ -106,6 +111,7 @@ pub mod called_by_entry_condition {
     }
 }
 
+/// Helpers for the `Not` witness condition.
 pub mod not_condition {
     use crate::witness_rule::WitnessCondition;
 
@@ -125,6 +131,7 @@ pub mod not_condition {
     }
 }
 
+/// General witness condition helpers re-exported from the canonical implementation.
 pub mod witness_condition {
     pub use crate::witness_rule::{WitnessCondition, WitnessConditionType};
 

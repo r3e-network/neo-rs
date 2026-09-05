@@ -1,6 +1,6 @@
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StoreCache,
+    StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
 };
 use neo_core::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
 use std::path::PathBuf;

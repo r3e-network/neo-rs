@@ -5,9 +5,9 @@
 use neo_core::hardfork::Hardfork;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::native::policy_contract::PolicyContract;
-use neo_core::smart_contract::native::NativeContract;
 use neo_core::smart_contract::ContractParameterType;
+use neo_core::smart_contract::native::NativeContract;
+use neo_core::smart_contract::native::policy_contract::PolicyContract;
 use std::collections::HashMap;
 
 /// Tests that PolicyContract has correct contract ID (-7)
@@ -184,19 +184,21 @@ fn test_policy_contract_methods() {
     );
 }
 
+type ExpectedPolicyMethod = (
+    &'static str,
+    bool,
+    u8,
+    &'static [ContractParameterType],
+    ContractParameterType,
+    Option<Hardfork>,
+    Option<Hardfork>,
+    &'static [&'static str],
+);
+
 #[test]
 fn test_policy_contract_method_metadata_matches_protocol() {
     let policy = PolicyContract::new();
-    let expected_methods: &[(
-        &str,
-        bool,
-        u8,
-        &[ContractParameterType],
-        ContractParameterType,
-        Option<Hardfork>,
-        Option<Hardfork>,
-        &[&str],
-    )] = &[
+    let expected_methods: &[ExpectedPolicyMethod] = &[
         (
             "getFeePerByte",
             true,
@@ -547,17 +549,18 @@ fn test_policy_contract_event_metadata_hardforks() {
 }
 
 fn policy_event_settings() -> ProtocolSettings {
-    let mut settings = ProtocolSettings::default();
-    settings.hardforks = HashMap::from([
-        (Hardfork::HfAspidochelone, 0),
-        (Hardfork::HfBasilisk, 0),
-        (Hardfork::HfCockatrice, 0),
-        (Hardfork::HfDomovoi, 0),
-        (Hardfork::HfEchidna, 20),
-        (Hardfork::HfFaun, 40),
-        (Hardfork::HfGorgon, 60),
-    ]);
-    settings
+    ProtocolSettings {
+        hardforks: HashMap::from([
+            (Hardfork::HfAspidochelone, 0),
+            (Hardfork::HfBasilisk, 0),
+            (Hardfork::HfCockatrice, 0),
+            (Hardfork::HfDomovoi, 0),
+            (Hardfork::HfEchidna, 20),
+            (Hardfork::HfFaun, 40),
+            (Hardfork::HfGorgon, 60),
+        ]),
+        ..ProtocolSettings::default()
+    }
 }
 
 fn assert_event_descriptors(

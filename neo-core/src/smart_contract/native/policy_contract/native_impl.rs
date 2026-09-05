@@ -45,59 +45,54 @@ impl NativeContract for PolicyContract {
             )?;
         }
 
-        if engine.is_hardfork_enabled(Hardfork::HfFaun) {
-            if let Some(&faun_height) = engine.protocol_settings().hardforks.get(&Hardfork::HfFaun)
-            {
-                if engine.current_block_index() == faun_height {
-                    // v3.9.1: Scale exec fee factor by ApplicationEngine.FeeFactor at Faun activation.
-                    //
-                    // C# ref: `var item = engine.SnapshotCache.GetAndChange(_execFeeFactor)
-                    //           ?? throw new InvalidOperationException();
-                    //          item.Set((uint)(BigInteger)item * ApplicationEngine.FeeFactor);`
-                    //
-                    // Keep this branch idempotent so repeated initialization against the
-                    // same snapshot cannot over-scale the stored value.
-                    if let Some(item) = snapshot_ref.try_get(&Self::exec_fee_factor_key()) {
-                        let value = BigInt::from_signed_bytes_le(&item.value_bytes())
-                            .to_u32()
-                            .ok_or_else(|| {
-                                Error::native_contract(
-                                    "ExecFeeFactor exceeds u32 capacity".to_string(),
-                                )
-                            })?;
-                        if value <= Self::MAX_EXEC_FEE_FACTOR {
-                            let scaled = value.saturating_mul(
-                                crate::smart_contract::application_engine::FEE_FACTOR as u32,
-                            );
-                            engine.set_storage(
-                                Self::exec_fee_factor_key(),
-                                StorageItem::from_bytes(Self::encode_u32(scaled)),
-                            )?;
-                        }
-                    }
-
-                    // v3.9.1: Add timestamp to ALL blocked accounts at Faun activation.
-                    //
-                    // C# ref: `engine.SnapshotCache.GetAndChange(key).Set(time)`
-                    // for every entry under Prefix_BlockedAccount.  This ensures
-                    // recoverFund has a valid timestamp for the 1-year waiting period.
-                    let timestamp = engine
-                        .get_current_block_time()
-                        .map_err(Error::invalid_operation)?;
-                    let timestamp_bytes = Self::encode_u64(timestamp);
-                    let prefix_key = StorageKey::new(Self::ID, vec![Self::PREFIX_BLOCKED_ACCOUNT]);
-                    let all_keys: Vec<StorageKey> = snapshot_ref
-                        .find(
-                            Some(&prefix_key),
-                            crate::persistence::seek_direction::SeekDirection::Forward,
-                        )
-                        .map(|(key, _)| key)
-                        .collect();
-                    for key in all_keys {
-                        engine
-                            .set_storage(key, StorageItem::from_bytes(timestamp_bytes.clone()))?;
-                    }
+        if engine.is_hardfork_enabled(Hardfork::HfFaun)
+            && let Some(&faun_height) = engine.protocol_settings().hardforks.get(&Hardfork::HfFaun)
+            && engine.current_block_index() == faun_height
+        {
+            // v3.9.1: Scale exec fee factor by ApplicationEngine.FeeFactor at Faun activation.
+            //
+            // C# ref: `var item = engine.SnapshotCache.GetAndChange(_execFeeFactor)
+            //           ?? throw new InvalidOperationException();
+            //          item.Set((uint)(BigInteger)item * ApplicationEngine.FeeFactor);`
+            //
+            // Keep this branch idempotent so repeated initialization against the
+            // same snapshot cannot over-scale the stored value.
+            if let Some(item) = snapshot_ref.try_get(&Self::exec_fee_factor_key()) {
+                let value = BigInt::from_signed_bytes_le(&item.value_bytes())
+                    .to_u32()
+                    .ok_or_else(|| {
+                        Error::native_contract("ExecFeeFactor exceeds u32 capacity".to_string())
+                    })?;
+                if value <= Self::MAX_EXEC_FEE_FACTOR {
+                    let scaled = value.saturating_mul(
+                        crate::smart_contract::application_engine::FEE_FACTOR as u32,
+                    );
+                    engine.set_storage(
+                        Self::exec_fee_factor_key(),
+                        StorageItem::from_bytes(Self::encode_u32(scaled)),
+                    )?;
                 }
+            }
+
+            // v3.9.1: Add timestamp to ALL blocked accounts at Faun activation.
+            //
+            // C# ref: `engine.SnapshotCache.GetAndChange(key).Set(time)`
+            // for every entry under Prefix_BlockedAccount.  This ensures
+            // recoverFund has a valid timestamp for the 1-year waiting period.
+            let timestamp = engine
+                .get_current_block_time()
+                .map_err(Error::invalid_operation)?;
+            let timestamp_bytes = Self::encode_u64(timestamp);
+            let prefix_key = StorageKey::new(Self::ID, vec![Self::PREFIX_BLOCKED_ACCOUNT]);
+            let all_keys: Vec<StorageKey> = snapshot_ref
+                .find(
+                    Some(&prefix_key),
+                    crate::persistence::seek_direction::SeekDirection::Forward,
+                )
+                .map(|(key, _)| key)
+                .collect();
+            for key in all_keys {
+                engine.set_storage(key, StorageItem::from_bytes(timestamp_bytes.clone()))?;
             }
         }
 
@@ -152,7 +147,6 @@ impl NativeContract for PolicyContract {
 
         Ok(())
     }
-
 }
 
 crate::impl_default_via_new!(PolicyContract);

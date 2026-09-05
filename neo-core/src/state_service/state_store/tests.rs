@@ -1,17 +1,17 @@
 use super::*;
 use crate::network::p2p::payloads::Witness;
+use crate::persistence::DataCache;
+use crate::persistence::TrackState;
 use crate::persistence::providers::memory_store_provider::MemoryStoreProvider;
 use crate::persistence::read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric};
 use crate::persistence::storage::StorageError;
-use crate::persistence::store::{Store, OnNewSnapshotDelegate};
+use crate::persistence::store::{OnNewSnapshotDelegate, Store};
 use crate::persistence::store_snapshot::StoreSnapshot;
 use crate::persistence::write_store::WriteStore;
-use crate::persistence::DataCache;
-use crate::persistence::TrackState;
 use crate::protocol_settings::ProtocolSettings;
-use crate::smart_contract::native::LedgerContract;
-use crate::smart_contract::native::{role_management::RoleManagement, NativeContract, Role};
 use crate::smart_contract::Contract;
+use crate::smart_contract::native::LedgerContract;
+use crate::smart_contract::native::{NativeContract, Role, role_management::RoleManagement};
 use crate::wallets::KeyPair;
 use neo_vm::OpCode;
 use std::any::Any;
@@ -344,8 +344,28 @@ fn update_local_state_root_returns_commit_error() {
         .expect_err("commit should fail");
 
     assert!(err.contains("injected state store commit failure"));
-    assert!(store.state_snapshot.read().is_some());
+    assert!(store.state_snapshot.read().is_none());
     assert!(store.local_root_index().is_none());
+}
+
+#[test]
+fn failed_local_root_commit_does_not_leak_staged_overlay() {
+    let backend = Arc::new(FailingStateStoreBackend);
+    let store = StateStore::new(backend.clone(), StateServiceSettings::default());
+    let key = StorageKey::new(123, b"failed-key".to_vec());
+    let item = StorageItem::from_bytes(b"failed-value".to_vec());
+
+    store
+        .update_local_state_root_snapshot(
+            1,
+            std::iter::once((key.clone(), item, TrackState::Added)),
+        )
+        .expect("stage local state root");
+    assert!(store.update_local_state_root(1).is_err());
+
+    assert!(store.state_snapshot.read().is_none());
+    assert!(store.get_state_root(1).is_none());
+    assert!(store.current_local_root_hash().is_none());
 }
 
 #[test]

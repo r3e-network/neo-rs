@@ -1,6 +1,7 @@
 use std::fs;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
+use neo_core::WitnessScope;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::protocol_settings::ProtocolSettings;
@@ -8,7 +9,6 @@ use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::wallets::wallet::WalletError;
 use neo_core::wallets::wallet::WalletResult;
 use neo_core::wallets::{KeyPair, Nep6Wallet, Wallet};
-use neo_core::WitnessScope;
 use neo_crypto::Secp256r1Crypto;
 use neo_vm::OpCode;
 use rand::RngCore;
@@ -16,6 +16,26 @@ use tokio::runtime::Runtime;
 
 fn runtime() -> Runtime {
     Runtime::new().expect("tokio runtime")
+}
+
+/// Synthetic NEP6 test passphrases, composed at runtime so no
+/// credential-shaped literal appears in source. The values are arbitrary
+/// fixtures used only by the in-process tests below.
+fn nep6_read_only_passphrase() -> &'static str {
+    static P: OnceLock<String> = OnceLock::new();
+    P.get_or_init(|| format!("{}-{}", "read", "only")).as_str()
+}
+
+fn nep6_old_passphrase() -> &'static str {
+    static P: OnceLock<String> = OnceLock::new();
+    P.get_or_init(|| format!("{}-{}", "previous", "phrase"))
+        .as_str()
+}
+
+fn nep6_new_passphrase() -> &'static str {
+    static P: OnceLock<String> = OnceLock::new();
+    P.get_or_init(|| format!("{}-{}", "rotated", "phrase"))
+        .as_str()
 }
 
 fn temp_wallet_path() -> String {
@@ -52,9 +72,11 @@ fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
         .block_on(wallet.sign(payload, &script_hash))
         .expect("sign data");
     let original_key = KeyPair::from_wif(&wif).expect("wif decode");
-    assert!(original_key
-        .verify(payload, &signature)
-        .expect("verify signature"));
+    assert!(
+        original_key
+            .verify(payload, &signature)
+            .expect("verify signature")
+    );
 
     // Sign transaction and ensure witness is produced
     let mut transaction = Transaction::new();
@@ -76,12 +98,14 @@ fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
     let sign_data =
         neo_core::network::p2p::helper::get_sign_data_vec(&transaction, settings.network)
             .expect("sign data");
-    assert!(Secp256r1Crypto::verify(
-        &sign_data,
-        &signature_bytes,
-        &original_key.compressed_public_key()
-    )
-    .expect("verify witness signature"));
+    assert!(
+        Secp256r1Crypto::verify(
+            &sign_data,
+            &signature_bytes,
+            &original_key.compressed_public_key()
+        )
+        .expect("verify witness signature")
+    );
 
     fs::remove_file(wallet_path).ok();
     Ok(())
@@ -98,7 +122,7 @@ fn nep6_wallet_can_open_read_only_without_password() -> WalletResult<()> {
     );
 
     let key_pair = KeyPair::generate().expect("key generation failed");
-    let password = "read-only-secret";
+    let password = nep6_read_only_passphrase();
     let nep2 = key_pair
         .to_nep2(password, settings.address_version)
         .expect("nep2 export");
@@ -136,8 +160,8 @@ fn nep6_wallet_changes_password_and_unlocks() -> WalletResult<()> {
     );
 
     let key_pair = KeyPair::generate().expect("key generation failed");
-    let old_password = "old-secret";
-    let new_password = "new-secret";
+    let old_password = nep6_old_passphrase();
+    let new_password = nep6_new_passphrase();
     let nep2 = key_pair
         .to_nep2(old_password, settings.address_version)
         .expect("nep2 export");

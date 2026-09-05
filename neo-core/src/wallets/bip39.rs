@@ -44,7 +44,7 @@ pub fn get_mnemonic_code_with_language(
     if entropy.len() < 16 || entropy.len() > 32 {
         return Err("The length of entropy should be between 128 and 256 bits.".to_string());
     }
-    if entropy.len() % 4 != 0 {
+    if !entropy.len().is_multiple_of(4) {
         return Err("The length of entropy should be a multiple of 32 bits.".to_string());
     }
 
@@ -59,7 +59,7 @@ pub fn get_mnemonic_code_with_language(
 /// is automatically zeroed when dropped.
 pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Zeroizing<Vec<u8>>, String> {
     let word_count = mnemonic.len();
-    if !(12..=24).contains(&word_count) || word_count % 3 != 0 {
+    if !(12..=24).contains(&word_count) || !word_count.is_multiple_of(3) {
         return Err("The number of words should be 12, 15, 18, 21 or 24.".to_string());
     }
     for word in mnemonic {

@@ -21,6 +21,7 @@ macro_rules! define_opcodes {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         #[repr(u8)]
         #[allow(non_camel_case_types)]
+        #[allow(missing_docs)] // canonical NeoVM instruction names are self-descriptive
         pub enum OpCode {
             $(
                 $name = $byte,

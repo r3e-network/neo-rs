@@ -12,22 +12,39 @@ pub const DEFAULT_ORACLE_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Oracle service configuration settings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OracleServiceSettings {
+    /// Network magic the oracle responses are signed for.
     pub network: u32,
+    /// Oracle node endpoints used for request routing (C# `Nodes`).
     pub nodes: Vec<String>,
+    /// Upper bound a single oracle task may stay active.
     pub max_task_timeout: Duration,
+    /// Upper bound the reference implementation allows per oracle request.
     pub max_oracle_timeout: Duration,
+    /// Allow requests to private/internal hosts (breaks SSRF protection).
     pub allow_private_host: bool,
+    /// Content types accepted in oracle responses.
     pub allowed_content_types: Vec<String>,
+    /// Per-request HTTPS timeout.
     pub https_timeout: Duration,
+    /// NeoFS REST/gRPC endpoint used for object retrieval.
     pub neofs_endpoint: String,
+    /// Timeout applied to NeoFS operations.
     pub neofs_timeout: Duration,
+    /// Pre-provisioned bearer token for NeoFS requests.
     pub neofs_bearer_token: Option<String>,
+    /// Signature accompanying a pre-provisioned bearer token.
     pub neofs_bearer_signature: Option<String>,
+    /// Public key matching a pre-provisioned bearer token signature.
     pub neofs_bearer_signature_key: Option<String>,
+    /// Use the NeoFS wallet-connect flow for bearer tokens.
     pub neofs_wallet_connect: bool,
+    /// Sign NeoFS bearer tokens automatically with the oracle wallet.
     pub neofs_auto_sign_bearer: bool,
+    /// Use the gRPC transport instead of REST for NeoFS.
     pub neofs_use_grpc: bool,
+    /// Start the oracle service automatically with the node.
     pub auto_start: bool,
+    /// Policy applied when the service hits an unhandled exception.
     pub exception_policy: UnhandledExceptionPolicy,
     /// URL whitelist - only these URLs/patterns are allowed (empty = allow all non-blocked).
     pub url_whitelist: Vec<String>,

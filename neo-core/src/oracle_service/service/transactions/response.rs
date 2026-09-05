@@ -1,12 +1,12 @@
 use super::super::{OracleService, OracleServiceError};
+use crate::VerifiableExt;
 use crate::cryptography::ECPoint;
 use crate::neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
-use crate::neo_io::Serializable;
 use crate::network::p2p::payloads::{
-    oracle_response::MAX_RESULT_SIZE, OracleResponse, OracleResponseCode, Signer, Transaction,
-    TransactionAttribute, Witness, HEADER_SIZE,
+    HEADER_SIZE, OracleResponse, OracleResponseCode, Signer, Transaction, TransactionAttribute,
+    Witness, oracle_response::MAX_RESULT_SIZE,
 };
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
@@ -17,7 +17,6 @@ use crate::smart_contract::native::{
     ContractManagement, LedgerContract, OracleContract, PolicyContract,
 };
 use crate::smart_contract::{ApplicationEngine, Contract, TriggerType};
-use crate::Verifiable;
 use crate::{UInt160, WitnessScope};
 use std::collections::HashMap;
 use std::sync::Arc;

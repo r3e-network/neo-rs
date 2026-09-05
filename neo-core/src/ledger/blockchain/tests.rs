@@ -8,10 +8,13 @@ use super::*;
 
 mod tests {
     use super::{
-        classify_import_block, should_schedule_reverify_idle, Blockchain, ImportDisposition,
-        InventoryCacheKey, InventoryPayload, StateRoot, VerifyResult, MAX_REVERIFY_INVENTORY_CACHE,
-        STATE_SERVICE_CATEGORY,
+        Blockchain, ImportDisposition, InventoryCacheKey, InventoryPayload,
+        MAX_REVERIFY_INVENTORY_CACHE, STATE_SERVICE_CATEGORY, StateRoot, VerifyResult,
+        classify_import_block, should_schedule_reverify_idle,
     };
+    use crate::WitnessScope;
+    use crate::error::{CoreError, CoreResult};
+    use crate::i_event_handlers::CommittingHandler;
     use crate::ledger::LedgerContext;
     use crate::neo_io::BinaryWriter;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
@@ -19,29 +22,58 @@ mod tests {
     use crate::network::p2p::{
         helper::get_sign_data_vec,
         payloads::{
-            block::Block as PayloadBlock, conflicts::Conflicts, header::Header, signer::Signer,
-            transaction::Transaction, transaction_attribute::TransactionAttribute,
-            witness::Witness, InventoryType,
+            InventoryType, block::Block as PayloadBlock, conflicts::Conflicts, header::Header,
+            signer::Signer, transaction::Transaction, transaction_attribute::TransactionAttribute,
+            witness::Witness,
         },
     };
     use crate::persistence::StoreCache;
     use crate::smart_contract::BinarySerializer;
-    use crate::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
+    use crate::smart_contract::Contract;
+    use crate::smart_contract::native::fungible_token::{PREFIX_ACCOUNT, PREFIX_TOTAL_SUPPLY};
     use crate::smart_contract::native::gas_token::GasToken;
     use crate::smart_contract::native::{
-        role_management::RoleManagement, AccountState, NativeContract, Role,
+        AccountState, NativeContract, Role, role_management::RoleManagement,
     };
-    use crate::smart_contract::Contract;
     use crate::smart_contract::{StorageItem, StorageKey};
     use crate::state_service::state_store::StateServiceSettings;
     use crate::wallets::KeyPair;
-    use crate::WitnessScope;
-    use crate::{neo_io::Serializable, NeoSystem, ProtocolSettings, UInt160, UInt256};
+    use crate::{NeoSystem, ProtocolSettings, UInt160, UInt256, neo_io::Serializable};
     use neo_vm::ExecutionEngineLimits;
     use neo_vm::OpCode;
     use num_bigint::BigInt;
+    use std::any::Any;
     use std::sync::Arc;
-    use tokio::time::{sleep, timeout, Duration};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::time::{Duration, sleep, timeout};
+
+    struct FailOnceCommittingHandler {
+        failed: AtomicBool,
+    }
+
+    impl CommittingHandler for FailOnceCommittingHandler {
+        fn blockchain_committing_handler(
+            &self,
+            _system: &dyn Any,
+            _block: &crate::ledger::block::Block,
+            _snapshot: &crate::persistence::DataCache,
+            _application_executed_list: &[crate::ledger::blockchain_application_executed::ApplicationExecuted],
+        ) {
+        }
+
+        fn try_blockchain_committing_handler(
+            &self,
+            _system: &dyn Any,
+            _block: &crate::ledger::block::Block,
+            _snapshot: &crate::persistence::DataCache,
+            _application_executed_list: &[crate::ledger::blockchain_application_executed::ApplicationExecuted],
+        ) -> CoreResult<()> {
+            if !self.failed.swap(true, Ordering::SeqCst) {
+                return Err(CoreError::system("injected blockchain committing failure"));
+            }
+            Ok(())
+        }
+    }
 
     fn sign_extensible_payload(
         payload: &mut ExtensiblePayload,
@@ -117,6 +149,15 @@ mod tests {
             &ExecutionEngineLimits::default(),
         )
         .expect("serialize account state");
+        store
+            .data_cache()
+            .update(key, StorageItem::from_bytes(bytes));
+        store.commit();
+    }
+
+    fn seed_gas_total_supply(store: &mut StoreCache, amount: u64) {
+        let key = StorageKey::create(GasToken::new().id(), PREFIX_TOTAL_SUPPLY);
+        let bytes = BigInt::from(amount).to_signed_bytes_le();
         store
             .data_cache()
             .update(key, StorageItem::from_bytes(bytes));
@@ -251,7 +292,6 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "State service initialization timing issue - needs investigation"]
     async fn state_service_payload_ingests_into_shared_state_store() {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::new("state=debug"))
@@ -500,6 +540,99 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn actor_persist_failure_clears_state_service_staging_for_retry() {
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new_with_state_service(
+            settings,
+            None,
+            None,
+            Some(StateServiceSettings::default()),
+        )
+        .expect("neo system with state service");
+        let handler = Arc::new(FailOnceCommittingHandler {
+            failed: AtomicBool::new(false),
+        });
+        system
+            .register_committing_handler(handler)
+            .expect("register committing handler");
+
+        let mut block = PayloadBlock::new();
+        let mut header = Header::new();
+        header.set_index(1);
+        header.set_prev_hash(UInt256::zero());
+        header.set_merkle_root(UInt256::zero());
+        header.set_next_consensus(UInt160::zero());
+        header.set_timestamp(1);
+        header.witness = Witness::new();
+        block.header = header;
+
+        let state_store = system
+            .state_store()
+            .expect("state store lookup")
+            .expect("state service enabled");
+        let mut blockchain = Blockchain::new(system.ledger_context());
+        blockchain.system_context = Some(system.context());
+        let block = Arc::new(block);
+
+        assert_eq!(
+            blockchain.on_new_block(Arc::clone(&block), false).await,
+            VerifyResult::Invalid
+        );
+        assert!(state_store.get_state_root(1).is_none());
+        assert_eq!(state_store.local_root_index(), Some(0));
+
+        assert_eq!(
+            blockchain.on_new_block(block, false).await,
+            VerifyResult::Succeed
+        );
+        assert_eq!(state_store.local_root_index(), Some(1));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn persist_completed_updates_memory_pool_during_fast_sync() {
+        use crate::ledger::PersistCompleted;
+
+        let settings = ProtocolSettings::default();
+        let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
+        system.context().enable_fast_sync_mode();
+        let keypair = KeyPair::generate().expect("keypair");
+        let account = keypair.get_script_hash();
+
+        let mut store_cache = StoreCache::new_from_store(system.store(), false);
+        seed_gas_balance(&mut store_cache, account, 50_0000_0000);
+        seed_gas_total_supply(&mut store_cache, settings.initial_gas_distribution);
+
+        let mut blockchain = Blockchain::new(system.ledger_context());
+        blockchain.system_context = Some(system.context());
+        let tx = build_signed_transaction(&settings, &keypair);
+        assert_eq!(blockchain.on_new_transaction(&tx), VerifyResult::Succeed);
+        let memory_pool = system.context().memory_pool_handle();
+        assert!(memory_pool.lock().contains_key(&tx.hash()));
+
+        let mut block = PayloadBlock::new();
+        let mut header = Header::new();
+        header.set_index(1);
+        header.set_prev_hash(UInt256::zero());
+        header.set_merkle_root(UInt256::zero());
+        header.set_next_consensus(UInt160::zero());
+        header.set_timestamp(1);
+        header.witness = Witness::new();
+        block.header = header;
+        block.transactions = vec![tx.clone()];
+
+        system.persist_block(block.clone()).expect("persist block");
+        let mut blockchain = blockchain;
+        blockchain.system_context = Some(system.context());
+        blockchain
+            .handle_persist_completed(PersistCompleted {
+                block: Arc::new(block),
+            })
+            .await;
+
+        assert!(!memory_pool.lock().contains_key(&tx.hash()));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn relay_rejects_mismatched_signers_and_witnesses() {
         let settings = ProtocolSettings::default();
         let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
@@ -525,15 +658,16 @@ mod tests {
         let tx = transaction_with_oversized_script();
 
         assert_eq!(blockchain.on_new_transaction(&tx), VerifyResult::Invalid);
-        assert!(!system
-            .context()
-            .memory_pool_handle()
-            .lock()
-            .contains_key(&UInt256::zero()));
+        assert!(
+            !system
+                .context()
+                .memory_pool_handle()
+                .lock()
+                .contains_key(&UInt256::zero())
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "Conflict detection needs investigation - conflict stubs not being read correctly"]
     async fn relay_rejects_on_chain_conflict_with_same_sender() {
         let settings = ProtocolSettings::default();
         let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");
@@ -546,6 +680,10 @@ mod tests {
         let mut store_cache = StoreCache::new_from_store(system.store(), false);
         seed_gas_balance(&mut store_cache, account_a, 50_0000_0000);
         seed_gas_balance(&mut store_cache, account_b, 50_0000_0000);
+        // The GAS burn performed while persisting the block reads the total supply,
+        // which is only minted by the real persistence-initialization path. The
+        // fixture must seed it explicitly, keyed off the network configuration.
+        seed_gas_total_supply(&mut store_cache, settings.initial_gas_distribution);
 
         let tx2 = build_signed_transaction_with_attrs(&settings, &keypair_a, 10, Vec::new());
         let tx3 = build_signed_transaction_with_attrs(&settings, &keypair_b, 10, Vec::new());
@@ -613,8 +751,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn import_rejects_invalid_block_when_verify_enabled() {
-        use crate::ledger::blockchain::{BlockchainCommand, Import};
         use crate::UInt256;
+        use crate::ledger::blockchain::{BlockchainCommand, Import};
 
         let settings = ProtocolSettings::mainnet();
         let system = NeoSystem::new(settings.clone(), None, None).expect("NeoSystem::new");

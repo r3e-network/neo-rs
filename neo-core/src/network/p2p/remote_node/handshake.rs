@@ -1,15 +1,19 @@
 //! Handshake bootstrap and reader lifecycle for `RemoteNode`.
 use super::{RemoteNode, RemoteNodeCommand};
 use crate::network::error::NetworkError;
-use crate::network::p2p::connection::ConnectionState;
+use crate::network::p2p::connection::{ConnectionState, ReceiveStep};
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::timeouts;
 use crate::runtime::{ActorContext, ActorResult};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Instant;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 use tokio::task::yield_now;
 use tracing::{debug, warn};
+
+/// Pause between stepwise reads so queued writers acquire the connection lock
+/// between read steps (R11).
+const RECEIVE_STEP_YIELD: Duration = Duration::from_millis(1);
 
 impl RemoteNode {
     pub(super) async fn start_protocol(&mut self, ctx: &mut ActorContext) -> ActorResult {
@@ -67,15 +71,36 @@ impl RemoteNode {
         let endpoint = self.endpoint;
         let handshake_done = Arc::clone(&self.handshake_done);
         let cancellation = self.reader_cancellation.child_token();
-        let _ = self.reader_tasks.spawn(async move {
+        // Detached tracked reader task: dropping the handle (rather than
+        // awaiting) is intentional; the tracker owns cancellation/teardown.
+        drop(self.reader_tasks.spawn(async move {
             loop {
                 let result = tokio::select! {
                     _ = cancellation.cancelled() => break,
                     result = async {
-                        let mut guard = connection.lock().await;
-                        debug!(target: "neo", endpoint = %guard.address, "waiting for inbound message");
+                        // R11: receive in short steps and RELEASE the
+                        // connection lock between steps, so outbound sends
+                        // are not blocked for a whole read timeout while the
+                        // peer is silent. `receive_message_step` enforces the
+                        // overall active read deadline across steps.
                         let done = handshake_done.load(Ordering::Relaxed);
-                        guard.receive_message(done).await.map(|msg| (msg, done))
+                        loop {
+                            let step = {
+                                let mut guard = connection.lock().await;
+                                guard.receive_message_step(done).await
+                            };
+                            match step {
+                                Ok(ReceiveStep::Message(message)) => {
+                                    return Ok((message, done));
+                                }
+                                Ok(ReceiveStep::Pending) | Ok(ReceiveStep::Idle) => {
+                                    // Yield the lock window to writers before
+                                    // the next read step.
+                                    tokio::time::sleep(RECEIVE_STEP_YIELD).await;
+                                }
+                                Err(err) => return Err(err),
+                            }
+                        }
                     } => result,
                 };
 
@@ -138,8 +163,7 @@ impl RemoteNode {
                     _ = yield_now() => {}
                 }
             }
-        });
-
+        }));
         self.reader_spawned = true;
     }
 

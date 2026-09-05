@@ -2,19 +2,19 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
 use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
-use neo_core::smart_contract::CallFlags;
-use neo_core::tokens_tracker::{
-    find_range, Nep11TransferKey, Nep17TransferKey, TokenTransfer,
-    TokensTrackerService,
-};
-use neo_core::tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
-use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::UInt160;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
+use neo_core::tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
+use neo_core::tokens_tracker::{
+    Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService, find_range,
+};
+use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_vm::OpCode;
 use neo_vm::VmState as VMState;
 use num_traits::ToPrimitive;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -41,29 +41,34 @@ pub(super) fn parse_address_param(
         .and_then(|value| value.as_str())
         .ok_or_else(|| invalid_params(format!("{method} requires address parameter")))?;
 
-    let mut parsed = None;
-    if UInt160::try_parse(text, &mut parsed) {
-        if let Some(value) = parsed {
+    if text.len() < 40 {
+        WalletHelper::to_script_hash(text, address_version)
+            .map_err(|_| invalid_params(format!("Invalid address: {text}")))
+    } else {
+        let mut parsed = None;
+        if UInt160::try_parse(text, &mut parsed)
+            && let Some(value) = parsed
+        {
             return Ok(value);
         }
+        UInt160::from_str(text).map_err(|_| invalid_params(format!("Invalid script hash: {text}")))
     }
-
-    WalletHelper::to_script_hash(text, address_version)
-        .map_err(|_| invalid_params(format!("Invalid address: {text}")))
 }
 
-pub(super) fn parse_optional_u64(value: Option<&Value>) -> Result<u64, RpcException> {
+pub(super) fn parse_optional_u64_field(value: Option<&Value>) -> Result<Option<u64>, RpcException> {
     let Some(value) = value else {
-        return Ok(0);
+        return Ok(None);
     };
     match value {
-        Value::Null => Ok(0),
+        Value::Null => Ok(None),
         Value::Number(num) => num
             .as_u64()
+            .map(Some)
             .ok_or_else(|| invalid_params("Expected unsigned integer")),
         Value::String(text) => text
             .trim()
             .parse::<u64>()
+            .map(Some)
             .map_err(|_| invalid_params("Expected unsigned integer")),
         _ => Err(invalid_params("Expected unsigned integer")),
     }

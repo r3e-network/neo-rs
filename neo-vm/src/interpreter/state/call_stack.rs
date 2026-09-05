@@ -1,8 +1,8 @@
 #[cfg(target_arch = "riscv32")]
 use super::super::helpers::{
-    decode_retained_prefix_into, encode_retained_prefix_to_slice, RETAINED_CALL_STACK_BUF,
+    RETAINED_CALL_STACK_BUF, decode_retained_prefix_into, encode_retained_prefix_to_slice,
 };
-use super::{call_frame::CallFrame, StackValue, MAX_CALL_DEPTH};
+use super::{MAX_CALL_DEPTH, StackValue, call_frame::CallFrame};
 use alloc::{
     string::{String, ToString},
     vec::Vec,

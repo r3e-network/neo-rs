@@ -1,16 +1,16 @@
+use neo_core::ScriptBuilder;
 use neo_core::hardfork::Hardfork;
-use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
+use neo_core::ledger::block_header::BlockHeader;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::native::{NativeContract, StdLib};
 use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
+use neo_core::smart_contract::native::{NativeContract, StdLib};
 use neo_core::witness::Witness;
 use neo_core::{UInt160, Verifiable, WitnessScope};
 use neo_vm::OpCode;
@@ -304,9 +304,8 @@ fn stdlib_deserialize_returns_stack_item_shape_for_any_results() {
         StackItem::from_int(1),
         StackItem::from_byte_string(b"neo".to_vec()),
     ]);
-    let encoded =
-        BinarySerializer::serialize(&original, &neo_vm::ExecutionEngineLimits::default())
-            .expect("serialize array");
+    let encoded = BinarySerializer::serialize(&original, &neo_vm::ExecutionEngineLimits::default())
+        .expect("serialize array");
 
     let mut sb = ScriptBuilder::new();
     emit_stdlib_call(

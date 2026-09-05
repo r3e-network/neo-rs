@@ -5,21 +5,25 @@
 
 mod common;
 
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use common::{test_byte_array as get_test_byte_array, test_transaction as create_test_transaction};
-use neo_core::smart_contract::StorageItemExt;
 use neo_core::BigDecimal;
+use neo_core::ScriptBuilder;
 use neo_core::neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
 use neo_core::neo_io::{BinaryWriter, Serializable};
-use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness, InventoryType};
+use neo_core::network::p2p::payloads::{InventoryType, signer::Signer, witness::Witness};
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::ScriptBuilder;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::ContractBasicMethod;
+use neo_core::smart_contract::ContractParameterType;
+use neo_core::smart_contract::ContractParametersContext;
+use neo_core::smart_contract::StorageItemExt;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
-use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::helper::Helper as ContractHelper;
@@ -28,17 +32,13 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
 use neo_core::smart_contract::native::{GasToken, NativeContract, PolicyContract};
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::ContractBasicMethod;
-use neo_core::smart_contract::ContractParameterType;
-use neo_core::smart_contract::ContractParametersContext;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::wallets::{Nep6Wallet, TransferOutput, Wallet};
 use neo_core::{
-    ledger::TransactionVerificationContext, ledger::VerifyResult,
-    network::p2p::helper::get_sign_data_vec, Transaction, TransactionAttribute,
-    TransactionAttributeType, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
+    HEADER_SIZE, MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute, TransactionAttributeType,
+    UInt160, WitnessScope, ledger::TransactionVerificationContext, ledger::VerifyResult,
+    network::p2p::helper::get_sign_data_vec,
 };
 use neo_vm::OpCode;
 use num_bigint::BigInt;
@@ -77,10 +77,10 @@ impl MockTransactionVerificationContext {
     pub fn check_transaction(&self, tx: &Transaction, _conflicts: &[Transaction]) -> bool {
         // Check for duplicate oracle responses
         for attr in tx.attributes() {
-            if let TransactionAttribute::OracleResponse(attr) = attr {
-                if self.oracle_ids.contains(&attr.id) {
-                    return false;
-                }
+            if let TransactionAttribute::OracleResponse(attr) = attr
+                && self.oracle_ids.contains(&attr.id)
+            {
+                return false;
             }
         }
 
@@ -564,22 +564,26 @@ mod tests {
 
         // Test with no attributes
         assert_eq!(tx.attributes().len(), 0);
-        assert!(tx
-            .get_attribute(TransactionAttributeType::OracleResponse)
-            .is_none());
-        assert!(tx
-            .get_attribute(TransactionAttributeType::HighPriority)
-            .is_none());
+        assert!(
+            tx.get_attribute(TransactionAttributeType::OracleResponse)
+                .is_none()
+        );
+        assert!(
+            tx.get_attribute(TransactionAttributeType::HighPriority)
+                .is_none()
+        );
 
         // Test with high priority attribute
         tx.set_attributes(vec![TransactionAttribute::high_priority()]);
         assert_eq!(tx.attributes().len(), 1);
-        assert!(tx
-            .get_attribute(TransactionAttributeType::OracleResponse)
-            .is_none());
-        assert!(tx
-            .get_attribute(TransactionAttributeType::HighPriority)
-            .is_some());
+        assert!(
+            tx.get_attribute(TransactionAttributeType::OracleResponse)
+                .is_none()
+        );
+        assert!(
+            tx.get_attribute(TransactionAttributeType::HighPriority)
+                .is_some()
+        );
 
         // Test with multiple attributes
         tx.set_attributes(vec![
@@ -907,9 +911,11 @@ mod tests {
         let signature = key.sign(&sign_data).expect("sign");
         let public_key = key.get_public_key_point().expect("pub");
         let contract = Contract::create_signature_contract(public_key.clone());
-        assert!(context
-            .add_signature(contract, public_key, signature)
-            .expect("add signature"));
+        assert!(
+            context
+                .add_signature(contract, public_key, signature)
+                .expect("add signature")
+        );
         assert!(context.completed());
 
         let witnesses = context.witnesses().expect("witnesses");
@@ -1019,12 +1025,16 @@ mod tests {
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
         let sig_a = key_a.sign(&sign_data).expect("sign a");
         let sig_b = key_b.sign(&sign_data).expect("sign b");
-        assert!(context
-            .add_signature(contract.clone(), pub_a, sig_a)
-            .expect("add signature a"));
-        assert!(context
-            .add_signature(contract.clone(), pub_b, sig_b)
-            .expect("add signature b"));
+        assert!(
+            context
+                .add_signature(contract.clone(), pub_a, sig_a)
+                .expect("add signature a")
+        );
+        assert!(
+            context
+                .add_signature(contract.clone(), pub_b, sig_b)
+                .expect("add signature b")
+        );
         assert!(context.completed());
 
         let witnesses = context.witnesses().expect("witnesses");
@@ -1158,12 +1168,14 @@ mod tests {
             .expect("load contract");
         engine.execute().expect("execute");
         assert_eq!(engine.result_stack().len(), 1);
-        assert!(engine
-            .result_stack()
-            .peek(0)
-            .expect("result")
-            .as_boolean()
-            .unwrap_or(false));
+        assert!(
+            engine
+                .result_stack()
+                .peek(0)
+                .expect("result")
+                .as_boolean()
+                .unwrap_or(false)
+        );
 
         let expected_fee = engine.fee_consumed()
             + expected_size as i64 * PolicyContract::DEFAULT_FEE_PER_BYTE as i64;

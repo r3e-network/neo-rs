@@ -6,11 +6,11 @@
 //! - Timestamp/nonce are fixed constants
 //! - NextConsensus is derived from the standby validators via the BFT multisig address
 
+use crate::Witness;
 use crate::constants::GENESIS_TIMESTAMP_MS;
 use crate::ledger::{Block, BlockHeader};
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::helpers::NativeHelpers;
-use crate::Witness;
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::OpCode;
 

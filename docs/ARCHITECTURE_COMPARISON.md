@@ -29,20 +29,20 @@ This document explains the architectural differences between the official C# Neo
 
 | Aspect | C# Implementation | Rust Implementation | Usage Impact |
 |---------|-------------------|----------------------|----------------|
-| **Design** | Direct `Neo.CLI` with embedded wallet manager | Pure RPC client (`neo-cli`) communicating with `neo-node` | Network dependency for wallet ops |
-| **Wallet** | Local `NEP6Wallet` file operations | Wallet operations via `openwallet` RPC or embedded in neo-node | CLI requires running node for wallet ops |
+| **Design** | Direct `Neo.CLI` with embedded wallet manager | `neo-node` daemon exposes flags + JSON-RPC; no separate CLI client binary | Queries and wallet ops go through the node's JSON-RPC endpoint |
+| **Wallet** | Local `NEP6Wallet` file operations | Wallet operations via `openwallet` RPC or embedded in neo-node | API requires running node for wallet ops |
 | **Transaction Signing** | Local signing before RPC submission | RPC submission (`sendrawtransaction`) with optional local wallet signing | Same end result: tx submitted to network |
 
-**Command Mapping:**
+**Command Mapping (Rust side via JSON-RPC):**
 
-| C# Command | Rust CLI Command | Implementation |
+| C# Command | Rust equivalent | Implementation |
 |-------------|------------------|------------------|
-| `open wallet` | `wallet open` | RPC call to neo-node (requires wallet config) |
-| `close wallet` | `wallet close` | RPC call to neo-node |
-| `show block` | `block <hash|index>` | `getblock` RPC call |
-| `show tx` | `tx <hash>` | `getrawtransaction` RPC call |
-| `start oracle` | `consensus start` | `startconsensus` RPC call |
-| `transfer` | `send` / `invoke` | Contract invocation via RPC |
+| `open wallet` | `openwallet` | RPC call to neo-node (requires wallet config) |
+| `close wallet` | `closewallet` | RPC call to neo-node |
+| `show block` | `getblock <hash\|index>` | RPC call |
+| `show tx` | `getrawtransaction <hash>` | RPC call |
+| `start consensus` | `startconsensus` | RPC call |
+| `transfer` | `sendrawtransaction` / `invokefunction` | Contract invocation via RPC |
 
 ### Actor Framework
 
@@ -70,7 +70,7 @@ This document explains the architectural differences between the official C# Neo
 | Feature | C# | Rust | Notes |
 |----------|-----|-------|-------|
 | NeoVM execution | ✅ | ✅ | 156 opcodes, stack semantics match |
-| Native contracts (12) | ✅ | ✅ | Same contract IDs, storage layout |
+| Native contracts (11) | ✅ | ✅ | Same contract IDs, storage layout |
 | NEP-17 tokens | ✅ | ✅ | Fungible token standard |
 | NEP-11 NFTs | ✅ | ✅ | Non-fungible token standard |
 | Oracle service | ✅ | ✅ | HTTPS + NeoFS protocol support |
@@ -101,7 +101,7 @@ This document explains the architectural differences between the official C# Neo
 **No action required** - The Rust implementation maintains wire protocol compatibility. You can:
 
 1. Use existing C# nodes and Rust nodes on the same network
-2. Mix clients (`neo-cli` and C# RPC clients)
+2. Mix JSON-RPC clients (`curl`, C# clients, or a sidecar) against any node
 3. Use the same wallet files (NEP-6 format)
 
 ### For Application Developers

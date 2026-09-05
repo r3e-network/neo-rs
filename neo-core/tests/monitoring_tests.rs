@@ -3,7 +3,7 @@
 //! Integration tests for the monitoring system
 
 use neo_core::monitoring::{
-    init_monitoring, ExporterFactory, HealthStatus, PerformanceThreshold, Profiler, ThresholdType,
+    ExporterFactory, HealthStatus, PerformanceThreshold, Profiler, ThresholdType, init_monitoring,
 };
 use serde_json::Value;
 use std::sync::Arc;

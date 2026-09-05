@@ -40,10 +40,14 @@ const SIGNATURE_SEND_TIMEOUT: Duration = Duration::from_secs(5);
 /// TTL for request deduplication cache (5 minutes).
 const DEDUP_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 
+/// Lifecycle state of the oracle service.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OracleStatus {
+    /// Created but never started.
     Unstarted,
+    /// Currently processing oracle requests.
     Running,
+    /// Explicitly stopped after running.
     Stopped,
 }
 
@@ -65,28 +69,40 @@ impl OracleStatus {
     }
 }
 
+/// Errors raised while processing oracle requests and responses.
 #[derive(Debug, Error)]
 pub enum OracleServiceError {
+    /// The service is disabled by configuration.
     #[error("oracle service disabled")]
     Disabled,
+    /// The request was already responded to and retired.
     #[error("oracle request already finished")]
     RequestFinished,
+    /// No active oracle request matches the given id.
     #[error("oracle request not found")]
     RequestNotFound,
+    /// This node is not among the designated responders for the request.
     #[error("oracle not designated: {0}")]
     NotDesignated(String),
+    /// A submitted signature failed verification.
     #[error("invalid signature: {0}")]
     InvalidSignature(String),
+    /// The supplied oracle public key is malformed.
     #[error("invalid oracle public key")]
     InvalidOraclePublicKey,
+    /// The request transaction is absent from the ledger.
     #[error("oracle request transaction not found")]
     RequestTransactionNotFound,
+    /// Building the response transaction failed.
     #[error("oracle response build failed: {0}")]
     BuildFailed(String),
+    /// An internal processing step failed.
     #[error("oracle processing error: {0}")]
     Processing(String),
+    /// The same request was submitted twice within the dedup window.
     #[error("duplicate request")]
     DuplicateRequest,
+    /// The request URL was rejected by the SSRF/whitelist policy.
     #[error("URL blocked by security policy")]
     UrlBlocked,
 }

@@ -45,12 +45,15 @@ const PREFIX_NFT_STATE: u8 = 8;
 const PREFIX_NFT_OWNER_UNIQUE_ID_INDEX: u8 = 21;
 const PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX: u8 = 23;
 
+/// The TokenManagement native contract (active from the Faun hardfork) for
+/// registering and querying fungible and non-fungible token state.
 #[derive(Debug, Clone)]
 pub struct TokenManagement {
     methods: Vec<NativeMethod>,
 }
 
 impl TokenManagement {
+    /// Creates a new TokenManagement instance with its native method table.
     pub fn new() -> Self {
         Self {
             methods: Self::native_methods(),
@@ -88,6 +91,7 @@ impl NativeContract for TokenManagement {
 }
 
 impl TokenManagement {
+    /// Dispatches a TokenManagement native contract method invocation.
     pub fn invoke_method(
         &self,
         engine: &mut ApplicationEngine,
@@ -116,8 +120,8 @@ impl TokenManagement {
             ));
         };
 
-        let bytes = Self::serialize_storage_stack_value(&token_state.to_stack_value())
-            .native_err()?;
+        let bytes =
+            Self::serialize_storage_stack_value(&token_state.to_stack_value()).native_err()?;
         Ok(bytes)
     }
 
@@ -176,9 +180,7 @@ impl TokenManagement {
 
         let options = FindOptions::RemovePrefix | FindOptions::DeserializeValues;
         let iterator = StorageIterator::new(filtered, 1, options);
-        let iterator_id = engine
-            .store_storage_iterator(iterator)
-            .native_err()?;
+        let iterator_id = engine.store_storage_iterator(iterator).native_err()?;
 
         Ok(iterator_id.to_le_bytes().to_vec())
     }

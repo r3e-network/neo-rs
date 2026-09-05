@@ -2,13 +2,22 @@ use super::*;
 use crate::hardfork::Hardfork;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
-use crate::smart_contract::native::NativeContract;
-use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::BinarySerializer;
 use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::native::NativeContract;
+use crate::smart_contract::trigger_type::TriggerType;
 use num_bigint::BigInt;
 use std::collections::HashSet;
 use std::sync::Arc;
+
+type StdLibMethodMetadata = (
+    &'static str,
+    i64,
+    &'static [ContractParameterType],
+    ContractParameterType,
+    Option<Hardfork>,
+    &'static [&'static str],
+);
 
 fn create_stdlib() -> StdLib {
     StdLib::new()
@@ -30,14 +39,7 @@ fn make_engine() -> ApplicationEngine {
 #[test]
 fn test_method_metadata_snapshot() {
     let stdlib = create_stdlib();
-    let expected: &[(
-        &str,
-        i64,
-        &[ContractParameterType],
-        ContractParameterType,
-        Option<Hardfork>,
-        &[&str],
-    )] = &[
+    let expected: &[StdLibMethodMetadata] = &[
         (
             "serialize",
             1 << 12,
@@ -327,9 +329,11 @@ fn test_metadata_methods_all_dispatch() {
     let missing_error = stdlib
         .invoke_method(&mut engine, "__missing__", &[])
         .expect_err("unknown method should be rejected");
-    assert!(missing_error
-        .to_string()
-        .contains("Unknown method: __missing__"));
+    assert!(
+        missing_error
+            .to_string()
+            .contains("Unknown method: __missing__")
+    );
 }
 
 #[test]

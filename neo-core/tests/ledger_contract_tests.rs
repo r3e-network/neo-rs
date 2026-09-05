@@ -1,19 +1,19 @@
+use neo_core::ScriptBuilder;
 use neo_core::constants::GENESIS_TIMESTAMP_MS;
-use neo_core::ledger::block_header::BlockHeader;
 use neo_core::ledger::Block;
+use neo_core::ledger::block_header::BlockHeader;
 use neo_core::neo_io::{BinaryWriter, Serializable};
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::ContractParameterType;
+use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
 use neo_core::smart_contract::native::{LedgerContract, NativeContract, NativeHelpers};
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::ContractParameterType;
 use neo_core::{UInt160, UInt256, Witness};
 use neo_vm::VmState as VMState;
 use neo_vm::{ExecutionEngineLimits, OpCode};
@@ -143,14 +143,15 @@ fn serialize_transaction_state_record(
 #[test]
 fn ledger_method_metadata_matches_protocol() {
     let ledger = LedgerContract::new();
-    let expected_methods: &[(
-        &str,
+    type ExpectedLedgerMethod = (
+        &'static str,
         i64,
         u8,
-        &[ContractParameterType],
+        &'static [ContractParameterType],
         ContractParameterType,
-        &[&str],
-    )] = &[
+        &'static [&'static str],
+    );
+    let expected_methods: &[ExpectedLedgerMethod] = &[
         (
             "currentHash",
             1 << 15,
@@ -300,14 +301,18 @@ fn ledger_get_block_by_hash_and_index() {
     assert_eq!(by_index.hash(), block.hash());
 
     let missing_hash = UInt256::from_bytes(&[9u8; 32]).expect("hash");
-    assert!(ledger
-        .get_block(snapshot.as_ref(), HashOrIndex::Hash(missing_hash))
-        .expect("get missing block")
-        .is_none());
-    assert!(ledger
-        .get_block(snapshot.as_ref(), HashOrIndex::Index(1))
-        .expect("get missing block")
-        .is_none());
+    assert!(
+        ledger
+            .get_block(snapshot.as_ref(), HashOrIndex::Hash(missing_hash))
+            .expect("get missing block")
+            .is_none()
+    );
+    assert!(
+        ledger
+            .get_block(snapshot.as_ref(), HashOrIndex::Index(1))
+            .expect("get missing block")
+            .is_none()
+    );
 }
 
 #[test]
@@ -404,13 +409,17 @@ fn ledger_contains_block_and_transaction() {
     persist_block(&snapshot, &block, ProtocolSettings::default());
 
     assert!(ledger.contains_block(snapshot.as_ref(), &block.hash()));
-    assert!(ledger
-        .contains_transaction(snapshot.as_ref(), &tx.hash())
-        .expect("contains transaction"));
+    assert!(
+        ledger
+            .contains_transaction(snapshot.as_ref(), &tx.hash())
+            .expect("contains transaction")
+    );
     let missing_hash = UInt256::from_bytes(&[8u8; 32]).expect("hash");
-    assert!(!ledger
-        .contains_transaction(snapshot.as_ref(), &missing_hash)
-        .expect("contains transaction"));
+    assert!(
+        !ledger
+            .contains_transaction(snapshot.as_ref(), &missing_hash)
+            .expect("contains transaction")
+    );
 }
 
 #[test]

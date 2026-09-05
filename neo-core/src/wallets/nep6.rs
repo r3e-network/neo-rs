@@ -83,20 +83,27 @@ pub struct Nep6Account {
 /// NEP-6 contract wrapper (C# `NEP6Contract`).
 #[derive(Debug, Clone)]
 pub struct Nep6Contract {
+    /// The verification contract associated with the account.
     pub contract: Contract,
+    /// The names of the contract's verification script parameters.
     pub parameter_names: Vec<String>,
+    /// Indicates whether the contract has been deployed on chain.
     pub deployed: bool,
 }
 
 /// Scrypt parameters used for NEP-2 encryption (C# `ScryptParameters`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScryptParameters {
+    /// CPU/memory cost parameter (must be a power of two).
     pub n: u32,
+    /// Block size parameter.
     pub r: u32,
+    /// Parallelization parameter.
     pub p: u32,
 }
 
 impl ScryptParameters {
+    /// Returns the default NEP-6 scrypt parameters (n=16384, r=8, p=8).
     pub fn default_nep6() -> Self {
         Self {
             n: 16384,
@@ -113,6 +120,7 @@ impl Default for ScryptParameters {
 }
 
 impl Nep6Wallet {
+    /// Creates a new, empty NEP-6 wallet with the given name and file path.
     pub fn new(
         name: Option<String>,
         path: Option<String>,
@@ -129,6 +137,7 @@ impl Nep6Wallet {
         }
     }
 
+    /// Loads a NEP-6 wallet from a JSON file, unlocking accounts with the given password.
     pub fn from_file(
         path: &str,
         password: &str,
@@ -137,6 +146,7 @@ impl Nep6Wallet {
         Self::from_file_with_password(path, Some(password), settings)
     }
 
+    /// Loads a NEP-6 wallet from a JSON file, with an optional password for decrypting account keys.
     pub fn from_file_with_password(
         path: &str,
         password: Option<&str>,
@@ -183,6 +193,7 @@ impl Nep6Wallet {
         })
     }
 
+    /// Serializes the wallet to NEP-6 JSON and writes it to its associated file path.
     pub fn persist(&self) -> WalletResult<()> {
         let path = self
             .path
@@ -603,18 +614,18 @@ impl Nep6Account {
             _wallet: Arc::new(wallet.clone()),
         };
 
-        if account.inner.nep2_key().is_some() {
-            if let Some(password) = password {
-                let unlocked = account
-                    .inner
-                    .unlock(password)
-                    .map_err(|e| WalletError::Other(e.to_string()))?;
-                if !unlocked {
-                    return Err(WalletError::InvalidPassword);
-                }
-                if account.lock {
-                    account.inner.lock();
-                }
+        if account.inner.nep2_key().is_some()
+            && let Some(password) = password
+        {
+            let unlocked = account
+                .inner
+                .unlock(password)
+                .map_err(|e| WalletError::Other(e.to_string()))?;
+            if !unlocked {
+                return Err(WalletError::InvalidPassword);
+            }
+            if account.lock {
+                account.inner.lock();
             }
         }
 
@@ -826,7 +837,7 @@ fn parse_parameter_type(name: &str) -> WalletResult<ContractParameterType> {
         other => {
             return Err(WalletError::Other(format!(
                 "Unsupported contract parameter type: {other}"
-            )))
+            )));
         }
     };
 

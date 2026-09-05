@@ -6,12 +6,12 @@
 
 use crate::error::{TeeError, TeeResult};
 use aes_gcm::{
-    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit},
 };
 use hkdf::Hkdf;
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use zeroize::Zeroize;
@@ -115,6 +115,12 @@ pub fn seal_data_with_context(
     // Derive context-specific key using HKDF
     let derived_key = derive_sealing_key(sealing_key, context)?;
 
+    // R16: bind the replay-protection counter into the authenticated data.
+    // Without this, `SealedData::counter` can be rewritten to any value
+    // without detection, silently disabling counter-based rollback defenses.
+    let mut bound_aad = aad.to_vec();
+    bound_aad.extend_from_slice(&counter.to_be_bytes());
+
     // Generate random nonce using cryptographically secure RNG
     // SECURITY: Must use OsRng for AES-GCM nonce generation
     let mut nonce_bytes = [0u8; 12];
@@ -131,7 +137,7 @@ pub fn seal_data_with_context(
             nonce,
             aes_gcm::aead::Payload {
                 msg: plaintext,
-                aad,
+                aad: &bound_aad,
             },
         )
         .map_err(|e| TeeError::SealingFailed(format!("Encryption failed: {}", e)))?;
@@ -165,12 +171,12 @@ pub fn unseal_data(
     }
 
     // Check replay protection
-    if let Some(min) = min_counter {
-        if sealed.counter < min {
-            return Err(TeeError::UnsealingFailed(
-                "Sealed data counter too old (potential replay attack)".to_string(),
-            ));
-        }
+    if let Some(min) = min_counter
+        && sealed.counter < min
+    {
+        return Err(TeeError::UnsealingFailed(
+            "Sealed data counter too old (potential replay attack)".to_string(),
+        ));
     }
 
     // Determine key derivation context
@@ -183,6 +189,12 @@ pub fn unseal_data(
     let cipher = Aes256Gcm::new_from_slice(&derived_key)
         .map_err(|e| TeeError::CryptoError(format!("Failed to create cipher: {}", e)))?;
 
+    // Recompute the counter-bound AAD (see `seal_data_with_context`): the
+    // counter participates in the AEAD tag, so a tampered counter field fails
+    // decryption instead of silently weakening replay protection.
+    let mut bound_aad = sealed.aad.clone();
+    bound_aad.extend_from_slice(&sealed.counter.to_be_bytes());
+
     // Decrypt with AAD verification
     let nonce = Nonce::from_slice(&sealed.nonce);
     let plaintext = cipher
@@ -190,7 +202,7 @@ pub fn unseal_data(
             nonce,
             aes_gcm::aead::Payload {
                 msg: &sealed.ciphertext,
-                aad: &sealed.aad,
+                aad: &bound_aad,
             },
         )
         .map_err(|e| TeeError::UnsealingFailed(format!("Decryption failed: {}", e)))?;

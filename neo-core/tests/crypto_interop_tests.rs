@@ -1,13 +1,13 @@
+use neo_core::Verifiable;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::wallets::KeyPair;
-use neo_core::Verifiable;
 use neo_vm::OpCode;
 use std::sync::Arc;
 
@@ -127,9 +127,11 @@ fn crypto_checkmultisig_behaves_like_csharp() {
             StackItem::from_byte_string(key2.public_key()),
         ]))
         .expect("push pubkeys");
-    assert!(!invalid_signature
-        .crypto_check_multisig()
-        .expect("check multisig"));
+    assert!(
+        !invalid_signature
+            .crypto_check_multisig()
+            .expect("check multisig")
+    );
 
     let mut invalid_pubkey = make_engine(tx, settings);
     invalid_pubkey

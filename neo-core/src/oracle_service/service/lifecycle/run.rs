@@ -2,11 +2,13 @@ use super::super::utils::{ledger_height, wallet_has_oracle_account};
 use super::super::{OracleService, OracleStatus};
 use crate::smart_contract::native::{Role, RoleManagement};
 use crate::wallets::Wallet;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tracing::{info, warn};
 
 impl OracleService {
+    /// Starts the service with the given oracle wallet: resolves the oracle
+    /// designated set and spawns the request and timer tasks.
     pub fn start(self: &Arc<Self>, wallet: Arc<dyn Wallet>) {
         if self.is_running() {
             return;
@@ -61,6 +63,7 @@ impl OracleService {
         info!(target: "neo::oracle", "oracle service started");
     }
 
+    /// Stops the service, cancelling pending requests and timers.
     pub fn stop(&self) {
         self.cancel.store(true, Ordering::SeqCst);
         *self.wallet.write() = None;

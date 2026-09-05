@@ -8,7 +8,7 @@ Professional Rust implementation of the Neo N3 blockchain node and CLI tools.
 
 [![Build Status](https://github.com/r3e-network/neo-rs/workflows/CI/badge.svg)](https://github.com/r3e-network/neo-rs/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Rust Version](https://img.shields.io/badge/rust-1.85+-blue.svg)](https://www.rust-lang.org)
+[![Rust Version](https://img.shields.io/badge/rust-1.88+-blue.svg)](https://www.rust-lang.org)
 
 ## Quick Start
 
@@ -19,8 +19,11 @@ Professional Rust implementation of the Neo N3 blockchain node and CLI tools.
 git clone https://github.com/r3e-network/neo-rs.git
 cd neo-rs
 
-# Build all components
-cargo build --release
+# Build all components. `--features full` enables the RocksDB production
+# storage provider; the shipped *.toml configs select RocksDB by default, so
+# a plain `cargo build --release` produces a binary that cannot start with
+# those configs.
+cargo build --release --features full
 ```
 
 ### Running a Node
@@ -57,23 +60,22 @@ NEO_RPC_USER=neo NEO_RPC_PASS='change-this' \
   --tee-data-path /tmp/neo-tee
 ```
 
-### Using the CLI Client
+### Querying the Node
+
+The `neo-node` daemon exposes the JSON-RPC API directly. Use `curl` or an
+RPC client library for state, block, and contract queries.
 
 ```bash
 # Get node state
-./target/release/neo-cli state
-
-# Get current block height
-./target/release/neo-cli block-count
+curl -s http://localhost:10332 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"getblockcount","params":[],"id":1}'
 
 # Get block information
-./target/release/neo-cli block 1000
-
-# Invoke smart contract (read-only)
-./target/release/neo-cli invoke 0xcontract123 balanceOf '["0xaddress123"]'
+curl -s http://localhost:10332 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"getblock","params":[1000,1],"id":1}'
 ```
 
-📖 **See [CLI Usage Guide](docs/CLI_USAGE.md) for comprehensive documentation.**
+📖 **See [RPC Usage Guide](docs/RPC_USAGE.md) for comprehensive documentation.**
 
 ## Documentation
 
@@ -93,18 +95,19 @@ NEO_RPC_USER=neo NEO_RPC_PASS='change-this' \
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Application Layer                        │
-│  neo-cli (CLI Client)     │  neo-node (Node Daemon)         │
+│  neo-node (Node Daemon)                                     │
 ├─────────────────────────────────────────────────────────────┤
-│                    Chain Management                         │
-│  neo-chain (Blockchain)   │  neo-mempool (Transaction Pool) │
+│              Services & Infrastructure Layer                │
+│  neo-rpc │ neo-telemetry │ neo-tee │ neo-hsm                │
 ├─────────────────────────────────────────────────────────────┤
-│                    Core Layer                               │
-│  neo-core (Core Logic + VM compatibility)                    │
-│  neo-consensus (dBFT)   │  neo-p2p (P2P Network)            │
-│  neo-rpc (RPC Server)                                       │
+│                 VM & Protocol Layer                          │
+│  neo-vm │ neo-core │ neo-consensus │ neo-p2p                │
+├─────────────────────────────────────────────────────────────┤
+│                    Crypto Layer                             │
+│  neo-crypto                                                 │
 ├─────────────────────────────────────────────────────────────┤
 │                    Foundation Layer                         │
-│  neo-primitives │ neo-crypto │ neo-storage │ neo-io │ neo-json│
+│  neo-primitives │ neo-json │ neo-storage │ neo-io │ neo-config│
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -112,7 +115,7 @@ NEO_RPC_USER=neo NEO_RPC_PASS='change-this' \
 
 | neo-rs Version | Neo N3 Version | C# Reference                                                                                      |
 | -------------- | -------------- | ------------------------------------------------------------------------------------------------- |
-| 0.15.x         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (protocol compliance validated) |
+| 0.17.0         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (protocol compliance validated) |
 | 0.4.x          | 3.8.2          | [`ede620e`](https://github.com/neo-project/neo/commit/ede620e5722c48e199a0f3f2ab482ae090c1b878) |
 
 This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.10.1) for blocks, transactions, and P2P messages. Protocol behavior was validated against the v3.10.1 reference and live Neo MainNet/TestNet endpoints.
@@ -160,15 +163,25 @@ All native contract hashes match the C# reference implementation:
 
 ### Test Coverage
 
+Last verified 2026-09-05 on `protocol-v3.10.1-compliance` with default features
+(`cargo test --workspace --lib --locked --no-fail-fast`):
+
 ```
-✅ 343 lib tests passed (neo-core)
-✅ 520+ integration tests passed
-✅ All C# UT_* equivalent tests converted to Rust
+✅ 2,230 library tests passed across 15 workspace crates
+   (neo-core 741, neo-rpc 567, neo-primitives 264, neo-storage 160,
+    neo-crypto 124, neo-vm 128, neo-consensus 110, neo-tee 54,
+    telemetry/io/p2p/config/hsm/json 87 combined)
 ✅ JSON manifest parity with C# reference (byte-for-byte)
 ✅ Contract hash verification (all 11 native contracts)
 ✅ NEP-17 Transfer/NEP-30 Oracle callbacks tested
 ✅ NEP-11 NFT operations (mint, burn, transfer, enumerate)
 ```
+
+Test counts drift as tests are added — treat the commands above, not these
+numbers, as the source of truth. Protocol/gas conformance vectors run
+continuously in the v3.10.1 compatibility workflow
+(`.github/workflows/compatibility-v3101.yml`); the full-feature build is gated
+by the `node-full` CI job.
 
 ## Prerequisites
 
@@ -184,18 +197,22 @@ cargo build
 Release build for production:
 
 ```bash
-cargo build --release
+# `full` is required for the RocksDB storage backend the shipped configs use
+cargo build --release --features full
 ```
+
+Development builds keep the default feature set (memory storage, faster
+compile): `cargo build`.
 
 Use `cargo build --workspace` when you explicitly need optional crates such as
 TEE/HSM integrations, telemetry, tests, and benchmarks.
 
 ## Run the node
 
-`neo-node` is the daemon (P2P sync + optional JSON-RPC server). `neo-cli` is a JSON-RPC client.
+`neo-node` is the daemon, providing P2P synchronization and the optional JSON-RPC server.
 
 ```bash
-cargo run -p neo-node --release -- --config neo_mainnet_node.toml
+cargo run -p neo-node --release --features full -- --config neo_mainnet_node.toml
 ```
 
 Common overrides:
@@ -209,7 +226,8 @@ Use `cargo run -p neo-node -- --help` for the full daemon flag list.
 Query a running node:
 
 ```bash
-cargo run -p neo-cli --release -- --rpc-url http://localhost:10332 state
+curl -s http://localhost:10332 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"getblockcount","params":[],"id":1}'
 ```
 
 Validate a node config without starting the daemon:
@@ -337,25 +355,25 @@ For faster iterations you can target a specific crate or test:
 cargo test -p neo-core
 ```
 
-## Neo v3.9.1 Consistency Validation
+## Neo v3.10.1 Consistency Validation
 
 Run continuous protocol/vector compatibility checks locally:
 
 ```bash
-bash scripts/validate-v391-consistency.sh --network all
+bash scripts/validate-v3101-consistency.sh --network all
 ```
 
 Key checks performed:
 
-- Local `neo-node` `getversion.protocol` parity vs live C# (`Neo:3.9.1`) and NeoGo endpoints.
+- Local `neo-node` `getversion.protocol` parity vs live C# (`Neo:3.10.1`) and NeoGo endpoints.
 - Full execution-spec vector run against local `neo-node` for MainNet/TestNet.
 - Optional C# vs NeoGo baseline compatibility to detect reference endpoint drift.
 
 CI automation:
 
-- Workflow: `.github/workflows/compatibility-v391.yml`
+- Workflow: `.github/workflows/compatibility-v3101.yml`
 - Triggers: schedule every 12 hours, `workflow_dispatch`, and PR/push affecting core protocol paths.
-- Artifacts: `reports/compat-v391/**` with protocol snapshots, logs, and vector reports.
+- Artifacts: `reports/compat-v3101/**` with protocol snapshots, logs, and vector reports.
 
 ## Linting & formatting
 
@@ -371,7 +389,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - `NEO_PLUGINS_DIR`: set this env var to move plugin state/config (like `Plugins/RpcServer.json`) to a writable, persistent path.
 - Config files are strict: unknown keys/tables fail parsing. Supported sections are `[network]`, `[p2p]`, `[storage]`, `[blockchain]`, `[rpc]`, `[logging]`, `[unlock_wallet]`, `[contracts]`, `[plugins]`.
 - Validate configs without starting the node via `neo-node --check-config --config <path>`.
-- Logging defaults to `/data/Logs/neo-cli.log` in Docker and can be moved via the config `logging.path`.
+- Logging defaults to `/data/Logs/neo-node.log` in Docker and can be moved via the config `logging.path`.
 - If you use the bundled production TOML outside Docker, create the configured log directory (or override `logging.path`).
 - See `docs/RPC_HARDENING.md` for a hardened `RpcServer.json` example and reverse-proxy guidance.
 - See `docs/MONITORING.md` for signal/alert suggestions.

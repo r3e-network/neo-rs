@@ -212,17 +212,17 @@ impl ApplicationEngine {
                 .flatten()
             };
 
-            if let Some(executing_contract) = executing_contract {
-                if !executing_contract.manifest.can_call(
+            if let Some(executing_contract) = executing_contract
+                && !executing_contract.manifest.can_call(
                     &contract.manifest,
                     &contract.hash,
                     &method.name,
-                ) {
-                    return Err(Error::invalid_operation(format!(
-                        "Cannot call method {} of contract {} from contract {}.",
-                        method.name, contract.hash, previous_hash
-                    )));
-                }
+                )
+            {
+                return Err(Error::invalid_operation(format!(
+                    "Cannot call method {} of contract {} from contract {}.",
+                    method.name, contract.hash, previous_hash
+                )));
             }
         }
 
@@ -278,6 +278,9 @@ impl ApplicationEngine {
         Ok(new_context)
     }
 
+    /// Dynamically invokes a contract method (C# `System.Contract.Call`):
+    /// validates the method name and contract state, applies the call flags,
+    /// pushes the arguments, and enters the callee's execution context.
     pub fn call_contract_dynamic(
         &mut self,
         contract_hash: &UInt160,

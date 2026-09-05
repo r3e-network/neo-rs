@@ -5,8 +5,14 @@ use neo_json::JToken;
 #[test]
 fn test_string_construction_and_equality() {
     assert_eq!(JToken::from("neo"), JToken::String("neo".to_string()));
-    assert_eq!(JToken::from("neo".to_string()), JToken::String("neo".to_string()));
-    assert_ne!(JToken::String("neo".to_string()), JToken::String("n3".to_string()));
+    assert_eq!(
+        JToken::from("neo".to_string()),
+        JToken::String("neo".to_string())
+    );
+    assert_ne!(
+        JToken::String("neo".to_string()),
+        JToken::String("n3".to_string())
+    );
     assert_ne!(JToken::String(String::new()), JToken::Null);
 }
 
@@ -99,7 +105,10 @@ fn test_string_within_containers() {
         array.get_index(0).unwrap(),
         Some(&JToken::String("first".to_string()))
     );
-    assert_eq!(array.get_index(1).unwrap(), Some(&JToken::String(String::new())));
+    assert_eq!(
+        array.get_index(1).unwrap(),
+        Some(&JToken::String(String::new()))
+    );
     assert_eq!(array.get_index(2).unwrap(), None);
 }
 

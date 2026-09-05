@@ -1,12 +1,12 @@
 use super::peer_commands::{send_get_blocks_by_index, send_get_data_groups, send_get_headers};
 use super::scheduling::{
-    block_index_window_limit, effective_header_height, plan_available_inventory_tasks,
-    plan_block_index_request, plan_header_request, AvailableInventoryPlan,
+    AvailableInventoryPlan, block_index_window_limit, effective_header_height,
+    plan_available_inventory_tasks, plan_block_index_request, plan_header_request,
 };
-use super::{request_mempool_once, SessionEntry, TaskManager, HEADER_TASK_HASH};
+use super::{HEADER_TASK_HASH, SessionEntry, TaskManager, request_mempool_once};
 use crate::network::p2p::payloads::{
-    inv_payload::{InvPayload, MAX_HASHES_COUNT},
     InventoryType,
+    inv_payload::{InvPayload, MAX_HASHES_COUNT},
 };
 use crate::runtime::ActorRef;
 use crate::smart_contract::native::LedgerContract;

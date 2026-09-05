@@ -10,12 +10,12 @@
 // modifications are permitted.
 
 use super::{block::Block, header::Header};
+use crate::CoreResult;
 use crate::cryptography::MerkleTree;
 use crate::neo_io::serializable::helper::{
     deserialize_array, get_var_size_bytes, get_var_size_serializable_slice, serialize_array,
 };
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::CoreResult;
 use bitvec::prelude::{BitVec, Lsb0};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -113,7 +113,7 @@ fn pack_flags(flags: &[bool]) -> Vec<u8> {
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
-    use super::{pack_flags, pad_flags, MerkleBlockPayload};
+    use super::{MerkleBlockPayload, pack_flags, pad_flags};
     use crate::network::p2p::payloads::block::Block;
     use crate::network::p2p::payloads::signer::Signer;
     use crate::network::p2p::payloads::transaction::Transaction;

@@ -5,7 +5,7 @@ use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::{block::Block, header::Header};
 use neo_core::{KeyPair, Signer, Transaction, UInt160, UInt256, Witness, WitnessScope};
 use neo_core::{NeoSystem, ProtocolSettings};
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 fn build_unfunded_signed_transaction(
     settings: &ProtocolSettings,

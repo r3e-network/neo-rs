@@ -1,6 +1,6 @@
 [package]
 name = "neo-tests"
-version = "0.16.0"
+version = "0.17.0"
 edition = "2024"
 publish = false
 description = "Integration tests for neo-rs workspace layer boundaries and end-to-end testing"
@@ -63,10 +63,6 @@ path = "tests/chaos_tests.rs"
 [[test]]
 name = "e2e_transaction_flow"
 path = "tests/e2e_transaction_flow.rs"
-
-[[test]]
-name = "block_persistence"
-path = "tests/block_persistence.rs"
 
 [[test]]
 name = "p2p_message_exchange"

@@ -2,24 +2,24 @@
 //! Converted from C# Neo.UnitTests.SmartContract.UT_SmartContractHelper.cs
 //! and C# Neo.UnitTests.SmartContract.UT_Helper.cs
 
+use neo_core::ScriptBuilder;
 use neo_core::neo_vm::execution_context::ExecutionContext;
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::helper::Helper;
-use neo_core::smart_contract::diagnostic::Diagnostic;
 use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
+use neo_core::smart_contract::diagnostic::Diagnostic;
+use neo_core::smart_contract::helper::Helper;
 use neo_core::wallets::key_pair::KeyPair;
 use neo_core::{Transaction, UInt160, WitnessScope};
 use neo_vm::Instruction;
 use neo_vm::OpCode;
-use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 
 #[derive(Debug)]
 struct OpcodeDiagnostic {
@@ -237,12 +237,14 @@ fn test_signature_contract_engine_fee_consumed() {
         .expect("load invocation");
     engine.execute().expect("execute");
 
-    assert!(engine
-        .result_stack()
-        .peek(0)
-        .expect("result")
-        .as_boolean()
-        .unwrap_or(false));
+    assert!(
+        engine
+            .result_stack()
+            .peek(0)
+            .expect("result")
+            .as_boolean()
+            .unwrap_or(false)
+    );
 
     let expected_opcode_units = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte()) * 2
         + ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
@@ -352,12 +354,14 @@ fn test_multi_signature_contract_engine_fee_consumed() {
         .expect("load invocation");
     engine.execute().expect("execute");
 
-    assert!(engine
-        .result_stack()
-        .peek(0)
-        .expect("result")
-        .as_boolean()
-        .unwrap_or(false));
+    assert!(
+        engine
+            .result_stack()
+            .peek(0)
+            .expect("result")
+            .as_boolean()
+            .unwrap_or(false)
+    );
 
     let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
     let m_opcode = ApplicationEngine::get_opcode_price(OpCode::PUSH2.byte());

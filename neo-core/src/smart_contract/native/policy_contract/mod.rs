@@ -3,11 +3,14 @@
 //! Mirrors the behaviour of `Neo.SmartContract.Native.PolicyContract` from the
 //! Neo N3 C# reference node.
 
+use crate::UInt160;
 use crate::error::{CoreError as Error, CoreResult as Result, ToNativeError};
 use crate::hardfork::Hardfork;
 use crate::neo_config::ADDRESS_SIZE;
+use crate::neo_vm::StackItem;
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::StorageItem;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::find_options::FindOptions;
@@ -17,9 +20,6 @@ use crate::smart_contract::native::stack_value_numeric::{
 };
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::storage_key::StorageKey;
-use crate::smart_contract::StorageItem;
-use crate::neo_vm::StackItem;
-use crate::UInt160;
 use neo_primitives::TransactionAttributeType;
 use neo_vm::{ExecutionEngineLimits, StackValue};
 use num_bigint::{BigInt, Sign};
@@ -75,16 +75,16 @@ impl WhitelistedContract {
             )));
         }
 
-        if let Some(bytes) = items[0].to_byte_string_bytes() {
-            if let Ok(hash) = UInt160::from_bytes(&bytes) {
-                self.contract_hash = hash;
-            }
+        if let Some(bytes) = items[0].to_byte_string_bytes()
+            && let Ok(hash) = UInt160::from_bytes(&bytes)
+        {
+            self.contract_hash = hash;
         }
 
-        if let Some(bytes) = items[1].to_byte_string_bytes() {
-            if let Ok(method) = String::from_utf8(bytes) {
-                self.method = method;
-            }
+        if let Some(bytes) = items[1].to_byte_string_bytes()
+            && let Ok(method) = String::from_utf8(bytes)
+        {
+            self.method = method;
         }
 
         if let Some(count) = stack_value_to_u32(&items[2]) {

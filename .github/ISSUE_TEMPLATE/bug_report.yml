@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: neo-rs version
-      description: Output of `neo-cli --version` or commit SHA
+      description: Output of `neo-node --version` or commit SHA
     validations:
       required: true
   - type: textarea

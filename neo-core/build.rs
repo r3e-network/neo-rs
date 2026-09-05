@@ -6,10 +6,10 @@ fn main() {
         return;
     }
 
-    if env::var("PROTOC").is_err() {
-        if let Ok(path) = protoc_bin_vendored::protoc_bin_path() {
-            set_env_var("PROTOC", path);
-        }
+    if env::var("PROTOC").is_err()
+        && let Ok(path) = protoc_bin_vendored::protoc_bin_path()
+    {
+        set_env_var("PROTOC", path);
     }
 
     let proto_root = PathBuf::from("proto/neofs");

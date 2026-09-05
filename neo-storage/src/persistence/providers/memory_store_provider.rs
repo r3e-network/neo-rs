@@ -1,7 +1,7 @@
 use super::memory_store::MemoryStore;
 use crate::error::StorageResult;
-use crate::persistence::{store::Store, store_provider::StoreProvider};
 use crate::impl_default_via_new;
+use crate::persistence::{store::Store, store_provider::StoreProvider};
 use std::sync::Arc;
 
 /// A provider for creating MemoryStore instances.

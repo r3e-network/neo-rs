@@ -14,17 +14,19 @@ type StorageGetFn = Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync
 type StorageFindFn =
     Arc<dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync>;
 use super::NeoSystem;
+use crate::UInt256;
 use crate::error::{CoreError, CoreResult};
 use crate::events::PluginEvent;
 use crate::ledger::block::Block as LedgerBlock;
 use crate::ledger::blockchain_application_executed::ApplicationExecuted;
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::block::Block;
+use crate::persistence::StoreTransaction;
 use crate::persistence::data_cache::{
-    clear_storage_watch_context, set_storage_watch_context, DataCache, DataCacheConfig,
-    StorageWatchPhase,
+    DataCache, DataCacheConfig, StorageWatchPhase, clear_storage_watch_context,
+    set_storage_watch_context,
 };
 use crate::persistence::seek_direction::SeekDirection;
-use crate::persistence::StoreTransaction;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::application_engine::TEST_MODE_GAS;
 use crate::smart_contract::call_flags::CallFlags;
@@ -33,8 +35,6 @@ use crate::smart_contract::native::ledger_contract::{
 };
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::{StorageItem, StorageKey};
-use crate::neo_vm::StackItem;
-use crate::UInt256;
 use neo_vm::VmState as VMState;
 use tracing::{debug, info, warn};
 
@@ -213,10 +213,8 @@ impl NeoSystem {
             enable_prefetching: false,
             ..Default::default()
         };
-        let mut tx = StoreTransaction::from_snapshot_with_config(
-            self.store().snapshot(),
-            base_cache_config,
-        );
+        let mut tx =
+            StoreTransaction::from_snapshot_with_config(self.store().snapshot(), base_cache_config);
         let base_snapshot = Arc::new(tx.cache().data_cache().clone());
         let tx_store_get: StorageGetFn = {
             let base = Arc::clone(&base_snapshot);
@@ -505,7 +503,13 @@ impl NeoSystem {
 
         // State root handlers must always run to keep the state trie up to date.
         // Other expensive handlers (application logs, etc.) are skipped during fast sync.
-        self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed)?;
+        if let Err(error) = self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed)
+        {
+            if let Ok(Some(state_store)) = self.state_store() {
+                state_store.discard_staged_local_state_root();
+            }
+            return Err(error);
+        }
 
         let apply_tracked_started = if perf_enabled {
             Some(Instant::now())
@@ -527,12 +531,15 @@ impl NeoSystem {
         } else {
             None
         };
-        tx.commit().map_err(|err| {
-            CoreError::system(format!(
+        if let Err(err) = tx.commit() {
+            if let Ok(Some(state_store)) = self.state_store() {
+                state_store.discard_staged_local_state_root();
+            }
+            return Err(CoreError::system(format!(
                 "failed to commit store cache for block {}: {err}",
                 ledger_block.index()
-            ))
-        })?;
+            )));
+        }
         if let Some(started) = commit_started {
             persist_perf_stats()
                 .commit_ns
@@ -541,12 +548,15 @@ impl NeoSystem {
 
         if update_runtime_cache {
             // Update in-memory caches with the payload block so networking queries can respond immediately.
-            self.context().record_block(block.clone()).map_err(|err| {
-                CoreError::system(format!(
+            if let Err(err) = self.context().record_block(block.clone()) {
+                if let Ok(Some(state_store)) = self.state_store() {
+                    state_store.discard_staged_local_state_root();
+                }
+                return Err(CoreError::system(format!(
                     "failed to update runtime block cache for block {}: {err}",
                     ledger_block.index()
-                ))
-            })?;
+                )));
+            }
         } else {
             // Keep tip height moving for helper call sites during offline imports.
             self.context()
@@ -576,7 +586,7 @@ impl NeoSystem {
             stats.txs.fetch_add(tx_count, Ordering::Relaxed);
             let blocks = stats.blocks.fetch_add(1, Ordering::Relaxed) + 1;
 
-            if blocks % 1000 == 0 {
+            if blocks.is_multiple_of(1000) {
                 let blocks_f = blocks as f64;
                 let txs = stats.txs.load(Ordering::Relaxed);
                 let txs_f = txs.max(1) as f64;

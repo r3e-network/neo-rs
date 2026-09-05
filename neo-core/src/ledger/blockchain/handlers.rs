@@ -5,6 +5,10 @@
 use super::*;
 
 impl Blockchain {
+    fn has_header_backlog(&self, context: &NeoSystemContext) -> bool {
+        context.header_cache().count() > 0 || self.ledger.has_future_headers()
+    }
+
     fn find_tip_in_store(
         ledger_contract: &LedgerContract,
         store_cache: &StoreCache,
@@ -129,19 +133,16 @@ impl Blockchain {
             let store_cache = context.store_cache();
             let snapshot = store_cache.data_cache();
             let settings = context.settings();
-            let header_backlog_present = context.header_cache().count() > 0;
-            // Skip mempool updates during fast sync for better performance
-            if !context.is_fast_sync_mode() {
-                context
-                    .memory_pool()
-                    .lock()
-                    .update_pool_for_block_persisted(
-                        &block,
-                        snapshot,
-                        settings.as_ref(),
-                        header_backlog_present,
-                    );
-            }
+            let header_backlog_present = self.has_header_backlog(context);
+            context
+                .memory_pool()
+                .lock()
+                .update_pool_for_block_persisted(
+                    &block,
+                    snapshot,
+                    settings.as_ref(),
+                    header_backlog_present,
+                );
         }
 
         if let Some(context) = &self.system_context {
@@ -307,14 +308,12 @@ impl Blockchain {
             let needs_idle = pool.unverified_count() > 0;
             drop(pool);
 
-            if needs_idle {
-                if let Err(error) = ctx.self_ref().tell(BlockchainCommand::Idle) {
-                    tracing::debug!(
-                        target: "neo",
-                        %error,
-                        "failed to enqueue idle reverify after filling memory pool"
-                    );
-                }
+            if needs_idle && let Err(error) = ctx.self_ref().tell(BlockchainCommand::Idle) {
+                tracing::debug!(
+                    target: "neo",
+                    %error,
+                    "failed to enqueue idle reverify after filling memory pool"
+                );
             }
 
             if let Some(sender) = ctx.sender() {
@@ -499,8 +498,7 @@ impl Blockchain {
             let store_cache = system_context.store_cache();
             let settings = system_context.settings();
             let snapshot = store_cache.data_cache();
-            let header_backlog =
-                system_context.header_cache().count() > 0 || self.ledger.has_future_headers();
+            let header_backlog = self.has_header_backlog(system_context);
             let more_pending = system_context
                 .memory_pool()
                 .lock()
@@ -511,14 +509,12 @@ impl Blockchain {
                     header_backlog,
                 );
 
-            if more_pending {
-                if let Err(error) = ctx.self_ref().tell(BlockchainCommand::Idle) {
-                    tracing::debug!(
-                        target: "neo",
-                        %error,
-                        "failed to enqueue idle reverify continuation"
-                    );
-                }
+            if more_pending && let Err(error) = ctx.self_ref().tell(BlockchainCommand::Idle) {
+                tracing::debug!(
+                    target: "neo",
+                    %error,
+                    "failed to enqueue idle reverify continuation"
+                );
             }
         }
     }
@@ -582,16 +578,16 @@ impl Blockchain {
         inventory: Option<RelayInventory>,
         ctx: &ActorContext,
     ) {
-        if relay && result == VerifyResult::Succeed {
-            if let Some(inv) = inventory {
-                if let Err(error) = context.local_node.relay_directly(inv, block_index) {
-                    tracing::debug!(
-                        target: "neo",
-                        %error,
-                        "failed to record relay broadcast"
-                    );
-                }
-            }
+        if relay
+            && result == VerifyResult::Succeed
+            && let Some(inv) = inventory
+            && let Err(error) = context.local_node.relay_directly(inv, block_index)
+        {
+            tracing::debug!(
+                target: "neo",
+                %error,
+                "failed to record relay broadcast"
+            );
         }
 
         let relay_message = RelayResult {
@@ -612,14 +608,14 @@ impl Blockchain {
             });
         }
 
-        if let Some(sender) = ctx.sender() {
-            if let Err(error) = sender.tell(relay_message) {
-                tracing::debug!(
-                    target: "neo",
-                    %error,
-                    "failed to reply with relay result to sender"
-                );
-            }
+        if let Some(sender) = ctx.sender()
+            && let Err(error) = sender.tell(relay_message)
+        {
+            tracing::debug!(
+                target: "neo",
+                %error,
+                "failed to reply with relay result to sender"
+            );
         }
     }
 

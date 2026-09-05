@@ -52,14 +52,14 @@ impl RemoteNode {
             return;
         }
 
-        if let Some(parent) = ctx.parent() {
-            if let Err(err) = parent.tell(PeerCommand::AddPeers { endpoints }) {
-                warn!(
-                    target: "neo",
-                    error = %err,
-                    "failed to forward peer addresses to local node"
-                );
-            }
+        if let Some(parent) = ctx.parent()
+            && let Err(err) = parent.tell(PeerCommand::AddPeers { endpoints })
+        {
+            warn!(
+                target: "neo",
+                error = %err,
+                "failed to forward peer addresses to local node"
+            );
         }
     }
 
@@ -124,10 +124,11 @@ fn collect_reachable_endpoints(addresses: Vec<NetworkAddressWithTime>) -> Vec<So
     let mut seen = HashSet::new();
 
     for address in addresses {
-        if let Some(endpoint) = address.endpoint() {
-            if endpoint.port() > 0 && seen.insert(endpoint) {
-                endpoints.push(endpoint);
-            }
+        if let Some(endpoint) = address.endpoint()
+            && endpoint.port() > 0
+            && seen.insert(endpoint)
+        {
+            endpoints.push(endpoint);
         }
     }
 

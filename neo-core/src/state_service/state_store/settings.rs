@@ -22,7 +22,7 @@ impl Default for StateServiceSettings {
         Self {
             full_state: false,
             path: "Data_MPT_{0}".to_string(),
-            network: 0,
+            network: 5195086,
             auto_verify: false,
             max_find_result_items: 100,
             exception_policy: UnhandledExceptionPolicy::StopPlugin,

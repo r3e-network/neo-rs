@@ -5,6 +5,7 @@
 use super::*;
 
 impl NeoToken {
+    /// Creates a new NeoToken native contract instance.
     pub fn new() -> Self {
         Self {
             methods: Self::native_methods(),
@@ -49,14 +50,17 @@ impl NeoToken {
         }
     }
 
+    /// Returns the NEO token symbol (`"NEO"`).
     pub fn symbol(&self) -> &'static str {
         Self::SYMBOL
     }
 
+    /// Returns the number of decimal places used by NEO (0).
     pub fn decimals(&self) -> u8 {
         Self::DECIMALS
     }
 
+    /// Returns the fixed NEO total supply of 100 million.
     pub fn total_supply(&self) -> BigInt {
         BigInt::from(Self::TOTAL_SUPPLY)
     }

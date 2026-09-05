@@ -3,11 +3,11 @@
 //! Validates the architectural layering of the neo-rs workspace:
 //!
 //! ```text
-//! Layer 0 (Foundation - no neo-* deps): neo-primitives, neo-json, neo-storage, neo-io, neo-config
-//! Layer 1 (Crypto): neo-crypto (depends on Layer 0)
-//! Layer 2 (Protocol): neo-core, neo-p2p, neo-consensus
-//! Layer 3 (Services): neo-rpc, neo-telemetry, neo-tee
-//! Layer 4 (Application): neo-node, neo-cli
+//! Layer 0 (Foundation): neo-primitives, neo-json, neo-storage, neo-io, neo-config
+//! Layer 1 (Crypto): neo-crypto
+//! Layer 2 (VM/Protocol): neo-vm, neo-core, neo-p2p, neo-consensus
+//! Layer 3 (Services/Infrastructure): neo-rpc, neo-telemetry, neo-tee, neo-hsm
+//! Layer 4 (Application): neo-node
 //! ```
 
 use std::collections::{HashMap, HashSet};
@@ -19,8 +19,8 @@ use std::path::Path;
 enum Layer {
     Foundation = 0,
     Crypto = 1,
-    Protocol = 2,
-    Services = 3,
+    VmProtocol = 2,
+    ServicesInfrastructure = 3,
     Application = 4,
 }
 
@@ -33,12 +33,14 @@ impl Layer {
             "neo-io" => Some(Layer::Foundation),
             // Layer 1: Crypto (depends on Layer 0 only)
             "neo-crypto" => Some(Layer::Crypto),
-            // Layer 2: Protocol (includes extracted sub-crates)
-            "neo-p2p" | "neo-consensus" | "neo-core" => Some(Layer::Protocol),
-            // Layer 3: Services
-            "neo-rpc" | "neo-telemetry" | "neo-tee" => Some(Layer::Services),
-            // Layer 5: Application
-            "neo-node" | "neo-cli" => Some(Layer::Application),
+            // Layer 2: VM and protocol (depends on lower layers)
+            "neo-vm" | "neo-p2p" | "neo-consensus" | "neo-core" => Some(Layer::VmProtocol),
+            // Layer 3: Services and infrastructure
+            "neo-rpc" | "neo-telemetry" | "neo-tee" | "neo-hsm" => {
+                Some(Layer::ServicesInfrastructure)
+            }
+            // Layer 4: Application
+            "neo-node" => Some(Layer::Application),
             _ => None,
         }
     }
@@ -76,12 +78,12 @@ fn parse_neo_dependencies(cargo_toml_path: &Path) -> Vec<String> {
         if in_dependencies && !in_dev_dependencies {
             // Match lines like: neo-primitives = { workspace = true }
             // or: neo-p2p = { path = "../neo-p2p" }
-            if trimmed.starts_with("neo-") {
-                if let Some(name) = trimmed.split('=').next() {
-                    let dep_name = name.trim().to_string();
-                    if dep_name.starts_with("neo-") {
-                        deps.push(dep_name);
-                    }
+            if trimmed.starts_with("neo-")
+                && let Some(name) = trimmed.split('=').next()
+            {
+                let dep_name = name.trim().to_string();
+                if dep_name.starts_with("neo-") {
+                    deps.push(dep_name);
                 }
             }
         }
@@ -206,6 +208,18 @@ fn test_no_upward_dependencies() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let crates = get_workspace_crates(workspace_root);
 
+    // Every production workspace crate must participate in the layer model;
+    // an unmapped crate would silently bypass the upward-dependency check.
+    let unmapped: Vec<_> = crates
+        .iter()
+        .filter(|name| Layer::from_crate_name(name).is_none())
+        .cloned()
+        .collect();
+    assert!(
+        unmapped.is_empty(),
+        "Every production crate must be mapped to an architecture layer: {unmapped:?}"
+    );
+
     let mut violations = Vec::new();
 
     for crate_name in &crates {
@@ -221,13 +235,13 @@ fn test_no_upward_dependencies() {
         let deps = parse_neo_dependencies(&cargo_toml);
 
         for dep in deps {
-            if let Some(dep_layer) = Layer::from_crate_name(&dep) {
-                if dep_layer > crate_layer {
-                    violations.push(format!(
-                        "{} (Layer {:?}) depends on {} (Layer {:?})",
-                        crate_name, crate_layer, dep, dep_layer
-                    ));
-                }
+            if let Some(dep_layer) = Layer::from_crate_name(&dep)
+                && dep_layer > crate_layer
+            {
+                violations.push(format!(
+                    "{} (Layer {:?}) depends on {} (Layer {:?})",
+                    crate_name, crate_layer, dep, dep_layer
+                ));
             }
         }
     }

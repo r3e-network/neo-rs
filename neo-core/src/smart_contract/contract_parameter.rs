@@ -3,7 +3,7 @@
 use crate::cryptography::ECPoint;
 use crate::smart_contract::ContractParameterType;
 use crate::{UInt160, UInt256};
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use num_bigint::BigInt;
 
 /// Represents a parameter of a contract method (matches C# ContractParameter)
@@ -19,18 +19,31 @@ pub struct ContractParameter {
 /// Possible values for a contract parameter
 #[derive(Clone, Debug)]
 pub enum ContractParameterValue {
+    /// A parameter whose type and value are unspecified (C# `ContractParameterType.Any`).
     Any,
+    /// A 64-byte signature value.
     Signature(Vec<u8>),
+    /// A boolean value.
     Boolean(bool),
+    /// An arbitrary-precision integer.
     Integer(BigInt),
+    /// A 160-bit script hash.
     Hash160(UInt160),
+    /// A 256-bit hash.
     Hash256(UInt256),
+    /// A raw byte array.
     ByteArray(Vec<u8>),
+    /// An ECDSA public key.
     PublicKey(ECPoint),
+    /// A UTF-8 string.
     String(String),
+    /// An array of contract parameters.
     Array(Vec<ContractParameter>),
+    /// A map of contract parameter key/value pairs.
     Map(Vec<(ContractParameter, ContractParameter)>),
+    /// An opaque interop interface handle.
     InteropInterface,
+    /// No value (void).
     Void,
 }
 
@@ -93,7 +106,7 @@ impl ContractParameter {
                 return Err(format!(
                     "Cannot set value from string for type {:?}",
                     self.param_type
-                ))
+                ));
             }
         };
 
@@ -178,35 +191,34 @@ impl ContractParameter {
 
         let mut param = Self::new(param_type);
 
-        if let Some(value_json) = obj.get("value") {
-            if !value_json.is_null() {
-                match param_type {
-                    ContractParameterType::String => {
-                        if let Some(s) = value_json.as_str() {
-                            param.set_value(s)?;
-                        }
+        if let Some(value_json) = obj.get("value")
+            && !value_json.is_null()
+        {
+            match param_type {
+                ContractParameterType::String => {
+                    if let Some(s) = value_json.as_str() {
+                        param.set_value(s)?;
                     }
-                    ContractParameterType::Boolean => {
-                        if let Some(b) = value_json.as_bool() {
-                            param.value = ContractParameterValue::Boolean(b);
-                        }
+                }
+                ContractParameterType::Boolean => {
+                    if let Some(b) = value_json.as_bool() {
+                        param.value = ContractParameterValue::Boolean(b);
                     }
-                    ContractParameterType::Integer => {
-                        if let Some(s) = value_json.as_str() {
-                            param.set_value(s)?;
-                        }
+                }
+                ContractParameterType::Integer => {
+                    if let Some(s) = value_json.as_str() {
+                        param.set_value(s)?;
                     }
-                    ContractParameterType::Array => {
-                        if let Some(arr) = value_json.as_array() {
-                            let items: Result<Vec<_>, _> =
-                                arr.iter().map(Self::from_json).collect();
-                            param.value = ContractParameterValue::Array(items?);
-                        }
+                }
+                ContractParameterType::Array => {
+                    if let Some(arr) = value_json.as_array() {
+                        let items: Result<Vec<_>, _> = arr.iter().map(Self::from_json).collect();
+                        param.value = ContractParameterValue::Array(items?);
                     }
-                    _ => {
-                        if let Some(s) = value_json.as_str() {
-                            param.set_value(s)?;
-                        }
+                }
+                _ => {
+                    if let Some(s) = value_json.as_str() {
+                        param.set_value(s)?;
                     }
                 }
             }

@@ -49,7 +49,7 @@ pub fn log_stats() {
     );
 }
 
-#[cfg(test)]
+/// Reset all timeout counters.
 pub fn reset() {
     HANDSHAKE_TIMEOUTS.store(0, Ordering::Relaxed);
     READ_TIMEOUTS.store(0, Ordering::Relaxed);

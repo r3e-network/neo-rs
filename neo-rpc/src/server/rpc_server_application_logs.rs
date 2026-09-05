@@ -4,9 +4,9 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
+use neo_core::UInt256;
 use neo_core::application_logs::ApplicationLogsService;
 use neo_core::smart_contract::TriggerType;
-use neo_core::UInt256;
 use serde_json::Value;
 use std::str::FromStr;
 
@@ -28,7 +28,7 @@ impl RpcServerApplicationLogs {
             _ => {
                 return Err(invalid_params(
                     "getapplicationlog expects string parameter 2",
-                ))
+                ));
             }
         };
 
@@ -47,18 +47,16 @@ impl RpcServerApplicationLogs {
                 )
             })?;
 
-        if let Some(filter) = trigger_filter {
-            if TriggerType::from_str(&filter).is_ok() {
-                if let Value::Object(obj) = &mut raw {
-                    if let Some(Value::Array(executions)) = obj.get_mut("executions") {
-                        executions.retain(|e| {
-                            e.get("trigger")
-                                .and_then(Value::as_str)
-                                .is_some_and(|v| v.eq_ignore_ascii_case(&filter))
-                        });
-                    }
-                }
-            }
+        if let Some(filter) = trigger_filter
+            && TriggerType::from_str(&filter).is_ok()
+            && let Value::Object(obj) = &mut raw
+            && let Some(Value::Array(executions)) = obj.get_mut("executions")
+        {
+            executions.retain(|e| {
+                e.get("trigger")
+                    .and_then(Value::as_str)
+                    .is_some_and(|v| v.eq_ignore_ascii_case(&filter))
+            });
         }
         Ok(raw)
     }

@@ -27,11 +27,12 @@ fn governor_limiter_keeps_per_ip_buckets_independent() {
     let first_ip: IpAddr = "127.0.0.1".parse().unwrap();
     let second_ip: IpAddr = "127.0.0.2".parse().unwrap();
 
-    assert_eq!(limiter.check(first_ip), RateLimitCheckResult::Allowed);
+    // R19: the configured burst is the effective burst. (The old preset
+    // rescaling turned `burst=1` into an effective burst of 2.)
     assert_eq!(limiter.check(first_ip), RateLimitCheckResult::Allowed);
     assert_eq!(limiter.check(first_ip), RateLimitCheckResult::Blocked);
     assert_eq!(limiter.check(second_ip), RateLimitCheckResult::Allowed);
-    assert_eq!(limiter.check(second_ip), RateLimitCheckResult::Allowed);
+    assert_eq!(limiter.check(second_ip), RateLimitCheckResult::Blocked);
     assert_eq!(limiter.tracked_ips(), 2);
 }
 

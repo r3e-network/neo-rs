@@ -2,32 +2,50 @@
 
 use std::net::IpAddr;
 
-/// Checks if a host is an internal/private host that should be blocked.
-pub(super) async fn is_internal_host(uri: &url::Url) -> Result<bool, std::io::Error> {
-    let host = match uri.host_str() {
-        Some(host) => host,
-        None => return Ok(false),
+/// Resolves the URL host and returns the socket addresses the request may
+/// connect to, or `None` when the host must not be contacted (localhost
+/// names, internal addresses).
+///
+/// R15: EVERY resolved address is checked — inspecting only the first record
+/// lets multi-address responses or DNS rebinds slip an internal target
+/// through. Callers must pin the connection to the returned addresses (via
+/// reqwest `resolve`) so the checked addresses and the address actually
+/// connected to cannot diverge. An empty Vec means "validated, nothing to
+/// pin" (raw IP literal hosts).
+pub(super) async fn validated_external_addresses(
+    uri: &url::Url,
+) -> Result<Option<Vec<std::net::SocketAddr>>, std::io::Error> {
+    let Some(host) = uri.host_str() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "URL has no host",
+        ));
     };
 
     // Check for common localhost names
     if is_localhost_name(host) {
-        return Ok(true);
+        return Ok(None);
     }
 
-    // Check if it's a raw IP address
+    // Raw IP address: no resolution step to race with; still enforce the
+    // internal filter. The caller connects to this literal host directly.
     if let Ok(ip) = host.parse::<IpAddr>() {
-        return Ok(is_internal_ip(ip));
+        return Ok(if is_internal_ip(ip) {
+            None
+        } else {
+            Some(Vec::new())
+        });
     }
 
-    // DNS lookup and check resolved IP
-    let addr = tokio::net::lookup_host((host, 0)).await?.next();
-    if let Some(addr) = addr {
+    let mut addrs = Vec::new();
+    for addr in tokio::net::lookup_host((host, 0u16)).await? {
         if is_internal_ip(addr.ip()) {
-            return Ok(true);
+            return Ok(None);
         }
+        addrs.push(addr);
     }
 
-    Ok(false)
+    Ok(Some(addrs))
 }
 
 /// Check if a hostname is a localhost variant.

@@ -10,13 +10,13 @@
 //! The reference counter uses `parking_lot::Mutex` for thread-safe access
 //! without the risk of mutex poisoning that comes with `std::sync::Mutex`.
 
-use crate::stack_item::StackItem;
 use crate::Tarjan;
+use crate::stack_item::StackItem;
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Shared state for a reference counter instance.
 struct ReferenceCounterState {
@@ -466,7 +466,7 @@ impl ItemRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-use crate::stack_item::StackItem;
+    use crate::stack_item::StackItem;
 
     fn make_array() -> StackItem {
         StackItem::from_array(vec![StackItem::from_int(1), StackItem::Null])

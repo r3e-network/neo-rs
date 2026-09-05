@@ -1,5 +1,5 @@
 //! Application engine core implementation aligned with Neo C# version.
-//!
+
 //! This module implements the Neo N3 smart contract execution engine, providing
 //! the runtime environment for executing NeoVM scripts with blockchain context.
 //!
@@ -68,6 +68,14 @@
 //! directory to keep individual methods readable while preserving a single Rust
 //! module boundary (matching the C# layout).
 
+pub mod contract;
+pub mod crypto;
+pub mod helper;
+pub mod iterator;
+pub mod op_code_prices;
+pub mod runtime;
+pub mod storage;
+
 use crate::cryptography::{Crypto, murmur128};
 use crate::error::{CoreError as Error, Result};
 use crate::hardfork::Hardfork;
@@ -80,60 +88,65 @@ use crate::neo_vm::jump_table::JumpTable;
 use crate::neo_vm::script::Script;
 // InteropInterface trait removed - StackValue::Interop(u64) is used instead
 // VerifiableInterop is now stored via the interop host registry, not inline in the VM stack
+use crate::Verifiable;
 use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute};
 use crate::persistence::data_cache::DataCache;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::protocol_settings::ProtocolSettings;
 use crate::services::SystemContext;
+use crate::smart_contract::CallFlags;
+use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::FindOptions;
+use crate::smart_contract::LogEventArgs;
+use crate::smart_contract::NotifyEventArgs;
+use crate::smart_contract::StorageContext;
+use crate::smart_contract::StorageItem;
+use crate::smart_contract::StorageKey;
+use crate::smart_contract::TriggerType;
 use crate::smart_contract::application_engine_contract::register_contract_interops;
 use crate::smart_contract::application_engine_crypto::register_crypto_interops;
 use crate::smart_contract::application_engine_iterator::register_iterator_interops;
 use crate::smart_contract::application_engine_runtime::register_runtime_interops;
 use crate::smart_contract::application_engine_storage::register_storage_interops;
-use crate::smart_contract::CallFlags;
-use crate::smart_contract::ContractParameterType;
 use crate::smart_contract::contract_state::ContractState;
-use crate::smart_contract::execution_context_state::ExecutionContextState;
-use crate::smart_contract::FindOptions;
-use crate::smart_contract::helper::Helper;
 use crate::smart_contract::diagnostic::Diagnostic;
-use crate::smart_contract::iterators::iterator::StorageIterator as _;
+use crate::smart_contract::execution_context_state::ExecutionContextState;
+use crate::smart_contract::helper::Helper;
 use crate::smart_contract::iterators::StorageIterator;
-use crate::smart_contract::LogEventArgs;
+use crate::smart_contract::iterators::iterator::StorageIterator as _;
 use crate::smart_contract::manifest::ContractMethodDescriptor;
 use crate::smart_contract::native::ContractManagement;
 use crate::smart_contract::native::{
     LedgerContract, LedgerTransactionStates, NativeContract, NativeContractsCache, NativeRegistry,
     PolicyContract,
 };
-use crate::smart_contract::NotifyEventArgs;
-use crate::smart_contract::StorageContext;
-use crate::smart_contract::StorageItem;
-use crate::smart_contract::StorageKey;
-use crate::smart_contract::TriggerType;
-use crate::Verifiable;
 use crate::{UInt160, UInt256, WitnessCondition, WitnessRuleAction};
-use neo_vm::interpret_with_stack_and_syscalls_at;
-use neo_vm::interpret_with_stack_and_syscalls_at_with_result_limit;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::Instruction;
 use neo_vm::OpCode;
 use neo_vm::StackValue as VmStackValue;
 use neo_vm::SyscallProvider;
 use neo_vm::VmState as VMState;
+use neo_vm::interpret_with_stack_and_syscalls_at;
+use neo_vm::interpret_with_stack_and_syscalls_at_with_result_limit;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::fmt;
 use std::sync::Arc;
 
+/// Maximum GAS (in datoshi) available to an engine created for testing/invoke (C# `TestModeGas`).
 pub const TEST_MODE_GAS: i64 = 20_000_000_000;
+/// Maximum length (in bytes) of an event name.
 pub const MAX_EVENT_NAME: usize = 32;
+/// Maximum serialized size (in bytes) of a single notification.
 pub const MAX_NOTIFICATION_SIZE: usize = 1024;
+/// Maximum number of notifications a single execution may emit (C# `MaxNotificationCounter`).
 pub const MAX_NOTIFICATION_COUNT: usize = 512;
+/// Fee units charged to verify one signature (C# `CheckSigPrice`).
 pub const CHECK_SIG_PRICE: i64 = 1 << 15;
+/// Scaling factor between raw internal fee counters and datoshi GAS amounts.
 pub const FEE_FACTOR: i64 = 10000;
 
 type InteropHandler = fn(&mut ApplicationEngine, &mut ExecutionEngine) -> VmResult<()>;
@@ -178,29 +191,6 @@ impl VmEngineHost {
     }
 }
 
-#[derive(Clone)]
-struct VerifiableInterop {
-    container: Arc<dyn Verifiable>,
-}
-
-impl VerifiableInterop {
-    fn new(container: Arc<dyn Verifiable>) -> Self {
-        Self { container }
-    }
-}
-
-impl fmt::Debug for VerifiableInterop {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "VerifiableInterop")
-    }
-}
-
-impl VerifiableInterop {
-    fn interface_type(&self) -> &str {
-        "Verifiable"
-    }
-}
-
 /// Represents a contract call queued by a native contract.
 ///
 /// Native contracts sometimes need to invoke a user contract (e.g., NEP-17
@@ -216,6 +206,8 @@ struct PendingNativeCall {
     args: Vec<StackItem>,
 }
 
+/// The Neo N3 application engine: executes smart contracts on the VM,
+/// charging GAS for syscalls and collecting notifications and logs.
 pub struct ApplicationEngine {
     trigger: TriggerType,
     script_container: Option<Arc<dyn Verifiable>>,

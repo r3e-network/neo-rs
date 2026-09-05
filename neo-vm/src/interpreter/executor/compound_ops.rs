@@ -1,9 +1,9 @@
 use super::super::helpers::*;
 use super::super::opcodes::*;
 use super::super::runtime_types::{
-    find_affected_indices, propagate_update, CompoundIds, StackValue,
+    CompoundIds, StackValue, find_affected_indices, propagate_update,
 };
-use super::super::state::{remember_consumed_mutation, PendingException, TryStack, MAX_STACK_SIZE};
+use super::super::state::{MAX_STACK_SIZE, PendingException, TryStack, remember_consumed_mutation};
 use super::control::Dispatch;
 use crate::{
     new_array_default_value_for_neovm_type_tag, semantics::collections as collection_rules,
@@ -311,7 +311,7 @@ pub(super) fn execute(
                             _ => {
                                 return Err(
                                     "PICKITEM index must be a non-negative integer".to_string()
-                                )
+                                );
                             }
                         };
                         match item {
@@ -329,7 +329,7 @@ pub(super) fn execute(
                                 return Err(
                                     "PICKITEM expects an array, map, byte string, or integer"
                                         .to_string(),
-                                )
+                                );
                             }
                         }
                     }
@@ -352,7 +352,7 @@ pub(super) fn execute(
                 StackValue::ByteString(_) => {
                     return Err(
                         "SETITEM expects a mutable buffer, array, struct, or map".to_string()
-                    )
+                    );
                 }
                 StackValue::Buffer(id, mut bytes) => {
                     let index = integer_value_for_collection_index(&key)?;

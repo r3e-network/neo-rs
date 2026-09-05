@@ -1,8 +1,9 @@
 //! Outbound message queueing and per-peer memory quota handling.
 
 use super::RemoteNode;
-use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
+use crate::neo_io::Serializable;
 use crate::network::MessageCommand;
+use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::runtime::ActorResult;
 use bitvec::{array::BitArray, order::Lsb0};
 use std::collections::VecDeque;
@@ -55,18 +56,10 @@ pub(super) struct QueuedOutboundMessage {
     estimated_bytes: usize,
 }
 
+#[derive(Default)]
 pub(super) struct OutboundMessageQueue {
     messages: VecDeque<QueuedOutboundMessage>,
     queued_single_commands: CommandBitSet,
-}
-
-impl Default for OutboundMessageQueue {
-    fn default() -> Self {
-        Self {
-            messages: VecDeque::new(),
-            queued_single_commands: CommandBitSet::default(),
-        }
-    }
 }
 
 impl OutboundMessageQueue {
@@ -105,20 +98,11 @@ impl OutboundMessageQueue {
     }
 }
 
+#[derive(Default)]
 pub(super) struct OutboundQueues {
     high: OutboundMessageQueue,
     low: OutboundMessageQueue,
     queued_bytes: usize,
-}
-
-impl Default for OutboundQueues {
-    fn default() -> Self {
-        Self {
-            high: OutboundMessageQueue::default(),
-            low: OutboundMessageQueue::default(),
-            queued_bytes: 0,
-        }
-    }
 }
 
 impl OutboundQueues {
@@ -239,16 +223,26 @@ impl RemoteNode {
 
 fn estimate_message_size(message: &NetworkMessage) -> usize {
     const BASE_OVERHEAD: usize = 64;
+    const FIXED_PAYLOAD_OVERHEAD: usize = 128;
 
+    // Review §5.1: the per-peer byte budget must reflect what the message
+    // will actually retain on the wire, not fixed guesses (a Block guessed
+    // at 2 KiB can serialize to hundreds of KiB). Variable payloads use
+    // their real serialized size; fixed-shape payloads keep exact-size
+    // arithmetic.
     let payload_size = match &message.payload {
-        ProtocolMessage::Block(_) => 2048,
-        ProtocolMessage::Headers(headers) => headers.headers.len() * 512,
-        ProtocolMessage::Transaction(_) => 1024,
+        ProtocolMessage::Block(block) => block.size(),
+        ProtocolMessage::Headers(headers) => headers
+            .headers
+            .iter()
+            .map(|header| header.size())
+            .sum::<usize>(),
+        ProtocolMessage::Transaction(tx) => tx.size(),
         ProtocolMessage::Inv(inv) => inv.hashes.len() * 32,
         ProtocolMessage::GetData(inv) => inv.hashes.len() * 32,
         ProtocolMessage::GetBlocks(_) => 64,
-        ProtocolMessage::Extensible(ext) => ext.data.len() + 128,
-        _ => 128,
+        ProtocolMessage::Extensible(ext) => ext.data.len() + FIXED_PAYLOAD_OVERHEAD,
+        _ => FIXED_PAYLOAD_OVERHEAD,
     };
 
     BASE_OVERHEAD + payload_size
@@ -257,10 +251,10 @@ fn estimate_message_size(message: &NetworkMessage) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::p2p::payloads::{
-        inv_payload::InvPayload, ping_payload::PingPayload, InventoryType,
-    };
     use crate::UInt256;
+    use crate::network::p2p::payloads::{
+        InventoryType, inv_payload::InvPayload, ping_payload::PingPayload,
+    };
 
     const TEST_MAX_QUEUE_BYTES: usize = usize::MAX;
 

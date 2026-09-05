@@ -1,17 +1,19 @@
+use neo_core::ScriptBuilder;
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
+use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::BinarySerializer;
 use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::ContractParameterType;
+use neo_core::smart_contract::Interoperable;
+use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::contract_state::{ContractState, NefFile};
 use neo_core::smart_contract::manifest::{
-    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
+    ContractAbi, ContractEventDescriptor, ContractManifest, ContractMethodDescriptor,
+    ContractParameterDefinition,
 };
 use neo_core::smart_contract::native::{ContractManagement, GasToken, NativeContract, NeoToken};
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::Interoperable;
 use neo_core::wallets::KeyPair;
 use neo_core::witness::Witness;
 use neo_core::{UInt160, Verifiable, WitnessScope};
@@ -163,12 +165,14 @@ fn make_engine(snapshot: Arc<DataCache>, signer: UInt160) -> ApplicationEngine {
     // Add a witness for the signer to pass check_witness validation
     container.add_witness(Witness::new());
     let script_container: Arc<dyn Verifiable> = Arc::new(container);
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.clear();
     ApplicationEngine::new(
         TriggerType::Application,
         Some(script_container),
         snapshot,
         None,
-        Default::default(),
+        settings,
         TEST_GAS_LIMIT,
         None,
     )
@@ -259,9 +263,10 @@ fn gas_token_mint_burn_and_transfer_update_balances() {
 
     gas.burn(&mut engine, &account_a, &balance_a_after)
         .expect("burn succeeds");
-    assert!(gas
-        .balance_of_snapshot(snapshot.as_ref(), &account_a)
-        .is_zero());
+    assert!(
+        gas.balance_of_snapshot(snapshot.as_ref(), &account_a)
+            .is_zero()
+    );
 }
 
 #[test]
@@ -299,9 +304,10 @@ fn gas_transfer_uses_current_contract_hash_for_contract_sender_authorization() {
         vec![1],
         "contract-originated GAS transfer should authorize against current contract hash",
     );
-    assert!(gas
-        .balance_of_snapshot(snapshot.as_ref(), &contract_hash)
-        .is_zero());
+    assert!(
+        gas.balance_of_snapshot(snapshot.as_ref(), &contract_hash)
+            .is_zero()
+    );
     assert_eq!(
         gas.balance_of_snapshot(snapshot.as_ref(), &recipient),
         amount
@@ -407,7 +413,23 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
     .unwrap();
 
     let mut manifest = ContractManifest::new("PaymentReceiver".to_string());
-    manifest.abi = ContractAbi::new(vec![on_payment], vec![]);
+    // C# parity (ApplicationEngine.Runtime.RuntimeNotify, HF_Basilisk): Notify
+    // validates the event name against the deployed contract's manifest ABI
+    // events and throws `Event \`X\` does not exist.` when the name is absent.
+    // The receiver script emits `Payment` with the 20-byte calling script
+    // hash, so the manifest must declare that event.
+    let payment_event = ContractEventDescriptor::new(
+        "Payment".to_string(),
+        vec![
+            ContractParameterDefinition::new(
+                "calling_script_hash".to_string(),
+                ContractParameterType::Hash160,
+            )
+            .unwrap(),
+        ],
+    )
+    .unwrap();
+    manifest.abi = ContractAbi::new(vec![on_payment], vec![payment_event]);
 
     let manifest_json = manifest.to_json().expect("manifest json");
     let manifest_bytes = serde_json::to_vec(&manifest_json).expect("serialize manifest");
@@ -516,7 +538,20 @@ fn gas_transfer_passes_raw_any_payload_into_on_nep17_payment() {
     .unwrap();
 
     let mut manifest = ContractManifest::new("PaymentReceiverData".to_string());
-    manifest.abi = ContractAbi::new(vec![on_payment], Vec::new());
+    // C# parity (ApplicationEngine.Runtime.RuntimeNotify, HF_Basilisk): the
+    // manifest must declare the emitted event or Notify faults with
+    // `Event \`X\` does not exist.` The payload is raw untyped data, so the
+    // event declares a single `Any` parameter (CheckItemType: Any always
+    // passes).
+    let payment_data_event = ContractEventDescriptor::new(
+        "PaymentData".to_string(),
+        vec![
+            ContractParameterDefinition::new("data".to_string(), ContractParameterType::Any)
+                .unwrap(),
+        ],
+    )
+    .unwrap();
+    manifest.abi = ContractAbi::new(vec![on_payment], vec![payment_data_event]);
 
     let manifest_json = manifest.to_json().expect("manifest json");
     let manifest_bytes = serde_json::to_vec(&manifest_json).expect("serialize manifest");
@@ -623,7 +658,20 @@ fn system_contract_call_gas_transfer_passes_raw_any_payload_into_on_nep17_paymen
     .unwrap();
 
     let mut manifest = ContractManifest::new("PaymentReceiverDataCall".to_string());
-    manifest.abi = ContractAbi::new(vec![on_payment], Vec::new());
+    // C# parity (ApplicationEngine.Runtime.RuntimeNotify, HF_Basilisk): the
+    // manifest must declare the emitted event or Notify faults with
+    // `Event \`X\` does not exist.` The payload is raw untyped data, so the
+    // event declares a single `Any` parameter (CheckItemType: Any always
+    // passes).
+    let payment_data_event = ContractEventDescriptor::new(
+        "PaymentData".to_string(),
+        vec![
+            ContractParameterDefinition::new("data".to_string(), ContractParameterType::Any)
+                .unwrap(),
+        ],
+    )
+    .unwrap();
+    manifest.abi = ContractAbi::new(vec![on_payment], vec![payment_data_event]);
 
     let manifest_json = manifest.to_json().expect("manifest json");
     let manifest_bytes = serde_json::to_vec(&manifest_json).expect("serialize manifest");

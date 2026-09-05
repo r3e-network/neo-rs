@@ -1,14 +1,16 @@
-# neo-node and neo-cli Usage
+# neo-node Usage
 
-Current command-line reference for `neo-node` (daemon) and `neo-cli` (JSON-RPC client) in `neo-rs` v0.7.x.
+Current command-line reference for the `neo-node` daemon and its JSON-RPC API in `neo-rs` v0.15.0 (Neo N3 v3.10.1).
+
+> The former `neo-cli` client was merged into `neo-node`; use the node's JSON-RPC endpoint or an external RPC client.
 
 ## Quick Start
 
 ### Build binaries
 
 ```bash
-# Standard node + client
-cargo build --release -p neo-node -p neo-cli
+# Node daemon (RPC client tools are external)
+cargo build --release -p neo-node
 
 # Optional TEE/SGX-enabled node binary
 cargo build --release -p neo-node --features tee-sgx
@@ -107,103 +109,50 @@ Environment variables:
 - Run `neo-node --help` to see the exact env var attached to each flag.
 - During `--import-acc`, `neo-node` auto-selects `NEO_ROCKSDB_BATCH_PROFILE=high_throughput` unless you set `NEO_ROCKSDB_BATCH_PROFILE` explicitly.
 
-## neo-cli Reference
+## Interacting with a running node
 
-`neo-cli` is an RPC client. It does not run networking/P2P; it talks to an RPC endpoint.
+`neo-node` is a daemon that exposes its capabilities through flags (for
+startup/validation) and a JSON-RPC API (for querying chain, wallet, and
+invoking contracts). There is no separate `neo-cli` client binary — use the
+node's JSON-RPC endpoint or an external RPC client.
 
-Usage:
+### Startup & validation flags
 
 ```bash
-neo-cli [OPTIONS] <COMMAND>
+# Config/storage checks without starting networking
+neo-node --config neo_mainnet_node.toml --check-config
+neo-node --config neo_mainnet_node.toml --check-storage
+neo-node --config neo_mainnet_node.toml --check-all
 ```
 
-Global options:
-- `-u, --rpc-url <RPC_URL>` (default: `http://localhost:10332`)
-- `--rpc-user <RPC_USER>`
-- `--rpc-pass <RPC_PASS>`
-- `-o, --output <OUTPUT>` where `OUTPUT` is `plain|table|json`
-
-Main commands:
-- `version`
-- `state`
-- `peers`
-- `mempool`
-- `plugins`
-- `start-consensus`
-- `block`
-- `header`
-- `tx`
-- `contract`
-- `best-block-hash`
-- `block-count`
-- `block-hash`
-- `balance`
-- `transfers`
-- `gas`
-- `invoke`
-- `test-invoke`
-- `wallet`
-- `send`
-- `transfer`
-- `vote`
-- `unvote`
-- `register-candidate`
-- `unregister-candidate`
-- `candidates`
-- `committee`
-- `validators`
-- `native-contracts`
-- `neo`
-- `gas-token`
-- `parse`
-- `parse-script`
-- `validate-address`
-- `sign`
-- `relay`
-- `broadcast`
-- `export-blocks`
-
-## Common neo-cli Examples
+### JSON-RPC queries
 
 ```bash
-# Node and sync state
-neo-cli state
-neo-cli peers
-neo-cli block-count
+# Node and chain state
+curl -s http://localhost:10332 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}'
 
-# Chain data
-neo-cli block 1000
-neo-cli block 0x<block_hash> --raw
-neo-cli tx 0x<tx_hash>
+curl -s http://localhost:10332 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getblock","params":[1000,1]}'
+
+curl -s http://localhost:10332 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getrawtransaction","params":["0x<tx_hash>",1]}'
 
 # Contract invocation (read-only)
-neo-cli invoke 0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5 totalSupply '[]'
+curl -s http://localhost:10332 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"invokefunction","params":["0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5","totalSupply",[]]}'
 
-# Token and account info
-neo-cli balance NQy6...address...
-neo-cli transfers NQy6...address...
-neo-cli gas NQy6...address...
-
-# Wallet subcommands
-neo-cli wallet create ./wallet.json
-neo-cli wallet open ./wallet.json
-neo-cli wallet list
-
-# Output control
-neo-cli --output json state
-neo-cli --rpc-url http://127.0.0.1:20332 state
+# Peers / mempool
+curl -s http://localhost:10332 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getpeers","params":[]}'
 ```
+
+Run `neo-node --help` for the full flag list and `--rpc-port`/`NEO_RPC_PORT`
+for the JSON-RPC endpoint configuration.
 
 ## Troubleshooting
 
 ```bash
 # Show all available node flags (depends on enabled features)
 neo-node --help
-
-# Show client command tree
-neo-cli --help
-
-# Show command-specific help
-neo-cli invoke --help
-neo-cli wallet --help
 ```

@@ -6,8 +6,8 @@ pub(in crate::service) fn compute_merkle_root(hashes: &[UInt256]) -> UInt256 {
 }
 
 pub(in crate::service) fn compute_next_consensus_address(validators: &[ValidatorInfo]) -> UInt160 {
-    use neo_vm::ScriptBuilder;
     use neo_crypto::ECPoint;
+    use neo_vm::ScriptBuilder;
 
     if validators.is_empty() {
         return UInt160::zero();

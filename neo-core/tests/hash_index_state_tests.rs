@@ -1,6 +1,6 @@
-use neo_core::smart_contract::native::hash_index_state::HashIndexState;
-use neo_core::smart_contract::BinarySerializer;
 use neo_core::UInt256;
+use neo_core::smart_contract::BinarySerializer;
+use neo_core::smart_contract::native::hash_index_state::HashIndexState;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackValue;
 

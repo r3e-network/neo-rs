@@ -5,6 +5,7 @@ use neo_consensus::{
     BlockData, ChangeViewReason, ConsensusContext, ConsensusEvent, ConsensusMessageType,
     ConsensusPayload, ConsensusService, ConsensusSigner, ValidatorInfo,
 };
+use neo_core::ScriptBuilder;
 use neo_core::cryptography::MerkleTree;
 use neo_core::i_event_handlers::MessageReceivedHandler;
 use neo_core::ledger::{
@@ -22,7 +23,6 @@ use neo_core::network::p2p::{
 use neo_core::persistence::Store;
 use neo_core::prelude::Serializable;
 use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, Props, ScheduleHandle};
-use neo_core::ScriptBuilder;
 use neo_core::smart_contract::ContractParametersContext;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
@@ -39,7 +39,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 const CONSENSUS_STATE_KEY: [u8; 1] = [0xf4];
 
@@ -262,11 +262,7 @@ impl ConsensusActor {
 
     fn current_time_ms() -> u64 {
         let millis = TimeProvider::current().utc_now_timestamp_millis();
-        if millis < 0 {
-            0
-        } else {
-            millis as u64
-        }
+        if millis < 0 { 0 } else { millis as u64 }
     }
 
     fn start_timer(&mut self, ctx: &ActorContext) {
@@ -401,6 +397,7 @@ impl ConsensusActor {
 
         let network = self.system.settings().network;
         let expected_block_time = self.system.time_per_block().as_millis() as u64;
+        let max_transactions_per_block = self.system.settings().max_transactions_per_block as usize;
         let now = Self::current_time_ms();
 
         let mut use_recovery = None;
@@ -441,6 +438,7 @@ impl ConsensusActor {
                 ConsensusService::with_context(network, context, private_key.clone(), event_tx);
             service.set_signer(Some(signer.clone()));
             service.set_expected_block_time(expected_block_time);
+            service.set_max_transactions_per_block(max_transactions_per_block);
             service.set_prev_timestamp(prev_timestamp);
             if let Err(err) = service.resume(now, prev_hash, 0) {
                 warn!(target: "neo", %err, "failed to resume consensus from recovery log");
@@ -454,6 +452,7 @@ impl ConsensusActor {
             service.set_private_key(private_key.clone());
             service.set_signer(Some(signer.clone()));
             service.set_expected_block_time(expected_block_time);
+            service.set_max_transactions_per_block(max_transactions_per_block);
             service.set_prev_timestamp(prev_timestamp);
             if let Err(err) = service.start(block_index, now, prev_hash, 0) {
                 warn!(target: "neo", %err, "failed to start consensus round");
@@ -471,6 +470,7 @@ impl ConsensusActor {
         );
         service.set_signer(Some(signer));
         service.set_expected_block_time(expected_block_time);
+        service.set_max_transactions_per_block(max_transactions_per_block);
         service.set_prev_timestamp(prev_timestamp);
         if let Err(err) = service.start(block_index, now, prev_hash, 0) {
             warn!(target: "neo", %err, "failed to start consensus round");
@@ -517,7 +517,9 @@ impl ConsensusActor {
     fn on_persist_completed(&mut self, mut block: Block, ctx: &ActorContext) {
         let next_index = block.index().saturating_add(1);
         let hash = block.hash();
-        self.start_round(next_index, hash, block.timestamp(), ctx);
+        // Timer compensation starts at local persistence completion time, not the
+        // persisted block's header timestamp (which may be far older).
+        self.start_round(next_index, hash, Self::current_time_ms(), ctx);
     }
 
     fn on_timer_tick(&mut self) {
@@ -525,24 +527,21 @@ impl ConsensusActor {
         self.try_prepare_response(now);
         self.try_finalize_pending_block(now);
 
+        let reason = if self
+            .missing_transactions
+            .as_ref()
+            .map(|missing| !missing.is_empty())
+            .unwrap_or(false)
+        {
+            ChangeViewReason::TxNotFound
+        } else {
+            ChangeViewReason::Timeout
+        };
         let Some(service) = self.service.as_mut() else {
             return;
         };
-        if service.context().is_timed_out(now) {
-            let reason = if self
-                .missing_transactions
-                .as_ref()
-                .map(|missing| !missing.is_empty())
-                .unwrap_or(false)
-            {
-                ChangeViewReason::TxNotFound
-            } else {
-                ChangeViewReason::Timeout
-            };
-
-            if let Err(err) = service.request_change_view(reason, now) {
-                warn!(target: "neo", %err, "failed to request view change");
-            }
+        if let Err(err) = service.on_timer_tick_with_reason(now, reason) {
+            warn!(target: "neo", %err, ?reason, "failed to process consensus timer");
         }
     }
 
@@ -584,7 +583,16 @@ impl ConsensusActor {
                 }
             }
             if !saved {
-                warn!(target: "neo", "failed to persist consensus recovery log");
+                // R03: a signed Commit must never be published unless its
+                // recovery state is durably persisted — losing it after
+                // broadcast would risk re-signing a different proposal after
+                // a crash. Withhold the Commit and fail loudly instead.
+                error!(
+                    target: "neo",
+                    validator = payload.validator_index,
+                    "commit recovery state could not be persisted to store or disk; withholding Commit broadcast"
+                );
+                return;
             }
         }
 
@@ -666,10 +674,10 @@ impl ConsensusActor {
             .collect();
 
         let hashes = selected.into_iter().map(|tx| tx.hash()).collect();
-        if let Some(service) = self.service.as_mut() {
-            if let Err(err) = service.on_transactions_received(hashes) {
-                warn!(target: "neo", %err, "failed to submit proposal transactions");
-            }
+        if let Some(service) = self.service.as_mut()
+            && let Err(err) = service.on_transactions_received(hashes)
+        {
+            warn!(target: "neo", %err, "failed to submit proposal transactions");
         }
     }
 
@@ -730,8 +738,7 @@ impl ConsensusActor {
             return candidates;
         }
 
-        let fallback = pool.lock().get_sorted_verified_transactions(limit);
-        fallback
+        pool.lock().get_sorted_verified_transactions(limit)
     }
 
     fn try_prepare_response(&mut self, now: u64) {
@@ -1085,10 +1092,10 @@ impl ConsensusActor {
             return false;
         }
 
-        if let Some(prev_hash) = self.current_prev_hash {
-            if message.prev_hash != prev_hash {
-                return false;
-            }
+        if let Some(prev_hash) = self.current_prev_hash
+            && message.prev_hash != prev_hash
+        {
+            return false;
         }
 
         let prev_timestamp = self.prev_timestamp.unwrap_or(0);

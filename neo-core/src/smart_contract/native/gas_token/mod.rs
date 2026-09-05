@@ -1,3 +1,4 @@
+use super::AccountState;
 use super::contract_management::ContractManagement;
 use super::fungible_token::{FungibleToken, PREFIX_ACCOUNT as ACCOUNT_PREFIX, PREFIX_TOTAL_SUPPLY};
 use super::native_contract::{NativeContract, NativeMethod};
@@ -5,20 +6,19 @@ use super::policy_contract::PolicyContract;
 use super::security_fixes::{
     PermissionValidator, ReentrancyGuardType, SafeArithmetic, SecurityContext, StateValidator,
 };
-use super::AccountState;
+use crate::UInt160;
 use crate::error::{CoreError, CoreResult, ToNativeError};
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
+use crate::smart_contract::StorageItem;
+use crate::smart_contract::StorageItemExt;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::native::helpers::serialize_stack_value_native;
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
-use crate::smart_contract::StorageItem;
-use crate::smart_contract::StorageItemExt;
-use crate::neo_vm::{StackItem, StackItemExt};
-use crate::UInt160;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackValue;
 use num_bigint::BigInt;
@@ -42,16 +42,19 @@ impl GasToken {
     const DECIMALS: u8 = 8;
     const NAME: &'static str = "GasToken";
 
+    /// Creates a new GasToken native contract instance.
     pub fn new() -> Self {
         Self {
             methods: Self::native_methods(),
         }
     }
 
+    /// Returns the GAS token symbol (`"GAS"`).
     pub fn symbol(&self) -> &'static str {
         Self::SYMBOL
     }
 
+    /// Returns the number of decimal places used by GAS (8).
     pub fn decimals(&self) -> u8 {
         Self::DECIMALS
     }

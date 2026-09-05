@@ -1,6 +1,6 @@
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, ReadOnlyStoreGeneric, StoreProvider, SeekDirection,
-    StorageConfig, StoreCache,
+    ReadOnlyStoreGeneric, SeekDirection, StorageConfig, StoreCache, StoreProvider,
+    providers::RocksDBStoreProvider,
 };
 use neo_core::smart_contract::StorageKey;
 use std::path::PathBuf;

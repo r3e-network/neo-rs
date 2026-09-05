@@ -130,10 +130,12 @@ impl ActorRef {
             .map_err(|e| ActorRuntimeError::send(e.to_string()))
     }
 
+    /// Returns a clone of this actor's path.
     pub fn path(&self) -> ActorPath {
         self.path.clone()
     }
 
+    /// Returns true while the actor system backing this reference is alive.
     pub fn is_alive(&self) -> bool {
         self.system.upgrade().is_some()
     }

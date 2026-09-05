@@ -7,7 +7,7 @@ use alloc::{
 };
 
 use crate::{
-    new_array_default_value_for_neovm_type_tag, semantics::numeric, StackValue, MAX_ITEM_SIZE,
+    MAX_ITEM_SIZE, StackValue, new_array_default_value_for_neovm_type_tag, semantics::numeric,
 };
 
 /// Convert a primitive NeoVM value into an index used by collection opcodes.
@@ -234,13 +234,15 @@ pub fn size(value: &StackValue) -> Result<i64, String> {
 pub fn has_key(collection: &StackValue, key: &StackValue) -> Result<bool, String> {
     match collection {
         StackValue::Array(items) | StackValue::Struct(items) => {
-            Ok(non_negative_index(collection_index_value(key)?)
-                .is_some_and(|index| index < items.len()))
+            let index = non_negative_index(collection_index_value(key)?)
+                .ok_or_else(|| "HASKEY: negative index".to_string())?;
+            Ok(index < items.len())
         }
         StackValue::Map(pairs) => Ok(map_entry_index(pairs, key)?.is_some()),
         StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
-            Ok(non_negative_index(collection_index_value(key)?)
-                .is_some_and(|index| index < bytes.len()))
+            let index = non_negative_index(collection_index_value(key)?)
+                .ok_or_else(|| "HASKEY: negative index".to_string())?;
+            Ok(index < bytes.len())
         }
         _ => Err("HASKEY: unsupported types".into()),
     }
@@ -388,5 +390,31 @@ fn primitive_memory(value: &StackValue) -> Vec<u8> {
             .to_byte_string_bytes()
             .expect("primitive values have byte-string memory"),
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn has_key_negative_index_faults() {
+        // R07: both executors must fault on a negative index (official
+        // Gorgon behavior), not answer `false`.
+        let array = StackValue::Array(vec![StackValue::Integer(1)]);
+        assert!(has_key(&array, &StackValue::Integer(-1)).is_err());
+
+        let bytes = StackValue::ByteString(vec![0xAA, 0xBB]);
+        assert!(has_key(&bytes, &StackValue::Integer(-1)).is_err());
+    }
+
+    #[test]
+    fn has_key_valid_indices() {
+        let array = StackValue::Array(vec![StackValue::Integer(1)]);
+        assert_eq!(has_key(&array, &StackValue::Integer(0)), Ok(true));
+        assert_eq!(has_key(&array, &StackValue::Integer(1)), Ok(false));
+
+        let bytes = StackValue::ByteString(vec![0xAA, 0xBB]);
+        assert_eq!(has_key(&bytes, &StackValue::Integer(1)), Ok(true));
     }
 }

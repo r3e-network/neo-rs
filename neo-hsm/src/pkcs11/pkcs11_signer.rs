@@ -2,7 +2,7 @@
 
 use crate::device::{HsmDeviceInfo, HsmDeviceType};
 use crate::error::{HsmError, HsmResult};
-use crate::signer::{normalize_public_key, script_hash_from_public_key, HsmKeyInfo, HsmSigner};
+use crate::signer::{HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key};
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use std::path::Path;
@@ -16,12 +16,33 @@ use cryptoki::{
 };
 use neo_crypto::Crypto;
 
+/// Thread-safe wrapper around cryptoki's `Pkcs11` context.
+///
+/// `cryptoki::context::Pkcs11` holds raw FFI pointers and is conservatively
+/// `!Send + !Sync`. Safety: the context is initialized with
+/// `CInitializeArgs::OsThreads` (PKCS#11 `CKF_OS_LOCKING_OK`), under which the
+/// PKCS#11 v2.40 specification (section 2.2.2) requires the library to use OS
+/// locking primitives so its function entry points are thread-safe.
+struct ThreadSafePkcs11(Pkcs11);
+unsafe impl Send for ThreadSafePkcs11 {}
+unsafe impl Sync for ThreadSafePkcs11 {}
+
+/// Thread-safe wrapper around cryptoki's `Session`.
+///
+/// Safety: sessions are only ever accessed through the
+/// `RwLock<Option<ThreadSafeSession>>` on `Pkcs11Signer`, and the underlying
+/// PKCS#11 library is initialized with `CKF_OS_LOCKING_OK` (see
+/// [`ThreadSafePkcs11`]), making session entry points thread-safe.
+struct ThreadSafeSession(Session);
+unsafe impl Send for ThreadSafeSession {}
+unsafe impl Sync for ThreadSafeSession {}
+
 /// PKCS#11 HSM signer
 pub struct Pkcs11Signer {
     device_info: HsmDeviceInfo,
-    ctx: Pkcs11,
+    ctx: ThreadSafePkcs11,
     slot_index: u64,
-    session: RwLock<Option<Session>>,
+    session: RwLock<Option<ThreadSafeSession>>,
     is_ready: RwLock<bool>,
     is_locked: RwLock<bool>,
 }
@@ -71,7 +92,7 @@ impl Pkcs11Signer {
 
         Ok(Self {
             device_info,
-            ctx,
+            ctx: ThreadSafePkcs11(ctx),
             slot_index: slot,
             session: RwLock::new(None),
             is_ready: RwLock::new(false),
@@ -83,6 +104,7 @@ impl Pkcs11Signer {
     fn get_slot(&self) -> HsmResult<cryptoki::slot::Slot> {
         let slots = self
             .ctx
+            .0
             .get_slots_with_token()
             .map_err(|e| HsmError::Pkcs11Error(e.to_string()))?;
 
@@ -239,7 +261,11 @@ impl Pkcs11Signer {
         normalize_public_key(point)
     }
 
-    fn decode_der_octet_string(&self, der: &[u8]) -> HsmResult<Option<&[u8]>> {
+    // Explicit lifetime: the returned slice borrows from `der`, not from
+    // `&self` (default elision would tie the output to `&self` and fail to
+    // compile - this module is feature-gated behind `pkcs11` and had never
+    // been compiled).
+    fn decode_der_octet_string<'a>(&self, der: &'a [u8]) -> HsmResult<Option<&'a [u8]>> {
         if der.len() < 2 || der[0] != 0x04 {
             return Ok(None);
         }
@@ -308,6 +334,7 @@ impl HsmSigner for Pkcs11Signer {
 
         let session = self
             .ctx
+            .0
             .open_rw_session(slot)
             .map_err(|e| HsmError::Pkcs11Error(format!("Failed to open session: {}", e)))?;
 
@@ -325,7 +352,7 @@ impl HsmSigner for Pkcs11Signer {
                 }
             })?;
 
-        *self.session.write() = Some(session);
+        *self.session.write() = Some(ThreadSafeSession(session));
         *self.is_locked.write() = false;
         *self.is_ready.write() = true;
 
@@ -341,7 +368,7 @@ impl HsmSigner for Pkcs11Signer {
 
     fn lock(&self) {
         if let Some(session) = self.session.write().take() {
-            let _ = session.logout();
+            let _ = session.0.logout();
         }
         *self.is_locked.write() = true;
         *self.is_ready.write() = false;
@@ -353,7 +380,10 @@ impl HsmSigner for Pkcs11Signer {
 
     async fn list_keys(&self) -> HsmResult<Vec<HsmKeyInfo>> {
         let session_guard = self.session.read();
-        let session = session_guard.as_ref().ok_or(HsmError::NotInitialized)?;
+        let session = session_guard
+            .as_ref()
+            .map(|guarded| &guarded.0)
+            .ok_or(HsmError::NotInitialized)?;
 
         // Find all EC public keys (easier to enumerate than private keys)
         let template = vec![Attribute::Class(ObjectClass::PUBLIC_KEY)];
@@ -374,7 +404,10 @@ impl HsmSigner for Pkcs11Signer {
 
     async fn get_key(&self, key_id: &str) -> HsmResult<HsmKeyInfo> {
         let session_guard = self.session.read();
-        let session = session_guard.as_ref().ok_or(HsmError::NotInitialized)?;
+        let session = session_guard
+            .as_ref()
+            .map(|guarded| &guarded.0)
+            .ok_or(HsmError::NotInitialized)?;
 
         let handle = self.find_public_key(session, key_id)?;
         self.get_key_info_from_handle(session, handle)
@@ -386,7 +419,10 @@ impl HsmSigner for Pkcs11Signer {
         }
 
         let session_guard = self.session.read();
-        let session = session_guard.as_ref().ok_or(HsmError::NotInitialized)?;
+        let session = session_guard
+            .as_ref()
+            .map(|guarded| &guarded.0)
+            .ok_or(HsmError::NotInitialized)?;
 
         let key_handle = self.find_private_key(session, key_id)?;
 

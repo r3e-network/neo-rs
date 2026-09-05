@@ -24,7 +24,7 @@ impl NeoToken {
             return false;
         }
         let count_u32 = u32::try_from(committee_members_count).unwrap_or(u32::MAX);
-        height % count_u32 == 0
+        height.is_multiple_of(count_u32)
     }
 
     /// Attempts to read the current committee from the snapshot-backed storage used by the
@@ -83,14 +83,12 @@ impl NeoToken {
         let key = StorageKey::create(Self::ID, Self::PREFIX_COMMITTEE);
         if let Some(item) = snapshot.try_get(&key) {
             let bytes = item.value_bytes();
-            if !bytes.is_empty() {
-                if let Ok(stack_value) = BinarySerializer::deserialize_stack_value(&bytes) {
-                    if let Ok(values) = Self::decode_committee_with_votes_value(stack_value) {
-                        if !values.is_empty() {
-                            return Ok(values);
-                        }
-                    }
-                }
+            if !bytes.is_empty()
+                && let Ok(stack_value) = BinarySerializer::deserialize_stack_value(&bytes)
+                && let Ok(values) = Self::decode_committee_with_votes_value(stack_value)
+                && !values.is_empty()
+            {
+                return Ok(values);
             }
         }
         self.compute_committee_members(snapshot, settings)
@@ -272,8 +270,7 @@ impl NeoToken {
                 continue;
             };
 
-            let state =
-                CandidateState::from_storage_item(&item).native_err()?;
+            let state = CandidateState::from_storage_item(&item).native_err()?;
             if !state.registered {
                 continue;
             }
@@ -298,6 +295,8 @@ impl NeoToken {
             .collect::<Vec<_>>())
     }
 
+    /// Computes the next block validators from the voted committee, returning the
+    /// top `validators_count` public keys sorted by point.
     pub fn compute_next_block_validators_snapshot<S>(
         &self,
         snapshot: &S,
@@ -317,6 +316,8 @@ impl NeoToken {
         Ok(validators)
     }
 
+    /// Returns the next block validators as the highest-voted committee members,
+    /// limited to `validators_count`.
     pub fn get_next_block_validators_snapshot<S>(
         &self,
         snapshot: &S,

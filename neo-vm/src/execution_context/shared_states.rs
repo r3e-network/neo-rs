@@ -58,9 +58,7 @@ impl SharedStates {
         let script = Arc::new(script);
         Self {
             script: Arc::clone(&script),
-            evaluation_stack: Arc::new(Mutex::new(
-                EvaluationStack::new(reference_counter.clone()),
-            )),
+            evaluation_stack: Arc::new(Mutex::new(EvaluationStack::new(reference_counter.clone()))),
             static_fields: Arc::new(Mutex::new(None)),
             reference_counter,
             states: Arc::new(RwLock::new(HashMap::new())),
@@ -86,16 +84,12 @@ impl SharedStates {
     }
 
     /// Returns the evaluation stack.
-    pub fn evaluation_stack(
-        &self,
-    ) -> parking_lot::MutexGuard<'_, EvaluationStack> {
+    pub fn evaluation_stack(&self) -> parking_lot::MutexGuard<'_, EvaluationStack> {
         self.evaluation_stack.lock()
     }
 
     /// Returns a mutable reference to the evaluation stack.
-    pub fn evaluation_stack_mut(
-        &self,
-    ) -> parking_lot::MutexGuard<'_, EvaluationStack> {
+    pub fn evaluation_stack_mut(&self) -> parking_lot::MutexGuard<'_, EvaluationStack> {
         self.evaluation_stack.lock()
     }
 
@@ -142,17 +136,17 @@ impl SharedStates {
     ) -> Arc<Mutex<T>> {
         let type_id = TypeId::of::<T>();
 
-        if let Some(existing) = self.states.read().get(&type_id) {
-            if let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>() {
-                return Arc::clone(arc);
-            }
+        if let Some(existing) = self.states.read().get(&type_id)
+            && let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>()
+        {
+            return Arc::clone(arc);
         }
 
         let mut states = self.states.write();
-        if let Some(existing) = states.get(&type_id) {
-            if let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>() {
-                return Arc::clone(arc);
-            }
+        if let Some(existing) = states.get(&type_id)
+            && let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>()
+        {
+            return Arc::clone(arc);
         }
 
         let new_state = Arc::new(Mutex::new(factory()));

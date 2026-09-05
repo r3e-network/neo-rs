@@ -5,7 +5,7 @@
 //! This enables the P2P networking layer to serialize/deserialize messages
 //! without depending on the smart contract execution engine.
 
-use crate::{UInt256, Witness};
+use crate::UInt256;
 
 /// Trait for blockchain payloads that can be serialized and hashed.
 ///
@@ -31,7 +31,7 @@ pub trait SerializablePayload: Send + Sync {
         use sha2::{Digest, Sha256};
         let data = self.hash_data();
         let first = Sha256::digest(&data);
-        let second = Sha256::digest(&first);
+        let second = Sha256::digest(first);
         UInt256::from_bytes(&second).unwrap_or_default()
     }
 

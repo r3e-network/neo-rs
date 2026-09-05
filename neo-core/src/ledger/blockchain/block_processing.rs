@@ -40,7 +40,7 @@ impl Blockchain {
             .map(|header| header.index())
             .unwrap_or(current_height);
 
-        if block_index % 10000 == 0 {
+        if block_index.is_multiple_of(10000) {
             tracing::info!(
                 target: "neo",
                 block_index,
@@ -341,10 +341,10 @@ impl Blockchain {
             return VerifyResult::Invalid;
         }
 
-        if payload.category == STATE_SERVICE_CATEGORY {
-            if let Err(err) = self.process_state_service_payload(context, &payload) {
-                warn!(target: "neo", %err, "state service payload handling failed");
-            }
+        if payload.category == STATE_SERVICE_CATEGORY
+            && let Err(err) = self.process_state_service_payload(context, &payload)
+        {
+            warn!(target: "neo", %err, "state service payload handling failed");
         }
 
         if let Err(err) = context.record_extensible(payload) {
@@ -379,9 +379,9 @@ impl Blockchain {
         settings: &ProtocolSettings,
         snapshot: &DataCache,
     ) -> std::collections::HashSet<UInt160> {
+        use crate::smart_contract::Contract;
         use crate::smart_contract::native::helpers::NativeHelpers;
         use crate::smart_contract::native::{NeoToken, Role, RoleManagement};
-        use crate::smart_contract::Contract;
 
         let current_height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
         let mut whitelist = std::collections::HashSet::new();
@@ -408,15 +408,14 @@ impl Blockchain {
             snapshot,
             Role::StateValidator,
             current_height,
-        ) {
-            if !state_validators.is_empty() {
-                whitelist.insert(NativeHelpers::get_bft_address(&state_validators));
-                whitelist.extend(
-                    state_validators
-                        .into_iter()
-                        .map(|key| Contract::create_signature_contract(key).script_hash()),
-                );
-            }
+        ) && !state_validators.is_empty()
+        {
+            whitelist.insert(NativeHelpers::get_bft_address(&state_validators));
+            whitelist.extend(
+                state_validators
+                    .into_iter()
+                    .map(|key| Contract::create_signature_contract(key).script_hash()),
+            );
         }
 
         whitelist

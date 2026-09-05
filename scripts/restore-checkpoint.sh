@@ -105,9 +105,9 @@ if [[ -f "$SOURCE/CHECKPOINT_IN_PROGRESS" ]]; then
 fi
 
 # ----- safety: refuse if writer is live -----
-PIDS=$(pgrep -f 'neo-node|neo-cli' || true)
+PIDS=$(pgrep -f 'neo-node' || true)
 if [[ -n "$PIDS" ]]; then
-  echo "ERROR: a neo-node/neo-cli process appears to be running:" >&2
+  echo "ERROR: a neo-node process appears to be running:" >&2
   ps -fp $PIDS >&2 || true
   echo "Stop it first, then re-run." >&2
   exit 1

@@ -1,9 +1,9 @@
 use super::StdLib;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::neo_vm::StackItem;
 use crate::smart_contract::BinarySerializer;
-use crate::neo_vm::{StackItem, StackItemExt};
+use crate::smart_contract::application_engine::ApplicationEngine;
 use num_bigint::{BigInt, Sign};
 use num_traits::{Num, ToPrimitive, Zero};
 
@@ -24,14 +24,9 @@ impl StdLib {
     }
 
     /// Validate a single arg and convert it to a UTF-8 string.
-    pub(super) fn validate_string_arg(
-        &self,
-        args: &[Vec<u8>],
-        method: &str,
-    ) -> Result<String> {
+    pub(super) fn validate_string_arg(&self, args: &[Vec<u8>], method: &str) -> Result<String> {
         let data = self.validate_single_arg(args, method)?;
-        String::from_utf8(data.to_vec())
-            .map_err(|_| Error::native_contract("Invalid UTF-8 string"))
+        String::from_utf8(data.to_vec()).map_err(|_| Error::native_contract("Invalid UTF-8 string"))
     }
 
     pub(super) fn ensure_max_input_len(&self, data: &[u8], method: &str) -> Result<()> {
@@ -99,7 +94,7 @@ impl StdLib {
         if value.sign() != Sign::Minus {
             let hex = value.to_str_radix(16);
             let requires_sign_padding =
-                hex.len() % 2 == 0 && matches!(hex.as_bytes().first(), Some(b'8'..=b'f'));
+                hex.len().is_multiple_of(2) && matches!(hex.as_bytes().first(), Some(b'8'..=b'f'));
             return if requires_sign_padding {
                 format!("0{hex}")
             } else {

@@ -2,8 +2,8 @@
 use crate::i_event_handlers::MessageReceivedHandler;
 use parking_lot::RwLock;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc, OnceLock,
+    atomic::{AtomicUsize, Ordering},
 };
 
 #[derive(Clone)]

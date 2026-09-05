@@ -5,7 +5,7 @@
 //! typed payload deserialization.
 
 use crate::{MessageCommand, MessageFlags, P2PError, P2PResult};
-use neo_io::compression::{compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE};
+use neo_io::compression::{COMPRESSION_MIN_SIZE, compress_lz4, decompress_lz4};
 use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 
 /// Maximum payload size (matches `Neo.Network.P2P.Message.PayloadMaxSize`).
@@ -50,19 +50,18 @@ impl RawMessage {
 
     /// Serializes this message to wire format, optionally compressing the payload.
     pub fn to_bytes(&self, enable_compression: bool) -> IoResult<Vec<u8>> {
-        let (flags, wire_payload) = if enable_compression
-            && self.payload.len() >= COMPRESSION_MIN_SIZE
-        {
-            let compressed = compress_lz4(&self.payload)
-                .map_err(|e| neo_io::IoError::invalid_data(e.to_string()))?;
-            if compressed.len() < self.payload.len() {
-                (MessageFlags::COMPRESSED, compressed)
+        let (flags, wire_payload) =
+            if enable_compression && self.payload.len() >= COMPRESSION_MIN_SIZE {
+                let compressed = compress_lz4(&self.payload)
+                    .map_err(|e| neo_io::IoError::invalid_data(e.to_string()))?;
+                if compressed.len() < self.payload.len() {
+                    (MessageFlags::COMPRESSED, compressed)
+                } else {
+                    (MessageFlags::NONE, self.payload.clone())
+                }
             } else {
                 (MessageFlags::NONE, self.payload.clone())
-            }
-        } else {
-            (MessageFlags::NONE, self.payload.clone())
-        };
+            };
 
         let mut writer = BinaryWriter::with_capacity(2 + wire_payload.len() + 8);
         writer.write_u8(flags.bits())?;

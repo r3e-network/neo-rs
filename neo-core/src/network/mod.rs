@@ -6,6 +6,7 @@ pub mod error;
 pub mod p2p;
 
 #[cfg(feature = "upnp")]
+/// Optional UPnP port forwarding for accepting inbound P2P connections.
 pub mod upnp;
 
 // Re-export commonly used types

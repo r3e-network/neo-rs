@@ -54,7 +54,6 @@ impl core::fmt::Display for InstructionError {
     }
 }
 
-#[cfg(feature = "std")]
 impl std::error::Error for InstructionError {}
 
 /// Result type for shared NeoVM instruction operations.

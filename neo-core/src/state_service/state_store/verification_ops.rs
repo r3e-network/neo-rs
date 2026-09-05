@@ -1,7 +1,7 @@
 use super::{StateRootVerificationResult, StateStore};
+use crate::UInt256;
 use crate::error::{CoreError, CoreResult};
 use crate::state_service::StateRoot;
-use crate::UInt256;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::debug;
 
@@ -117,13 +117,13 @@ impl StateStore {
         }
 
         // If an expected root is provided, also verify against it
-        if let Some(expected) = expected_root {
-            if computed_root != expected {
-                return Err(CoreError::invalid_operation(format!(
-                    "State root mismatch with expected at block {}: computed={}, expected={}",
-                    index, computed_root, expected
-                )));
-            }
+        if let Some(expected) = expected_root
+            && computed_root != expected
+        {
+            return Err(CoreError::invalid_operation(format!(
+                "State root mismatch with expected at block {}: computed={}, expected={}",
+                index, computed_root, expected
+            )));
         }
 
         // Cache the verified root

@@ -160,7 +160,7 @@ impl RpcError {
         wallet_fee_limit => (
             -301,
             "Wallet fee limit exceeded",
-            data = "The necessary fee is more than the MaxFee, this transaction is failed. Please increase your MaxFee value."
+            data = "The necessary fee is more than the Max_fee, this transaction is failed. Please increase your Max_fee value."
         );
         /// No wallet opened.
         no_opened_wallet => (-302, "No opened wallet");
@@ -168,8 +168,8 @@ impl RpcError {
         wallet_not_found => (-303, "Wallet not found");
         /// Wallet type not supported.
         wallet_not_supported => (-304, "Wallet not supported");
-        /// Unknown account referenced in request.
-        unknown_account => (-305, "Unknown account");
+        /// Compatibility error for wallet account lookup. C# has no dedicated account code.
+        unknown_account => (-300, "Insufficient funds in wallet");
         /// Inventory verification failed.
         verification_failed => (-500, "Inventory verification failed");
         /// Inventory already exists.
@@ -182,8 +182,8 @@ impl RpcError {
         insufficient_network_fee => (-504, "Insufficient network fee");
         /// Policy check failed.
         policy_failed => (-505, "Policy check failed");
-        /// Transaction script invalid.
-        invalid_script => (-506, "Invalid transaction script");
+        /// Transaction script invalid. C# uses the legacy -509 code.
+        invalid_script => (-509, "Invalid transaction script");
         /// Invalid transaction attribute.
         invalid_attribute => (-507, "Invalid transaction attribute");
         /// Invalid signature detected.
@@ -273,7 +273,6 @@ mod tests {
             RpcError::no_opened_wallet(),
             RpcError::wallet_not_found(),
             RpcError::wallet_not_supported(),
-            RpcError::unknown_account(),
             RpcError::verification_failed(),
             RpcError::already_exists(),
             RpcError::mempool_cap_reached(),
@@ -345,7 +344,6 @@ mod tests {
             RpcError::no_opened_wallet(),
             RpcError::wallet_not_found(),
             RpcError::wallet_not_supported(),
-            RpcError::unknown_account(),
             RpcError::verification_failed(),
             RpcError::already_exists(),
             RpcError::mempool_cap_reached(),

@@ -1,6 +1,6 @@
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, ReadOnlyStoreGeneric, StoreProvider, SeekDirection,
-    StorageConfig,
+    ReadOnlyStoreGeneric, SeekDirection, StorageConfig, StoreProvider,
+    providers::RocksDBStoreProvider,
 };
 use std::path::PathBuf;
 

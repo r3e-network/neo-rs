@@ -10,7 +10,9 @@
 //! that depend on `neo-vm`.
 
 // Re-export core types from neo-io
-pub use neo_io_crate::witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
+pub use neo_io_crate::witness_rule::{
+    WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction,
+};
 
 // Stack projection stays in neo-core (depends on neo-vm StackItem)
 mod stack_projection;

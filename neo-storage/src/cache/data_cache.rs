@@ -233,15 +233,15 @@ impl DataCache {
     /// Deletes an item from the cache.
     pub fn delete(&self, key: &StorageKey) {
         let mut dict = self.dictionary.write();
-        if let Some(existing) = dict.get(key) {
-            if existing.state == TrackState::Added {
-                // Item was added and never committed, just remove it
-                dict.remove(key);
-                if let Some(ref change_set) = self.change_set {
-                    change_set.write().remove(key);
-                }
-                return;
+        if let Some(existing) = dict.get(key)
+            && existing.state == TrackState::Added
+        {
+            // Item was added and never committed, just remove it
+            dict.remove(key);
+            if let Some(ref change_set) = self.change_set {
+                change_set.write().remove(key);
             }
+            return;
         }
 
         dict.insert(key.clone(), Trackable::deleted());
@@ -729,9 +729,11 @@ mod tests {
     fn test_error_display() {
         assert_eq!(DataCacheError::ReadOnly.to_string(), "cache is read-only");
         assert_eq!(DataCacheError::KeyNotFound.to_string(), "key not found");
-        assert!(DataCacheError::CommitFailed("test".to_string())
-            .to_string()
-            .contains("unable to commit"));
+        assert!(
+            DataCacheError::CommitFailed("test".to_string())
+                .to_string()
+                .contains("unable to commit")
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
+use neo_core::UInt160;
 use neo_core::builders::WitnessRuleBuilder;
 use neo_core::network::p2p::payloads::{WitnessCondition, WitnessRuleAction};
-use neo_core::UInt160;
 
 #[test]
 fn witness_rule_builder_create() {

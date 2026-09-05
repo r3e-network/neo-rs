@@ -1,8 +1,8 @@
 use super::*;
-use crate::neo_vm::StackItemExt;
 use crate::smart_contract::iterators::IteratorInterop;
 
 impl ApplicationEngine {
+    /// Gets the raw value stored under the given key in the context's storage.
     pub fn get_storage_item(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
         self.snapshot_cache
@@ -40,6 +40,8 @@ impl ApplicationEngine {
         Ok(())
     }
 
+    /// Puts a value, charging dynamic storage fees for the added bytes
+    /// (matching the C# `ApplicationEngine` storage accounting).
     pub fn put_storage_item(
         &mut self,
         context: &StorageContext,
@@ -86,23 +88,22 @@ impl ApplicationEngine {
         Ok(())
     }
 
+    /// Deletes the storage entry for the given key from the context's storage.
     pub fn delete_storage_item(&mut self, context: &StorageContext, key: &[u8]) -> Result<()> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
         self.snapshot_cache.delete(&storage_key);
         Ok(())
     }
 
-    pub fn push_interop_container(
-        &mut self,
-        container: Arc<dyn Verifiable>,
-    ) -> Result<(), String> {
+    /// Pushes a verifiable script container onto the VM stack as an interop
+    /// interface (`System.Runtime.GetScriptContainer`).
+    pub fn push_interop_container(&mut self, container: Arc<dyn Verifiable>) -> Result<(), String> {
         // The native `StackItem` model has no integer interop handle
         // (`StackItem::Interop(u64)` was a neo-vm-rs concept). Interop objects are
         // carried inline as `StackItem::InteropInterface`. For a verifiable
         // container we project it to a structured stack item, matching
-        // `System.Runtime.GetScriptContainer`.
-        // TODO(parity-review): original pushed an opaque `Interop(0)` placeholder;
-        // no in-tree caller uses this, revisit if an opaque container handle is required.
+        // `System.Runtime.GetScriptContainer`. The historical opaque `Interop(0)`
+        // placeholder is intentionally not reproduced; no in-tree caller needs it.
         use crate::smart_contract::Interoperable;
         if let Some(transaction) = container
             .as_any()
@@ -114,6 +115,7 @@ impl ApplicationEngine {
         }
     }
 
+    /// Pops an iterator reference from the stack and returns its engine-side id.
     pub fn pop_iterator_id(&mut self) -> Result<u32, String> {
         let item = self.pop()?;
         // Native iterators are `StackItem::InteropInterface(IteratorInterop { id })`.
@@ -129,6 +131,7 @@ impl ApplicationEngine {
         Ok(identifier)
     }
 
+    /// Advances the iterator with the given id, returning whether a value is available.
     pub fn iterator_next_internal(&mut self, iterator_id: u32) -> Result<bool, String> {
         let iterator = self
             .storage_iterators
@@ -137,6 +140,7 @@ impl ApplicationEngine {
         Ok(iterator.next())
     }
 
+    /// Returns the current value of the iterator with the given id.
     pub fn iterator_value_internal(&self, iterator_id: u32) -> Result<StackItem, String> {
         let iterator = self
             .storage_iterators

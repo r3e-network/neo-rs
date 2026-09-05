@@ -14,6 +14,7 @@ pub struct HeaderCache {
 }
 
 impl HeaderCache {
+    /// Creates an empty cache pre-sized for `MAX_HEADERS` header entries.
     pub fn new() -> Self {
         Self {
             headers: RwLock::new(VecDeque::with_capacity(MAX_HEADERS)),

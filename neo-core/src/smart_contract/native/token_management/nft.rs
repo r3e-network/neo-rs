@@ -133,10 +133,10 @@ impl TokenManagement {
 
         let account_key = Self::account_state_key_suffix(&account, &asset_id);
         let mut account_balance = BigInt::from(0);
-        if let Some(account_data) = engine.get_storage_item(&context, &account_key) {
-            if let Some(state) = Self::deserialize_account_state(&account_data) {
-                account_balance = state.balance;
-            }
+        if let Some(account_data) = engine.get_storage_item(&context, &account_key)
+            && let Some(state) = Self::deserialize_account_state(&account_data)
+        {
+            account_balance = state.balance;
         }
         account_balance += 1;
 
@@ -359,9 +359,7 @@ impl TokenManagement {
         let filtered = Self::collect_nft_index_entries(engine, index_prefix, target);
         let options = FindOptions::KeysOnly | FindOptions::RemovePrefix;
         let iterator = StorageIterator::new(filtered, NFT_INDEX_LOOKUP_PREFIX_LEN, options);
-        let iterator_id = engine
-            .store_storage_iterator(iterator)
-            .native_err()?;
+        let iterator_id = engine.store_storage_iterator(iterator).native_err()?;
 
         Ok(iterator_id.to_le_bytes().to_vec())
     }

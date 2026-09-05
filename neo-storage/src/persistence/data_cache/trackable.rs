@@ -59,6 +59,8 @@ impl Default for DataCacheConfig {
 pub enum DataCacheError {
     #[error("cache is read-only")]
     ReadOnly,
+    #[error("invalid cache state transition: {0}")]
+    InvalidState(String),
     #[error("unable to commit changes: {0}")]
     CommitFailed(String),
 }

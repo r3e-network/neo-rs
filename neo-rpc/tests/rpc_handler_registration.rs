@@ -32,9 +32,11 @@ fn blockchain_handler_registration_preserves_order_and_public_metadata() {
             "getcommittee",
         ]
     );
-    assert!(handlers
-        .iter()
-        .all(|handler| !handler.descriptor().requires_auth()));
+    assert!(
+        handlers
+            .iter()
+            .all(|handler| !handler.descriptor().requires_auth())
+    );
 }
 
 #[test]
@@ -63,7 +65,9 @@ fn wallet_handler_registration_preserves_protected_metadata() {
             "canceltransaction",
         ]
     );
-    assert!(handlers
-        .iter()
-        .all(|handler| handler.descriptor().requires_auth()));
+    assert!(
+        handlers
+            .iter()
+            .all(|handler| handler.descriptor().requires_auth())
+    );
 }

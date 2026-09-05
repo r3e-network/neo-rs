@@ -1,7 +1,7 @@
 //! Encoding helpers used by Neo cryptographic APIs.
 
 use crate::error::{CryptoError, CryptoResult};
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_primitives::base58_check::{self, Base58CheckDecodeError};
 
 /// Base58 encoding/decoding utilities.

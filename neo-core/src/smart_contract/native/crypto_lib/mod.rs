@@ -3,6 +3,7 @@
 //! Provides cryptographic functions for the Neo blockchain.
 //! Matches the C# Neo.SmartContract.Native.CryptoLib contract.
 
+use crate::UInt160;
 use crate::cryptography::crypto_utils::murmur::murmur32;
 use crate::cryptography::{Crypto, Ed25519Crypto, HashAlgorithm, NamedCurveHash};
 use crate::error::CoreError as Error;
@@ -10,7 +11,6 @@ use crate::error::CoreResult as Result;
 use crate::hardfork::Hardfork;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
-use crate::UInt160;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::any::Any;
@@ -19,6 +19,8 @@ mod bls12381;
 mod metadata;
 pub(crate) use bls12381::Bls12381Interop;
 
+/// The CryptoLib native contract exposing hashing primitives (SHA-256, RIPEMD-160,
+/// Murmur32, Keccak-256) plus signature verification and secp256k1 public-key recovery.
 pub struct CryptoLib {
     id: i32,
     hash: UInt160,
@@ -28,6 +30,7 @@ pub struct CryptoLib {
 impl CryptoLib {
     const ID: i32 = -3;
 
+    /// Creates a new CryptoLib instance with its native method table.
     pub fn new() -> Self {
         // CryptoLib contract hash: 0x726cb6e0cd8628a1350a611384688911ab75f51b
         let hash = UInt160::parse("0x726cb6e0cd8628a1350a611384688911ab75f51b")
@@ -107,7 +110,7 @@ impl CryptoLib {
             None => {
                 return Err(Error::invalid_argument(
                     "Invalid curve hash for verifyWithECDsa".to_string(),
-                ))
+                ));
             }
         };
 
@@ -154,11 +157,7 @@ impl CryptoLib {
     ///
     /// C# versions: V0 (Echidna..Gorgon) degrades malformed input to `false`;
     /// V1 (Gorgon+) throws on bad sizes.
-    fn verify_with_ed25519(
-        &self,
-        engine: &ApplicationEngine,
-        args: &[Vec<u8>],
-    ) -> Result<Vec<u8>> {
+    fn verify_with_ed25519(&self, engine: &ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() != 3 {
             return Err(Error::native_contract(
                 "verifyWithEd25519 requires message, public key, and signature arguments"
@@ -185,7 +184,7 @@ impl CryptoLib {
             Err(_) if gorgon_enabled => {
                 return Err(Error::invalid_argument(
                     "Invalid signature for verifyWithEd25519".to_string(),
-                ))
+                ));
             }
             Err(_) => return Ok(vec![0]),
         };
@@ -194,7 +193,7 @@ impl CryptoLib {
             Err(_) if gorgon_enabled => {
                 return Err(Error::invalid_argument(
                     "Invalid public key for verifyWithEd25519".to_string(),
-                ))
+                ));
             }
             Err(_) => return Ok(vec![0]),
         };

@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::{inventory::Inventory, witness::Witness, InventoryType};
+use super::{InventoryType, inventory::Inventory, witness::Witness};
 use crate::macros::ValidateLength;
 use crate::neo_io::serializable::helper::{get_var_size, get_var_size_bytes, get_var_size_str};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
@@ -216,7 +216,9 @@ impl neo_primitives::Verifiable for ExtensiblePayload {
 
     fn hash(&self) -> PrimitiveResult<UInt256> {
         let mut clone = self.clone();
-        clone.try_hash().map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
+        clone
+            .try_hash()
+            .map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
     }
 
     fn hash_data(&self) -> Vec<u8> {
@@ -314,6 +316,9 @@ mod tests {
 
         let expected = payload.try_hash().expect("try hash");
 
-        assert_eq!(neo_primitives::Verifiable::hash(&payload).unwrap(), expected);
+        assert_eq!(
+            neo_primitives::Verifiable::hash(&payload).unwrap(),
+            expected
+        );
     }
 }

@@ -46,10 +46,10 @@ impl ContractNameOrHashOrId {
         }
 
         let mut result = None;
-        if UInt160::try_parse(value, &mut result) {
-            if let Some(hash) = result {
-                return Some(Self::Hash(hash));
-            }
+        if UInt160::try_parse(value, &mut result)
+            && let Some(hash) = result
+        {
+            return Some(Self::Hash(hash));
         }
 
         if !value.is_empty() {

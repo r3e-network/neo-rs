@@ -56,12 +56,11 @@ impl ConsensusService {
             "Received ChangeView"
         );
 
-        // If the ChangeView targets a view we already passed, treat it as a recovery request.
-        // C# OnChangeViewMessage stops here: the stale request is not recorded and
-        // never feeds the view-change counting (which could otherwise regress the
-        // view number, e.g. 5 -> 3).
+        // A stale ChangeView doubles as a RecoveryRequest in C#. It must not
+        // enter current-view accounting or overwrite monotonic state.
         if new_view <= self.context.view_number {
-            return self.maybe_send_recovery_response(payload.validator_index);
+            self.maybe_send_recovery_response(payload)?;
+            return Ok(());
         }
 
         let commit_sent = self
@@ -73,10 +72,10 @@ impl ConsensusService {
             return Ok(());
         }
 
-        if let Some((expected_view, _)) = self.context.change_views.get(&payload.validator_index) {
-            if new_view <= *expected_view {
-                return Ok(());
-            }
+        if let Some((expected_view, _)) = self.context.change_views.get(&payload.validator_index)
+            && new_view <= *expected_view
+        {
+            return Ok(());
         }
 
         self.context
@@ -90,7 +89,7 @@ impl ConsensusService {
 
         // Check if we have enough change view requests
         if self.context.has_enough_change_views(new_view) {
-            self.change_view(new_view, timestamp)?;
+            self.change_view(new_view)?;
         }
 
         Ok(())
@@ -108,6 +107,17 @@ impl ConsensusService {
         reason: ChangeViewReason,
         timestamp: u64,
     ) -> ConsensusResult<()> {
+        let new_view = self
+            .context
+            .view_number
+            .checked_add(1)
+            .ok_or_else(|| crate::ConsensusError::invalid_proposal("View number overflow"))?;
+
+        // C# ChangeTimer uses the local clock; the ChangeView timestamp is
+        // remote protocol data and must not affect the local deadline.
+        self.context
+            .change_timer_for_view(current_timestamp(), new_view);
+
         // Check if we should request recovery instead of change view
         // This matches C# DBFTPlugin's RequestChangeView logic
         if self.context.more_than_f_nodes_committed_or_lost() {
@@ -121,8 +131,6 @@ impl ConsensusService {
             );
             return self.request_recovery();
         }
-
-        let new_view = self.context.view_number + 1;
 
         warn!(
             block_index = self.context.block_index,
@@ -158,7 +166,7 @@ impl ConsensusService {
 
         // Check if we already have enough
         if self.context.has_enough_change_views(new_view) {
-            self.change_view(new_view, timestamp)?;
+            self.change_view(new_view)?;
         }
 
         Ok(())
@@ -195,15 +203,15 @@ impl ConsensusService {
     }
 
     /// Changes to a new view
-    fn change_view(&mut self, new_view: u8, timestamp: u64) -> ConsensusResult<()> {
+    fn change_view(&mut self, new_view: u8) -> ConsensusResult<()> {
         let old_view = self.context.view_number;
+        let timestamp = current_timestamp();
 
         // The view number must be monotonic; ignore any attempt to regress it.
         if new_view <= old_view {
             debug!(
                 block_index = self.context.block_index,
-                old_view, new_view,
-                "ignoring view change that does not advance the view number"
+                old_view, new_view, "ignoring view change that does not advance the view number"
             );
             return Ok(());
         }
@@ -214,6 +222,15 @@ impl ConsensusService {
         );
 
         self.context.reset_for_new_view(new_view, timestamp);
+        // Recovery replay uses the C# recovery-primary branch: the new primary
+        // gets the full backoff interval instead of the initial proposal delay.
+        if self.is_recovering && self.context.is_primary() {
+            let timeout = self
+                .context
+                .expected_block_time
+                .saturating_mul(1u64 << (u32::from(new_view) + 1).min(63));
+            self.context.change_timer(timestamp, timeout);
+        }
 
         self.send_event(ConsensusEvent::ViewChanged {
             block_index: self.context.block_index,
@@ -221,11 +238,7 @@ impl ConsensusService {
             new_view,
         })?;
 
-        // If we're now the primary, initiate proposal
-        if self.context.is_primary() {
-            self.initiate_proposal(timestamp)?;
-        }
-
+        // The new primary starts its proposal only after the initial timer.
         Ok(())
     }
 }

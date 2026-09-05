@@ -120,17 +120,17 @@ fn normalize_numeric_json(value: JsonValue) -> JsonValue {
                 .collect(),
         ),
         JsonValue::Number(number) => {
-            if let Some(float) = number.as_f64() {
-                if float.fract() == 0.0 {
-                    if float >= 0.0 && float <= u64::MAX as f64 {
-                        if float <= i64::MAX as f64 {
-                            return JsonValue::Number(JsonNumber::from(float as i64));
-                        }
-                        return JsonValue::Number(JsonNumber::from(float as u64));
-                    }
-                    if float >= i64::MIN as f64 {
+            if let Some(float) = number.as_f64()
+                && float.fract() == 0.0
+            {
+                if float >= 0.0 && float <= u64::MAX as f64 {
+                    if float <= i64::MAX as f64 {
                         return JsonValue::Number(JsonNumber::from(float as i64));
                     }
+                    return JsonValue::Number(JsonNumber::from(float as u64));
+                }
+                if float >= i64::MIN as f64 {
+                    return JsonValue::Number(JsonNumber::from(float as i64));
                 }
             }
             JsonValue::Number(number)

@@ -113,7 +113,6 @@ cargo build --release
 
 # Binaries will be available at:
 # - target/release/neo-node  (node daemon)
-# - target/release/neo-cli   (CLI client)
 ```
 
 Use `cargo build --release --workspace` for explicit full-workspace validation,
@@ -125,11 +124,10 @@ For maximum performance, use the custom production profile:
 
 ```bash
 # Build with production optimizations
-cargo build --profile production -p neo-node -p neo-cli
+cargo build --profile production -p neo-node
 
 # Binaries will be at:
 # - target/production/neo-node
-# - target/production/neo-cli
 ```
 
 The production profile enables:
@@ -233,9 +231,8 @@ Notes:
 ### Build Verification
 
 ```bash
-# Verify binary versions
+# Verify binary version
 ./target/release/neo-node --version
-./target/release/neo-cli --version
 
 # Run preflight checks
 make preflight
@@ -660,17 +657,16 @@ Available endpoints:
 - `GET /readyz` - Readiness probe (returns 200 if synced)
 - `GET /metrics` - Prometheus metrics
 
-#### CLI Status Commands
+#### Status via JSON-RPC
 
 ```bash
-# Node status
-./target/release/neo-cli state
-
 # Blockchain height
-./target/release/neo-cli block-count
+curl -s -X POST http://localhost:10332 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}'
 
 # Peer information
-./target/release/neo-cli peers
+curl -s -X POST http://localhost:10332 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getpeers","params":[]}'
 
 # Check sync status
 curl -s -X POST \
@@ -799,7 +795,7 @@ git fetch origin
 git checkout v0.7.1  # or latest tag
 
 # Build new version
-cargo build --release -p neo-node -p neo-cli
+cargo build --release -p neo-node
 
 # Run preflight checks
 make preflight

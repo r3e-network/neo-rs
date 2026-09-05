@@ -53,16 +53,16 @@ use super::keys::Keys;
 use super::metrics;
 use super::root_cache::StateRootCache;
 use super::state_root::StateRoot;
+use crate::UInt256;
 use crate::error::CoreResult;
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::persistence::{
-    seek_direction::SeekDirection, store::Store, store_provider::StoreProvider, TrackState,
+    TrackState, seek_direction::SeekDirection, store::Store, store_provider::StoreProvider,
 };
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
 use crate::smart_contract::{StorageItem, StorageKey};
 use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
-use crate::UInt256;
 use parking_lot::RwLock;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -78,8 +78,8 @@ mod verification_ops;
 mod verification_result;
 mod verifier;
 pub use backend::{
-    MemoryStateStoreBackend, SnapshotBackedStateStoreBackend, StateStoreBackend,
-    StateStoreSnapshot, StateStoreTransaction,
+    MemoryStateStoreBackend, SnapshotBackedStateStoreBackend, StagedStateStoreBackend,
+    StateStoreBackend, StateStoreSnapshot, StateStoreTransaction,
 };
 pub use settings::StateServiceSettings;
 pub use snapshot::StateSnapshot;
@@ -365,17 +365,17 @@ impl StateStore {
         }
 
         // Check if already validated
-        if let Some(validated_index) = self.validated_root_index() {
-            if state_root.index <= validated_index {
-                tracing::debug!(
-                    target: "state",
-                    index = state_root.index,
-                    validated_index,
-                    "rejecting state root: index not ahead of validated root"
-                );
-                metrics::record_ingest_result(false);
-                return false;
-            }
+        if let Some(validated_index) = self.validated_root_index()
+            && state_root.index <= validated_index
+        {
+            tracing::debug!(
+                target: "state",
+                index = state_root.index,
+                validated_index,
+                "rejecting state root: index not ahead of validated root"
+            );
+            metrics::record_ingest_result(false);
+            return false;
         }
 
         let local_index = match self.local_root_index() {
@@ -506,13 +506,16 @@ impl StateStore {
     ) -> Result<(), String> {
         // Skip blocks that have already been processed (e.g., after node restart).
         // The C# StateService does the same check: if local root index >= block height, skip.
-        if let Some(current_index) = self.local_root_index() {
-            if height <= current_index {
-                return Ok(());
-            }
+        if let Some(current_index) = self.local_root_index()
+            && height <= current_index
+        {
+            return Ok(());
         }
 
-        let mut snapshot = self.snapshot();
+        // Keep all writes in an isolated overlay until the blockchain transaction commits.
+        // The overlay is applied to the base backend only from update_local_state_root.
+        let staged_backend = Arc::new(StagedStateStoreBackend::new(self.store.clone()));
+        let mut snapshot = StateSnapshot::new(staged_backend, self.settings.clone());
         let mut put_count: u32 = 0;
         let mut del_count: u32 = 0;
         let mut _skip_count: u32 = 0;
@@ -570,7 +573,7 @@ impl StateStore {
         // Validate against reference if available
         if let Some(expected) = self.reference_roots.get(&height) {
             if root_hash == *expected {
-                if height % 5000 == 0 {
+                if height.is_multiple_of(5000) {
                     tracing::info!(
                         target: "neo::state_service",
                         height,
@@ -583,7 +586,7 @@ impl StateStore {
                     "state root mismatch at height {height}: computed {root_hash}, expected {expected}, put_count {put_count}, del_count {del_count}"
                 ));
             }
-        } else if height % 5000 == 0 {
+        } else if height.is_multiple_of(5000) {
             tracing::info!(
                 target: "neo::state_service",
                 height,
@@ -609,15 +612,25 @@ impl StateStore {
         // Commit and dispose snapshot
         {
             let mut state_snap = self.state_snapshot.write();
-            if let Some(ref mut snapshot) = *state_snap {
-                snapshot.commit()?;
+            if let Some(mut snapshot) = state_snap.take()
+                && let Err(error) = snapshot.commit()
+            {
+                snapshot.discard_pending();
+                return Err(error);
             }
-            *state_snap = None;
         }
 
         self.update_current_snapshot();
         self.check_validated_state_root(height);
         Ok(())
+    }
+
+    /// Discards a staged local root when the enclosing blockchain transaction fails.
+    pub fn discard_staged_local_state_root(&self) {
+        let mut state_snap = self.state_snapshot.write();
+        if let Some(snapshot) = state_snap.take() {
+            snapshot.discard_pending();
+        }
     }
 
     /// Checks if we have a cached validated state root for this height.

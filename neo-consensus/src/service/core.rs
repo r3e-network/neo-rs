@@ -1,6 +1,6 @@
 use super::ConsensusEvent;
-use crate::context::{ConsensusContext, ValidatorInfo};
 use crate::ConsensusSigner;
+use crate::context::{ConsensusContext, ValidatorInfo};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use zeroize::Zeroizing;
@@ -20,6 +20,8 @@ pub struct ConsensusService {
     pub(super) event_tx: mpsc::Sender<ConsensusEvent>,
     /// Whether the service is running
     pub(super) running: bool,
+    /// True only while replaying a RecoveryMessage payload set.
+    pub(super) is_recovering: bool,
 }
 
 impl ConsensusService {
@@ -39,6 +41,7 @@ impl ConsensusService {
             signer: None,
             event_tx,
             running: false,
+            is_recovering: false,
         }
     }
 
@@ -57,6 +60,7 @@ impl ConsensusService {
             signer: None,
             event_tx,
             running: false,
+            is_recovering: false,
         }
     }
 }

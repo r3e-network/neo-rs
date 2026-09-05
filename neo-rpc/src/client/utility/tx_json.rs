@@ -366,7 +366,7 @@ fn condition_to_json(condition: &neo_core::WitnessCondition) -> JObject {
         WC::And { conditions } | WC::Or { conditions } => {
             json.insert(
                 "expressions".to_string(),
-                object_array(conditions, |condition| condition_to_json(condition)),
+                object_array(conditions, condition_to_json),
             );
         }
         WC::ScriptHash { hash } | WC::CalledByContract { hash } => {

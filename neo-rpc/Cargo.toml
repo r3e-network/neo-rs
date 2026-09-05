@@ -82,6 +82,7 @@ subtle = { version = "2.5", optional = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 mockito = "1.0"
+tracing-subscriber = { workspace = true }
 
 [features]
 default = []

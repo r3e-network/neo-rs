@@ -1,8 +1,8 @@
+use super::super::ConsensusService;
 use super::super::helpers::invocation_script_from_signature;
 use super::super::helpers::{
     compute_header_hash, compute_merkle_root, compute_next_consensus_address, current_timestamp,
 };
-use super::super::ConsensusService;
 use crate::context::{ConsensusState, MAX_PREPARE_REQUEST_FUTURE_MS_FACTOR};
 use crate::messages::{
     CommitMessage, ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage,
@@ -137,6 +137,9 @@ impl ConsensusService {
             ));
         }
 
+        // C# extends the timer after a valid PrepareRequest is accepted.
+        self.context.extend_timer_by_factor(current_timestamp(), 2);
+
         // Mark prepare request as received and store proposal fields.
         self.context.prepare_request_received = true;
         self.context.prepare_request_invocation = if payload.witness.is_empty() {
@@ -200,6 +203,19 @@ impl ConsensusService {
             return Err(ConsensusError::AlreadyReceived(payload.validator_index));
         }
 
+        // R01: the primary's preparation vote is its PrepareRequest. An extra
+        // PrepareResponse signed by the primary occupies the same validator
+        // slot in C#, so it must not add a second vote here.
+        if self.context.prepare_request_received
+            && payload.validator_index == self.context.primary_index()
+        {
+            debug!(
+                validator = payload.validator_index,
+                "Ignoring primary PrepareResponse: its PrepareRequest already occupies its slot"
+            );
+            return Ok(());
+        }
+
         debug!(
             block_index = self.context.block_index,
             validator = payload.validator_index,
@@ -240,6 +256,9 @@ impl ConsensusService {
             msg.validate(&expected)?;
         }
 
+        // C# extends the timer after a valid PrepareResponse is accepted.
+        self.context.extend_timer_by_factor(current_timestamp(), 2);
+
         // Add the response
         let invocation_script = invocation_script_from_signature(&payload.witness);
         self.context.add_prepare_response(
@@ -268,7 +287,12 @@ impl ConsensusService {
             return Ok(());
         }
 
-        let preparation_hash = self.context.preparation_hash.unwrap_or_default();
+        // R02: a response publishes our vote for a specific preparation hash.
+        // Without a PrepareRequest there is nothing to vote for, and sending
+        // the default hash would legitimize an unverified proposal.
+        let Some(preparation_hash) = self.context.preparation_hash else {
+            return Ok(());
+        };
         let response = PrepareResponseMessage::new(
             self.context.block_index,
             self.context.view_number,
@@ -298,6 +322,18 @@ impl ConsensusService {
         }
 
         if self.context.state == ConsensusState::Committed {
+            return Ok(());
+        }
+
+        // R02: never sign a Commit without a verified proposal. Signing with
+        // `unwrap_or_default()` would bind this validator to the zero block
+        // hash when the PrepareRequest has not been seen or verified.
+        if !self.context.can_sign_commit() {
+            warn!(
+                block_index = self.context.block_index,
+                responses = self.context.prepare_responses.len(),
+                "Enough PrepareResponses but no verified proposal; withholding Commit"
+            );
             return Ok(());
         }
 
@@ -332,6 +368,11 @@ impl ConsensusService {
         // Add our own commit
         self.context
             .add_commit(my_index, self.context.view_number, signature)?;
+
+        // C# resets the timer to one block interval after Commit is sent,
+        // leaving T for peers to relay the commit before recovery retries.
+        self.context
+            .change_timer(current_timestamp(), self.context.expected_block_time);
 
         self.check_commits()?;
 

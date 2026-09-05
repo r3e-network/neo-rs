@@ -1,15 +1,15 @@
 use super::{
-    OracleContract, PendingRequest, DEFAULT_PRICE, MAX_PENDING_PER_URL, PREFIX_ID_LIST,
-    PREFIX_PRICE, PREFIX_REQUEST, PREFIX_REQUEST_ID,
+    DEFAULT_PRICE, MAX_PENDING_PER_URL, OracleContract, PREFIX_ID_LIST, PREFIX_PRICE,
+    PREFIX_REQUEST, PREFIX_REQUEST_ID, PendingRequest,
 };
 use crate::cryptography::Crypto;
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::persistence::{read_only_store::ReadOnlyStoreGeneric, DataCache};
+use crate::neo_vm::StackItem;
+use crate::persistence::{DataCache, read_only_store::ReadOnlyStoreGeneric};
+use crate::smart_contract::StorageItem;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::native::oracle_request::OracleRequest;
 use crate::smart_contract::storage_key::StorageKey;
-use crate::smart_contract::StorageItem;
-use crate::neo_vm::{StackItem, StackItemExt};
 use crate::{UInt160, UInt256};
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackValue;

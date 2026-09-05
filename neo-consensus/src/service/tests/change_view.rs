@@ -24,11 +24,11 @@ async fn timer_tick_triggers_change_view_broadcast() {
 
     let mut change_view = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::ChangeView {
-                change_view = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::ChangeView
+        {
+            change_view = Some(payload);
+            break;
         }
     }
 
@@ -70,7 +70,7 @@ async fn timeout_view_change_allows_new_prepare_request() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
     let (validators, keys) = create_validators_with_keys(4);
-    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
 
     service.start(0, 0, UInt256::zero(), 0).unwrap();
     while rx.try_recv().is_ok() {}
@@ -81,11 +81,11 @@ async fn timeout_view_change_allows_new_prepare_request() {
 
     let mut change_view = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::ChangeView {
-                change_view = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::ChangeView
+        {
+            change_view = Some(payload);
+            break;
         }
     }
 
@@ -106,6 +106,8 @@ async fn timeout_view_change_allows_new_prepare_request() {
     service
         .context
         .reset_for_new_view(new_view, change_view_msg.timestamp);
+    let new_deadline = service.context().view_start_time + service.context().get_timeout();
+    service.on_timer_tick(new_deadline + 1).unwrap();
     while rx.try_recv().is_ok() {}
 
     let tx_hashes = vec![UInt256::from([0x33; 32])];
@@ -113,11 +115,11 @@ async fn timeout_view_change_allows_new_prepare_request() {
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::PrepareRequest {
-                prepare_payload = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::PrepareRequest
+        {
+            prepare_payload = Some(payload);
+            break;
         }
     }
 
@@ -171,20 +173,22 @@ async fn view_change_allows_consensus_to_complete() {
         }
     }
 
-    assert!(requested);
+    assert!(!requested);
     assert_eq!(service.context().view_number, 1);
     assert!(service.context().is_primary());
+    let new_deadline = service.context().view_start_time + service.context().get_timeout();
+    service.on_timer_tick(new_deadline + 1).unwrap();
 
     let tx_hashes = vec![UInt256::from([0x44; 32])];
     service.on_transactions_received(tx_hashes.clone()).unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::PrepareRequest {
-                prepare_payload = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::PrepareRequest
+        {
+            prepare_payload = Some(payload);
+            break;
         }
     }
 
@@ -210,11 +214,11 @@ async fn view_change_allows_consensus_to_complete() {
 
     let mut commit_payload = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::Commit {
-                commit_payload = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::Commit
+        {
+            commit_payload = Some(payload);
+            break;
         }
     }
 
@@ -293,6 +297,14 @@ async fn change_view_threshold_triggers_view_change() {
 
     assert_eq!(view_changed, Some((0, 1)));
     assert_eq!(service.context().view_number, 1);
+    // The remote ChangeView timestamps above are tiny test values. The local
+    // timer/view start must use the local wall clock instead.
+    assert!(service.context().view_start_time > 1_000_000_000);
+    assert_ne!(service.context().view_start_time, 1_001);
+    assert_eq!(
+        service.context().get_timeout(),
+        crate::context::BLOCK_TIME_MS * 4
+    );
 }
 
 #[tokio::test]
@@ -329,15 +341,54 @@ async fn recovery_request_when_more_than_f_committed() {
 
     let mut recovery_sent = false;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::RecoveryRequest {
-                recovery_sent = true;
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::RecoveryRequest
+        {
+            recovery_sent = true;
+            break;
         }
     }
 
     assert!(recovery_sent);
+    // The timer starts from the local clock, never the caller's timestamp.
+    assert!(service.context().view_start_time > 1_000_000_000);
+    assert_ne!(service.context().view_start_time, 2_000);
+    assert_eq!(
+        service.context().get_timeout(),
+        crate::context::BLOCK_TIME_MS * 4
+    );
+}
+
+#[tokio::test]
+async fn stale_change_view_only_sends_one_recovery_response() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(2), keys[2].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    service.context.reset_for_new_view(1, 2_000);
+    let message = ChangeViewMessage::new(0, 0, 1, 1_500, ChangeViewReason::Timeout);
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        1,
+        0,
+        ConsensusMessageType::ChangeView,
+        message.serialize(),
+    );
+    sign_payload(&service, &mut payload, &keys[1]);
+
+    service.process_message(payload.clone()).unwrap();
+    service.process_message(payload).unwrap();
+
+    let recovery_count = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter(|event| matches!(event, ConsensusEvent::BroadcastMessage(payload) if payload.message_type == ConsensusMessageType::RecoveryMessage))
+        .count();
+    assert_eq!(recovery_count, 1);
+    assert!(service.context().change_views.is_empty());
+    assert!(service.context().last_change_view_timestamps.is_empty());
+    assert!(service.context().change_view_invocations.is_empty());
 }
 
 #[tokio::test]

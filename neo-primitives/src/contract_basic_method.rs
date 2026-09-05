@@ -29,8 +29,12 @@ impl ContractBasicMethod {
     /// Parameter counts for the methods.
     /// -1 represents the method can take arbitrary parameters.
     pub const VERIFY_P_COUNT: i32 = -1;
+    /// Parameter count for [`INITIALIZE`](Self::INITIALIZE).
     pub const INITIALIZE_P_COUNT: i32 = 0;
+    /// Parameter count for [`DEPLOY`](Self::DEPLOY).
     pub const DEPLOY_P_COUNT: i32 = 2;
+    /// Parameter count for [`UPDATE`](Self::UPDATE).
     pub const UPDATE_P_COUNT: i32 = 3;
+    /// Parameter count for [`DESTROY`](Self::DESTROY).
     pub const DESTROY_P_COUNT: i32 = 0;
 }

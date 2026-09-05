@@ -1,18 +1,18 @@
 //! ApplicationEngine.Runtime - matches C# Neo.SmartContract.ApplicationEngine.Runtime.cs exactly
 
+use crate::UInt160;
 use crate::cryptography::murmur128;
 use crate::hardfork::Hardfork;
 use crate::neo_config::{ADDRESS_SIZE, HASH_SIZE};
-use crate::neo_vm::{ExecutionEngine, StackItem, StackItemExt, VmError, VmResult};
+use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
+use crate::smart_contract::CallFlags;
+use crate::smart_contract::ContractParameterDefinition;
+use crate::smart_contract::ContractParameterType;
+use crate::smart_contract::Interoperable;
+use crate::smart_contract::LogEventArgs;
 use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE,
 };
-use crate::smart_contract::CallFlags;
-use crate::smart_contract::ContractParameterType;
-use crate::smart_contract::LogEventArgs;
-use crate::smart_contract::ContractParameterDefinition;
-use crate::smart_contract::Interoperable;
-use crate::UInt160;
 use neo_vm::StackItemType;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
@@ -347,7 +347,11 @@ impl ApplicationEngine {
             return self.push_null();
         };
 
-        let Some(tx) = container.as_ref().as_any().downcast_ref::<crate::network::p2p::payloads::Transaction>() else {
+        let Some(tx) = container
+            .as_ref()
+            .as_any()
+            .downcast_ref::<crate::network::p2p::payloads::Transaction>()
+        else {
             return self.push_null();
         };
 
@@ -762,17 +766,32 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
 /// Basilisk notify-state normalization: coerces `Buffer` stack items to
 /// `ByteString` (recursing through arrays and structs), matching C# Neo's
 /// post-`HF_Basilisk` `System.Runtime.Notify` behavior.
-fn coerce_notify_state_basilisk(items: Vec<neo_core::neo_vm::StackItem>) -> Vec<neo_core::neo_vm::StackItem> {
+fn coerce_notify_state_basilisk(
+    items: Vec<neo_core::neo_vm::StackItem>,
+) -> Vec<neo_core::neo_vm::StackItem> {
     use neo_core::neo_vm::StackItem;
-    items.into_iter().map(coerce_item_basilisk).collect::<Vec<StackItem>>()
+    items
+        .into_iter()
+        .map(coerce_item_basilisk)
+        .collect::<Vec<StackItem>>()
 }
 
 fn coerce_item_basilisk(item: neo_core::neo_vm::StackItem) -> neo_core::neo_vm::StackItem {
     use neo_core::neo_vm::StackItem;
     match item {
         StackItem::Buffer(b) => StackItem::ByteString(b.data()),
-        StackItem::Array(a) => StackItem::from_array(a.items().into_iter().map(coerce_item_basilisk).collect::<Vec<StackItem>>()),
-        StackItem::Struct(s) => StackItem::from_struct(s.items().into_iter().map(coerce_item_basilisk).collect::<Vec<StackItem>>()),
+        StackItem::Array(a) => StackItem::from_array(
+            a.items()
+                .into_iter()
+                .map(coerce_item_basilisk)
+                .collect::<Vec<StackItem>>(),
+        ),
+        StackItem::Struct(s) => StackItem::from_struct(
+            s.items()
+                .into_iter()
+                .map(coerce_item_basilisk)
+                .collect::<Vec<StackItem>>(),
+        ),
         other => other,
     }
 }

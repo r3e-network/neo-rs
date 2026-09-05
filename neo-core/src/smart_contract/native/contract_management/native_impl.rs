@@ -16,10 +16,10 @@ fn put_storage_if_changed(
     key: &[u8],
     value: &[u8],
 ) -> Result<()> {
-    if let Some(existing) = engine.get_storage_item(context, key) {
-        if existing == value {
-            return Ok(());
-        }
+    if let Some(existing) = engine.get_storage_item(context, key)
+        && existing == value
+    {
+        return Ok(());
     }
     engine.put_storage_item(context, key, value)?;
     Ok(())

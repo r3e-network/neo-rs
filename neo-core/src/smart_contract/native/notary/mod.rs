@@ -4,24 +4,24 @@
 //! This contract assists with multisignature transaction forming by managing
 //! GAS deposits for notary service fees.
 
+use crate::UInt160;
 use crate::cryptography::Crypto;
 use crate::error::{CoreError as Error, CoreResult as Result};
+use crate::neo_vm::StackItem;
 use crate::network::p2p::payloads::{Transaction, TransactionAttributeType};
-use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::persistence::DataCache;
+use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
+use crate::smart_contract::StorageItem;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::native::helpers::NativeHelpers;
 use crate::smart_contract::native::{
-    gas_token::GasToken, ledger_contract::LedgerContract, policy_contract::PolicyContract,
-    role_management::RoleManagement, NativeContract, NativeMethod, Role,
+    NativeContract, NativeMethod, Role, gas_token::GasToken, ledger_contract::LedgerContract,
+    policy_contract::PolicyContract, role_management::RoleManagement,
 };
 use crate::smart_contract::storage_key::StorageKey;
-use crate::smart_contract::StorageItem;
-use crate::neo_vm::{StackItem, StackItemExt};
-use crate::UInt160;
 use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
@@ -100,7 +100,9 @@ impl Notary {
 
         if matches!(item, StackItem::ByteString(_) | StackItem::Buffer(_)) {
             let nested_bytes = item.as_bytes().map_err(|_| {
-                Error::native_contract("Invalid deposit metadata: cannot convert to bytes".to_string())
+                Error::native_contract(
+                    "Invalid deposit metadata: cannot convert to bytes".to_string(),
+                )
             })?;
             item = BinarySerializer::deserialize(
                 &nested_bytes,
@@ -130,9 +132,9 @@ impl Notary {
         let owner = if items[0].is_null() {
             *default_owner
         } else {
-            let bytes = items[0]
-                .as_bytes()
-                .map_err(|_| Error::native_contract("Invalid deposit owner: cannot convert to bytes".to_string()))?;
+            let bytes = items[0].as_bytes().map_err(|_| {
+                Error::native_contract("Invalid deposit owner: cannot convert to bytes".to_string())
+            })?;
             if bytes.len() != UInt160::LENGTH {
                 return Err(Error::native_contract(
                     "Deposit owner must be 20 bytes".to_string(),

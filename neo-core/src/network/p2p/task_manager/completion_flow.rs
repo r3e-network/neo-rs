@@ -1,13 +1,13 @@
 use super::block_validation::{
-    block_matches_hash, match_persisted_block, persisted_block_hash, validate_incoming_block,
     BlockHashMatch, IncomingBlockDisconnect, IncomingBlockOutcome, PersistedBlockMatch,
+    block_matches_hash, match_persisted_block, persisted_block_hash, validate_incoming_block,
 };
 use super::peer_commands::disconnect as disconnect_peer;
-use super::{TaskManager, HEADER_TASK_HASH};
-use crate::ledger::{RelayResult, VerifyResult};
-use crate::network::p2p::payloads::{block::Block, InventoryType};
-use crate::runtime::ActorRef;
+use super::{HEADER_TASK_HASH, TaskManager};
 use crate::UInt256;
+use crate::ledger::{RelayResult, VerifyResult};
+use crate::network::p2p::payloads::{InventoryType, block::Block};
+use crate::runtime::ActorRef;
 use tracing::{trace, warn};
 
 impl TaskManager {
@@ -59,10 +59,10 @@ impl TaskManager {
             index_to_release = Some(block_ref.index());
         }
 
-        if let Some(index) = index_to_release {
-            if entry.session.complete_index_task(index) {
-                self.decrement_index_task(index);
-            }
+        if let Some(index) = index_to_release
+            && entry.session.complete_index_task(index)
+        {
+            self.decrement_index_task(index);
         }
 
         let mut should_request = true;

@@ -8,7 +8,7 @@ use alloc::{
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 
-use crate::{encode_integer, semantics::numeric, StackValue};
+use crate::{StackValue, encode_integer, semantics::numeric};
 
 /// Return the canonical NeoVM integer result representation.
 pub(crate) fn numeric_stack_value(
@@ -186,8 +186,34 @@ pub fn modpow_values(
     )
 }
 
-/// Shift left. A zero shift preserves the original value.
+/// Shift left. The result is always an `Integer` (Gorgon hardfork semantics:
+/// a zero shift converts the operand to `Integer` instead of preserving its
+/// original stack item type).
 pub fn shl_value(value: StackValue, shift: i64) -> Result<StackValue, String> {
+    if !(0..=256).contains(&shift) {
+        return Err("shift count out of range for SHL".into());
+    }
+    numeric_stack_value(
+        numeric_bigint(value)? << (shift as usize),
+        "integer overflow for SHL",
+    )
+}
+
+/// Arithmetic shift right. The result is always an `Integer` (Gorgon hardfork
+/// semantics: a zero shift converts the operand to `Integer` instead of
+/// preserving its original stack item type).
+pub fn shr_value(value: StackValue, shift: i64) -> Result<StackValue, String> {
+    if !(0..=256).contains(&shift) {
+        return Err("shift count out of range for SHR".into());
+    }
+    numeric_stack_value(
+        numeric_bigint(value)? >> (shift as usize),
+        "integer overflow for SHR",
+    )
+}
+
+/// Pre-Gorgon shift left: a zero shift preserves the operand's original type.
+pub fn shl_value_pre_gorgon(value: StackValue, shift: i64) -> Result<StackValue, String> {
     if !(0..=256).contains(&shift) {
         return Err("shift count out of range for SHL".into());
     }
@@ -200,8 +226,9 @@ pub fn shl_value(value: StackValue, shift: i64) -> Result<StackValue, String> {
     )
 }
 
-/// Arithmetic shift right. A zero shift preserves the original value.
-pub fn shr_value(value: StackValue, shift: i64) -> Result<StackValue, String> {
+/// Pre-Gorgon arithmetic shift right: a zero shift preserves the operand's
+/// original type.
+pub fn shr_value_pre_gorgon(value: StackValue, shift: i64) -> Result<StackValue, String> {
     if !(0..=256).contains(&shift) {
         return Err("shift count out of range for SHR".into());
     }
@@ -299,4 +326,41 @@ pub fn within_values(
     let lower = numeric_bigint(lower)?;
     let upper = numeric_bigint(upper)?;
     Ok(value >= lower && value < upper)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shl_zero_shift_yields_integer_gorgon() {
+        // R06: post-Gorgon, a zero shift converts the operand to Integer
+        // instead of preserving its original stack item type.
+        let result = shl_value(StackValue::ByteString(vec![0x01]), 0).unwrap();
+        assert!(matches!(result, StackValue::Integer(1)));
+    }
+
+    #[test]
+    fn shr_zero_shift_yields_integer_gorgon() {
+        let result = shr_value(StackValue::ByteString(vec![0x04]), 0).unwrap();
+        assert!(matches!(result, StackValue::Integer(4)));
+    }
+
+    #[test]
+    fn shl_nonzero_shift_yields_integer() {
+        let result = shl_value(StackValue::Integer(1), 3).unwrap();
+        assert_eq!(result, StackValue::Integer(8));
+    }
+
+    #[test]
+    fn shl_pre_gorgon_zero_shift_preserves_type() {
+        let result = shl_value_pre_gorgon(StackValue::ByteString(vec![0x01]), 0).unwrap();
+        assert_eq!(result, StackValue::ByteString(vec![0x01]));
+    }
+
+    #[test]
+    fn shift_count_out_of_range_faults() {
+        assert!(shl_value(StackValue::Integer(1), 257).is_err());
+        assert!(shl_value(StackValue::Integer(1), -1).is_err());
+    }
 }

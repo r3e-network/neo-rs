@@ -23,8 +23,11 @@ from datetime import datetime
 
 import gzip
 
+from ops_safety import safe_output_path, validate_rpc_url
+
 def rpc_call(url, method, params=None, timeout=30):
     """Make a JSON-RPC call."""
+    url = validate_rpc_url(url)
     payload = {
         "jsonrpc": "2.0",
         "method": method,
@@ -228,7 +231,7 @@ def main():
             "error_details": errors[:100],
             "result": "PASS" if total_mismatched == 0 else "FAIL"
         }
-        with open(args.output, "w") as f:
+        with safe_output_path(args.output).open("w") as f:
             json.dump(report, f, indent=2)
         print(f"\nReport written to {args.output}")
 

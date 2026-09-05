@@ -1,10 +1,10 @@
 use neo_core::network::p2p::payloads::{signer::Signer, transaction::Transaction};
 use neo_core::persistence::DataCache;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::witness::Witness;
-use neo_core::{Verifiable, UInt160, WitnessScope};
+use neo_core::{UInt160, Verifiable, WitnessScope};
 use std::sync::Arc;
 
 fn sample_hash(tag: u8) -> UInt160 {

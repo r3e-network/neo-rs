@@ -1,7 +1,7 @@
 use super::StateStore;
-use crate::state_service::root_cache::StateRootCacheStats;
-use crate::state_service::StateRoot;
 use crate::UInt256;
+use crate::state_service::StateRoot;
+use crate::state_service::root_cache::StateRootCacheStats;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, warn};

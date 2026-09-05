@@ -2,7 +2,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::server::rpc_helpers::expect_base64_param_with_decode_message;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use neo_core::UInt160;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
@@ -11,16 +12,15 @@ use neo_core::persistence::StoreCache;
 use neo_core::smart_contract::native::GasToken;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::wallets::{Wallet, WalletAccount};
-use neo_core::UInt160;
 use num_bigint::BigInt;
 use rand::random;
-use serde_json::{json, Map, Number as JsonNumber, Value};
+use serde_json::{Map, Number as JsonNumber, Value, json};
 
 use crate::server::diagnostic::Diagnostic;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 use crate::server::session::Session;
-use neo_core::vm_runtime::StackItem;
+use neo_core::neo_vm::StackItem;
 use neo_vm::VmState as VMState;
 
 use super::helpers::{
@@ -367,14 +367,14 @@ fn build_pending_item(
     account: UInt160,
     wallet_account: Option<Arc<dyn WalletAccount>>,
 ) -> PendingSignatureItem {
-    if let Some(account_ref) = wallet_account {
-        if let Some(contract) = account_ref.contract() {
-            return PendingSignatureItem {
-                account,
-                script: Some(contract.script.clone()),
-                parameter_types: contract.parameter_list.clone(),
-            };
-        }
+    if let Some(account_ref) = wallet_account
+        && let Some(contract) = account_ref.contract()
+    {
+        return PendingSignatureItem {
+            account,
+            script: Some(contract.script.clone()),
+            parameter_types: contract.parameter_list.clone(),
+        };
     }
 
     PendingSignatureItem {

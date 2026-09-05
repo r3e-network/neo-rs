@@ -19,10 +19,10 @@ impl RoleManagement {
         let prefix = Self::role_prefix_key(role);
         let iter = snapshot.find(Some(&prefix), SeekDirection::Backward);
         for (key, item) in iter {
-            if let Some(designation_index) = Self::parse_designation_index(&key, role) {
-                if designation_index <= index {
-                    return Ok(Some(item.to_value()));
-                }
+            if let Some(designation_index) = Self::parse_designation_index(&key, role)
+                && designation_index <= index
+            {
+                return Ok(Some(item.to_value()));
             }
         }
         Ok(None)

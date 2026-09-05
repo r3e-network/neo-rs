@@ -1,17 +1,17 @@
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use neo_core::UInt160;
+use neo_core::neo_vm::StackItem;
+use neo_core::neo_vm::rpc_json::stack_item_rpc_json_deferred_size_check;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
-use neo_core::smart_contract::NotifyEventArgs;
 use neo_core::smart_contract::ApplicationEngine;
-use neo_core::vm_runtime::rpc_json::stack_item_rpc_json_deferred_size_check;
-use neo_core::vm_runtime::StackItem;
-use neo_core::UInt160;
+use neo_core::smart_contract::CallFlags;
+use neo_core::smart_contract::NotifyEventArgs;
+use neo_core::smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
 use neo_json::JToken;
 use neo_vm::{StackValue, VmState};
 use num_traits::ToPrimitive;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 use crate::server::diagnostic::{Diagnostic, DiagnosticInvocation};
@@ -40,10 +40,12 @@ pub(super) fn parse_contract_parameters(
 }
 
 pub(super) fn final_rpc_vm_state_string(state: VmState) -> Result<String, RpcException> {
+    // Final RPC results must project through the shared neo-vm state
+    // semantics — local BREAK/NONE debug states are never exposed.
     state
         .final_name()
         .map(str::to_string)
-        .ok_or_else(|| internal_error(format!("{state:?} is not a final VM state")))
+        .ok_or_else(|| internal_error(format!("non-final VM state for RPC result: {state:?}")))
 }
 
 #[allow(clippy::type_complexity)]
@@ -171,18 +173,16 @@ fn stack_item_to_json_with_budget(
 ) -> Result<Value, RpcException> {
     let mut value = stack_item_rpc_json_deferred_size_check(item, max_size)
         .map_err(|err| stack_item_error(err.to_string()))?;
-    if let StackItem::InteropInterface(iface) = item {
-        if let Some(session) = session {
-            if let Some(iterator_id) = session.register_iterator_interface(iface) {
-                if let Value::Object(obj) = &mut value {
-                    obj.insert(
-                        "interface".to_string(),
-                        Value::String("StorageIterator".to_string()),
-                    );
-                    obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
-                }
-            }
-        }
+    if let StackItem::InteropInterface(iface) = item
+        && let Some(session) = session
+        && let Some(iterator_id) = session.register_iterator_interface(iface)
+        && let Value::Object(obj) = &mut value
+    {
+        obj.insert(
+            "interface".to_string(),
+            Value::String("IIterator".to_string()),
+        );
+        obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
     }
     Ok(value)
 }

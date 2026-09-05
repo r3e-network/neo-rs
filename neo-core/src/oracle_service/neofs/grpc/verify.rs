@@ -1,5 +1,5 @@
 use super::super::proto::neofs_v2;
-use crate::cryptography::{Secp256r1Crypto, NEOFS_ECDSA_SHA512_SIGNATURE_LEN};
+use crate::cryptography::{NEOFS_ECDSA_SHA512_SIGNATURE_LEN, Secp256r1Crypto};
 use prost::Message;
 
 pub(super) fn validate_neofs_response<B: Message>(

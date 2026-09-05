@@ -1,7 +1,7 @@
 //! NotifyEventArgs - matches C# Neo.SmartContract.NotifyEventArgs exactly
 
-use crate::interoperable::Interoperable;
 use crate::StackItem;
+use crate::interoperable::Interoperable;
 use neo_primitives::{UInt160, Verifiable};
 use std::fmt;
 use std::sync::Arc;
@@ -75,7 +75,7 @@ impl Interoperable for NotifyEventArgs {
 
     fn to_stack_item(&self) -> Result<StackItem, crate::VmError> {
         // Returns an array with [ScriptHash, EventName, State]
-        let state: Vec<StackItem> = self.state.iter().cloned().collect();
+        let state: Vec<StackItem> = self.state.to_vec();
         Ok(StackItem::from_array(vec![
             StackItem::from_byte_string(self.script_hash.to_bytes()),
             StackItem::from_byte_string(self.event_name.clone().into_bytes()),

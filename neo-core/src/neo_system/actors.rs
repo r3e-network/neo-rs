@@ -148,10 +148,9 @@ mod tests {
             if let Ok(BlockchainCommand::PreverifyCompleted(completed)) = envelope
                 .downcast::<BlockchainCommand>()
                 .map(|message| *message)
+                && let Some(sender) = self.completed.lock().take()
             {
-                if let Some(sender) = self.completed.lock().take() {
-                    let _ = sender.send(completed);
-                }
+                let _ = sender.send(completed);
             }
             Ok(())
         }
@@ -225,7 +224,7 @@ mod tests {
             .expect("preverify timeout")
             .expect("preverify result");
 
-        assert_eq!(completed.relay, true);
+        assert!(completed.relay);
         assert_eq!(completed.transaction.nonce(), transaction.nonce());
         assert_eq!(completed.result, expected);
         assert_eq!(completed.result, VerifyResult::Succeed);

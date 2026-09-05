@@ -15,8 +15,8 @@ use neo_core::persistence::DataCache;
 use neo_core::smart_contract::native::GasToken;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::{
-    smart_contract::ContractParametersContext, Contract, ECPoint, Verifiable, KeyPair,
-    NativeContract, Signer, Transaction, TransactionAttribute, Witness,
+    Contract, ECPoint, KeyPair, NativeContract, Signer, Transaction, TransactionAttribute,
+    VerifiableExt, Witness, smart_contract::ContractParametersContext,
 };
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
@@ -176,9 +176,7 @@ impl TransactionManager {
     /// Sign the transaction
     /// Matches C# `SignAsync`
     pub async fn sign(&mut self) -> Result<Transaction, RpcError> {
-        let script_hashes = self
-            .tx
-            .script_hashes_for_verifying(&DataCache::new(true));
+        let script_hashes = self.tx.script_hashes_for_verifying(&DataCache::new(true));
         let mut witnesses = Vec::with_capacity(script_hashes.len());
         for hash in &script_hashes {
             let verification_script = self.get_verification_script(hash);
@@ -238,9 +236,7 @@ impl TransactionManager {
 
     fn add_sign_item(&mut self, contract: Contract, key: KeyPair) -> Result<(), RpcError> {
         let hash = contract.script_hash();
-        let script_hashes = self
-            .tx
-            .script_hashes_for_verifying(&DataCache::new(true));
+        let script_hashes = self.tx.script_hashes_for_verifying(&DataCache::new(true));
         if !script_hashes.contains(&hash) {
             return Err(format!("Add SignItem error: Mismatch ScriptHash ({hash})").into());
         }

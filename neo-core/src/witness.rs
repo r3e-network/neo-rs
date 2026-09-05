@@ -36,15 +36,15 @@
 //! let script_hash = witness.script_hash();
 //! ```
 
+use crate::UInt160;
 use crate::cryptography::Crypto;
 use crate::error::{CoreError, CoreResult};
-use crate::neo_io::{serializable::helper::get_var_size_bytes, Serializable};
+use crate::neo_io::{Serializable, serializable::helper::get_var_size_bytes};
 use crate::smart_contract::helper::Helper;
-use crate::UInt160;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_vm::OpCode;
-use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use std::{convert::TryInto, fmt};
 
 /// Maximum size of invocation script in bytes.

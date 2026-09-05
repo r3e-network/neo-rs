@@ -4,9 +4,10 @@
 
 use hex::decode as hex_decode;
 use hex::encode as hex_encode;
+use neo_core::ScriptBuilder;
+use neo_core::UInt160;
 use neo_core::cryptography::{
-    Bls12381Crypto, Crypto, Ed25519Crypto, NamedCurveHash, Secp256k1Crypto,
-    Secp256r1Crypto,
+    Bls12381Crypto, Crypto, Ed25519Crypto, NamedCurveHash, Secp256k1Crypto, Secp256r1Crypto,
 };
 use neo_core::hardfork::{Hardfork, HardforkManager};
 use neo_core::ledger::{TransactionVerificationContext, VerifyResult};
@@ -14,13 +15,11 @@ use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::{Signer, Transaction, Witness, WitnessScope};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::ScriptBuilder;
+use neo_core::smart_contract::ContractParameterType;
+use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::native::crypto_lib::CryptoLib;
 use neo_core::smart_contract::native::{NativeContract, NativeContractsCache};
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::ContractParameterType;
-use neo_core::UInt160;
 use neo_vm::OpCode;
 use num_bigint::BigInt;
 use secp256k1::{Message, Secp256k1, SecretKey};
@@ -54,8 +53,7 @@ const BLS_GT_HEX: &str = concat!(
     "943e50439f1d59882a98eaa0170f1250ebd871fc0a92a7b2d83168d0d727272d",
     "441befa15c503dd8e90ce98db3e7b6d194f60839c508a84305aaca1789b6",
 );
-const BLS_NOT_G1_HEX: &str =
-    "8123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const BLS_NOT_G1_HEX: &str = "8123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const BLS_NOT_G2_HEX: &str = concat!(
     "8123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -291,15 +289,11 @@ const BLS_GT_SCALAR_MUL_POINT_4: &str = concat!(
 );
 const BLS_GT_SCALAR_MUL_POINT_4_SCALAR: &str =
     "0000000000000000000000000000000000000000000000000000000000000000";
-const BLS_G1_SCALAR_MUL_POINT: &str =
-    "a1f9855f7670a63e4c80d64dfe6ddedc2ed2bfaebae27e4da82d71ba474987a39808e8921d3df97df6e5d4b979234de8";
+const BLS_G1_SCALAR_MUL_POINT: &str = "a1f9855f7670a63e4c80d64dfe6ddedc2ed2bfaebae27e4da82d71ba474987a39808e8921d3df97df6e5d4b979234de8";
 const BLS_G1_SCALAR_MUL_SCALAR: &str = BLS_GT_SCALAR_MUL_POINT_1_SCALAR;
-const BLS_G1_SCALAR_MUL_EXPECTED: &str =
-    "ae85e3e2d677c9e3424ed79b5a7554262c3d6849202b84d2e7024e4b1f2e9dd3f7cf20b807a9f2a67d87e47e9e94d361";
-const BLS_G1_SCALAR_MUL_EXPECTED_NEG: &str =
-    "8e85e3e2d677c9e3424ed79b5a7554262c3d6849202b84d2e7024e4b1f2e9dd3f7cf20b807a9f2a67d87e47e9e94d361";
-const BLS_G1_SCALAR_MUL_EXPECTED_ZERO: &str =
-    "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+const BLS_G1_SCALAR_MUL_EXPECTED: &str = "ae85e3e2d677c9e3424ed79b5a7554262c3d6849202b84d2e7024e4b1f2e9dd3f7cf20b807a9f2a67d87e47e9e94d361";
+const BLS_G1_SCALAR_MUL_EXPECTED_NEG: &str = "8e85e3e2d677c9e3424ed79b5a7554262c3d6849202b84d2e7024e4b1f2e9dd3f7cf20b807a9f2a67d87e47e9e94d361";
+const BLS_G1_SCALAR_MUL_EXPECTED_ZERO: &str = "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
 const BLS_G2_SCALAR_MUL_POINT: &str = concat!(
     "a41e586fdd58d39616fea921a855e65417a5732809afc35e28466e3acaeed3d5",
     "3dd4b97ca398b2f29bf6bbcaca026a6609a42bdeaaeef42813ae225e35c23c61",
@@ -436,15 +430,16 @@ fn test_hash256() {
 #[test]
 fn test_crypto_lib_methods() {
     let crypto = CryptoLib::new();
-    let expected_methods: &[(
-        &str,
+    type ExpectedCryptoLibMethod = (
+        &'static str,
         i64,
-        &[ContractParameterType],
+        &'static [ContractParameterType],
         ContractParameterType,
         Option<Hardfork>,
         Option<Hardfork>,
-        &[&str],
-    )] = &[
+        &'static [&'static str],
+    );
+    let expected_methods: &[ExpectedCryptoLibMethod] = &[
         (
             "recoverSecp256K1",
             1 << 15,
@@ -658,16 +653,18 @@ fn test_crypto_lib_methods() {
 #[test]
 fn crypto_lib_verify_with_ecdsa_hardfork_metadata_selects_single_version() {
     let crypto = CryptoLib::new();
-    let mut settings = ProtocolSettings::default();
-    settings.hardforks = HashMap::from([
-        (Hardfork::HfAspidochelone, 0),
-        (Hardfork::HfBasilisk, 0),
-        (Hardfork::HfCockatrice, 20),
-        (Hardfork::HfDomovoi, 20),
-        (Hardfork::HfEchidna, 100),
-        (Hardfork::HfFaun, 100),
-        (Hardfork::HfGorgon, 100),
-    ]);
+    let settings = ProtocolSettings {
+        hardforks: HashMap::from([
+            (Hardfork::HfAspidochelone, 0),
+            (Hardfork::HfBasilisk, 0),
+            (Hardfork::HfCockatrice, 20),
+            (Hardfork::HfDomovoi, 20),
+            (Hardfork::HfEchidna, 100),
+            (Hardfork::HfFaun, 100),
+            (Hardfork::HfGorgon, 100),
+        ]),
+        ..ProtocolSettings::default()
+    };
 
     let mut cache = NativeContractsCache::default();
     let entry = cache.get_or_build(&crypto);
@@ -1016,8 +1013,7 @@ fn crypto_lib_verify_with_ecdsa_named_curve_hash_keccak() {
         .expect("r1 pubkey")
         .to_vec();
     let digest = Crypto::keccak256(message);
-    let sig_r1 =
-        Secp256r1Crypto::sign_prehash(&digest, &priv_r1).expect("r1 keccak signature");
+    let sig_r1 = Secp256r1Crypto::sign_prehash(&digest, &priv_r1).expect("r1 keccak signature");
     let result = engine
         .call_native_contract(
             crypto.hash(),

@@ -1,12 +1,12 @@
 use super::{
-    TokenManagement, ID, NFT_INDEX_KEY_SIZE, PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX,
-    PREFIX_NFT_OWNER_UNIQUE_ID_INDEX,
+    ID, NFT_INDEX_KEY_SIZE, PREFIX_NFT_ASSET_ID_UNIQUE_ID_INDEX, PREFIX_NFT_OWNER_UNIQUE_ID_INDEX,
+    TokenManagement,
 };
+use crate::UInt160;
 use crate::error::CoreResult;
+use crate::smart_contract::StorageKey;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::storage_context::StorageContext;
-use crate::smart_contract::StorageKey;
-use crate::UInt160;
 
 impl TokenManagement {
     fn update_nft_index(

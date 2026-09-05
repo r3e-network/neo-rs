@@ -4,6 +4,8 @@
 //!
 //! This module provides the stack item implementations used in the Neo VM.
 
+use crate::ExecutionEngineLimits;
+use crate::StackItemType;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
@@ -13,14 +15,12 @@ use crate::stack_item::buffer::Buffer as BufferItem;
 use crate::stack_item::map::Map as MapItem;
 use crate::stack_item::pointer::Pointer as PointerItem;
 use crate::stack_item::struct_item::Struct as StructItem;
-use crate::ExecutionEngineLimits;
-use crate::StackItemType;
 use crate::{StackValue, VmOrderedDictionary};
 use num_bigint::BigInt;
 use std::fmt;
 use std::sync::Arc;
 
-use super::vm_integer::{vm_integer_stack_value, VmInteger};
+use super::vm_integer::{VmInteger, vm_integer_stack_value};
 
 /// A trait for interop interfaces that can be wrapped by a stack item.
 pub trait InteropInterface: fmt::Debug + Send + Sync {
@@ -370,9 +370,7 @@ impl StackItem {
             | Self::Boolean(_)
             | Self::Integer(_)
             | Self::ByteString(_)
-            | Self::Buffer(_)) => {
-                stack_value_byte_string_bytes(crate::StackValue::try_from(item)?)
-            }
+            | Self::Buffer(_)) => stack_value_byte_string_bytes(crate::StackValue::try_from(item)?),
             _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
         }
     }
@@ -460,10 +458,10 @@ impl StackItem {
         &self,
         refs: &mut std::collections::HashMap<CompoundIdentity, Self>,
     ) -> Self {
-        if let Some(self_id) = compound_identity(self) {
-            if let Some(cloned) = refs.get(&self_id) {
-                return cloned.clone();
-            }
+        if let Some(self_id) = compound_identity(self)
+            && let Some(cloned) = refs.get(&self_id)
+        {
+            return cloned.clone();
         }
 
         // Clone the item based on its type
@@ -598,12 +596,12 @@ impl StackItem {
                 Self::Null | Self::Integer(_) | Self::ByteString(_),
                 target_type @ StackItemType::Boolean,
             ) => {
-                if let Self::ByteString(bytes) = self {
-                    if bytes.len() > VM_INTEGER_MAX_SIZE {
-                        return Err(VmError::invalid_type_simple(
-                            "Cannot convert ByteString to Boolean",
-                        ));
-                    }
+                if let Self::ByteString(bytes) = self
+                    && bytes.len() > VM_INTEGER_MAX_SIZE
+                {
+                    return Err(VmError::invalid_type_simple(
+                        "Cannot convert ByteString to Boolean",
+                    ));
                 }
                 return convert_stack_value_via_semantics(
                     StackValue::try_from(self.clone())?,
@@ -620,7 +618,7 @@ impl StackItem {
                 );
             }
             (Self::Null, StackItemType::ByteString) => {
-                return Ok(Self::ByteString(self.as_bytes()?))
+                return Ok(Self::ByteString(self.as_bytes()?));
             }
             (Self::Null, StackItemType::Buffer) => {
                 return Ok(Self::Buffer(BufferItem::new(self.as_bytes()?)));

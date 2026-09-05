@@ -1,5 +1,5 @@
 use neo_core::persistence::{
-    providers::RocksDBStoreProvider, StoreProvider, StorageConfig, StoreCache,
+    StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
 };
 use neo_core::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
 use std::path::PathBuf;

@@ -91,10 +91,10 @@ pub trait NativeContract: Any + Send + Sync {
     ) -> (bool, Vec<Hardfork>) {
         let mut hits = Vec::new();
         for hardfork in self.used_hardforks() {
-            if let Some(&activation_height) = settings.hardforks.get(&hardfork) {
-                if activation_height == index {
-                    hits.push(hardfork);
-                }
+            if let Some(&activation_height) = settings.hardforks.get(&hardfork)
+                && activation_height == index
+            {
+                hits.push(hardfork);
             }
         }
 

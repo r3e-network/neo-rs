@@ -17,11 +17,16 @@ use super::{
     native_contract::{NativeContract, NativeMethod},
     policy_contract::PolicyContract,
 };
+use crate::UInt160;
 use crate::cryptography::ECPoint;
 use crate::error::{CoreError, CoreResult, ToNativeError};
 use crate::hardfork::Hardfork;
+use crate::neo_vm::StackItem;
 use crate::persistence::{read_only_store::ReadOnlyStoreGeneric, seek_direction::SeekDirection};
 use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::Contract;
+use crate::smart_contract::StorageItem;
+use crate::smart_contract::StorageItemExt;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::binary_serializer::BinarySerializer;
 use crate::smart_contract::helper::Helper;
@@ -29,11 +34,6 @@ use crate::smart_contract::manifest::ContractEventDescriptor;
 use crate::smart_contract::native::ledger_contract::LedgerContract;
 use crate::smart_contract::storage_context::StorageContext;
 use crate::smart_contract::storage_key::StorageKey;
-use crate::smart_contract::Contract;
-use crate::smart_contract::StorageItem;
-use crate::smart_contract::StorageItemExt;
-use crate::neo_vm::StackItem;
-use crate::UInt160;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackValue;
 use num_bigint::BigInt;

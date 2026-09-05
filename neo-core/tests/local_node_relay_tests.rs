@@ -36,7 +36,7 @@ impl Actor for CaptureActor {
 
 fn peer_version(settings: &ProtocolSettings) -> VersionPayload {
     VersionPayload::create(
-        settings,
+        settings.network,
         42,
         "/peer".to_string(),
         vec![
@@ -190,7 +190,7 @@ async fn address_book_ignores_peers_without_tcp_server_capability() {
         .expect("probe actor");
 
     let version = VersionPayload::create(
-        &settings,
+        settings.network,
         99,
         "/peer".to_string(),
         vec![NodeCapability::FullNode { start_height: 0 }],
@@ -235,7 +235,7 @@ async fn register_remote_node_updates_and_clears_per_ip_connection_index() {
         .expect("probe actor");
 
     let version_a = VersionPayload::create(
-        &settings,
+        settings.network,
         node.nonce.wrapping_add(1),
         "/peer-a".to_string(),
         Vec::new(),
@@ -252,7 +252,7 @@ async fn register_remote_node_updates_and_clears_per_ip_connection_index() {
     node.register_remote_node(probe.clone(), registered.clone(), version_a);
 
     let version_b = VersionPayload::create(
-        &settings,
+        settings.network,
         node.nonce.wrapping_add(2),
         "/peer-b".to_string(),
         Vec::new(),

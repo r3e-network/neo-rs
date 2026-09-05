@@ -133,8 +133,7 @@
 //! }
 //! ```
 
-// Documentation warnings deferred — tracked for incremental doc coverage
-#![allow(missing_docs)]
+// Keep public API documentation warnings visible to maintainers.
 #![warn(rustdoc::missing_crate_level_docs)]
 
 // Vendored modules use `alloc::` paths; make the crate nameable crate-wide.
@@ -237,16 +236,10 @@ mod vm;
 
 // Full public re-export surface (mirrors the vendored crate's `lib.rs`).
 pub use abi::{
-    byte_sequence_bytes, byte_sequence_len, concat_splice_values, default_value_for_type_tag,
-    encode_integer, new_array_default_value_for_neovm_type_tag,
-    new_array_default_value_for_type_tag, normalize_stack_item_type_tag, pop_byte_arg,
-    slice_splice_value, stack_value_as_bool, stack_value_as_bytes, stack_value_as_fixed_bytes,
-    stack_value_as_i64, stack_value_as_string, stack_value_as_u32, stack_value_as_u8,
-    stack_value_into_items, stack_value_span_bytes, BackendKind, ExecutionResult, StackItemType,
-    StackValue, VmState, COMPACT_TAG_ARRAY, COMPACT_TAG_BIG_INTEGER, COMPACT_TAG_BOOLEAN,
+    BackendKind, COMPACT_TAG_ARRAY, COMPACT_TAG_BIG_INTEGER, COMPACT_TAG_BOOLEAN,
     COMPACT_TAG_BUFFER, COMPACT_TAG_BYTESTRING, COMPACT_TAG_INTEGER, COMPACT_TAG_INTEROP,
     COMPACT_TAG_ITERATOR, COMPACT_TAG_MAP, COMPACT_TAG_NULL, COMPACT_TAG_POINTER,
-    COMPACT_TAG_STRUCT, NEOVM_STACK_ITEM_TYPE_ANY, NEOVM_STACK_ITEM_TYPE_ARRAY,
+    COMPACT_TAG_STRUCT, ExecutionResult, NEOVM_STACK_ITEM_TYPE_ANY, NEOVM_STACK_ITEM_TYPE_ARRAY,
     NEOVM_STACK_ITEM_TYPE_BOOLEAN, NEOVM_STACK_ITEM_TYPE_BUFFER, NEOVM_STACK_ITEM_TYPE_BYTESTRING,
     NEOVM_STACK_ITEM_TYPE_INTEGER, NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE,
     NEOVM_STACK_ITEM_TYPE_MAP, NEOVM_STACK_ITEM_TYPE_POINTER, NEOVM_STACK_ITEM_TYPE_STRUCT,
@@ -254,27 +247,33 @@ pub use abi::{
     STACK_VALUE_CODEC_TAG_BUFFER, STACK_VALUE_CODEC_TAG_BYTESTRING, STACK_VALUE_CODEC_TAG_INTEGER,
     STACK_VALUE_CODEC_TAG_INTEROP, STACK_VALUE_CODEC_TAG_ITERATOR, STACK_VALUE_CODEC_TAG_MAP,
     STACK_VALUE_CODEC_TAG_NULL, STACK_VALUE_CODEC_TAG_POINTER, STACK_VALUE_CODEC_TAG_STRUCT,
+    StackItemType, StackValue, VmState, byte_sequence_bytes, byte_sequence_len,
+    concat_splice_values, default_value_for_type_tag, encode_integer,
+    new_array_default_value_for_neovm_type_tag, new_array_default_value_for_type_tag,
+    normalize_stack_item_type_tag, pop_byte_arg, slice_splice_value, stack_value_as_bool,
+    stack_value_as_bytes, stack_value_as_fixed_bytes, stack_value_as_i64, stack_value_as_string,
+    stack_value_as_u8, stack_value_as_u32, stack_value_into_items, stack_value_span_bytes,
 };
 pub use abi::{callback_codec, fast_codec, result_codec};
 pub use host::{interop_hash, syscall_arg_count};
 pub use interpreter::{
-    interpret, interpret_with_stack_and_syscalls, interpret_with_stack_and_syscalls_at,
+    CALLT_MARKER, CALLT_MARKER_HI, INITIALIZER_COMPLETE_MARKER, SyscallProvider, interpret,
+    interpret_with_stack_and_syscalls, interpret_with_stack_and_syscalls_at,
     interpret_with_stack_and_syscalls_at_with_initializer,
     interpret_with_stack_and_syscalls_at_with_initializer_and_result_limit,
     interpret_with_stack_and_syscalls_at_with_result_limit, interpret_with_syscalls,
     last_interpreter_ip, last_result_limit, last_result_stack_len, last_result_stage,
-    SyscallProvider, CALLT_MARKER, CALLT_MARKER_HI, INITIALIZER_COMPLETE_MARKER,
 };
 pub use runtime::{RuntimeStack, VmContext};
 pub use vm::{
-    instruction_jump_target, instruction_try_targets, next_stack_item_id,
-    parse_script_instructions, validate_script, validate_strict_script,
+    DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, ExceptionHandlingContext,
+    ExceptionHandlingState, ExecutionEngineLimits, FromOperand, Instruction, InstructionError,
+    InstructionErrorKind, InstructionResult, MAX_ITEM_SIZE, MAX_SCRIPT_SIZE, OpCode,
+    ScriptInstruction, Tarjan, ValidatedScript, ValidationResult, VmOrderedDictionary,
 };
 pub use vm::{
-    ExceptionHandlingContext, ExceptionHandlingState, ExecutionEngineLimits, FromOperand,
-    Instruction, InstructionError, InstructionErrorKind, InstructionResult, OpCode,
-    ScriptInstruction, Tarjan, ValidatedScript, ValidationResult, VmOrderedDictionary,
-    DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, MAX_ITEM_SIZE, MAX_SCRIPT_SIZE,
+    instruction_jump_target, instruction_try_targets, next_stack_item_id,
+    parse_script_instructions, validate_script, validate_strict_script,
 };
 
 // ============================================================================
@@ -286,13 +285,15 @@ pub use error::{VmError, VmResult};
 pub use evaluation_stack::EvaluationStack;
 pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
+pub use interop_service::InteropService;
 pub use interoperable::Interoperable;
 pub use json_serializer::JsonSerializer;
-pub use notify_event_args::NotifyEventArgs;
-pub use interop_service::InteropService;
 pub use jump_table::JumpTable;
+pub use notify_event_args::NotifyEventArgs;
 pub use reference_counter::{CompoundParent, ReferenceCounter};
-pub use rpc_json::{stack_item_rpc_json, stack_item_rpc_json_deferred_size_check, stack_items_rpc_json_per_item};
+pub use rpc_json::{
+    stack_item_rpc_json, stack_item_rpc_json_deferred_size_check, stack_items_rpc_json_per_item,
+};
 pub use script::Script;
 pub use script_builder::ScriptBuilder;
 pub use slot::Slot;

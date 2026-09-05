@@ -143,13 +143,13 @@ impl ContractManagement {
             let value = item.value_bytes();
             match *prefix {
                 PREFIX_CONTRACT => {
-                    if let Ok(contract_hash) = UInt160::from_bytes(rest) {
-                        if let Ok(contract_state) = Self::deserialize_contract_state(&value) {
-                            storage
-                                .contract_ids
-                                .insert(contract_state.id, contract_hash);
-                            storage.contracts.insert(contract_hash, contract_state);
-                        }
+                    if let Ok(contract_hash) = UInt160::from_bytes(rest)
+                        && let Ok(contract_state) = Self::deserialize_contract_state(&value)
+                    {
+                        storage
+                            .contract_ids
+                            .insert(contract_state.id, contract_hash);
+                        storage.contracts.insert(contract_hash, contract_state);
                     }
                 }
                 PREFIX_CONTRACT_HASH if rest.len() == 4 => {
@@ -188,10 +188,10 @@ impl ContractManagement {
             storage.contract_count = u32::try_from(storage.contracts.len()).unwrap_or(u32::MAX);
         }
 
-        if let Some(max_id) = storage.contract_ids.keys().copied().max() {
-            if storage.next_id <= max_id {
-                storage.next_id = max_id + 1;
-            }
+        if let Some(max_id) = storage.contract_ids.keys().copied().max()
+            && storage.next_id <= max_id
+        {
+            storage.next_id = max_id + 1;
         }
 
         Self::validate_hydrated_storage(&storage)?;
@@ -212,15 +212,15 @@ impl ContractManagement {
             if contract.id < 0 {
                 continue;
             }
-            if let Some(existing) = ids.insert(contract.id, *hash) {
-                if existing != *hash {
-                    return Err(Error::invalid_data(format!(
-                        "corrupted ContractManagement state: duplicate non-native contract id {} for hashes {} and {}",
-                        contract.id,
-                        existing.to_hex_string(),
-                        hash.to_hex_string()
-                    )));
-                }
+            if let Some(existing) = ids.insert(contract.id, *hash)
+                && existing != *hash
+            {
+                return Err(Error::invalid_data(format!(
+                    "corrupted ContractManagement state: duplicate non-native contract id {} for hashes {} and {}",
+                    contract.id,
+                    existing.to_hex_string(),
+                    hash.to_hex_string()
+                )));
             }
         }
 
@@ -233,13 +233,13 @@ impl ContractManagement {
                         id,
                         mapped.to_hex_string(),
                         hash.to_hex_string()
-                    )))
+                    )));
                 }
                 None => {
                     return Err(Error::invalid_data(format!(
                         "corrupted ContractManagement state: missing contract id mapping for id {}",
                         id
-                    )))
+                    )));
                 }
             }
         }

@@ -28,12 +28,12 @@
 
 const MAX_CLEAN_HEIGHT_DEFAULT: u32 = 172_612;
 
+use neo_core::UInt256;
 use neo_core::persistence::StorageConfig;
-use neo_core::persistence::{store_provider::StoreProvider, providers::RocksDBStoreProvider};
+use neo_core::persistence::{providers::RocksDBStoreProvider, store_provider::StoreProvider};
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };
-use neo_core::UInt256;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;

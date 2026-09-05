@@ -1,10 +1,10 @@
 # Neo-rs Architecture
 
-> **Version**: 0.7.0  
-> **Last Updated**: 2026-01-28  
-> **Target Compatibility**: Neo N3 v3.9.2
+> **Version**: 0.17.0  
+> **Last Updated**: 2026-09-05  
+> **Target Compatibility**: Neo N3 v3.10.1
 
-This document describes the architecture of the neo-rs project, a professional Rust implementation of the Neo N3 blockchain node.
+This document describes the architecture of the neo-rs project, a professional Rust implementation of the Neo N3 blockchain node. Crate composition below reflects the actual workspace members in the root `Cargo.toml`.
 
 📖 **For comprehensive architecture documentation, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** which includes:
 - Detailed system overview with architecture diagrams
@@ -43,12 +43,12 @@ Neo-rs follows a **strict layered architecture** with clear dependency boundarie
 │                         APPLICATION LAYER (Layer 3)                         │
 │                                                                             │
 │   ┌─────────────────────┐         ┌─────────────────────┐                   │
-│   │     neo-cli         │         │     neo-node        │                   │
-│   │  (CLI Client)       │         │  (Node Daemon)      │                   │
+│   │     neo-node        │         │  neo-rpc (client)   │                   │
+│   │  (Node Daemon)      │         │  (RpcClient API)    │                   │
 │   │                     │         │                     │                   │
-│   │  • Wallet commands  │         │  • P2P networking   │                   │
-│   │  • Contract invoke  │         │  • RPC server       │                   │
-│   │  • Query blockchain │         │  • Consensus        │                   │
+│   │  • P2P networking   │         │  • JSON-RPC calls   │                   │
+│   │  • RPC server       │         │  • Wallet helpers   │                   │
+│   │  • Consensus        │         │  • Node queries     │                   │
 │   └─────────────────────┘         └─────────────────────┘                   │
 └─────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -57,16 +57,16 @@ Neo-rs follows a **strict layered architecture** with clear dependency boundarie
 │                         SERVICE LAYER (Layer 2)                             │
 │                                                                             │
 │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│   │  neo-chain   │  │  neo-mempool │  │  neo-state   │  │ neo-config   │    │
-│   │              │  │              │  │              │  │              │    │
-│   │ Chain mgmt   │  │ Tx pool      │  │ World state  │  │ Configuration│    │
-│   │ Fork choice  │  │ Validation   │  │ Snapshots    │  │ Protocol     │    │
+│   │  neo-core    │  │ neo-config   │  │  neo-tee     │  │  neo-hsm     │    │
+│   │  services    │  │              │  │  (optional)  │  │  (optional)  │    │
+│   │              │  │ Configuration│  │              │  │              │    │
+│   │ Mempool/State│  │ Protocol     │  │              │  │              │    │
+│   │ /Oracle/Logs │  │              │  │              │  │              │    │
 │   └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
-│                                                                             │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                       │
-│   │  neo-tee     │  │  neo-hsm     │  │neo-telemetry │                       │
-│   │  (optional)  │  │  (optional)  │  │  (optional)  │                       │
-│   └──────────────┘  └──────────────┘  └──────────────┘                       │
+│   ┌──────────────┐                                                          │
+│   │neo-telemetry │                                                          │
+│   │  (optional)  │                                                          │
+│   └──────────────┘                                                          │
 └─────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
@@ -74,19 +74,18 @@ Neo-rs follows a **strict layered architecture** with clear dependency boundarie
 │                         CORE LAYER (Layer 1)                                │
 │                                                                             │
 │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│   │   neo-core   │  │  VM module   │  │   neo-p2p    │  │  neo-consensus│   │
+│   │   neo-core   │  │   neo-vm     │  │   neo-p2p    │  │neo-consensus │   │
 │   │              │  │              │  │              │  │              │    │
 │   │ • Protocol   │  │ • Stack VM   │  │ • Messages   │  │ • dBFT 2.0   │    │
 │   │ • Ledger     │  │ • OpCodes    │  │ • Handshake  │  │ • Consensus  │    │
 │   │ • Contracts  │  │ • Debugging  │  │ • Peers      │  │   state      │    │
 │   │ • Wallets    │  │ • Interop    │  │              │  │              │    │
 │   └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
-│                                                                             │
 │   ┌──────────────┐  ┌──────────────┐                                         │
-│   │   neo-rpc    │  │  neo-state   │                                         │
+│   │   neo-rpc    │  │ neo-storage  │                                         │
 │   │              │  │              │                                         │
-│   │ • JSON-RPC   │  │ • State root │                                         │
-│   │ • Client/    │  │ • Proofs     │                                         │
+│   │ • JSON-RPC   │  │ • Store API  │                                         │
+│   │ • Client/    │  │ • Providers  │                                         │
 │   │   Server     │  │ • Snapshots  │                                         │
 │   └──────────────┘  └──────────────┘                                         │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -142,16 +141,14 @@ The core layer implements blockchain protocol logic. It depends only on the Foun
 | `neo-p2p` | P2P networking | `MessageCommand`, `InventoryType`, `VerifyResult` |
 | `neo-consensus` | dBFT consensus | `ConsensusService`, `ConsensusContext`, `ConsensusMessage` |
 | `neo-rpc` | RPC communication | `RpcServer`, `RpcClient`, `RpcErrorCode` |
-| `neo-state` | State management | `StateStore`, `StateRoot`, `MerklePatriciaTrie` |
 
 ### Layer 2: Service Layer
 
-The service layer provides higher-level blockchain services and orchestration.
+The service layer provides higher-level blockchain services and orchestration. Mempool, state service, oracle, and application-log services live inside `neo-core` as modules rather than separate crates.
 
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
-| `neo-chain` | Chain management | `Blockchain`, `ForkChoice`, `HeaderCache` |
-| `neo-mempool` | Transaction pool | `MemoryPool`, `TransactionVerification` |
+| `neo-core` (modules) | Transaction pool, state service, oracle, logs | `MemoryPool`, `StateStore`, `OracleService` |
 | `neo-config` | Configuration | `ProtocolSettings`, `NodeConfig` |
 | `neo-telemetry` | Observability | `Metrics`, `HealthCheck`, `Tracing` |
 | `neo-tee` | TEE support | `EnclaveClient` (feature-gated) |
@@ -164,7 +161,6 @@ The application layer contains user-facing binaries.
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
 | `neo-node` | Full node daemon | `NeoNode`, `RpcServer` |
-| `neo-cli` | CLI client | `Cli`, `WalletCommands`, `ContractCommands` |
 
 ---
 
@@ -199,7 +195,7 @@ neo-p2p = { path = "../neo-p2p" }
 neo-core = { path = "../neo-core" }  // FORBIDDEN - creates cycle
 
 // ❌ WRONG: Layer jumping
-// neo-cli (Layer 3) directly using neo-primitives (Layer 0)
+// neo-node (Layer 3) directly using neo-primitives (Layer 0)
 // While technically allowed, prefer going through Layer 2 abstractions
 ```
 
@@ -219,9 +215,8 @@ neo-crypto = { path = "../neo-crypto" }
 neo-vm-rs = { workspace = true }
 
 // ✅ CORRECT: Service layer depends on Core and Foundation
-// neo-chain/Cargo.toml:
+// neo-config/Cargo.toml:
 [dependencies]
-neo-core = { path = "../neo-core" }
 neo-primitives = { path = "../neo-primitives" }
 ```
 
@@ -443,11 +438,11 @@ let transaction = TransactionBuilder::new()
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Error Hierarchy                               │
 ├─────────────────────────────────────────────────────────────────┤
-│  Application (neo-cli, neo-node)                                │
-│  └── CliError, NodeError                                        │
+│  Application (neo-node)                                         │
+│  └── NodeError                                                  │
 │                                                                 │
-│  Service (neo-chain, neo-mempool)                               │
-│  └── ChainError, MempoolError                                   │
+│  Service (neo-config, neo-tee, neo-hsm)                         │
+│  └── ConfigError, TeeError, HsmError                            │
 │                                                                 │
 │  Core (neo-core, neo-p2p, neo-rpc, neo-consensus)               │
 │  └── CoreError, VmError, P2PError, RpcError, ConsensusError     │

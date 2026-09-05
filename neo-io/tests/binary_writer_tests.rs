@@ -165,23 +165,6 @@ mod tests {
         assert_eq!(result, expected);
     }
 
-    /// Test writing floating point numbers (matches C# BinaryWriter float operations exactly)
-    #[test]
-    #[ignore = "BinaryWriter doesn't have write_f32/write_f64 methods"]
-    fn test_write_float_compatibility() {
-        // Test f32
-        let writer = BinaryWriter::new();
-        // writer.write_f32(1.23f32).unwrap();
-        let _ = writer.to_bytes();
-        // assert_eq!(result, 1.23f32.to_le_bytes().to_vec());
-
-        // Test f64
-        let writer = BinaryWriter::new();
-        // writer.write_f64(1.23456789f64).unwrap();
-        let _ = writer.to_bytes();
-        // assert_eq!(result, 1.23456789f64.to_le_bytes().to_vec());
-    }
-
     /// Test round-trip compatibility with BinaryReader (matches C# round-trip behavior exactly)
     #[test]
     fn test_round_trip_compatibility() {

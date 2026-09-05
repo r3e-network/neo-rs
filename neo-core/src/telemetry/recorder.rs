@@ -119,8 +119,11 @@ pub struct HistogramSnapshot {
 /// Snapshot of all metrics at a point in time.
 #[derive(Debug, Clone)]
 pub struct MetricsSnapshot {
+    /// Counter values keyed by metric name.
     pub counters: HashMap<String, u64>,
+    /// Gauge values keyed by metric name.
     pub gauges: HashMap<String, f64>,
+    /// Histogram snapshots keyed by metric name.
     pub histograms: HashMap<String, HistogramSnapshot>,
 }
 

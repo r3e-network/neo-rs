@@ -3,7 +3,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Snapshot of state root ingestion counters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StateRootIngestStats {
+    /// Number of state roots accepted after validation.
     pub accepted: u64,
+    /// Number of state roots rejected during validation.
     pub rejected: u64,
 }
 

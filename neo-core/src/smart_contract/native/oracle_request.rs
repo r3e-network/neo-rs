@@ -74,12 +74,11 @@ impl OracleRequest {
                 return Ok(());
             }
 
-            if let Some(bytes) = items[0].to_byte_string_bytes() {
-                if bytes.len() == 32 {
-                    if let Ok(hash) = UInt256::from_bytes(&bytes) {
-                        self.original_tx_id = hash;
-                    }
-                }
+            if let Some(bytes) = items[0].to_byte_string_bytes()
+                && bytes.len() == 32
+                && let Ok(hash) = UInt256::from_bytes(&bytes)
+            {
+                self.original_tx_id = hash;
             }
 
             if let Some(value) = items[1]
@@ -89,32 +88,31 @@ impl OracleRequest {
                 self.gas_for_response = value;
             }
 
-            if let Some(bytes) = items[2].to_byte_string_bytes() {
-                if let Ok(url) = String::from_utf8(bytes) {
-                    self.url = url;
-                }
+            if let Some(bytes) = items[2].to_byte_string_bytes()
+                && let Ok(url) = String::from_utf8(bytes)
+            {
+                self.url = url;
             }
 
             if matches!(items[3], StackValue::Null) {
                 self.filter = None;
-            } else if let Some(bytes) = items[3].to_byte_string_bytes() {
-                if let Ok(filter) = String::from_utf8(bytes) {
-                    self.filter = Some(filter);
-                }
+            } else if let Some(bytes) = items[3].to_byte_string_bytes()
+                && let Ok(filter) = String::from_utf8(bytes)
+            {
+                self.filter = Some(filter);
             }
 
-            if let Some(bytes) = items[4].to_byte_string_bytes() {
-                if bytes.len() == 20 {
-                    if let Ok(hash) = UInt160::from_bytes(&bytes) {
-                        self.callback_contract = hash;
-                    }
-                }
+            if let Some(bytes) = items[4].to_byte_string_bytes()
+                && bytes.len() == 20
+                && let Ok(hash) = UInt160::from_bytes(&bytes)
+            {
+                self.callback_contract = hash;
             }
 
-            if let Some(bytes) = items[5].to_byte_string_bytes() {
-                if let Ok(method) = String::from_utf8(bytes) {
-                    self.callback_method = method;
-                }
+            if let Some(bytes) = items[5].to_byte_string_bytes()
+                && let Ok(method) = String::from_utf8(bytes)
+            {
+                self.callback_method = method;
             }
 
             if let Some(bytes) = items[6].to_byte_string_bytes() {

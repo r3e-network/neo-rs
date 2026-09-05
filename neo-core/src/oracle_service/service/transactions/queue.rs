@@ -1,6 +1,6 @@
 use super::super::utils::{ledger_height, verify_oracle_signature};
 use super::super::{OracleService, OracleServiceError, OracleTask};
-use crate::Verifiable;
+use crate::VerifiableExt;
 use crate::cryptography::ECPoint;
 use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::Transaction;
@@ -67,12 +67,12 @@ impl OracleService {
         let task = queue.get_mut(&request_id).expect("oracle task inserted");
 
         // Check if task has been pending for too long
-        if let Ok(elapsed) = SystemTime::now().duration_since(task.timestamp) {
-            if elapsed > MAX_TASK_PENDING_TIME {
-                return Err(OracleServiceError::Processing(
-                    "Task has been pending for too long".to_string(),
-                ));
-            }
+        if let Ok(elapsed) = SystemTime::now().duration_since(task.timestamp)
+            && elapsed > MAX_TASK_PENDING_TIME
+        {
+            return Err(OracleServiceError::Processing(
+                "Task has been pending for too long".to_string(),
+            ));
         }
 
         if let Some(tx) = response_tx {

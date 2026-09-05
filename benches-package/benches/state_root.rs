@@ -1,4 +1,11 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+//! Benchmark cryptographic hashing primitives (SHA-256, Hash256, Hash160).
+//!
+//! Scope note (review §4.3.5): despite the source file name, this suite does
+//! NOT benchmark MPT state-root computation — no trie is involved. Results
+//! must not be reported as state-root performance. The MPT benchmark belongs
+//! in a dedicated trie suite once the staging path is wired for replay.
+
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_crypto::Crypto;
 
 /// Benchmark SHA-256 hashing with various input sizes.

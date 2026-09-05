@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod block_validation;
+
 /// Test vector containing input and expected output from C# implementation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestVector {

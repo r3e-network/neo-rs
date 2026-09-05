@@ -127,20 +127,20 @@ fn writes_rpc_config_with_restricted_permissions() {
 
 #[test]
 fn bundled_mainnet_config_parses() {
-    let cfg: NodeConfig = toml::from_str(include_str!("../../neo_mainnet_node.toml"))
+    let cfg: NodeConfig = toml::from_str(include_str!("../../../neo_mainnet_node.toml"))
         .expect("mainnet config should parse");
     assert_eq!(cfg.network.network_type.as_deref(), Some("MainNet"));
 }
 
 #[test]
 fn bundled_testnet_config_parses() {
-    let cfg: NodeConfig = toml::from_str(include_str!("../../neo_testnet_node.toml"))
+    let cfg: NodeConfig = toml::from_str(include_str!("../../../neo_testnet_node.toml"))
         .expect("testnet config should parse");
     assert_eq!(cfg.network.network_type.as_deref(), Some("TestNet"));
 }
 
 #[test]
 fn bundled_production_config_parses() {
-    toml::from_str::<NodeConfig>(include_str!("../../neo_production_node.toml"))
+    toml::from_str::<NodeConfig>(include_str!("../../../neo_production_node.toml"))
         .expect("production template should parse");
 }

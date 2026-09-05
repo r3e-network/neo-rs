@@ -1,15 +1,18 @@
-use crate::{serializable::helper, IoError, IoResult, MemoryReader, Serializable};
+use crate::{IoError, IoResult, MemoryReader, Serializable, serializable::helper};
 
 /// Extension helpers for [`MemoryReader`] mirroring
 /// `Neo.Extensions.IO.MemoryReaderExtensions`.
 pub trait MemoryReaderExtensions {
+    /// Reads an array of optional `Serializable` values, enforcing the item count upper bound.
     fn read_nullable_array<T: Serializable + Default>(
         &mut self,
         max: usize,
     ) -> IoResult<Vec<Option<T>>>;
 
+    /// Reads a single `Serializable` value.
     fn read_serializable<T: Serializable>(&mut self) -> IoResult<T>;
 
+    /// Reads an array of `Serializable` values, enforcing the item count upper bound.
     fn read_serializable_array<T: Serializable>(&mut self, max: usize) -> IoResult<Vec<T>>;
 }
 

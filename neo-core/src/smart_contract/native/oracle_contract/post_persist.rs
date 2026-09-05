@@ -1,11 +1,11 @@
 use super::OracleContract;
+use crate::UInt160;
 use crate::cryptography::Crypto;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::native::{GasToken, Role, RoleManagement};
-use crate::UInt160;
 use num_bigint::BigInt;
 use std::collections::HashMap;
 
@@ -24,13 +24,13 @@ impl OracleContract {
 
         for transaction in &block.transactions {
             for attribute in transaction.attributes() {
-                if let TransactionAttribute::OracleResponse(response) = attribute {
-                    if let Some(request) = self.read_request(snapshot, response.id)? {
-                        let url_hash = self.compute_url_hash(&request.url);
-                        self.delete_request(snapshot, response.id);
-                        self.remove_request_id(snapshot, &url_hash, response.id)?;
-                        completed_response_ids.push(response.id);
-                    }
+                if let TransactionAttribute::OracleResponse(response) = attribute
+                    && let Some(request) = self.read_request(snapshot, response.id)?
+                {
+                    let url_hash = self.compute_url_hash(&request.url);
+                    self.delete_request(snapshot, response.id);
+                    self.remove_request_id(snapshot, &url_hash, response.id)?;
+                    completed_response_ids.push(response.id);
                 }
             }
         }

@@ -23,12 +23,12 @@ impl ContractManagement {
             ));
         }
 
-        if let Some(nef_bytes) = nef_file.as_ref() {
-            if nef_bytes.is_empty() {
-                return Err(Error::invalid_argument(
-                    "NEF file length cannot be zero".to_string(),
-                ));
-            }
+        if let Some(nef_bytes) = nef_file.as_ref()
+            && nef_bytes.is_empty()
+        {
+            return Err(Error::invalid_argument(
+                "NEF file length cannot be zero".to_string(),
+            ));
         }
         if let Some(manifest_payload) = manifest_bytes.as_ref() {
             if manifest_payload.is_empty() {
@@ -43,15 +43,15 @@ impl ContractManagement {
             }
         }
 
-        if engine.is_hardfork_enabled(Hardfork::HfAspidochelone) {
-            if let Ok(state) = engine.current_execution_state() {
-                let state = state.lock();
-                if !state.call_flags.contains(CallFlags::ALL) {
-                    return Err(Error::invalid_operation(format!(
-                        "Cannot call Update with the flag {:?}.",
-                        state.call_flags
-                    )));
-                }
+        if engine.is_hardfork_enabled(Hardfork::HfAspidochelone)
+            && let Ok(state) = engine.current_execution_state()
+        {
+            let state = state.lock();
+            if !state.call_flags.contains(CallFlags::ALL) {
+                return Err(Error::invalid_operation(format!(
+                    "Cannot call Update with the flag {:?}.",
+                    state.call_flags
+                )));
             }
         }
 

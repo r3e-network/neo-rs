@@ -1,9 +1,6 @@
 use crate::{
     error::CoreResult,
-    ledger::{
-        block::Block,
-        blockchain_application_executed::ApplicationExecuted,
-    },
+    ledger::{block::Block, blockchain_application_executed::ApplicationExecuted},
     network::message::Message,
     wallets::Wallet,
 };
@@ -12,6 +9,7 @@ use std::{any::Any, sync::Arc};
 /// Handler of Committed event from Blockchain.
 /// Triggered after a new block is committed and state has been updated.
 pub trait CommittedHandler {
+    /// Called after a block has been committed and its state updated.
     fn blockchain_committed_handler(&self, system: &dyn Any, block: &Block);
 }
 
@@ -23,6 +21,7 @@ pub trait CommittingHandler {
         false
     }
 
+    /// Called when a block is committing, while its state is still in the cache.
     fn blockchain_committing_handler(
         &self,
         system: &dyn Any,
@@ -47,12 +46,14 @@ pub trait CommittingHandler {
 /// Handler of MessageReceived event from RemoteNode.
 /// Triggered when a new message is received from a peer.
 pub trait MessageReceivedHandler {
+    /// Called when a message is received from a remote peer; returns whether it was handled.
     fn remote_node_message_received_handler(&self, system: &dyn Any, message: &Message) -> bool;
 }
 
 /// Handler of WalletChanged event from the WalletProvider.
 /// Triggered when a new wallet is assigned to the node.
 pub trait WalletChangedHandler {
+    /// Called when the node's active wallet changes.
     fn wallet_provider_wallet_changed_handler(
         &self,
         sender: &dyn Any,

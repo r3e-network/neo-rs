@@ -28,12 +28,11 @@ use crate::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChanged
 use crate::ledger::blockchain::BlockchainHandle;
 use crate::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use crate::network::p2p::{
-    LocalNode, LocalNodeHandle,
+    LocalNode, LocalNodeHandle, TaskManagerHandle,
     payloads::{
         block::Block, extensible_payload::ExtensiblePayload, header::Header,
         transaction::Transaction,
     },
-    TaskManagerHandle,
 };
 use crate::persistence::{StoreCache, store::Store, store_provider::StoreProvider};
 use crate::protocol_settings::ProtocolSettings;
@@ -120,10 +119,13 @@ impl NeoSystemContext {
         self.service_registry.get_named_service::<T>(name)
     }
 
+    /// Opens a typed read/write cache directly over the store's latest state.
     pub fn store_cache(&self) -> StoreCache {
         StoreCache::new_from_store(self.store.clone(), false)
     }
 
+    /// Opens a typed read/write cache over a fresh store snapshot, isolating
+    /// reads from concurrent writes until the snapshot is committed.
     pub fn store_snapshot_cache(&self) -> StoreCache {
         let snapshot = self.store.snapshot();
         StoreCache::new_from_snapshot(snapshot)
@@ -332,10 +334,12 @@ impl NeoSystemContext {
             .unwrap_or(false)
     }
 
+    /// Broadcasts a plugin lifecycle event to all registered listeners.
     pub fn broadcast_plugin_event(&self, event: PluginEvent) {
         broadcast_plugin_event(&event);
     }
 
+    /// Registers a handler invoked before each block's state is committed.
     pub fn register_committing_handler(
         &self,
         handler: Arc<dyn CommittingHandler + Send + Sync>,
@@ -344,6 +348,7 @@ impl NeoSystemContext {
         Ok(())
     }
 
+    /// Registers a handler invoked after each block has been persisted.
     pub fn register_committed_handler(
         &self,
         handler: Arc<dyn CommittedHandler + Send + Sync>,
@@ -352,6 +357,8 @@ impl NeoSystemContext {
         Ok(())
     }
 
+    /// Registers a wallet-changed handler and immediately replays the
+    /// current wallet to it.
     pub fn register_wallet_changed_handler(
         &self,
         handler: Arc<dyn WalletChangedHandler + Send + Sync>,
@@ -363,12 +370,17 @@ impl NeoSystemContext {
         Ok(())
     }
 
+    /// Application-log notification; intentionally a no-op on this context.
     pub fn notify_application_log(&self, _engine: &ApplicationEngine, _args: &LogEventArgs) {}
 
+    /// Logging notification; intentionally a no-op on this context.
     pub fn notify_logging_handlers(&self, _source: &str, _level: LogLevel, _message: &str) {}
 
+    /// Notify-event notification; intentionally a no-op on this context.
     pub fn notify_application_notify(&self, _engine: &ApplicationEngine, _args: &NotifyEventArgs) {}
 
+    /// Updates the active wallet, replays it to registered handlers, and
+    /// broadcasts a `WalletChanged` plugin event.
     pub fn notify_wallet_changed(&self, sender: &dyn Any, wallet: Option<Arc<dyn Wallet>>) {
         *self.current_wallet.write() = wallet.clone();
         let handlers = { self.wallet_changed_handlers.read().clone() };
@@ -382,6 +394,8 @@ impl NeoSystemContext {
         self.broadcast_plugin_event(PluginEvent::WalletChanged { wallet_name });
     }
 
+    /// Attaches a wallet provider: spawns a listener thread that forwards
+    /// wallet changes into this context for the provider's lifetime.
     pub fn attach_wallet_provider(
         context: &Arc<Self>,
         provider: Arc<dyn WalletProvider + Send + Sync>,
@@ -409,12 +423,14 @@ impl NeoSystemContext {
         Ok(())
     }
 
+    /// Returns the shared registry of committing handlers.
     pub fn committing_handlers(
         &self,
     ) -> Arc<RwLock<Vec<Arc<dyn CommittingHandler + Send + Sync>>>> {
         Arc::clone(&self.committing_handlers)
     }
 
+    /// Returns the shared registry of committed handlers.
     pub fn committed_handlers(&self) -> Arc<RwLock<Vec<Arc<dyn CommittedHandler + Send + Sync>>>> {
         Arc::clone(&self.committed_handlers)
     }

@@ -9,9 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::super::utility::{
-    parse_number_or_string_token, parse_uint256_array_lossy, token_array,
-};
+use super::super::utility::{parse_number_or_string_token, parse_uint256_array_lossy, token_array};
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -53,7 +51,9 @@ impl RpcRawMemPool {
     /// Creates from JSON
     /// Matches C# `FromJson`
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let height_token = json.get("height").ok_or("Missing or invalid 'height' field")?;
+        let height_token = json
+            .get("height")
+            .ok_or("Missing or invalid 'height' field")?;
         let height = parse_number_or_string_token(
             height_token,
             "height",
@@ -74,8 +74,8 @@ impl RpcRawMemPool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_fixtures::rpc_case_result;
+    use super::*;
     use neo_json::JArray;
     use neo_json::JToken;
 

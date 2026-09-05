@@ -13,18 +13,18 @@ use neo_core::smart_contract::manifest::{
 use neo_core::smart_contract::native::{ContractManagement, CryptoLib, NativeContract, NeoToken};
 use neo_core::smart_contract::{
     ApplicationEngine, Contract, ContractParameterType, ContractState, FindOptions, Interoperable,
-    NefFile, StorageItem, StorageKey, TriggerType,
+    NefFile, StorageItem, StorageItemExt, StorageKey, TriggerType,
 };
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::wallets::wallet::{Wallet, WalletError, WalletResult};
 use neo_core::wallets::{KeyPair, StandardWalletAccount, WalletAccount};
 use neo_core::{NeoSystem, ProtocolSettings, UInt160, WitnessScope};
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use neo_core::vm_runtime::InteropInterface as VmInteropInterface;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use neo_core::neo_vm::stack_item::InteropInterface as VmInteropInterface;
 use neo_vm::{ExecutionEngineLimits, OpCode};
 use num_bigint::BigInt;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::server::session::Session;
@@ -249,6 +249,67 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
     contract.hash
 }
 
+fn deploy_no_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
+    let mut store_cache = system.context().store_snapshot_cache();
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+
+    let mut builder = neo_core::ScriptBuilder::new();
+    builder.emit_push_bool(true);
+    builder.emit_opcode(OpCode::RET);
+    let nef = NefFile::new("test_noverify".to_string(), builder.to_array());
+
+    let other_method = ContractMethodDescriptor::new(
+        "other".to_string(),
+        Vec::<ContractParameterDefinition>::new(),
+        ContractParameterType::Boolean,
+        0,
+        false,
+    )
+    .expect("other method");
+
+    let mut manifest = ContractManifest::new("NoVerifyContract".to_string());
+    manifest.abi = ContractAbi::new(vec![other_method], Vec::new());
+    let manifest_json = manifest.to_json().expect("manifest json");
+    let manifest_bytes = serde_json::to_vec(&manifest_json).expect("manifest bytes");
+
+    let key_pair = KeyPair::from_private_key(&[0x45u8; 32]).expect("keypair");
+    let sender = key_pair.get_script_hash();
+    let mut tx = Transaction::new();
+    tx.set_signers(vec![Signer::new(sender, WitnessScope::CALLED_BY_ENTRY)]);
+    tx.add_witness(Witness::new());
+
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        Some(Arc::new(tx)),
+        Arc::clone(&snapshot),
+        None,
+        system.settings().clone(),
+        50_000_000_000,
+        None,
+    )
+    .expect("engine");
+
+    let contract_bytes = engine
+        .call_native_contract(
+            ContractManagement::new().hash(),
+            "deploy",
+            &[nef.to_bytes(), manifest_bytes, Vec::new()],
+        )
+        .expect("deploy");
+
+    let item =
+        BinarySerializer::deserialize(&contract_bytes, &ExecutionEngineLimits::default(), None)
+            .expect("contract stack item");
+    let mut contract = ContractState::default();
+    let _ = contract.from_stack_item(item);
+
+    let tracked = engine.snapshot_cache().tracked_items();
+    apply_tracked_items(&mut store_cache, tracked);
+    store_cache.commit();
+
+    contract.hash
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn invokescript_returns_fault_state_in_result() {
     let server = make_server(RpcServerConfig::default());
@@ -319,18 +380,17 @@ async fn invokecontractverify_returns_true_for_deployed_contract() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn invokecontractverify_rejects_missing_verify_overload() {
+async fn invokecontractverify_rejects_missing_verify_method() {
     let server = make_server(RpcServerConfig::default());
-    let contract_hash = deploy_verify_contract(&server.system());
+    let contract_hash = deploy_no_verify_contract(&server.system());
     let handlers = RpcServerSmartContract::register_handlers();
     let invokecontractverify = find_handler(&handlers, "invokecontractverify");
 
-    let params = [
-        Value::String(contract_hash.to_string()),
-        json!([{"type": "Integer", "value": "0"}]),
-    ];
-    let err = (invokecontractverify.callback())(&server, &params).expect_err("missing overload");
+    let params = [Value::String(contract_hash.to_string()), json!([])];
+    let err =
+        (invokecontractverify.callback())(&server, &params).expect_err("missing verify method");
     assert_eq!(err.code(), -512);
+    assert!(err.to_string().contains("haven't got verify method"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -528,7 +588,6 @@ async fn invokescript_transfer_returns_false() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "Diagnostics test needs system context - pre-existing issue"]
 async fn invokescript_with_diagnostics_includes_invoked_contract() {
     let server = make_server(RpcServerConfig::default());
     let handlers = RpcServerSmartContract::register_handlers();
@@ -568,17 +627,17 @@ async fn invokescript_with_diagnostics_includes_invoked_contract() {
     collect_hashes(invoked, &mut hashes);
     assert!(hashes.contains(&NeoToken::new().hash().to_string()));
 
+    // C# parity (RpcServer.GetInvokeResult in neo-modules): "storagechanges"
+    // serializes session.Engine.Snapshot.GetChangeSet() - the uncommitted
+    // change set of the engine's cloned snapshot. The script below is a pure
+    // read (NEO.totalSupply) against a snapshot that already contains the
+    // persisted genesis state, so no storage writes occur and the change set
+    // is empty - exactly as in C#.
     let storage_changes = diagnostics
         .get("storagechanges")
         .and_then(Value::as_array)
         .expect("storagechanges");
-    assert!(!storage_changes.is_empty());
-    let first_change = storage_changes
-        .first()
-        .and_then(Value::as_object)
-        .expect("storage change object");
-    assert!(first_change.contains_key("state"));
-    assert!(first_change.contains_key("key"));
+    assert!(storage_changes.is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]

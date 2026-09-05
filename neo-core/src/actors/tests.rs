@@ -3,10 +3,10 @@ use super::*;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use std::any::Any;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::oneshot;
-use tokio::time::{sleep, timeout, Duration};
+use tokio::time::{Duration, sleep, timeout};
 
 #[derive(Default)]
 struct CounterActor {

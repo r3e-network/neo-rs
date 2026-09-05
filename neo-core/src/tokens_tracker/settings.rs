@@ -44,10 +44,10 @@ impl TokensTrackerSettings {
         let section = value.get("PluginConfiguration").unwrap_or(value);
         let mut settings = TokensTrackerSettings::default();
 
-        if let Some(db_path) = section.get("DBPath").and_then(|v| v.as_str()) {
-            if !db_path.trim().is_empty() {
-                settings.db_path = db_path.trim().to_string();
-            }
+        if let Some(db_path) = section.get("DBPath").and_then(|v| v.as_str())
+            && !db_path.trim().is_empty()
+        {
+            settings.db_path = db_path.trim().to_string();
         }
 
         if let Some(track_history) = section.get("TrackHistory").and_then(|v| v.as_bool()) {

@@ -1,13 +1,13 @@
 use super::helpers::{create_validators_with_keys, sign_commit, sign_payload};
+use crate::ConsensusMessageType;
 use crate::messages::{
     ChangeViewMessage, ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact,
     ConsensusPayload, PreparationPayloadCompact, PrepareRequestMessage, PrepareResponseMessage,
     RecoveryMessage, RecoveryRequestMessage,
 };
-use crate::ConsensusMessageType;
 use crate::{ChangeViewReason, ConsensusEvent, ConsensusService};
-use neo_vm::ScriptBuilder;
 use neo_primitives::UInt256;
+use neo_vm::ScriptBuilder;
 use tokio::sync::mpsc;
 
 use super::super::helpers::{
@@ -44,11 +44,11 @@ async fn recovery_request_broadcasts_recovery_message() {
 
     let mut recovery_sent = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::RecoveryMessage {
-                recovery_sent = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::RecoveryMessage
+        {
+            recovery_sent = Some(payload);
+            break;
         }
     }
 
@@ -79,11 +79,11 @@ async fn recovery_request_ignored_by_non_selected_validator() {
 
     let mut recovery_sent = false;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::RecoveryMessage {
-                recovery_sent = true;
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::RecoveryMessage
+        {
+            recovery_sent = true;
+            break;
         }
     }
 
@@ -118,11 +118,11 @@ async fn recovery_request_responds_when_commit_sent() {
 
     let mut recovery_sent = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::RecoveryMessage {
-                recovery_sent = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::RecoveryMessage
+        {
+            recovery_sent = Some(payload);
+            break;
         }
     }
 
@@ -193,6 +193,44 @@ async fn recovery_message_change_view_triggers_view_change() {
 }
 
 #[tokio::test]
+async fn off_view_commit_does_not_block_current_view_commit() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    service.context.proposed_block_hash = Some(UInt256::from([0x55; 32]));
+    let off_view_sig = sign_commit(network, &UInt256::from([0x55; 32]), &keys[1]);
+    let mut off_view = ConsensusPayload::new(
+        network,
+        0,
+        1,
+        1,
+        ConsensusMessageType::Commit,
+        CommitMessage::new(0, 1, 1, off_view_sig).serialize(),
+    );
+    sign_payload(&service, &mut off_view, &keys[1]);
+    service.process_message(off_view).unwrap();
+    assert!(!service.context().commits.contains_key(&1));
+
+    let current_sig = sign_commit(network, &UInt256::from([0x55; 32]), &keys[2]);
+    let mut current = ConsensusPayload::new(
+        network,
+        0,
+        2,
+        0,
+        ConsensusMessageType::Commit,
+        CommitMessage::new(0, 0, 2, current_sig).serialize(),
+    );
+    sign_payload(&service, &mut current, &keys[2]);
+    service.process_message(current).unwrap();
+    assert!(service.context().commits.contains_key(&2));
+    assert!(!service.context().commits.contains_key(&0));
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn recovery_message_commits_for_other_view_do_not_commit_block() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
@@ -244,7 +282,46 @@ async fn recovery_message_commits_for_other_view_do_not_commit_block() {
     }
 
     assert!(committed.is_none());
-    assert_eq!(service.context().commits.len(), 3);
+    // Off-view commits are routed out and remain eligible for the active view.
+    assert!(service.context().commits.is_empty());
+}
+
+#[tokio::test]
+async fn recovery_message_rejects_duplicate_compact_validators_and_clears_flag() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    let mut recovery = RecoveryMessage::new(0, 0, 1);
+    recovery.preparation_hash = Some(UInt256::zero());
+    recovery.preparation_messages = vec![
+        PreparationPayloadCompact {
+            validator_index: 1,
+            invocation_script: invocation_script(&[0xAB; 64]),
+        },
+        PreparationPayloadCompact {
+            validator_index: 1,
+            invocation_script: invocation_script(&[0xAC; 64]),
+        },
+    ];
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        1,
+        0,
+        ConsensusMessageType::RecoveryMessage,
+        recovery.serialize(),
+    );
+    sign_payload(&service, &mut payload, &keys[1]);
+
+    let result = service.process_message(payload);
+    assert!(matches!(
+        result,
+        Err(crate::ConsensusError::DuplicateValidator(1))
+    ));
+    assert!(!service.is_recovering());
 }
 
 #[tokio::test]
@@ -604,14 +681,18 @@ async fn recovery_response_includes_compact_payloads() {
         invocation_script(&[0xAA; 64])
     );
 
-    assert!(recovery
-        .preparation_messages
-        .iter()
-        .any(|msg| msg.validator_index == 0));
-    assert!(recovery
-        .preparation_messages
-        .iter()
-        .any(|msg| msg.validator_index == 2));
+    assert!(
+        recovery
+            .preparation_messages
+            .iter()
+            .any(|msg| msg.validator_index == 0)
+    );
+    assert!(
+        recovery
+            .preparation_messages
+            .iter()
+            .any(|msg| msg.validator_index == 2)
+    );
 
     let commit = recovery
         .commit_messages

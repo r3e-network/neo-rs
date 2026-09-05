@@ -23,83 +23,24 @@ This document provides comprehensive architecture documentation for the neo-rs p
 
 ### 1.1 High-Level Architecture Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                    APPLICATION LAYER                                        │
-│                                                                                             │
-│   ┌─────────────────────────────────┐    ┌─────────────────────────────────┐                │
-│   │           neo-cli               │    │           neo-node              │                │
-│   │        (CLI Client)             │    │       (Node Daemon)             │                │
-│   │                                 │    │                                 │                │
-│   │  • Wallet management            │    │  • P2P networking               │                │
-│   │  • Contract invocation          │    │  • RPC server                   │                │
-│   │  • Transaction building         │    │  • Consensus participation      │                │
-│   │  • Query operations             │    │  • Block synchronization        │                │
-│   │  • Offline signing              │    │  • Health/metrics endpoints     │                │
-│   └─────────────────────────────────┘    └─────────────────────────────────┘                │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-                                                   │
-                                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                    SERVICE LAYER                                            │
-│                                                                                             │
-│   ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐              │
-│   │     neo-chain        │  │    neo-mempool       │  │     neo-state        │              │
-│   │                      │  │                      │  │                      │              │
-│   │  • Chain management  │  │  • Transaction pool  │  │  • World state       │              │
-│   │  • Fork choice       │  │  • Fee prioritization│  │  • Account state     │              │
-│   │  • Block validation  │  │  • Conflict detection│  │  • Contract storage  │              │
-│   │  • Reorganization    │  │  • Expiration        │  │  • State snapshots   │              │
-│   └──────────────────────┘  └──────────────────────┘  └──────────────────────┘              │
-│                                                                                             │
-│   ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐              │
-│   │    neo-config        │  │   neo-telemetry      │  │  neo-storage (impl)  │              │
-│   │                      │  │                      │  │                      │              │
-│   │  • Protocol settings │  │  • Metrics           │  │  • RocksDB backend   │              │
-│   │  • Network config    │  │  • Health checks     │  │  • Cache layers      │              │
-│   │  • Node configuration│  │  • Tracing           │  │  • Memory store      │              │
-│   └──────────────────────┘  └──────────────────────┘  └──────────────────────┘              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-                                                   │
-                                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                     CORE LAYER                                              │
-│                                                                                             │
-│   ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐              │
-│   │      neo-core        │  │    VM module         │  │      neo-p2p         │              │
-│   │                      │  │                      │  │                      │              │
-│   │  • Protocol types    │  │  • Execution engine  │  │  • Message types     │              │
-│   │  • Ledger (blocks/tx)│  │  • Instruction set   │  │  • P2P protocol      │              │
-│   │  • Smart contracts   │  │  • Stack machine     │  │  • Handshake         │              │
-│   │  • Native contracts  │  │  • Gas metering      │  │  • Inventory mgmt    │              │
-│   │  • Wallets/keys      │  │  • Debugging         │  │  • Peer management   │              │
-│   └──────────────────────┘  └──────────────────────┘  └──────────────────────┘              │
-│                                                                                             │
-│   ┌──────────────────────┐  ┌──────────────────────┐                                        │
-│   │   neo-consensus      │  │      neo-rpc         │                                        │
-│   │                      │  │                      │                                        │
-│   │  • dBFT 2.0 algorithm│  │  • JSON-RPC server   │                                        │
-│   │  • Consensus messages│  │  • RPC client        │                                        │
-│   │  • View changes      │  │  • Method handlers   │                                        │
-│   │  • Block signing     │  │  • Typed APIs        │                                        │
-│   └──────────────────────┘  └──────────────────────┘                                        │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-                                                   │
-                                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   FOUNDATION LAYER                                          │
-│                                                                                             │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│   │neo-primitives│  │  neo-crypto  │  │ neo-storage  │  │    neo-io    │  │   neo-json   │  │
-│   │              │  │              │  │   (traits)   │  │              │  │              │  │
-│   │ • UInt160    │  │ • SHA256     │  │ • IStore     │  │ • Binary RW  │  │ • JToken     │  │
-│   │ • UInt256    │  │ • Hash160    │  │ • ISnapshot  │  │ • Serialize  │  │ • JObject    │  │
-│   │ • BigDecimal │  │ • ECC (P-256)│  │ • DataCache  │  │ • ISerializ  │  │ • JArray     │  │
-│   │ • Hardfork   │  │ • MPT Trie   │  │ • StorageKey │  │ • MemoryReader│  │ • JPath     │  │
-│   └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```text
+Application:  neo-node
+    │
+Services:    neo-rpc (server/client), neo-telemetry, neo-tee, neo-hsm
+    │
+Protocol:    neo-core, neo-vm, neo-consensus, neo-p2p
+    │
+Crypto:      neo-crypto
+    │
+Foundation:  neo-primitives, neo-json, neo-storage, neo-io, neo-config
 ```
 
+The node is the application entry point. Protocol and VM crates are isolated
+from services; foundation crates contain reusable data, storage, I/O, and
+configuration primitives. `neo-core::rpc` contains only shared core error
+models; the full RPC implementation lives in `neo-rpc`.
+
+### 1.2 Component Relationships
 ### 1.2 Component Relationships
 
 ```
@@ -124,7 +65,7 @@ This document provides comprehensive architecture documentation for the neo-rs p
           │                       │                       │
           ▼                       ▼                       ▼
 ┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐
-│   neo-chain       │   │   neo-mempool     │   │ neo-core::neo_vm  │
+│   neo-core ledger       │   │   neo-core mempool     │   │ neo-core::neo-vm  │
 │                   │   │                   │   │                   │
 │ • Block storage   │   │ • Tx validation   │   │ • Script exec     │
 │ • Chain state     │   │ • Fee ordering    │   │ • Gas metering    │
@@ -491,7 +432,7 @@ Phase 1: Creation
 Phase 2: Submission                                       │
 ─────────────────                                         ▼
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   neo-cli or    │◀────│  Signed TX      │◀────│   Witness       │
+│   neo-node or    │◀────│  Signed TX      │◀────│   Witness       │
 │   Wallet SDK    │     │  (serialized)   │     │  (Script +      │
 │                 │     │                 │     │  Invocation)    │
 └────────┬────────┘     └─────────────────┘     └─────────────────┘
@@ -499,7 +440,7 @@ Phase 2: Submission                                       │
          │ JSON-RPC
          ▼
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   RPC Server    │────▶│  Tx Validation  │────▶│   neo-mempool   │
+│   RPC Server    │────▶│  Tx Validation  │────▶│   neo-core mempool   │
 │  (neo-rpc)      │     │  (Basic checks) │     │   (if valid)    │
 └─────────────────┘     └─────────────────┘     └────────┬────────┘
                                                          │
@@ -732,7 +673,7 @@ neo-rs/
 │       ├── persistence/          # Storage abstractions
 │       └── actors/               # Actor runtime (optional)
 │
-│       ├── neo_vm/               # VM compatibility module backed by neo-vm-rs
+│       ├── neo-vm/               # VM compatibility module backed by neo-vm
 │       │   ├── execution_engine/ # Core VM loop
 │       │   ├── application_engine.rs
 │       │   ├── evaluation_stack.rs
@@ -776,20 +717,20 @@ neo-rs/
 │           ├── mod.rs
 │           └── apis/             # Typed API wrappers
 │
-├── neo-chain/                    # Service Layer
+├── neo-core ledger/                    # Service Layer
 │   └── src/
 │       ├── lib.rs
 │       ├── chain_state.rs        # Chain state machine
 │       ├── fork_choice.rs        # Fork resolution
 │       └── validation.rs         # Block validation
 │
-├── neo-mempool/                  # Service Layer
+├── neo-core mempool/                  # Service Layer
 │   └── src/
 │       ├── lib.rs
 │       ├── pool.rs               # Mempool implementation
 │       └── policy.rs             # Fee policies
 │
-├── neo-state/                    # Service Layer
+├── neo-core state service/                    # Service Layer
 │   └── src/
 │       ├── lib.rs
 │       ├── world_state.rs        # World state abstraction
@@ -814,75 +755,39 @@ neo-rs/
 │       ├── health.rs             # Health check endpoints
 │       └── metrics.rs            # Prometheus metrics
 │
-└── neo-cli/                      # Application Layer
+└── neo-node/                      # Application Layer
     └── src/
         └── main.rs               # CLI client entry
 ```
 
 ### 4.2 Dependency Graph
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          DEPENDENCY GRAPH                                    │
-│                                                                              │
-│  Legend: ───▶ depends on                                                     │
-└─────────────────────────────────────────────────────────────────────────────┘
+```text
+neo-node
+├── neo-core (runtime)
+├── neo-consensus
+├── neo-p2p
+├── neo-rpc (server)
+├── neo-telemetry
+└── optional neo-tee / neo-hsm
 
-Layer 3 (Application)
-┌─────────────────────────────────────────────────────────────────┐
-│  ┌──────────┐      ┌──────────┐                                  │
-│  │neo-cli   │      │neo-node  │                                  │
-│  └────┬─────┘      └────┬─────┘                                  │
-└───────┼────────────────┼────────────────────────────────────────┘
-        │                │
-        │    ┌───────────┘
-        │    │
-        ▼    ▼
-Layer 2 (Service)
-┌─────────────────────────────────────────────────────────────────┐
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │neo-chain │  │neo-mempool│  │neo-state │  │neo-config│        │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘        │
-│  ┌──────────┐  ┌──────────┐                                     │
-│  │neo-telemetry│ │neo-tee │                                     │
-│  └──────────┘  └──────────┘                                     │
-└───────┼────────────────┼────────────────────────────────────────┘
-        │                │
-        └───────┬────────┘
-                │
-                ▼
-Layer 1 (Core)
-┌─────────────────────────────────────────────────────────────────┐
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │neo-core  │  │neo_core::│  │neo-p2p   │  │neo-consensus│      │
-│  │          │  │neo_vm    │  │          │  │             │      │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘        │
-│  ┌──────────┐  ┌──────────┐                                     │
-│  │neo-rpc   │  │neo-hsm   │                                     │
-│  └──────────┘  └──────────┘                                     │
-└───────┼────────────────┼────────────────────────────────────────┘
-        │                │
-        └───────┬────────┘
-                │
-                ▼
-Layer 0 (Foundation)
-┌─────────────────────────────────────────────────────────────────┐
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │neo-primitives│ │neo-crypto│  │neo-storage│  │neo-io   │        │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘        │
-│  ┌──────────┐                                                   │
-│  │neo-json  │                                                   │
-│  └──────────┘                                                   │
-└─────────────────────────────────────────────────────────────────┘
+neo-core
+├── neo-vm
+├── neo-p2p
+├── neo-config
+├── neo-storage
+├── neo-crypto
+├── neo-io
+├── neo-json
+└── neo-primitives
 
-Key Dependencies:
-• neo-cli ──▶ neo-core, neo-rpc(client)
-• neo-node ──▶ neo-core, neo-chain, neo-mempool, neo-consensus, neo-rpc(server)
-• neo-core ──▶ neo-primitives, neo-crypto, neo-storage, neo-io, neo-json, neo-vm-rs
-• neo-consensus ──▶ neo-primitives, neo-crypto
-• neo-chain ──▶ neo-core, neo-state
-• neo-state ──▶ neo-primitives, neo-storage
+neo-vm → neo-crypto → neo-primitives / neo-io
+neo-consensus → neo-crypto / neo-io / neo-primitives
+neo-p2p → neo-crypto / neo-io / neo-primitives
 ```
+
+The dependency graph is acyclic and has no production upward-layer edges;
+`tests/tests/layer_boundary_tests.rs` enforces this invariant.
 
 ### 4.3 Feature Flags
 
@@ -1110,7 +1015,7 @@ pub enum WitnessCondition {
 | `Neo.Ledger` | `neo-core` | `neo_core::ledger` |
 | `Neo.Network.P2P` | `neo-p2p` | `neo_p2p` |
 | `Neo.SmartContract` | `neo-core` | `neo_core::smart_contract` |
-| `Neo.VM` | `neo-core` | `neo_core::neo_vm` |
+| `Neo.VM` | `neo-core` | `neo-vm` |
 | `Neo.Wallets` | `neo-core` | `neo_core::wallets` |
 | `Neo.Plugins.RpcServer` | `neo-rpc` | `neo_rpc::server` |
 | `Neo.Plugins.DBFTPlugin` | `neo-consensus` | `neo_consensus` |
@@ -1150,17 +1055,17 @@ pub enum WitnessCondition {
 │                    Error Type Hierarchy                          │
 ├─────────────────────────────────────────────────────────────────┤
 │  Application Layer                                               │
-│  ├── CliError (neo-cli)                                         │
+│  ├── CliError (neo-node)                                         │
 │  └── NodeError (neo-node)                                       │
 │                                                                  │
 │  Service Layer                                                   │
-│  ├── ChainError (neo-chain)                                     │
-│  ├── MempoolError (neo-mempool)                                 │
-│  └── StateError (neo-state)                                     │
+│  ├── ChainError (neo-core ledger)                                     │
+│  ├── MempoolError (neo-core mempool)                                 │
+│  └── StateError (neo-core state service)                                     │
 │                                                                  │
 │  Core Layer                                                      │
 │  ├── CoreError (neo-core)                                       │
-│  ├── VmError (neo_core::neo_vm)                                 │
+│  ├── VmError (neo-vm)                                 │
 │  ├── P2PError (neo-p2p)                                         │
 │  ├── RpcError (neo-rpc)                                         │
 │  └── ConsensusError (neo-consensus)                             │

@@ -1,7 +1,7 @@
 use super::OracleContract;
 use crate::error::{CoreError as Error, CoreResult as Result};
-use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::StorageItem;
+use crate::smart_contract::application_engine::ApplicationEngine;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 

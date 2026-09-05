@@ -7,14 +7,14 @@ use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::persistence::providers::MemoryStoreProvider;
 use neo_core::persistence::StoreProvider;
+use neo_core::persistence::providers::MemoryStoreProvider;
 use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::native::{GasToken, NativeContract, NeoToken};
 use neo_core::smart_contract::NotifyEventArgs;
 use neo_core::smart_contract::TriggerType;
+use neo_core::smart_contract::native::{GasToken, NativeContract, NeoToken};
 use neo_core::tokens_tracker::{
-    find_prefix, Nep17Tracker, Nep17TransferKey, TokenTransfer, TokenTransferKeyView, Tracker,
+    Nep17Tracker, Nep17TransferKey, TokenTransfer, TokenTransferKeyView, Tracker, find_prefix,
 };
 use neo_core::{UInt160, WitnessScope};
 use neo_vm::VmState as VMState;

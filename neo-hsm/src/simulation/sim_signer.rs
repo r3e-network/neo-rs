@@ -2,7 +2,7 @@
 
 use crate::device::HsmDeviceInfo;
 use crate::error::{HsmError, HsmResult};
-use crate::signer::{normalize_public_key, script_hash_from_public_key, HsmKeyInfo, HsmSigner};
+use crate::signer::{HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key};
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -50,8 +50,8 @@ impl SimulationSigner {
     /// Generate a new key pair
     pub fn generate_key(&self, key_id: &str, label: Option<&str>) -> HsmResult<HsmKeyInfo> {
         use neo_crypto::Secp256r1Crypto;
-        use rand::rngs::OsRng;
         use rand::RngCore;
+        use rand::rngs::OsRng;
 
         // Generate random private key using cryptographically secure RNG
         // SECURITY: Must use OsRng, not thread_rng(), for key generation
@@ -156,10 +156,10 @@ impl HsmSigner for SimulationSigner {
 
     async fn unlock(&self, pin: &str) -> HsmResult<()> {
         let stored_pin = self.pin.read();
-        if let Some(ref expected) = *stored_pin {
-            if pin != expected {
-                return Err(HsmError::InvalidPin);
-            }
+        if let Some(ref expected) = *stored_pin
+            && pin != expected
+        {
+            return Err(HsmError::InvalidPin);
         }
         // No PIN set or PIN matches
         *self.is_locked.write() = false;
