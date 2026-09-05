@@ -49,12 +49,11 @@ impl HashIndexState {
                 return Ok(());
             }
 
-            if let Some(bytes) = items[0].to_byte_string_bytes() {
-                if bytes.len() == 32 {
-                    if let Ok(hash) = UInt256::from_bytes(&bytes) {
-                        self.hash = hash;
-                    }
-                }
+            if let Some(bytes) = items[0].to_byte_string_bytes()
+                && bytes.len() == 32
+                && let Ok(hash) = UInt256::from_bytes(&bytes)
+            {
+                self.hash = hash;
             }
 
             if let Some(index) = Self::stack_value_to_u32(&items[1]) {

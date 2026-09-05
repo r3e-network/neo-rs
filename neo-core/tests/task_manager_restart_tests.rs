@@ -31,10 +31,10 @@ impl Actor for CaptureActor {
         message: Box<dyn Any + Send>,
         _ctx: &mut ActorContext,
     ) -> ActorResult {
-        if let Ok(command) = message.downcast::<RemoteNodeCommand>() {
-            if let RemoteNodeCommand::Send(message) = *command {
-                let _ = self.tx.send(message.command());
-            }
+        if let Ok(command) = message.downcast::<RemoteNodeCommand>()
+            && let RemoteNodeCommand::Send(message) = *command
+        {
+            let _ = self.tx.send(message.command());
         }
         Ok(())
     }
@@ -51,10 +51,10 @@ impl Actor for MessageCaptureActor {
         message: Box<dyn Any + Send>,
         _ctx: &mut ActorContext,
     ) -> ActorResult {
-        if let Ok(command) = message.downcast::<RemoteNodeCommand>() {
-            if let RemoteNodeCommand::Send(message) = *command {
-                let _ = self.tx.send(message);
-            }
+        if let Ok(command) = message.downcast::<RemoteNodeCommand>()
+            && let RemoteNodeCommand::Send(message) = *command
+        {
+            let _ = self.tx.send(message);
         }
         Ok(())
     }

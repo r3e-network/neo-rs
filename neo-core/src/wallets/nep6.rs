@@ -614,18 +614,18 @@ impl Nep6Account {
             _wallet: Arc::new(wallet.clone()),
         };
 
-        if account.inner.nep2_key().is_some() {
-            if let Some(password) = password {
-                let unlocked = account
-                    .inner
-                    .unlock(password)
-                    .map_err(|e| WalletError::Other(e.to_string()))?;
-                if !unlocked {
-                    return Err(WalletError::InvalidPassword);
-                }
-                if account.lock {
-                    account.inner.lock();
-                }
+        if account.inner.nep2_key().is_some()
+            && let Some(password) = password
+        {
+            let unlocked = account
+                .inner
+                .unlock(password)
+                .map_err(|e| WalletError::Other(e.to_string()))?;
+            if !unlocked {
+                return Err(WalletError::InvalidPassword);
+            }
+            if account.lock {
+                account.inner.lock();
             }
         }
 

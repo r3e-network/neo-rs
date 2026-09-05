@@ -132,6 +132,6 @@ impl NativeHelpers {
             return false;
         }
         let count_u32 = u32::try_from(committee_members_count).unwrap_or(u32::MAX);
-        next_height % count_u32 == 0
+        next_height.is_multiple_of(count_u32)
     }
 }

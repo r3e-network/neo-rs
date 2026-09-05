@@ -24,13 +24,13 @@ impl OracleContract {
 
         for transaction in &block.transactions {
             for attribute in transaction.attributes() {
-                if let TransactionAttribute::OracleResponse(response) = attribute {
-                    if let Some(request) = self.read_request(snapshot, response.id)? {
-                        let url_hash = self.compute_url_hash(&request.url);
-                        self.delete_request(snapshot, response.id);
-                        self.remove_request_id(snapshot, &url_hash, response.id)?;
-                        completed_response_ids.push(response.id);
-                    }
+                if let TransactionAttribute::OracleResponse(response) = attribute
+                    && let Some(request) = self.read_request(snapshot, response.id)?
+                {
+                    let url_hash = self.compute_url_hash(&request.url);
+                    self.delete_request(snapshot, response.id);
+                    self.remove_request_id(snapshot, &url_hash, response.id)?;
+                    completed_response_ids.push(response.id);
                 }
             }
         }

@@ -73,59 +73,59 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
         rules: Vec::new(),
     };
 
-    if scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
-        if let Some(contracts_token) = obj.get("allowedcontracts") {
-            let array = expect_array(contracts_token)?;
-            signer.allowed_contracts = array
-                .children()
-                .iter()
-                .map(|item| {
-                    let contract = item
-                        .as_ref()
-                        .ok_or_else(|| invalid_params("Null contract entry"))?;
-                    let text = expect_string(contract, "Allowed contract entries must be strings")?;
-                    parse_uint160(&text)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-        }
+    if scopes.contains(WitnessScope::CUSTOM_CONTRACTS)
+        && let Some(contracts_token) = obj.get("allowedcontracts")
+    {
+        let array = expect_array(contracts_token)?;
+        signer.allowed_contracts = array
+            .children()
+            .iter()
+            .map(|item| {
+                let contract = item
+                    .as_ref()
+                    .ok_or_else(|| invalid_params("Null contract entry"))?;
+                let text = expect_string(contract, "Allowed contract entries must be strings")?;
+                parse_uint160(&text)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
     }
 
-    if scopes.contains(WitnessScope::CUSTOM_GROUPS) {
-        if let Some(groups_token) = obj.get("allowedgroups") {
-            let array = expect_array(groups_token)?;
-            signer.allowed_groups = array
-                .children()
-                .iter()
-                .map(|item| {
-                    let group = item
-                        .as_ref()
-                        .ok_or_else(|| invalid_params("Null group entry"))?;
-                    let text = expect_string(group, "Allowed group entries must be strings")?;
-                    let bytes = hex::decode(text.trim_start_matches("0x"))
-                        .map_err(|_| invalid_params("Invalid ECPoint"))?;
-                    ECPoint::new(ECCurve::Secp256r1, bytes)
-                        .map_err(|e| invalid_params(format!("Invalid ECPoint: {e}")))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-        }
+    if scopes.contains(WitnessScope::CUSTOM_GROUPS)
+        && let Some(groups_token) = obj.get("allowedgroups")
+    {
+        let array = expect_array(groups_token)?;
+        signer.allowed_groups = array
+            .children()
+            .iter()
+            .map(|item| {
+                let group = item
+                    .as_ref()
+                    .ok_or_else(|| invalid_params("Null group entry"))?;
+                let text = expect_string(group, "Allowed group entries must be strings")?;
+                let bytes = hex::decode(text.trim_start_matches("0x"))
+                    .map_err(|_| invalid_params("Invalid ECPoint"))?;
+                ECPoint::new(ECCurve::Secp256r1, bytes)
+                    .map_err(|e| invalid_params(format!("Invalid ECPoint: {e}")))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
     }
 
-    if scopes.contains(WitnessScope::WITNESS_RULES) {
-        if let Some(rules_token) = obj.get("rules") {
-            let array = expect_array(rules_token)?;
-            signer.rules = array
-                .children()
-                .iter()
-                .map(|item| {
-                    let value = item
-                        .as_ref()
-                        .ok_or_else(|| invalid_params("Null witness rule"))?;
-                    let json = jtoken_to_serde(value);
-                    WitnessRule::from_json(&json)
-                        .map_err(|e| invalid_params(format!("Invalid witness rule: {e}")))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-        }
+    if scopes.contains(WitnessScope::WITNESS_RULES)
+        && let Some(rules_token) = obj.get("rules")
+    {
+        let array = expect_array(rules_token)?;
+        signer.rules = array
+            .children()
+            .iter()
+            .map(|item| {
+                let value = item
+                    .as_ref()
+                    .ok_or_else(|| invalid_params("Null witness rule"))?;
+                let json = jtoken_to_serde(value);
+                WitnessRule::from_json(&json)
+                    .map_err(|e| invalid_params(format!("Invalid witness rule: {e}")))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
     }
 
     Ok(signer)

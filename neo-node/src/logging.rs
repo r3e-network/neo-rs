@@ -92,11 +92,11 @@ fn create_file_writer(path: &str) -> Result<(non_blocking::NonBlocking, WorkerGu
         provided.join(default_log_name())
     };
 
-    if let Some(parent) = file_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create log directory {}", parent.display()))?;
-        }
+    if let Some(parent) = file_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create log directory {}", parent.display()))?;
     }
 
     let file = OpenOptions::new()

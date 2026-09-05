@@ -224,15 +224,14 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         wallet_provider.as_ref(),
     )
     .context("failed to initialise dBFT consensus")?;
-    if let Some(server) = rpc_server.as_ref() {
-        if dbft_settings
+    if let Some(server) = rpc_server.as_ref()
+        && dbft_settings
             .as_ref()
             .is_some_and(|settings| settings.network == protocol_settings.network)
-        {
-            server
-                .write()
-                .register_handlers(RpcServerConsensus::register_handlers());
-        }
+    {
+        server
+            .write()
+            .register_handlers(RpcServerConsensus::register_handlers());
     }
 
     let hsm_wallet_enabled =
@@ -284,10 +283,10 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         warn!(target: "neo", "background task shutdown timed out");
     }
 
-    if let Some(server) = rpc_server {
-        if let Some(mut guard) = server.try_write() {
-            guard.stop_rpc_server();
-        }
+    if let Some(server) = rpc_server
+        && let Some(mut guard) = server.try_write()
+    {
+        guard.stop_rpc_server();
     }
 
     #[cfg(feature = "tee")]

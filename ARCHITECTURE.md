@@ -1,6 +1,6 @@
 # Neo-rs Architecture
 
-> **Version**: 0.16.0  
+> **Version**: 0.17.0  
 > **Last Updated**: 2026-09-05  
 > **Target Compatibility**: Neo N3 v3.10.1
 

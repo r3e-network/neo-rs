@@ -136,17 +136,17 @@ impl SharedStates {
     ) -> Arc<Mutex<T>> {
         let type_id = TypeId::of::<T>();
 
-        if let Some(existing) = self.states.read().get(&type_id) {
-            if let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>() {
-                return Arc::clone(arc);
-            }
+        if let Some(existing) = self.states.read().get(&type_id)
+            && let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>()
+        {
+            return Arc::clone(arc);
         }
 
         let mut states = self.states.write();
-        if let Some(existing) = states.get(&type_id) {
-            if let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>() {
-                return Arc::clone(arc);
-            }
+        if let Some(existing) = states.get(&type_id)
+            && let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>()
+        {
+            return Arc::clone(arc);
         }
 
         let new_state = Arc::new(Mutex::new(factory()));

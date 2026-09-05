@@ -242,10 +242,10 @@ impl ContractManifest {
                     return Err(Error::invalid_data("Duplicate trust entry in manifest"));
                 }
                 seen_trusts.push(trust.clone());
-                if let ContractPermissionDescriptor::Group(pub_key) = trust {
-                    if !pub_key.is_valid() {
-                        return Err(Error::invalid_data("Invalid group public key in trusts"));
-                    }
+                if let ContractPermissionDescriptor::Group(pub_key) = trust
+                    && !pub_key.is_valid()
+                {
+                    return Err(Error::invalid_data("Invalid group public key in trusts"));
                 }
             }
         }

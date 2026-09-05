@@ -294,43 +294,41 @@ impl ConsensusService {
                 .context
                 .commits
                 .contains_key(&self.context.my_index.unwrap_or(255))
+            && let Some(my_idx) = self.context.my_index
         {
-            if let Some(my_idx) = self.context.my_index {
-                info!(
-                    block_index = self.context.block_index,
-                    "Recovery enabled sending commit"
-                );
-                // Create and broadcast commit message
-                let block_hash = self.context.proposed_block_hash.unwrap_or_default();
-                let signature = self.sign_block_hash(&block_hash)?;
+            info!(
+                block_index = self.context.block_index,
+                "Recovery enabled sending commit"
+            );
+            // Create and broadcast commit message
+            let block_hash = self.context.proposed_block_hash.unwrap_or_default();
+            let signature = self.sign_block_hash(&block_hash)?;
 
-                let commit = CommitMessage::new(
-                    self.context.block_index,
-                    self.context.view_number,
-                    my_idx,
-                    signature.clone(),
-                );
+            let commit = CommitMessage::new(
+                self.context.block_index,
+                self.context.view_number,
+                my_idx,
+                signature.clone(),
+            );
 
-                let payload =
-                    self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
-                let commit_witness = payload.witness.clone();
-                let commit_invocation = invocation_script_from_signature(&commit_witness);
-                self.broadcast(payload)?;
-                if !commit_witness.is_empty() {
-                    self.context
-                        .commit_invocations
-                        .insert(my_idx, commit_invocation);
-                }
-
-                // Add our own commit
+            let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
+            let commit_witness = payload.witness.clone();
+            let commit_invocation = invocation_script_from_signature(&commit_witness);
+            self.broadcast(payload)?;
+            if !commit_witness.is_empty() {
                 self.context
-                    .add_commit(my_idx, self.context.view_number, signature)?;
-                // Match C# CheckPreparations: once our Commit is sent, allow one
-                // block interval before retrying via RecoveryMessage.
-                self.context
-                    .change_timer(current_timestamp(), self.context.expected_block_time);
-                self.check_commits()?;
+                    .commit_invocations
+                    .insert(my_idx, commit_invocation);
             }
+
+            // Add our own commit
+            self.context
+                .add_commit(my_idx, self.context.view_number, signature)?;
+            // Match C# CheckPreparations: once our Commit is sent, allow one
+            // block interval before retrying via RecoveryMessage.
+            self.context
+                .change_timer(current_timestamp(), self.context.expected_block_time);
+            self.check_commits()?;
         }
 
         Ok(())

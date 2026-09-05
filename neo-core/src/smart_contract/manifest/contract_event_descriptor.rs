@@ -92,10 +92,10 @@ impl ContractEventDescriptor {
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let items = required_struct_fields(stack_value, "ContractEventDescriptor", 2)?;
 
-        if let Some(bytes) = items[0].to_byte_string_bytes() {
-            if let Ok(name) = String::from_utf8(bytes) {
-                self.name = name;
-            }
+        if let Some(bytes) = items[0].to_byte_string_bytes()
+            && let Ok(name) = String::from_utf8(bytes)
+        {
+            self.name = name;
         }
 
         if let Some(parameters) = decode_stack_value_objects(

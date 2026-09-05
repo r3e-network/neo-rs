@@ -56,18 +56,10 @@ pub(super) struct QueuedOutboundMessage {
     estimated_bytes: usize,
 }
 
+#[derive(Default)]
 pub(super) struct OutboundMessageQueue {
     messages: VecDeque<QueuedOutboundMessage>,
     queued_single_commands: CommandBitSet,
-}
-
-impl Default for OutboundMessageQueue {
-    fn default() -> Self {
-        Self {
-            messages: VecDeque::new(),
-            queued_single_commands: CommandBitSet::default(),
-        }
-    }
 }
 
 impl OutboundMessageQueue {
@@ -106,20 +98,11 @@ impl OutboundMessageQueue {
     }
 }
 
+#[derive(Default)]
 pub(super) struct OutboundQueues {
     high: OutboundMessageQueue,
     low: OutboundMessageQueue,
     queued_bytes: usize,
-}
-
-impl Default for OutboundQueues {
-    fn default() -> Self {
-        Self {
-            high: OutboundMessageQueue::default(),
-            low: OutboundMessageQueue::default(),
-            queued_bytes: 0,
-        }
-    }
 }
 
 impl OutboundQueues {

@@ -115,7 +115,7 @@ curl -s http://localhost:10332 -H 'Content-Type: application/json' \
 
 | neo-rs Version | Neo N3 Version | C# Reference                                                                                      |
 | -------------- | -------------- | ------------------------------------------------------------------------------------------------- |
-| 0.16.0         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (protocol compliance validated) |
+| 0.17.0         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (protocol compliance validated) |
 | 0.4.x          | 3.8.2          | [`ede620e`](https://github.com/neo-project/neo/commit/ede620e5722c48e199a0f3f2ab482ae090c1b878) |
 
 This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.10.1) for blocks, transactions, and P2P messages. Protocol behavior was validated against the v3.10.1 reference and live Neo MainNet/TestNet endpoints.

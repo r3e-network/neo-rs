@@ -191,35 +191,34 @@ impl ContractParameter {
 
         let mut param = Self::new(param_type);
 
-        if let Some(value_json) = obj.get("value") {
-            if !value_json.is_null() {
-                match param_type {
-                    ContractParameterType::String => {
-                        if let Some(s) = value_json.as_str() {
-                            param.set_value(s)?;
-                        }
+        if let Some(value_json) = obj.get("value")
+            && !value_json.is_null()
+        {
+            match param_type {
+                ContractParameterType::String => {
+                    if let Some(s) = value_json.as_str() {
+                        param.set_value(s)?;
                     }
-                    ContractParameterType::Boolean => {
-                        if let Some(b) = value_json.as_bool() {
-                            param.value = ContractParameterValue::Boolean(b);
-                        }
+                }
+                ContractParameterType::Boolean => {
+                    if let Some(b) = value_json.as_bool() {
+                        param.value = ContractParameterValue::Boolean(b);
                     }
-                    ContractParameterType::Integer => {
-                        if let Some(s) = value_json.as_str() {
-                            param.set_value(s)?;
-                        }
+                }
+                ContractParameterType::Integer => {
+                    if let Some(s) = value_json.as_str() {
+                        param.set_value(s)?;
                     }
-                    ContractParameterType::Array => {
-                        if let Some(arr) = value_json.as_array() {
-                            let items: Result<Vec<_>, _> =
-                                arr.iter().map(Self::from_json).collect();
-                            param.value = ContractParameterValue::Array(items?);
-                        }
+                }
+                ContractParameterType::Array => {
+                    if let Some(arr) = value_json.as_array() {
+                        let items: Result<Vec<_>, _> = arr.iter().map(Self::from_json).collect();
+                        param.value = ContractParameterValue::Array(items?);
                     }
-                    _ => {
-                        if let Some(s) = value_json.as_str() {
-                            param.set_value(s)?;
-                        }
+                }
+                _ => {
+                    if let Some(s) = value_json.as_str() {
+                        param.set_value(s)?;
                     }
                 }
             }

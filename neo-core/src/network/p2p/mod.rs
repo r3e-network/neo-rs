@@ -455,10 +455,10 @@ pub fn validate_peer_endpoint(endpoint: &std::net::SocketAddr) -> Result<(), &'s
     }
 
     // Reject broadcast addresses (255.255.255.255)
-    if let IpAddr::V4(v4) = ip {
-        if v4.octets() == [255, 255, 255, 255] {
-            return Err("broadcast address not allowed");
-        }
+    if let IpAddr::V4(v4) = ip
+        && v4.octets() == [255, 255, 255, 255]
+    {
+        return Err("broadcast address not allowed");
     }
 
     // Reject port 0

@@ -322,11 +322,11 @@ impl ActorCell {
             children: Vec::new(),
         };
 
-        if let Err(err) = self.actor.pre_start(&mut context).await {
-            if !self.handle_failure(err, &mut context).await {
-                self.cleanup(&mut context).await;
-                return;
-            }
+        if let Err(err) = self.actor.pre_start(&mut context).await
+            && !self.handle_failure(err, &mut context).await
+        {
+            self.cleanup(&mut context).await;
+            return;
         }
 
         loop {
@@ -359,10 +359,10 @@ impl ActorCell {
             MailboxMessage::User(envelope) => {
                 let (msg, sender) = envelope.take();
                 context.sender = sender;
-                if let Err(err) = self.actor.handle(msg, context).await {
-                    if !self.handle_failure(err, context).await {
-                        return true;
-                    }
+                if let Err(err) = self.actor.handle(msg, context).await
+                    && !self.handle_failure(err, context).await
+                {
+                    return true;
                 }
                 false
             }

@@ -46,10 +46,10 @@ pub(super) fn parse_address_param(
             .map_err(|_| invalid_params(format!("Invalid address: {text}")))
     } else {
         let mut parsed = None;
-        if UInt160::try_parse(text, &mut parsed) {
-            if let Some(value) = parsed {
-                return Ok(value);
-            }
+        if UInt160::try_parse(text, &mut parsed)
+            && let Some(value) = parsed
+        {
+            return Ok(value);
         }
         UInt160::from_str(text).map_err(|_| invalid_params(format!("Invalid script hash: {text}")))
     }

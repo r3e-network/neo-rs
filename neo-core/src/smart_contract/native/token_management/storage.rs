@@ -166,10 +166,10 @@ impl TokenManagement {
         let account_key = Self::account_state_key_suffix(account, asset_id);
 
         let mut balance = BigInt::from(0);
-        if let Some(account_data) = engine.get_storage_item(context, &account_key) {
-            if let Some(state) = Self::deserialize_account_state(&account_data) {
-                balance = state.balance;
-            }
+        if let Some(account_data) = engine.get_storage_item(context, &account_key)
+            && let Some(state) = Self::deserialize_account_state(&account_data)
+        {
+            balance = state.balance;
         }
 
         balance = balance.clone() + delta;

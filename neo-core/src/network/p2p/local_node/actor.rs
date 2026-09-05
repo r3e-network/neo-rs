@@ -474,12 +474,14 @@ impl LocalNodeActor {
         F: Future<Output = ()> + Send + 'static,
     {
         let cancel = self.task_cancellation.child_token();
-        let _ = self.spawned_tasks.spawn(async move {
+        // Detached tracked task: dropping the handle (rather than awaiting)
+        // is intentional; the tracker owns shutdown.
+        drop(self.spawned_tasks.spawn(async move {
             tokio::select! {
                 _ = cancel.cancelled() => {}
                 _ = task => {}
             }
-        });
+        }));
     }
 
     pub(super) async fn stop_background_tasks(&mut self) {
@@ -504,12 +506,10 @@ impl LocalNodeActor {
     ) {
         for entry in self.state.remote_entries() {
             // For blocks, optionally skip peers that already have this block height.
-            if restrict_block_height {
-                if let RelayInventory::Block(block) = inventory {
-                    let target_index = block_index.unwrap_or(block.index());
-                    if entry.snapshot.last_block_index >= target_index {
-                        continue;
-                    }
+            if restrict_block_height && let RelayInventory::Block(block) = inventory {
+                let target_index = block_index.unwrap_or(block.index());
+                if entry.snapshot.last_block_index >= target_index {
+                    continue;
                 }
             }
 

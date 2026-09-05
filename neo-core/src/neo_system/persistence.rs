@@ -586,7 +586,7 @@ impl NeoSystem {
             stats.txs.fetch_add(tx_count, Ordering::Relaxed);
             let blocks = stats.blocks.fetch_add(1, Ordering::Relaxed) + 1;
 
-            if blocks % 1000 == 0 {
+            if blocks.is_multiple_of(1000) {
                 let blocks_f = blocks as f64;
                 let txs = stats.txs.load(Ordering::Relaxed);
                 let txs_f = txs.max(1) as f64;

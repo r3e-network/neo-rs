@@ -91,11 +91,10 @@ impl NodeConfig {
             settings.max_transactions_per_block = max_tx;
         }
 
-        if let Some(mempool) = &self.mempool {
-            if let Some(max_mempool) = mempool.max_transactions {
-                settings.memory_pool_max_transactions =
-                    i32::try_from(max_mempool).unwrap_or(i32::MAX);
-            }
+        if let Some(mempool) = &self.mempool
+            && let Some(max_mempool) = mempool.max_transactions
+        {
+            settings.memory_pool_max_transactions = i32::try_from(max_mempool).unwrap_or(i32::MAX);
         }
 
         settings
@@ -160,10 +159,10 @@ impl NodeConfig {
         if let Some(max_files) = self.storage.max_open_files {
             config.max_open_files = Some(max_files);
         }
-        if let Some(compression) = self.storage.compression.as_deref() {
-            if let Some(algorithm) = parse_compression(compression) {
-                config.compression_algorithm = algorithm;
-            }
+        if let Some(compression) = self.storage.compression.as_deref()
+            && let Some(algorithm) = parse_compression(compression)
+        {
+            config.compression_algorithm = algorithm;
         }
         if let Some(read_only) = self.storage.read_only {
             config.read_only = read_only;

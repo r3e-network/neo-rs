@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.17.0] - 2026-09-05
+
+### Consensus (dBFT)
+- **Single preparation slot per validator (R01)**: a primary's `PrepareRequest` and an explicit `PrepareResponse` signed by the primary now occupy the same vote slot, closing a liveness attack where a malicious primary equivocated backups into distinct blocks.
+- **Verified-proposal commit gate (R02)**: `ConsensusContext::can_sign_commit()` requires both the proposed block hash and preparation hash before a validator signs a `Commit`; unsigned proposals can no longer be legitimized with default hashes.
+- **Recovery completeness (R20)**: recovery packages that advance the view are fully consumed (prepare request/responses, commits) instead of being dropped to the dedup cache.
+- **Durable commit publication (R03)**: a `Commit` is withheld when its recovery state cannot be persisted to store or disk, preventing double-signing after a crash.
+
+### NeoVM & Protocol
+- **Gas as the only execution bound (R05)**: removed the local 1,000,000-instruction cap that turned a service budget into a consensus validity rule the C# reference does not have.
+- **Hardfork-aware shift semantics (R06)**: Gorgon zero-shift integer conversion is selected from protocol settings and block height; pre-Gorgon replay keeps the legacy behavior, and the fast interpreter is disabled when non-Gorgon semantics are active.
+- **HASKEY negative-index parity (R07)**: both executors fault on negative indices, matching the official Gorgon behavior.
+- **Witness verification fallback (R04)**: valid-but-non-quick-format invocation scripts (e.g. `PUSHDATA2`) fall back to full VM verification instead of being rejected.
+
+### Storage
+- **Full-feature build restored (R21)**: RocksDB provider returns `StorageResult` matching the workspace `WriteStore`/`StoreProvider` traits.
+- **Snapshot drop safety (R08)**: `RocksDbSnapshot` field order guarantees the snapshot is released before the last DB owner, eliminating a use-after-free window.
+- **Fail-fast reads (R09)**: RocksDB read errors abort the operation instead of being reported as missing data.
+- **Snapshot cache isolation (R10)**: snapshots bypass the shared read cache in both directions and committed keys are invalidated on commit.
+
+### Network & RPC
+- **Non-blocking reads (R11)**: stepwise P2P reads release the connection lock between read steps, so a silent peer no longer stalls outbound sends for a full read timeout.
+- **Concurrent TLS handshakes (R12)**: RPC TLS handshakes run on detached tasks with a 10-second deadline; one stalled client can no longer head-of-line block the accept loop.
+- **Honest rate limiting (R19)**: the configured `burst` is the effective burst per tier (previous preset rescaling ignored it), and GET requests are charged once.
+
+### Oracle
+- **SSRF address pinning (R15)**: every resolved address is validated and the connection is pinned to the checked addresses; HTTPS-downgrading redirects are refused.
+- **Chunking-independent responses (R18)**: response acceptance depends on the cumulative size limit only, not on transport chunk boundaries.
+
+### Hardware & TEE
+- **Ledger HID transport (R17)**: chunked request framing, multi-frame response reassembly, and bounds-checked DER signature parsing.
+- **SGX attestation binding (R16)**: strict mode refuses evidence whose report data does not match the request; sealing binds the replay counter into the AEAD tag and wallet unsealing enforces the counter floor. Crate docs now state the support level precisely (evidence verification + experimental host-side integration).
+
+### Delivery & Tooling
+- **MSRV 1.88 (R14)**: workspace, fuzz crate, Docker image, and a dedicated CI MSRV lane agree; `Cargo.lock` dependencies require it.
+- **Shippable build recipes (R13)**: Dockerfile and README build `neo-node --features full`, matching the shipped RocksDB configurations; CI adds `node-full` and feature-matrix (`tee`, `hsm`) lanes.
+- **Compatibility pipeline exact mode**: `VECTOR_GAS_TOLERANCE` is dispatch-configurable; `0` runs exact per-vector gas equality, and the pipeline documents its strength boundary (protocol/RPC vectors, not RocksDB replay).
+- **Operations script hardening**: operator-supplied RPC URLs are validated as http(s) and all writes go through `scripts/ops_safety.py` (`safe_output_path`: NUL/`..` rejection plus allowed-root check).
+- **Repository hygiene**: line-ending normalization via `.gitattributes`; `.gitignore` covers agent/tooling state, session scratch, and isolated audit build trees.
+- **Zero-warning builds**: the full-node build compiles with zero warnings across default, `full`, and unified-feature profiles, including complete rustdoc on previously undocumented public APIs.
+
+### Behavior Notes
+- The TEE sealing format changed (counter now authenticated); previously sealed blobs must be re-sealed. Affects the experimental `sgx-hw` feature only.
+- Rate limiter configurations that relied on the old burst rescaling will see smaller effective bursts matching their configured values.
+
 ## [0.16.0] - 2026-09-03
 
 ### Protocol Compatibility & Hardforks

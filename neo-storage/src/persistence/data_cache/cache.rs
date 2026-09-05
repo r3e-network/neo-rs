@@ -299,38 +299,38 @@ impl DataCache {
         }
 
         // Check read cache
-        if let Some(ref cache) = self.read_cache {
-            if let Some(item) = cache.get(key) {
-                if self.is_recently_prefetched(key) {
-                    cache.record_prefetch_hit();
-                }
-
-                if pattern != PrefetchPattern::None {
-                    self.trigger_prefetch_if_needed(key, pattern);
-                }
-
-                log_watched_storage_event("get", "read_cache_hit", key, None, None, Some(&item));
-                return Some(item);
+        if let Some(ref cache) = self.read_cache
+            && let Some(item) = cache.get(key)
+        {
+            if self.is_recently_prefetched(key) {
+                cache.record_prefetch_hit();
             }
+
+            if pattern != PrefetchPattern::None {
+                self.trigger_prefetch_if_needed(key, pattern);
+            }
+
+            log_watched_storage_event("get", "read_cache_hit", key, None, None, Some(&item));
+            return Some(item);
         }
 
         // Fall back to store getter
-        if let Some(getter) = &self.store_get {
-            if let Some(item) = getter(key) {
-                if let Some(ref cache) = self.read_cache {
-                    let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
-                    cache.put(key.clone(), item.clone(), size);
-                }
-
-                self.track_in_write_cache(key, &item);
-
-                for handler in self.on_read.read().iter() {
-                    handler(self, key, &item);
-                }
-
-                log_watched_storage_event("get", "store_get_hit", key, None, None, Some(&item));
-                return Some(item);
+        if let Some(getter) = &self.store_get
+            && let Some(item) = getter(key)
+        {
+            if let Some(ref cache) = self.read_cache {
+                let size = item.value_bytes().len() + std::mem::size_of::<StorageKey>();
+                cache.put(key.clone(), item.clone(), size);
             }
+
+            self.track_in_write_cache(key, &item);
+
+            for handler in self.on_read.read().iter() {
+                handler(self, key, &item);
+            }
+
+            log_watched_storage_event("get", "store_get_hit", key, None, None, Some(&item));
+            return Some(item);
         }
 
         log_watched_storage_event("get", "miss", key, None, None, None);
@@ -355,11 +355,11 @@ impl DataCache {
     pub fn get_ref(&self, key: &StorageKey) -> Option<StorageItem> {
         {
             let state = self.state.read();
-            if let Some(trackable) = state.dictionary.get(key) {
-                if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound
-                {
-                    return Some(trackable.item.clone());
-                }
+            if let Some(trackable) = state.dictionary.get(key)
+                && trackable.state != TrackState::Deleted
+                && trackable.state != TrackState::NotFound
+            {
+                return Some(trackable.item.clone());
             }
         }
         None

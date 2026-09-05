@@ -1,0 +1,4 @@
+# Normalize line endings: LF in the repository for all text files; working
+# tree line endings follow each platform's git configuration. Binary files
+# are excluded by git's auto-detection.
+* text=auto

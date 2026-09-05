@@ -171,12 +171,12 @@ pub fn unseal_data(
     }
 
     // Check replay protection
-    if let Some(min) = min_counter {
-        if sealed.counter < min {
-            return Err(TeeError::UnsealingFailed(
-                "Sealed data counter too old (potential replay attack)".to_string(),
-            ));
-        }
+    if let Some(min) = min_counter
+        && sealed.counter < min
+    {
+        return Err(TeeError::UnsealingFailed(
+            "Sealed data counter too old (potential replay attack)".to_string(),
+        ));
     }
 
     // Determine key derivation context

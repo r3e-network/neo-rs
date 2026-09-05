@@ -123,10 +123,10 @@ impl TransactionVerificationContext {
             return false;
         }
 
-        if let Some(oracle) = Self::oracle_response(tx) {
-            if self.oracle_responses.contains_key(&oracle.id) {
-                return false;
-            }
+        if let Some(oracle) = Self::oracle_response(tx)
+            && self.oracle_responses.contains_key(&oracle.id)
+        {
+            return false;
         }
 
         true

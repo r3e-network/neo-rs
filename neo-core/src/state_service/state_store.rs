@@ -365,17 +365,17 @@ impl StateStore {
         }
 
         // Check if already validated
-        if let Some(validated_index) = self.validated_root_index() {
-            if state_root.index <= validated_index {
-                tracing::debug!(
-                    target: "state",
-                    index = state_root.index,
-                    validated_index,
-                    "rejecting state root: index not ahead of validated root"
-                );
-                metrics::record_ingest_result(false);
-                return false;
-            }
+        if let Some(validated_index) = self.validated_root_index()
+            && state_root.index <= validated_index
+        {
+            tracing::debug!(
+                target: "state",
+                index = state_root.index,
+                validated_index,
+                "rejecting state root: index not ahead of validated root"
+            );
+            metrics::record_ingest_result(false);
+            return false;
         }
 
         let local_index = match self.local_root_index() {
@@ -506,10 +506,10 @@ impl StateStore {
     ) -> Result<(), String> {
         // Skip blocks that have already been processed (e.g., after node restart).
         // The C# StateService does the same check: if local root index >= block height, skip.
-        if let Some(current_index) = self.local_root_index() {
-            if height <= current_index {
-                return Ok(());
-            }
+        if let Some(current_index) = self.local_root_index()
+            && height <= current_index
+        {
+            return Ok(());
         }
 
         // Keep all writes in an isolated overlay until the blockchain transaction commits.
@@ -573,7 +573,7 @@ impl StateStore {
         // Validate against reference if available
         if let Some(expected) = self.reference_roots.get(&height) {
             if root_hash == *expected {
-                if height % 5000 == 0 {
+                if height.is_multiple_of(5000) {
                     tracing::info!(
                         target: "neo::state_service",
                         height,
@@ -586,7 +586,7 @@ impl StateStore {
                     "state root mismatch at height {height}: computed {root_hash}, expected {expected}, put_count {put_count}, del_count {del_count}"
                 ));
             }
-        } else if height % 5000 == 0 {
+        } else if height.is_multiple_of(5000) {
             tracing::info!(
                 target: "neo::state_service",
                 height,
@@ -612,11 +612,11 @@ impl StateStore {
         // Commit and dispose snapshot
         {
             let mut state_snap = self.state_snapshot.write();
-            if let Some(mut snapshot) = state_snap.take() {
-                if let Err(error) = snapshot.commit() {
-                    snapshot.discard_pending();
-                    return Err(error);
-                }
+            if let Some(mut snapshot) = state_snap.take()
+                && let Err(error) = snapshot.commit()
+            {
+                snapshot.discard_pending();
+                return Err(error);
             }
         }
 

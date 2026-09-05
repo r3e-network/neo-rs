@@ -451,10 +451,10 @@ impl LedgerContract {
     where
         S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
-        if let Some(state) = self.try_read_transaction_state(snapshot, hash)? {
-            if Self::is_traceable_block(current_index, state.block_index(), max_traceable) {
-                return Ok(Some(state));
-            }
+        if let Some(state) = self.try_read_transaction_state(snapshot, hash)?
+            && Self::is_traceable_block(current_index, state.block_index(), max_traceable)
+        {
+            return Ok(Some(state));
         }
         Ok(None)
     }

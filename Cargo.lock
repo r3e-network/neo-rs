@@ -2212,7 +2212,7 @@ dependencies = [
 
 [[package]]
 name = "neo-benches"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "criterion",
  "hex",
@@ -2225,7 +2225,7 @@ dependencies = [
 
 [[package]]
 name = "neo-config"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "dirs",
  "serde",
@@ -2236,7 +2236,7 @@ dependencies = [
 
 [[package]]
 name = "neo-consensus"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "async-trait",
  "bincode",
@@ -2255,7 +2255,7 @@ dependencies = [
 
 [[package]]
 name = "neo-core"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "aes",
  "async-trait",
@@ -2332,7 +2332,7 @@ dependencies = [
 
 [[package]]
 name = "neo-crypto"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "base64 0.22.1",
  "bitvec",
@@ -2368,7 +2368,7 @@ dependencies = [
 
 [[package]]
 name = "neo-hsm"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2391,7 +2391,7 @@ dependencies = [
 
 [[package]]
 name = "neo-io"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2413,7 +2413,7 @@ dependencies = [
 
 [[package]]
 name = "neo-json"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "hashbrown 0.14.5",
  "indexmap 2.8.0",
@@ -2425,7 +2425,7 @@ dependencies = [
 
 [[package]]
 name = "neo-node"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2465,7 +2465,7 @@ dependencies = [
 
 [[package]]
 name = "neo-p2p"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -2482,7 +2482,7 @@ dependencies = [
 
 [[package]]
 name = "neo-primitives"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "bitflags 2.11.0",
  "bs58",
@@ -2501,7 +2501,7 @@ dependencies = [
 
 [[package]]
 name = "neo-rpc"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2549,7 +2549,7 @@ dependencies = [
 
 [[package]]
 name = "neo-storage"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "fastbloom",
  "hashbrown 0.14.5",
@@ -2567,7 +2567,7 @@ dependencies = [
 
 [[package]]
 name = "neo-tee"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2592,7 +2592,7 @@ dependencies = [
 
 [[package]]
 name = "neo-telemetry"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2611,7 +2611,7 @@ dependencies = [
 
 [[package]]
 name = "neo-tests"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "criterion",
  "hex",
@@ -2636,7 +2636,7 @@ dependencies = [
 
 [[package]]
 name = "neo-vm"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "base64 0.22.1",
  "bitflags 2.11.0",

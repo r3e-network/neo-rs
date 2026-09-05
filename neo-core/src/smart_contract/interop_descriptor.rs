@@ -96,10 +96,10 @@ impl InteropDescriptor {
         }
 
         // Check hardfork if required
-        if let Some(ref hardfork) = self.hardfork {
-            if !engine.is_hardfork_enabled(*hardfork) {
-                return Err(format!("Hardfork {:?} not enabled", hardfork));
-            }
+        if let Some(ref hardfork) = self.hardfork
+            && !engine.is_hardfork_enabled(*hardfork)
+        {
+            return Err(format!("Hardfork {:?} not enabled", hardfork));
         }
 
         // Invoke the handler

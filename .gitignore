@@ -49,6 +49,16 @@ Thumbs.db
 .serena/
 **/.serena/
 
+# Local agent/tooling state (CodeGraph index, Mimosa scans, ZCode session data)
+/.codegraph/
+/.mimosa/
+/.zcode/
+
+# Session scratch and isolated audit build trees
+/outputs/
+/consensus-test-list.txt
+/target-*/
+
 # Compiled binaries
 /neo-node
 /neo-node.exe

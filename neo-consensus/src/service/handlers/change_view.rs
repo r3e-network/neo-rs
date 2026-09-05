@@ -72,10 +72,10 @@ impl ConsensusService {
             return Ok(());
         }
 
-        if let Some((expected_view, _)) = self.context.change_views.get(&payload.validator_index) {
-            if new_view <= *expected_view {
-                return Ok(());
-            }
+        if let Some((expected_view, _)) = self.context.change_views.get(&payload.validator_index)
+            && new_view <= *expected_view
+        {
+            return Ok(());
         }
 
         self.context

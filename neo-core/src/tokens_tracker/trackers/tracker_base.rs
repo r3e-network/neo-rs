@@ -249,10 +249,10 @@ impl TrackerBase {
         } else {
             Some(from_item.as_bytes().ok()?)
         };
-        if let Some(ref bytes) = from_bytes {
-            if bytes.len() != 20 {
-                return None;
-            }
+        if let Some(ref bytes) = from_bytes
+            && bytes.len() != 20
+        {
+            return None;
         }
 
         let to_bytes = if to_item.is_null() {
@@ -260,10 +260,10 @@ impl TrackerBase {
         } else {
             Some(to_item.as_bytes().ok()?)
         };
-        if let Some(ref bytes) = to_bytes {
-            if bytes.len() != 20 {
-                return None;
-            }
+        if let Some(ref bytes) = to_bytes
+            && bytes.len() != 20
+        {
+            return None;
         }
 
         if from_bytes.is_none() && to_bytes.is_none() {

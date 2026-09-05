@@ -24,11 +24,11 @@ async fn timer_tick_triggers_change_view_broadcast() {
 
     let mut change_view = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::ChangeView {
-                change_view = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::ChangeView
+        {
+            change_view = Some(payload);
+            break;
         }
     }
 
@@ -81,11 +81,11 @@ async fn timeout_view_change_allows_new_prepare_request() {
 
     let mut change_view = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::ChangeView {
-                change_view = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::ChangeView
+        {
+            change_view = Some(payload);
+            break;
         }
     }
 
@@ -115,11 +115,11 @@ async fn timeout_view_change_allows_new_prepare_request() {
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::PrepareRequest {
-                prepare_payload = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::PrepareRequest
+        {
+            prepare_payload = Some(payload);
+            break;
         }
     }
 
@@ -184,11 +184,11 @@ async fn view_change_allows_consensus_to_complete() {
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::PrepareRequest {
-                prepare_payload = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::PrepareRequest
+        {
+            prepare_payload = Some(payload);
+            break;
         }
     }
 
@@ -214,11 +214,11 @@ async fn view_change_allows_consensus_to_complete() {
 
     let mut commit_payload = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::Commit {
-                commit_payload = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::Commit
+        {
+            commit_payload = Some(payload);
+            break;
         }
     }
 
@@ -341,11 +341,11 @@ async fn recovery_request_when_more_than_f_committed() {
 
     let mut recovery_sent = false;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::RecoveryRequest {
-                recovery_sent = true;
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::RecoveryRequest
+        {
+            recovery_sent = true;
+            break;
         }
     }
 

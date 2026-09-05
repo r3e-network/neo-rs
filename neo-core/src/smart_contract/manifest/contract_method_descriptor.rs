@@ -148,10 +148,10 @@ impl ContractMethodDescriptor {
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let items = required_struct_fields(stack_value, "ContractMethodDescriptor", 5)?;
 
-        if let Some(bytes) = items[0].to_byte_string_bytes() {
-            if let Ok(name) = String::from_utf8(bytes) {
-                self.name = name;
-            }
+        if let Some(bytes) = items[0].to_byte_string_bytes()
+            && let Ok(name) = String::from_utf8(bytes)
+        {
+            self.name = name;
         }
 
         if let Some(parameters) = decode_stack_value_objects(
@@ -161,17 +161,17 @@ impl ContractMethodDescriptor {
             self.parameters = parameters;
         }
 
-        if let Some(integer) = items[2].to_i128() {
-            if let Ok(byte_val) = u8::try_from(integer) {
-                self.return_type = ContractParameterType::from_byte(byte_val)
-                    .unwrap_or(ContractParameterType::Void);
-            }
+        if let Some(integer) = items[2].to_i128()
+            && let Ok(byte_val) = u8::try_from(integer)
+        {
+            self.return_type =
+                ContractParameterType::from_byte(byte_val).unwrap_or(ContractParameterType::Void);
         }
 
-        if let Some(integer) = items[3].to_i128() {
-            if let Ok(offset) = i32::try_from(integer) {
-                self.offset = offset;
-            }
+        if let Some(integer) = items[3].to_i128()
+            && let Ok(offset) = i32::try_from(integer)
+        {
+            self.offset = offset;
         }
 
         self.safe = items[4].to_bool();

@@ -23,8 +23,8 @@ use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::sync::oneshot;
 
 fn localhost_binding_permitted() -> bool {

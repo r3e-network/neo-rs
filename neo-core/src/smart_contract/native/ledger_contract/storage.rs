@@ -113,10 +113,9 @@ impl LedgerContract {
             let signer_key = transaction_conflict_storage_key(self.id, hash, signer);
             if let Some(TransactionStateRecord::ConflictStub { block_index }) =
                 self.read_transaction_record(snapshot, &signer_key)?
+                && Self::is_traceable_block(current_index, block_index, max_traceable_blocks)
             {
-                if Self::is_traceable_block(current_index, block_index, max_traceable_blocks) {
-                    return Ok(true);
-                }
+                return Ok(true);
             }
         }
 

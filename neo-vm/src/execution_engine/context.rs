@@ -17,10 +17,10 @@ impl ExecutionEngine {
         // Push the context onto the invocation stack
         self.invocation_stack.push(context);
 
-        if let Some(host) = self.interop_host {
-            if let Some(new_context) = self.current_context().cloned() {
-                host.on_context_loaded(self, &new_context)?;
-            }
+        if let Some(host) = self.interop_host
+            && let Some(new_context) = self.current_context().cloned()
+        {
+            host.on_context_loaded(self, &new_context)?;
         }
 
         Ok(())

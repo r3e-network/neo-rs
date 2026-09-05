@@ -163,10 +163,10 @@ impl PersistCompletedHarness {
                     if idx == sender_index {
                         continue;
                     }
-                    if let Err(err) = service.process_message(payload.clone()) {
-                        if !matches!(err, crate::ConsensusError::AlreadyReceived(_)) {
-                            return Err(err);
-                        }
+                    if let Err(err) = service.process_message(payload.clone())
+                        && !matches!(err, crate::ConsensusError::AlreadyReceived(_))
+                    {
+                        return Err(err);
                     }
                     if let Some(ref prepare) = maybe_prepare {
                         service.on_transactions_received(prepare.transaction_hashes.clone())?;

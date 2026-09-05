@@ -187,21 +187,21 @@ impl MemoryPool {
         }
 
         for attr in tx.attributes() {
-            if let TransactionAttribute::Conflicts(Conflicts { hash }) = attr {
-                if let Some(conflict_item) = self.verified.get(hash) {
-                    let share_sender = tx.signers().iter().any(|signer| {
-                        conflict_item
-                            .transaction
-                            .signers()
-                            .iter()
-                            .any(|existing| existing.account == signer.account)
-                    });
-                    if !share_sender {
-                        return Err(VerifyResult::HasConflicts);
-                    }
-                    total_conflict_fee += conflict_item.transaction.network_fee();
-                    push_unique(conflict_item);
+            if let TransactionAttribute::Conflicts(Conflicts { hash }) = attr
+                && let Some(conflict_item) = self.verified.get(hash)
+            {
+                let share_sender = tx.signers().iter().any(|signer| {
+                    conflict_item
+                        .transaction
+                        .signers()
+                        .iter()
+                        .any(|existing| existing.account == signer.account)
+                });
+                if !share_sender {
+                    return Err(VerifyResult::HasConflicts);
                 }
+                total_conflict_fee += conflict_item.transaction.network_fee();
+                push_unique(conflict_item);
             }
         }
 
@@ -222,12 +222,12 @@ impl MemoryPool {
 
     fn unregister_conflicts(&mut self, tx_hash: &UInt256, tx: &Transaction) {
         for attr in tx.attributes() {
-            if let TransactionAttribute::Conflicts(Conflicts { hash }) = attr {
-                if let Some(set) = self.conflicts.get_mut(hash) {
-                    set.remove(tx_hash);
-                    if set.is_empty() {
-                        self.conflicts.remove(hash);
-                    }
+            if let TransactionAttribute::Conflicts(Conflicts { hash }) = attr
+                && let Some(set) = self.conflicts.get_mut(hash)
+            {
+                set.remove(tx_hash);
+                if set.is_empty() {
+                    self.conflicts.remove(hash);
                 }
             }
         }
@@ -287,18 +287,18 @@ impl MemoryPool {
             Err(result) => return result,
         };
 
-        if let Some(limit) = self.max_transactions_per_sender {
-            if let Some(sender) = tx.sender() {
-                let replaced_from_same_sender = conflicts_to_remove
-                    .iter()
-                    .filter(|item| item.transaction.sender() == Some(sender))
-                    .count();
-                let sender_tx_count = self
-                    .sender_transaction_count(&sender)
-                    .saturating_sub(replaced_from_same_sender);
-                if sender_tx_count >= limit {
-                    return VerifyResult::PolicyFail;
-                }
+        if let Some(limit) = self.max_transactions_per_sender
+            && let Some(sender) = tx.sender()
+        {
+            let replaced_from_same_sender = conflicts_to_remove
+                .iter()
+                .filter(|item| item.transaction.sender() == Some(sender))
+                .count();
+            let sender_tx_count = self
+                .sender_transaction_count(&sender)
+                .saturating_sub(replaced_from_same_sender);
+            if sender_tx_count >= limit {
+                return VerifyResult::PolicyFail;
             }
         }
 
@@ -341,31 +341,31 @@ impl MemoryPool {
                 }
             }
 
-            if let Some(handler) = &self.transaction_removed {
-                if !removed_conflicts.is_empty() {
-                    handler(
-                        self,
-                        &TransactionRemovedEventArgs {
-                            transactions: removed_conflicts,
-                            reason: TransactionRemovalReason::CapacityExceeded,
-                        },
-                    );
-                }
+            if let Some(handler) = &self.transaction_removed
+                && !removed_conflicts.is_empty()
+            {
+                handler(
+                    self,
+                    &TransactionRemovedEventArgs {
+                        transactions: removed_conflicts,
+                        reason: TransactionRemovalReason::CapacityExceeded,
+                    },
+                );
             }
         }
 
         if self.count() > self.capacity {
             let removed = self.remove_over_capacity();
-            if let Some(handler) = &self.transaction_removed {
-                if !removed.is_empty() {
-                    handler(
-                        self,
-                        &TransactionRemovedEventArgs {
-                            transactions: removed,
-                            reason: TransactionRemovalReason::CapacityExceeded,
-                        },
-                    );
-                }
+            if let Some(handler) = &self.transaction_removed
+                && !removed.is_empty()
+            {
+                handler(
+                    self,
+                    &TransactionRemovedEventArgs {
+                        transactions: removed,
+                        reason: TransactionRemovalReason::CapacityExceeded,
+                    },
+                );
             }
             if !self.verified.contains_key(&hash) {
                 return VerifyResult::OutOfMemory;
@@ -446,16 +446,16 @@ impl MemoryPool {
 
         self.invalidate_verified_transactions();
 
-        if !conflicting_items.is_empty() {
-            if let Some(handler) = &self.transaction_removed {
-                handler(
-                    self,
-                    &TransactionRemovedEventArgs {
-                        transactions: conflicting_items,
-                        reason: TransactionRemovalReason::Conflict,
-                    },
-                );
-            }
+        if !conflicting_items.is_empty()
+            && let Some(handler) = &self.transaction_removed
+        {
+            handler(
+                self,
+                &TransactionRemovedEventArgs {
+                    transactions: conflicting_items,
+                    reason: TransactionRemovalReason::Conflict,
+                },
+            );
         }
 
         if block.index() > 0 && header_backlog_present {
@@ -547,10 +547,10 @@ impl MemoryPool {
         let mut invalidated = Vec::new();
 
         for item in candidates {
-            if let Some(budget) = time_budget {
-                if start_instant.elapsed() > budget {
-                    break;
-                }
+            if let Some(budget) = time_budget
+                && start_instant.elapsed() > budget
+            {
+                break;
             }
 
             let hash = item.transaction.hash();
@@ -623,27 +623,27 @@ impl MemoryPool {
         if !reverified.is_empty() {
             for item in &reverified {
                 let hash = item.transaction.hash();
-                if let Some(stored) = self.verified.get_mut(&hash) {
-                    if stored.last_broadcast_timestamp < rebroadcast_cutoff {
-                        if let Some(relay) = &self.transaction_relay {
-                            relay(&stored.transaction);
-                        }
-                        stored.last_broadcast_timestamp = now;
+                if let Some(stored) = self.verified.get_mut(&hash)
+                    && stored.last_broadcast_timestamp < rebroadcast_cutoff
+                {
+                    if let Some(relay) = &self.transaction_relay {
+                        relay(&stored.transaction);
                     }
+                    stored.last_broadcast_timestamp = now;
                 }
             }
         }
 
-        if !invalidated.is_empty() {
-            if let Some(handler) = &self.transaction_removed {
-                handler(
-                    self,
-                    &TransactionRemovedEventArgs {
-                        transactions: invalidated,
-                        reason: TransactionRemovalReason::NoLongerValid,
-                    },
-                );
-            }
+        if !invalidated.is_empty()
+            && let Some(handler) = &self.transaction_removed
+        {
+            handler(
+                self,
+                &TransactionRemovedEventArgs {
+                    transactions: invalidated,
+                    reason: TransactionRemovalReason::NoLongerValid,
+                },
+            );
         }
 
         !self.unverified.is_empty()

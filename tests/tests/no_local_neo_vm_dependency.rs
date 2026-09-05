@@ -702,9 +702,15 @@ fn smart_contract_script_helpers_use_neo_vm_rs_opcode_byte_metadata() {
     ] {
         let source = fs::read_to_string(workspace.join(relative))
             .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
+        // Opcode bytes must flow through sanctioned neo-vm metadata:
+        // either `OpCode::byte()` at push sites or the ScriptBuilder
+        // opcode APIs (`emit_opcode`/`emit_instruction`) that own the
+        // byte encoding internally. Files that only build scripts via
+        // the builders legitimately contain no `.byte()` call.
         assert!(
-            source.contains(".byte()"),
-            "{relative} should use neo-vm-rs OpCode::byte() metadata for script bytes"
+            source.contains(".byte()") || source.contains("emit_opcode("),
+            "{relative} should use neo-vm-rs OpCode byte metadata or the \
+             ScriptBuilder opcode APIs for script bytes"
         );
         for cast in [
             "OpCode::PUSHDATA1 as u8",
@@ -3075,9 +3081,14 @@ fn shift_opcodes_reuse_neo_vm_rs_i64_semantics_with_bigint_fallback() {
     let numeric = read_source(workspace.join("neo-vm/src/jump_table/numeric.rs"));
 
     for helper in ["shl_value", "shr_value"] {
+        // Both hardfork semantics route through the shared arithmetic
+        // helpers: Gorgon (`shl_value`/`shr_value`) and pre-Gorgon
+        // (`*_pre_gorgon`) selected per `zero_shift_converts_to_integer`.
         assert!(
-            numeric.contains(&format!("shift(engine, arithmetic::{helper}")),
-            "SHL/SHR should reuse neo-vm-rs StackValue helper {helper}"
+            numeric.contains(&format!("arithmetic::{helper}"))
+                && numeric.contains(&format!("arithmetic::{helper}_pre_gorgon")),
+            "SHL/SHR should reuse the neo-vm-rs StackValue helpers for {helper} \
+             across both hardfork semantics"
         );
     }
     assert!(

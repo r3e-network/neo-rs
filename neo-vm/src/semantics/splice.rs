@@ -11,10 +11,10 @@ pub fn cat_values(left: &StackValue, right: &StackValue) -> Result<StackValue, S
     let result = concat_splice_values(left, right)
         .ok_or_else(|| "CAT: operands must expose byte memory".to_string())?;
 
-    if let StackValue::Buffer(bytes) = &result {
-        if bytes.len() > MAX_ITEM_SIZE {
-            return Err("CAT: result exceeds max item size".to_string());
-        }
+    if let StackValue::Buffer(bytes) = &result
+        && bytes.len() > MAX_ITEM_SIZE
+    {
+        return Err("CAT: result exceeds max item size".to_string());
     }
 
     Ok(result)

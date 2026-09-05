@@ -50,10 +50,10 @@ impl ContractAbi {
         }
 
         // Look up method
-        if let Some(dict) = &self.method_dictionary {
-            if let Some(&index) = dict.get(&(name.to_string(), pcount)) {
-                return self.methods.get(index);
-            }
+        if let Some(dict) = &self.method_dictionary
+            && let Some(&index) = dict.get(&(name.to_string(), pcount))
+        {
+            return self.methods.get(index);
         }
 
         None

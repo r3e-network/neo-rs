@@ -59,10 +59,10 @@ impl TaskManager {
             index_to_release = Some(block_ref.index());
         }
 
-        if let Some(index) = index_to_release {
-            if entry.session.complete_index_task(index) {
-                self.decrement_index_task(index);
-            }
+        if let Some(index) = index_to_release
+            && entry.session.complete_index_task(index)
+        {
+            self.decrement_index_task(index);
         }
 
         let mut should_request = true;

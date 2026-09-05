@@ -77,10 +77,10 @@ impl MockTransactionVerificationContext {
     pub fn check_transaction(&self, tx: &Transaction, _conflicts: &[Transaction]) -> bool {
         // Check for duplicate oracle responses
         for attr in tx.attributes() {
-            if let TransactionAttribute::OracleResponse(attr) = attr {
-                if self.oracle_ids.contains(&attr.id) {
-                    return false;
-                }
+            if let TransactionAttribute::OracleResponse(attr) = attr
+                && self.oracle_ids.contains(&attr.id)
+            {
+                return false;
             }
         }
 

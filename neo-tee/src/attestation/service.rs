@@ -235,18 +235,18 @@ impl AttestationService {
         expected_mrenclave: Option<&[u8; 32]>,
         expected_mrsigner: Option<&[u8; 32]>,
     ) -> bool {
-        if let Some(expected) = expected_mrenclave {
-            if !report.verify_mrenclave(expected) {
-                debug!("MRENCLAVE mismatch");
-                return false;
-            }
+        if let Some(expected) = expected_mrenclave
+            && !report.verify_mrenclave(expected)
+        {
+            debug!("MRENCLAVE mismatch");
+            return false;
         }
 
-        if let Some(expected) = expected_mrsigner {
-            if !report.verify_mrsigner(expected) {
-                debug!("MRSIGNER mismatch");
-                return false;
-            }
+        if let Some(expected) = expected_mrsigner
+            && !report.verify_mrsigner(expected)
+        {
+            debug!("MRSIGNER mismatch");
+            return false;
         }
 
         true
@@ -296,11 +296,11 @@ impl AttestationService {
         };
 
         // Verify report data if provided
-        if let Some(expected) = expected_report_data {
-            if &quote.report_data != expected {
-                warn!("Quote report data mismatch");
-                return Ok(QuoteValidationResult::InvalidSignature);
-            }
+        if let Some(expected) = expected_report_data
+            && &quote.report_data != expected
+        {
+            warn!("Quote report data mismatch");
+            return Ok(QuoteValidationResult::InvalidSignature);
         }
 
         let options = self.config.to_quote_options();

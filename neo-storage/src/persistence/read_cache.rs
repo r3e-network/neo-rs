@@ -417,18 +417,18 @@ where
 
         if let Some(entry) = data.peek(key) {
             // Check TTL
-            if let Some(ttl) = self.config.ttl {
-                if entry.last_access.elapsed() > ttl {
-                    // Entry expired
-                    let entry = data.pop(key).expect("peeked cache entry must exist");
-                    self.stats
-                        .record_cache_eviction(entry.size_bytes, self.config.enable_stats);
+            if let Some(ttl) = self.config.ttl
+                && entry.last_access.elapsed() > ttl
+            {
+                // Entry expired
+                let entry = data.pop(key).expect("peeked cache entry must exist");
+                self.stats
+                    .record_cache_eviction(entry.size_bytes, self.config.enable_stats);
 
-                    if self.config.enable_stats {
-                        self.stats.record_miss();
-                    }
-                    return None;
+                if self.config.enable_stats {
+                    self.stats.record_miss();
                 }
+                return None;
             }
         }
 
@@ -475,10 +475,8 @@ where
         let is_new = self.push_cache_entry(&mut data, key, entry);
 
         // Update bloom filter for new entries
-        if is_new {
-            if let Some(ref bloom) = self.bloom_filter {
-                bloom.insert_hash(key_for_bloom.hash_for_bloom());
-            }
+        if is_new && let Some(ref bloom) = self.bloom_filter {
+            bloom.insert_hash(key_for_bloom.hash_for_bloom());
         }
 
         trace!(target: "neo", size_bytes, "cache insert");

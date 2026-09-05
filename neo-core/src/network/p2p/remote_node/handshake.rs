@@ -71,7 +71,9 @@ impl RemoteNode {
         let endpoint = self.endpoint;
         let handshake_done = Arc::clone(&self.handshake_done);
         let cancellation = self.reader_cancellation.child_token();
-        let _ = self.reader_tasks.spawn(async move {
+        // Detached tracked reader task: dropping the handle (rather than
+        // awaiting) is intentional; the tracker owns cancellation/teardown.
+        drop(self.reader_tasks.spawn(async move {
             loop {
                 let result = tokio::select! {
                     _ = cancellation.cancelled() => break,
@@ -161,8 +163,7 @@ impl RemoteNode {
                     _ = yield_now() => {}
                 }
             }
-        });
-
+        }));
         self.reader_spawned = true;
     }
 

@@ -19,10 +19,10 @@ fn collection_stack_item(value: Result<crate::StackValue, String>) -> VmResult<S
 }
 
 fn normalize_index(type_name: &str, index: &BigInt, length: usize) -> VmResult<usize> {
-    if let Some(idx) = index.to_usize() {
-        if idx < length {
-            return Ok(idx);
-        }
+    if let Some(idx) = index.to_usize()
+        && idx < length
+    {
+        return Ok(idx);
     }
 
     Err(VmError::catchable_exception_msg(format!(

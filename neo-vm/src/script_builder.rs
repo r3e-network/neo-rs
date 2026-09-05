@@ -151,15 +151,16 @@ impl ScriptBuilder {
 
     /// Emits a push operation for an arbitrary precision integer (C# parity).
     pub fn emit_push_bigint(&mut self, value: BigInt) -> VmResult<&mut Self> {
-        if value >= BigInt::from(-1) && value <= BigInt::from(16) {
-            if let Some(v) = value.to_i64() {
-                if v == -1 {
-                    self.emit_opcode(OpCode::PUSHM1);
-                } else {
-                    self.emit(OpCode::PUSH0.byte().wrapping_add(v as u8));
-                }
-                return Ok(self);
+        if value >= BigInt::from(-1)
+            && value <= BigInt::from(16)
+            && let Some(v) = value.to_i64()
+        {
+            if v == -1 {
+                self.emit_opcode(OpCode::PUSHM1);
+            } else {
+                self.emit(OpCode::PUSH0.byte().wrapping_add(v as u8));
             }
+            return Ok(self);
         }
 
         let mut bytes = value
@@ -273,7 +274,7 @@ impl ScriptBuilder {
             )));
         }
 
-        let is_short = opcode_value % 2 == 0;
+        let is_short = opcode_value.is_multiple_of(2);
         if is_short {
             if offset < i32::from(i8::MIN) || offset > i32::from(i8::MAX) {
                 opcode = OpCode::try_from(opcode_value + 1)

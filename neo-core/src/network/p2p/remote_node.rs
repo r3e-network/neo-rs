@@ -388,14 +388,13 @@ impl RemoteNode {
             "verack received; handshake complete"
         );
 
-        if let Some(version) = self.remote_version.clone() {
-            if let Err(err) = self
+        if let Some(version) = self.remote_version.clone()
+            && let Err(err) = self
                 .system
                 .task_manager
                 .register_peer(ctx.self_ref(), version)
-            {
-                warn!(target: "neo", error = %err, "failed to notify task manager about session registration");
-            }
+        {
+            warn!(target: "neo", error = %err, "failed to notify task manager about session registration");
         }
 
         self.flush_queue().await
@@ -403,14 +402,13 @@ impl RemoteNode {
 
     async fn fail(&mut self, ctx: &mut ActorContext, error: NetworkError) -> ActorResult {
         warn!(target: "neo", endpoint = %self.endpoint, error = %error, "remote node failure");
-        if !self.inbound {
-            if let Some(parent) = ctx.parent() {
-                if let Err(err) = parent.tell(PeerCommand::ConnectionFailed {
-                    endpoint: self.endpoint,
-                }) {
-                    error!(target: "neo", error = %err, "failed to notify parent about connection failure");
-                }
-            }
+        if !self.inbound
+            && let Some(parent) = ctx.parent()
+            && let Err(err) = parent.tell(PeerCommand::ConnectionFailed {
+                endpoint: self.endpoint,
+            })
+        {
+            error!(target: "neo", error = %err, "failed to notify parent about connection failure");
         }
         ctx.stop_self()?;
         Ok(())

@@ -90,7 +90,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.16.0"
+version = "0.17.0"
 edition = "2024"
 # R14: the Cargo.lock pins `time 0.3.47` (via tracing-appender), whose own
 # manifest requires rustc 1.88 — 1.85 could not build the locked tree.
@@ -113,30 +113,30 @@ msrv = "1.85"
 [workspace.dependencies]
 # === Internal crates ===
 # Foundation layer
-neo-primitives = { path = "neo-primitives", version = "0.16.0" }
-neo-config = { path = "neo-config", version = "0.16.0" }
-neo-crypto = { path = "neo-crypto", version = "0.16.0" }
-neo-storage = { path = "neo-storage", version = "0.16.0" }
-neo-io = { path = "neo-io", version = "0.16.0" }
-neo-json = { path = "neo-json", version = "0.16.0" }
+neo-primitives = { path = "neo-primitives", version = "0.17.0" }
+neo-config = { path = "neo-config", version = "0.17.0" }
+neo-crypto = { path = "neo-crypto", version = "0.17.0" }
+neo-storage = { path = "neo-storage", version = "0.17.0" }
+neo-io = { path = "neo-io", version = "0.17.0" }
+neo-json = { path = "neo-json", version = "0.17.0" }
 
 # Core layer
-neo-vm = { path = "neo-vm", version = "0.16.0" }
-neo-core = { path = "neo-core", version = "0.16.0" }
-neo-p2p = { path = "neo-p2p", version = "0.16.0" }
-neo-rpc = { path = "neo-rpc", version = "0.16.0" }
-neo-consensus = { path = "neo-consensus", version = "0.16.0" }
+neo-vm = { path = "neo-vm", version = "0.17.0" }
+neo-core = { path = "neo-core", version = "0.17.0" }
+neo-p2p = { path = "neo-p2p", version = "0.17.0" }
+neo-rpc = { path = "neo-rpc", version = "0.17.0" }
+neo-consensus = { path = "neo-consensus", version = "0.17.0" }
 
 # Infrastructure layer
-neo-tee = { path = "neo-tee", version = "0.16.0" }
-neo-hsm = { path = "neo-hsm", version = "0.16.0" }
+neo-tee = { path = "neo-tee", version = "0.17.0" }
+neo-hsm = { path = "neo-hsm", version = "0.17.0" }
 
 # Telemetry
-neo-telemetry = { path = "neo-telemetry", version = "0.16.0" }
+neo-telemetry = { path = "neo-telemetry", version = "0.17.0" }
 
 # Application layer
 # neo-cli removed: functionality merged into neo-node
-neo-node = { path = "neo-node", version = "0.16.0" }
+neo-node = { path = "neo-node", version = "0.17.0" }
 
 # === Core dependencies ===
 # Async runtime

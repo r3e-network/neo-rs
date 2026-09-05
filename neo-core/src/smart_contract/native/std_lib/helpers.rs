@@ -94,7 +94,7 @@ impl StdLib {
         if value.sign() != Sign::Minus {
             let hex = value.to_str_radix(16);
             let requires_sign_padding =
-                hex.len() % 2 == 0 && matches!(hex.as_bytes().first(), Some(b'8'..=b'f'));
+                hex.len().is_multiple_of(2) && matches!(hex.as_bytes().first(), Some(b'8'..=b'f'));
             return if requires_sign_padding {
                 format!("0{hex}")
             } else {

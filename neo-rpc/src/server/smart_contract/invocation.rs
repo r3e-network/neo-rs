@@ -367,14 +367,14 @@ fn build_pending_item(
     account: UInt160,
     wallet_account: Option<Arc<dyn WalletAccount>>,
 ) -> PendingSignatureItem {
-    if let Some(account_ref) = wallet_account {
-        if let Some(contract) = account_ref.contract() {
-            return PendingSignatureItem {
-                account,
-                script: Some(contract.script.clone()),
-                parameter_types: contract.parameter_list.clone(),
-            };
-        }
+    if let Some(account_ref) = wallet_account
+        && let Some(contract) = account_ref.contract()
+    {
+        return PendingSignatureItem {
+            account,
+            script: Some(contract.script.clone()),
+            parameter_types: contract.parameter_list.clone(),
+        };
     }
 
     PendingSignatureItem {

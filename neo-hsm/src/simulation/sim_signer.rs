@@ -156,10 +156,10 @@ impl HsmSigner for SimulationSigner {
 
     async fn unlock(&self, pin: &str) -> HsmResult<()> {
         let stored_pin = self.pin.read();
-        if let Some(ref expected) = *stored_pin {
-            if pin != expected {
-                return Err(HsmError::InvalidPin);
-            }
+        if let Some(ref expected) = *stored_pin
+            && pin != expected
+        {
+            return Err(HsmError::InvalidPin);
         }
         // No PIN set or PIN matches
         *self.is_locked.write() = false;

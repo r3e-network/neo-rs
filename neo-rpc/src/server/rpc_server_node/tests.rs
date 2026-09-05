@@ -598,10 +598,10 @@ async fn send_raw_transaction_reports_invalid_signature() {
     store.commit();
 
     let mut tx = build_signed_transaction(&settings, &keypair, 4, 0);
-    if let Some(witness) = tx.witnesses_mut().get_mut(0) {
-        if let Some(last) = witness.invocation_script.last_mut() {
-            *last ^= 0x01;
-        }
+    if let Some(witness) = tx.witnesses_mut().get_mut(0)
+        && let Some(last) = witness.invocation_script.last_mut()
+    {
+        *last ^= 0x01;
     }
 
     let payload = BASE64_STANDARD.encode(tx.to_bytes());
@@ -1184,7 +1184,7 @@ async fn notary_node_level_deposit_deduction_roundtrip() {
     let mut designate_tx = Transaction::new();
     designate_tx.set_nonce(1);
     designate_tx.set_system_fee(1_0000_0000);
-    designate_tx.set_network_fee(0_1000_0000);
+    designate_tx.set_network_fee(10_000_000);
     designate_tx.set_valid_until_block(1000);
     designate_tx.set_script(designate_script);
     designate_tx.set_signers(vec![Signer::new(committee_address, WitnessScope::GLOBAL)]);
@@ -1232,7 +1232,7 @@ async fn notary_node_level_deposit_deduction_roundtrip() {
     let mut deposit_tx = Transaction::new();
     deposit_tx.set_nonce(2);
     deposit_tx.set_system_fee(1_0000_0000);
-    deposit_tx.set_network_fee(0_1000_0000);
+    deposit_tx.set_network_fee(10_000_000);
     deposit_tx.set_valid_until_block(1000);
     deposit_tx.set_script(deposit_script);
     deposit_tx.set_signers(vec![Signer::new(payer, WitnessScope::GLOBAL)]);

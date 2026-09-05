@@ -47,10 +47,10 @@ impl OracleContract {
         if url.len() > self.config.max_url_length {
             return Err(Error::invalid_operation("URL too long"));
         }
-        if let Some(ref f) = filter {
-            if f.len() > self.config.max_filter_length {
-                return Err(Error::invalid_operation("Filter too long"));
-            }
+        if let Some(ref f) = filter
+            && f.len() > self.config.max_filter_length
+        {
+            return Err(Error::invalid_operation("Filter too long"));
         }
         if callback.is_empty() || callback.len() > self.config.max_callback_length {
             return Err(Error::invalid_operation(

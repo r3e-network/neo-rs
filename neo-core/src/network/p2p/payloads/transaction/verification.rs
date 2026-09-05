@@ -76,10 +76,10 @@ impl Transaction {
             }
         }
 
-        if let Some(ctx) = context {
-            if !ctx.check_transaction(self, conflicts_list.iter(), snapshot) {
-                return VerifyResult::InsufficientFunds;
-            }
+        if let Some(ctx) = context
+            && !ctx.check_transaction(self, conflicts_list.iter(), snapshot)
+        {
+            return VerifyResult::InsufficientFunds;
         }
 
         let mut attributes_fee = 0i64;

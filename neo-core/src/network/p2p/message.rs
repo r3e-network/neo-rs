@@ -97,13 +97,11 @@ impl Message {
         if enable_compression
             && command.allows_compression()
             && message.payload_compressed.len() > COMPRESSION_MIN_SIZE
+            && let Ok(compressed) = compress_lz4(&message.payload_compressed)
+            && compressed.len() + COMPRESSION_THRESHOLD < message.payload_compressed.len()
         {
-            if let Ok(compressed) = compress_lz4(&message.payload_compressed) {
-                if compressed.len() + COMPRESSION_THRESHOLD < message.payload_compressed.len() {
-                    message.payload_compressed = compressed;
-                    message.flags = MessageFlags::COMPRESSED;
-                }
-            }
+            message.payload_compressed = compressed;
+            message.flags = MessageFlags::COMPRESSED;
         }
 
         Ok(message)

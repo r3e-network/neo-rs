@@ -47,18 +47,16 @@ impl RpcServerApplicationLogs {
                 )
             })?;
 
-        if let Some(filter) = trigger_filter {
-            if TriggerType::from_str(&filter).is_ok() {
-                if let Value::Object(obj) = &mut raw {
-                    if let Some(Value::Array(executions)) = obj.get_mut("executions") {
-                        executions.retain(|e| {
-                            e.get("trigger")
-                                .and_then(Value::as_str)
-                                .is_some_and(|v| v.eq_ignore_ascii_case(&filter))
-                        });
-                    }
-                }
-            }
+        if let Some(filter) = trigger_filter
+            && TriggerType::from_str(&filter).is_ok()
+            && let Value::Object(obj) = &mut raw
+            && let Some(Value::Array(executions)) = obj.get_mut("executions")
+        {
+            executions.retain(|e| {
+                e.get("trigger")
+                    .and_then(Value::as_str)
+                    .is_some_and(|v| v.eq_ignore_ascii_case(&filter))
+            });
         }
         Ok(raw)
     }

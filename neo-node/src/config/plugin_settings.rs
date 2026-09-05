@@ -551,10 +551,10 @@ fn build_oracle_service_settings(
     if !allowed_content_types.is_empty() {
         settings.allowed_content_types = allowed_content_types;
     }
-    if let Some(https) = https {
-        if let Some(timeout) = https.timeout {
-            settings.https_timeout = Duration::from_millis(timeout);
-        }
+    if let Some(https) = https
+        && let Some(timeout) = https.timeout
+    {
+        settings.https_timeout = Duration::from_millis(timeout);
     }
     if let Some(neofs) = neofs {
         apply_neofs_settings(&mut settings, neofs);

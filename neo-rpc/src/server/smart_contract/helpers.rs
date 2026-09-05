@@ -40,13 +40,12 @@ pub(super) fn parse_contract_parameters(
 }
 
 pub(super) fn final_rpc_vm_state_string(state: VmState) -> Result<String, RpcException> {
-    let name = match state {
-        VmState::HALT => "HALT",
-        VmState::FAULT => "FAULT",
-        VmState::BREAK => "BREAK",
-        VmState::NONE => "NONE",
-    };
-    Ok(name.to_string())
+    // Final RPC results must project through the shared neo-vm state
+    // semantics — local BREAK/NONE debug states are never exposed.
+    state
+        .final_name()
+        .map(str::to_string)
+        .ok_or_else(|| internal_error(format!("non-final VM state for RPC result: {state:?}")))
 }
 
 #[allow(clippy::type_complexity)]
@@ -174,18 +173,16 @@ fn stack_item_to_json_with_budget(
 ) -> Result<Value, RpcException> {
     let mut value = stack_item_rpc_json_deferred_size_check(item, max_size)
         .map_err(|err| stack_item_error(err.to_string()))?;
-    if let StackItem::InteropInterface(iface) = item {
-        if let Some(session) = session {
-            if let Some(iterator_id) = session.register_iterator_interface(iface) {
-                if let Value::Object(obj) = &mut value {
-                    obj.insert(
-                        "interface".to_string(),
-                        Value::String("IIterator".to_string()),
-                    );
-                    obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
-                }
-            }
-        }
+    if let StackItem::InteropInterface(iface) = item
+        && let Some(session) = session
+        && let Some(iterator_id) = session.register_iterator_interface(iface)
+        && let Value::Object(obj) = &mut value
+    {
+        obj.insert(
+            "interface".to_string(),
+            Value::String("IIterator".to_string()),
+        );
+        obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
     }
     Ok(value)
 }

@@ -674,10 +674,10 @@ impl ConsensusActor {
             .collect();
 
         let hashes = selected.into_iter().map(|tx| tx.hash()).collect();
-        if let Some(service) = self.service.as_mut() {
-            if let Err(err) = service.on_transactions_received(hashes) {
-                warn!(target: "neo", %err, "failed to submit proposal transactions");
-            }
+        if let Some(service) = self.service.as_mut()
+            && let Err(err) = service.on_transactions_received(hashes)
+        {
+            warn!(target: "neo", %err, "failed to submit proposal transactions");
         }
     }
 
@@ -738,8 +738,7 @@ impl ConsensusActor {
             return candidates;
         }
 
-        let fallback = pool.lock().get_sorted_verified_transactions(limit);
-        fallback
+        pool.lock().get_sorted_verified_transactions(limit)
     }
 
     fn try_prepare_response(&mut self, now: u64) {
@@ -1093,10 +1092,10 @@ impl ConsensusActor {
             return false;
         }
 
-        if let Some(prev_hash) = self.current_prev_hash {
-            if message.prev_hash != prev_hash {
-                return false;
-            }
+        if let Some(prev_hash) = self.current_prev_hash
+            && message.prev_hash != prev_hash
+        {
+            return false;
         }
 
         let prev_timestamp = self.prev_timestamp.unwrap_or(0);

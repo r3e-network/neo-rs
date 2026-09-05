@@ -458,10 +458,10 @@ impl StackItem {
         &self,
         refs: &mut std::collections::HashMap<CompoundIdentity, Self>,
     ) -> Self {
-        if let Some(self_id) = compound_identity(self) {
-            if let Some(cloned) = refs.get(&self_id) {
-                return cloned.clone();
-            }
+        if let Some(self_id) = compound_identity(self)
+            && let Some(cloned) = refs.get(&self_id)
+        {
+            return cloned.clone();
         }
 
         // Clone the item based on its type
@@ -596,12 +596,12 @@ impl StackItem {
                 Self::Null | Self::Integer(_) | Self::ByteString(_),
                 target_type @ StackItemType::Boolean,
             ) => {
-                if let Self::ByteString(bytes) = self {
-                    if bytes.len() > VM_INTEGER_MAX_SIZE {
-                        return Err(VmError::invalid_type_simple(
-                            "Cannot convert ByteString to Boolean",
-                        ));
-                    }
+                if let Self::ByteString(bytes) = self
+                    && bytes.len() > VM_INTEGER_MAX_SIZE
+                {
+                    return Err(VmError::invalid_type_simple(
+                        "Cannot convert ByteString to Boolean",
+                    ));
                 }
                 return convert_stack_value_via_semantics(
                     StackValue::try_from(self.clone())?,

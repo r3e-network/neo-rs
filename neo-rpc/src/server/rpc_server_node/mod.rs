@@ -247,13 +247,13 @@ impl RpcServerNode {
             }));
         }
 
-        if let Some((host, port)) = endpoint.rsplit_once(':') {
-            if let Ok(port) = port.parse::<u16>() {
-                return Some(json!({
-                    "address": host.to_string(),
-                    "port": port,
-                }));
-            }
+        if let Some((host, port)) = endpoint.rsplit_once(':')
+            && let Ok(port) = port.parse::<u16>()
+        {
+            return Some(json!({
+                "address": host.to_string(),
+                "port": port,
+            }));
         }
 
         None

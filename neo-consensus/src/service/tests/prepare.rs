@@ -52,11 +52,11 @@ async fn consensus_round_emits_block_committed() {
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::PrepareRequest {
-                prepare_payload = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::PrepareRequest
+        {
+            prepare_payload = Some(payload);
+            break;
         }
     }
     let prepare_payload = prepare_payload.expect("prepare request payload");
@@ -372,11 +372,11 @@ async fn primary_broadcasts_prepare_request_with_transactions() {
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::PrepareRequest {
-                prepare_payload = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::PrepareRequest
+        {
+            prepare_payload = Some(payload);
+            break;
         }
     }
 
@@ -505,11 +505,11 @@ async fn multi_round_prepare_requests_rotate_primary() {
 
     let mut first_prepare = None;
     while let Ok(event) = rx0.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::PrepareRequest {
-                first_prepare = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::PrepareRequest
+        {
+            first_prepare = Some(payload);
+            break;
         }
     }
 
@@ -538,11 +538,11 @@ async fn multi_round_prepare_requests_rotate_primary() {
 
     let mut second_prepare = None;
     while let Ok(event) = rx1.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::PrepareRequest {
-                second_prepare = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::PrepareRequest
+        {
+            second_prepare = Some(payload);
+            break;
         }
     }
 
@@ -605,11 +605,11 @@ async fn prepare_responses_trigger_commit_broadcast() {
 
     let mut commit_payload = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::Commit {
-                commit_payload = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::Commit
+        {
+            commit_payload = Some(payload);
+            break;
         }
     }
 
@@ -634,11 +634,11 @@ async fn commits_reach_threshold_emit_block_committed() {
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::PrepareRequest {
-                prepare_payload = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::PrepareRequest
+        {
+            prepare_payload = Some(payload);
+            break;
         }
     }
     let prepare_payload = prepare_payload.expect("prepare request payload");

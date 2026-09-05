@@ -190,15 +190,15 @@ impl ContractManagement {
         let mut ids = HashMap::<i32, UInt160>::with_capacity(contracts.len());
 
         for contract in contracts {
-            if let Some(existing) = ids.insert(contract.id, contract.hash) {
-                if existing != contract.hash {
-                    return Err(Error::invalid_data(format!(
-                        "corrupted ContractManagement state: duplicate non-native contract id {} for hashes {} and {}",
-                        contract.id,
-                        existing.to_hex_string(),
-                        contract.hash.to_hex_string()
-                    )));
-                }
+            if let Some(existing) = ids.insert(contract.id, contract.hash)
+                && existing != contract.hash
+            {
+                return Err(Error::invalid_data(format!(
+                    "corrupted ContractManagement state: duplicate non-native contract id {} for hashes {} and {}",
+                    contract.id,
+                    existing.to_hex_string(),
+                    contract.hash.to_hex_string()
+                )));
             }
         }
 

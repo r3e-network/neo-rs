@@ -81,20 +81,20 @@ impl RpcInvokeResult {
         insert_vm_state_field(&mut json, "state", self.state);
         insert_gas_consumed_field(&mut json, self.gas_consumed);
 
-        if let Some(exception) = &self.exception {
-            if !exception.is_empty() {
-                json.insert("exception".to_string(), JToken::String(exception.clone()));
-            }
+        if let Some(exception) = &self.exception
+            && !exception.is_empty()
+        {
+            json.insert("exception".to_string(), JToken::String(exception.clone()));
         }
 
         let stack_json = stack_items_to_json(&self.stack)
             .unwrap_or_else(|_| JToken::String("error: recursive reference".to_string()));
         json.insert("stack".to_string(), stack_json);
 
-        if let Some(tx) = &self.tx {
-            if !tx.is_empty() {
-                json.insert("tx".to_string(), JToken::String(tx.clone()));
-            }
+        if let Some(tx) = &self.tx
+            && !tx.is_empty()
+        {
+            json.insert("tx".to_string(), JToken::String(tx.clone()));
         }
 
         json

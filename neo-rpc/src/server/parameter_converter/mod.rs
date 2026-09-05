@@ -226,10 +226,10 @@ impl RpcConvertible for Vec<ContractParameter> {
 
 pub(super) fn parse_address(text: &str, address_version: u8) -> Result<Address, RpcException> {
     let mut result = None;
-    if UInt160::try_parse(text, &mut result) {
-        if let Some(hash) = result {
-            return Ok(Address::new(hash, address_version));
-        }
+    if UInt160::try_parse(text, &mut result)
+        && let Some(hash) = result
+    {
+        return Ok(Address::new(hash, address_version));
     }
 
     WalletHelper::to_script_hash(text, address_version)
@@ -239,10 +239,10 @@ pub(super) fn parse_address(text: &str, address_version: u8) -> Result<Address, 
 
 pub(super) fn parse_uint160(text: &str) -> Result<UInt160, RpcException> {
     let mut result = None;
-    if UInt160::try_parse(text, &mut result) {
-        if let Some(value) = result {
-            return Ok(value);
-        }
+    if UInt160::try_parse(text, &mut result)
+        && let Some(value) = result
+    {
+        return Ok(value);
     }
     Err(invalid_params(format!("Invalid UInt160 value: {text}")))
 }

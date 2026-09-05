@@ -137,10 +137,10 @@ pub(super) fn invoke_contract_verify(
         "gasconsumed": engine.fee_consumed().to_string(),
         "exception": exception,
     });
-    if stack_error.is_none() {
-        if let Value::Object(ref mut obj) = result {
-            obj.insert("stack".to_string(), Value::Array(stack_items));
-        }
+    if stack_error.is_none()
+        && let Value::Object(ref mut obj) = result
+    {
+        obj.insert("stack".to_string(), Value::Array(stack_items));
     }
 
     Ok(result)

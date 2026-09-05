@@ -395,10 +395,10 @@ impl ApplicationEngine {
 
     /// Gets a storage item by key (legacy API for native contracts).
     pub fn get_storage_item_legacy(&self, key: &[u8]) -> Option<Vec<u8>> {
-        if let Some(current_hash) = &self.current_script_hash {
-            if let Ok(context) = self.get_native_storage_context(current_hash) {
-                return self.get_storage_item(&context, key);
-            }
+        if let Some(current_hash) = &self.current_script_hash
+            && let Ok(context) = self.get_native_storage_context(current_hash)
+        {
+            return self.get_storage_item(&context, key);
         }
         None
     }
@@ -570,11 +570,10 @@ impl ApplicationEngine {
             }
 
             let hash = contract.hash();
-            if !self.contracts.contains_key(&hash) {
-                if let Some(state) = contract.contract_state(&self.protocol_settings, block_height)
-                {
-                    self.contracts.insert(hash, state);
-                }
+            if !self.contracts.contains_key(&hash)
+                && let Some(state) = contract.contract_state(&self.protocol_settings, block_height)
+            {
+                self.contracts.insert(hash, state);
             }
 
             if let Err(error) = contract.initialize(self) {
@@ -602,27 +601,26 @@ impl ApplicationEngine {
             let block_height = self.current_block_index();
             // Native contract method getExecPicoFeeFactor exists since activeIn Hardfork::HfFaun
             // But we should check if hardfork is enabled to call it safely/logically.
-            if self.is_hardfork_enabled(Hardfork::HfFaun) {
-                if let Ok(raw) = policy.invoke(self, "getExecPicoFeeFactor", &[]) {
-                    if !raw.is_empty() {
-                        let mut buffer = [0u8; 4];
-                        let len = raw.len().min(4);
-                        buffer[..len].copy_from_slice(&raw[..len]);
-                        self.exec_fee_factor = u32::from_le_bytes(buffer);
-                        got_pico = true;
-                    }
-                }
+            if self.is_hardfork_enabled(Hardfork::HfFaun)
+                && let Ok(raw) = policy.invoke(self, "getExecPicoFeeFactor", &[])
+                && !raw.is_empty()
+            {
+                let mut buffer = [0u8; 4];
+                let len = raw.len().min(4);
+                buffer[..len].copy_from_slice(&raw[..len]);
+                self.exec_fee_factor = u32::from_le_bytes(buffer);
+                got_pico = true;
             }
 
             if !got_pico {
-                if let Ok(raw) = policy.invoke(self, "getExecFeeFactor", &[]) {
-                    if !raw.is_empty() {
-                        let mut buffer = [0u8; 4];
-                        let len = raw.len().min(4);
-                        buffer[..len].copy_from_slice(&raw[..len]);
-                        let val = u32::from_le_bytes(buffer);
-                        self.exec_fee_factor = val * (FEE_FACTOR as u32);
-                    }
+                if let Ok(raw) = policy.invoke(self, "getExecFeeFactor", &[])
+                    && !raw.is_empty()
+                {
+                    let mut buffer = [0u8; 4];
+                    let len = raw.len().min(4);
+                    buffer[..len].copy_from_slice(&raw[..len]);
+                    let val = u32::from_le_bytes(buffer);
+                    self.exec_fee_factor = val * (FEE_FACTOR as u32);
                 }
             } else if self.trigger == TriggerType::OnPersist
                 && block_height > 0
@@ -633,13 +631,13 @@ impl ApplicationEngine {
                 self.exec_fee_factor = self.exec_fee_factor.saturating_mul(FEE_FACTOR as u32);
             }
 
-            if let Ok(raw) = policy.invoke(self, "getStoragePrice", &[]) {
-                if !raw.is_empty() {
-                    let mut buffer = [0u8; 4];
-                    let len = raw.len().min(4);
-                    buffer[..len].copy_from_slice(&raw[..len]);
-                    self.storage_price = u32::from_le_bytes(buffer);
-                }
+            if let Ok(raw) = policy.invoke(self, "getStoragePrice", &[])
+                && !raw.is_empty()
+            {
+                let mut buffer = [0u8; 4];
+                let len = raw.len().min(4);
+                buffer[..len].copy_from_slice(&raw[..len]);
+                self.storage_price = u32::from_le_bytes(buffer);
             }
         }
     }
@@ -650,11 +648,11 @@ impl ApplicationEngine {
     ) -> [u8; 16] {
         let mut data = [0u8; 16];
 
-        if let Some(container) = container {
-            if let Some(transaction) = container.as_any().downcast_ref::<Transaction>() {
-                let hash_bytes = transaction.hash().to_bytes();
-                data.copy_from_slice(&hash_bytes[..16]);
-            }
+        if let Some(container) = container
+            && let Some(transaction) = container.as_any().downcast_ref::<Transaction>()
+        {
+            let hash_bytes = transaction.hash().to_bytes();
+            data.copy_from_slice(&hash_bytes[..16]);
         }
 
         if let Some(block) = persisting_block {

@@ -88,17 +88,17 @@ impl ContractParameterDefinition {
             )));
         }
 
-        if let Some(bytes) = items[0].to_byte_string_bytes() {
-            if let Ok(name) = String::from_utf8(bytes) {
-                self.name = name;
-            }
+        if let Some(bytes) = items[0].to_byte_string_bytes()
+            && let Ok(name) = String::from_utf8(bytes)
+        {
+            self.name = name;
         }
 
-        if let Some(integer) = items[1].to_i128() {
-            if let Ok(value) = u8::try_from(integer) {
-                self.param_type =
-                    ContractParameterType::from_byte(value).unwrap_or(ContractParameterType::Any);
-            }
+        if let Some(integer) = items[1].to_i128()
+            && let Ok(value) = u8::try_from(integer)
+        {
+            self.param_type =
+                ContractParameterType::from_byte(value).unwrap_or(ContractParameterType::Any);
         }
 
         Ok(())

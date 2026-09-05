@@ -55,12 +55,11 @@ impl AccountState {
 
     /// Updates this account state from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        if let StackValue::Struct(items) = stack_value {
-            if let Some(first) = items.first() {
-                if let Some(balance) = stack_value_to_bigint(first) {
-                    self.balance = balance;
-                }
-            }
+        if let StackValue::Struct(items) = stack_value
+            && let Some(first) = items.first()
+            && let Some(balance) = stack_value_to_bigint(first)
+        {
+            self.balance = balance;
         }
 
         Ok(())

@@ -409,17 +409,17 @@ impl AttestationReport {
         }
 
         // Check MRENCLAVE if specified
-        if let Some(expected) = &options.expected_mrenclave {
-            if !self.verify_mrenclave(expected) {
-                return QuoteValidationResult::InvalidMrEnclave;
-            }
+        if let Some(expected) = &options.expected_mrenclave
+            && !self.verify_mrenclave(expected)
+        {
+            return QuoteValidationResult::InvalidMrEnclave;
         }
 
         // Check MRSIGNER if specified
-        if let Some(expected) = &options.expected_mrsigner {
-            if !self.verify_mrsigner(expected) {
-                return QuoteValidationResult::InvalidMrSigner;
-            }
+        if let Some(expected) = &options.expected_mrsigner
+            && !self.verify_mrsigner(expected)
+        {
+            return QuoteValidationResult::InvalidMrSigner;
         }
 
         // Check debug mode requirement
@@ -587,17 +587,17 @@ impl Quote {
         }
 
         // Check MRENCLAVE if specified
-        if let Some(expected) = &options.expected_mrenclave {
-            if &self.mrenclave != expected {
-                return QuoteValidationResult::InvalidMrEnclave;
-            }
+        if let Some(expected) = &options.expected_mrenclave
+            && &self.mrenclave != expected
+        {
+            return QuoteValidationResult::InvalidMrEnclave;
         }
 
         // Check MRSIGNER if specified
-        if let Some(expected) = &options.expected_mrsigner {
-            if &self.mrsigner != expected {
-                return QuoteValidationResult::InvalidMrSigner;
-            }
+        if let Some(expected) = &options.expected_mrsigner
+            && &self.mrsigner != expected
+        {
+            return QuoteValidationResult::InvalidMrSigner;
         }
 
         // Check security version

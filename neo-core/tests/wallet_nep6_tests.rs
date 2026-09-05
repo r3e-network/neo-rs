@@ -28,12 +28,14 @@ fn nep6_read_only_passphrase() -> &'static str {
 
 fn nep6_old_passphrase() -> &'static str {
     static P: OnceLock<String> = OnceLock::new();
-    P.get_or_init(|| format!("{}-{}", "previous", "phrase")).as_str()
+    P.get_or_init(|| format!("{}-{}", "previous", "phrase"))
+        .as_str()
 }
 
 fn nep6_new_passphrase() -> &'static str {
     static P: OnceLock<String> = OnceLock::new();
-    P.get_or_init(|| format!("{}-{}", "rotated", "phrase")).as_str()
+    P.get_or_init(|| format!("{}-{}", "rotated", "phrase"))
+        .as_str()
 }
 
 fn temp_wallet_path() -> String {

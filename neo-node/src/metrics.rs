@@ -93,11 +93,11 @@ pub fn update_metrics(
     }
 
     // Update storage metrics
-    if let Some(path) = storage_path {
-        if let Some((free, total)) = disk_usage_for(path) {
-            neo_telemetry::update_storage_metrics(free, total);
-            TELEMETRY.record_storage_metrics(free, total);
-        }
+    if let Some(path) = storage_path
+        && let Some((free, total)) = disk_usage_for(path)
+    {
+        neo_telemetry::update_storage_metrics(free, total);
+        TELEMETRY.record_storage_metrics(free, total);
     }
 }
 

@@ -44,11 +44,11 @@ async fn recovery_request_broadcasts_recovery_message() {
 
     let mut recovery_sent = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::RecoveryMessage {
-                recovery_sent = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::RecoveryMessage
+        {
+            recovery_sent = Some(payload);
+            break;
         }
     }
 
@@ -79,11 +79,11 @@ async fn recovery_request_ignored_by_non_selected_validator() {
 
     let mut recovery_sent = false;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::RecoveryMessage {
-                recovery_sent = true;
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::RecoveryMessage
+        {
+            recovery_sent = true;
+            break;
         }
     }
 
@@ -118,11 +118,11 @@ async fn recovery_request_responds_when_commit_sent() {
 
     let mut recovery_sent = None;
     while let Ok(event) = rx.try_recv() {
-        if let ConsensusEvent::BroadcastMessage(payload) = event {
-            if payload.message_type == ConsensusMessageType::RecoveryMessage {
-                recovery_sent = Some(payload);
-                break;
-            }
+        if let ConsensusEvent::BroadcastMessage(payload) = event
+            && payload.message_type == ConsensusMessageType::RecoveryMessage
+        {
+            recovery_sent = Some(payload);
+            break;
         }
     }
 

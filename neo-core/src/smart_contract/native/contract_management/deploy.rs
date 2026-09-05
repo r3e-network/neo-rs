@@ -45,15 +45,15 @@ impl ContractManagement {
         SafeArithmetic::check_add_overflow(nef_len, manifest_len)
             .map_err(|e| Error::invalid_argument(format!("Payload size overflow: {}", e)))?;
 
-        if engine.is_hardfork_enabled(Hardfork::HfAspidochelone) {
-            if let Ok(state) = engine.current_execution_state() {
-                let state = state.lock();
-                if !state.call_flags.contains(CallFlags::ALL) {
-                    return Err(Error::invalid_operation(format!(
-                        "Cannot call Deploy with the flag {:?}.",
-                        state.call_flags
-                    )));
-                }
+        if engine.is_hardfork_enabled(Hardfork::HfAspidochelone)
+            && let Ok(state) = engine.current_execution_state()
+        {
+            let state = state.lock();
+            if !state.call_flags.contains(CallFlags::ALL) {
+                return Err(Error::invalid_operation(format!(
+                    "Cannot call Deploy with the flag {:?}.",
+                    state.call_flags
+                )));
             }
         }
 

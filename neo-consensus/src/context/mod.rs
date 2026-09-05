@@ -451,10 +451,10 @@ impl ConsensusContext {
         if validator_index as usize >= self.validator_count() {
             return Err(ConsensusError::InvalidValidatorIndex(validator_index));
         }
-        if let Some(existing_view) = self.commit_view_numbers.get(&validator_index) {
-            if *existing_view == self.view_number {
-                return Err(ConsensusError::AlreadyReceived(validator_index));
-            }
+        if let Some(existing_view) = self.commit_view_numbers.get(&validator_index)
+            && *existing_view == self.view_number
+        {
+            return Err(ConsensusError::AlreadyReceived(validator_index));
         }
         self.commits.insert(validator_index, signature);
         self.commit_view_numbers

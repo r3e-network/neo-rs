@@ -233,10 +233,8 @@ impl RpcServerBlockchain {
         let pool_arc = system.context().memory_pool_handle();
         let tx_from_pool = pool_arc.lock().try_get(&hash);
 
-        if !verbose {
-            if let Some(tx) = tx_from_pool {
-                return Ok(Value::String(serialize_to_base64(tx.as_ref())?));
-            }
+        if !verbose && let Some(tx) = tx_from_pool {
+            return Ok(Value::String(serialize_to_base64(tx.as_ref())?));
         }
 
         let store = system.store_cache();

@@ -46,10 +46,10 @@ impl ApplicationEngine {
 
     /// Adds picoGAS to `FeeConsumed` / `GasConsumed`.
     fn add_fee_pico(&mut self, pico_gas: i64) -> Result<()> {
-        if let Ok(state_arc) = self.current_execution_state() {
-            if state_arc.lock().whitelisted {
-                return Ok(());
-            }
+        if let Ok(state_arc) = self.current_execution_state()
+            && state_arc.lock().whitelisted
+        {
+            return Ok(());
         }
 
         if pico_gas < 0 {
@@ -328,7 +328,7 @@ impl ApplicationEngine {
         if profiling {
             let stats = native_on_persist_perf_stats();
             let blocks = stats.blocks.fetch_add(1, Ordering::Relaxed) + 1;
-            if blocks % 1000 == 0 {
+            if blocks.is_multiple_of(1000) {
                 let blocks_f = blocks as f64;
                 let mut top = {
                     let totals = stats.total_ns_by_contract.lock();

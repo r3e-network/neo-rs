@@ -75,16 +75,16 @@ impl WhitelistedContract {
             )));
         }
 
-        if let Some(bytes) = items[0].to_byte_string_bytes() {
-            if let Ok(hash) = UInt160::from_bytes(&bytes) {
-                self.contract_hash = hash;
-            }
+        if let Some(bytes) = items[0].to_byte_string_bytes()
+            && let Ok(hash) = UInt160::from_bytes(&bytes)
+        {
+            self.contract_hash = hash;
         }
 
-        if let Some(bytes) = items[1].to_byte_string_bytes() {
-            if let Ok(method) = String::from_utf8(bytes) {
-                self.method = method;
-            }
+        if let Some(bytes) = items[1].to_byte_string_bytes()
+            && let Ok(method) = String::from_utf8(bytes)
+        {
+            self.method = method;
         }
 
         if let Some(count) = stack_value_to_u32(&items[2]) {

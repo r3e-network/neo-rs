@@ -217,10 +217,9 @@ impl Helper {
                     .peek(0)
                     .map_err(|e| WalletError::Other(e.to_string()))
                     .and_then(|item| item.as_int().map_err(|e| WalletError::Other(e.to_string())))
+                    && value.sign() == Sign::Plus
                 {
-                    if value.sign() == Sign::Plus {
-                        balances.push((*account, value));
-                    }
+                    balances.push((*account, value));
                 }
             }
 
@@ -488,13 +487,13 @@ fn calculate_network_fee_impl(
         let mut invocation_script: Option<Vec<u8>> = None;
         let mut witness_script = account_script.and_then(|resolver| resolver(hash));
 
-        if witness_script.is_none() {
-            if let Some(witness) = tx.witnesses().get(index) {
-                if witness.verification_script.is_empty() {
-                    invocation_script = Some(witness.invocation_script.clone());
-                } else {
-                    witness_script = Some(witness.verification_script.clone());
-                }
+        if witness_script.is_none()
+            && let Some(witness) = tx.witnesses().get(index)
+        {
+            if witness.verification_script.is_empty() {
+                invocation_script = Some(witness.invocation_script.clone());
+            } else {
+                witness_script = Some(witness.verification_script.clone());
             }
         }
 

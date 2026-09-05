@@ -82,13 +82,12 @@ impl Nep17Tracker {
             });
         }
 
-        if let Some(container) = container {
-            if let Some(tx) = container
+        if let Some(container) = container
+            && let Some(tx) = container
                 .as_any()
                 .downcast_ref::<crate::network::p2p::payloads::Transaction>()
-            {
-                self.record_transfer_history(&record, &tx.hash(), transfer_index);
-            }
+        {
+            self.record_transfer_history(&record, &tx.hash(), transfer_index);
         }
     }
 

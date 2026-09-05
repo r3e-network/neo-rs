@@ -149,7 +149,7 @@ fn compress_uncompressed_key(uncompressed_xy: &[u8]) -> HsmResult<Vec<u8>> {
     let x = &uncompressed_xy[..32];
     let y = &uncompressed_xy[32..];
     let y_last = y[31];
-    let prefix = if y_last % 2 == 0 { 0x02 } else { 0x03 };
+    let prefix = if y_last.is_multiple_of(2) { 0x02 } else { 0x03 };
     let mut compressed = Vec::with_capacity(33);
     compressed.push(prefix);
     compressed.extend_from_slice(x);

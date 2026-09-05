@@ -168,12 +168,13 @@ pub(super) fn end_finally(
 }
 
 fn end_try_at(target_ip: usize, try_frames: &mut TryStack) -> usize {
-    if let Some(frame) = try_frames.last_mut() {
-        if frame.finally_ip != 0 && !frame.in_finally {
-            frame.end_ip = target_ip;
-            frame.in_finally = true;
-            return frame.finally_ip;
-        }
+    if let Some(frame) = try_frames.last_mut()
+        && frame.finally_ip != 0
+        && !frame.in_finally
+    {
+        frame.end_ip = target_ip;
+        frame.in_finally = true;
+        return frame.finally_ip;
     }
     try_frames.pop();
     target_ip

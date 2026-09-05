@@ -371,23 +371,23 @@ impl ProtocolSettings {
 
         for (index, hardfork) in all.iter().enumerate() {
             if let Some(&height) = hardforks.get(hardfork) {
-                if let Some(prev_index) = previous_index {
-                    if index - prev_index > 1 {
-                        let missing = all[prev_index + 1];
-                        return Err(format!(
-                            "Hardfork {:?} is configured while {:?} is missing. Configure every hardfork sequentially.",
-                            hardfork, missing
-                        ));
-                    }
+                if let Some(prev_index) = previous_index
+                    && index - prev_index > 1
+                {
+                    let missing = all[prev_index + 1];
+                    return Err(format!(
+                        "Hardfork {:?} is configured while {:?} is missing. Configure every hardfork sequentially.",
+                        hardfork, missing
+                    ));
                 }
 
-                if let Some(prev_height) = previous_height {
-                    if height < prev_height {
-                        return Err(format!(
-                            "Hardfork {:?} activates at block {}, which is before previously configured height {}.",
-                            hardfork, height, prev_height
-                        ));
-                    }
+                if let Some(prev_height) = previous_height
+                    && height < prev_height
+                {
+                    return Err(format!(
+                        "Hardfork {:?} activates at block {}, which is before previously configured height {}.",
+                        hardfork, height, prev_height
+                    ));
                 }
 
                 previous_index = Some(index);

@@ -31,10 +31,10 @@ impl BlockHashOrIndex {
         }
 
         let mut result = None;
-        if UInt256::try_parse(value, &mut result) {
-            if let Some(hash) = result {
-                return Some(Self::Hash(hash));
-            }
+        if UInt256::try_parse(value, &mut result)
+            && let Some(hash) = result
+        {
+            return Some(Self::Hash(hash));
         }
 
         None
