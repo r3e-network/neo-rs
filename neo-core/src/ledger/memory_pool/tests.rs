@@ -317,7 +317,7 @@ fn max_transactions_per_sender_allows_conflict_replacement() {
 }
 
 #[test]
-fn conflict_replacement_emits_capacity_exceeded_reason() {
+fn conflict_replacement_emits_conflict_reason() {
     let settings = ProtocolSettings {
         memory_pool_max_transactions: 10,
         ..Default::default()
@@ -349,7 +349,11 @@ fn conflict_replacement_emits_capacity_exceeded_reason() {
 
     let removed = removed.lock().unwrap();
     assert_eq!(removed.len(), 1);
-    assert_eq!(removed[0].0, TransactionRemovalReason::CapacityExceeded);
+    // Conflict replacement evicts the displaced transaction because it
+    // conflicts, not because the pool is over capacity (audit D-04,
+    // 2026-09-08: `CapacityExceeded` here was an incidental drift from the
+    // v0.15.0 baseline; the genuine capacity path asserts its own reason).
+    assert_eq!(removed[0].0, TransactionRemovalReason::Conflict);
     assert_eq!(removed[0].1, vec![original.hash()]);
 }
 

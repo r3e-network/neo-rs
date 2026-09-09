@@ -234,18 +234,33 @@ pub fn size(value: &StackValue) -> Result<i64, String> {
 pub fn has_key(collection: &StackValue, key: &StackValue) -> Result<bool, String> {
     match collection {
         StackValue::Array(items) | StackValue::Struct(items) => {
-            let index = non_negative_index(collection_index_value(key)?)
-                .ok_or_else(|| "HASKEY: negative index".to_string())?;
+            let index = has_key_index(key)?;
             Ok(index < items.len())
         }
         StackValue::Map(pairs) => Ok(map_entry_index(pairs, key)?.is_some()),
         StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
-            let index = non_negative_index(collection_index_value(key)?)
-                .ok_or_else(|| "HASKEY: negative index".to_string())?;
+            let index = has_key_index(key)?;
             Ok(index < bytes.len())
         }
         _ => Err("HASKEY: unsupported types".into()),
     }
+}
+
+/// Normalized HASKEY array/string index.
+///
+/// C# `JumpTable.HasKey` faults when the index is negative **or**
+/// `index >= engine.Limits.MaxItemSize` — not merely when it is out of range
+/// of the collection — so an oversized index must FAULT instead of yielding
+/// `false` (audit F-NEW-1, 2026-09-08).
+fn has_key_index(key: &StackValue) -> Result<usize, String> {
+    let index = collection_index_value(key)?;
+    if index < 0 {
+        return Err("HASKEY: negative index".into());
+    }
+    if index >= MAX_ITEM_SIZE as i64 {
+        return Err("HASKEY: index exceeds MaxItemSize".into());
+    }
+    non_negative_index(index).ok_or_else(|| "HASKEY: index out of range".into())
 }
 
 /// Return map keys as an array.
@@ -416,5 +431,23 @@ mod tests {
 
         let bytes = StackValue::ByteString(vec![0xAA, 0xBB]);
         assert_eq!(has_key(&bytes, &StackValue::Integer(1)), Ok(true));
+    }
+
+    #[test]
+    fn has_key_index_beyond_max_item_size_faults() {
+        // F-NEW-1: C# `JumpTable.HasKey` throws when `index >= Limits.MaxItemSize`
+        // (131070) even if the collection is tiny; the pre-fix Rust returned
+        // `Ok(false)`, a constructible divergence from the reference VM.
+        let array = StackValue::Array(vec![StackValue::Integer(1)]);
+        assert!(has_key(&array, &StackValue::Integer(MAX_ITEM_SIZE as i64)).is_err());
+
+        let bytes = StackValue::ByteString(vec![0xAA, 0xBB]);
+        assert!(has_key(&bytes, &StackValue::Integer(MAX_ITEM_SIZE as i64 + 1)).is_err());
+
+        // Boundary sanity: the largest in-range index still answers `false`.
+        assert_eq!(
+            has_key(&array, &StackValue::Integer(MAX_ITEM_SIZE as i64 - 1)),
+            Ok(false)
+        );
     }
 }

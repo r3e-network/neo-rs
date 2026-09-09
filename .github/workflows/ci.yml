@@ -104,6 +104,94 @@ jobs:
       run: cargo nextest run --workspace --no-fail-fast
     - name: Run doctests
       run: cargo test --workspace --doc
+  test-runtime:
+    name: Test (runtime feature gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+    - name: Reclaim runner disk space
+      run: 'sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+
+        sudo docker image prune -af || true
+
+        '
+    - name: Cache APT packages
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
+          libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
+        version: 1.0
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Setup sccache
+      uses: mozilla-actions/sccache-action@v0.0.7
+      continue-on-error: true
+    - name: Enable sccache (best-effort)
+      run: "if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null;\
+        \ then\n  echo \"RUSTC_WRAPPER=sccache\" >> \"$GITHUB_ENV\"\n  echo \"SCCACHE_GHA_ENABLED=true\"\
+        \ >> \"$GITHUB_ENV\"\n  echo \"::notice::sccache enabled\"\nelse\n  echo \"\
+        ::warning::sccache unavailable — falling back to direct compilation\"\nfi\n"
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@nextest
+    - name: Cache cargo registry & git
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ci-runtime
+    # F-NEW-3 root cause: integration tests behind `--features runtime` (and
+    # the neo-tests consensus integration crate) never ran in CI, letting a
+    # C#-contradicting assertion live for 40 days. This lane executes them.
+    - name: Run neo-core runtime-gated tests
+      run: cargo nextest run -p neo-core --features runtime --no-fail-fast
+    - name: Run consensus integration tests
+      run: cargo nextest run -p neo-tests --no-fail-fast
+    - name: Run neo-rpc server tests
+      run: cargo nextest run -p neo-rpc --features server --no-fail-fast
+  fuzz-smoke:
+    name: Fuzz (libFuzzer smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v4
+    - name: Reclaim runner disk space
+      run: 'sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+
+        sudo docker image prune -af || true
+
+        '
+    - uses: dtolnay/rust-toolchain@nightly
+    - name: Install cargo-fuzz
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-fuzz
+    - name: Cache cargo registry & git
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ci-fuzz
+    # Coverage-guided fuzzing cannot run on windows-gnullvm hosts (no
+    # sanitizer/sancov support), so the bounded smoke lane lives here.
+    # Local Windows verification (uninstrumented) is documented in
+    # outputs/audit-v017-final-report.md §5 E2.
+    - name: Build fuzz targets (optimized + sancov)
+      working-directory: fuzz
+      run: cargo fuzz build -O
+    - name: Fuzz transaction parse (60s)
+      working-directory: fuzz
+      run: cargo fuzz run fuzz_transaction_parse -O -- -max_total_time=60 -rss_limit_mb=2560
+    - name: Fuzz script parse (60s)
+      working-directory: fuzz
+      run: cargo fuzz run fuzz_script_parse -O -- -max_total_time=60 -rss_limit_mb=2560
+    - name: Fuzz message parse (60s)
+      working-directory: fuzz
+      run: cargo fuzz run fuzz_message_parse -O -- -max_total_time=60 -rss_limit_mb=2560
+    - name: Upload crash artifacts
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: fuzz-crash-artifacts
+        path: |
+          fuzz/crash-*
+          fuzz/artifacts/
+        if-no-files-found: ignore
   windows-msvc:
     name: Windows MSVC Build
     runs-on: windows-latest
@@ -209,3 +297,38 @@ jobs:
         shared-key: ci-features
     - name: Check optional feature set
       run: cargo check --locked -p ${{ matrix.features }}
+
+  deny:
+    name: Dependency policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - name: cargo deny (licenses, bans, sources)
+      uses: EmbarkStudios/cargo-deny-action@v2
+      with:
+        command: check
+        arguments: licenses bans sources
+    - name: cargo deny (advisories)
+      uses: EmbarkStudios/cargo-deny-action@v2
+      continue-on-error: true
+      with:
+        command: check
+        arguments: advisories
+
+  protocol-consistency-goldens:
+    name: Protocol consistency goldens
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Verify C# state-root goldens against live seed
+      run: python scripts/verify-protocol-consistency.py verify-goldens-online --reference http://seed1.neo.org:10332
+    - name: Verify protocol presets against live MainNet/TestNet seeds
+      # Audit P0-4 (2026-09-08): the preset reconciliation script was the only
+      # true C#-parity check for the consensus constants migrated to neo-config,
+      # but it was not wired into CI. Run it as a hard gate on every push/PR.
+      run: python scripts/verify-protocol-presets.py

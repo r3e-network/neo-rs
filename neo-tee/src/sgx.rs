@@ -93,21 +93,21 @@ pub(crate) fn verify_runtime_evidence(
         read_bool_env(ENV_SGX_ALLOW_EXPIRED_COLLATERAL),
     )?;
 
-    if let Some(expected) = expected_mrenclave {
-        if parsed_quote.mrenclave != expected {
-            return Err(TeeError::mrenclave_mismatch(
-                &expected,
-                &parsed_quote.mrenclave,
-            ));
-        }
+    if let Some(expected) = expected_mrenclave
+        && parsed_quote.mrenclave != expected
+    {
+        return Err(TeeError::mrenclave_mismatch(
+            &expected,
+            &parsed_quote.mrenclave,
+        ));
     }
-    if let Some(expected) = expected_mrsigner {
-        if parsed_quote.mrsigner != expected {
-            return Err(TeeError::mrsigner_mismatch(
-                &expected,
-                &parsed_quote.mrsigner,
-            ));
-        }
+    if let Some(expected) = expected_mrsigner
+        && parsed_quote.mrsigner != expected
+    {
+        return Err(TeeError::mrsigner_mismatch(
+            &expected,
+            &parsed_quote.mrsigner,
+        ));
     }
     if parsed_quote.isv_svn < min_isv_svn {
         return Err(TeeError::enclave_init_error(
