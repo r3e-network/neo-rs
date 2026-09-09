@@ -115,10 +115,10 @@ curl -s http://localhost:10332 -H 'Content-Type: application/json' \
 
 | neo-rs Version | Neo N3 Version | C# Reference                                                                                      |
 | -------------- | -------------- | ------------------------------------------------------------------------------------------------- |
-| 0.17.0         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (protocol compliance validated) |
+| 0.17.0         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (presets & serialization validated) |
 | 0.4.x          | 3.8.2          | [`ede620e`](https://github.com/neo-project/neo/commit/ede620e5722c48e199a0f3f2ab482ae090c1b878) |
 
-This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.10.1) for blocks, transactions, and P2P messages. Protocol behavior was validated against the v3.10.1 reference and live Neo MainNet/TestNet endpoints.
+This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.10.1) for blocks, transactions, and P2P messages. Validation status: serialization (block hash, size, header fields, byte round-trip) is verified against 27 real MainNet blocks captured from a live v3.10.1 seed, and the consensus protocol presets (network magic, ms-per-block, hardfork activations, standby committee) are reconciled field-by-field against live MainNet/TestNet nodes in CI. Full-chain equivalence (a complete MainNet sync with state-root comparison) is **not yet validated** — see `MAINNET-STATUS.md`.
 
 ### C# v3.10.1 Feature Parity
 
@@ -163,8 +163,10 @@ All native contract hashes match the C# reference implementation:
 
 ### Test Coverage
 
-Last verified 2026-09-05 on `protocol-v3.10.1-compliance` with default features
-(`cargo test --workspace --lib --locked --no-fail-fast`):
+Last verified 2026-09-05 on `protocol-v3.10.1-compliance` with the per-crate
+features below (`cargo test --workspace --lib --locked --no-fail-fast`, run
+with `neo-core --features runtime` and `neo-rpc --features server`; the plain
+default-feature workspace run passes fewer tests — e.g. neo-core lib 586):
 
 ```
 ✅ 2,230 library tests passed across 15 workspace crates
@@ -178,10 +180,11 @@ Last verified 2026-09-05 on `protocol-v3.10.1-compliance` with default features
 ```
 
 Test counts drift as tests are added — treat the commands above, not these
-numbers, as the source of truth. Protocol/gas conformance vectors run
-continuously in the v3.10.1 compatibility workflow
-(`.github/workflows/compatibility-v3101.yml`); the full-feature build is gated
-by the `node-full` CI job.
+numbers, as the source of truth. Protocol/gas conformance vectors run in the
+v3.10.1 compatibility workflow (`.github/workflows/compatibility-v3101.yml`);
+note that push/PR lanes execute with a gas tolerance of 1,000,000 — exact-vector
+mode (tolerance 0) currently requires a manual workflow dispatch. The
+full-feature build is gated by the `node-full` CI job.
 
 ## Prerequisites
 

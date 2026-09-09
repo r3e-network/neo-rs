@@ -348,7 +348,11 @@ impl MemoryPool {
                     self,
                     &TransactionRemovedEventArgs {
                         transactions: removed_conflicts,
-                        reason: TransactionRemovalReason::CapacityExceeded,
+                        // Conflict evictions, not capacity pressure: the
+                        // baseline reported `Conflict` here and the genuine
+                        // capacity path below already uses `CapacityExceeded`
+                        // (audit D-04, 2026-09-08).
+                        reason: TransactionRemovalReason::Conflict,
                     },
                 );
             }

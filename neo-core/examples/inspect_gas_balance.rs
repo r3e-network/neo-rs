@@ -2,7 +2,8 @@
 use neo_core::UInt160;
 #[cfg(feature = "rocksdb")]
 use neo_core::persistence::{
-    StorageConfig, StorageKey, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
+    StorageConfig, StorageItemExt, StorageKey, StoreCache, StoreProvider,
+    providers::RocksDBStoreProvider,
 };
 #[cfg(feature = "rocksdb")]
 use std::path::PathBuf;
