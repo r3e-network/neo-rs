@@ -4,45 +4,14 @@ permissions:
   contents: read
   actions: write
 
+# Auto-triggers (schedule / push / PR) are intentionally disabled:
+# this workflow has never passed (0/9 runs as of 2026-09-10) because the
+# repo variable NEO_EXECUTION_SPECS_REF is not configured — every run
+# fails in minutes and burns CI minutes. Re-enable triggers ONLY after
+# setting that variable (Settings -> Secrets and variables -> Actions ->
+# Variables) to an immutable v3.10.1 tag or commit SHA. Manual dispatch
+# remains available.
 on:
-  push:
-    branches:
-    - main
-    - master
-    paths:
-    - .github/workflows/compatibility-v3101.yml
-    - scripts/validate-v3101-consistency.sh
-    - neo-core/**
-    - neo-node/**
-    - neo-rpc/**
-    - neo-p2p/**
-    - neo-vm/**
-    - neo-config/**
-    - neo-consensus/**
-    - neo-primitives/**
-    - neo-crypto/**
-    - neo-io/**
-    - neo-storage/**
-  pull_request:
-    branches:
-    - main
-    - master
-    paths:
-    - .github/workflows/compatibility-v3101.yml
-    - scripts/validate-v3101-consistency.sh
-    - neo-core/**
-    - neo-node/**
-    - neo-rpc/**
-    - neo-p2p/**
-    - neo-vm/**
-    - neo-config/**
-    - neo-consensus/**
-    - neo-primitives/**
-    - neo-crypto/**
-    - neo-io/**
-    - neo-storage/**
-  schedule:
-  - cron: 0 */12 * * *
   workflow_dispatch:
     inputs:
       network:

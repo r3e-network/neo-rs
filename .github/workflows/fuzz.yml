@@ -22,8 +22,9 @@ name: Fuzzing
     - neo-primitives/**
     - fuzz/**
     - .github/workflows/fuzz.yml
-  schedule:
-  - cron: 0 2 * * *
+  # Daily scheduled run (cron 0 2 * * *) removed 2026-09-10 to conserve CI
+  # minutes; coverage-guided fuzzing continues via the ci.yml fuzz-smoke lane
+  # on push/PR and via manual workflow_dispatch for long runs.
   workflow_dispatch:
     inputs:
       duration:
