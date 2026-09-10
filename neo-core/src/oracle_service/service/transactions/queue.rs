@@ -168,7 +168,7 @@ impl OracleService {
         let contract = Contract::create_multi_sig_contract(needed_threshold, &oracle_nodes);
         let mut builder = crate::script_builder::ScriptBuilder::new();
         let mut remaining = needed_threshold;
-        for (_key, sign) in signs.iter() {
+        for sign in signs.values() {
             builder.emit_push(sign.as_slice());
             remaining -= 1;
             if remaining == 0 {

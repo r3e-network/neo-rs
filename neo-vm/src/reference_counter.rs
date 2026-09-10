@@ -150,7 +150,10 @@ impl ReferenceCounter {
             return self.state.references_count.load(Ordering::Relaxed);
         }
 
-        let candidate_filter: HashSet<ItemId> = tracked.zero_referred.drain().collect();
+        // `mem::take` moves the whole set out in O(1), leaving an empty set in
+        // place — same semantics as `drain().collect()` without the churn
+        // (clippy::drain_collect, clippy 1.98).
+        let candidate_filter: HashSet<ItemId> = std::mem::take(&mut tracked.zero_referred);
 
         let mut tarjan = Tarjan::new();
         for id in tracked.tracked_items.keys() {
