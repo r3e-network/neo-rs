@@ -306,16 +306,26 @@ jobs:
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
+    # Pin cargo-deny instead of using EmbarkStudios/cargo-deny-action. The action is a
+    # Docker action that assembles its command line with `arguments` BEFORE `command`
+    # (see its action.yml `runs.args`), producing `... licenses bans sources check`,
+    # which current cargo-deny rejects. That made the step fail for a tooling reason
+    # while looking like a policy violation. Running the pinned binary directly keeps
+    # CI behaviour identical to the locally verified invocation.
+    - name: Install cargo-deny 0.20.2
+      run: |
+        set -euo pipefail
+        curl -sSL -o /tmp/cargo-deny.tar.gz \
+          https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz
+        tar -xzf /tmp/cargo-deny.tar.gz -C /tmp
+        install -m 0755 /tmp/cargo-deny-0.20.2-x86_64-unknown-linux-musl/cargo-deny /usr/local/bin/cargo-deny
+        cargo-deny --version
     # Hard gate. Previously soft-gated (continue-on-error) while a local-vs-CI delta
-    # was undiagnosed; that delta was caused by deny.toml never having been committed,
-    # so CI was failing on a 404 rather than on a real policy violation. With the file
-    # committed this check passes, so the gate is restored -- a soft gate proves
-    # nothing and must not be counted as a passing check.
+    # was undiagnosed; that delta was the action's argument ordering above, not a real
+    # policy violation. Verified passing locally with cargo-deny 0.20.2 for both the
+    # windows and x86_64-unknown-linux-gnu dependency closures.
     - name: cargo deny (licenses, bans, sources)
-      uses: EmbarkStudios/cargo-deny-action@v2
-      with:
-        command: check
-        arguments: licenses bans sources
+      run: cargo deny check licenses bans sources
     # SOFT GATE, AND DELIBERATELY NOT COUNTED AS A PASS. This step genuinely fails on
     # four real RustSec advisories reachable through neo-rpc's rustls 0.21 / webpki
     # 0.101 stack (reproduced locally with cargo-deny 0.20.2, exit 1):
@@ -330,11 +340,8 @@ jobs:
     # affect protocol correctness. Tracked for a decision; do not treat a green run
     # of this step as evidence that the advisories are resolved.
     - name: cargo deny (advisories)
-      uses: EmbarkStudios/cargo-deny-action@v2
+      run: cargo deny check advisories
       continue-on-error: true
-      with:
-        command: check
-        arguments: advisories
 
   protocol-consistency-goldens:
     name: Protocol consistency goldens
