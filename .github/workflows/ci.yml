@@ -360,8 +360,8 @@ jobs:
       # but it was not wired into CI. Run it as a hard gate on every push/PR.
       run: python scripts/verify-protocol-presets.py
 
-  native-parity:
-    name: Native contract parity
+  surface-parity:
+    name: Protocol surface parity
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -369,16 +369,22 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    # Hard gate on the completeness question: every native contract method exposed by
-    # the C# v3.10.1 reference must exist under the same name in the Rust node, and no
-    # extra method may be exposed. Test suites cannot answer this -- they only cover
-    # behaviour someone thought to write a test for -- so the surface itself is diffed.
+    # Hard gate on the completeness question. Test suites cannot answer it -- they only
+    # cover behaviour someone thought to write a test for -- so the *surface* is diffed
+    # against the C# v3.10.1 reference instead: every native contract method and every
+    # System.* syscall must exist under the same name, with none extra. Syscall hashes
+    # are additionally recomputed from their names with the C# derivation rule, since
+    # names can match while hashes disagree (which would fault every SYSCALL).
     - name: Verify native contract method parity against C# v3.10.1
       run: python scripts/verify-native-parity.py --json reports/native-parity.json
-    - name: Upload parity report
+    - name: Verify interop service (syscall) parity against C# v3.10.1
+      run: python scripts/verify-syscall-parity.py --json reports/syscall-parity.json
+    - name: Verify NeoVM opcode parity against C# neo-vm v3.10.1
+      run: python scripts/verify-opcode-parity.py --json reports/opcode-parity.json
+    - name: Upload parity reports
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: native-parity-report
-        path: reports/native-parity.json
+        name: surface-parity-reports
+        path: reports/
         if-no-files-found: ignore
