@@ -1304,7 +1304,7 @@ mod tests {
         tx.set_version(0);
         tx.set_nonce(14);
         tx.set_system_fee(0);
-        tx.set_network_fee(0);
+        tx.set_network_fee(1_000_000);
         tx.set_valid_until_block(1);
         tx.set_script(vec![OpCode::PUSH1.byte()]);
         tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
@@ -1317,8 +1317,22 @@ mod tests {
             verification_script,
         )]);
 
+        // C# `Transaction.VerifyStateIndependent` inlines only the single-sig /
+        // multi-sig fast paths and skips non-matching witnesses WITHOUT calling
+        // VerifyWitness (neo-project/neo master-n3), so a truncated invocation
+        // script does NOT fail the state-independent check. The rejection
+        // happens in VerifyStateDependent, when Helper.VerifyWitness actually
+        // executes the script and fails (audit C# reconciliation, 2026-09-08).
         assert_eq!(
             tx.verify_state_independent(&settings),
+            VerifyResult::Succeed
+        );
+
+        let snapshot = DataCache::new(false);
+        let context =
+            TransactionVerificationContext::with_balance_provider(|_, _| BigInt::from(u64::MAX));
+        assert_eq!(
+            tx.verify_state_dependent(&settings, &snapshot, Some(&context), &[]),
             VerifyResult::Invalid
         );
     }
