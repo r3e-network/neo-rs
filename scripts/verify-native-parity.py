@@ -234,7 +234,12 @@ def main() -> int:
     print(f"missing: {len(total_missing)}   extra: {len(total_extra)}   -> {'PARITY' if ok else 'DIFFERENCES'}")
 
     if args.json:
-        Path(args.json).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        # Create the parent directory: CI passes a path under reports/, which need not
+        # exist. Without this the run fails with exit code 2 *after* successfully
+        # computing parity, which reads as a parity failure when it is only an IO slip.
+        out = Path(args.json)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(f"\nJSON report: {args.json}")
 
     return 0 if ok else 1
