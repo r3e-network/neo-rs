@@ -1,6 +1,11 @@
 use crate::network::p2p::payloads::block::Block;
 use crate::{CoreError, UInt256};
 
+// `Store` carries the whole block while the other variants are cheap
+// outcomes; the enum is constructed once per incoming block, so boxing the
+// payload would add allocation/indirection for no benefit. Lint consciously
+// suppressed.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub(super) enum IncomingBlockOutcome {
     Store {

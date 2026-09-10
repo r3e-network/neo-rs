@@ -21,6 +21,11 @@ use std::net::SocketAddr;
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 /// Result of one stepwise receive attempt (see [`PeerConnection::receive_message_step`]).
+// `Message` carries the full decoded frame while the other variants are
+// dataless states; boxing `NetworkMessage` would add an indirection on the
+// P2P receive hot path for no runtime benefit, so the lint is consciously
+// suppressed here.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum ReceiveStep {
     /// A complete message was decoded.
