@@ -159,9 +159,9 @@ jobs:
 
         '
     - name: Install system dependencies
-      run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\n\
-        \  build-essential clang libclang-dev llvm-dev liblz4-dev librocksdb-dev\n\
-        \  libssl-dev pkg-config\n"
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends build-essential clang libclang-dev llvm-dev liblz4-dev librocksdb-dev libssl-dev pkg-config
     - uses: dtolnay/rust-toolchain@nightly
     - name: Install cargo-fuzz
       uses: taiki-e/install-action@v2
