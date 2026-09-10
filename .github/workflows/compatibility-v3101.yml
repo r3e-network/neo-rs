@@ -80,6 +80,19 @@ jobs:
         VECTOR_GAS_TOLERANCE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.vector_gas_tolerance
           || '1000000' }}
         # Pin this to the reviewed v3.10.1 execution-specs commit/tag.
+        #
+        # IMPORTANT (verified 2026-09-10): the upstream repo
+        # r3e-network/neo-execution-specs has NO v3.10.1 tag -- it only carries
+        # v0.1.1 and v0.1.2 -- and its latest commits target v3.10.0. So this
+        # variable must be set to a full 40-char commit SHA, not a tag name.
+        # `main`/`master` are rejected on purpose: they are moving refs and would
+        # silently change what "conformance" means between runs.
+        #
+        # The script deliberately refuses to guess a default here. Resolve the SHA
+        # with:  git ls-remote https://github.com/r3e-network/neo-execution-specs.git main
+        #
+        # NOTE: this gate remains UNVALIDATED -- it has never completed a run, so
+        # configuring the variable is necessary but not sufficient.
         NEO_EXECUTION_SPECS_REF: ${{ vars.NEO_EXECUTION_SPECS_REF }}
         ALLOW_POLICY_DEFAULT_VECTOR_MISMATCH: 'false'
       run: "if [ \"$TARGET_NETWORK\" != \"all\" ] && [ \"$TARGET_NETWORK\" != \"${{\

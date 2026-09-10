@@ -306,20 +306,18 @@ jobs:
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
-    # TEMP soft-gate: cargo-deny fails in the CI environment while the same
-    # check is green locally for both windows and linux dependency closures
-    # (cargo deny check licenses bans sources, with and without
-    # --target x86_64-unknown-linux-gnu). CI logs are not retrievable
-    # anonymously; restore to a hard gate once the delta is diagnosed.
+    # Hard gate. Previously soft-gated (continue-on-error) while a local-vs-CI delta
+    # was undiagnosed; that delta was caused by deny.toml never having been committed,
+    # so CI was failing on a 404 rather than on a real policy violation. With the file
+    # committed the run produces no failure annotations, so the gate is restored --
+    # a soft gate proves nothing and must not be counted as a passing check.
     - name: cargo deny (licenses, bans, sources)
       uses: EmbarkStudios/cargo-deny-action@v2
-      continue-on-error: true
       with:
         command: check
         arguments: licenses bans sources
     - name: cargo deny (advisories)
       uses: EmbarkStudios/cargo-deny-action@v2
-      continue-on-error: true
       with:
         command: check
         arguments: advisories
@@ -340,3 +338,26 @@ jobs:
       # true C#-parity check for the consensus constants migrated to neo-config,
       # but it was not wired into CI. Run it as a hard gate on every push/PR.
       run: python scripts/verify-protocol-presets.py
+
+  native-parity:
+    name: Native contract parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    # Hard gate on the completeness question: every native contract method exposed by
+    # the C# v3.10.1 reference must exist under the same name in the Rust node, and no
+    # extra method may be exposed. Test suites cannot answer this -- they only cover
+    # behaviour someone thought to write a test for -- so the surface itself is diffed.
+    - name: Verify native contract method parity against C# v3.10.1
+      run: python scripts/verify-native-parity.py --json reports/native-parity.json
+    - name: Upload parity report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: native-parity-report
+        path: reports/native-parity.json
+        if-no-files-found: ignore

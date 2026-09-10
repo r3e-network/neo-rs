@@ -120,3 +120,6 @@ neo-csharp-latest/
 /tools/sgx-evidence-helper/Enclave/*.o
 /tools/sgx-evidence-helper/Enclave/Enclave_private_test.pem
 .omx/
+
+# Cache for C# parity sources fetched by scripts/verify-native-parity.py
+/.cache/
