@@ -381,6 +381,8 @@ jobs:
       run: python scripts/verify-syscall-parity.py --json reports/syscall-parity.json
     - name: Verify NeoVM opcode parity against C# neo-vm v3.10.1
       run: python scripts/verify-opcode-parity.py --json reports/opcode-parity.json
+    - name: Verify P2P message command parity against C# v3.10.1
+      run: python scripts/verify-p2p-parity.py --json reports/p2p-parity.json
     - name: Upload parity reports
       if: always()
       uses: actions/upload-artifact@v4
