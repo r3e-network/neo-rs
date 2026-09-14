@@ -47,9 +47,6 @@
 //! arena.reset();
 //! ```
 
-use bumpalo::Bump;
-use std::fmt;
-use std::sync::Arc;
 
 /// Thread-safe arena pool for VM allocations.
 ///
@@ -146,7 +143,8 @@ impl ArenaMemoryPool {
     /// assert_eq!(*item.as_int().unwrap(), 42);
     /// ```
     pub unsafe fn allocate<T>(&self, value: T) -> &T {
-        (*self.inner.get()).arena.alloc(value)
+        let raw_ptr = self.inner.get();
+        unsafe { (*raw_ptr).arena.alloc(value) }
     }
 
     /// Allocates an array of T values filled with initial_value (O(1) bump allocation).
@@ -179,8 +177,9 @@ impl ArenaMemoryPool {
             return &[];
         }
         // Use bumpalo's alloc for single item and replicate
-        let ptr = (*self.inner.get()).arena.alloc(initial_value);
-        std::slice::from_ref(ptr)
+        let raw_ptr = self.inner.get();
+        let alloc_ptr = unsafe { (*raw_ptr).arena.alloc(initial_value) };
+        std::slice::from_ref(alloc_ptr)
     }
 
     /// Resets the entire arena, freeing all allocated memory at once (O(1)).
@@ -209,7 +208,8 @@ impl ArenaMemoryPool {
     /// let next = arena.allocate(42);
     /// ```
     pub fn reset(&self) {
-        unsafe { (*self.inner.get()).arena.reset(); }
+        let raw_ptr = self.inner.get();
+        unsafe { (*raw_ptr).arena.reset(); }
     }
 
     /// Gets the current number of bytes allocated in this arena.
@@ -226,13 +226,15 @@ impl ArenaMemoryPool {
     /// println!("Used {} KB", arena.used_bytes() / 1024);
     /// ```
     pub fn used_bytes(&self) -> usize {
-        unsafe { (*self.inner.get()).arena.allocated_bytes() }
+        let raw_ptr = self.inner.get();
+        unsafe { (*raw_ptr).arena.allocated_bytes() }
     }
 
     /// Gets the configured capacity in bytes.
     #[must_use]
     pub fn capacity_bytes(&self) -> usize {
-        unsafe { (*self.inner.get()).capacity_bytes }
+        let raw_ptr = self.inner.get();
+        unsafe { (*raw_ptr).capacity_bytes }
     }
 
     /// Checks if the arena has enough remaining space for an allocation.
@@ -461,7 +463,6 @@ mod property_tests {
 // ============================================================================
 
 use crate::execution_engine::ExecutionEngine;
-use crate::error::VmResult;
 use crate::stack_item::array::Array;
 use crate::{StackItem, VmState};
 
