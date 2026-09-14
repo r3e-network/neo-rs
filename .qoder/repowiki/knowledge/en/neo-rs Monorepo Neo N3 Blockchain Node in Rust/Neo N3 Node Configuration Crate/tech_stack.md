@@ -1,0 +1,1 @@
+Serde + TOML for config serialization/deserialization, thiserror for error types, uuid for node name generation, dirs for platform data directory resolution.

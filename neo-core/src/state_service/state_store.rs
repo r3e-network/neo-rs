@@ -108,6 +108,8 @@ pub struct StateStore {
     verifier: Option<StateRootVerifier>,
     /// Reference state roots for validation (loaded from JSONL file).
     reference_roots: HashMap<u32, UInt256>,
+    reference_min_height: Option<u32>,
+    reference_max_height: Option<u32>,
 }
 
 impl StateStore {
@@ -132,6 +134,8 @@ impl StateStore {
             state_snapshot: RwLock::new(None),
             verifier,
             reference_roots: HashMap::new(),
+            reference_min_height: None,
+            reference_max_height: None,
         }
     }
 
@@ -143,32 +147,93 @@ impl StateStore {
 
     /// Loads reference state roots from a JSONL file for validation.
     /// Each line: {"height": N, "roothash": "0x..."}
-    pub fn load_reference_roots(&mut self, path: &str) {
-        let file = match std::fs::File::open(path) {
-            Ok(f) => f,
-            Err(e) => {
-                warn!(target: "neo::state_service", "reference roots file not found: {path}: {e}");
-                return;
-            }
-        };
+    ///
+    /// Fail-closed gate: fails hard on missing file, read errors, malformed JSON,
+    /// invalid UInt256 hashes, duplicate heights, empty file, or height gaps in the range.
+    pub fn load_reference_roots(&mut self, path: &str) -> Result<u32, String> {
+        let file = std::fs::File::open(path)
+            .map_err(|e| format!("reference roots file not found: {path}: {e}"))?;
         let reader = std::io::BufReader::new(file);
         use std::io::BufRead;
         let mut count = 0u32;
-        for line in reader.lines() {
-            let Ok(line) = line else { continue };
-            if line.trim().is_empty() {
+        let mut min_height: Option<u32> = None;
+        let mut max_height: Option<u32> = None;
+
+        for (line_idx, line) in reader.lines().enumerate() {
+            let line_no = line_idx + 1;
+            let line = line
+                .map_err(|e| format!("failed to read line {line_no} from '{path}': {e}"))?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
                 continue;
             }
 
-            let Ok(reference) = serde_json::from_str::<ReferenceRootLine>(&line) else {
-                continue;
-            };
-            if let Ok(hash) = UInt256::parse(&reference.roothash) {
-                self.reference_roots.insert(reference.height, hash);
-                count += 1;
+            let reference: ReferenceRootLine = serde_json::from_str(trimmed).map_err(|e| {
+                format!("failed to parse reference root JSON at line {line_no} in '{path}': {trimmed} ({e})")
+            })?;
+
+            let hash = UInt256::parse(&reference.roothash).map_err(|_| {
+                format!(
+                    "invalid roothash format at line {line_no} in '{path}': '{}'",
+                    reference.roothash
+                )
+            })?;
+
+            if let Some(existing) = self.reference_roots.get(&reference.height) {
+                if *existing != hash {
+                    return Err(format!(
+                        "conflicting duplicate reference root at height {} (line {line_no} in '{path}'): existing {existing}, new {hash}",
+                        reference.height
+                    ));
+                }
+                return Err(format!(
+                    "duplicate reference root at height {} at line {line_no} in '{path}'",
+                    reference.height
+                ));
+            }
+
+            min_height = Some(min_height.map_or(reference.height, |m| m.min(reference.height)));
+            max_height = Some(max_height.map_or(reference.height, |m| m.max(reference.height)));
+
+            self.reference_roots.insert(reference.height, hash);
+            count += 1;
+        }
+
+        if count == 0 {
+            return Err(format!("reference roots file is empty: {path}"));
+        }
+
+        let min_h = min_height.unwrap();
+        let max_h = max_height.unwrap();
+        let expected_span = (max_h - min_h + 1) as usize;
+        if self.reference_roots.len() != expected_span {
+            for h in min_h..=max_h {
+                if !self.reference_roots.contains_key(&h) {
+                    return Err(format!(
+                        "reference roots has missing entry at height {h} within range [{min_h}, {max_h}] in '{path}'"
+                    ));
+                }
             }
         }
-        info!(target: "neo::state_service", "loaded {count} reference state roots for validation");
+
+        self.reference_min_height = Some(min_h);
+        self.reference_max_height = Some(max_h);
+
+        info!(
+            target: "neo::state_service",
+            "loaded {count} reference state roots for validation covering heights [{min_h}, {max_h}]"
+        );
+        Ok(count)
+    }
+
+    /// Returns the number of loaded reference state roots.
+    pub fn reference_roots_len(&self) -> usize {
+        self.reference_roots.len()
+    }
+
+    /// Returns the inclusive range `[min_height, max_height]` of loaded reference roots.
+    pub fn reference_range(&self) -> (Option<u32>, Option<u32>) {
+        (self.reference_min_height, self.reference_max_height)
     }
 
     /// Returns whether the state store keeps full historical state.
@@ -544,6 +609,15 @@ impl StateStore {
             match state {
                 TrackState::Added | TrackState::Changed => {
                     let value_bytes = item.value_bytes();
+                    if height == 5107 {
+                        eprintln!(
+                            "[DEBUG 5107] contract {} key {} val {} state {:?}",
+                            key.id,
+                            hex::encode(&key_bytes),
+                            hex::encode(&value_bytes),
+                            state
+                        );
+                    }
                     snapshot.trie.put(&key_bytes, &value_bytes).map_err(|e| {
                         format!(
                             "state root trie put failed at height {height} for contract {}: {e}",
@@ -570,7 +644,7 @@ impl StateStore {
         // Get new root hash
         let root_hash = snapshot.trie.root_hash().unwrap_or_else(UInt256::zero);
 
-        // Validate against reference if available
+        // Validate against reference roots (fail-closed)
         if let Some(expected) = self.reference_roots.get(&height) {
             if root_hash == *expected {
                 if height.is_multiple_of(5000) {
@@ -585,6 +659,21 @@ impl StateStore {
                 return Err(format!(
                     "state root mismatch at height {height}: computed {root_hash}, expected {expected}, put_count {put_count}, del_count {del_count}"
                 ));
+            }
+        } else if let (Some(min_h), Some(max_h)) = (self.reference_min_height, self.reference_max_height) {
+            if height >= min_h && height <= max_h {
+                return Err(format!(
+                    "missing reference state root at height {height} within active reference range [{min_h}, {max_h}]"
+                ));
+            } else if height.is_multiple_of(5000) {
+                tracing::info!(
+                    target: "neo::state_service",
+                    height,
+                    put_count,
+                    del_count,
+                    root_hash = %root_hash,
+                    "state root computed (beyond reference range [{min_h}, {max_h}])"
+                );
             }
         } else if height.is_multiple_of(5000) {
             tracing::info!(
@@ -651,6 +740,17 @@ impl StateStore {
     /// Gets a state root by index.
     pub fn get_state_root(&self, index: u32) -> Option<StateRoot> {
         self.snapshot().get_state_root(index)
+    }
+
+    /// Flushes committed writes to durable storage.
+    ///
+    /// The state service keeps its roots in a store that is *separate* from the
+    /// blockchain store, and the high-throughput RocksDB batch profile disables
+    /// the write-ahead log. Callers (offline importers, the node shutdown path)
+    /// must therefore invoke this before the process exits, otherwise the
+    /// committed roots remain in the memtable and are lost on restart.
+    pub fn flush(&self) {
+        self.store.flush();
     }
 }
 

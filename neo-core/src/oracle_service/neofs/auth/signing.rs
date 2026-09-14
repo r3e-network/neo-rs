@@ -1,4 +1,4 @@
-use crate::cryptography::Secp256r1Crypto;
+use crate::cryptography::{Crypto, Secp256r1Crypto};
 use crate::neo_io::BinaryWriter;
 use crate::wallets::KeyPair;
 use base64::Engine as _;
@@ -35,7 +35,7 @@ fn sign_neofs_wallet_connect(data: &[u8], key: &KeyPair) -> Result<Vec<u8>, Stri
     let mut salt = [0u8; 16];
     OsRng.fill_bytes(&mut salt);
     let message = salt_message_wallet_connect(b64.as_bytes(), &salt);
-    let signature = Secp256r1Crypto::sign(&message, key.private_key())
+    let signature = Secp256r1Crypto::sign_prehash(&Crypto::sha256(&message), key.private_key())
         .map_err(|err| format!("invalid neofs key: {err}"))?;
     let mut output = signature.to_vec();
     output.extend_from_slice(&salt);
@@ -76,7 +76,7 @@ mod tests {
         let message = salt_message_wallet_connect(b64.as_bytes(), &salt);
 
         assert!(
-            Secp256r1Crypto::verify(&message, &signature, &key.compressed_public_key())
+            Secp256r1Crypto::verify_prehash(&Crypto::sha256(&message), &signature, &key.compressed_public_key())
                 .expect("wallet connect signature verification")
         );
     }

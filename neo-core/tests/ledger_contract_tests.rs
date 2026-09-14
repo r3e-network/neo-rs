@@ -501,7 +501,8 @@ fn ledger_get_transaction_from_block_keeps_missing_null_and_bad_index_error() {
     let missing_item = deserialize_ledger_item(&missing);
     assert!(missing_item.is_null());
 
-    let error = ledger
+    // C# returns null (not an error) for an out-of-range tx index — matches Neo N3 reference.
+    let out_of_range = ledger
         .invoke(
             &mut engine,
             "getTransactionFromBlock",
@@ -510,10 +511,11 @@ fn ledger_get_transaction_from_block_keeps_missing_null_and_bad_index_error() {
                 1_i32.to_le_bytes().to_vec(),
             ],
         )
-        .expect_err("existing block with bad tx index should fail");
+        .expect("existing block with out-of-range tx index should return Null, not error");
+    let out_of_range_item = deserialize_ledger_item(&out_of_range);
     assert!(
-        error.to_string().contains("Transaction index out of range"),
-        "{error}"
+        out_of_range_item.is_null(),
+        "expected Null for out-of-range tx index, got {out_of_range_item:?}"
     );
 }
 

@@ -1,0 +1,9 @@
+bash syntax OK
+py compile OK
+=== default references + default parallel sanity [0,10] ===
+verify plan: [0, 10] total=11 resumed=0 todo=11 parallel=64 references=5
+PASS: contiguous [0, 10] matched C# state roots (11 heights, 0.814s)
+report reference_urls = ['http://seed1.neo.org:10332', 'http://seed2.neo.org:10332', 'http://seed3.neo.org:10332', 'http://seed4.neo.org:10332', 'http://seed5.neo.org:10332']
+report passed = True
+27:#   VERIFY_PARALLEL        verifier worker threads
+59:VERIFY_PARALLEL="${VERIFY_PARALLEL:-80}"

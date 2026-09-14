@@ -1,0 +1,601 @@
+{
+ "description": "NeoVM differential-execution vectors (pure VM, no host)",
+ "generator": "scripts/gen-vm-diff-vectors.py",
+ "baseline": "C# neo.vm 3.10.1 / neo-rs v0.17.0",
+ "vectors": [
+  {
+   "name": "arith.add.basic",
+   "group": "arithmetic",
+   "note": "",
+   "script": "11129e"
+  },
+  {
+   "name": "arith.sub.negative",
+   "group": "arithmetic",
+   "note": "",
+   "script": "11129f"
+  },
+  {
+   "name": "arith.mul.basic",
+   "group": "arithmetic",
+   "note": "",
+   "script": "1617a0"
+  },
+  {
+   "name": "arith.div.trunc.pos",
+   "group": "arithmetic",
+   "note": "",
+   "script": "1712a1"
+  },
+  {
+   "name": "arith.div.trunc.neg",
+   "group": "arithmetic",
+   "note": "C# and Rust must agree on truncation direction for negative operands",
+   "script": "00f912a1"
+  },
+  {
+   "name": "arith.mod.neg",
+   "group": "arithmetic",
+   "note": "MOD sign rule is a classic cross-implementation divergence",
+   "script": "00f912a2"
+  },
+  {
+   "name": "arith.mod.pos",
+   "group": "arithmetic",
+   "note": "",
+   "script": "1712a2"
+  },
+  {
+   "name": "arith.negate",
+   "group": "arithmetic",
+   "note": "",
+   "script": "002a9b"
+  },
+  {
+   "name": "arith.abs.negative",
+   "group": "arithmetic",
+   "note": "",
+   "script": "00d69a"
+  },
+  {
+   "name": "arith.inc.max",
+   "group": "arithmetic",
+   "note": "increment past i64::MAX: fault or promote to bigint?",
+   "script": "03ffffffffffffff7f9c"
+  },
+  {
+   "name": "arith.dec.min",
+   "group": "arithmetic",
+   "note": "decrement past i64::MIN: fault or promote to bigint?",
+   "script": "0300000000000000809d"
+  },
+  {
+   "name": "arith.add.overflow.i64",
+   "group": "arith-overflow",
+   "note": "",
+   "script": "03ffffffffffffff7f119e"
+  },
+  {
+   "name": "arith.add.underflow.i64",
+   "group": "arith-overflow",
+   "note": "",
+   "script": "0300000000000000800f9e"
+  },
+  {
+   "name": "arith.mul.overflow.i64",
+   "group": "arith-overflow",
+   "note": "",
+   "script": "03000000000000004014a0"
+  },
+  {
+   "name": "arith.div.min.neg1",
+   "group": "arith-overflow",
+   "note": "i64::MIN / -1 overflows two's complement",
+   "script": "0300000000000000800fa1"
+  },
+  {
+   "name": "arith.div.by.zero",
+   "group": "divzero",
+   "note": "",
+   "script": "1110a1"
+  },
+  {
+   "name": "arith.mod.by.zero",
+   "group": "divzero",
+   "note": "",
+   "script": "1110a2"
+  },
+  {
+   "name": "cmp.eq.true",
+   "group": "compare",
+   "note": "",
+   "script": "111297"
+  },
+  {
+   "name": "cmp.eq.false",
+   "group": "compare",
+   "note": "",
+   "script": "121197"
+  },
+  {
+   "name": "cmp.eq.equal",
+   "group": "compare",
+   "note": "",
+   "script": "121297"
+  },
+  {
+   "name": "cmp.ne.true",
+   "group": "compare",
+   "note": "",
+   "script": "1112b4"
+  },
+  {
+   "name": "cmp.ne.false",
+   "group": "compare",
+   "note": "",
+   "script": "1211b4"
+  },
+  {
+   "name": "cmp.ne.equal",
+   "group": "compare",
+   "note": "",
+   "script": "1212b4"
+  },
+  {
+   "name": "cmp.lt.true",
+   "group": "compare",
+   "note": "",
+   "script": "1112b5"
+  },
+  {
+   "name": "cmp.lt.false",
+   "group": "compare",
+   "note": "",
+   "script": "1211b5"
+  },
+  {
+   "name": "cmp.lt.equal",
+   "group": "compare",
+   "note": "",
+   "script": "1212b5"
+  },
+  {
+   "name": "cmp.le.true",
+   "group": "compare",
+   "note": "",
+   "script": "1112b6"
+  },
+  {
+   "name": "cmp.le.false",
+   "group": "compare",
+   "note": "",
+   "script": "1211b6"
+  },
+  {
+   "name": "cmp.le.equal",
+   "group": "compare",
+   "note": "",
+   "script": "1212b6"
+  },
+  {
+   "name": "cmp.gt.true",
+   "group": "compare",
+   "note": "",
+   "script": "1112b7"
+  },
+  {
+   "name": "cmp.gt.false",
+   "group": "compare",
+   "note": "",
+   "script": "1211b7"
+  },
+  {
+   "name": "cmp.gt.equal",
+   "group": "compare",
+   "note": "",
+   "script": "1212b7"
+  },
+  {
+   "name": "cmp.ge.true",
+   "group": "compare",
+   "note": "",
+   "script": "1112b8"
+  },
+  {
+   "name": "cmp.ge.false",
+   "group": "compare",
+   "note": "",
+   "script": "1211b8"
+  },
+  {
+   "name": "cmp.ge.equal",
+   "group": "compare",
+   "note": "",
+   "script": "1212b8"
+  },
+  {
+   "name": "cmp.within.true",
+   "group": "compare",
+   "note": "",
+   "script": "15111abb"
+  },
+  {
+   "name": "cmp.within.false.lo",
+   "group": "compare",
+   "note": "",
+   "script": "10111abb"
+  },
+  {
+   "name": "cmp.within.false.hi",
+   "group": "compare",
+   "note": "",
+   "script": "1b111abb"
+  },
+  {
+   "name": "cmp.sign.neg",
+   "group": "compare",
+   "note": "",
+   "script": "00fb99"
+  },
+  {
+   "name": "cmp.sign.zero",
+   "group": "compare",
+   "note": "",
+   "script": "1099"
+  },
+  {
+   "name": "cmp.sign.pos",
+   "group": "compare",
+   "note": "",
+   "script": "1599"
+  },
+  {
+   "name": "cmp.max",
+   "group": "compare",
+   "note": "",
+   "script": "1319ba"
+  },
+  {
+   "name": "cmp.min",
+   "group": "compare",
+   "note": "",
+   "script": "1319b9"
+  },
+  {
+   "name": "bit.and",
+   "group": "bitwise",
+   "note": "",
+   "script": "1c1a91"
+  },
+  {
+   "name": "bit.or",
+   "group": "bitwise",
+   "note": "",
+   "script": "1c1a92"
+  },
+  {
+   "name": "bit.xor",
+   "group": "bitwise",
+   "note": "",
+   "script": "1c1a93"
+  },
+  {
+   "name": "bit.not.zero",
+   "group": "bitwise",
+   "note": "",
+   "script": "10aa"
+  },
+  {
+   "name": "bit.not.minus1",
+   "group": "bitwise",
+   "note": "",
+   "script": "0faa"
+  },
+  {
+   "name": "bit.shl.zero",
+   "group": "bitwise",
+   "note": "",
+   "script": "1110a8"
+  },
+  {
+   "name": "bit.shl.255",
+   "group": "bitwise",
+   "note": "MaxShift boundary is 256",
+   "script": "1101ff00a8"
+  },
+  {
+   "name": "bit.shl.256",
+   "group": "bitwise",
+   "note": "shift == MaxShift: boundary behavior",
+   "script": "11010001a8"
+  },
+  {
+   "name": "bit.shl.257",
+   "group": "bitwise",
+   "note": "shift > MaxShift: fault expected",
+   "script": "11010101a8"
+  },
+  {
+   "name": "bit.shl.negative",
+   "group": "bitwise",
+   "note": "negative shift: fault expected",
+   "script": "110fa8"
+  },
+  {
+   "name": "bit.shr.positive",
+   "group": "bitwise",
+   "note": "SHR must be arithmetic (sign-preserving) on both sides",
+   "script": "01000114a9"
+  },
+  {
+   "name": "bit.shr.negative",
+   "group": "bitwise",
+   "note": "",
+   "script": "0100ff14a9"
+  },
+  {
+   "name": "bit.shr.256",
+   "group": "bitwise",
+   "note": "",
+   "script": "11010001a9"
+  },
+  {
+   "name": "bit.shr.257",
+   "group": "bitwise",
+   "note": "",
+   "script": "11010101a9"
+  },
+  {
+   "name": "bit.packmap",
+   "group": "bitwise",
+   "note": "PACKMAP consumes 2n items from the stack; n=1 pair here",
+   "script": "111111be"
+  },
+  {
+   "name": "stack.depth",
+   "group": "stack",
+   "note": "",
+   "script": "111243"
+  },
+  {
+   "name": "stack.dup",
+   "group": "stack",
+   "note": "",
+   "script": "174a"
+  },
+  {
+   "name": "stack.drop",
+   "group": "stack",
+   "note": "",
+   "script": "111245"
+  },
+  {
+   "name": "stack.swap",
+   "group": "stack",
+   "note": "",
+   "script": "111250"
+  },
+  {
+   "name": "stack.over",
+   "group": "stack",
+   "note": "",
+   "script": "11124b"
+  },
+  {
+   "name": "stack.nip",
+   "group": "stack",
+   "note": "",
+   "script": "111246"
+  },
+  {
+   "name": "stack.tuck",
+   "group": "stack",
+   "note": "",
+   "script": "11124e"
+  },
+  {
+   "name": "stack.rot",
+   "group": "stack",
+   "note": "",
+   "script": "11121351"
+  },
+  {
+   "name": "stack.reverse3",
+   "group": "stack",
+   "note": "",
+   "script": "11121353"
+  },
+  {
+   "name": "stack.reverse4",
+   "group": "stack",
+   "note": "",
+   "script": "1112131454"
+  },
+  {
+   "name": "stack.reversen",
+   "group": "stack",
+   "note": "",
+   "script": "111213141455"
+  },
+  {
+   "name": "stack.pick",
+   "group": "stack",
+   "note": "",
+   "script": "1a0014104d"
+  },
+  {
+   "name": "stack.roll",
+   "group": "stack",
+   "note": "",
+   "script": "1a00141052"
+  },
+  {
+   "name": "stack.dup.empty",
+   "group": "stack-errors",
+   "note": "DUP on empty stack: underflow",
+   "script": "4a"
+  },
+  {
+   "name": "stack.drop.empty",
+   "group": "stack-errors",
+   "note": "",
+   "script": "45"
+  },
+  {
+   "name": "stack.swap.one",
+   "group": "stack-errors",
+   "note": "SWAP with one item: underflow",
+   "script": "1150"
+  },
+  {
+   "name": "stack.pick.oob",
+   "group": "stack-errors",
+   "note": "",
+   "script": "11154d"
+  },
+  {
+   "name": "flow.nop",
+   "group": "control",
+   "note": "",
+   "script": "2111"
+  },
+  {
+   "name": "flow.jmp.forward",
+   "group": "control",
+   "note": "jump over two PUSH1s onto PUSH2",
+   "script": "2202111112"
+  },
+  {
+   "name": "flow.jmpif.taken",
+   "group": "control",
+   "note": "",
+   "script": "112402111119119e"
+  },
+  {
+   "name": "flow.jmpif.not.taken",
+   "group": "control",
+   "note": "",
+   "script": "10240017"
+  },
+  {
+   "name": "flow.jmpifnot.taken",
+   "group": "control",
+   "note": "",
+   "script": "1026011118119e"
+  },
+  {
+   "name": "flow.assert.ok",
+   "group": "control",
+   "note": "",
+   "script": "113915"
+  },
+  {
+   "name": "flow.assert.fail",
+   "group": "control",
+   "note": "",
+   "script": "1039"
+  },
+  {
+   "name": "type.newarray0",
+   "group": "compound",
+   "note": "",
+   "script": "c2"
+  },
+  {
+   "name": "type.newarray_t.int",
+   "group": "compound",
+   "note": "NEWARRAY_T takes its type as an immediate operand (0x21 = Integer)",
+   "script": "13c421"
+  },
+  {
+   "name": "type.pack",
+   "group": "compound",
+   "note": "",
+   "script": "111212c0"
+  },
+  {
+   "name": "type.unpack",
+   "group": "compound",
+   "note": "",
+   "script": "111212c0c1"
+  },
+  {
+   "name": "type.size.array",
+   "group": "compound",
+   "note": "",
+   "script": "111212c0ca"
+  },
+  {
+   "name": "type.newstruct0",
+   "group": "compound",
+   "note": "",
+   "script": "c5"
+  },
+  {
+   "name": "bytes.cat",
+   "group": "bytes",
+   "note": "",
+   "script": "0c036e656f0c026e348b"
+  },
+  {
+   "name": "bytes.left",
+   "group": "bytes",
+   "note": "",
+   "script": "0c0568656c6c6f138d"
+  },
+  {
+   "name": "bytes.right",
+   "group": "bytes",
+   "note": "",
+   "script": "0c0568656c6c6f138e"
+  },
+  {
+   "name": "bytes.substr.inrange",
+   "group": "bytes",
+   "note": "",
+   "script": "0c0568656c6c6f11138c"
+  },
+  {
+   "name": "bytes.substr.oob",
+   "group": "bytes-errors",
+   "note": "",
+   "script": "0c0568656c6c6f14158c"
+  },
+  {
+   "name": "bytes.left.oob",
+   "group": "bytes-errors",
+   "note": "",
+   "script": "0c0568656c6c6f198d"
+  },
+  {
+   "name": "bytes.size",
+   "group": "bytes",
+   "note": "",
+   "script": "0c0568656c6c6fca"
+  },
+  {
+   "name": "conv.int.to.bytestring",
+   "group": "convert",
+   "note": "CONVERT takes the target type as an immediate operand (0x28 = ByteString)",
+   "script": "018000db28"
+  },
+  {
+   "name": "conv.bool.to.int",
+   "group": "convert",
+   "note": "",
+   "script": "11aaaa"
+  },
+  {
+   "name": "meta.empty",
+   "group": "meta",
+   "note": "",
+   "script": ""
+  },
+  {
+   "name": "meta.nop.only",
+   "group": "meta",
+   "note": "",
+   "script": "21"
+  }
+ ]
+}

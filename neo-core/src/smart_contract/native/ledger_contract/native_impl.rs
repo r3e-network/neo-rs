@@ -400,6 +400,14 @@ impl LedgerContract {
     }
 
     fn parse_index_or_hash(&self, data: &[u8], name: &str) -> Result<HashOrIndex> {
+        // C# checks the StackItem type: Integer => block index, ByteString with len==32 => hash.
+        // By the time args reach invoke methods they are already serialized to raw bytes
+        // (type tag stripped), so we discriminate by byte length instead:
+        //   - exactly 32 bytes → UInt256 block hash (a ByteString of length 32 in C#)
+        //   - fewer than 32 bytes → BigInt LE block index (an Integer in C#)
+        //   - more than 32 bytes → invalid (would fault in C# as well)
+        // This is equivalent for all well-formed inputs because a u32 block index
+        // encodes to at most 4 bytes and a UInt256 hash is always exactly 32 bytes.
         if data.len() == 32 {
             let hash = UInt256::from_bytes(data)
                 .map_err(|e| Error::invalid_argument(format!("Invalid {name}: {e}")))?;
@@ -477,9 +485,10 @@ impl LedgerContract {
 
             let tx_index = tx_index as usize;
             if tx_index >= block.transactions.len() {
-                return Err(Error::invalid_argument(
-                    "Transaction index out of range".to_string(),
-                ));
+                // C# returns null (pushes Null on the stack) for an out-of-range
+                // transaction index rather than throwing an exception.
+                // Returning Ok(None) causes the caller to push Null instead of FAULTing.
+                return Ok(None);
             }
 
             let tx = &block.transactions[tx_index];

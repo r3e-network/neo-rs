@@ -202,6 +202,12 @@ impl ConsensusContext {
         my_index: Option<u8>,
         block_time_ms: Option<u64>,
     ) -> Self {
+        assert!(
+            validators.len() <= MAX_VALIDATORS,
+            "validator count {} exceeds MAX_VALIDATORS ({})",
+            validators.len(),
+            MAX_VALIDATORS
+        );
         let effective_block_time = match block_time_ms {
             Some(t) if t > 0 => t,
             _ => DEFAULT_BLOCK_TIME_MS,
@@ -301,11 +307,29 @@ impl ConsensusContext {
         // is the implicit vote, and an explicit PrepareResponse from the
         // primary occupies the same validator slot (R01 — a malicious primary
         // must not double-count by sending both).
+        // Only responses that agree on `preparation_hash` count toward M.
+        // A primary PrepareResponse with a divergent hash must not fill the
+        // primary slot when PrepareRequest has not been verified locally.
+        let Some(expected_hash) = self.preparation_hash else {
+            return false;
+        };
+
         let primary_index = self.primary_index();
-        let primary_in_responses = self.prepare_responses.contains_key(&primary_index);
-        let primary_voted = self.prepare_request_received || primary_in_responses;
-        let count = usize::from(primary_voted) + self.prepare_responses.len()
-            - usize::from(primary_in_responses);
+        let matching_responses = self
+            .prepare_response_hashes
+            .iter()
+            .filter(|(_, hash)| **hash == expected_hash)
+            .count();
+        let primary_match_in_responses = self
+            .prepare_response_hashes
+            .get(&primary_index)
+            .is_some_and(|hash| *hash == expected_hash);
+
+        // PrepareRequest always votes for `expected_hash` (it is the source of
+        // that hash). Add it only when the primary is not already counted via
+        // a matching PrepareResponse.
+        let count = matching_responses
+            + usize::from(self.prepare_request_received && !primary_match_in_responses);
         count >= self.m()
     }
 
@@ -328,11 +352,18 @@ impl ConsensusContext {
             .commits
             .keys()
             .filter(|idx| {
-                self.commit_view_numbers
-                    .get(idx)
-                    .copied()
-                    .unwrap_or(self.view_number)
-                    == self.view_number
+                match self.commit_view_numbers.get(idx).copied() {
+                    Some(v) => v == self.view_number,
+                    None => {
+                        // A commit without a stored view number is a data
+                        // inconsistency — skip rather than silently miscounting.
+                        debug_assert!(
+                            false,
+                            "commit for validator {idx} has no entry in commit_view_numbers"
+                        );
+                        false
+                    }
+                }
             })
             .count();
         count >= self.m()
@@ -856,7 +887,11 @@ impl ConsensusContext {
             validators,
             my_index,
             state: ConsensusState::Initial, // Caller should update based on role
-            view_start_time: 0,             // Caller should update to current time
+            // SAFETY: caller MUST call set_view_start_time(current_time) (or
+            // equivalent timer initialisation) immediately after from_bytes.
+            // Leaving view_start_time at 0 will cause the timeout logic to fire
+            // instantly on the first on_timer_tick call.
+            view_start_time: 0,
             expected_block_time: 0,         // Caller should update
             timer_timeout: None,
             proposal_requested: state.prepare_request_received,

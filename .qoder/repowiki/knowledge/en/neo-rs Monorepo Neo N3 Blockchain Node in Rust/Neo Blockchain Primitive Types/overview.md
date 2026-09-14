@@ -1,0 +1,1 @@
+Layer-0 Rust crate providing Neo blockchain's core primitive types (UInt160, UInt256, BigDecimal) and shared protocol enums, traits, and error types with no dependencies on other neo-* crates.

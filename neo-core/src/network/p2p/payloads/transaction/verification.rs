@@ -216,7 +216,7 @@ impl Transaction {
             let mut signature_bytes = [0u8; 64];
             signature_bytes.copy_from_slice(signature);
 
-            let verified = Secp256r1Crypto::verify(sign_data, &signature_bytes, public_key)
+            let verified = Secp256r1Crypto::verify_prehash(&Crypto::sha256(sign_data), &signature_bytes, public_key)
                 .map_err(|_| VerifyResult::Invalid)?;
 
             if !verified {
@@ -262,7 +262,7 @@ impl Transaction {
             signature_bytes.copy_from_slice(signature);
 
             let verified =
-                Secp256r1Crypto::verify(sign_data, &signature_bytes, &public_keys[key_index])
+                Secp256r1Crypto::verify_prehash(&Crypto::sha256(sign_data), &signature_bytes, &public_keys[key_index])
                     .map_err(|_| VerifyResult::Invalid)?;
 
             if verified {

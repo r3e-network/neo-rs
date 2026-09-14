@@ -1,0 +1,10 @@
+bash OK
+py OK
+=== POS [0,30] ===
+exit=0
+=== NEG @7 ===
+exit=1
+=== default 5-seed [0,50] ===
+verify plan: [0, 50] stride=1 FULL span=51 sample=51 resumed=0 todo=51 parallel=16 references=5
+PASS: contiguous [0, 50] matched C# state roots (51 heights, 20.93 heights/s, 2.436s)
+passed= True matched= 51 passed_claim= contiguous

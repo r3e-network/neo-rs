@@ -31,6 +31,9 @@ use std::str::FromStr;
 
 // This limits maximum number of AllowedContracts or AllowedGroups
 const MAX_SUBITEMS: usize = 16;
+
+/// Maximum number of allowed contracts, groups, or witness rules on a signer.
+pub const MAX_SIGNER_SUBITEMS: usize = MAX_SUBITEMS;
 const ECPOINT_COMPRESSED_SIZE: usize = 33;
 
 /// Represents a signer of a Transaction.
@@ -362,7 +365,10 @@ impl Serializable for Signer {
         let mut allowed_groups = Vec::new();
         let mut rules = Vec::new();
 
-        // Validate scopes
+        // NOTE: This check is intentionally stricter than the C# reference which does not
+        // explicitly validate unknown scope bits. This prevents accepting transactions with
+        // undeclared future scope flags on nodes that haven't upgraded. If a hardfork adds
+        // new scope bits, this list must be updated before activation.
         let invalid_flags = !(WitnessScope::CALLED_BY_ENTRY
             | WitnessScope::CUSTOM_CONTRACTS
             | WitnessScope::CUSTOM_GROUPS

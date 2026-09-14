@@ -1,0 +1,2 @@
+﻿C:\Users\Administrator\.workbuddy\binaries\python\versions\3.13.12\python.exe scripts/download_reference_roots.py --start 0 --end 13150240 --output data/reference_stateroots.jsonl --workers-per-seed 32
+D:\Git\neo-rs\target\release\neo-node.exe --config config/tmp-rust5107.toml

@@ -1,0 +1,271 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: en-US
+branch: protocol-v3.10.1-compliance
+nodes_managed: true
+exported_at: "2026-09-13T21:33:14Z"
+modules:
+    "":
+        dir_name: neo-rs Monorepo Neo N3 Blockchain Node in Rust
+        title: 'neo-rs Monorepo: Neo N3 Blockchain Node in Rust'
+        scope:
+            - README.md
+            - CONTRIBUTING.md
+            - ARCHITECTURE.md
+            - Cargo.toml
+            - Cargo.lock
+            - Makefile
+            - Dockerfile
+            - docker-compose.yml
+            - .gitignore
+            - deny.toml
+            - rustfmt.toml
+            - neo_mainnet_node.toml
+            - neo_production_node.toml
+            - neo_testnet_node.toml
+            - .dockerignore
+            - .env.example
+            - .gitattributes
+            - .gitmodules
+            - .pre-commit-config.yaml
+            - .stateroot_probe.txt
+            - .t_main.diff
+            - .t_main.wc
+            - .t_main_tests.diff
+            - .t_perf_target.txt
+            - CHANGELOG.md
+            - LICENSE
+            - MAINNET-STATUS.md
+            - OPTIMIZATION-COMPLETED.md
+            - OPTIMIZATION-RESULTS.md
+            - OPTIMIZATION-STATUS.md
+            - OPTIMIZATION-SUMMARY.md
+            - PERFORMANCE.md
+            - SECURITY.md
+            - SYNC-OPTIMIZATION-PLAN.md
+            - WORK-SUMMARY.md
+            - block_vectors.json
+            - ci_script.bin
+            - disasm_ci.py
+            - meta_t01.err
+            - meta_t01.json
+            - overview.md
+            - qa-neo-core-test.exit
+            - qa-signature2.exit
+        source_files: []
+        children:
+            - config_and_data
+            - docs_and_specs
+            - fuzzing
+            - integration_tests
+            - neo_config
+            - neo_consensus
+            - neo_core
+            - neo_crypto
+            - neo_hsm
+            - neo_io
+            - neo_json
+            - neo_p2p
+            - neo_primitives
+            - neo_rpc
+            - neo_storage
+            - neo_tee
+            - neo_telemetry
+            - neo_vm
+            - scripts_and_tools
+        depends_on: []
+        related_to: []
+    config_and_data:
+        dir_name: Neo Node Configuration Profiles
+        title: Neo Node Configuration Profiles
+        scope:
+            - config/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    docs_and_specs:
+        dir_name: Project Documentation & OpenSpec Change Management
+        title: Project Documentation & OpenSpec Change Management
+        scope:
+            - docs/
+            - openspec/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    fuzzing:
+        dir_name: Neo-rs Fuzzing Targets (cargo-fuzz)
+        title: Neo-rs Fuzzing Targets (cargo-fuzz)
+        scope:
+            - fuzz/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: neo_p2p
+            - path: neo_vm
+    integration_tests:
+        dir_name: Integration Tests & Benchmarks for neo-rs
+        title: Integration Tests & Benchmarks for neo-rs
+        scope:
+            - tests/
+            - benches-package/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: neo_consensus
+            - path: neo_p2p
+    neo_config:
+        dir_name: Neo N3 Node Configuration Crate
+        title: Neo N3 Node Configuration Crate
+        scope:
+            - neo-config/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    neo_consensus:
+        dir_name: Neo dBFT 2.0 Consensus Engine
+        title: Neo dBFT 2.0 Consensus Engine
+        scope:
+            - neo-consensus/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: integration_tests
+            - path: neo_p2p
+            - path: neo_storage
+    neo_core:
+        dir_name: Neo Core Blockchain Protocol Library
+        title: Neo Core Blockchain Protocol Library
+        scope:
+            - neo-core/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: neo_rpc
+            - path: neo_tee
+    neo_crypto:
+        dir_name: Neo Cryptographic Primitives & Merkle Patricia Trie
+        title: Neo Cryptographic Primitives & Merkle Patricia Trie
+        scope:
+            - neo-crypto/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    neo_hsm:
+        dir_name: Neo HSM Abstraction Layer
+        title: Neo HSM Abstraction Layer
+        scope:
+            - neo-hsm/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: neo_tee
+    neo_io:
+        dir_name: Neo.IO Binary I_O, Serialization & Caching
+        title: Neo.IO Binary I/O, Serialization & Caching
+        scope:
+            - neo-io/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    neo_json:
+        dir_name: Neo JSON Value Types and JSONPath
+        title: Neo JSON Value Types and JSONPath
+        scope:
+            - neo-json/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    neo_p2p:
+        dir_name: Neo P2P Protocol Types & Wire Framing
+        title: Neo P2P Protocol Types & Wire Framing
+        scope:
+            - neo-p2p/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: fuzzing
+            - path: integration_tests
+            - path: neo_consensus
+    neo_primitives:
+        dir_name: Neo Blockchain Primitive Types
+        title: Neo Blockchain Primitive Types
+        scope:
+            - neo-primitives/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    neo_rpc:
+        dir_name: Neo JSON-RPC Server & Client
+        title: Neo JSON-RPC Server & Client
+        scope:
+            - neo-rpc/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: neo_core
+            - path: scripts_and_tools
+    neo_storage:
+        dir_name: Neo Blockchain Storage Abstraction Layer
+        title: Neo Blockchain Storage Abstraction Layer
+        scope:
+            - neo-storage/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: neo_consensus
+    neo_tee:
+        dir_name: Neo TEE (Trusted Execution Environment) Support
+        title: Neo TEE (Trusted Execution Environment) Support
+        scope:
+            - neo-tee/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: neo_core
+            - path: neo_hsm
+    neo_telemetry:
+        dir_name: Neo Node Telemetry & Observability Stack
+        title: Neo Node Telemetry & Observability Stack
+        scope:
+            - neo-telemetry/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    neo_vm:
+        dir_name: Neo Virtual Machine (NeoVM) Runtime
+        title: Neo Virtual Machine (NeoVM) Runtime
+        scope:
+            - neo-vm/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: fuzzing
+    scripts_and_tools:
+        dir_name: Protocol Consistency & Differential Verification Scripts and Tools
+        title: Protocol Consistency & Differential Verification Scripts and Tools
+        scope:
+            - scripts/
+            - tools/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: neo_rpc

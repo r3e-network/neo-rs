@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: neo_core
+title: Neo Core Blockchain Protocol Library
+scope:
+    - neo-core/
+source_files: []
+depends_on: []
+related_to:
+    - path: neo_rpc
+    - path: neo_tee

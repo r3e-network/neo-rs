@@ -1,0 +1,1 @@
+JSON-RPC server and client implementation for Neo N3, exposing blockchain, node, wallet, state, oracle, tokens-tracker, application-logs, smart-contract, and utility methods over HTTP and WebSocket.

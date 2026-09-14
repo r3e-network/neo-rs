@@ -68,6 +68,12 @@ impl ConsensusService {
     /// Processes a consensus message
     pub fn process_message(&mut self, payload: ConsensusPayload) -> ConsensusResult<()> {
         if !self.running {
+            // Committed nodes must still respond to RecoveryRequests so that
+            // lagging peers can collect the commit signatures needed to assemble
+            // the block. All other messages are ignored after commit.
+            if payload.message_type == ConsensusMessageType::RecoveryRequest {
+                return self.on_recovery_request(&payload);
+            }
             return Ok(());
         }
 

@@ -1,0 +1,1 @@
+Build is feature-gated: enable `server` to compile the HTTP/WebSocket server (pulls in `warp`, `hyper`, `tokio-rustls`, `governor`, `prometheus`, etc.), `client` for the HTTP client, and `jsonrpsee-server` as a superset of `server` that adds the jsonrpsee adapter. Tests use `mockito` and `tracing-subscriber` dev-dependencies.

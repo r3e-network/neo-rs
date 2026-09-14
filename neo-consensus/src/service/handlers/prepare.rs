@@ -5,7 +5,7 @@ use super::super::helpers::{
 };
 use crate::context::{ConsensusState, MAX_PREPARE_REQUEST_FUTURE_MS_FACTOR};
 use crate::messages::{
-    CommitMessage, ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage,
+    ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage,
 };
 use crate::{ConsensusError, ConsensusMessageType, ConsensusResult};
 use tracing::{debug, info, warn};
@@ -142,11 +142,10 @@ impl ConsensusService {
 
         // Mark prepare request as received and store proposal fields.
         self.context.prepare_request_received = true;
-        self.context.prepare_request_invocation = if payload.witness.is_empty() {
-            None
-        } else {
-            Some(invocation_script_from_signature(&payload.witness))
-        };
+        // witness is guaranteed non-empty: the empty-witness guard above returns
+        // an error before we reach this point.
+        self.context.prepare_request_invocation =
+            Some(invocation_script_from_signature(&payload.witness));
         self.context.proposed_timestamp = prepare_request.timestamp;
         self.context.nonce = prepare_request.nonce;
         self.context.proposed_tx_hashes = prepare_request.transaction_hashes;
@@ -154,6 +153,8 @@ impl ConsensusService {
         // Cache PrepareRequest payload hash (ExtensiblePayload.Hash) for PrepareResponse.
         self.context.preparation_hash = Some(self.dbft_payload_hash(payload)?);
         if let Some(expected) = self.context.preparation_hash {
+            // Drop buffered PrepareResponses that voted for a different hash
+            // (early responses stored before this PrepareRequest arrived).
             self.context
                 .prepare_responses
                 .retain(|idx, _| self.context.prepare_response_hashes.get(idx) == Some(&expected));
@@ -181,6 +182,9 @@ impl ConsensusService {
         if self.context.proposed_tx_hashes.is_empty() {
             self.send_prepare_response()?;
         }
+
+        // Buffered early PrepareResponses may now form a quorum.
+        self.check_prepare_responses()?;
 
         Ok(())
     }
@@ -251,7 +255,9 @@ impl ConsensusService {
             payload.validator_index,
         )?;
 
-        // Verify PreparationHash matches the primary PrepareRequest payload hash (C# behavior).
+        // When PrepareRequest is already known, bind the response to its hash.
+        // When it is not yet known (reordering / late join), buffer the signed
+        // response; on_prepare_request retains only matching hashes (C# parity).
         if let Some(expected) = self.context.preparation_hash {
             msg.validate(&expected)?;
         }
@@ -326,56 +332,8 @@ impl ConsensusService {
         }
 
         // R02: never sign a Commit without a verified proposal. Signing with
-        // `unwrap_or_default()` would bind this validator to the zero block
-        // hash when the PrepareRequest has not been seen or verified.
-        if !self.context.can_sign_commit() {
-            warn!(
-                block_index = self.context.block_index,
-                responses = self.context.prepare_responses.len(),
-                "Enough PrepareResponses but no verified proposal; withholding Commit"
-            );
-            return Ok(());
-        }
-
-        // We have enough responses - send Commit
-        info!(
-            block_index = self.context.block_index,
-            responses = self.context.prepare_responses.len(),
-            "Enough PrepareResponses received, sending Commit"
-        );
-
-        let block_hash = self.context.proposed_block_hash.unwrap_or_default();
-        let signature = self.sign_block_hash(&block_hash)?;
-
-        let my_index = self.my_index()?;
-        let commit = CommitMessage::new(
-            self.context.block_index,
-            self.context.view_number,
-            my_index,
-            signature.clone(),
-        );
-
-        let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
-        let commit_witness = payload.witness.clone();
-        let commit_invocation = invocation_script_from_signature(&commit_witness);
-        self.broadcast(payload)?;
-        if !commit_witness.is_empty() {
-            self.context
-                .commit_invocations
-                .insert(my_index, commit_invocation);
-        }
-
-        // Add our own commit
-        self.context
-            .add_commit(my_index, self.context.view_number, signature)?;
-
-        // C# resets the timer to one block interval after Commit is sent,
-        // leaving T for peers to relay the commit before recovery retries.
-        self.context
-            .change_timer(current_timestamp(), self.context.expected_block_time);
-
-        self.check_commits()?;
-
-        Ok(())
+        // a default hash would bind this validator to the zero block hash when
+        // the PrepareRequest has not been seen or verified.
+        self.try_broadcast_own_commit()
     }
 }

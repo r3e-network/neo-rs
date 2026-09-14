@@ -1,0 +1,4 @@
+- Crate version numbers are coordinated via the workspace `[workspace.package]` and `[workspace.dependencies]` blocks rather than per-crate manifests.
+- Cross-crate boundaries are expressed as trait interfaces (e.g. storage providers, IO serializers) so implementations can be swapped without touching callers.
+- Optional features (`tee`, `hsm`, `server`, `runtime`) gate non-default functionality behind compile-time flags instead of runtime configuration alone.
+- Serialization APIs mirror the C# Neo.IO / Neo.Json contracts to preserve byte-for-byte compatibility with the reference implementation.

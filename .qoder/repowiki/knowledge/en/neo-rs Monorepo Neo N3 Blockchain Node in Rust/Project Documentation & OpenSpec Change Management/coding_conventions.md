@@ -1,0 +1,5 @@
+- Audit and plan files are prefixed with ISO dates (`YYYY-MM-DD-<title>.md`) so they sort chronologically and remain uniquely identifiable.
+- Protocol-compliance specs use an ADDED Requirements + Scenario format where each requirement states a SHALL obligation followed by WHEN/THEN scenarios that assert byte-for-byte parity with the C# reference implementation.
+- Each openspec change set groups its proposal, design, tasks, and affected specs under a single date-stamped directory and includes a minimal `.openspec.yaml` declaring `schema: spec-driven`.
+- Golden-state comparison outputs are named `compare-goldens-<block-number>-<ISO8601Z>.json` and stored under `docs/protocol-consistency/reports/` to tie each diff to a specific mainnet block and run timestamp.
+- Archived or legacy artifacts are segregated into dedicated subdirectories (`archive/`, `state-root/`) rather than mixed with active docs, keeping the root of each namespace focused on current material.

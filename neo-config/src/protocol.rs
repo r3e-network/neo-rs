@@ -145,7 +145,7 @@ const fn default_address_version() -> u8 {
 }
 
 const fn default_ms_per_block() -> u64 {
-    15000 // 15 seconds
+    3000 // 3 seconds (Neo N3 MainNet and TestNet)
 }
 
 const fn default_max_valid_until_block_increment() -> u32 {
@@ -334,7 +334,13 @@ impl ProtocolSettings {
         }
     }
 
-    /// Check if a hardfork is enabled at the given height
+    /// Check if a hardfork is enabled at the given height.
+    ///
+    /// # Maintenance note
+    ///
+    /// When adding a new hardfork to [`HardforkHeights`], a corresponding match arm **MUST** be
+    /// added here. Consider refactoring to a typed `Hardfork` enum (see `neo-core`) to get
+    /// compile-time exhaustiveness checking instead of this string-matched dispatch.
     #[must_use]
     pub fn is_hardfork_enabled(&self, hardfork: &str, height: u32) -> bool {
         match hardfork.to_lowercase().as_str() {
@@ -349,6 +355,7 @@ impl ProtocolSettings {
             "echidna" | "hf_echidna" => self.hardforks.hf_echidna.is_some_and(|h| height >= h),
             "faun" | "hf_faun" => self.hardforks.hf_faun.is_some_and(|h| height >= h),
             "gorgon" | "hf_gorgon" => self.hardforks.hf_gorgon.is_some_and(|h| height >= h),
+            "huyao" | "hf_huyao" => self.hardforks.hf_huyao.is_some_and(|h| height >= h),
             _ => false,
         }
     }

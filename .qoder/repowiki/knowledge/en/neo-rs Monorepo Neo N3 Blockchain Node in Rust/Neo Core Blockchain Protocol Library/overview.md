@@ -1,0 +1,1 @@
+Rust implementation of the Neo N3 blockchain core, providing ledger, smart contract execution, P2P networking, persistence, wallets, and an actor-based runtime system.

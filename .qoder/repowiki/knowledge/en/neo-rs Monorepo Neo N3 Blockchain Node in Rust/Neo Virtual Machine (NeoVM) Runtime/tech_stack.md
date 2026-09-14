@@ -1,0 +1,1 @@
+Rust library (`neo-vm`) built against `neo-primitives`, `neo-io`, `neo-crypto`; uses `num-bigint`/`num-traits` for big integers, `parking_lot` for concurrency primitives, `thiserror` for error types, `serde`/`serde_json` for serialization, `sha2` for hashing, and `bitflags` for flag enums.

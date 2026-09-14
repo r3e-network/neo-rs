@@ -1,0 +1,55 @@
+=== state_service path resolution ===
+neo-node/src/cli.rs:223:    /// Path to store state root data (defaults to StateRoot subdirectory of storage path).
+neo-node/src/config/node_config.rs:14:    state_service::state_store::StateServiceSettings,
+neo-node/src/config/node_config.rs:191:    /// Returns StateService settings if enabled via node or plugin config.
+neo-node/src/config/node_config.rs:195:    ) -> Result<Option<StateServiceSettings>> {
+neo-node/src/config/plugin_settings.rs:4:    oracle_service::OracleServiceSettings, state_service::state_store::StateServiceSettings,
+neo-node/src/config/plugin_settings.rs:13:    OracleServiceSection, StateServiceSection, TokensTrackerSection,
+neo-node/src/config/plugin_settings.rs:19:        _ => PathBuf::from("data/Plugins"),
+neo-node/src/config/plugin_settings.rs:39:        .join("StateService")
+neo-node/src/config/plugin_settings.rs:40:        .join("StateService.json")
+neo-node/src/config/plugin_settings.rs:44:    plugins_directory().join("StateService")
+neo-node/src/config/plugin_settings.rs:93:struct StateServicePluginSection {
+neo-node/src/config/plugin_settings.rs:207:    section: &StateServiceSection,
+neo-node/src/config/plugin_settings.rs:209:) -> StateServiceSettings {
+neo-node/src/config/plugin_settings.rs:291:) -> Result<Option<StateServiceSettings>> {
+neo-node/src/config/plugin_settings.rs:294:        StateServicePluginSection,
+neo-node/src/config/plugin_settings.rs:295:        "StateService"
+neo-node/src/config/plugin_settings.rs:385:pub fn resolve_state_service_store_path(settings: &StateServiceSettings) -> PathBuf {
+neo-node/src/config/plugin_settings.rs:434:) -> StateServiceSettings {
+neo-node/src/config/plugin_settings.rs:444:    StateServiceSettings {
+neo-node/src/config/sections.rs:19:    pub state_service: Option<StateServiceSection>,
+neo-node/src/config/sections.rs:26:    pub plugins: PluginsSection,
+neo-node/src/config/sections.rs:167:pub struct StateServiceSection {
+neo-node/src/config/sections.rs:342:pub struct PluginsSection {
+neo-node/src/config/sections.rs:351:impl Default for PluginsSection {
+neo-node/src/startup/config.rs:12:    state_service::state_store::StateServiceSettings,
+neo-node/src/startup/config.rs:338:) -> Result<Option<StateServiceSettings>> {
+neo-node/src/startup/config.rs:340:        let default_state_dir = PathBuf::from("StateRoot");
+neo-node/src/startup/config.rs:363:        return Ok(Some(StateServiceSettings {
+neo-node/src/startup/services.rs:19:    state_service::{state_store::StateServiceSettings, verification::StateServiceVerification},
+neo-node/src/startup/services.rs:358:    state_service_settings: &Option<StateServiceSettings>,
+neo-node/src/startup/services.rs:382:        .register_wallet_changed_handler(Arc::new(StateServiceVerification::new(system.clone()))
+
+=== storage.rs context ===
+    let store = store_provider.get_store(storage_path.as_deref().unwrap_or(""))?;
+    let store_cache_for_hydration = StoreCache::new_from_store(store.clone(), true);
+
+    let state_store = if let Some(state_settings) = state_service_settings {
+        // Use a dedicated store for state roots / MPT nodes (mirrors C# StateService plugin).
+        // Witness verification must still consult the *blockchain* store for RoleManagement lookups.
+        let state_db = store_provider.get_store(&state_settings.path)?;
+        let backend = Arc::new(SnapshotBackedStateStoreBackend::new(state_db));
+        let verifier = StateRootVerifier::from_store(store.clone(), settings);
+        let mut ss = StateStore::new_with_verifier(backend, state_settings, Some(verifier));
+        // Load reference state roots for validation if available.
+        ss.load_reference_roots("data/reference_stateroots.jsonl");
+        let ss = Arc::new(ss);
+        // Populate the trie with current blockchain storage if the trie is empty.
+        // Without this, only block deltas would be in the trie, producing wrong roots.
+        ss.initialize_trie_from_store(&store);
+        ss
+    } else {
+        // Disabled by default: keep an in-memory store instance but do not expose it via the
+        // NeoSystemContext unless explicitly enabled.
+        Arc::new(StateStore::new_in_memory())

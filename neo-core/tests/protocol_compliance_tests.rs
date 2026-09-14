@@ -44,6 +44,30 @@ mod tests {
         assert_eq!(harness.test_vectors.len(), 0);
     }
 
+    /// `run_all` must execute the real per-vector checks — audit 2026-09-08
+    /// found it mapping every vector to `Inconclusive { "Not implemented" }`,
+    /// which let the harness pretend compliance without running anything.
+    #[test]
+    fn run_all_reports_compliant_for_checked_in_mainnet_vectors() {
+        let mut harness = test_harness::ProtocolTestHarness::new();
+        harness.test_vectors = blockvec::mainnet_block_vectors();
+        assert!(
+            !harness.test_vectors.is_empty(),
+            "fixture must not be empty"
+        );
+
+        let results = harness.run_all();
+        assert_eq!(results.len(), harness.test_vectors.len());
+        for (v, result) in harness.test_vectors.iter().zip(&results) {
+            assert!(
+                result.is_compliant(),
+                "vector {} ({}) not compliant: {result:?}",
+                v.height,
+                v.note
+            );
+        }
+    }
+
     #[test]
     fn test_state_root_comparison_match() {
         let root1 = vec![1, 2, 3, 4];

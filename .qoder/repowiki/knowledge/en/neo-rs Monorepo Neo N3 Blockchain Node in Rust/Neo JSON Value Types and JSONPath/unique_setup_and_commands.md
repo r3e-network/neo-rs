@@ -1,0 +1,1 @@
+Standard Cargo workspace usage — build with `cargo build -p neo-json` and run tests with `cargo test -p neo-json`; no special environment or build scripts required.

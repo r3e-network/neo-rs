@@ -1,0 +1,1 @@
+Rust implementation of Neo's C# Neo.IO layer providing binary readers/writers, a Serializable trait with macro-driven serialization, LZ4 compression, and thread-safe caches for network and storage use.

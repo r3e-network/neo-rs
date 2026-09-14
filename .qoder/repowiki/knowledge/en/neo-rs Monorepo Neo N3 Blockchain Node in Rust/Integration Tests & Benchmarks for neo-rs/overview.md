@@ -1,0 +1,1 @@
+Workspace-level integration test crate and separate Criterion benchmark crate that exercise neo-rs layer boundaries, consensus, P2P, state trie, contract execution, and end-to-end node flows.

@@ -1,0 +1,1 @@
+Cryptographic library for Neo N3 providing hashing, ECDSA/Ed25519/BLS12-381 signatures, BIP-32 key derivation, Bloom filters, Merkle trees, and a Merkle Patricia Trie implementation.

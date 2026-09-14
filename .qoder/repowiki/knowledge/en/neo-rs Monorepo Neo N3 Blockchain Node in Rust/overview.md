@@ -1,0 +1,1 @@
+Cargo workspace that assembles the Neo N3 blockchain node from layered crates — primitives, crypto, storage, VM, core, P2P, consensus, RPC, and optional TEE/HSM — into a single production-ready daemon.

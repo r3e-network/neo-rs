@@ -1,0 +1,1 @@
+Rust with tokio async runtime and `async-trait`; serialization via bincode/serde; cryptographic primitives from `neo-crypto` (ECPoint, sha256); LRU-backed replay protection via `lru`; error modeling with `thiserror`; memory-safe secret handling via `zeroize::Zeroizing`.

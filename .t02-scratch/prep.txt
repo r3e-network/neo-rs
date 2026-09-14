@@ -1,0 +1,10 @@
+=== verify-acc (MD5 of 6GB zip) ===
+[2026-09-12 07:08:46] === mainnet-full-validation: step=verify-acc ===
+[2026-09-12 07:08:49] verify-acc: SKIP (marker matches 998C67C307F16B2D3608C225B2E892AE size=6036620262)
+[2026-09-12 07:08:49] === mainnet-full-validation: step=verify-acc DONE ===
+verify-acc exit=0
+=== unzip inner .acc ===
+[2026-09-12 07:08:52] === mainnet-full-validation: step=unzip ===
+[2026-09-12 07:08:54] unzip: SKIP (already extracted: data/bootstrap/chain.0.acc, size=11206414268)
+[2026-09-12 07:08:54] === mainnet-full-validation: step=unzip DONE ===
+unzip exit=0

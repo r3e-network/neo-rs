@@ -113,6 +113,8 @@ rpc_error_codes! {
     InsufficientNetworkFee = -504 => "Insufficient network fee", standard = false;
     /// Policy check failed.
     PolicyFailed = -505 => "Policy check failed", standard = false;
+    /// Invalid size (transaction or script exceeds protocol limit).
+    InvalidSize = -506 => "Invalid size", standard = false;
     /// Invalid attribute.
     InvalidAttribute = -507 => "Invalid attribute", standard = false;
     /// Invalid signature.

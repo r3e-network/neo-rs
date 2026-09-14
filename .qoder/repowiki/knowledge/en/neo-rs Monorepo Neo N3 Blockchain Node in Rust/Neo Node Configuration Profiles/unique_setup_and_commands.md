@@ -1,0 +1,1 @@
+Profiles are selected at node startup via the CLI flag pointing to one of the `.toml` files; some profiles assume pre-existing data directories (e.g. `./data/mainnet`, `./data/testnet`, `../mainnet/StateRoot`) and must not be mixed with other profiles' databases because they share or overlap port numbers and paths.

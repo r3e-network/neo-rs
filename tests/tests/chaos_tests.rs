@@ -40,7 +40,7 @@ async fn test_consensus_timeout_triggers_view_change() {
     let (tx, mut rx) = mpsc::channel(100);
     let validators = create_test_validators(7);
 
-    let mut service = ConsensusService::new(0x4E454F, validators, Some(1), vec![0u8; 32], tx);
+    let mut service = ConsensusService::new(0x4E454F, validators, Some(1), vec![15u8; 32], tx);
 
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
@@ -68,7 +68,7 @@ async fn test_multiple_timeouts_increment_view() {
     let (tx, mut rx) = mpsc::channel(100);
     let validators = create_test_validators(7);
 
-    let mut service = ConsensusService::new(0x4E454F, validators, Some(1), vec![0u8; 32], tx);
+    let mut service = ConsensusService::new(0x4E454F, validators, Some(1), vec![15u8; 32], tx);
 
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 

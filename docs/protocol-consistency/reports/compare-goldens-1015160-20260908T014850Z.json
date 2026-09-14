@@ -1,0 +1,10 @@
+{
+  "generated_at": "2026-09-08T01:48:50.670779+00:00",
+  "local": "http://127.0.0.1:10332",
+  "local_tip": 1015160,
+  "goldens_le_tip": 224,
+  "matched": 224,
+  "mismatches": [],
+  "missing_local": [],
+  "highest_matched_golden": 980196
+}

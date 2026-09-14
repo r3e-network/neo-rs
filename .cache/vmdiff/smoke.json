@@ -1,0 +1,40 @@
+{
+ "vectors": [
+  {
+   "name": "add_basic",
+   "script": "11129E"
+  },
+  {
+   "name": "div_by_zero",
+   "script": "1110A1"
+  },
+  {
+   "name": "add_overflow",
+   "script": "03ffffffffffffff7f119E"
+  },
+  {
+   "name": "sub_overflow",
+   "script": "030000000000000080119F"
+  },
+  {
+   "name": "div_trunc",
+   "script": "1712A1"
+  },
+  {
+   "name": "not_zero",
+   "script": "10AA"
+  },
+  {
+   "name": "gt_true",
+   "script": "1315B7"
+  },
+  {
+   "name": "nop_only",
+   "script": "21"
+  },
+  {
+   "name": "empty",
+   "script": ""
+  }
+ ]
+}

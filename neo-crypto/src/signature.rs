@@ -200,6 +200,11 @@ impl Secp256r1Crypto {
     }
 
     /// Verifies a secp256r1 signature.
+    ///
+    /// `message` is hashed with SHA-256 internally (matches the p256 crate
+    /// DigestVerifier trait). For Neo N3 protocol paths where the caller has
+    /// already produced a 32-byte SHA-256 digest, prefer [`verify_prehash`]
+    /// to avoid a second SHA-256 pass.
     pub fn verify(message: &[u8], signature: &[u8; 64], public_key: &[u8]) -> CryptoResult<bool> {
         let public_key = P256PublicKey::from_sec1_bytes(public_key)
             .map_err(|e| CryptoError::invalid_key(format!("Invalid public key: {e}")))?;
@@ -209,6 +214,24 @@ impl Secp256r1Crypto {
             .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
 
         Ok(verifying_key.verify(message, &signature).is_ok())
+    }
+
+    /// Verifies a secp256r1 signature over a 32-byte message prehash.
+    ///
+    /// This matches Neo N3 C# `ECDsa.VerifyHash` semantics: the caller is
+    /// responsible for hashing the payload with SHA-256 before calling this
+    /// function.  No additional hashing is performed internally.
+    pub fn verify_prehash(
+        message_digest: &[u8; 32],
+        signature: &[u8; 64],
+        public_key: &[u8],
+    ) -> CryptoResult<bool> {
+        let public_key = P256PublicKey::from_sec1_bytes(public_key)
+            .map_err(|e| CryptoError::invalid_key(format!("Invalid public key: {e}")))?;
+        let verifying_key = VerifyingKey::from(public_key);
+        let signature = Signature::try_from(signature.as_slice())
+            .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
+        Ok(verifying_key.verify_prehash(message_digest, &signature).is_ok())
     }
 
     /// Signs NeoFS data using P-256 over a SHA-512 prehash.
@@ -331,7 +354,10 @@ fn verify_ecdsa_raw64_with_hash(
                 .map_err(|_| CryptoError::invalid_key("Invalid public key length"))?;
             Secp256k1Crypto::verify(data, signature, &public_key)
         }
-        (ECCurve::Secp256r1, _) => Secp256r1Crypto::verify(data, signature, public_key),
+        (ECCurve::Secp256r1, _) => {
+            let digest = Crypto::sha256(data);
+            Secp256r1Crypto::verify_prehash(&digest, signature, public_key)
+        }
         (ECCurve::Ed25519, _) => Err(CryptoError::invalid_argument(
             "Ed25519 is not an ECDSA curve",
         )),
@@ -346,7 +372,10 @@ impl ECDsa {
     pub fn sign(data: &[u8], private_key: &[u8; 32], curve: ECCurve) -> CryptoResult<[u8; 64]> {
         match curve {
             ECCurve::Secp256k1 => Secp256k1Crypto::sign(data, private_key),
-            ECCurve::Secp256r1 => Secp256r1Crypto::sign(data, private_key),
+            ECCurve::Secp256r1 => {
+                let digest = Crypto::sha256(data);
+                Secp256r1Crypto::sign_prehash(&digest, private_key)
+            }
             ECCurve::Ed25519 => Ed25519Crypto::sign(data, private_key),
         }
     }
@@ -498,15 +527,19 @@ impl Crypto {
                 Ed25519Crypto::verify(message, &sig, &pk).unwrap_or(false)
             }
             33 => {
-                let mut pk = [0u8; 33];
-                pk.copy_from_slice(public_key);
-                if Secp256k1Crypto::verify(message, &sig, &pk) == Ok(true) {
+                // Neo N3 uses secp256r1 exclusively — try it first.
+                let digest = Crypto::sha256(message);
+                if Secp256r1Crypto::verify_prehash(&digest, &sig, public_key) == Ok(true) {
                     return true;
                 }
-                Secp256r1Crypto::verify(message, &sig, public_key).unwrap_or(false)
+                // secp256k1 fallback for non-Neo-N3 callers (placed after secp256r1).
+                let mut pk = [0u8; 33];
+                pk.copy_from_slice(public_key);
+                Secp256k1Crypto::verify(message, &sig, &pk).unwrap_or(false)
             }
             64 | 65 => {
-                if Secp256r1Crypto::verify(message, &sig, public_key) == Ok(true) {
+                let digest = Crypto::sha256(message);
+                if Secp256r1Crypto::verify_prehash(&digest, &sig, public_key) == Ok(true) {
                     return true;
                 }
 
@@ -518,7 +551,10 @@ impl Crypto {
                 }
                 false
             }
-            _ => Secp256r1Crypto::verify(message, &sig, public_key).unwrap_or(false),
+            _ => {
+                let digest = Crypto::sha256(message);
+                Secp256r1Crypto::verify_prehash(&digest, &sig, public_key).unwrap_or(false)
+            }
         }
     }
 }

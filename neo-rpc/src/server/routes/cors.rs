@@ -156,5 +156,13 @@ pub fn verify_basic_auth(header: Option<&str>, auth: &BasicAuth) -> bool {
 }
 
 fn constant_time_equals(left: &[u8], right: &[u8]) -> bool {
-    left.len() == right.len() && left.ct_eq(right).into()
+    // Avoid short-circuiting solely on length before a constant-time body compare.
+    let max = left.len().max(right.len());
+    let mut left_buf = vec![0u8; max.saturating_add(8)];
+    let mut right_buf = vec![0u8; max.saturating_add(8)];
+    left_buf[..left.len()].copy_from_slice(left);
+    right_buf[..right.len()].copy_from_slice(right);
+    left_buf[max..max + 8].copy_from_slice(&(left.len() as u64).to_le_bytes());
+    right_buf[max..max + 8].copy_from_slice(&(right.len() as u64).to_le_bytes());
+    left_buf.ct_eq(right_buf.as_slice()).into()
 }

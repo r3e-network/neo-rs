@@ -79,19 +79,6 @@ impl ConsensusPayload {
         }
     }
 
-    /// Computes the hash of this payload for signing
-    #[must_use]
-    pub fn get_sign_data(&self) -> Vec<u8> {
-        let mut data = Vec::new();
-        data.extend_from_slice(&self.network.to_le_bytes());
-        data.extend_from_slice(&self.block_index.to_le_bytes());
-        data.push(self.validator_index);
-        data.push(self.view_number);
-        data.push(self.message_type.to_byte());
-        data.extend_from_slice(&self.data);
-        data
-    }
-
     /// Serializes this consensus message using the Neo N3 `DBFTPlugin` on-wire format:
     /// `[type:1][block_index:4][validator_index:1][view_number:1][body...]`.
     ///

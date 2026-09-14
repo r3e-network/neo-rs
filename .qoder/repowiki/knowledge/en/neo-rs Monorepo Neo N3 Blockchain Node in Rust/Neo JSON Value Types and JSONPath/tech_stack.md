@@ -1,0 +1,1 @@
+serde + serde_json for parsing/serialization with a custom `Visitor` enforcing max nesting depth; `indexmap` for insertion-ordered property maps; `thiserror` for typed error reporting.

@@ -4,6 +4,7 @@ use crate::device::HsmDeviceInfo;
 use crate::error::{HsmError, HsmResult};
 use crate::signer::{HsmKeyInfo, HsmSigner, normalize_public_key, script_hash_from_public_key};
 use async_trait::async_trait;
+use neo_crypto::Crypto;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use zeroize::Zeroizing;
@@ -17,7 +18,7 @@ pub struct SimulationSigner {
     is_ready: RwLock<bool>,
     is_locked: RwLock<bool>,
     keys: RwLock<HashMap<String, SimulatedKey>>,
-    pin: RwLock<Option<String>>,
+    pin: RwLock<Option<Zeroizing<String>>>,
 }
 
 struct SimulatedKey {
@@ -132,7 +133,7 @@ impl SimulationSigner {
 
     /// Set a PIN for the simulation (for testing PIN flows)
     pub fn set_pin(&self, pin: &str) {
-        *self.pin.write() = Some(pin.to_string());
+        *self.pin.write() = Some(Zeroizing::new(pin.to_string()));
         *self.is_locked.write() = true;
         let _ = &self.device_info; // Silence unused field warning
     }
@@ -157,7 +158,7 @@ impl HsmSigner for SimulationSigner {
     async fn unlock(&self, pin: &str) -> HsmResult<()> {
         let stored_pin = self.pin.read();
         if let Some(ref expected) = *stored_pin
-            && pin != expected
+            && pin != expected.as_str()
         {
             return Err(HsmError::InvalidPin);
         }
@@ -214,7 +215,7 @@ impl HsmSigner for SimulationSigner {
             .get(key_id)
             .ok_or_else(|| HsmError::KeyNotFound(key_id.to_string()))?;
 
-        let signature = Secp256r1Crypto::sign(data, &key.private_key)
+        let signature = Secp256r1Crypto::sign_prehash(&Crypto::sha256(data), &key.private_key)
             .map_err(|e| HsmError::SigningFailed(e.to_string()))?;
 
         Ok(signature.to_vec())

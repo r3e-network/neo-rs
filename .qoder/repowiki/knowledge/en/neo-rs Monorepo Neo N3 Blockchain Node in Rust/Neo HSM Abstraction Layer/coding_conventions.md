@@ -1,0 +1,5 @@
+- Each backend lives in its own feature-gated subdirectory (`ledger`, `pkcs11`, `simulation`) and is exposed only when the corresponding Cargo feature is enabled via `#[cfg(feature = "...")]` on both the module declaration and its re-export.
+- Public configuration uses constructor helpers on `HsmConfig` (`ledger`, `pkcs11`, `simulation`) combined with `with_*` setters rather than positional arguments, enabling fluent construction.
+- Errors are modeled as a single `HsmError` enum using `thiserror`, with domain-specific variants (e.g. `Pkcs11Error`, `LedgerError`, `PinLocked`) and a blanket `From<anyhow::Error>` conversion for interop.
+- Neo address generation consistently derives a 20-byte script hash from a compressed secp256r1 public key and encodes it as Base58Check with a configurable version byte via `HsmKeyInfo::neo_address`.
+- Shared cryptographic utilities (`normalize_public_key`, `signature_redeem_script`, `script_hash_from_public_key`) are placed in the `signer` module and marked `pub(crate)` so all backends reuse identical Neo contract/script logic.

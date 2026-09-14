@@ -1,0 +1,1 @@
+Rust crate using `async-trait` for the signer interface, `neo-crypto` for Neo-specific primitives (Base58Check, SHA-256, secp256r1), `hidapi` for Ledger USB HID transport, `cryptoki` for PKCS#11 access, and `rpassword` for secure PIN prompting; feature flags `simulation` (default), `ledger`, and `pkcs11` control compilation of each backend.

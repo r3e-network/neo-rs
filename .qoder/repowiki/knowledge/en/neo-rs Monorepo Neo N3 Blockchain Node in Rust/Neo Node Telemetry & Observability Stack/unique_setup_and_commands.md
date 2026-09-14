@@ -1,0 +1,1 @@
+No special build commands; the crate is configured via workspace-level Cargo metadata (`version.workspace = true`, etc.). The node-specific initializer `init_for_node` requires passing a `daemon_mode: bool` flag to suppress console output when running as a daemon, and the health server binds to `127.0.0.1:<port>` by default (ports configurable via `TelemetryConfig`).

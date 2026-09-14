@@ -1,0 +1,3 @@
+ProgramData=[C:\ProgramData]
+APPDATA=[C:\Users\Administrator\AppData\Roaming]
+LOCALAPPDATA=[C:\Users\Administrator\AppData\Local]

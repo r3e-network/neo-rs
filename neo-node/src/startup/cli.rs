@@ -82,17 +82,29 @@ pub(crate) fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
         node_config.rpc.auth_enabled = true;
         node_config.rpc.allow_origins.clear();
         let mut disabled = node_config.rpc.disabled_methods.clone();
-        if !disabled
-            .iter()
-            .any(|m| m.eq_ignore_ascii_case("openwallet"))
-        {
-            disabled.push("openwallet".to_string());
-        }
-        if !disabled
-            .iter()
-            .any(|m| m.eq_ignore_ascii_case("listplugins"))
-        {
-            disabled.push("listplugins".to_string());
+        for method in [
+            "openwallet",
+            "listplugins",
+            "dumpprivkey",
+            "importprivkey",
+            "sendfrom",
+            "sendto",
+            "sendmany",
+            "sendrawtransaction",
+        ] {
+            if !disabled
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(method))
+            {
+                if method == "sendrawtransaction" {
+                    tracing::warn!(
+                        "RPC hardened mode: sendrawtransaction is disabled. \
+                        Clients attempting to send transactions will receive \
+                        -32601 Method not found."
+                    );
+                }
+                disabled.push(method.to_string());
+            }
         }
         node_config.rpc.disabled_methods = disabled;
     }

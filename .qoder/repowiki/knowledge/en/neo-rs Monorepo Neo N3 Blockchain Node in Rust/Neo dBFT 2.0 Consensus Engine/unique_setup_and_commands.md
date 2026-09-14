@@ -1,0 +1,1 @@
+No special build or test commands beyond standard Cargo; tests live under `src/service/tests/` and `src/context/tests.rs` and run via `cargo test`. The crate participates in a workspace manifest (`version.workspace = true`, etc.) and depends on sibling crates `neo-primitives`, `neo-crypto`, `neo-io`, `neo-vm`.

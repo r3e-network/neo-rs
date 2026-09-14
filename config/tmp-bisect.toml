@@ -1,0 +1,63 @@
+# TEMPORARY bisect config — FRESH isolated data dir for locating the first
+# state-root divergence during `.acc` import. Do NOT point at the pristine
+# data/mainnet-full-validation or data/mainnet-protocol-consistency stores.
+#
+# Run with an isolated plugins dir so the StateService MPT store is not shared:
+#   NEO_PLUGINS_DIR=./data/tmp-bisect-plugins \
+#   NEO_IMPORT_STOP_HEIGHT=15000 \
+#   target/release/neo-node.exe --config config/tmp-bisect.toml \
+#     --import-acc data/bootstrap/chain.0.acc --import-only
+
+[network]
+network_type = "MainNet"
+network_magic = 0x334F454E
+
+[storage]
+backend = "rocksdb"
+path = "./data/tmp-bisect"
+read_only = false
+
+[p2p]
+port = 10344
+max_connections = 50
+min_desired_connections = 0
+seed_nodes = []
+enable_compression = true
+broadcast_history_limit = 100000
+
+[rpc]
+enabled = false
+port = 10345
+bind_address = "127.0.0.1"
+cors_enabled = false
+auth_enabled = false
+max_gas_invoke = 50000000
+max_iterator_results = 100
+disabled_methods = ["openwallet"]
+
+[consensus]
+enabled = false
+auto_start = false
+
+[telemetry]
+[telemetry.metrics]
+enabled = false
+
+[logging]
+level = "info"
+format = "json"
+file_path = "./logs/tmp-bisect.log"
+max_file_size = "100MB"
+max_files = 4
+
+[blockchain]
+block_time = 15000
+max_transactions_per_block = 512
+
+[mempool]
+max_transactions = 50000
+
+[state_service]
+enabled = true
+full_state = true
+path = "StateRoot"

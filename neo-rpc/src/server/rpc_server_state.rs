@@ -85,7 +85,7 @@ impl RpcServerState {
         })?;
         let value = StateStore::verify_proof(root_hash, &key, &nodes).ok_or_else(|| {
             RpcException::from(
-                RpcError::verification_failed()
+                RpcError::invalid_proof()
                     .with_data("failed to verify state proof against supplied root"),
             )
         })?;

@@ -11,6 +11,7 @@
 #![allow(unused_assignments)]
 
 use crate::error::{CryptoError, CryptoResult};
+use crate::hash::Crypto;
 use ed25519_dalek::{Signature as Ed25519Signature, SigningKey as Ed25519SigningKey, VerifyingKey};
 use k256::{
     AffinePoint as K256AffinePoint, EncodedPoint as K256EncodedPoint,
@@ -24,6 +25,7 @@ use k256::{
 };
 use p256::{
     AffinePoint as P256AffinePoint, EncodedPoint as P256EncodedPoint,
+    ecdsa::signature::hazmat::PrehashVerifier,
     ecdsa::signature::Verifier,
     ecdsa::{
         Signature as P256Signature, SigningKey as P256SigningKey, VerifyingKey as P256VerifyingKey,
@@ -184,6 +186,15 @@ impl ECPoint {
     ///
     /// - 32 bytes: Ed25519
     /// - 33 or 65 bytes: tries secp256r1 first, then secp256k1
+    ///
+    /// # Warning
+    ///
+    /// The secp256k1 fallback in this function is **not** appropriate for Neo N3
+    /// consensus or transaction-validation paths, which use secp256r1
+    /// exclusively.  In those paths, always call
+    /// [`decode_compressed_with_curve(ECCurve::Secp256r1, data)`] directly so
+    /// that an unexpected secp256k1 key is rejected rather than silently
+    /// accepted.
     pub fn from_bytes(data: &[u8]) -> CryptoResult<Self> {
         match data.len() {
             32 => Self::from_bytes_with_curve(ECCurve::Ed25519, data),
@@ -601,6 +612,10 @@ pub fn verify_signature(
 }
 
 /// Verifies a secp256r1 (P-256) signature.
+///
+/// `message` is SHA-256 hashed before verification, matching Neo N3 C#
+/// `ECDsa.VerifyHash` semantics (the caller passes raw payload; this
+/// function produces the required 32-byte prehash internally).
 pub fn verify_signature_secp256r1(
     public_key: &[u8],
     message: &[u8],
@@ -613,7 +628,8 @@ pub fn verify_signature_secp256r1(
         .or_else(|_| P256Signature::from_slice(signature))
         .map_err(|e| CryptoError::invalid_signature(format!("Invalid secp256r1 signature: {e}")))?;
 
-    Ok(verifying_key.verify(message, &sig).is_ok())
+    let digest = Crypto::sha256(message);
+    Ok(verifying_key.verify_prehash(&digest, &sig).is_ok())
 }
 
 /// Verifies a secp256k1 signature.

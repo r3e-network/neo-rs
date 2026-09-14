@@ -1,0 +1,6 @@
+- Each RPC method category is isolated in its own `rpc_server_<domain>.rs` module and registers handlers via `rpc_handler` or `protected_rpc_handler` helpers that wrap functions returning `Result<Value, RpcException>`.
+- Authentication-sensitive methods are marked with `protected_rpc_handler` producing a `RpcMethodDescriptor { requires_auth: true }`, while public methods use `rpc_handler` with `requires_auth: false`.
+- Request/response modeling follows a one-file-per-type convention under `client/models/`, where each file defines the serde-serializable structs for a single RPC model (e.g. `rpc_block.rs`, `rpc_transaction.rs`, `rpc_response.rs`).
+- High-level client APIs are exposed as separate trait-like modules (`Nep17Api`, `WalletApi`, `PolicyApi`, `StateApi`, `ContractClient`) that delegate to a shared `RpcClient` instance, keeping domain logic out of the transport layer.
+- Cross-cutting concerns (CORS, basic auth, rate limiting, batch size, parameter depth) are applied uniformly in `routes/handlers.rs` before dispatching to individual RPC handlers, rather than being handled per-method.
+- Global mutable state such as the server registry (`SERVERS`) and Prometheus counters (`RPC_REQ_TOTAL`, `RPC_ERR_TOTAL`) is accessed via `LazyLock` + `parking_lot::RwLock` to avoid initialization order issues.

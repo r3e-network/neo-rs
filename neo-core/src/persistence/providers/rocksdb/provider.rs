@@ -8,7 +8,7 @@ use crate::persistence::{
 use neo_storage::{StorageError, StorageResult};
 use rocksdb::{
     BlockBasedOptions, Cache, DB, DBIteratorWithThreadMode, Direction, IteratorMode, Options,
-    PrefixRange, ReadOptions, Snapshot as DbSnapshot,
+    ReadOptions, Snapshot as DbSnapshot,
 };
 use std::{path::PathBuf, sync::Arc};
 
@@ -51,7 +51,7 @@ impl RocksDBStoreProvider {
     pub fn new(base_config: StorageConfig) -> Self {
         Self {
             base_config,
-            batch_config: BatchCommitConfig::balanced(),
+            batch_config: BatchCommitConfig::durable(),
             batch_stats: Arc::new(BatchCommitStats::new()),
             read_cache_config: Some(ReadCacheConfig::default()),
             enable_bloom_filters: true,
@@ -207,6 +207,22 @@ pub(crate) fn iterator_from<'a>(
     db.iterator_opt(mode, opts)
 }
 
+/// Returns the smallest key that is strictly greater than all keys with the
+/// given prefix. Increments the last non-`0xFF` byte and truncates trailing
+/// `0xFF` bytes. Returns `None` when every byte is `0xFF` (no upper bound).
+fn prefix_successor(prefix: &[u8]) -> Option<Vec<u8>> {
+    let mut result = prefix.to_vec();
+    for i in (0..result.len()).rev() {
+        if result[i] < 0xFF {
+            result[i] += 1;
+            result.truncate(i + 1);
+            return Some(result);
+        }
+    }
+    // All bytes are 0xFF — no finite upper bound exists.
+    None
+}
+
 pub(crate) fn reverse_prefix_iterator<'a>(
     db: &'a DB,
     read_options: Option<ReadOptions>,
@@ -214,7 +230,13 @@ pub(crate) fn reverse_prefix_iterator<'a>(
     read_ahead_config: &ReadAheadConfig,
 ) -> DBIteratorWithThreadMode<'a, DB> {
     let mut opts = read_options.unwrap_or_else(|| build_read_options(None, read_ahead_config));
-    opts.set_iterate_range(PrefixRange(prefix));
+    // PrefixRange is silently ignored without a configured prefix extractor.
+    // Use explicit byte-range bounds instead: lower bound is the prefix itself;
+    // upper bound is prefix_successor (the first key that sorts past the prefix).
+    opts.set_iterate_lower_bound(prefix.to_vec());
+    if let Some(upper) = prefix_successor(prefix) {
+        opts.set_iterate_upper_bound(upper);
+    }
     db.iterator_opt(IteratorMode::End, opts)
 }
 
@@ -266,7 +288,15 @@ pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: boo
     options.set_min_write_buffer_number_to_merge(2);
 
     // Advanced Performance Tuning
-    options.set_allow_mmap_reads(true);
+    // CRITICAL: On Windows, mmap reads cause massive soft page faults (~750K per block)
+    // when reading from cold RocksDB SST files. Disable mmap entirely on Windows.
+    if !cfg!(windows) {
+        options.set_allow_mmap_reads(true);
+        tracing::debug!("Enabled mmap reads for RocksDB (non-Windows)");
+    } else {
+        options.set_allow_mmap_reads(false);
+        tracing::warn!("Disabled mmap reads for RocksDB (Windows - prevents soft page faults)");
+    }
     options.set_allow_mmap_writes(false);
     options.set_enable_pipelined_write(true);
     options.set_memtable_prefix_bloom_ratio(0.1); // better hit rate on memtable lookups

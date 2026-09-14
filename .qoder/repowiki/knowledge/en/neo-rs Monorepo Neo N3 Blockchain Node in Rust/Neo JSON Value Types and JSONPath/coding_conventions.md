@@ -1,0 +1,6 @@
+- Public constructors and accessors return owned values or references marked with `#[must_use]` to mirror C# API semantics.
+- Failable operations return `Result<T, JsonError>` using the centralized `JsonError` variants (`IndexOutOfRange`, `InvalidCast`, `NotSupported`, `Overflow`, `DuplicateKey`, `Format`).
+- JSON values are stored as `Option<JToken>` so that explicit `null` slots can be represented in both arrays and object properties.
+- Object property ordering is preserved through `OrderedDictionary` (backed by `indexmap`), and duplicate keys during deserialization are rejected via `try_insert`.
+- Serde integration uses a shared `TokenSeed`/`TokenVisitor` pair that tracks remaining depth to enforce a maximum nesting limit during recursive parse.
+- Each public module declares its purpose in a top-level doc comment referencing the matching C# Neo.Json type it implements.

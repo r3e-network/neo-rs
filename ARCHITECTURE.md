@@ -136,8 +136,8 @@ The core layer implements blockchain protocol logic. It depends only on the Foun
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
 | `neo-core` | Protocol implementation | `Block`, `Transaction`, `Witness`, `Contract` |
-| `neo-core::neo_vm` | Virtual machine compatibility module backed by `neo-vm-rs` where available | `ExecutionEngine`, `StackItem`, `Script` |
-| `neo-vm-rs` | Shared low-level VM primitives used directly by callers | `OpCode`, `interop_hash`, `encode_integer` |
+| `neo-core::neo_vm` | Virtual machine compatibility façade over in-tree `neo-vm` | `ExecutionEngine`, `StackItem`, `Script` |
+| `neo-vm` | Workspace NeoVM crate (opcodes, interpreter, limits) | `OpCode`, `interop_hash`, `encode_integer` |
 | `neo-p2p` | P2P networking | `MessageCommand`, `InventoryType`, `VerifyResult` |
 | `neo-consensus` | dBFT consensus | `ConsensusService`, `ConsensusContext`, `ConsensusMessage` |
 | `neo-rpc` | RPC communication | `RpcServer`, `RpcClient`, `RpcErrorCode` |
@@ -212,7 +212,7 @@ serde = "1.0"  // External crates only
 [dependencies]
 neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }
-neo-vm-rs = { workspace = true }
+neo-vm = { workspace = true }
 
 // ✅ CORRECT: Service layer depends on Core and Foundation
 // neo-config/Cargo.toml:
@@ -312,7 +312,7 @@ pub mod services {      // Service traits
 
 #### `neo-core::neo_vm`
 
-Neo Virtual Machine compatibility module. Shared low-level opcode, ABI, and interpreter primitives come from `neo-vm-rs`.
+Neo Virtual Machine compatibility module. Shared low-level opcode, ABI, and interpreter primitives come from `neo-vm`.
 
 ```rust
 // Core VM types
@@ -328,7 +328,7 @@ pub struct ScriptBuilder { ... }
 pub enum StackItem { ... }
 pub enum VMState { HALT, FAULT, BREAK, ... }
 
-// Shared opcode definitions are imported directly from neo-vm-rs.
+// Shared opcode definitions are imported directly from neo-vm.
 neo_vm_rs::OpCode
 ```
 
@@ -597,6 +597,17 @@ pub fn my_function() -> Result<(), Error> { ... }
 | `PascalCase` methods | `snake_case` methods |
 | `PascalCase` properties | `snake_case` methods or fields |
 | `PascalCase` enum variants | `PascalCase` enum variants |
+
+### Protocol consistency (state roots)
+
+Crate/API naming parity is not enough for node interoperability. Authoritative
+rules for claiming Neo N3 state equivalence live in
+[`docs/PROTOCOL_CONSISTENCY.md`](docs/PROTOCOL_CONSISTENCY.md). Current verified
+range and open divergences:
+[`docs/protocol-consistency/STATUS.md`](docs/protocol-consistency/STATUS.md).
+
+Orchestrator: `scripts/verify-protocol-consistency.py`  
+Goldens: `tests/fixtures/protocol_consistency/csharp_stateroot_goldens.jsonl`
 
 ---
 

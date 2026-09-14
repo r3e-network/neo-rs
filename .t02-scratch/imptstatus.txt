@@ -1,0 +1,32 @@
+=== processes ===
+cargo.exe                    50436 Console                    1    107,524 K
+cargo.exe                    75544 Console                    1    137,316 K
+=== markers ===
+-rw-r--r-- 1 Administrator 197121 43 Sep 12 06:44 data/bootstrap/chain.0.acc.zip.md5-ok
+total 11625
+drwxr-xr-x 1 Administrator 197121       0 Sep 12 06:49 .
+drwxr-xr-x 1 Administrator 197121       0 Sep 12 07:08 ..
+-rw-r--r-- 1 Administrator 197121       5 Sep 12 06:48 .node.pid
+-rw-r--r-- 1 Administrator 197121       0 Sep 12 06:48 000004.log
+-rw-r--r-- 1 Administrator 197121 5522954 Sep 12 06:46 000011.sst
+-rw-r--r-- 1 Administrator 197121 5488892 Sep 12 06:46 000013.sst
+-rw-r--r-- 1 Administrator 197121  760978 Sep 12 06:46 000015.sst
+-rw-r--r-- 1 Administrator 197121       0 Sep 12 06:48 000018.log
+-rw-r--r-- 1 Administrator 197121      16 Sep 12 06:48 CURRENT
+=== import log tail ===
+-rw-r--r-- 1 Administrator 197121 11064 Sep 12 06:46 logs/mainnet-full-import.log
+{"timestamp":"2026-09-11T22:46:26.170609Z","level":"INFO","fields":{"message":"acc import progress","imported":16000,"skipped":1,"current_height":16000,"local_view_height":16000,"current_hash_written":true,"rate_blocks_per_sec":1408.8973718208288},"target":"neo"}
+{"timestamp":"2026-09-11T22:46:27.492999Z","level":"INFO","fields":{"message":"acc import progress","imported":17000,"skipped":1,"current_height":17000,"local_view_height":17000,"current_hash_written":true,"rate_blocks_per_sec":1340.8227274058415},"target":"neo"}
+{"timestamp":"2026-09-11T22:46:29.034054Z","level":"INFO","fields":{"message":"acc import progress","imported":18000,"skipped":1,"current_height":18000,"local_view_height":18000,"current_hash_written":true,"rate_blocks_per_sec":1265.8368229582968},"target":"neo"}
+{"timestamp":"2026-09-11T22:46:30.599780Z","level":"INFO","fields":{"message":"acc import progress","imported":19000,"skipped":1,"current_height":19000,"local_view_height":19000,"current_hash_written":true,"rate_blocks_per_sec":1203.6314676321294},"target":"neo"}
+{"timestamp":"2026-09-11T22:46:32.246201Z","level":"INFO","fields":{"message":"state root computed (no reference)","height":20000,"put_count":2,"del_count":0,"root_hash":"0xb592c619580c72fe15b8efd038335a00ee119aa8495a3d67dcfc255088f00982"},"target":"neo::state_service"}
+{"timestamp":"2026-09-11T22:46:32.302118Z","level":"INFO","fields":{"message":"acc import storage checkpoint flush completed","reason":"periodic","imported":20000,"skipped":1,"expected_height":20000,"persisted_height":20000,"local_view_height":20000,"verification_source":"disk","flush_elapsed_ms":"55"},"target":"neo"}
+{"timestamp":"2026-09-11T22:46:32.302175Z","level":"INFO","fields":{"message":"acc import progress","imported":20000,"skipped":1,"current_height":20000,"local_view_height":20000,"current_hash_written":true,"rate_blocks_per_sec":1143.6445192357464},"target":"neo"}
+{"timestamp":"2026-09-11T22:46:33.931823Z","level":"INFO","fields":{"message":"acc import progress","imported":21000,"skipped":1,"current_height":21000,"local_view_height":21000,"current_hash_written":true,"rate_blocks_per_sec":1098.4640125404837},"target":"neo"}
+{"timestamp":"2026-09-11T22:46:34.570889Z","level":"WARN","fields":{"message":"insufficient sender balance before gas burn","block_index":21373,"block_hash":"0x09a348a5c629e278d62018c0203abbecf2642a38511913afc223fafa889c44ba","tx_hash":"0xc68aac4b0bb9e88bd42086c50cebe648ad28726d2849ff73faeb93985e510587","sender":"0xed369077652ddd55bd7696df93fe49c0bb40d3bc","system_fee":9977750,"network_fee":1243960,"burn_amount":"11221710","pre_balance":"0","total_supply":"5199184314280179","bft_address":"0x9f8f056a53e39585c7bb52886418c7bed83d126b","bft_balance":"5198093593607000","ledger_current_index":21372},"target":"neo"}
+{"timestamp":"2026-09-11T22:46:34.795184Z","level":"INFO","fields":{"message":"storage flush completed after .acc import error"},"target":"neo"}
+Error: failed to import blocks from .acc file
+
+Caused by:
+    0: failed to persist imported block 21373
+    1: Execution error: GasToken burn failed at block 21373 (0x09a348a5c629e278d62018c0203abbecf2642a38511913afc223fafa889c44ba), tx 0xc68aac4b0bb9e88bd42086c50cebe648ad28726d2849ff73faeb93985e510587 sender 0xed369077652ddd55bd7696df93fe49c0bb40d3bc (system_fee=9977750, network_fee=1243960, burn=11221710, balance=0): Execution error: Insufficient balance for burn

@@ -1,0 +1,4 @@
+﻿Before: PROGRAMDATA=[] APPDATA=[]
+Set OK
+After: PROGRAMDATA=[C:\ProgramData] APPDATA=[C:\Users\Administrator\AppData\Roaming]
+Machine PROGRAMDATA=[]

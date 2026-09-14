@@ -33,7 +33,7 @@ use num_traits::{ToPrimitive, Zero};
 use serde_json::{Map, Value, json};
 use std::future::Future;
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -209,12 +209,17 @@ impl RpcServerWallet {
     fn open_wallet(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let path = expect_string_param(params, 0, "openwallet")?;
         let password = expect_string_param(params, 1, "openwallet")?;
-        if !Path::new(&path).exists() {
-            return Err(RpcException::from(RpcError::wallet_not_found()));
-        }
+        // A08: jail wallet paths; use a single not-found error to avoid path/oracle leaks.
+        let resolved = Self::resolve_jailed_wallet_path(server, &path)?;
         let system = server.system();
         let settings = Arc::new(system.settings().clone());
-        let wallet = Nep6Wallet::from_file(&path, &password, settings);
+        let wallet = Nep6Wallet::from_file(
+            resolved.to_str().ok_or_else(|| {
+                RpcException::from(RpcError::wallet_not_found())
+            })?,
+            &password,
+            settings,
+        );
         let wallet = match wallet {
             Ok(wallet) => wallet,
             Err(WalletError::InvalidPassword) => {
@@ -237,6 +242,45 @@ impl RpcServerWallet {
         let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
         server.set_wallet(Some(wallet_arc));
         Ok(Value::Bool(true))
+    }
+
+    /// Resolves `openwallet` paths under `WalletDirectory` (or CWD when empty).
+    fn resolve_jailed_wallet_path(
+        server: &RpcServer,
+        path: &str,
+    ) -> Result<PathBuf, RpcException> {
+        let not_found = || RpcException::from(RpcError::wallet_not_found());
+        let requested = Path::new(path);
+        if requested
+            .components()
+            .any(|c| matches!(c, Component::ParentDir))
+        {
+            return Err(not_found());
+        }
+
+        let jail_root = {
+            let configured = server.settings().wallet_directory.trim();
+            if configured.is_empty() {
+                std::env::current_dir().map_err(|_| not_found())?
+            } else {
+                PathBuf::from(configured)
+            }
+        };
+        let jail = jail_root
+            .canonicalize()
+            .unwrap_or_else(|_| jail_root.clone());
+
+        let candidate = if requested.is_absolute() {
+            requested.to_path_buf()
+        } else {
+            jail.join(requested)
+        };
+
+        let canonical = candidate.canonicalize().map_err(|_| not_found())?;
+        if !canonical.starts_with(&jail) {
+            return Err(not_found());
+        }
+        Ok(canonical)
     }
 
     fn calculate_network_fee(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {

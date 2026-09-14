@@ -17,6 +17,7 @@ use neo_vm::OpCode;
 use std::any::Any;
 use std::io::Write;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct FailingStateStoreBackend;
 
@@ -378,7 +379,9 @@ fn update_local_state_root_snapshot_rejects_reference_root_mismatch() {
         "11".repeat(32)
     )
     .expect("write reference root");
-    store.load_reference_roots(reference_file.path().to_str().unwrap());
+    store
+        .load_reference_roots(reference_file.path().to_str().unwrap())
+        .expect("load reference roots");
 
     let err = store
         .update_local_state_root_snapshot(1, std::iter::empty())
@@ -390,31 +393,98 @@ fn update_local_state_root_snapshot_rejects_reference_root_mismatch() {
 }
 
 #[test]
-fn load_reference_roots_parses_jsonl_with_uint256_parse() {
+fn load_reference_roots_fails_on_missing_file() {
     let mut store = StateStore::new_in_memory();
-    let mut reference_file = tempfile::NamedTempFile::new().expect("reference file");
-    let root_hash = format!("0x{}", "22".repeat(32));
+    let err = store
+        .load_reference_roots("data/definitely_missing_reference_roots_file.jsonl")
+        .expect_err("missing file must fail closed");
+    assert!(err.contains("reference roots file not found"));
+}
 
-    writeln!(reference_file, "not json").expect("write invalid line");
-    writeln!(
-        reference_file,
-        "{{ \"height\": 7, \"roothash\": \"{}\" }}",
-        root_hash
-    )
-    .expect("write reference root");
-    writeln!(
-        reference_file,
-        "{{\"height\":8,\"roothash\":\"not-a-hash\"}}"
-    )
-    .expect("write invalid hash");
+#[test]
+fn load_reference_roots_fails_on_malformed_json() {
+    let mut store = StateStore::new_in_memory();
+    let mut file = tempfile::NamedTempFile::new().expect("temp file");
+    writeln!(file, "this is not json").expect("write line");
+    let err = store
+        .load_reference_roots(file.path().to_str().unwrap())
+        .expect_err("malformed json must fail closed");
+    assert!(err.contains("failed to parse reference root JSON"));
+}
 
-    store.load_reference_roots(reference_file.path().to_str().unwrap());
+#[test]
+fn load_reference_roots_fails_on_invalid_hash() {
+    let mut store = StateStore::new_in_memory();
+    let mut file = tempfile::NamedTempFile::new().expect("temp file");
+    writeln!(file, "{{\"height\":0,\"roothash\":\"0xnot_a_valid_hash\"}}").expect("write line");
+    let err = store
+        .load_reference_roots(file.path().to_str().unwrap())
+        .expect_err("invalid roothash must fail closed");
+    assert!(err.contains("invalid roothash format"));
+}
 
-    assert_eq!(
-        store.reference_roots.get(&7),
-        Some(&UInt256::parse(&root_hash).expect("reference hash"))
-    );
-    assert!(!store.reference_roots.contains_key(&8));
+#[test]
+fn load_reference_roots_fails_on_range_gap() {
+    let mut store = StateStore::new_in_memory();
+    let mut file = tempfile::NamedTempFile::new().expect("temp file");
+    let hash = format!("0x{}", "11".repeat(32));
+    writeln!(file, "{{\"height\":0,\"roothash\":\"{hash}\"}}").expect("write line 0");
+    writeln!(file, "{{\"height\":2,\"roothash\":\"{hash}\"}}").expect("write line 2");
+    let err = store
+        .load_reference_roots(file.path().to_str().unwrap())
+        .expect_err("range gap must fail closed");
+    assert!(err.contains("missing entry at height 1 within range [0, 2]"));
+}
+
+#[test]
+fn load_reference_roots_fails_on_duplicate_height() {
+    let mut store = StateStore::new_in_memory();
+    let mut file = tempfile::NamedTempFile::new().expect("temp file");
+    let hash = format!("0x{}", "11".repeat(32));
+    writeln!(file, "{{\"height\":0,\"roothash\":\"{hash}\"}}").expect("write line 0");
+    writeln!(file, "{{\"height\":0,\"roothash\":\"{hash}\"}}").expect("write line 0 duplicate");
+    let err = store
+        .load_reference_roots(file.path().to_str().unwrap())
+        .expect_err("duplicate height must fail closed");
+    assert!(err.contains("duplicate reference root at height 0"));
+}
+
+#[test]
+fn load_reference_roots_succeeds_on_valid_contiguous_range() {
+    let mut store = StateStore::new_in_memory();
+    let mut file = tempfile::NamedTempFile::new().expect("temp file");
+    let hash0 = format!("0x{}", "11".repeat(32));
+    let hash1 = format!("0x{}", "22".repeat(32));
+    let hash2 = format!("0x{}", "33".repeat(32));
+    writeln!(file, "{{\"height\":0,\"roothash\":\"{hash0}\"}}").expect("write line 0");
+    writeln!(file, "{{\"height\":1,\"roothash\":\"{hash1}\"}}").expect("write line 1");
+    writeln!(file, "{{\"height\":2,\"roothash\":\"{hash2}\"}}").expect("write line 2");
+    let count = store
+        .load_reference_roots(file.path().to_str().unwrap())
+        .expect("valid contiguous range must succeed");
+    assert_eq!(count, 3);
+    assert_eq!(store.reference_roots_len(), 3);
+    assert_eq!(store.reference_range(), (Some(0), Some(2)));
+}
+
+#[test]
+fn update_local_state_root_snapshot_rejects_missing_reference_in_active_range() {
+    let mut store = StateStore::new_in_memory();
+    let mut file = tempfile::NamedTempFile::new().expect("temp file");
+    let hash0 = format!("0x{}", "00".repeat(32));
+    let hash1 = format!("0x{}", "11".repeat(32));
+    writeln!(file, "{{\"height\":0,\"roothash\":\"{hash0}\"}}").expect("write line 0");
+    writeln!(file, "{{\"height\":1,\"roothash\":\"{hash1}\"}}").expect("write line 1");
+    store
+        .load_reference_roots(file.path().to_str().unwrap())
+        .expect("load reference roots");
+
+    store.reference_roots.remove(&1);
+
+    let err = store
+        .update_local_state_root_snapshot(1, std::iter::empty())
+        .expect_err("missing reference in active range must fail closed");
+    assert!(err.contains("missing reference state root at height 1 within active reference range [0, 1]"));
 }
 
 #[test]
@@ -886,6 +956,184 @@ fn preload_recent_roots_populates_cache() {
 
     // Cache should have entries
     assert!(store.root_cache_len() >= 5);
+}
+
+// ============================================================================
+// State-store durability regression tests
+//
+// Regression guard for the `--import-acc` bug where computed state roots were
+// lost after import because the state-service store (a RocksDB instance
+// separate from the chain store) was never flushed while the high-throughput
+// batch profile had the WAL disabled. See `StateStore::flush`.
+// ============================================================================
+
+/// Minimal `Store` that records how many times `flush` was invoked.
+#[derive(Default)]
+struct FlushProbeStore {
+    flush_count: Arc<AtomicUsize>,
+}
+
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for FlushProbeStore {
+    fn try_get(&self, _key: &StorageKey) -> Option<StorageItem> {
+        None
+    }
+
+    fn find(
+        &self,
+        _key_prefix: Option<&StorageKey>,
+        _direction: SeekDirection,
+    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+        Box::new(std::iter::empty())
+    }
+}
+
+impl WriteStore<Vec<u8>, Vec<u8>> for FlushProbeStore {
+    fn delete(&mut self, _key: Vec<u8>) -> Result<(), StorageError> {
+        Ok(())
+    }
+
+    fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> Result<(), StorageError> {
+        Ok(())
+    }
+}
+
+impl ReadOnlyStore for FlushProbeStore {}
+
+impl Store for FlushProbeStore {
+    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
+        Arc::new(FailingCoreSnapshot {
+            store: Arc::new(FlushProbeStore {
+                flush_count: Arc::clone(&self.flush_count),
+            }),
+        })
+    }
+
+    fn on_new_snapshot(&self, _handler: OnNewSnapshotDelegate) {}
+
+    fn flush(&self) {
+        self.flush_count.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// `StateStore::flush` must propagate to the backing `Store`, otherwise the
+/// importer/shutdown flushes cannot make the state store durable.
+#[test]
+fn state_store_flush_reaches_backing_store() {
+    let probe = Arc::new(FlushProbeStore::default());
+    let backend = Arc::new(SnapshotBackedStateStoreBackend::new(
+        probe.clone() as Arc<dyn Store>
+    ));
+    let store = StateStore::new(backend, StateServiceSettings::default());
+
+    assert_eq!(probe.flush_count.load(Ordering::SeqCst), 0);
+    store.flush();
+    assert_eq!(
+        probe.flush_count.load(Ordering::SeqCst),
+        1,
+        "StateStore::flush must reach the backing Store::flush"
+    );
+    store.flush();
+    assert_eq!(probe.flush_count.load(Ordering::SeqCst), 2);
+}
+
+#[cfg(feature = "rocksdb")]
+fn count_sst_files(path: &std::path::Path) -> usize {
+    std::fs::read_dir(path)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    entry
+                        .path()
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("sst"))
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+/// Durable-persistence regression test: under the high-throughput (WAL-disabled)
+/// profile, a committed root lives only in the memtable until `flush` is called.
+/// After `flush`, the root must survive a store close/reopen.
+#[cfg(feature = "rocksdb")]
+#[test]
+fn state_roots_survive_reopen_after_flush() {
+    use crate::persistence::providers::{RocksDBStoreProvider, rocksdb::BatchCommitConfig};
+    use crate::persistence::storage::StorageConfig;
+
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let path = dir.path().join("StateRoot");
+    let path_str = path.to_string_lossy().to_string();
+    let protocol_settings = Arc::new(ProtocolSettings::default_settings());
+    let settings = StateServiceSettings::default();
+
+    let height = 5000u32;
+    let root_hash = UInt256::from_bytes(&[0x42u8; 32]).expect("root hash");
+
+    let make_provider = || {
+        Arc::new(
+            RocksDBStoreProvider::new(StorageConfig {
+                path: path.clone(),
+                ..Default::default()
+            })
+            .with_batch_config(BatchCommitConfig::high_throughput()),
+        ) as Arc<dyn crate::persistence::store_provider::StoreProvider>
+    };
+
+    {
+        let store = StateStore::open_with_provider(
+            make_provider(),
+            &path_str,
+            settings.clone(),
+            protocol_settings.clone(),
+        )
+        .expect("open state store");
+
+        let mut snapshot = store.snapshot();
+        snapshot
+            .add_local_state_root(&StateRoot::new_current(height, root_hash))
+            .expect("stage state root");
+        snapshot.commit().expect("commit state root");
+
+        // WAL is disabled for the high-throughput profile, so the commit stays in
+        // the memtable until an explicit flush writes it out as an SST file.
+        assert_eq!(
+            count_sst_files(&path),
+            0,
+            "state store must not have flushed an SST before StateStore::flush"
+        );
+
+        store.flush();
+
+        assert!(
+            count_sst_files(&path) >= 1,
+            "StateStore::flush must persist the state store memtable to disk"
+        );
+    }
+
+    // Reopen a fresh store over the same directory (the writer has been dropped).
+    let reopened = StateStore::open_with_provider(
+        make_provider(),
+        &path_str,
+        settings,
+        protocol_settings,
+    )
+    .expect("reopen state store");
+
+    let root = reopened
+        .get_state_root(height)
+        .expect("committed state root must be readable after reopen");
+    assert_eq!(root.root_hash, root_hash);
+    assert_eq!(
+        reopened.local_root_index(),
+        Some(height),
+        "local root index must survive a reopen after flush"
+    );
 }
 
 #[test]

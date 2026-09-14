@@ -1,0 +1,6 @@
+- Each dBFT message type lives in its own file under `src/messages/` and implements the shared `ConsensusMessage` trait plus `serialize`/`validate` methods.
+- Incoming message processing is split into per-flow handler modules (`prepare`, `commit`, `change_view`, `recovery`) re-exported through `service/handlers.rs`, keeping state transitions localized.
+- DBFT wire-format construction is centralized in `service/helpers/dbft.rs` via `dbft_unsigned_extensible_bytes`, `dbft_payload_hash`, and `dbft_sign_data`, so all outgoing payloads follow the same byte layout.
+- Public entry points on `ConsensusService` return `ConsensusResult<T>` using the `thiserror`-based `ConsensusError` enum rather than panicking.
+- Validator identity is resolved by index to a `UInt160` script hash through the shared `dbft_sender` helper instead of direct vector access at call sites.
+- Sensitive key material is held in `Zeroizing<Vec<u8>>` fields on `ConsensusService` to ensure automatic zeroing on drop.

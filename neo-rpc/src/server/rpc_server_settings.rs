@@ -134,6 +134,15 @@ pub struct RpcServerConfig {
         alias = "MaxBatchSize"
     )]
     pub max_batch_size: usize,
+    /// Directory that `openwallet` paths must resolve under (empty = process CWD).
+    #[serde(default = "RpcServerConfig::default_wallet_directory", alias = "WalletDirectory")]
+    pub wallet_directory: String,
+    /// Maximum concurrent invoke iterator sessions when `SessionEnabled` is true.
+    #[serde(
+        default = "RpcServerConfig::default_max_sessions",
+        alias = "MaxSessions"
+    )]
+    pub max_sessions: usize,
 }
 
 impl RpcServerConfig {
@@ -166,7 +175,16 @@ impl RpcServerConfig {
     }
 
     const fn default_enable_cors() -> bool {
-        true
+        // Default closed: open CORS (`*`) with wallet RPCs is an ops footgun.
+        false
+    }
+
+    const fn default_max_sessions() -> usize {
+        32
+    }
+
+    const fn default_wallet_directory() -> String {
+        String::new()
     }
 
     const fn default_keep_alive_timeout() -> i32 {
@@ -343,6 +361,8 @@ impl Default for RpcServerConfig {
             session_expiration_time: Self::default_session_expiration_seconds(),
             find_storage_page_size: Self::default_find_storage_page_size(),
             max_batch_size: Self::default_max_batch_size(),
+            wallet_directory: Self::default_wallet_directory(),
+            max_sessions: Self::default_max_sessions(),
         }
     }
 }
@@ -437,6 +457,17 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    fn rpc_server_config_defaults_disable_cors() {
+        // CORS defaults to closed: open CORS (`*`) combined with wallet RPCs
+        // is an operations footgun. `rpc_server_config_loads_csharp_settings`
+        // covers the explicit `EnableCors: true` from the C# fixture; this
+        // locks the Rust-side default for configs that do not set it.
+        let config = RpcServerConfig::default();
+        assert!(!config.enable_cors);
+        assert!(config.allow_origins.is_empty());
+    }
+
+    #[test]
     fn rpc_server_config_loads_csharp_settings() {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let config_path = manifest_dir.join("../neo_csharp/node/plugins/RpcServer/RpcServer.json");
@@ -465,6 +496,8 @@ mod tests {
         assert!(config.trusted_authorities.is_empty());
         assert_eq!(config.rpc_user, "");
         assert_eq!(config.rpc_pass, "");
+        // The C# fixture sets EnableCors explicitly to true — the loaded value
+        // must reflect the file, not the (deliberately closed) Rust default.
         assert!(config.enable_cors);
         assert!(config.allow_origins.is_empty());
         assert_eq!(config.keep_alive_timeout, 60);

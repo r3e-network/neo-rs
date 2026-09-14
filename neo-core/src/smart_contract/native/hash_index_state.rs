@@ -44,23 +44,34 @@ impl HashIndexState {
 
     /// Updates this hash/index state from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        if let StackValue::Struct(items) = stack_value {
-            if items.len() < 2 {
-                return Ok(());
-            }
-
-            if let Some(bytes) = items[0].to_byte_string_bytes()
-                && bytes.len() == 32
-                && let Ok(hash) = UInt256::from_bytes(&bytes)
-            {
-                self.hash = hash;
-            }
-
-            if let Some(index) = Self::stack_value_to_u32(&items[1]) {
-                self.index = index;
-            }
+        let StackValue::Struct(items) = stack_value else {
+            return Err(CoreError::invalid_data(
+                "HashIndexState expects a Struct stack value".to_string(),
+            ));
+        };
+        if items.len() < 2 {
+            return Err(CoreError::invalid_data(
+                "HashIndexState struct must contain hash and index".to_string(),
+            ));
         }
 
+        let bytes = items[0].to_byte_string_bytes().ok_or_else(|| {
+            CoreError::invalid_data("HashIndexState hash field must be a byte string".to_string())
+        })?;
+        if bytes.len() != 32 {
+            return Err(CoreError::invalid_data(
+                "HashIndexState hash field must be 32 bytes".to_string(),
+            ));
+        }
+        let hash = UInt256::from_bytes(&bytes).map_err(|e| {
+            CoreError::invalid_data(format!("HashIndexState hash decode failed: {e}"))
+        })?;
+        let index = Self::stack_value_to_u32(&items[1]).ok_or_else(|| {
+            CoreError::invalid_data("HashIndexState index field must be an integer".to_string())
+        })?;
+
+        self.hash = hash;
+        self.index = index;
         Ok(())
     }
 }

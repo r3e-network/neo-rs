@@ -1,3 +1,8 @@
+// NOTE: This type is a parallel implementation of [neo_core::network::p2p::payloads::header::Header].
+// Both serialize/deserialize the same Neo N3 block header wire format.
+// Any wire format change MUST be applied to both types.
+// TODO: Unify these into a single shared serialization to prevent divergence.
+
 use crate::cryptography::Crypto;
 use crate::neo_io::serializable::helper::{deserialize_array, get_var_size, serialize_array};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
@@ -138,13 +143,9 @@ impl BlockHeader {
     /// Computes the header hash (matches C# CalculateHash).
     /// The result is cached; subsequent calls return the cached value.
     pub fn hash(&self) -> UInt256 {
-        match self.try_hash() {
-            Ok(hash) => hash,
-            Err(err) => {
-                tracing::error!("BlockHeader unsigned serialization failed: {err}");
-                UInt256::zero()
-            }
-        }
+        self.try_hash().unwrap_or_else(|err| {
+            panic!("BlockHeader unsigned serialization failed: {err}");
+        })
     }
 
     /// Computes the header hash, failing closed if unsigned serialization

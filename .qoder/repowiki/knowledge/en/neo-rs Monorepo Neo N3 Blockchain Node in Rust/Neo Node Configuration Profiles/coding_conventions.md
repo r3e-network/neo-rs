@@ -1,0 +1,6 @@
+- Each profile is a standalone TOML document with a top-level comment header naming the environment it targets (local, testnet, mainnet, full-validation, perf, etc.).
+- Profiles group settings into consistent sections: `[network]`, `[storage]`, `[p2p]`, `[rpc]`, `[consensus]` or `[dbft]`, `[telemetry]`, `[logging]`, `[blockchain]`, `[mempool]`, and optionally `[state_service]`.
+- Network isolation is achieved by varying `network_magic` and distinct p2p/rpc ports per profile so multiple nodes can coexist on the same host.
+- Storage backends default to RocksDB for persistent chains and `memory` for local development, with explicit `read_only = false` on writable profiles.
+- Consensus is disabled by default in all shipped profiles (`enabled = false`, `auto_start = false`) and must be explicitly turned on for validator runs.
+- Logging is configured per-profile with `level`, `format` (pretty/json), and a log file path under `./logs/` sized by `max_file_size` and rotated via `max_files`.

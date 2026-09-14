@@ -1,0 +1,32 @@
+=== reference files present ===
+-rw-r--r-- 1 Administrator 197121 68383216 2026-09-12 07:29:03.643470400 +0800 data/reference_stateroots.jsonl
+-rw-r--r-- 1 Administrator 197121        0 2026-09-12 07:08:54.901914800 +0800 data/reference_stateroots.jsonl.failed.jsonl
+-rw-r--r-- 1 Administrator 197121 68461246 2026-09-12 07:29:04.389848800 +0800 data/reference_stateroots.jsonl
+-rw-r--r-- 1 Administrator 197121        0 2026-09-12 07:08:54.901914800 +0800 data/reference_stateroots.jsonl.failed.jsonl
+=== head/tail/count of reference_stateroots.jsonl ===
+{"height": 0, "roothash": "0x58a5157b7e99eeabf631291f1747ec8eb12ab89461cda888492b17a301de81e8"}
+{"height": 1, "roothash": "0xa1afcea88ba49958951f6f0d0bfc196cb5c7ac95f4cc84b5b00ac00542f6bb5f"}
+{"height": 2, "roothash": "0xd1be94494dd36112e6cc4a7d261f9dca2a9bef198147b3b034ea59c274dd4f65"}
+...
+{"height": 673529, "roothash": "0xfff55147af6bb675c463efaf90424bbeca169eb1b6cae15fb3d6a728cf67c601"}
+{"height": 673391, "roothash": "0x2ef975b121a200ca7013303eb3dd9bdc77d4050c955203cfb3c062adb228eb80"}
+count=674417
+=== any 0..29999 file ===
+./benches-package/benches/state_root.rs
+./config/mainnet-stateroot.toml
+./data/reference_stateroots.jsonl
+./data/reference_stateroots.jsonl.failed.jsonl
+./neo-core/examples/dump_state_root.rs
+./neo-core/tests/mainnet_state_roots_vs_csharp.rs
+./neo-core/tests/state_root_height_probe.rs
+./scripts/compare-local-csharp-rust-stateroots.py
+./scripts/continuous-stateroot-validation.py
+./scripts/download_stateroots.py
+./scripts/download_stateroots_parallel.py
+./scripts/find-stateroot-divergence.py
+./scripts/stateroot-watchdog.sh
+./scripts/tests/test_compare_state_roots.py
+./scripts/validate-stateroot-continuous.sh
+=== mismatch message in code ===
+./neo-core/src/state_service/state_store/tests.rs:388:    assert!(err.contains("state root mismatch at height 1"));
+./neo-core/src/state_service/state_store.rs:586:                    "state root mismatch at height {height}: computed {root_hash}, expected {expected}, put_count {put_count}, del_count {del_count}"

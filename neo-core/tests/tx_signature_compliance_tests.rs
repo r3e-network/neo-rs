@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use neo_core::cryptography::Secp256r1Crypto;
+    use neo_core::cryptography::{Crypto, Secp256r1Crypto};
     use neo_core::network::p2p::helper;
     use neo_core::network::p2p::payloads::Transaction;
     use neo_core::wallets::KeyPair;
@@ -30,7 +30,7 @@ mod tests {
 
         let mut sig_bytes = [0u8; 64];
         sig_bytes.copy_from_slice(&signature);
-        let verified = Secp256r1Crypto::verify(message, &sig_bytes, &pubkey_bytes).unwrap();
+        let verified = Secp256r1Crypto::verify_prehash(&Crypto::sha256(message), &sig_bytes, &pubkey_bytes).unwrap();
         assert!(verified, "Signature verification should succeed");
     }
 }

@@ -211,13 +211,9 @@ impl Transaction {
 
     /// Gets the hash of the transaction.
     pub fn hash(&self) -> UInt256 {
-        match self.try_hash() {
-            Ok(hash) => hash,
-            Err(e) => {
-                tracing::error!("Transaction serialization failed: {:?}", e);
-                UInt256::zero()
-            }
-        }
+        self.try_hash().unwrap_or_else(|e| {
+            panic!("Transaction unsigned serialization failed: {e:?}");
+        })
     }
 
     /// Gets the hash of the transaction, failing closed if unsigned

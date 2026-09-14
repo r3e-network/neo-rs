@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: neo_storage
+title: Neo Blockchain Storage Abstraction Layer
+scope:
+    - neo-storage/
+source_files: []
+depends_on: []
+related_to:
+    - path: neo_consensus

@@ -9,7 +9,7 @@ use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::wallets::wallet::WalletError;
 use neo_core::wallets::wallet::WalletResult;
 use neo_core::wallets::{KeyPair, Nep6Wallet, Wallet};
-use neo_crypto::Secp256r1Crypto;
+use neo_crypto::{Crypto, Secp256r1Crypto};
 use neo_vm::OpCode;
 use rand::RngCore;
 use tokio::runtime::Runtime;
@@ -99,8 +99,8 @@ fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
         neo_core::network::p2p::helper::get_sign_data_vec(&transaction, settings.network)
             .expect("sign data");
     assert!(
-        Secp256r1Crypto::verify(
-            &sign_data,
+        Secp256r1Crypto::verify_prehash(
+            &Crypto::sha256(&sign_data),
             &signature_bytes,
             &original_key.compressed_public_key()
         )

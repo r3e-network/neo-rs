@@ -30,19 +30,7 @@ pub(super) async fn handle_post_request(
         .map(|addr| addr.ip())
         .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
-    if let Some(limiter) = filters.rate_limiter.as_ref() {
-        let check_result = limiter.check(client_ip);
-        if check_result.is_blocked() {
-            let mut response = build_http_response(
-                Some(error_response(None, RpcError::too_many_requests())),
-                false,
-                false,
-            );
-            apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
-            return Ok(response);
-        }
-    }
-
+    // A11: do not pre-charge Standard here — process_object charges the method tier once.
     let (response, unauthorized) = process_body(
         &filters,
         auth_header.as_deref(),
@@ -68,48 +56,48 @@ pub(super) async fn handle_get_request(
         .map(|addr| addr.ip())
         .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
-    let method_from_query = query_to_request_value(&raw_query)
-        .and_then(|v| v.get("method").and_then(|m| m.as_str()).map(String::from));
-
-    // R19: charge the request exactly once — at the method's tier when the
-    // method is known, otherwise at the Standard tier. Charging both made the
-    // same method cost twice as much over GET as over POST.
-    if let Some(limiter) = filters.rate_limiter.as_ref() {
-        let check_result = match method_from_query.as_deref() {
-            Some(method) => limiter.check_for_method(client_ip, method),
-            None => limiter.check(client_ip),
-        };
-        if check_result.is_blocked() {
-            let mut response = build_http_response(
-                Some(error_response(None, RpcError::too_many_requests())),
-                false,
-                false,
-            );
-            apply_cors(&mut response, filters.cors.as_ref(), origin.as_ref());
-            return Ok(response);
-        }
-    }
-
+    // A11: charge only inside process_object (method tier). Pre-charging doubled GET cost.
+    // Oversized / unparsable queries still pay Standard so they cannot bypass the limiter.
     let (response, unauthorized) = if raw_query.len() as u64 > max_query_len {
-        (Some(error_response(None, RpcError::bad_request())), false)
+        if let Some(outcome) = charge_standard_rate_limit(&filters, Some(client_ip)) {
+            (outcome.response, outcome.unauthorized)
+        } else {
+            (Some(error_response(None, RpcError::bad_request())), false)
+        }
     } else {
         match query_to_request_value(&raw_query) {
             Some(value) if exceeds_max_depth(&value, MAX_PARAMS_DEPTH) => {
-                (Some(error_response(None, RpcError::bad_request())), false)
+                if let Some(outcome) = charge_standard_rate_limit(&filters, Some(client_ip)) {
+                    (outcome.response, outcome.unauthorized)
+                } else {
+                    (Some(error_response(None, RpcError::bad_request())), false)
+                }
             }
             Some(Value::Object(obj)) => {
                 let outcome =
                     process_object(obj, &filters, auth_header.as_deref(), Some(client_ip));
                 (outcome.response, outcome.unauthorized)
             }
-            Some(_) => (
-                Some(error_response(None, RpcError::invalid_request())),
-                false,
-            ),
-            None => (
-                Some(error_response(None, RpcError::invalid_request())),
-                false,
-            ),
+            Some(_) => {
+                if let Some(outcome) = charge_standard_rate_limit(&filters, Some(client_ip)) {
+                    (outcome.response, outcome.unauthorized)
+                } else {
+                    (
+                        Some(error_response(None, RpcError::invalid_request())),
+                        false,
+                    )
+                }
+            }
+            None => {
+                if let Some(outcome) = charge_standard_rate_limit(&filters, Some(client_ip)) {
+                    (outcome.response, outcome.unauthorized)
+                } else {
+                    (
+                        Some(error_response(None, RpcError::invalid_request())),
+                        false,
+                    )
+                }
+            }
         }
     };
 
@@ -117,6 +105,24 @@ pub(super) async fn handle_get_request(
     let mut http_response = build_http_response(response, unauthorized, challenge);
     apply_cors(&mut http_response, filters.cors.as_ref(), origin.as_ref());
     Ok(http_response)
+}
+
+fn charge_standard_rate_limit(
+    filters: &RpcFilters,
+    client_ip: Option<IpAddr>,
+) -> Option<RequestOutcome> {
+    let (Some(limiter), Some(ip)) = (filters.rate_limiter.as_ref(), client_ip) else {
+        return None;
+    };
+    if limiter.check(ip).is_blocked() {
+        RPC_ERR_TOTAL.inc();
+        Some(RequestOutcome::error(
+            error_response(None, RpcError::too_many_requests()),
+            false,
+        ))
+    } else {
+        None
+    }
 }
 
 pub(super) fn process_body(
@@ -127,9 +133,17 @@ pub(super) fn process_body(
 ) -> (Option<Value>, bool) {
     let parsed: Value = match serde_json::from_slice(body) {
         Ok(value) => value,
-        Err(_) => return (Some(error_response(None, RpcError::bad_request())), false),
+        Err(_) => {
+            if let Some(outcome) = charge_standard_rate_limit(filters, client_ip) {
+                return (outcome.response, outcome.unauthorized);
+            }
+            return (Some(error_response(None, RpcError::bad_request())), false);
+        }
     };
     if exceeds_max_depth(&parsed, MAX_PARAMS_DEPTH) {
+        if let Some(outcome) = charge_standard_rate_limit(filters, client_ip) {
+            return (outcome.response, outcome.unauthorized);
+        }
         return (Some(error_response(None, RpcError::bad_request())), false);
     }
 
@@ -139,10 +153,15 @@ pub(super) fn process_body(
             let outcome = process_object(obj, filters, auth_header, client_ip);
             (outcome.response, outcome.unauthorized)
         }
-        _ => (
-            Some(error_response(None, RpcError::invalid_request())),
-            false,
-        ),
+        _ => {
+            if let Some(outcome) = charge_standard_rate_limit(filters, client_ip) {
+                return (outcome.response, outcome.unauthorized);
+            }
+            (
+                Some(error_response(None, RpcError::invalid_request())),
+                false,
+            )
+        }
     }
 }
 
@@ -210,6 +229,11 @@ fn process_object(
     let id = obj.get("id").cloned();
 
     if !has_id {
+        // Notifications still consume bandwidth; charge Standard so they cannot
+        // bypass the method-tier limiter by omitting `id`.
+        if let Some(outcome) = charge_standard_rate_limit(filters, client_ip) {
+            return outcome;
+        }
         return RequestOutcome::notification();
     }
 
@@ -220,6 +244,9 @@ fn process_object(
         value
     } else {
         RPC_ERR_TOTAL.inc();
+        if let Some(outcome) = charge_standard_rate_limit(filters, client_ip) {
+            return outcome;
+        }
         return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
     };
 
@@ -256,7 +283,8 @@ fn process_object(
         }
         if !verify_basic_auth(Some(header), auth) {
             RPC_ERR_TOTAL.inc();
-            return RequestOutcome::error(error_response(id, RpcError::access_denied()), false);
+            // A19: wrong credentials must also challenge with HTTP 401, not 200 + JSON.
+            return RequestOutcome::error(error_response(id, RpcError::access_denied()), true);
         }
     }
 

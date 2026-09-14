@@ -1,0 +1,24 @@
+=== background ===
+zip_size_bytes=6036620262
+neo_node_exe:
+-rwxr-xr-x 2 Administrator 197121 21262336 2026-09-12 06:13:23.860678500 +0800 target/release/neo-node.exe
+procs:
+cargo.exe                    50436 Console                    1    107,508 K
+cargo.exe                    75544 Console                    1    137,452 K
+rustc.exe                    12848 Console                    1     88,764 K
+=== script sizes ===
+  480 scripts/mainnet-full-verify.py
+  260 scripts/mainnet-full-validation.sh
+   72 config/mainnet-full-validation.toml
+  812 total
+=== git (no commits) ===
+ M ARCHITECTURE.md
+ M benches-package/Cargo.toml
+ M docs/RPC_HARDENING.md
+ M fuzz/Cargo.lock
+ M neo-config/src/protocol.rs
+ M neo-consensus/src/context/mod.rs
+ M neo-consensus/src/context/tests.rs
+ M neo-consensus/src/messages/mod.rs
+ M neo-consensus/src/service/handlers/commit.rs
+ M neo-consensus/src/service/handlers/prepare.rs

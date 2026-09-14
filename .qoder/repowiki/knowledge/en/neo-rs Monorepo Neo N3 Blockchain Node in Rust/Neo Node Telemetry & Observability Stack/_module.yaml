@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: neo_telemetry
+title: Neo Node Telemetry & Observability Stack
+scope:
+    - neo-telemetry/
+source_files: []
+depends_on: []
+related_to: []

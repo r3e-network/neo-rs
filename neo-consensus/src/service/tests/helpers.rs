@@ -50,7 +50,7 @@ pub(super) fn sign_payload(
     private_key: &[u8; 32],
 ) {
     let sign_data = service.dbft_sign_data(payload).expect("sign data");
-    let signature = Secp256r1Crypto::sign(&sign_data, private_key).expect("sign");
+    let signature = Secp256r1Crypto::sign_prehash(&Crypto::sha256(&sign_data), private_key).expect("sign");
     payload.set_witness(signature.to_vec());
 }
 
@@ -58,7 +58,7 @@ pub(super) fn sign_commit(network: u32, block_hash: &UInt256, private_key: &[u8;
     let mut sign_data = Vec::with_capacity(4 + 32);
     sign_data.extend_from_slice(&network.to_le_bytes());
     sign_data.extend_from_slice(&block_hash.as_bytes());
-    Secp256r1Crypto::sign(&sign_data, private_key)
+    Secp256r1Crypto::sign_prehash(&Crypto::sha256(&sign_data), private_key)
         .expect("sign")
         .to_vec()
 }

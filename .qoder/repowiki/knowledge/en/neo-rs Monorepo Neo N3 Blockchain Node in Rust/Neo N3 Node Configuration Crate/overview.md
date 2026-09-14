@@ -1,0 +1,1 @@
+Rust crate providing TOML-based configuration, protocol parameters, network presets, and genesis block definitions for a Neo N3 blockchain node.

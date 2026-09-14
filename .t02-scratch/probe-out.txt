@@ -1,0 +1,32 @@
+=== node procs ===
+neo-node.exe                 66424 Console                    1    125,208 K
+=== RPC probe ===
+getblockcount ERR Remote end closed connection without response
+h=0      EXC Remote end closed connection without response
+h=1      EXC Remote end closed connection without response
+h=2      EXC Remote end closed connection without response
+h=3      EXC Remote end closed connection without response
+h=10     EXC Remote end closed connection without response
+h=50     EXC Remote end closed connection without response
+h=100    EXC Remote end closed connection without response
+h=1000   EXC Remote end closed connection without response
+h=5000   EXC Remote end closed connection without response
+h=10000  EXC Remote end closed connection without response
+h=15000  EXC Remote end closed connection without response
+h=20000  EXC Remote end closed connection without response
+h=21000  EXC Remote end closed connection without response
+h=21372  EXC Remote end closed connection without response
+h=21373  EXC Remote end closed connection without response
+=== node log: state service / startup ===
+{"timestamp":"2026-09-11T22:48:01.157383Z","level":"INFO","fields":{"message":"build profile","build":"plugins: rpc-server,tokens-tracker,application-logs; storage: rocksdb"},"target":"neo"}
+{"timestamp":"2026-09-11T22:48:01.157724Z","level":"INFO","fields":{"message":"state root calculation enabled","path":"data/Plugins\\StateService\\StateRoot","full_state":true,"auto_verify":false},"target":"neo"}
+{"timestamp":"2026-09-11T22:48:01.158916Z","level":"INFO","fields":{"message":"rpc server configuration emitted","path":"data/Plugins\\RpcServer\\RpcServer.json"},"target":"neo"}
+{"timestamp":"2026-09-11T22:48:01.809737Z","level":"WARN","fields":{"message":"reference roots file not found: data/reference_stateroots.jsonl: The system cannot find the file specified. (os error 2)"},"target":"neo::state_service"}
+{"timestamp":"2026-09-11T22:48:01.866702Z","level":"INFO","fields":{"message":"RPC server bound on 127.0.0.1:10332"},"target":"neo_rpc::server::rpc_server"}
+{"timestamp":"2026-09-11T22:48:01.866742Z","level":"INFO","fields":{"message":"Starting RPC server on 127.0.0.1:10332 (network 860833102)"},"target":"neo_rpc::server::rpc_server"}
+{"timestamp":"2026-09-11T23:09:48.840520Z","level":"INFO","fields":{"message":"build profile","build":"plugins: rpc-server,tokens-tracker,application-logs; storage: rocksdb"},"target":"neo"}
+{"timestamp":"2026-09-11T23:09:48.840722Z","level":"INFO","fields":{"message":"state root calculation enabled","path":"data/Plugins\\StateService\\StateRoot","full_state":true,"auto_verify":false},"target":"neo"}
+{"timestamp":"2026-09-11T23:09:48.843240Z","level":"INFO","fields":{"message":"rpc server configuration emitted","path":"data/Plugins\\RpcServer\\RpcServer.json"},"target":"neo"}
+{"timestamp":"2026-09-11T23:09:49.753527Z","level":"INFO","fields":{"message":"loaded 58737 reference state roots for validation"},"target":"neo::state_service"}
+{"timestamp":"2026-09-11T23:09:49.806771Z","level":"INFO","fields":{"message":"RPC server bound on 127.0.0.1:10332"},"target":"neo_rpc::server::rpc_server"}
+{"timestamp":"2026-09-11T23:09:49.806802Z","level":"INFO","fields":{"message":"Starting RPC server on 127.0.0.1:10332 (network 860833102)"},"target":"neo_rpc::server::rpc_server"}

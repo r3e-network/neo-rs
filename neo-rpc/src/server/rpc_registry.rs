@@ -3,7 +3,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::LazyLock;
-use tracing::{info, warn};
+use tracing::info;
 
 pub static SERVERS: LazyLock<RwLock<HashMap<u32, Arc<RwLock<RpcServer>>>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
@@ -17,10 +17,17 @@ pub fn remove_server(network: u32) {
 pub fn register_server(network: u32, server: Arc<RwLock<RpcServer>>) {
     let mut guard = SERVERS.write();
     if let Some(previous) = guard.insert(network, Arc::clone(&server)) {
-        warn!(
-            "Replacing existing RPC server instance for network {}",
-            network
-        );
+        if cfg!(debug_assertions) {
+            panic!(
+                "double-registration of RPC server for network {}",
+                network
+            );
+        } else {
+            tracing::error!(
+                "Double-registration of RPC server for network {} — previous instance replaced",
+                network
+            );
+        }
         if let Some(mut previous_guard) = previous.try_write() {
             previous_guard.dispose();
         }

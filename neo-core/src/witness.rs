@@ -235,7 +235,7 @@ impl Witness {
                 .map_err(|_| CoreError::invalid_data("Invalid signature length"))?;
 
             let verified =
-                Secp256r1Crypto::verify(message, &signature_bytes, &sorted_keys[key_index])
+                Secp256r1Crypto::verify_prehash(&Crypto::sha256(message), &signature_bytes, &sorted_keys[key_index])
                     .map_err(|e| CoreError::Cryptographic {
                         message: format!("ECDSA verification failed: {e}"),
                     })?;
@@ -317,7 +317,7 @@ impl Witness {
             .try_into()
             .map_err(|_| CoreError::invalid_data("Invalid signature length"))?;
 
-        Secp256r1Crypto::verify(hash_data, &signature_bytes, public_key).map_err(|e| {
+        Secp256r1Crypto::verify_prehash(&Crypto::sha256(hash_data), &signature_bytes, public_key).map_err(|e| {
             CoreError::Cryptographic {
                 message: format!("ECDSA verification failed: {e}"),
             }
@@ -502,7 +502,7 @@ mod tests {
         let signatures: Vec<Vec<u8>> = pairs
             .iter()
             .take(m)
-            .map(|(_, pk)| Secp256r1Crypto::sign(message, pk).unwrap().to_vec())
+            .map(|(_, pk)| Secp256r1Crypto::sign_prehash(&Crypto::sha256(message), pk).unwrap().to_vec())
             .collect();
 
         let witness = Witness::new();

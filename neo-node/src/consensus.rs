@@ -568,9 +568,10 @@ impl ConsensusActor {
             return;
         };
 
-        if payload.message_type == ConsensusMessageType::Commit
-            && !self.settings.ignore_recovery_logs
-        {
+        if payload.message_type == ConsensusMessageType::Commit {
+            // R03: always persist recovery before broadcasting Commit.
+            // `ignore_recovery_logs` only skips *loading* prior logs at startup;
+            // it must not skip the Commit durability gate.
             let mut saved = self.save_recovery_to_store(service);
             if !saved {
                 if let Some(parent) = self.recovery_path.parent() {
@@ -583,10 +584,6 @@ impl ConsensusActor {
                 }
             }
             if !saved {
-                // R03: a signed Commit must never be published unless its
-                // recovery state is durably persisted — losing it after
-                // broadcast would risk re-signing a different proposal after
-                // a crash. Withhold the Commit and fail loudly instead.
                 error!(
                     target: "neo",
                     validator = payload.validator_index,

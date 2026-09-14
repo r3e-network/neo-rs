@@ -1,0 +1,40 @@
+=== COMMAND ===
+NEO_IMPORT_STOP_HEIGHT=29999 CAMPAIGN_START=0 CAMPAIGN_END=29999 CAMPAIGN_STORE=data/mainnet-gate-smoke CAMPAIGN_PLUGINS_DIR=./data/gate-smoke-plugins bash scripts/mainnet-full-validation.sh campaign
+=== RUN ===
+[2026-09-12 07:33:49] === mainnet-full-validation: step=campaign ===
+[2026-09-12 07:33:50] campaign: range [0, 29999] store=data/mainnet-gate-smoke reference=data/reference_stateroots.jsonl
+[2026-09-12 07:33:51] campaign: reference completeness gate ...
+[2026-09-12 07:33:55] campaign: gate verify-only exit=1 effective_pass=true reference_records=971861
+[2026-09-12 07:33:55] campaign: import starting (expect abort at first divergence; log -> logs/mainnet-campaign-smoke-import.log)
+[2026-09-12 07:33:56] campaign: bounded run - NEO_IMPORT_STOP_HEIGHT=29999
+[2026-09-12 07:33:56] campaign: isolated plugins dir NEO_PLUGINS_DIR=./data/gate-smoke-plugins
+{"timestamp":"2026-09-11T23:33:58.352805Z","level":"INFO","fields":{"message":"using protocol settings","seeds":"[\"seed1.neo.org:10333\", \"seed2.neo.org:10333\", \"seed3.neo.org:10333\", \"seed4.neo.org:10333\", \"seed5.neo.org:10333\"]","network_magic":"0x334f454e","listen_port":10343,"storage":"data/mainnet-gate-smoke","backend":"rocksdb"},"target":"neo"}
+{"timestamp":"2026-09-11T23:33:58.352878Z","level":"INFO","fields":{"message":"build profile","build":"plugins: rpc-server,tokens-tracker,application-logs; storage: rocksdb"},"target":"neo"}
+{"timestamp":"2026-09-11T23:33:58.352892Z","level":"WARN","fields":{"message":"using RocksDB high-throughput batch profile (reduced crash durability)","profile":"high_throughput"},"target":"neo"}
+{"timestamp":"2026-09-11T23:33:58.354036Z","level":"INFO","fields":{"message":"state root calculation enabled","path":"./data/gate-smoke-plugins\\StateService\\StateRoot","full_state":true,"auto_verify":false},"target":"neo"}
+{"timestamp":"2026-09-11T23:33:58.396097Z","level":"INFO","fields":{"message":"rpc server configuration emitted","path":"./data/gate-smoke-plugins\\RpcServer\\RpcServer.json"},"target":"neo"}
+{"timestamp":"2026-09-11T23:33:59.685205Z","level":"INFO","fields":{"message":"loaded 977350 reference state roots for validation"},"target":"neo::state_service"}
+{"timestamp":"2026-09-11T23:33:59.685259Z","level":"INFO","fields":{"message":"blockchain at genesis — starting state trie empty for incremental computation"},"target":"neo"}
+{"timestamp":"2026-09-11T23:33:59.698932Z","level":"INFO","fields":{"message":"Node starting, broadcasting NodeStarted event"},"target":"neo"}
+{"timestamp":"2026-09-11T23:33:59.699031Z","level":"INFO","fields":{"message":"persisting genesis block to initialize state"},"target":"neo"}
+{"timestamp":"2026-09-11T23:33:59.700732Z","level":"INFO","fields":{"message":"state root MATCH (checkpoint)","height":0,"root_hash":"0x58a5157b7e99eeabf631291f1747ec8eb12ab89461cda888492b17a301de81e8"},"target":"neo::state_service"}
+{"timestamp":"2026-09-11T23:33:59.701423Z","level":"INFO","fields":{"message":"ContractManagement snapshot integrity check passed","non_native_contracts":0},"target":"neo"}
+{"timestamp":"2026-09-11T23:33:59.746984Z","level":"INFO","fields":{"message":"starting .acc import","file":"data/bootstrap/chain.0.acc","declared_start":0,"declared_count":13141251,"local_height":0,"stop_height":"Some(29999)","progress_interval":1000,"progress_heartbeat_secs":60,"flush_interval":10000},"target":"neo"}
+{"timestamp":"2026-09-11T23:33:59.950172Z","level":"INFO","fields":{"message":"acc import progress","imported":1000,"skipped":1,"current_height":1000,"local_view_height":1000,"current_hash_written":true,"rate_blocks_per_sec":4023.1508190732757},"target":"neo"}
+{"timestamp":"2026-09-11T23:34:00.190253Z","level":"INFO","fields":{"message":"acc import progress","imported":2000,"skipped":1,"current_height":2000,"local_view_height":2000,"current_hash_written":true,"rate_blocks_per_sec":4092.7850747588122},"target":"neo"}
+{"timestamp":"2026-09-11T23:34:00.458405Z","level":"INFO","fields":{"message":"acc import progress","imported":3000,"skipped":1,"current_height":3000,"local_view_height":3000,"current_hash_written":true,"rate_blocks_per_sec":3964.004722979494},"target":"neo"}
+{"timestamp":"2026-09-11T23:34:00.761166Z","level":"INFO","fields":{"message":"acc import progress","imported":4000,"skipped":1,"current_height":4000,"local_view_height":4000,"current_hash_written":true,"rate_blocks_per_sec":3775.0963687725534},"target":"neo"}
+{"timestamp":"2026-09-11T23:34:01.160534Z","level":"INFO","fields":{"message":"state root MATCH (checkpoint)","height":5000,"root_hash":"0x73b58bd21d6dd5438c99aa55967aca628e592685e0ea78701c736796f11e1e6b"},"target":"neo::state_service"}
+{"timestamp":"2026-09-11T23:34:01.160615Z","level":"INFO","fields":{"message":"acc import progress","imported":5000,"skipped":1,"current_height":5000,"local_view_height":5000,"current_hash_written":true,"rate_blocks_per_sec":3426.941144547623},"target":"neo"}
+{"timestamp":"2026-09-11T23:34:01.358298Z","level":"INFO","fields":{"message":"storage flush completed after .acc import error"},"target":"neo"}
+Error: failed to import blocks from .acc file
+
+Caused by:
+    0: failed to persist imported block 5107
+    1: System error: state service commit handler failed during committing: state root mismatch at height 5107: computed 0x89584b3fa47f7aef571c1da3a7514a059750f6a5e366e7b77bb8d943406988e2, expected 0x941868fa4eb5cd80807dc17c0ef05e6cb1c6b57a9d2899ea274fa8b8c69604b1, put_count 4, del_count 0
+[2026-09-12 07:34:01] campaign: import exit=1
+Report -> outputs\mainnet-campaign-0-29999-20260911T233402Z.json
+status=diverged prefix={'start': 0, 'end': 5106}
+[2026-09-12 07:34:14] campaign: NOT CLEAN (exit=1) -> data/mainnet-gate-smoke/.campaign-aborted
+[2026-09-12 07:34:15] === mainnet-full-validation: step=campaign exit=1 ===
+CAMPAIGN_EXIT=1

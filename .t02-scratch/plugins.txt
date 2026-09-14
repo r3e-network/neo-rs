@@ -1,0 +1,134 @@
+=== plugin_settings.rs 1-60 ===
+use anyhow::{Context, Result, bail};
+use neo_core::{
+    UnhandledExceptionPolicy, application_logs::ApplicationLogsSettings, constants::MAX_BLOCK_SIZE,
+    oracle_service::OracleServiceSettings, state_service::state_store::StateServiceSettings,
+    tokens_tracker::TokensTrackerSettings,
+};
+use serde::Deserialize;
+use std::{env, fs, path::PathBuf, time::Duration};
+use url::Url;
+
+use super::{
+    ApplicationLogsSection, DbftSection, DbftSettings, OracleServiceNeoFsSection,
+    OracleServiceSection, StateServiceSection, TokensTrackerSection,
+};
+
+fn plugins_directory() -> PathBuf {
+    match env::var_os("NEO_PLUGINS_DIR") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => PathBuf::from("data/Plugins"),
+    }
+}
+
+pub(super) fn config_directory() -> PathBuf {
+    plugins_directory().join("RpcServer")
+}
+
+fn application_logs_config_path() -> PathBuf {
+    plugins_directory()
+        .join("ApplicationLogs")
+        .join("ApplicationLogs.json")
+}
+
+fn application_logs_directory() -> PathBuf {
+    plugins_directory().join("ApplicationLogs")
+}
+
+fn state_service_config_path() -> PathBuf {
+    plugins_directory()
+        .join("StateService")
+        .join("StateService.json")
+}
+
+fn state_service_directory() -> PathBuf {
+    plugins_directory().join("StateService")
+}
+
+fn tokens_tracker_config_path() -> PathBuf {
+    plugins_directory()
+        .join("TokensTracker")
+        .join("TokensTracker.json")
+}
+
+fn tokens_tracker_directory() -> PathBuf {
+    plugins_directory().join("TokensTracker")
+}
+
+fn oracle_service_config_path() -> PathBuf {
+    plugins_directory()
+        .join("OracleService")
+        .join("OracleService.json")
+=== PluginsSection ===
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PluginsSection {
+    #[serde(alias = "DownloadUrl")]
+    pub download_url: String,
+    #[serde(alias = "Prerelease")]
+    pub prerelease: bool,
+    #[serde(alias = "Version")]
+    pub version: Option<String>,
+}
+
+impl Default for PluginsSection {
+    fn default() -> Self {
+        Self {
+            download_url: "https://api.github.com/repos/neo-project/neo/releases".to_string(),
+            prerelease: false,
+            version: None,
+        }
+    }
+}
+
+/// Consensus configuration section
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct ConsensusSection {
+    /// Whether consensus is enabled
+=== how teammates set tmp plugins dir ===
+config/tmp-bisect.toml:5:# Run with an isolated plugins dir so the StateService MPT store is not shared:
+config/tmp-bisect.toml:6:#   NEO_PLUGINS_DIR=./data/tmp-bisect-plugins \
+config/tmp-rust5107.toml:11:path = "./data/tmp-rust5107"
+config/tmp-rust5107.toml:43:file_path = "./logs/tmp-rust5107.log"
+-rw-r--r-- 1 Administrator 197121 1075 Sep 12 07:13 config/tmp-rust5107.toml
+# TEMP read-only inspection config: import a small range (0..~5200) into an
+# isolated store so we can inspect the Rust-computed state at height 5107 via
+# RPC getstate/findstates. Do NOT point at pristine stores.
+
+[network]
+network_type = "MainNet"
+network_magic = 0x334F454E
+
+[storage]
+backend = "rocksdb"
+path = "./data/tmp-rust5107"
+read_only = false
+
+[p2p]
+port = 10349
+max_connections = 10
+min_desired_connections = 0
+seed_nodes = []
+enable_compression = true
+broadcast_history_limit = 100000
+
+[rpc]
+enabled = true
+port = 10348
+bind_address = "127.0.0.1"
+cors_enabled = false
+auth_enabled = false
+max_gas_invoke = 50000000
+max_iterator_results = 100
+disabled_methods = ["openwallet"]
+
+[consensus]
+enabled = false
+auto_start = false
+
+[telemetry]
+[telemetry.metrics]
+enabled = false
+
+[logging]

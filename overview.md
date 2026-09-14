@@ -102,6 +102,13 @@
 
 共享 target 并发构建时曾触发 Windows `x86_64-pc-windows-gnullvm` rustc metadata ICE、incremental `Access denied`、Cargo artifact lock 和 linker 占用。当前定向验证统一使用独立 `CARGO_TARGET_DIR`、`CARGO_INCREMENTAL=0` 和 `--jobs 1`。
 
+## VM 跨实现差分执行（2026-09-11）
+
+- 新增 `scripts/gen-chain-vm-vectors.py`：逐字节解析 `mainnet_blocks.json`，提取 27 个真实主网区块中的 708 个唯一 invocation/verification script。
+- 新增 `vectors/vm/chain-vectors.json`：真实链上脚本向量；Rust bare VM 执行结果为 561 HALT / 147 FAULT，0 harness error。147 个 fault 均为 bare VM 未注册 syscall 的预期结果。
+- 新增 `scripts/vm-diff.py`：严格比较终止状态、完整结果栈 JSON、fault 和 harness_error；退出码 0/1/2 分别表示一致/差异/输入错误。纯 VM 99 条和链上 708 条均已完成自比较与篡改检测。
+- C# `Neo.VM 3.10.1` runner 与 Rust runner 已完成代码，但本机机器级环境缺失 `ProgramData`/`APPDATA`/`LOCALAPPDATA`，NuGet 在 `NuGet.targets(780)` 静态初始化失败；尚未取得真实跨实现 PASS 结论。需管理员执行 `tools/csharp-vm-runner/FIX-MACHINE-ENV.ps1` 并重启 WorkBuddy 后继续。
+
 结论：项目已系统完成全仓审计优化与迭代闭环：
 1. 实现了与 C# Neo v3.10.1 官方实现深度对齐的协议与 RPC 规范修复（涵盖 WitnessScope 序列化、IIterator 命名、Signer 空数组保留、getversion/getrawtransaction 字段清洗、NEP-11/17 边界参数、合约验证任意 arity 及错误文案完全一致），`neo-rpc` 全量 567 项测试 100% 通过；
 2. 彻底闭环了 Fast-Sync 与 P2P 节点的真实端到端链路测试（`fast_sync_p2p_e2e_tests.rs` 3 passed / 0 failed），真实验证了双节点多区块生成持久化、交易手续费扣减、快速同步模式接入与提交回调链路；

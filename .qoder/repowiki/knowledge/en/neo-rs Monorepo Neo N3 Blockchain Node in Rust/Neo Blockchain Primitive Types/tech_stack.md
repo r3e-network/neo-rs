@@ -1,0 +1,1 @@
+Rust workspace crate using `serde`/`serde_json` for serialization, `sha2`+`ripemd` for script hash computation, `bs58` for Base58Check address encoding, `num-bigint`/`num-integer` for `BigDecimal`, `thiserror` for error types, `tracing` for logging, and `proptest` for property-based tests.

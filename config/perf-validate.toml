@@ -1,0 +1,58 @@
+[network]
+network_type = "MainNet"
+network_magic = 0x334F454E
+
+[storage]
+backend = "rocksdb"
+path = "./data/perf-validate"
+read_only = false
+
+[p2p]
+port = 10356
+max_connections = 50
+min_desired_connections = 0
+seed_nodes = []
+enable_compression = true
+broadcast_history_limit = 100000
+
+[rpc]
+enabled = false
+port = 10357
+bind_address = "127.0.0.1"
+cors_enabled = false
+auth_enabled = false
+max_gas_invoke = 50000000
+max_iterator_results = 100
+disabled_methods = ["openwallet"]
+
+[consensus]
+enabled = false
+auto_start = false
+
+[telemetry]
+[telemetry.metrics]
+enabled = false
+
+[logging]
+level = "info"
+format = "json"
+file_path = "./logs/perf-validate.log"
+max_file_size = "100MB"
+max_files = 4
+
+[blockchain]
+block_time = 15000
+max_transactions_per_block = 512
+
+[mempool]
+max_transactions = 50000
+
+# State roots must be enabled: this is the whole point of the validation run.
+# `path = "StateRoot"` is resolved to  <NEO_PLUGINS_DIR or data/Plugins>/StateService/StateRoot
+# (see neo-node/src/config/plugin_settings.rs resolve_state_service_store_path), which is
+# INDEPENDENT of [storage].path — so always run with NEO_PLUGINS_DIR set to isolate this run
+# from any other node's state store.
+[state_service]
+enabled = true
+full_state = true
+path = "StateRoot"

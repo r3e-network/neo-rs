@@ -1,3 +1,8 @@
+// NOTE: This type is a parallel implementation of [neo_core::ledger::block_header::BlockHeader].
+// Both serialize/deserialize the same Neo N3 block header wire format.
+// Any wire format change MUST be applied to both types.
+// TODO: Unify these into a single shared serialization to prevent divergence.
+
 use super::{Header, Witness};
 use crate::error::CoreResult;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};

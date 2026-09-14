@@ -1,5 +1,4 @@
 use super::{MAX_PENDING_PER_URL, OracleContract, PendingRequest};
-use crate::UInt256;
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{GasToken, contract_management::ContractManagement};
@@ -97,7 +96,11 @@ impl OracleContract {
                     .downcast_ref::<crate::network::p2p::payloads::Transaction>()
                     .map(|tx| tx.hash())
             })
-            .unwrap_or_else(UInt256::zero);
+            .ok_or_else(|| {
+                Error::invalid_operation(
+                    "Oracle request requires a Transaction script container".to_string(),
+                )
+            })?;
         let price = self.get_price_value(snapshot);
         let price_u64 = u64::try_from(price)
             .map_err(|_| Error::invalid_operation("Oracle price cannot be converted to u64"))?;

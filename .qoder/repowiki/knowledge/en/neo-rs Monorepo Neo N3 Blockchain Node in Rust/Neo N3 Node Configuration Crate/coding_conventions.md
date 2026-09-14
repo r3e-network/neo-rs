@@ -1,0 +1,6 @@
+- Configuration structs derive `Debug, Clone, Serialize, Deserialize` and annotate every field with `#[serde(default = ...)]` pointing to a module-local default function.
+- Default implementations delegate to a dedicated `for_network(NetworkType)` constructor that branches on MainNet/TestNet/Private to set network-specific ports, seeds, and protocol parameters.
+- Hardcoded network constants (magic numbers, seed nodes, validator public keys, hardfork heights) are exposed via named constructors (`mainnet()`, `testnet()`, `private(...)`) rather than global constants.
+- Validation logic is centralized in `validate()` methods on composite settings types and invoked after TOML deserialization in `from_file` / `from_toml_str` / `FromStr`.
+- Errors are modeled as a single `ConfigError` enum using `thiserror` with `#[from]` conversions for I/O and TOML parse errors, and returned via the shared `ConfigResult<T>` type alias.
+- Each module pairs its implementation with an inline `#[cfg(test)] mod tests` block exercising defaults, round-trip TOML serialization, and validation failure paths.

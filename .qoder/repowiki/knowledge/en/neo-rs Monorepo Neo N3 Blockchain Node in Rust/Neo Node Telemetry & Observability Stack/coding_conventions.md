@@ -1,0 +1,6 @@
+- Configuration structs derive `Serialize`/`Deserialize` with `#[serde(default)]` fields and provide private `default_*` helper functions for field defaults.
+- Process-wide Prometheus metrics are declared as `static LazyLock<Gauge|Counter>` and registered against the global `prometheus::Registry` via small `register_gauge`/`register_counter` helpers.
+- Node-facing update APIs (`update_node_metrics`, `update_timeout_metrics`, `update_storage_metrics`) accept flat primitive arguments and mutate the static metric globals rather than taking `&self`.
+- HTTP servers are constructed via builder-style structs (`NodeHealthServer`, `MetricsServer`) that hold configuration and expose a `start()` async method returning `anyhow::Result<()>`.
+- Health checks are registered through a trait (`HealthCheckFn`) and collected in a `Vec<Box<dyn HealthCheckFn>>`, allowing closure-based checks via the generic `FnHealthCheck` wrapper.
+- Each module groups unit tests under a `#[cfg(test)] mod tests { ... }` block colocated with the implementation.

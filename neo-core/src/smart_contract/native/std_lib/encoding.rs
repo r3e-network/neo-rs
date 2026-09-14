@@ -11,7 +11,9 @@ impl StdLib {
 
     pub(super) fn base64_decode(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         let string_data = self.validate_string_arg(args, "base64Decode")?;
-        Base64::decode_lenient(&string_data)
+        // C# uses Convert.FromBase64String which is strict: rejects whitespace,
+        // non-base64 characters, and incorrect padding.  Use the strict variant.
+        Base64::decode(&string_data)
             .map_err(|_| Error::native_contract("Invalid base64 data"))
     }
 

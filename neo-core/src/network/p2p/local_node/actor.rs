@@ -164,9 +164,20 @@ impl LocalNodeActor {
 
                 // SECURITY: Record connection failure in reputation tracker
                 let tracker = self.state.reputation_tracker();
+                let state = Arc::clone(&self.state);
                 let ip = endpoint.ip();
                 self.spawn_background(async move {
                     tracker.record_violation(ip, "handshake_failure").await;
+                    if tracker
+                        .is_misbehaving(ip, crate::network::p2p::DEFAULT_REPUTATION_THRESHOLD)
+                        .await
+                    {
+                        state.ban_peer(
+                            ip,
+                            std::time::Duration::from_secs(60 * 60),
+                            "peer reputation below threshold",
+                        );
+                    }
                 });
 
                 Ok(())
@@ -600,7 +611,10 @@ impl LocalNodeActor {
             return Ok(());
         }
 
-        let requested = count.max(MAX_COUNT_FROM_SEED_LIST);
+        // Respect the caller-supplied count instead of silently overriding it
+        // with MAX_COUNT_FROM_SEED_LIST, which made the `count` parameter
+        // misleading. The sole call site already passes MAX_COUNT_FROM_SEED_LIST.
+        let requested = count;
 
         if self.peer.connected_count() > 0 {
             // When we already have connected peers, rely on GetAddr only.

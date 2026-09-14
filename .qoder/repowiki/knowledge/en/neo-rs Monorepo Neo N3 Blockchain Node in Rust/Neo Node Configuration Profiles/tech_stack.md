@@ -1,0 +1,1 @@
+TOML-based declarative configuration; RocksDB backend for persistent storage; optional in-memory backend for local dev; JSON plugin manifests under `config/Plugins/`.

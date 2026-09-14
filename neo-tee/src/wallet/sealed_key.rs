@@ -89,7 +89,7 @@ impl SealedKey {
     /// Save sealed key to file
     pub fn save_to_file(&self, path: &Path) -> TeeResult<()> {
         let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, json)?;
+        crate::fs_acl::write_owner_only(path, json.as_bytes())?;
         Ok(())
     }
 

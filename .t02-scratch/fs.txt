@@ -1,0 +1,83 @@
+=== full-validation dir ===
+total 11649
+drwxr-xr-x 1 Administrator 197121       0 Sep 12 07:09 .
+drwxr-xr-x 1 Administrator 197121       0 Sep 12 07:15 ..
+-rw-r--r-- 1 Administrator 197121       5 Sep 12 07:09 .node.pid
+-rw-r--r-- 1 Administrator 197121       0 Sep 12 06:48 000004.log
+-rw-r--r-- 1 Administrator 197121 5522954 Sep 12 06:46 000011.sst
+-rw-r--r-- 1 Administrator 197121 5488892 Sep 12 06:46 000013.sst
+-rw-r--r-- 1 Administrator 197121  760978 Sep 12 06:46 000015.sst
+-rw-r--r-- 1 Administrator 197121       0 Sep 12 07:09 000018.log
+-rw-r--r-- 1 Administrator 197121       0 Sep 12 07:09 000028.log
+-rw-r--r-- 1 Administrator 197121      16 Sep 12 07:09 CURRENT
+-rw-r--r-- 1 Administrator 197121      36 Sep 12 06:46 IDENTITY
+-rw-r--r-- 1 Administrator 197121       0 Sep 12 07:09 LOCK
+-rw-r--r-- 1 Administrator 197121   22579 Sep 12 07:09 LOG
+-rw-r--r-- 1 Administrator 197121   48420 Sep 12 06:46 LOG.old.1789166881180627
+-rw-r--r-- 1 Administrator 197121   40550 Sep 12 06:48 LOG.old.1789168188864764
+-rw-r--r-- 1 Administrator 197121     363 Sep 12 07:09 MANIFEST-000029
+-rw-r--r-- 1 Administrator 197121      10 Sep 12 06:46 NETWORK_MAGIC
+-rw-r--r-- 1 Administrator 197121    6918 Sep 12 06:49 OPTIONS-000027
+-rw-r--r-- 1 Administrator 197121    6919 Sep 12 07:09 OPTIONS-000031
+-rw-r--r-- 1 Administrator 197121       6 Sep 12 06:46 VERSION
+--- its StateRoot subdir? ---
+(none)
+=== global plugin StateService dir ===
+total 4
+drwxr-xr-x 1 Administrator 197121 0 Sep 12 06:46 .
+drwxr-xr-x 1 Administrator 197121 0 Sep 12 06:46 ..
+drwxr-xr-x 1 Administrator 197121 0 Sep 12 07:09 StateRoot
+--- StateRoot ---
+total 98
+drwxr-xr-x 1 Administrator 197121     0 Sep 12 07:09 .
+drwxr-xr-x 1 Administrator 197121     0 Sep 12 06:46 ..
+-rw-r--r-- 1 Administrator 197121     0 Sep 12 06:48 000004.log
+-rw-r--r-- 1 Administrator 197121     0 Sep 12 07:09 000008.log
+-rw-r--r-- 1 Administrator 197121     0 Sep 12 07:09 000012.log
+-rw-r--r-- 1 Administrator 197121    16 Sep 12 07:09 CURRENT
+-rw-r--r-- 1 Administrator 197121    36 Sep 12 06:46 IDENTITY
+-rw-r--r-- 1 Administrator 197121     0 Sep 12 07:09 LOCK
+-rw-r--r-- 1 Administrator 197121 22335 Sep 12 07:09 LOG
+-rw-r--r-- 1 Administrator 197121 21716 Sep 12 06:46 LOG.old.1789166881541822
+-rw-r--r-- 1 Administrator 197121 22391 Sep 12 06:48 LOG.old.1789168189253428
+-rw-r--r-- 1 Administrator 197121    81 Sep 12 07:09 MANIFEST-000013
+-rw-r--r-- 1 Administrator 197121  6919 Sep 12 06:48 OPTIONS-000011
+-rw-r--r-- 1 Administrator 197121  6919 Sep 12 07:09 OPTIONS-000015
+=== any StateRoot dirs anywhere under data ===
+data/mainnet-protocol-consistency/StateRoot
+data/Plugins/StateService/StateRoot
+data/tmp-bisect-plugins/StateService/StateRoot
+data/tmp-rust5107-plugins/StateService/StateRoot
+=== reference stateroots file ===
+-rw-r--r-- 1 Administrator 197121 5921327 Sep 12 07:09 data/reference_stateroots.jsonl
+=== node log tail 30 ===
+{"timestamp":"2026-09-11T23:13:46.342450Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:46.398651Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:46.467588Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:46.555846Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:46.664323Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:46.756512Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:46.881164Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:47.002329Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:47.186795Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:47.358624Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:47.627235Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:47.912817Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:48.712957Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:13:49.888898Z","level":"INFO","fields":{"message":"task_manager timer tick","persisted_height":0,"global_index_tasks":0,"global_inv_tasks":0,"sessions":0},"target":"neo"}
+{"timestamp":"2026-09-11T23:14:00.709854Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:01.195139Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:01.644180Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:01.812240Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:01.888228Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:02.313116Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:02.972604Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:04.833550Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:13.701613Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:16.416168Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:17.455643Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:19.893660Z","level":"INFO","fields":{"message":"task_manager timer tick","persisted_height":0,"global_index_tasks":0,"global_inv_tasks":0,"sessions":0},"target":"neo"}
+{"timestamp":"2026-09-11T23:14:26.485192Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:32.642742Z","level":"WARN","fields":{"message":"read header from client timeout"},"target":"hyper::proto::h1::io"}
+{"timestamp":"2026-09-11T23:14:49.899967Z","level":"INFO","fields":{"message":"task_manager timer tick","persisted_height":0,"global_index_tasks":0,"global_inv_tasks":0,"sessions":0},"target":"neo"}
+{"timestamp":"2026-09-11T23:15:19.901573Z","level":"INFO","fields":{"message":"task_manager timer tick","persisted_height":0,"global_index_tasks":0,"global_inv_tasks":0,"sessions":0},"target":"neo"}

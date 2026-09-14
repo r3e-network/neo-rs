@@ -1,0 +1,8 @@
+=== state_root_path wiring ===
+neo-node/src/cli.rs:225:    pub state_root_path: Option<PathBuf>,
+neo-node/src/startup/config.rs:342:            .state_root_path
+
+=== bash -n ===
+bash-syntax-OK
+=== py compile ===
+py-OK

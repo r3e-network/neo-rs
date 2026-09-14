@@ -300,6 +300,12 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     let store = system.store();
     info!(target: "neo", "flushing storage before shutdown");
     store.flush();
+    // The state service uses a store separate from the chain store; flush it too
+    // so computed state roots survive the restart when the WAL is disabled by the
+    // high-throughput batch profile.
+    if let Ok(Some(state_store)) = system.state_store() {
+        state_store.flush();
+    }
     info!(target: "neo", "storage flush complete");
 
     match tokio::time::timeout(std::time::Duration::from_secs(30), system.shutdown()).await {

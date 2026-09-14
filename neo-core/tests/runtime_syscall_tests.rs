@@ -1,6 +1,6 @@
 use hex::{decode as hex_decode, encode as hex_encode};
 use neo_core::ScriptBuilder;
-use neo_core::cryptography::Secp256r1Crypto;
+use neo_core::cryptography::{Crypto, Secp256r1Crypto};
 use neo_core::ledger::Block;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::neo_io::BinaryWriter;
@@ -1437,7 +1437,7 @@ fn crypto_checksig_accepts_valid_signature() {
 
     let private_key = [0x01u8; 32];
     let public_key = Secp256r1Crypto::derive_public_key(&private_key).expect("pubkey");
-    let signature = Secp256r1Crypto::sign(&sign_data, &private_key).expect("signature");
+    let signature = Secp256r1Crypto::sign_prehash(&Crypto::sha256(&sign_data), &private_key).expect("signature");
 
     let mut script = ScriptBuilder::new();
     script.emit_push_byte_array(&signature);
@@ -1521,8 +1521,8 @@ fn crypto_checkmultisig_accepts_valid_signatures() {
     let private_key2 = [0x02u8; 32];
     let pubkey1 = Secp256r1Crypto::derive_public_key(&private_key1).expect("pubkey1");
     let pubkey2 = Secp256r1Crypto::derive_public_key(&private_key2).expect("pubkey2");
-    let sig1 = Secp256r1Crypto::sign(&sign_data, &private_key1).expect("sig1");
-    let sig2 = Secp256r1Crypto::sign(&sign_data, &private_key2).expect("sig2");
+    let sig1 = Secp256r1Crypto::sign_prehash(&Crypto::sha256(&sign_data), &private_key1).expect("sig1");
+    let sig2 = Secp256r1Crypto::sign_prehash(&Crypto::sha256(&sign_data), &private_key2).expect("sig2");
 
     let mut script = ScriptBuilder::new();
     emit_byte_array_array(&mut script, &[sig1.to_vec(), sig2.to_vec()]);
@@ -1551,7 +1551,7 @@ fn crypto_checkmultisig_faults_on_empty_pubkeys() {
     let (mut engine, sign_data) = make_engine_with_sign_data();
 
     let private_key = [0x01u8; 32];
-    let signature = Secp256r1Crypto::sign(&sign_data, &private_key).expect("signature");
+    let signature = Secp256r1Crypto::sign_prehash(&Crypto::sha256(&sign_data), &private_key).expect("signature");
 
     let mut script = ScriptBuilder::new();
     emit_byte_array_array(&mut script, &[signature.to_vec()]);
@@ -1576,7 +1576,7 @@ fn crypto_checkmultisig_returns_false_on_invalid_signature() {
     let private_key2 = [0x02u8; 32];
     let pubkey1 = Secp256r1Crypto::derive_public_key(&private_key1).expect("pubkey1");
     let pubkey2 = Secp256r1Crypto::derive_public_key(&private_key2).expect("pubkey2");
-    let sig1 = Secp256r1Crypto::sign(&sign_data, &private_key1).expect("sig1");
+    let sig1 = Secp256r1Crypto::sign_prehash(&Crypto::sha256(&sign_data), &private_key1).expect("sig1");
     let invalid_sig = vec![0u8; 64];
 
     let mut script = ScriptBuilder::new();
@@ -1609,8 +1609,8 @@ fn crypto_checkmultisig_faults_on_invalid_pubkey_length() {
     let private_key2 = [0x02u8; 32];
     let pubkey1 = Secp256r1Crypto::derive_public_key(&private_key1).expect("pubkey1");
     let invalid_pubkey = vec![0x02u8; 70];
-    let sig1 = Secp256r1Crypto::sign(&sign_data, &private_key1).expect("sig1");
-    let sig2 = Secp256r1Crypto::sign(&sign_data, &private_key2).expect("sig2");
+    let sig1 = Secp256r1Crypto::sign_prehash(&Crypto::sha256(&sign_data), &private_key1).expect("sig1");
+    let sig2 = Secp256r1Crypto::sign_prehash(&Crypto::sha256(&sign_data), &private_key2).expect("sig2");
 
     let mut script = ScriptBuilder::new();
     emit_byte_array_array(&mut script, &[sig1.to_vec(), sig2.to_vec()]);

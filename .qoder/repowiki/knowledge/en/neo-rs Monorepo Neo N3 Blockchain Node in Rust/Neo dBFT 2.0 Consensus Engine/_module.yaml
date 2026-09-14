@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: neo_consensus
+title: Neo dBFT 2.0 Consensus Engine
+scope:
+    - neo-consensus/
+source_files: []
+depends_on: []
+related_to:
+    - path: integration_tests
+    - path: neo_p2p
+    - path: neo_storage

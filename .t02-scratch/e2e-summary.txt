@@ -1,0 +1,19 @@
+=== verify summary (tail) ===
+progress 16500/21373 (142.0 heights/s, matched=0)
+progress 17000/21373 (143.5 heights/s, matched=0)
+progress 17500/21373 (145.0 heights/s, matched=0)
+progress 18000/21373 (146.4 heights/s, matched=0)
+progress 18500/21373 (147.8 heights/s, matched=0)
+progress 19000/21373 (149.1 heights/s, matched=0)
+progress 19500/21373 (150.4 heights/s, matched=0)
+progress 20000/21373 (151.6 heights/s, matched=0)
+progress 20500/21373 (152.8 heights/s, matched=0)
+progress 21000/21373 (154.0 heights/s, matched=0)
+FAIL: state-root verification not proven for the full range (matched=0, mismatches=1, missing_local=21292, missing_reference=80)
+Report -> outputs\mainnet-full-verify-0-21372-20260911T231543Z.json
+=== counts ===
+LOCAL-MISS lines: 21292
+MISMATCH lines: 1
+REF-MISS lines: 80
+MATCH of -106 distinct error: 11574
+total lines: 21463

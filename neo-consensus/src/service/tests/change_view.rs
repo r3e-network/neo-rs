@@ -14,8 +14,8 @@ use tokio::sync::mpsc;
 async fn timer_tick_triggers_change_view_broadcast() {
     let network = 0x4E454F;
     let (tx, mut rx) = mpsc::channel(100);
-    let validators = create_test_validators(4);
-    let mut service = ConsensusService::new(network, validators, Some(1), vec![], tx);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
 
     service.start(0, 0, UInt256::zero(), 0).unwrap();
     service

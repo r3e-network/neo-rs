@@ -457,7 +457,7 @@ async fn process_body_rejects_invalid_auth_header() {
 
     let header = format!("Basic {}", BASE64_STANDARD.encode("testuser:wrongpass"));
     let (response, unauthorized) = process_body(&filters, Some(&header), body, None);
-    assert!(!unauthorized);
+    assert!(unauthorized);
 
     let response = response.expect("response");
     let error = response

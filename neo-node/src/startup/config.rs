@@ -233,10 +233,11 @@ pub(crate) fn validate_node_config(
             .as_deref()
             .unwrap_or("127.0.0.1");
         if is_public_bind(bind) {
-            warn!(
-                target: "neo",
-                bind_address = bind,
-                "RPC is enabled on a non-loopback address without auth; enable auth or front with a proxy"
+            // A03: refuse public bind without auth — wallet RPCs remain callable
+            // when BasicAuth is unset; a warning alone is not an acceptable control.
+            bail!(
+                "RPC is enabled on non-loopback address '{}' without auth; set rpc.auth_enabled with rpc_user/rpc_pass, use --rpc-hardened, or bind to loopback",
+                bind
             );
         }
     }
@@ -467,6 +468,34 @@ mod tests {
             err.to_string().to_ascii_lowercase().contains("rpc_user"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn validate_rejects_public_bind_without_auth() {
+        let mut cfg = NodeConfig::default();
+        cfg.rpc.enabled = true;
+        cfg.rpc.auth_enabled = false;
+        cfg.rpc.bind_address = Some("0.0.0.0".to_string());
+
+        let err = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect_err("public bind without auth must be rejected");
+        assert!(
+            err.to_string()
+                .to_ascii_lowercase()
+                .contains("without auth"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_allows_loopback_without_auth() {
+        let mut cfg = NodeConfig::default();
+        cfg.rpc.enabled = true;
+        cfg.rpc.auth_enabled = false;
+        cfg.rpc.bind_address = Some("127.0.0.1".to_string());
+
+        validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect("loopback without auth should be allowed");
     }
 
     #[test]

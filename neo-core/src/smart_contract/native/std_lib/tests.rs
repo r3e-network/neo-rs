@@ -131,7 +131,8 @@ fn test_method_metadata_snapshot() {
             1 << 5,
             &[ContractParameterType::String],
             ContractParameterType::String,
-            Some(Hardfork::HfCockatrice),
+            // C# v3.10.1 + master-n3: [ContractMethod(Hardfork.HF_Echidna, CpuFee = 1 << 5)]
+            Some(Hardfork::HfEchidna),
             &["data"],
         ),
         (
@@ -139,7 +140,8 @@ fn test_method_metadata_snapshot() {
             1 << 5,
             &[ContractParameterType::String],
             ContractParameterType::String,
-            Some(Hardfork::HfCockatrice),
+            // C# v3.10.1 + master-n3: [ContractMethod(Hardfork.HF_Echidna, CpuFee = 1 << 5)]
+            Some(Hardfork::HfEchidna),
             &["s"],
         ),
         (

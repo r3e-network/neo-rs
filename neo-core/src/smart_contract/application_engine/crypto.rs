@@ -158,7 +158,7 @@ impl ApplicationEngine {
             return Err("Invalid public key length".to_string());
         }
 
-        match Secp256r1Crypto::verify(message, signature, public_key) {
+        match Secp256r1Crypto::verify_prehash(&Crypto::sha256(message), signature, public_key) {
             Ok(verified) => Ok(verified),
             Err(CryptoError::InvalidSignature { .. }) => Ok(false),
             Err(CryptoError::InvalidKey { .. } | CryptoError::InvalidPoint { .. }) => {

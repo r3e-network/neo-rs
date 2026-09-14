@@ -238,6 +238,16 @@ fn load_quote_bytes(sealed_data_path: &Path) -> TeeResult<Vec<u8>> {
 }
 
 fn load_sealing_key(sealed_data_path: &Path) -> TeeResult<[u8; 32]> {
+    let allow_host_key = std::env::var("NEO_TEE_ALLOW_HOST_SEALING_KEY")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if !allow_host_key {
+        return Err(TeeError::enclave_init_error(
+            EnclaveInitError::HardwareUnavailable,
+            "host-held SGX sealing keys require NEO_TEE_ALLOW_HOST_SEALING_KEY=1 (not EGETKEY-class sealing)",
+        ));
+    }
+
     if let Ok(hex_key) = std::env::var(ENV_SGX_SEALING_KEY_HEX) {
         return decode_sealing_key_from_hex(&hex_key).map_err(|e| {
             TeeError::enclave_init_error(
