@@ -1,0 +1,12 @@
+bash OK
+py OK
+  583 scripts/mainnet-full-verify.py
+  291 scripts/mainnet-full-validation.sh
+   72 config/mainnet-full-validation.toml
+  946 total
+=== features present ===
+6
+2
+19
+=== default parallel in orchestrator ===
+64:VERIFY_PARALLEL="${VERIFY_PARALLEL:-32}"

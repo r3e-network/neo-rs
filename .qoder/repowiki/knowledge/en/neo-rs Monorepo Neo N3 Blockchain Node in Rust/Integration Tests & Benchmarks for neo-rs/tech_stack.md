@@ -1,0 +1,1 @@
+Rust 2024 edition; `tokio` runtime with `test-util` for async tests; `criterion` with `html_reports` for benchmarks; `tracing` + `tracing-subscriber` (env-filter) for logging; `tempfile` for transient fixtures; golden-data fixtures under `fixtures/protocol_consistency/` and `fixtures/mainnet_block_1000.hex`.

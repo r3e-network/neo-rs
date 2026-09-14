@@ -49,6 +49,9 @@ neo-hsm = { path = "../neo-hsm", optional = true }
 # PIN input for HSM
 rpassword = { version = "7.3", optional = true }
 
+# Logging
+env_logger = "0.10"
+
 # Async channels
 futures = { workspace = true }
 async-trait.workspace = true

@@ -89,7 +89,10 @@ fn load_trusted_authorities(thumbprints: &[String]) -> Result<RootCertStore, Str
     }
 
     if matched == 0 {
-        warn!("RPC TLS configured with TrustedAuthorities, but no matching roots were found.");
+        return Err(
+            "RPC TLS TrustedAuthorities listed but none matched the configured certificate store"
+                .to_string(),
+        );
     }
 
     Ok(roots)

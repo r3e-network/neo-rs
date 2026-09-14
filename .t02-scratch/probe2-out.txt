@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "D:\Git\neo-rs\.t02-scratch\probe2.py", line 8, in <module>
+    print("getblockcount:", c.call("getblockcount", []))
+                            ~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Git\neo-rs\scripts/mainnet-full-verify.py", line 146, in call
+    raise RuntimeError(f"{method} failed against {self.url}: {last_err}")
+RuntimeError: getblockcount failed against http://127.0.0.1:10332: [WinError 10061] No connection could be made because the target machine actively refused it

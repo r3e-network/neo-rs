@@ -1,0 +1,1 @@
+Embedded Neo Virtual Machine runtime providing script parsing, opcode execution via a jump table, stack-based evaluation, gas metering, exception handling, and host interop for smart contracts.

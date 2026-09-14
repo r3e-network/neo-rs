@@ -37,7 +37,7 @@ fn create_consensus_service(
 ) -> (ConsensusService, mpsc::Receiver<ConsensusEvent>) {
     let (tx, rx) = mpsc::channel(100);
     let validators = create_test_validators(validator_count);
-    let private_key = vec![0u8; 32]; // Test key
+    let private_key = vec![15u8; 32]; // Valid test key (payload signing is fail-closed)
 
     let service = ConsensusService::new(
         0x4E454F, // NEO network magic
@@ -324,7 +324,10 @@ async fn test_consensus_payload_creation() {
 }
 
 #[tokio::test]
-async fn test_consensus_payload_sign_data() {
+async fn test_consensus_payload_message_bytes() {
+    // Verify to_message_bytes produces the correct DBFTPlugin on-wire layout.
+    // Sign data for ExtensiblePayload is [network:4][payload_hash:32] computed
+    // by ConsensusService::dbft_sign_data — not a field on ConsensusPayload.
     let payload = ConsensusPayload::new(
         0x4E454F,
         100,
@@ -334,12 +337,19 @@ async fn test_consensus_payload_sign_data() {
         vec![0x01, 0x02, 0x03],
     );
 
-    let sign_data = payload.get_sign_data();
-    assert!(!sign_data.is_empty());
+    let bytes = payload.to_message_bytes();
+    assert!(!bytes.is_empty());
 
-    // Sign data should be deterministic
-    let sign_data2 = payload.get_sign_data();
-    assert_eq!(sign_data, sign_data2);
+    // to_message_bytes should be deterministic
+    let bytes2 = payload.to_message_bytes();
+    assert_eq!(bytes, bytes2);
+
+    // Layout: [type:1][block_index:4][validator_index:1][view_number:1][body...]
+    assert_eq!(bytes[0], ConsensusMessageType::PrepareRequest.to_byte());
+    assert_eq!(&bytes[1..5], &100u32.to_le_bytes());
+    assert_eq!(bytes[5], 0); // validator_index
+    assert_eq!(bytes[6], 0); // view_number
+    assert_eq!(&bytes[7..], &[0x01u8, 0x02, 0x03]);
 }
 
 // ============================================================================
@@ -437,16 +447,19 @@ async fn r01_primary_request_and_response_share_one_vote_slot() {
     assert_eq!(ctx.primary_index(), 0);
 
     ctx.prepare_request_received = true;
+    // The countable votes are the responses whose PreparationHash matches the
+    // proposal this node knows about; give every response the same hash.
+    ctx.preparation_hash = Some(UInt256::zero());
     // The primary's extra response must occupy its existing slot, adding no
     // second vote.
-    ctx.add_prepare_response(0, vec![], None).unwrap();
+    ctx.add_prepare_response(0, vec![], Some(UInt256::zero())).unwrap();
     assert!(!ctx.has_enough_prepare_responses());
 
-    ctx.add_prepare_response(2, vec![], None).unwrap();
+    ctx.add_prepare_response(2, vec![], Some(UInt256::zero())).unwrap();
     // Old counting: request (1) + responses (2) = 3 >= M -> wrongly enough.
     assert!(!ctx.has_enough_prepare_responses());
 
-    ctx.add_prepare_response(3, vec![], None).unwrap();
+    ctx.add_prepare_response(3, vec![], Some(UInt256::zero())).unwrap();
     assert!(ctx.has_enough_prepare_responses());
 }
 
@@ -455,12 +468,13 @@ async fn r01_primary_request_and_response_share_one_vote_slot() {
 async fn r01_primary_response_counts_once_without_request() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(100, validators, Some(1), None);
+    ctx.preparation_hash = Some(UInt256::zero());
 
-    ctx.add_prepare_response(0, vec![], None).unwrap(); // primary's vote
-    ctx.add_prepare_response(1, vec![], None).unwrap();
+    ctx.add_prepare_response(0, vec![], Some(UInt256::zero())).unwrap(); // primary's vote
+    ctx.add_prepare_response(1, vec![], Some(UInt256::zero())).unwrap();
     assert!(!ctx.has_enough_prepare_responses());
 
-    ctx.add_prepare_response(3, vec![], None).unwrap();
+    ctx.add_prepare_response(3, vec![], Some(UInt256::zero())).unwrap();
     assert!(ctx.has_enough_prepare_responses());
 }
 

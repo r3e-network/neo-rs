@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-09-11T23:04:31.932574+00:00",
+  "local": "http://seed1.neo.org:10332",
+  "reference": "http://seed1.neo.org:10332",
+  "reference_urls": [
+    "http://seed1.neo.org:10332"
+  ],
+  "start": 0,
+  "end": 20,
+  "total": 21,
+  "matched": 21,
+  "resumed_from_checkpoint": 21,
+  "mismatches": [],
+  "missing_local": [],
+  "missing_reference": [],
+  "claimable_contiguous": {
+    "start": 0,
+    "end": 20
+  },
+  "forced_mismatch_at": null,
+  "passed": true,
+  "elapsed_secs": 0.0,
+  "report_path": ".t02-scratch\\smoke2\\mainnet-full-verify-0-20-20260911T230431Z.json"
+}

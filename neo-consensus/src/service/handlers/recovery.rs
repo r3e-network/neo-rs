@@ -1,7 +1,5 @@
 use super::super::ConsensusService;
-use super::super::helpers::{
-    current_timestamp, invocation_script_from_signature, signature_from_invocation_script,
-};
+use super::super::helpers::signature_from_invocation_script;
 use crate::context::ConsensusState;
 use crate::messages::{
     ChangeViewMessage, ChangeViewPayloadCompact, CommitMessage, CommitPayloadCompact,
@@ -288,47 +286,11 @@ impl ConsensusService {
             );
             self.check_commits()?;
         }
-        // Check if we can now send commit after applying recovery state
-        else if self.context.has_enough_prepare_responses()
-            && !self
-                .context
-                .commits
-                .contains_key(&self.context.my_index.unwrap_or(255))
-            && let Some(my_idx) = self.context.my_index
-        {
-            info!(
-                block_index = self.context.block_index,
-                "Recovery enabled sending commit"
-            );
-            // Create and broadcast commit message
-            let block_hash = self.context.proposed_block_hash.unwrap_or_default();
-            let signature = self.sign_block_hash(&block_hash)?;
-
-            let commit = CommitMessage::new(
-                self.context.block_index,
-                self.context.view_number,
-                my_idx,
-                signature.clone(),
-            );
-
-            let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
-            let commit_witness = payload.witness.clone();
-            let commit_invocation = invocation_script_from_signature(&commit_witness);
-            self.broadcast(payload)?;
-            if !commit_witness.is_empty() {
-                self.context
-                    .commit_invocations
-                    .insert(my_idx, commit_invocation);
-            }
-
-            // Add our own commit
-            self.context
-                .add_commit(my_idx, self.context.view_number, signature)?;
-            // Match C# CheckPreparations: once our Commit is sent, allow one
-            // block interval before retrying via RecoveryMessage.
-            self.context
-                .change_timer(current_timestamp(), self.context.expected_block_time);
-            self.check_commits()?;
+        // Check if we can now send commit after applying recovery state.
+        // R02/A01: reuse try_broadcast_own_commit — never sign a zero/default
+        // hash when recovery supplied prepare votes without a verified PrepareRequest.
+        else if self.context.has_enough_prepare_responses() {
+            self.try_broadcast_own_commit()?;
         }
 
         Ok(())
@@ -496,32 +458,28 @@ impl ConsensusService {
                 });
         }
 
-        let commit_sent = self
-            .context
-            .my_index
-            .and_then(|idx| self.context.commits.get(&idx))
-            .is_some();
-        if commit_sent {
-            for (&validator_index, signature) in &self.context.commits {
-                let invocation_script = self
-                    .context
-                    .commit_invocations
-                    .get(&validator_index)
-                    .cloned()
-                    .unwrap_or_default();
-                let commit_view = self
-                    .context
-                    .commit_view_numbers
-                    .get(&validator_index)
-                    .copied()
-                    .unwrap_or(self.context.view_number);
-                recovery.commit_messages.push(CommitPayloadCompact {
-                    view_number: commit_view,
-                    validator_index,
-                    signature: signature.clone(),
-                    invocation_script,
-                });
-            }
+        // C# includes ALL stored commits in the recovery message, not only the
+        // local node's own commit. This allows recovering peers to gather every
+        // commit signature they need to assemble the finalised block.
+        for (&validator_index, signature) in &self.context.commits {
+            let invocation_script = self
+                .context
+                .commit_invocations
+                .get(&validator_index)
+                .cloned()
+                .unwrap_or_default();
+            let commit_view = self
+                .context
+                .commit_view_numbers
+                .get(&validator_index)
+                .copied()
+                .unwrap_or(self.context.view_number);
+            recovery.commit_messages.push(CommitPayloadCompact {
+                view_number: commit_view,
+                validator_index,
+                signature: signature.clone(),
+                invocation_script,
+            });
         }
 
         Ok(recovery)

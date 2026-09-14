@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: fuzzing
+title: Neo-rs Fuzzing Targets (cargo-fuzz)
+scope:
+    - fuzz/
+source_files: []
+depends_on: []
+related_to:
+    - path: neo_p2p
+    - path: neo_vm

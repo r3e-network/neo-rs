@@ -59,6 +59,16 @@ impl UPnP {
 
     /// Sends an Udp broadcast message to discover the UPnP device.
     /// Returns true if the UPnP device is successfully discovered; otherwise, false.
+    ///
+    /// # Blocking
+    ///
+    /// This function performs synchronous UDP I/O and must **not** be called
+    /// directly from an async context on the Tokio runtime. Wrap it with
+    /// `tokio::task::spawn_blocking` at the call site:
+    ///
+    /// ```ignore
+    /// let discovered = tokio::task::spawn_blocking(UPnP::discover).await?;
+    /// ```
     pub fn discover() -> bool {
         let socket = match UdpSocket::bind("0.0.0.0:0") {
             Ok(s) => s,
@@ -126,8 +136,18 @@ impl UPnP {
     }
 
     fn get_service_url(location_url: &str) -> Option<String> {
-        // Fetch and parse device description XML
-        let resp = reqwest::blocking::get(location_url).ok()?;
+        // A19/SSRF: only follow LOCATION URLs that resolve to private/loopback hosts.
+        if !Self::is_safe_upnp_location(location_url) {
+            return None;
+        }
+
+        // Never follow redirects: a LAN LOCATION could 302 to IMDS / other link-local.
+        let client = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(5))
+            .build()
+            .ok()?;
+        let resp = client.get(location_url).send().ok()?;
         if !resp.status().is_success() {
             return None;
         }
@@ -186,7 +206,12 @@ impl UPnP {
             return None;
         }
         let control = control_url?;
-        Some(Self::combine_urls(location_url, &control))
+        let combined = Self::combine_urls(location_url, &control);
+        // Absolute control URLs in the device XML must pass the same host gate.
+        if !Self::is_safe_upnp_location(&combined) {
+            return None;
+        }
+        Some(combined)
     }
 
     fn combine_urls(location: &str, control: &str) -> String {
@@ -208,6 +233,10 @@ impl UPnP {
     }
 
     fn run_command(service_url: &str, command: &str, args: &str) -> Result<String, String> {
+        if !Self::is_safe_upnp_location(service_url) {
+            return Err("UPnP service URL failed SSRF host gate".to_string());
+        }
+
         let envelope = format!(
             "<?xml version=\"1.0\"?>\
             <s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">\
@@ -234,6 +263,7 @@ impl UPnP {
         );
 
         let client = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
             .timeout(Self::get_timeout())
             .default_headers(headers)
             .build()
@@ -256,6 +286,12 @@ impl UPnP {
     /// Forwards a port on the UPnP device.
     /// Mirrors C# `UPnP.ForwardPort(int port, ProtocolType protocol, string description)`.
     /// Returns true if the port is successfully forwarded; otherwise, false.
+    ///
+    /// # Blocking
+    ///
+    /// This function performs synchronous HTTP I/O via `reqwest::blocking` and
+    /// must **not** be called directly from an async context on the Tokio
+    /// runtime. Wrap it with `tokio::task::spawn_blocking` at the call site.
     pub fn forward_port(port: i32, protocol: &str, description: &str) -> bool {
         let Some(service_url) = service_state().lock().service_url.clone() else {
             return false;
@@ -284,6 +320,12 @@ impl UPnP {
     /// Deletes a forwarded port on the UPnP device.
     /// Mirrors C# `UPnP.DeleteForwardingRule(int port, ProtocolType protocol)`.
     /// Returns true if the port forwarding is successfully deleted; otherwise, false.
+    ///
+    /// # Blocking
+    ///
+    /// This function performs synchronous HTTP I/O via `reqwest::blocking` and
+    /// must **not** be called directly from an async context on the Tokio
+    /// runtime. Wrap it with `tokio::task::spawn_blocking` at the call site.
     pub fn delete_forwarding_rule(port: i32, protocol: &str) -> bool {
         let Some(service_url) = service_state().lock().service_url.clone() else {
             return false;
@@ -300,6 +342,12 @@ impl UPnP {
     }
 
     /// Gets the external IP address from the UPnP device.
+    ///
+    /// # Blocking
+    ///
+    /// This function performs synchronous HTTP I/O via `reqwest::blocking` and
+    /// must **not** be called directly from an async context on the Tokio
+    /// runtime. Wrap it with `tokio::task::spawn_blocking` at the call site.
     pub fn get_external_ip() -> Option<String> {
         let service_url = service_state().lock().service_url.clone()?;
 
@@ -337,6 +385,26 @@ impl UPnP {
         }
     }
 
+    fn is_safe_upnp_location(location_url: &str) -> bool {
+        let Ok(url) = url::Url::parse(location_url) else {
+            return false;
+        };
+        if url.scheme() != "http" && url.scheme() != "https" {
+            return false;
+        }
+        // Prefer Url's typed host: host_str() for IPv6 is not always IpAddr-parseable.
+        match url.host() {
+            // RFC1918 / loopback only. IPv4 link-local (169.254.0.0/16) includes
+            // cloud IMDS (169.254.169.254) and must never be treated as LAN-safe.
+            Some(url::Host::Ipv4(v4)) => v4.is_private() || v4.is_loopback(),
+            Some(url::Host::Ipv6(v6)) => {
+                v6.is_loopback() || v6.is_unique_local() || v6.is_unicast_link_local()
+            }
+            // Hostnames are rejected: SSDP LOCATION must be an IP on the LAN.
+            Some(url::Host::Domain(_)) | None => false,
+        }
+    }
+
     fn get_local_ip() -> Option<String> {
         // Determine the primary local IPv4 by opening a UDP socket
         use std::net::UdpSocket;
@@ -345,5 +413,47 @@ impl UPnP {
         socket.connect("8.8.8.8:80").ok()?;
         let addr = socket.local_addr().ok()?;
         Some(addr.ip().to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_public_hostname_and_ipv4_link_local_upnp_locations() {
+        assert!(!UPnP::is_safe_upnp_location(
+            "http://8.8.8.8:1900/rootDesc.xml"
+        ));
+        assert!(!UPnP::is_safe_upnp_location(
+            "http://router.local/rootDesc.xml"
+        ));
+        assert!(!UPnP::is_safe_upnp_location("file:///etc/passwd"));
+        // Cloud metadata / APIPA must not pass the LAN allowlist.
+        assert!(!UPnP::is_safe_upnp_location(
+            "http://169.254.169.254/latest/meta-data/"
+        ));
+        assert!(!UPnP::is_safe_upnp_location(
+            "http://169.254.1.1:1900/rootDesc.xml"
+        ));
+    }
+
+    #[test]
+    fn accepts_private_v4_and_link_local_v6_upnp_locations() {
+        assert!(UPnP::is_safe_upnp_location(
+            "http://192.168.1.1:1900/rootDesc.xml"
+        ));
+        assert!(UPnP::is_safe_upnp_location(
+            "http://10.0.0.2:2869/rootDesc.xml"
+        ));
+        assert!(UPnP::is_safe_upnp_location(
+            "http://127.0.0.1:1900/rootDesc.xml"
+        ));
+        assert!(UPnP::is_safe_upnp_location(
+            "http://[fe80::1]:1900/rootDesc.xml"
+        ));
+        assert!(UPnP::is_safe_upnp_location(
+            "http://[fd12:3456:789a::1]:1900/rootDesc.xml"
+        ));
     }
 }

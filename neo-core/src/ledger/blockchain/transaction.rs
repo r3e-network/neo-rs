@@ -24,7 +24,14 @@ impl Blockchain {
 
         LedgerContract::new()
             .contains_transaction(snapshot, &hash)
-            .unwrap_or(false)
+            .unwrap_or_else(|error| {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    "ledger contains_transaction failed; treating as present (fail-closed)"
+                );
+                true
+            })
     }
 
     pub(super) fn conflict_exists_on_chain(
@@ -52,7 +59,14 @@ impl Blockchain {
 
         LedgerContract::new()
             .contains_conflict_hash(snapshot, &hash, &signers, max_traceable_blocks)
-            .unwrap_or(false)
+            .unwrap_or_else(|error| {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    "ledger contains_conflict_hash failed; treating as conflict (fail-closed)"
+                );
+                true
+            })
     }
 
     pub(super) fn on_new_transaction(&self, transaction: &Transaction) -> VerifyResult {
@@ -79,11 +93,17 @@ impl Blockchain {
 
         let store_cache = context.store_cache();
         let ledger_contract = LedgerContract::new();
-        if ledger_contract
-            .contains_transaction(&store_cache, &hash)
-            .unwrap_or(false)
-        {
-            return VerifyResult::AlreadyExists;
+        match ledger_contract.contains_transaction(&store_cache, &hash) {
+            Ok(true) => return VerifyResult::AlreadyExists,
+            Ok(false) => {}
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    "ledger contains_transaction failed during mempool admission"
+                );
+                return VerifyResult::Invalid;
+            }
         }
 
         let signers: Vec<UInt160> = transaction
@@ -97,11 +117,22 @@ impl Blockchain {
                 .max_traceable_blocks_snapshot(&store_cache, &settings)
                 .unwrap_or(settings.max_traceable_blocks);
 
-            if ledger_contract
-                .contains_conflict_hash(&store_cache, &hash, &signers, max_traceable)
-                .unwrap_or(false)
-            {
-                return VerifyResult::HasConflicts;
+            match ledger_contract.contains_conflict_hash(
+                &store_cache,
+                &hash,
+                &signers,
+                max_traceable,
+            ) {
+                Ok(true) => return VerifyResult::HasConflicts,
+                Ok(false) => {}
+                Err(error) => {
+                    tracing::warn!(
+                        target: "neo",
+                        error = %error,
+                        "ledger contains_conflict_hash failed during mempool admission"
+                    );
+                    return VerifyResult::Invalid;
+                }
             }
         }
 

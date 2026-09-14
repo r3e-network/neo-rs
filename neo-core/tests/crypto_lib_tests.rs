@@ -1252,11 +1252,13 @@ fn crypto_lib_verify_with_ecdsa_custom_tx_witness_multi_sig() {
     vrf.emit_opcode(OpCode::NUMEQUAL);
 
     let mut verification_script = vrf.to_array();
-    let sigs_offset = (check_start as i32 - sigs_len_check_end as i32 + 2) as i8;
+    // Offsets are relative to the byte AFTER the instruction (C# NeoVM semantics:
+    // IP is advanced past the instruction before the jump handler runs).
+    let sigs_offset = (check_start as i32 - sigs_len_check_end as i32) as i8;
     verification_script[sigs_len_check_end - 1] = sigs_offset as u8;
-    let loop_back_offset = (loop_start as i32 - loop_end_offset as i32 + 2) as i8;
+    let loop_back_offset = (loop_start as i32 - loop_end_offset as i32) as i8;
     verification_script[loop_end_offset - 1] = loop_back_offset as u8;
-    let loop_exit_offset = (prog_ret_offset as i32 - loop_condition_offset as i32 + 2) as i8;
+    let loop_exit_offset = (prog_ret_offset as i32 - loop_condition_offset as i32) as i8;
     verification_script[loop_condition_offset - 1] = loop_exit_offset as u8;
 
     let account = UInt160::from_script(&verification_script);

@@ -139,7 +139,9 @@ impl neo_primitives::BlockLike for Block {
 
     fn hash(&self) -> UInt256 {
         let mut clone = self.clone();
-        clone.try_hash().unwrap_or_default()
+        clone
+            .try_hash()
+            .unwrap_or_else(|err| panic!("Block hash serialization failed (fail-closed): {err}"))
     }
 
     fn index(&self) -> u32 {

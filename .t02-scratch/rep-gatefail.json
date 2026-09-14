@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-09-11T23:34:40.739845+00:00",
+  "campaign": {
+    "range_start": 0,
+    "range_end": 29999,
+    "span": 30000,
+    "config": null,
+    "store": null,
+    "acc_file": null
+  },
+  "reference": {
+    "path": "data/reference_stateroots.jsonl",
+    "record_count": null,
+    "verified_range": [
+      0,
+      29999
+    ],
+    "gate": {
+      "passed": false,
+      "raw": null
+    }
+  },
+  "import": {
+    "log": ".t02-scratch/clean.log",
+    "exit_code": 127,
+    "clean_completion": true,
+    "final_height": 29999,
+    "last_flush_height": null
+  },
+  "first_divergence": null,
+  "abort_height": null,
+  "expected_stops": [
+    5107,
+    21373,
+    980196,
+    1465790
+  ],
+  "verified_contiguous_prefix": null,
+  "status": "gate_failed",
+  "claim": "no verified contiguous range (status=gate_failed).",
+  "notes": [
+    "Precondition gate did not pass: reference file is not complete for the campaign range; the import must not be treated as evidence."
+  ],
+  "raw_log_tail": [
+    "{\"fields\":{\"message\":\"completed .acc import\",\"final_height\":29999}}"
+  ],
+  "report_path": ".t02-scratch\\rep-gatefail.json"
+}

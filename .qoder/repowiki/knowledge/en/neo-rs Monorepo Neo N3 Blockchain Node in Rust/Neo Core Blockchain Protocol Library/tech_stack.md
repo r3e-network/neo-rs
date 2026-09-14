@@ -1,0 +1,1 @@
+Rust workspace crate using Tokio async runtime, Rayon for parallel processing, RocksDB (optional) for persistent storage, Prometheus metrics (optional), tonic+prost for NeoFS gRPC (optional), zstd/lz4 compression, blst for BLS signatures, bip39/bip32 for wallet key derivation, and criterion for benchmarks.

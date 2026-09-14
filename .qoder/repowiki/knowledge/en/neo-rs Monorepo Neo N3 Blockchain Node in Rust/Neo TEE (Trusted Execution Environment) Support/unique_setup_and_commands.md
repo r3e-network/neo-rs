@@ -1,0 +1,1 @@
+Builds default with the `simulation` feature (no SGX hardware required); enable real SGX support via `--features sgx-hw` and attestation via `--features attestation`. Real-SGX integration tests are opt-in through the `NEO_TEE_RUN_REAL_SGX_TEST=1` environment variable and require `NEO_TEE_SGX_QUOTE_PATH` plus `NEO_TEE_SGX_SEALING_KEY_PATH`/`NEO_TEE_SGX_SEALING_KEY_HEX`.

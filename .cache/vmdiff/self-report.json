@@ -1,0 +1,12 @@
+{
+  "left_impl": "rust-neo-vm",
+  "right_impl": "rust-neo-vm",
+  "summary": {
+    "total": 99,
+    "matched": 99,
+    "different": 0,
+    "missing_left": 0,
+    "missing_right": 0
+  },
+  "differences": []
+}

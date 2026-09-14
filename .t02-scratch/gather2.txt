@@ -1,0 +1,74 @@
+=== reference roots wiring ===
+neo-core/src/neo_system/storage.rs:31:        ss.load_reference_roots("data/reference_stateroots.jsonl");
+neo-core/src/state_service/state_store/settings.rs:13:    pub auto_verify: bool,
+neo-core/src/state_service/state_store/settings.rs:26:            auto_verify: false,
+neo-core/src/state_service/state_store/tests.rs:382:    store.load_reference_roots(reference_file.path().to_str().unwrap());
+neo-core/src/state_service/state_store/tests.rs:394:fn load_reference_roots_parses_jsonl_with_uint256_parse() {
+neo-core/src/state_service/state_store/tests.rs:412:    store.load_reference_roots(reference_file.path().to_str().unwrap());
+neo-core/src/state_service/state_store/tests.rs:415:        store.reference_roots.get(&7),
+neo-core/src/state_service/state_store/tests.rs:418:    assert!(!store.reference_roots.contains_key(&8));
+neo-core/src/state_service/state_store.rs:110:    reference_roots: HashMap<u32, UInt256>,
+neo-core/src/state_service/state_store.rs:134:            reference_roots: HashMap::new(),
+neo-core/src/state_service/state_store.rs:146:    pub fn load_reference_roots(&mut self, path: &str) {
+neo-core/src/state_service/state_store.rs:150:                warn!(target: "neo::state_service", "reference roots file not found: {path}: {e}");
+neo-core/src/state_service/state_store.rs:167:                self.reference_roots.insert(reference.height, hash);
+neo-core/src/state_service/state_store.rs:574:        if let Some(expected) = self.reference_roots.get(&height) {
+neo-core/tests/mainnet_state_roots_vs_csharp.rs:5:// root in data/reference_stateroots.jsonl, assert the locally-stored state
+neo-core/tests/mainnet_state_roots_vs_csharp.rs:61:#[ignore = "requires data/mainnet/StateRoot and data/reference_stateroots.jsonl"]
+neo-core/tests/mainnet_state_roots_vs_csharp.rs:73:    let reference_path = repo_root.join("data/reference_stateroots.jsonl");
+neo-core/tests/mainnet_state_roots_vs_csharp.rs:84:            "[SKIPPED] {}: data/reference_stateroots.jsonl not present",
+neo-node/src/config/plugin_settings.rs:101:    auto_verify: Option<bool>,
+neo-node/src/config/plugin_settings.rs:215:        section.auto_verify,
+neo-node/src/config/plugin_settings.rs:305:        section.auto_verify,
+neo-node/src/config/plugin_settings.rs:431:    auto_verify: Option<bool>,
+neo-node/src/config/plugin_settings.rs:438:    let auto_verify = auto_verify.unwrap_or(false);
+neo-node/src/config/plugin_settings.rs:448:        auto_verify,
+neo-node/src/config/sections.rs:177:    pub auto_verify: Option<bool>,
+neo-node/src/startup/config.rs:367:            auto_verify: false,
+neo-node/src/startup/config.rs:394:        auto_verify = settings.auto_verify,
+neo-node/src/startup/run.rs:205:        .map(|settings| settings.auto_verify)
+neo-node/src/startup/services.rs:365:    if !settings.auto_verify {
+neo-node/src/startup/services.rs:368:            "state service verification disabled (auto_verify=false)"
+
+=== state_store.rs 560-600 ===
+                        )
+                    })?;
+                    del_count += 1;
+                }
+                TrackState::None | TrackState::NotFound => {
+                    _skip_count += 1;
+                }
+            }
+        }
+
+        // Get new root hash
+        let root_hash = snapshot.trie.root_hash().unwrap_or_else(UInt256::zero);
+
+        // Validate against reference if available
+        if let Some(expected) = self.reference_roots.get(&height) {
+            if root_hash == *expected {
+                if height.is_multiple_of(5000) {
+                    tracing::info!(
+                        target: "neo::state_service",
+                        height,
+                        root_hash = %root_hash,
+                        "state root MATCH (checkpoint)"
+                    );
+                }
+            } else {
+                return Err(format!(
+                    "state root mismatch at height {height}: computed {root_hash}, expected {expected}, put_count {put_count}, del_count {del_count}"
+                ));
+            }
+        } else if height.is_multiple_of(5000) {
+            tracing::info!(
+                target: "neo::state_service",
+                height,
+                put_count,
+                del_count,
+                root_hash = %root_hash,
+                "state root computed (no reference)"
+            );
+        }
+
+        // Create and store state root

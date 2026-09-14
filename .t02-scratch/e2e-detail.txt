@@ -1,0 +1,30 @@
+=== the single MISMATCH ===
+MISMATCH 21372	local=0x99ae0c4f25c1ad583fac7256c59a98710f228465ba586ed9b8f6aba1fe90b068	reference=0x28702321cbdd5987ea60675a937ecbab0dfd039d7259a21fa0481e5472e84d09
+=== distinct LOCAL-MISS error kinds ===
+  11574 getstateroot error from http://127.0.0.1:10332: {'code': -106, 'message': 'Unknown state root'}
+   9237 getstateroot error from http://127.0.0.1:10332: {'code': -32001, 'message': 'Too many requests'}
+    413 getstateroot failed against http://127.0.0.1:10332: [WinError 10054] An existing connection was forcibly closed by the remote host
+     64 getstateroot failed against http://127.0.0.1:10332: [WinError 10053] An established connection was aborted by the software in your host machine
+      4 getstateroot failed against http://127.0.0.1:10332: Remote end closed connection without response
+=== distinct REF-MISS error kinds ===
+     72 getstateroot failed against http://seed2.neo.org:10332: Remote end closed connection without response
+      3 getstateroot failed against http://seed5.neo.org:10332: Remote end closed connection without response
+      3 getstateroot failed against http://seed3.neo.org:10332: Remote end closed connection without response
+      2 getstateroot failed against http://seed2.neo.org:10332: [WinError 10060] A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond
+=== sample REF-MISS heights ===
+REF-MISS 3476	getstateroot failed against http://seed2.neo.org:10332: Remote end closed connection without response
+REF-MISS 3481	getstateroot failed against http://seed2.neo.org:10332: Remote end closed connection without response
+REF-MISS 3506	getstateroot failed against http://seed2.neo.org:10332: Remote end closed connection without response
+REF-MISS 3521	getstateroot failed against http://seed2.neo.org:10332: Remote end closed connection without response
+REF-MISS 3546	getstateroot failed against http://seed2.neo.org:10332: Remote end closed connection without response
+=== any LOCAL-MISS with a real root (non -106)? ===
+LOCAL-MISS 564	getstateroot error from http://127.0.0.1:10332: {'code': -32001, 'message': 'Too many requests'}
+LOCAL-MISS 536	getstateroot error from http://127.0.0.1:10332: {'code': -32001, 'message': 'Too many requests'}
+LOCAL-MISS 537	getstateroot error from http://127.0.0.1:10332: {'code': -32001, 'message': 'Too many requests'}
+LOCAL-MISS 538	getstateroot error from http://127.0.0.1:10332: {'code': -32001, 'message': 'Too many requests'}
+LOCAL-MISS 540	getstateroot error from http://127.0.0.1:10332: {'code': -32001, 'message': 'Too many requests'}
+LOCAL-MISS 543	getstateroot error from http://127.0.0.1:10332: {'code': -32001, 'message': 'Too many requests'}
+LOCAL-MISS 545	getstateroot error from http://127.0.0.1:10332: {'code': -32001, 'message': 'Too many requests'}
+LOCAL-MISS 547	getstateroot error from http://127.0.0.1:10332: {'code': -32001, 'message': 'Too many requests'}
+LOCAL-MISS 550	getstateroot error from http://127.0.0.1:10332: {'code': -32001, 'message': 'Too many requests'}
+LOCAL-MISS 574	getstateroot error from http://127.0.0.1:10332: {'code': -32001, 'message': 'Too many requests'}

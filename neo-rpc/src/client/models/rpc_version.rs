@@ -116,7 +116,7 @@ pub struct RpcProtocol {
     pub memory_pool_max_transactions: i32,
 
     /// Initial gas distribution
-    pub initial_gas_distribution: u64,
+    pub initial_gas_distribution: i64,
 
     /// Hardforks (BTreeMap for deterministic JSON serialization order)
     pub hardforks: BTreeMap<String, u32>,
@@ -168,6 +168,9 @@ impl RpcProtocol {
         );
         json.insert(
             "initialgasdistribution".to_string(),
+            // Server serializes initial_gas_distribution as i64 via serde_json::json!().
+            // The cast to f64 is exact for all known Neo values (≤ 5_200_000_000_000_000
+            // ≈ 5.2×10¹⁵ < 2⁵³), so no precision is lost.
             JToken::Number(self.initial_gas_distribution as f64),
         );
 
@@ -246,7 +249,7 @@ impl RpcProtocol {
         let initial_gas_distribution =
             json.get("initialgasdistribution")
                 .and_then(neo_json::JToken::as_number)
-                .ok_or("Missing or invalid 'initialgasdistribution' field")? as u64;
+                .ok_or("Missing or invalid 'initialgasdistribution' field")? as i64;
 
         // Parse hardforks
         let hardforks = json

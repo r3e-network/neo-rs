@@ -1,0 +1,2 @@
+﻿User    = JIMMY\Administrator
+IsAdmin = False

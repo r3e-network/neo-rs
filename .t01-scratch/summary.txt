@@ -1,0 +1,16 @@
+=== neo-primitives | ARGS:  | EXIT=0 | SECS=185 ===
+=== neo-config | ARGS:  | EXIT=0 | SECS=99 ===
+=== neo-crypto | ARGS:  | EXIT=0 | SECS=411 ===
+=== neo-io | ARGS:  | EXIT=0 | SECS=90 ===
+=== neo-json | ARGS:  | EXIT=0 | SECS=86 ===
+=== neo-vm | ARGS:  | EXIT=0 | SECS=149 ===
+=== neo-storage | ARGS:  | EXIT=0 | SECS=56 ===
+=== neo-p2p | ARGS:  | EXIT=0 | SECS=13 ===
+=== neo-tee | ARGS:  | EXIT=0 | SECS=105 ===
+=== neo-hsm | ARGS:  | EXIT=0 | SECS=23 ===
+=== neo-telemetry | ARGS:  | EXIT=0 | SECS=252 ===
+=== neo-consensus | ARGS:  | EXIT=0 | SECS=25 ===
+=== neo-rpc | ARGS: --features server | EXIT=0 | SECS=857 ===
+=== neo-core | ARGS: --features runtime | EXIT=0 | SECS=549 ===
+=== neo-tests | ARGS:  | EXIT=0 | SECS=227 ===
+=== ALL DONE ===

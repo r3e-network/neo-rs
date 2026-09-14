@@ -1,0 +1,1 @@
+Rust crate providing SGX-backed wallet sealing, fair transaction ordering mempool, and remote attestation services for the Neo N3 blockchain.

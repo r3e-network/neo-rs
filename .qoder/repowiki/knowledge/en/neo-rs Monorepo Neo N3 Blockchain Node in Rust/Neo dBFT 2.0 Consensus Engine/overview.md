@@ -1,0 +1,1 @@
+Implements the Delegated Byzantine Fault Tolerance (dBFT 2.0) consensus algorithm for Neo N3, managing block proposal, validation, commit, view changes, and recovery across validators.

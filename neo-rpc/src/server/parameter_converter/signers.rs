@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
 use neo_core::cryptography::{ECCurve, ECPoint};
-use neo_core::network::p2p::payloads::signer::Signer;
+use neo_core::network::p2p::payloads::signer::{MAX_SIGNER_SUBITEMS, Signer};
 use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::{WitnessRule, WitnessScope};
@@ -77,6 +77,9 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
         && let Some(contracts_token) = obj.get("allowedcontracts")
     {
         let array = expect_array(contracts_token)?;
+        if array.count() > MAX_SIGNER_SUBITEMS {
+            return Err(invalid_params("Too many allowed contracts"));
+        }
         signer.allowed_contracts = array
             .children()
             .iter()
@@ -94,6 +97,9 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
         && let Some(groups_token) = obj.get("allowedgroups")
     {
         let array = expect_array(groups_token)?;
+        if array.count() > MAX_SIGNER_SUBITEMS {
+            return Err(invalid_params("Too many allowed groups"));
+        }
         signer.allowed_groups = array
             .children()
             .iter()
@@ -114,6 +120,9 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
         && let Some(rules_token) = obj.get("rules")
     {
         let array = expect_array(rules_token)?;
+        if array.count() > MAX_SIGNER_SUBITEMS {
+            return Err(invalid_params("Too many witness rules"));
+        }
         signer.rules = array
             .children()
             .iter()

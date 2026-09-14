@@ -1,0 +1,6 @@
+- Each integration scenario lives in its own `tests/tests/<name>.rs` file and is registered as an explicit `[[test]]` entry in `Cargo.toml` rather than relying on auto-discovery.
+- Shared test-only types (mempool stub, world state, storage keys, state trie manager) are factored into `src/lib.rs` modules (`mempool`, `state`) and imported by test crates instead of being duplicated per test file.
+- Async tests use `#[tokio::test]` and coordinate concurrent actors through `Arc<RwLock<...>>` plus `tokio::spawn` / `mpsc` channels for event-driven scenarios such as consensus timeouts and P2P message exchange.
+- Criterion benches declare `harness = false` and group functions via `criterion_group!` / `criterion_main!`, with each benchmark function constructing deterministic sample data (e.g. `make_sample_header`) before calling `c.bench_function`.
+- Benchmarks avoid full-node setup and explicitly scope themselves to serialization/hashing/VM execution only, as documented in benchmark file headers.
+- Tests assert protocol determinism by constructing two parallel state instances, applying identical changes, and asserting equal root hashes or expected mismatches.

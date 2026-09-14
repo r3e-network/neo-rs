@@ -49,6 +49,7 @@
 pub mod attestation;
 pub mod enclave;
 pub mod error;
+pub(crate) mod fs_acl;
 pub mod mempool;
 #[cfg(feature = "sgx-hw")]
 pub(crate) mod sgx;

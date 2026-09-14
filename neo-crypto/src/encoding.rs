@@ -57,6 +57,15 @@ impl Base64 {
         general_purpose::STANDARD.encode(data)
     }
 
+    /// Decodes standard padded Base64 strictly: rejects whitespace, non-base64
+    /// characters, and incorrect padding.  Matches C# `Convert.FromBase64String`
+    /// which is what the Neo StdLib `base64Decode` syscall uses.
+    pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
+        general_purpose::STANDARD
+            .decode(s.as_bytes())
+            .map_err(|e| CryptoError::encoding_error(format!("Base64 decode error: {e}")))
+    }
+
     /// Decodes standard padded Base64, ignoring ASCII/Unicode whitespace.
     pub fn decode_lenient(s: &str) -> CryptoResult<Vec<u8>> {
         let normalized = strip_whitespace(s);

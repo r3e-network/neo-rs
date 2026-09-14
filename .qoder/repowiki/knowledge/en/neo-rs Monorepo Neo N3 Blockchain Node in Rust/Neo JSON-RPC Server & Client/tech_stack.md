@@ -1,0 +1,1 @@
+Rust async stack built on `tokio` + `hyper`/`warp` for HTTP, optional `jsonrpsee 0.24.10` server adapter, `reqwest` for the HTTP client, `serde_json` for JSON-RPC payloads, `tokio-rustls`/`rustls` for TLS, `governor`+`dashmap` for rate limiting, `prometheus` counters for metrics, and `parking_lot` for lock primitives.

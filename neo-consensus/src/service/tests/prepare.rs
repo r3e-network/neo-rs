@@ -175,7 +175,8 @@ async fn prepare_response_with_future_view_can_be_reprocessed_after_view_change(
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
-    let response = PrepareResponseMessage::new(0, 1, 1, UInt256::zero());
+    let preparation_hash = UInt256::from_bytes(&[0x44; 32]).expect("hash");
+    let response = PrepareResponseMessage::new(0, 1, 1, preparation_hash);
     let mut payload = ConsensusPayload::new(
         network,
         0,
@@ -194,9 +195,15 @@ async fn prepare_response_with_future_view_can_be_reprocessed_after_view_change(
     assert!(service.context().prepare_responses.is_empty());
 
     service.context.reset_for_new_view(1, 2_000);
+    // Early PrepareResponses are buffered until PrepareRequest binds the hash.
+    // Without preparation_hash they are still stored (signature already verified).
     assert!(service.process_message(payload).is_ok());
     assert!(service.context().has_seen_message(&msg_hash));
     assert!(service.context().prepare_responses.contains_key(&1));
+    assert_eq!(
+        service.context().prepare_response_hashes.get(&1),
+        Some(&preparation_hash)
+    );
 
     // A successfully accepted message remains deduplicated.
     assert!(

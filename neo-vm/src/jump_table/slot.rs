@@ -112,6 +112,9 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
         for _ in 0..argument_count {
             arg_items.push(ctx.pop()?);
         }
+        // C# Neo.VM JumpTable.InitSlot consumes arguments from the evaluation stack in order:
+        // `for (int i = 0; i < count; i++) items[i] = EvaluationStack.Pop();`
+        // Thus items[0] is the topmost popped element (first popped from stack top).
         let rc = ctx.evaluation_stack().reference_counter().clone();
         ctx.set_arguments(Some(crate::slot::Slot::with_items(arg_items, rc)));
     }
@@ -134,10 +137,15 @@ fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> 
         ));
     }
 
-    if static_count > 0 {
-        let rc = ctx.evaluation_stack().reference_counter().clone();
-        ctx.set_static_fields(Some(crate::slot::Slot::new(static_count, rc)));
+    // C# throws InvalidOperationException when static_count == 0; mirror that behavior.
+    if static_count == 0 {
+        return Err(VmError::invalid_operation_msg(
+            "The operand is invalid for OpCode.INITSSLOT",
+        ));
     }
+
+    let rc = ctx.evaluation_stack().reference_counter().clone();
+    ctx.set_static_fields(Some(crate::slot::Slot::new(static_count, rc)));
 
     Ok(())
 }

@@ -1,0 +1,1 @@
+Central repository for Neo-rs architecture, protocol-compliance audits, performance reports, and spec-driven change proposals managed via the openspec tooling.

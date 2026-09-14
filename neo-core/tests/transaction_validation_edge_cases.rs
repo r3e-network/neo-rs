@@ -414,6 +414,14 @@ mod tests {
 
         // Transaction should handle oversized scripts appropriately
         assert!(tx.script().len() > MAX_TRANSACTION_SIZE);
+
+        // verify_state_independent must flag the transaction as OverSize
+        let settings = ProtocolSettings::default();
+        assert_eq!(
+            VerifyResult::OverSize,
+            tx.verify_state_independent(&settings),
+            "Oversized transaction must return VerifyResult::OverSize"
+        );
     }
 
     /// Test distinct signers validation (matches C# UT_Transaction.Transaction_Serialize_Deserialize_DistinctSigners)
@@ -437,22 +445,10 @@ mod tests {
         tx.set_attributes(vec![]);
         tx.set_witnesses(vec![Witness::empty(), Witness::empty()]);
 
-        // Serialization should handle duplicate signers
+        // C# reference always rejects duplicate signers during deserialization
         let serialized = tx.to_bytes();
-
-        // Should detect duplicate signers during validation
         let result = Transaction::from_bytes(&serialized);
-        // The behavior depends on implementation - some may accept, others reject
-        // This tests that the system handles the edge case appropriately
-        match result {
-            Ok(_) => {
-                // If accepted, ensure validation catches it
-                assert_eq!(tx.signers().len(), 2);
-            }
-            Err(_) => {
-                // If rejected during deserialization, that's also correct
-            }
-        }
+        assert!(result.is_err(), "Duplicate signers must be rejected during deserialization");
     }
 
     /// Test maximum signers limit (matches C# UT_Transaction.Transaction_Serialize_Deserialize_MaxSizeSigners)
@@ -1292,9 +1288,21 @@ mod tests {
         );
     }
 
-    /// Test VerifyStateIndependent rejects invalid invocation script formats.
+    /// Test VerifyStateIndependent skips invocation formats it cannot
+    /// quick-check (C# parity).
+    ///
+    /// C# `Transaction.VerifyStateIndependent` (master-n3) only inlines the
+    /// two quick branches — `IsSignatureContract &&
+    /// IsSingleSignatureInvocationScript` and `IsMultiSigContract &&
+    /// IsMultiSignatureInvocationScript`. Anything else (empty scripts,
+    /// truncated `PUSHDATA1`, `PUSHDATA2` encodings, ...) matches neither
+    /// branch and is **skipped silently**, returning `Succeed`. Full
+    /// verification of such witnesses belongs to
+    /// `VerifyStateDependent` -> `Helper.VerifyWitness`, whose
+    /// `new Script(witness.InvocationScript, true)` throws for the truncated
+    /// payload below and makes the dependent verification fail.
     #[test]
-    fn test_verify_state_independent_invalid_invocation_script() {
+    fn test_verify_state_independent_skips_non_standard_invocation() {
         let settings = ProtocolSettings::default();
         let key = KeyPair::from_private_key(&[15u8; 32]).expect("key");
         let verification_script = key.get_verification_script();
@@ -1310,7 +1318,8 @@ mod tests {
         tx.set_signers(vec![Signer::new(signer_hash, WitnessScope::GLOBAL)]);
         tx.set_attributes(Vec::new());
 
-        // Missing 64-byte signature payload.
+        // Missing 64-byte signature payload: not a single-signature
+        // invocation, so state-independent verification skips it (C# parity).
         let invalid_invocation = vec![OpCode::PUSHDATA1.byte(), 0x40];
         tx.set_witnesses(vec![Witness::new_with_scripts(
             invalid_invocation,
@@ -1632,6 +1641,15 @@ mod tests {
         let attributes = vec![TransactionAttribute::high_priority(); 16]; // Max attributes
         tx.set_attributes(attributes);
         assert_eq!(tx.attributes().len(), 16);
+
+        // 16 duplicate HighPriority attributes must be rejected during deserialization
+        let mut tx_hp = create_test_transaction();
+        tx_hp.set_attributes(vec![TransactionAttribute::high_priority(); 16]);
+        let hp_bytes = tx_hp.to_bytes();
+        assert!(
+            Transaction::from_bytes(&hp_bytes).is_err(),
+            "16 duplicate HighPriority attributes must be rejected during deserialization"
+        );
     }
 
     /// Test transaction validation with conflicts
@@ -1674,6 +1692,12 @@ mod tests {
         // Test negative network fee (should be handled appropriately)
         tx.set_network_fee(-1);
         assert_eq!(-1, tx.network_fee());
+        // Negative network fee must be rejected during deserialization
+        let bytes = tx.to_bytes();
+        assert!(
+            Transaction::from_bytes(&bytes).is_err(),
+            "Negative network fee must be rejected during deserialization"
+        );
     }
 
     /// Test transaction system fee edge cases
@@ -1692,6 +1716,14 @@ mod tests {
         // Test system fee boundary values
         tx.set_system_fee(1); // Minimum positive
         assert_eq!(1, tx.system_fee());
+
+        // Negative system fee must be rejected during deserialization
+        tx.set_system_fee(-1);
+        let bytes = tx.to_bytes();
+        assert!(
+            Transaction::from_bytes(&bytes).is_err(),
+            "Negative system fee must be rejected during deserialization"
+        );
     }
 
     /// Test transaction valid until block edge cases
@@ -1846,17 +1878,31 @@ mod tests {
     /// Test transaction version validation
     #[test]
     fn test_transaction_version_validation() {
-        let mut tx = Transaction::new();
+        let tx = Transaction::new();
 
         // Test default version
         assert_eq!(0, tx.version());
 
-        // Test setting version
+        // Non-zero versions must be rejected by deserialization; use a fully serializable base
+        let mut tx = create_test_transaction();
+        assert_eq!(0, tx.version());
+
+        // Test setting version 1
         tx.set_version(1);
         assert_eq!(1, tx.version());
+        let bytes = tx.to_bytes();
+        assert!(
+            Transaction::from_bytes(&bytes).is_err(),
+            "Version 1 must be rejected during deserialization"
+        );
 
         // Test maximum version
         tx.set_version(u8::MAX);
         assert_eq!(u8::MAX, tx.version());
+        let bytes = tx.to_bytes();
+        assert!(
+            Transaction::from_bytes(&bytes).is_err(),
+            "Version u8::MAX must be rejected during deserialization"
+        );
     }
 }

@@ -1,0 +1,1 @@
+Rust crate built on `neo-primitives` macros (`p2p_message_command!`) for command enums, `neo-io` for binary serialization and LZ4 compression, `tokio` + `async-trait` for async runtime abstraction, and `thiserror` for error enumeration.

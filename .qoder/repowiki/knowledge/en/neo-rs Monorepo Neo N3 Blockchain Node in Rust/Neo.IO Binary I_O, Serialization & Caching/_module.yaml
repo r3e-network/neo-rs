@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: neo_io
+title: Neo.IO Binary I/O, Serialization & Caching
+scope:
+    - neo-io/
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,4 @@
+=== p=32: [0,2000] self-compare (stress) ===
+EXIT=0 wall=28s rate_hps=71.5 error_lines=0
+=== p=64: [0,2000] self-compare (stress) ===
+EXIT=0 wall=15s rate_hps=133.4 error_lines=0

@@ -311,22 +311,7 @@ impl TeeWallet {
 
         let metadata_path = self.path.join("wallet.json");
         let json = serde_json::to_string_pretty(&metadata)?;
-        // Write with restrictive permissions (owner read/write only)
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(&metadata_path)
-                .and_then(|mut f| std::io::Write::write_all(&mut f, json.as_bytes()))?;
-        }
-        #[cfg(not(unix))]
-        {
-            std::fs::write(&metadata_path, json)?;
-        }
+        crate::fs_acl::write_owner_only(&metadata_path, json.as_bytes())?;
         Ok(())
     }
 
@@ -359,7 +344,7 @@ impl TeeWallet {
             ))
         })?;
 
-        Secp256r1Crypto::sign(data, key)
+        Secp256r1Crypto::sign_prehash(&Crypto::sha256(data), key)
             .map(|sig| sig.to_vec())
             .map_err(|e| TeeError::Other(format!("Failed to sign: {e}")))
     }

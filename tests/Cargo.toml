@@ -3,6 +3,7 @@ name = "neo-tests"
 version = "0.17.0"
 edition = "2024"
 publish = false
+license = "MIT"
 description = "Integration tests for neo-rs workspace layer boundaries and end-to-end testing"
 
 # This is a test-only crate, not part of the main workspace

@@ -1,0 +1,59 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "csharp-vm-runner/1.0.0": {
+        "dependencies": {
+          "Neo.VM": "3.10.1"
+        },
+        "runtime": {
+          "csharp-vm-runner.dll": {}
+        }
+      },
+      "Neo.VM/3.10.1": {
+        "dependencies": {
+          "System.IO.Hashing": "10.0.2"
+        },
+        "runtime": {
+          "lib/net10.0/Neo.VM.dll": {
+            "assemblyVersion": "3.10.1.0",
+            "fileVersion": "3.10.1.0"
+          }
+        }
+      },
+      "System.IO.Hashing/10.0.2": {
+        "runtime": {
+          "lib/net10.0/System.IO.Hashing.dll": {
+            "assemblyVersion": "10.0.0.2",
+            "fileVersion": "10.0.225.61305"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "csharp-vm-runner/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Neo.VM/3.10.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-74q+ntV9pFQXpPEIRS58W3Kf7VHdG7qvVCJtvLwggPVj24fyi4I+frvkYa7vg83XlLeOQgNFRGkPdzTUX1RDdQ==",
+      "path": "neo.vm/3.10.1",
+      "hashPath": "neo.vm.3.10.1.nupkg.sha512"
+    },
+    "System.IO.Hashing/10.0.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-AKJknIFi9O3+rGExxTry188JPvUoZAPcCtS2qdqyFhIzsxQ1Ap94BeGDG0VzVEHakhmRxmJtVih6TsHoghIt/g==",
+      "path": "system.io.hashing/10.0.2",
+      "hashPath": "system.io.hashing.10.0.2.nupkg.sha512"
+    }
+  }
+}

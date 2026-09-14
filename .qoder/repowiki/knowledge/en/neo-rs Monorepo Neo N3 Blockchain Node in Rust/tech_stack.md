@@ -1,0 +1,1 @@
+Rust workspace using tokio async runtime, serde/serde_json for serialization, RocksDB-backed storage, hyper/reqwest for HTTP JSON-RPC, secp256k1/ed25519-dalek/k256/p256/blst for cryptography, lz4_flex compression, and Prometheus/sysinfo telemetry — all pinned centrally in `[workspace.dependencies]`.

@@ -1,0 +1,1 @@
+None beyond standard `cargo build`/`cargo test`; the crate uses workspace-inherited metadata fields (`version.workspace`, `edition.workspace`, etc.) so it must be built within the parent Cargo workspace.

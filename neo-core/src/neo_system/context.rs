@@ -595,11 +595,17 @@ impl NeoSystemContext {
 
         let ledger_contract = LedgerContract::new();
         let store_cache = self.store_cache();
-        if ledger_contract
-            .contains_transaction(&store_cache, hash)
-            .unwrap_or(false)
-        {
-            return ContainsTransactionType::ExistsInLedger;
+        match ledger_contract.contains_transaction(&store_cache, hash) {
+            Ok(true) => return ContainsTransactionType::ExistsInLedger,
+            Ok(false) => {}
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    "ledger contains_transaction failed; treating as ExistsInLedger (fail-closed)"
+                );
+                return ContainsTransactionType::ExistsInLedger;
+            }
         }
 
         ContainsTransactionType::NotExist
@@ -620,7 +626,14 @@ impl NeoSystemContext {
 
         ledger_contract
             .contains_conflict_hash(&store_cache, hash, signers, max_traceable)
-            .unwrap_or(false)
+            .unwrap_or_else(|error| {
+                tracing::warn!(
+                    target: "neo",
+                    error = %error,
+                    "ledger contains_conflict_hash failed; treating as conflict (fail-closed)"
+                );
+                true
+            })
     }
 
     /// Protocol settings shared with network components.

@@ -1,0 +1,6 @@
+- Public APIs mirror the C# Neo.IO surface: reader/writer method names (`read_var_int`, `write_bool`, `Position`, `Count`) and error semantics are kept identical to the C# implementation.
+- New serializable types are generated via the `impl_serializable!` macro rather than hand-written `Serializable` impls, using field annotations like `var_bytes { max: N }` and optional `validate { ... }` blocks.
+- Caches share a common facade built from the `impl_cache_facade!` macro, so every cache exposes `count`, `is_empty`, `add_range`, `clear`, `contains`, `remove`, `try_get`, `values`, and `max_capacity` uniformly.
+- Cache wrappers implement `Deref`/`DerefMut` onto their inner map via the `impl_cache_wrapper_deref!` macro, delegating direct map operations while adding synchronized access through `parking_lot::Mutex`.
+- Errors are modeled with `thiserror::Error` enums (`IoError`) and returned via a module-local `IoResult<T>` alias instead of propagating `std::io::Error` directly.
+- Variable-length integers use the Neo compact encoding implemented in `var_int.rs`, shared between `MemoryReader::read_var_int` and `BinaryWriter::write_var_int`.

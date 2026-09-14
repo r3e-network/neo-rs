@@ -1,0 +1,1 @@
+Production observability crate for the Neo N3 node providing structured logging, Prometheus metrics, HTTP health endpoints, and system resource monitoring.

@@ -13,8 +13,8 @@ Recommendations and a sample `RpcServer.json` for running the RPC plugin securel
 - Optional built-in per-IP rate limiting is available via `max_requests_per_second` and `rate_limit_burst` (disabled when set to 0). Use a reverse proxy limiter for stronger guarantees.
 - Keep `disabled_methods` populated for any RPC methods you do not need.
 - Prefer environment overrides for secrets and endpoints in containers: `NEO_RPC_USER`, `NEO_RPC_PASS`, `NEO_RPC_TLS_CERT`, `NEO_RPC_TLS_PASS`, `NEO_RPC_BIND`, `NEO_RPC_PORT`, `NEO_RPC_ALLOW_ORIGINS`, `NEO_RPC_DISABLED_METHODS`.
-- Use the CLI `--rpc-hardened` switch to force auth, disable CORS, and disable `openwallet`/`listplugins` at startup; this will also fail if credentials are missing.
-- TLS termination is **not supported** by the Rust RPC plugin. Always terminate TLS at a reverse proxy or tunnel; setting `ssl_cert`/`ssl_cert_password`/`trusted_authorities` will cause the server to refuse to start.
+- Use the CLI `--rpc-hardened` switch to force auth, disable CORS, and disable wallet/key-export/send methods (`openwallet`, `dumpprivkey`, `importprivkey`, `sendfrom`, `sendto`, `sendmany`, `sendrawtransaction`, `listplugins`) at startup; this will also fail if credentials are missing.
+- Built-in TLS is supported via `ssl_cert` / `ssl_cert_password` / `trusted_authorities` (or `NEO_RPC_TLS_*`). Prefer terminating TLS at a reverse proxy when possible; if `TrustedAuthorities` is set, at least one matching client CA root must load or the server refuses to start.
 - Expose only what you need: avoid `listplugins` and `openwallet` on untrusted networks; keep them disabled or restrict via proxy ACLs.
 - Compatibility note: set `NEO_LISTPLUGINS_COMPAT=fixture` (and optionally `NEO_PLUGIN_VERSION=3.0.0.0`) to emulate legacy C# `listplugins` output when needed for fixture-based clients.
 - Default plugin set is limited to the stable services (rpc-server, rocksdb-store, application-logs, tokens-tracker). `tokens-tracker` is optional and only exposes RPC methods when enabled. `state-service` is optional and only enabled when configured (or via `--state-root`). Consensus (dBFT) is not wired into `neo-node` yet.

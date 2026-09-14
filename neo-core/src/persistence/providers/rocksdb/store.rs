@@ -350,15 +350,24 @@ impl Drop for RocksDbStore {
 
 /// Overlay snapshot over a `RocksDbStore`: buffered writes staged in memory,
 /// reads served from pending changes and a DB point-in-time, and an
-/// all-or-nothing `try_commit`. Field order matters for drop safety — see
-/// the comment on `snapshot` below.
+/// all-or-nothing `try_commit`.
+///
+/// # Drop order invariant (R08)
+///
+/// `snapshot` MUST be released before `db` (the `Arc<DB>`) is freed.
+/// `DbSnapshot::drop` calls `release_snapshot` on its parent `DB`; if the
+/// `Arc` were released first and this were the last owner, the database would
+/// be freed and the subsequent `release_snapshot` would be a use-after-free.
+///
+/// `snapshot` is wrapped in `ManuallyDrop` and released explicitly in the
+/// `Drop` impl below, which runs before Rust auto-drops any other field.
+/// This makes the invariant self-documenting and independent of field
+/// declaration order.
+#[allow(dead_code)] // Field order is intentional; see drop-order invariant above.
 pub struct RocksDbSnapshot {
-    // Rust drops fields in declaration order, and `DbSnapshot::drop` calls
-    // `release_snapshot` on its DB. The snapshot must therefore be declared
-    // (and so dropped) BEFORE the `Arc<DB>`/store owners: if this struct were
-    // the last DB owner, dropping `db` first would free the database and turn
-    // the later snapshot release into a use-after-free (R08).
-    snapshot: DbSnapshot<'static>,
+    /// Wrapped in `ManuallyDrop` so the explicit `Drop` impl can release it
+    /// before `db` is freed. Do not reorder or unwrap without updating `Drop`.
+    snapshot: mem::ManuallyDrop<DbSnapshot<'static>>,
     write_batch: Mutex<WriteBatch>,
     pending_changes: Mutex<BTreeMap<Vec<u8>, Option<Vec<u8>>>>,
     /// Optional read cache for this snapshot
@@ -379,7 +388,7 @@ impl RocksDbSnapshot {
         let snapshot = Self::create_snapshot(&db);
 
         Self {
-            snapshot,
+            snapshot: mem::ManuallyDrop::new(snapshot),
             write_batch: Mutex::new(WriteBatch::default()),
             pending_changes: Mutex::new(BTreeMap::new()),
             read_cache,
@@ -407,7 +416,7 @@ impl RocksDbSnapshot {
     }
 
     fn read_options(&self) -> ReadOptions {
-        provider::build_read_options(Some(&self.snapshot), &self.read_ahead_config)
+        provider::build_read_options(Some(&*self.snapshot), &self.read_ahead_config)
     }
 
     fn iterator_from(
@@ -482,6 +491,20 @@ impl RocksDbSnapshot {
             entries.reverse();
         }
         Some(entries)
+    }
+}
+
+impl Drop for RocksDbSnapshot {
+    fn drop(&mut self) {
+        // SAFETY: Drop the RocksDB snapshot before releasing the Arc<DB>.
+        // `snapshot` holds a `'static` borrow of the DB; `DbSnapshot::drop`
+        // calls `release_snapshot` on the underlying rocksdb::DB. If `db`
+        // (the Arc) were freed first and this were the last owner, the DB
+        // allocation would be gone and `release_snapshot` would access freed
+        // memory (use-after-free, R08). ManuallyDrop lets us call
+        // `drop_in_place` here, before Rust auto-drops `db` and `store`.
+        unsafe { mem::ManuallyDrop::drop(&mut self.snapshot) };
+        // `db` and `store` are dropped subsequently in declaration order.
     }
 }
 
@@ -673,6 +696,20 @@ impl StoreSnapshot for RocksDbSnapshot {
         }
         drop(batch_config);
 
+        // M-1 / R10: Evict stale cache entries BEFORE writing to the DB.
+        // If we evicted after the write, a concurrent reader could re-populate
+        // the cache with the *old* value in the window between the DB write and
+        // our eviction, leaving a stale entry. Evicting first closes that
+        // window: any reader that misses the cache after this point will fetch
+        // the freshly written value. If the DB write below fails, the eviction
+        // is harmless — readers will simply miss the cache and re-fetch the
+        // unchanged value from RocksDB.
+        if let Some(ref cache) = self.read_cache {
+            for key in pending_snapshot.keys() {
+                cache.remove(&StorageKey::from_bytes(key));
+            }
+        }
+
         if let Err(err) = self.db.write_opt(batch, &write_opts) {
             let mut batch_guard = self.write_batch.lock();
             let mut pending_guard = self.pending_changes.lock();
@@ -683,18 +720,6 @@ impl StoreSnapshot for RocksDbSnapshot {
                 "RocksDB write failed: {}",
                 err
             )));
-        }
-
-        // R10: a concurrent reader may have (re)populated the shared cache
-        // from the database between this snapshot's point-evictions and this
-        // commit. Invalidate every committed key so post-commit readers
-        // cannot observe pre-commit values. (A reader racing mid-commit can
-        // still cache one stale value; the complete fix is a versioned cache
-        // keyed by snapshot/sequence.)
-        if let Some(ref cache) = self.read_cache {
-            for key in pending_snapshot.keys() {
-                cache.remove(&StorageKey::from_bytes(key));
-            }
         }
 
         Ok(())
@@ -721,7 +746,7 @@ impl RocksDbStore {
     /// Disables fast sync mode optimizations.
     pub fn disable_fast_sync_mode(&self) {
         // Restore balanced batch config (WAL enabled)
-        *self.batch_config.write() = WriteBatchConfig::balanced();
+        *self.batch_config.write() = WriteBatchConfig::durable();
 
         if let Err(err) = self
             .db

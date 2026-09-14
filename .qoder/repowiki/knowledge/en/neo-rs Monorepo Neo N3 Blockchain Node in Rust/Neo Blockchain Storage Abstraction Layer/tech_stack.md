@@ -1,0 +1,1 @@
+Rust crate using `parking_lot` for concurrent maps, `hashbrown` for fast hash maps, `lru` for LRU eviction, `fastbloom` for bloom filters in read caching, `xxhash-rust` for C#-compatible xxhash3 key hashing, `serde` for serialization, and `thiserror` for error types.

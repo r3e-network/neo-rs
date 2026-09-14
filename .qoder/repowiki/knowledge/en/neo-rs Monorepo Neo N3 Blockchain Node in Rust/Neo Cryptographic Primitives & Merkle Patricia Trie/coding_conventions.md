@@ -1,0 +1,6 @@
+- Each curve or algorithm family is exposed as a dedicated zero-sized struct (`Secp256k1Crypto`, `Secp256r1Crypto`, `Ed25519Crypto`, `Bls12381Crypto`) implementing generate/sign/verify methods that return `CryptoResult<T>`.
+- Key material is handled with `Zeroizing` wrappers around temporary buffers to ensure automatic secure zeroing of secrets on drop.
+- Public APIs consistently mark fallible operations with `CryptoResult` errors and provide `#[must_use]` convenience wrappers on `Crypto` that swallow errors into `bool` for fast-path verification.
+- Constant-time hash comparison is provided via `ct_hash_eq` / `ct_hash_slice_eq` using `subtle::ConstantTimeEq` instead of raw `==` for security-sensitive comparisons.
+- The MPT trie module mirrors the C# Neo node structure by splitting functionality into sibling files (`node`, `node_type`, `cache`, `trie`, `error`) and re-exporting a minimal surface from `mod.rs`.
+- Tests are colocated with source under `#[cfg(test)] mod tests { ... }` blocks inside each file rather than in a separate `tests/` directory, with property-based tests isolated in `tests/property_tests.rs`.

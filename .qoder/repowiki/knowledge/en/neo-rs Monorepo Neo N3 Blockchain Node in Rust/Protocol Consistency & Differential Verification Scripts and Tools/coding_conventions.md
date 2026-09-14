@@ -1,0 +1,6 @@
+- Scripts are invoked directly from the repository root and resolve paths relative to `REPO_ROOT = Path(__file__).resolve().parents[1]` (e.g. `verify-protocol-consistency.py`, `mainnet-full-validation.sh`).
+- Long-running campaigns are made resumable by writing completion markers (e.g. `<zip>.md5-ok`, `.import-complete`, `.campaign-complete`, `.campaign-aborted`) and skipping steps when those files exist.
+- JSON-RPC calls use a uniform `{"jsonrpc":"2.0","id":1,"method":...}` payload and handle gzip-compressed responses by detecting the `\x1f\x8b` magic before decompressing.
+- Divergence-finding scripts follow a common shape: fetch data from both local and reference nodes, normalize values (e.g. hex prefixes), and exit non-zero on first mismatch while printing structured diagnostics.
+- Cross-implementation comparisons render results into a shared canonical JSON schema (Rust and C# both emit `{type, value}` stack envelopes) so diffs compare normalized output rather than raw VM state.
+- Shell harnesses enforce fail-fast execution with `set -euo pipefail` and wrap each pipeline stage in a `step_*` function that logs timestamps and returns early on skip conditions.

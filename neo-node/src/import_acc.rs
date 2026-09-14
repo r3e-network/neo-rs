@@ -137,6 +137,21 @@ fn flush_and_verify_checkpoint(
 ) -> Result<u32> {
     let started_at = Instant::now();
     system.store().flush();
+
+    // The state service persists its roots in a *separate* store from the chain
+    // store. Under the high-throughput import profile the write-ahead log is
+    // disabled, so the state store's memtable must be flushed explicitly —
+    // otherwise every computed root is lost when the process exits and
+    // `getstateroot` returns null after a restart. Flush it here, then fail
+    // closed below if the local root index has not reached the expected height.
+    let state_store = system.state_store().ok().flatten();
+    if let Some(state_store) = state_store.as_ref() {
+        state_store.flush();
+    }
+    let state_root_index = state_store
+        .as_ref()
+        .map(|store| store.local_root_index().unwrap_or(0));
+
     let local_view_height = read_local_view_height(system).unwrap_or(0);
 
     let (verification_source, persisted_height, current_hash_written) =
@@ -169,6 +184,19 @@ fn flush_and_verify_checkpoint(
         );
     }
 
+    // Fail closed: when the state service is enabled, its durable local root
+    // index must have reached the imported height, otherwise the computed roots
+    // would be silently unservable after a restart.
+    if let Some(state_root_index) = state_root_index
+        && state_root_index < expected_height
+    {
+        bail!(
+            "flush verification failed ({reason}): state service local root index {} is behind expected height {}",
+            state_root_index,
+            expected_height
+        );
+    }
+
     info!(
         target: "neo",
         reason,
@@ -177,6 +205,7 @@ fn flush_and_verify_checkpoint(
         expected_height,
         persisted_height,
         local_view_height,
+        state_root_index = ?state_root_index,
         verification_source,
         flush_elapsed_ms = started_at.elapsed().as_millis(),
         "acc import storage checkpoint flush completed"
@@ -426,6 +455,12 @@ pub fn import_acc_file(
         }
         Err(err) => {
             system.store().flush();
+            // Preserve whatever state roots were computed before the failure so a
+            // restart can still serve them (the state store is a separate store
+            // and is not covered by `system.store().flush()`).
+            if let Ok(Some(state_store)) = system.state_store() {
+                state_store.flush();
+            }
             info!(
                 target: "neo",
                 "storage flush completed after .acc import error"

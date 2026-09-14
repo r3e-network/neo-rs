@@ -44,6 +44,8 @@ pub trait StateStoreBackend: Send + Sync {
     fn commit(&self) -> Result<(), String>;
     /// Discard uncommitted changes.
     fn discard_pending(&self) {}
+    /// Flushes buffered writes to durable storage when the backend supports it.
+    fn flush(&self) {}
 }
 
 /// Isolated write overlay used while a blockchain transaction is still pending.

@@ -72,18 +72,93 @@ fn test_primary_index() {
 fn test_has_enough_responses() {
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(0, validators, Some(0), None);
+    let preparation_hash = UInt256::from_bytes(&[0x11; 32]).expect("hash");
+    ctx.preparation_hash = Some(preparation_hash);
 
     // Need M = 5 responses
     assert!(!ctx.has_enough_prepare_responses());
 
     ctx.prepare_request_received = true;
-    ctx.prepare_responses.insert(1, vec![1]);
-    ctx.prepare_responses.insert(2, vec![2]);
-    ctx.prepare_responses.insert(3, vec![3]);
+    for idx in 1u8..=3 {
+        ctx.prepare_responses.insert(idx, vec![idx]);
+        ctx.prepare_response_hashes
+            .insert(idx, preparation_hash);
+    }
     assert!(!ctx.has_enough_prepare_responses()); // 4 < 5
 
     ctx.prepare_responses.insert(4, vec![4]);
+    ctx.prepare_response_hashes.insert(4, preparation_hash);
     assert!(ctx.has_enough_prepare_responses()); // 5 >= 5
+}
+
+#[test]
+fn mismatched_prepare_response_hashes_do_not_count_toward_quorum() {
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(0, validators, Some(1), None);
+    let expected = UInt256::from_bytes(&[0x11; 32]).expect("hash");
+    let other = UInt256::from_bytes(&[0x22; 32]).expect("hash");
+    ctx.preparation_hash = Some(expected);
+    ctx.prepare_request_received = true; // primary (0) implicit vote
+
+    for idx in 1u8..=4 {
+        ctx.prepare_responses.insert(idx, vec![idx]);
+        ctx.prepare_response_hashes.insert(idx, other);
+    }
+    // 1 (PrepareRequest) + 0 matching responses < M=5
+    assert!(!ctx.has_enough_prepare_responses());
+
+    ctx.prepare_response_hashes.insert(1, expected);
+    ctx.prepare_response_hashes.insert(2, expected);
+    ctx.prepare_response_hashes.insert(3, expected);
+    ctx.prepare_response_hashes.insert(4, expected);
+    assert!(ctx.has_enough_prepare_responses()); // 1 + 4 = 5
+}
+
+#[test]
+fn primary_mismatched_response_without_prepare_request_does_not_count() {
+    // Recovery / gossip path: preparation_hash known from peers, but this node
+    // never verified PrepareRequest. Primary slot must not be filled by a
+    // PrepareResponse bound to a different hash.
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(0, validators, Some(1), None);
+    let expected = UInt256::from_bytes(&[0x11; 32]).expect("hash");
+    let other = UInt256::from_bytes(&[0x22; 32]).expect("hash");
+    ctx.preparation_hash = Some(expected);
+    ctx.prepare_request_received = false;
+
+    // Primary (0) sends divergent PrepareResponse; backups 1..=4 match expected.
+    ctx.prepare_responses.insert(0, vec![0]);
+    ctx.prepare_response_hashes.insert(0, other);
+    for idx in 1u8..=4 {
+        ctx.prepare_responses.insert(idx, vec![idx]);
+        ctx.prepare_response_hashes.insert(idx, expected);
+    }
+    // 4 matching (no primary) < M=5
+    assert!(!ctx.has_enough_prepare_responses());
+
+    ctx.prepare_response_hashes.insert(0, expected);
+    assert!(ctx.has_enough_prepare_responses()); // 5 matching including primary
+}
+
+#[test]
+fn prepare_request_and_primary_response_do_not_double_count() {
+    let validators = create_test_validators(7);
+    let mut ctx = ConsensusContext::new(0, validators, Some(1), None);
+    let expected = UInt256::from_bytes(&[0x11; 32]).expect("hash");
+    ctx.preparation_hash = Some(expected);
+    ctx.prepare_request_received = true;
+    ctx.prepare_responses.insert(0, vec![0]);
+    ctx.prepare_response_hashes.insert(0, expected);
+    for idx in 1u8..=3 {
+        ctx.prepare_responses.insert(idx, vec![idx]);
+        ctx.prepare_response_hashes.insert(idx, expected);
+    }
+    // primary once + backups 1..=3 = 4 < 5
+    assert!(!ctx.has_enough_prepare_responses());
+
+    ctx.prepare_responses.insert(4, vec![4]);
+    ctx.prepare_response_hashes.insert(4, expected);
+    assert!(ctx.has_enough_prepare_responses());
 }
 
 #[test]

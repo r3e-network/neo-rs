@@ -150,8 +150,8 @@ impl WitnessCondition {
                 get_var_size_serializable_slice(conditions)
             }
             WitnessCondition::ScriptHash { .. } => ADDRESS_SIZE,
-            WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {
-                group.len()
+            WitnessCondition::Group { .. } | WitnessCondition::CalledByGroup { .. } => {
+                helpers::ECPOINT_COMPRESSED_SIZE // 33 bytes; constant, not group.len()
             }
             WitnessCondition::CalledByEntry => 0,
             WitnessCondition::CalledByContract { .. } => ADDRESS_SIZE,

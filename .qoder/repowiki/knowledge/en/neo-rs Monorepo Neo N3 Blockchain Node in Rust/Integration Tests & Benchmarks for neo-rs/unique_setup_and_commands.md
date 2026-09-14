@@ -1,0 +1,1 @@
+Run integration tests via `cargo test -p neo-tests` (each file is a named `[[test]]` target). Run benchmarks via `cargo bench -p neo-benches` for the three Criterion benches, or `cargo bench -p neo-tests` for the single harness-less `performance_benchmarks` bench. Tests rely on workspace members being built first since they depend on `neo-*` crates via workspace resolution.

@@ -7,7 +7,7 @@ use crate::StackItem;
 use crate::StackItemType;
 use crate::stack_item::{Array, Map, Struct};
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
+use num_traits::{FromPrimitive, ToPrimitive};
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use std::collections::HashSet;
 
@@ -256,6 +256,17 @@ impl JsonSerializer {
                     Ok(StackItem::from_int(BigInt::from(i)))
                 } else if let Some(u) = n.as_u64() {
                     Ok(StackItem::from_int(BigInt::from(u)))
+                } else if let Some(f) = n.as_f64() {
+                    if !f.is_finite() || f % 1.0 != 0.0 {
+                        Err("Decimal value is not allowed".to_string())
+                    } else {
+                        // C# parity: Utf8JsonReader.GetDouble() -> JNumber -> (BigInteger)val.
+                        // Converts integer-valued floating point numbers (e.g. 1e21, 1.0, 1e5)
+                        // into BigInt.
+                        BigInt::from_f64(f)
+                            .map(StackItem::from_int)
+                            .ok_or_else(|| "Unsupported JSON number".to_string())
+                    }
                 } else {
                     Err("Unsupported JSON number".to_string())
                 }
@@ -282,5 +293,46 @@ impl JsonSerializer {
                 Ok(StackItem::from_map(entries))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_numbers() {
+        let cases = [
+            ("0", Some(BigInt::from(0))),
+            ("123", Some(BigInt::from(123))),
+            ("-456", Some(BigInt::from(-456))),
+            ("1.0", Some(BigInt::from(1))),
+            ("1e5", Some(BigInt::from(100000))),
+            (
+                "1000000000000000000000",
+                BigInt::from_f64(1e21),
+            ),
+            ("1.5", None),
+            ("-2.7", None),
+        ];
+        for (json_str, expected) in cases {
+            let res = JsonSerializer::deserialize(json_str.as_bytes(), 10);
+            match expected {
+                Some(exp) => {
+                    let item = res.unwrap_or_else(|e| panic!("failed to parse {json_str}: {e}"));
+                    assert_eq!(item.as_int().unwrap(), exp, "mismatch for {json_str}");
+                }
+                None => {
+                    assert!(res.is_err(), "expected error for {json_str}, got {:?}", res);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_deserialize_block_1497790_payload() {
+        let json_payload = br#"{"nft":{"tokenid":"1"},"settings":{"jd_name":"OG","price":1000000000000000000000,"init_supply":80,"is_transferable":true}}"#;
+        let item = JsonSerializer::deserialize(json_payload, 10).expect("should deserialize");
+        assert!(item.as_map().is_ok());
     }
 }

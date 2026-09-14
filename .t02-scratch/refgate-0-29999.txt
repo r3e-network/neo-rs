@@ -1,0 +1,16 @@
+
+=== COMPLETENESS GATE ===
+output      : data/reference_stateroots.jsonl
+range       : [0, 29999]  (30000 heights)
+file exists : True
+present     : 30000
+missing     : 0
+duplicates  : 0
+malformed   : 0 (lines) + 0 bad-root + 0 no-root
+out-of-range: 725156
+failure file: data/reference_stateroots.jsonl.failed.jsonl -> 0 recorded failures
+  first out-of-range heights: [30128, 30141, 30146, 30134, 30129, 30133, 30154, 30147, 30143, 30139, 30156, 30131, 30153, 30148, 30136, 30160, 30130, 30151, 30138, 30162, 30157, 30159, 30161, 30145, 30144, 30137, 30158, 30132, 30155, 30013, 30152, 30150, 30142, 30149, 30135, 30140, 30023, 30163, 30003, 30164, 30165, 30166, 30167, 30168, 30169, 30173, 30172, 30171, 30170, 30174]
+
+GATE: FAIL
+  - 725156 out-of-range heights
+exit=1

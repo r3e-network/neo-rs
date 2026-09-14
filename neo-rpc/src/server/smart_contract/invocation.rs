@@ -192,7 +192,9 @@ fn execute_script(
 
     if server.session_enabled() && session.has_iterators() {
         server.purge_expired_sessions();
-        let session_id = server.store_session(session);
+        let session_id = server
+            .store_session(session)
+            .map_err(RpcException::from)?;
         result.insert("session".to_string(), Value::String(session_id.to_string()));
     }
 

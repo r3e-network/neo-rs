@@ -1,0 +1,89 @@
+{
+  "impl_name": "rust-neo-vm",
+  "results": [
+    {
+      "name": "add_basic",
+      "state": "HALT",
+      "stack": [
+        {
+          "type": "Integer",
+          "value": "3"
+        }
+      ],
+      "fault": null
+    },
+    {
+      "name": "div_by_zero",
+      "state": "FAULT",
+      "stack": [],
+      "fault": "other"
+    },
+    {
+      "name": "add_overflow",
+      "state": "HALT",
+      "stack": [
+        {
+          "type": "Integer",
+          "value": "9223372036854775808"
+        }
+      ],
+      "fault": null
+    },
+    {
+      "name": "sub_overflow",
+      "state": "HALT",
+      "stack": [
+        {
+          "type": "Integer",
+          "value": "-9223372036854775809"
+        }
+      ],
+      "fault": null
+    },
+    {
+      "name": "div_trunc",
+      "state": "HALT",
+      "stack": [
+        {
+          "type": "Integer",
+          "value": "3"
+        }
+      ],
+      "fault": null
+    },
+    {
+      "name": "not_zero",
+      "state": "HALT",
+      "stack": [
+        {
+          "type": "Boolean",
+          "value": true
+        }
+      ],
+      "fault": null
+    },
+    {
+      "name": "gt_true",
+      "state": "HALT",
+      "stack": [
+        {
+          "type": "Boolean",
+          "value": false
+        }
+      ],
+      "fault": null
+    },
+    {
+      "name": "nop_only",
+      "state": "HALT",
+      "stack": [],
+      "fault": null
+    },
+    {
+      "name": "empty",
+      "state": "HALT",
+      "stack": [],
+      "fault": null
+    }
+  ]
+}

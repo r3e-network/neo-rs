@@ -134,7 +134,7 @@ pub struct TeeEnclave {
     config: EnclaveConfig,
     state: RwLock<EnclaveState>,
     /// Enclave-specific sealing key (derived from hardware or simulated)
-    sealing_key: RwLock<Option<[u8; 32]>>,
+    sealing_key: RwLock<Option<zeroize::Zeroizing<[u8; 32]>>>,
     /// Monotonic counter for replay protection
     monotonic_counter: RwLock<u64>,
     /// Initialization error details (if any)
@@ -207,19 +207,17 @@ impl TeeEnclave {
                 ));
             }
         };
-        *self.sealing_key.write() = Some(sealing_key);
+        *self.sealing_key.write() = Some(zeroize::Zeroizing::new(sealing_key));
 
-        // Step 4: Load monotonic counter
-        let counter_loaded = match self.load_monotonic_counter() {
-            Ok(()) => {
-                debug!("Successfully loaded monotonic counter");
-                true
-            }
-            Err(e) => {
-                warn!("Failed to load monotonic counter (starting from 0): {}", e);
-                false
-            }
-        };
+        // Step 4: Load monotonic counter.
+        // A04: fail closed — a corrupt/unreadable counter must not reset to 0
+        // while still entering Ready (that weakens sealed-blob rollback protection).
+        // Missing counter file is OK (first boot); load_monotonic_counter returns Ok.
+        self.load_monotonic_counter().map_err(|e| {
+            self.set_error_state(format!("Monotonic counter load failed: {}", e));
+            e
+        })?;
+        debug!("Successfully loaded monotonic counter");
 
         // Step 5: Check hardware attestation availability
         let hw_attestation_available = self.check_hardware_attestation();
@@ -231,7 +229,7 @@ impl TeeEnclave {
         Ok(InitResult {
             state: EnclaveState::Ready,
             sealing_key_derived: true,
-            counter_loaded,
+            counter_loaded: true,
             hardware_attestation_available: hw_attestation_available,
         })
     }
@@ -263,19 +261,19 @@ impl TeeEnclave {
                 }
             }
 
+            // Harden permissions on existing sealed-data directories as well.
+            if let Err(e) = crate::fs_acl::restrict_owner_only(path) {
+                warn!("Failed to set directory permissions: {}", e);
+            }
+
             return Ok(());
         }
 
         // Create directory with restricted permissions
         match std::fs::create_dir_all(path) {
             Ok(()) => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let permissions = std::fs::Permissions::from_mode(0o700);
-                    if let Err(e) = std::fs::set_permissions(path, permissions) {
-                        warn!("Failed to set directory permissions: {}", e);
-                    }
+                if let Err(e) = crate::fs_acl::restrict_owner_only(path) {
+                    warn!("Failed to set directory permissions: {}", e);
                 }
                 debug!("Created sealed data directory: {:?}", path);
                 Ok(())
@@ -336,10 +334,13 @@ impl TeeEnclave {
         self.sgx_evidence.read().clone()
     }
 
-    /// Get the sealing key (only available inside enclave)
-    pub(crate) fn sealing_key(&self) -> TeeResult<[u8; 32]> {
+    /// Get the sealing key (only available inside enclave).
+    /// Returns `Zeroizing` so callers do not hold a plaintext copy after drop.
+    pub(crate) fn sealing_key(&self) -> TeeResult<zeroize::Zeroizing<[u8; 32]>> {
         self.sealing_key
             .read()
+            .as_ref()
+            .map(|key| zeroize::Zeroizing::new(**key))
             .ok_or(TeeError::EnclaveNotInitialized)
     }
 
@@ -521,27 +522,8 @@ impl TeeEnclave {
             let _ = std::fs::create_dir_all(parent);
         }
 
-        // Write with restrictive permissions (owner read/write only)
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            let result = std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(id_file)
-                .and_then(|mut f| std::io::Write::write_all(&mut f, &id));
-
-            if let Err(e) = result {
-                warn!("Failed to persist machine_id: {}", e);
-            }
-        }
-        #[cfg(not(unix))]
-        {
-            if let Err(e) = std::fs::write(id_file, id) {
-                warn!("Failed to persist machine_id: {}", e);
-            }
+        if let Err(e) = crate::fs_acl::write_owner_only(id_file, &id) {
+            warn!("Failed to persist machine_id: {}", e);
         }
 
         id.to_vec()
@@ -571,22 +553,7 @@ impl TeeEnclave {
 
     fn save_monotonic_counter(&self, value: u64) -> TeeResult<()> {
         let path = self.counter_file_path();
-        // Write with restrictive permissions (owner read/write only)
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(&path)
-                .and_then(|mut f| std::io::Write::write_all(&mut f, &value.to_le_bytes()))?;
-        }
-        #[cfg(not(unix))]
-        {
-            std::fs::write(&path, value.to_le_bytes())?;
-        }
+        crate::fs_acl::write_owner_only(&path, &value.to_le_bytes())?;
         Ok(())
     }
 
@@ -649,6 +616,31 @@ mod tests {
 
         enclave.shutdown().unwrap();
         assert_eq!(enclave.state(), EnclaveState::Uninitialized);
+    }
+
+    #[test]
+    fn test_corrupt_monotonic_counter_fails_closed() {
+        let temp = tempdir().unwrap();
+        let counter_path = temp.path().join(".monotonic_counter");
+        std::fs::write(&counter_path, [0u8; 4]).expect("write truncated counter");
+
+        let config = EnclaveConfig {
+            sealed_data_path: temp.path().to_path_buf(),
+            simulation: true,
+            ..Default::default()
+        };
+
+        let enclave = TeeEnclave::new(config);
+        let err = enclave
+            .initialize()
+            .expect_err("corrupt counter must fail closed");
+        match err {
+            TeeError::EnclaveInitError { error, .. } => {
+                assert_eq!(error, EnclaveInitError::CounterLoadFailed);
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+        assert!(!enclave.is_ready());
     }
 
     #[test]

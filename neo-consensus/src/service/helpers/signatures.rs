@@ -1,9 +1,12 @@
 use super::super::ConsensusService;
-use crate::{ConsensusError, ConsensusResult};
+use super::time::current_timestamp;
+use crate::messages::CommitMessage;
+use crate::{ConsensusError, ConsensusMessageType, ConsensusResult};
+use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::OpCode;
 use neo_vm::ScriptBuilder;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 pub(in crate::service) fn invocation_script_from_signature(signature: &[u8]) -> Vec<u8> {
     let mut builder = ScriptBuilder::new();
@@ -53,6 +56,7 @@ impl ConsensusService {
         }
 
         use neo_crypto::Secp256r1Crypto;
+        use zeroize::Zeroizing;
 
         if self.private_key.len() != 32 {
             return Err(ConsensusError::state_error(
@@ -60,10 +64,10 @@ impl ConsensusService {
             ));
         }
 
-        let mut key_bytes = [0u8; 32];
+        let mut key_bytes = Zeroizing::new([0u8; 32]);
         key_bytes.copy_from_slice(&self.private_key);
 
-        Secp256r1Crypto::sign(data, &key_bytes)
+        Secp256r1Crypto::sign_prehash(&Crypto::sha256(data), &*key_bytes)
             .map(|sig| sig.to_vec())
             .map_err(|e| {
                 warn!(error = %e, "ECDSA signing failed");
@@ -77,6 +81,72 @@ impl ConsensusService {
         sign_data.extend_from_slice(&self.network.to_le_bytes());
         sign_data.extend_from_slice(&hash.as_bytes());
         self.sign(&sign_data)
+    }
+
+    /// Broadcast this validator's Commit for the locally verified proposal.
+    ///
+    /// Fail-closed: without `can_sign_commit()` the node withholds rather than
+    /// signing a zero/default hash. Idempotent for the current view.
+    pub(in crate::service) fn try_broadcast_own_commit(&mut self) -> ConsensusResult<()> {
+        let my_index = match self.context.my_index {
+            Some(index) => index,
+            None => return Ok(()),
+        };
+
+        if self
+            .context
+            .commit_view_numbers
+            .get(&my_index)
+            .copied()
+            == Some(self.context.view_number)
+        {
+            return Ok(());
+        }
+
+        if !self.context.can_sign_commit() {
+            warn!(
+                block_index = self.context.block_index,
+                responses = self.context.prepare_responses.len(),
+                "Enough PrepareResponses but no verified proposal; withholding Commit"
+            );
+            return Ok(());
+        }
+
+        let block_hash = self
+            .context
+            .proposed_block_hash
+            .expect("can_sign_commit guarantees proposed_block_hash");
+
+        info!(
+            block_index = self.context.block_index,
+            responses = self.context.prepare_responses.len(),
+            "Sending Commit for verified proposal"
+        );
+
+        let signature = self.sign_block_hash(&block_hash)?;
+        let commit = CommitMessage::new(
+            self.context.block_index,
+            self.context.view_number,
+            my_index,
+            signature.clone(),
+        );
+
+        let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
+        let commit_witness = payload.witness.clone();
+        let commit_invocation = invocation_script_from_signature(&commit_witness);
+        self.broadcast(payload)?;
+        if !commit_witness.is_empty() {
+            self.context
+                .commit_invocations
+                .insert(my_index, commit_invocation);
+        }
+
+        self.context
+            .add_commit(my_index, self.context.view_number, signature)?;
+        self.context
+            .change_timer(current_timestamp(), self.context.expected_block_time);
+        self.check_commits()?;
+        Ok(())
     }
 
     /// Verifies a signature against a public key
@@ -110,7 +180,7 @@ impl ConsensusService {
         // Get public key bytes
         let pub_key_bytes = validator.public_key.encoded();
 
-        match Secp256r1Crypto::verify(data, &sig_bytes, &pub_key_bytes) {
+        match Secp256r1Crypto::verify_prehash(&Crypto::sha256(data), &sig_bytes, &pub_key_bytes) {
             Ok(valid) => valid,
             Err(e) => {
                 debug!(error = %e, "Signature verification failed");

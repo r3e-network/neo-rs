@@ -1,0 +1,1 @@
+Cargo-fuzz fuzz targets that exercise Neo transaction, script, and P2P message deserialization to uncover panics, crashes, and resource-exhaustion vulnerabilities.

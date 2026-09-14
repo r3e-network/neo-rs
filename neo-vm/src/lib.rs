@@ -196,7 +196,7 @@ pub mod jump_table;
 /// Reference counting for garbage collection.
 pub mod reference_counter;
 
-/// VM script representation and validation.
+/// Script validation and execution utilities.
 pub mod script;
 
 /// Script builder for programmatically constructing VM scripts.
@@ -210,6 +210,9 @@ pub mod slot;
 
 /// StorageContext for smart contract storage operations.
 pub mod storage_context;
+
+/// Syscall registry - static dispatch table with zero allocations.
+pub mod syscalls;
 
 /// Native VM stack item engine.
 ///
@@ -226,6 +229,9 @@ pub mod stack_item;
 // surface below mirrors the previous the vendored VM core API so downstream code keeps
 // working via `neo_vm::*`.
 // ============================================================================
+
+/// Memory pool with arena-based allocation for high-performance VM execution.
+pub mod memory;
 
 mod abi;
 mod host;
@@ -286,6 +292,12 @@ pub use evaluation_stack::EvaluationStack;
 pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
 pub use interop_service::InteropService;
+
+// Syscall registry - publicly accessible for static lookups
+pub use syscalls::{
+    get_syscall_entry, init as init_syscall_registry, verify_registry_completeness,
+    NUM_BUILTINS, SyscallEntry, SyscallHash, GasCost,
+};
 pub use interoperable::Interoperable;
 pub use json_serializer::JsonSerializer;
 pub use jump_table::JumpTable;
@@ -299,6 +311,12 @@ pub use script_builder::ScriptBuilder;
 pub use slot::Slot;
 pub use stack_item::{StackItem, StackItemExt};
 pub use storage_context::StorageContext;
+
+// ============================================================================
+// Memory Pool API
+// ============================================================================
+
+pub use memory::arena_pool::{ArenaAllocation, ArenaMemoryPool};
 
 // ============================================================================
 // I/O Abstraction

@@ -27,8 +27,24 @@ pub(crate) fn init_store(
         let backend = Arc::new(SnapshotBackedStateStoreBackend::new(state_db));
         let verifier = StateRootVerifier::from_store(store.clone(), settings);
         let mut ss = StateStore::new_with_verifier(backend, state_settings, Some(verifier));
-        // Load reference state roots for validation if available.
-        ss.load_reference_roots("data/reference_stateroots.jsonl");
+        // Load reference state roots for validation when available or required.
+        let default_ref_path = "data/reference_stateroots.jsonl";
+        let ref_path_override = std::env::var("NEO_REFERENCE_ROOTS_PATH").ok();
+        let target_ref_path = ref_path_override.as_deref().unwrap_or(default_ref_path);
+
+        if std::path::Path::new(target_ref_path).exists() {
+            ss.load_reference_roots(target_ref_path).map_err(|e| {
+                crate::error::CoreError::system(format!(
+                    "failed to load reference roots from '{target_ref_path}': {e}"
+                ))
+            })?;
+        } else if std::env::var("NEO_REQUIRE_REFERENCE_ROOTS").as_deref() == Ok("1")
+            || ref_path_override.is_some()
+        {
+            return Err(crate::error::CoreError::system(format!(
+                "reference roots file required but not found: '{target_ref_path}'"
+            )));
+        }
         let ss = Arc::new(ss);
         // Populate the trie with current blockchain storage if the trie is empty.
         // Without this, only block deltas would be in the trie, producing wrong roots.

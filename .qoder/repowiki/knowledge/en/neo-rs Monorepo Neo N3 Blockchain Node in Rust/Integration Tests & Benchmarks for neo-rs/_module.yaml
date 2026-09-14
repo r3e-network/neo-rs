@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: integration_tests
+title: Integration Tests & Benchmarks for neo-rs
+scope:
+    - tests/
+    - benches-package/
+source_files: []
+depends_on: []
+related_to:
+    - path: neo_consensus
+    - path: neo_p2p

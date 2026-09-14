@@ -1,0 +1,6 @@
+- Each sub-module exposes a `mod.rs` that re-exports only the public API surface while keeping implementation files private.
+- Feature-gated code paths are split with `#[cfg(feature = "sgx-hw")]` / `#[cfg(not(feature = "sgx-hw"))]` blocks so simulation and hardware modes compile side-by-side.
+- All I/O writes to sensitive files go through `crate::fs_acl::write_owner_only` / `restrict_owner_only` to enforce owner-only permissions on sealed data and metadata.
+- Errors flow through the unified `TeeError` enum with a `TeeResult<T>` alias, and initialization failures are wrapped via `TeeError::enclave_init_error` carrying an `EnclaveInitError` variant.
+- Shared mutable state inside `TeeEnclave`, `TeeWallet`, and `TeeMempool` is protected by `parking_lot::RwLock` fields rather than interior mutability patterns like `RefCell`.
+- Secret material is held in `zeroize::Zeroizing<[u8; 32]>` and cleared during enclave shutdown or drop to prevent plaintext leakage.

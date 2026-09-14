@@ -1,0 +1,1 @@
+Provides a unified async signing interface for Neo N3 blockchain operations over Ledger hardware wallets, PKCS#11 HSMs, and a software simulation backend.

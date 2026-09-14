@@ -1,0 +1,57 @@
+# TEMP read-only inspection config: import a small range (0..~5200) into an
+# isolated store so we can inspect the Rust-computed state at height 5107 via
+# RPC getstate/findstates. Do NOT point at pristine stores.
+
+[network]
+network_type = "MainNet"
+network_magic = 0x334F454E
+
+[storage]
+backend = "rocksdb"
+path = "./data/tmp-rust5107"
+read_only = false
+
+[p2p]
+port = 10349
+max_connections = 10
+min_desired_connections = 0
+seed_nodes = []
+enable_compression = true
+broadcast_history_limit = 100000
+
+[rpc]
+enabled = true
+port = 10348
+bind_address = "127.0.0.1"
+cors_enabled = false
+auth_enabled = false
+max_gas_invoke = 50000000
+max_iterator_results = 100
+disabled_methods = ["openwallet"]
+
+[consensus]
+enabled = false
+auto_start = false
+
+[telemetry]
+[telemetry.metrics]
+enabled = false
+
+[logging]
+level = "info"
+format = "json"
+file_path = "./logs/tmp-rust5107.log"
+max_file_size = "50MB"
+max_files = 2
+
+[blockchain]
+block_time = 15000
+max_transactions_per_block = 512
+
+[mempool]
+max_transactions = 50000
+
+[state_service]
+enabled = true
+full_state = true
+path = "StateRoot"

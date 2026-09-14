@@ -1,0 +1,50 @@
+schema_version: 1
+module_path: ""
+title: 'neo-rs Monorepo: Neo N3 Blockchain Node in Rust'
+scope:
+    - README.md
+    - CONTRIBUTING.md
+    - ARCHITECTURE.md
+    - Cargo.toml
+    - Cargo.lock
+    - Makefile
+    - Dockerfile
+    - docker-compose.yml
+    - .gitignore
+    - deny.toml
+    - rustfmt.toml
+    - neo_mainnet_node.toml
+    - neo_production_node.toml
+    - neo_testnet_node.toml
+    - .dockerignore
+    - .env.example
+    - .gitattributes
+    - .gitmodules
+    - .pre-commit-config.yaml
+    - .stateroot_probe.txt
+    - .t_main.diff
+    - .t_main.wc
+    - .t_main_tests.diff
+    - .t_perf_target.txt
+    - CHANGELOG.md
+    - LICENSE
+    - MAINNET-STATUS.md
+    - OPTIMIZATION-COMPLETED.md
+    - OPTIMIZATION-RESULTS.md
+    - OPTIMIZATION-STATUS.md
+    - OPTIMIZATION-SUMMARY.md
+    - PERFORMANCE.md
+    - SECURITY.md
+    - SYNC-OPTIMIZATION-PLAN.md
+    - WORK-SUMMARY.md
+    - block_vectors.json
+    - ci_script.bin
+    - disasm_ci.py
+    - meta_t01.err
+    - meta_t01.json
+    - overview.md
+    - qa-neo-core-test.exit
+    - qa-signature2.exit
+source_files: []
+depends_on: []
+related_to: []

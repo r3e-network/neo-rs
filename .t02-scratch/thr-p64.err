@@ -1,0 +1,5 @@
+verify plan: [0, 2000] total=2001 resumed=0 todo=2001 parallel=64 references=5
+progress 500/2001 (118.2 heights/s, matched=500)
+progress 1000/2001 (134.5 heights/s, matched=1000)
+progress 1500/2001 (142.7 heights/s, matched=1500)
+progress 2000/2001 (147.2 heights/s, matched=2000)

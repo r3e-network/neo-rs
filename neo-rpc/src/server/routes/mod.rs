@@ -120,17 +120,36 @@ pub fn build_rpc_routes(
 pub fn build_ws_route(
     event_tx: tokio::sync::broadcast::Sender<super::ws::WsEvent>,
     subscription_mgr: std::sync::Arc<super::ws::SubscriptionManager>,
+    auth: Arc<Option<BasicAuth>>,
 ) -> impl Filter<Extract = (HttpResponse,), Error = warp::Rejection> + Clone {
+    use warp::reply::Reply;
+
     let event_tx = std::sync::Arc::new(event_tx);
 
     warp::path("ws")
         .and(warp::ws())
-        .map(move |ws: warp::ws::Ws| {
-            let event_rx = event_tx.subscribe();
-            let mgr = subscription_mgr.clone();
-            ws.on_upgrade(move |socket| super::ws::ws_handler(socket, event_rx, mgr))
-        })
-        .map(warp::reply::Reply::into_response)
+        .and(warp::header::optional::<String>("authorization"))
+        .map(
+            move |ws: warp::ws::Ws, authorization: Option<String>| -> HttpResponse {
+                // A07: WebSocket upgrades must honor the same BasicAuth gate as HTTP RPC.
+                if let Some(credentials) = auth.as_ref()
+                    && !cors::verify_basic_auth(authorization.as_deref(), credentials)
+                {
+                    let mut response = HttpResponse::new(Vec::new().into());
+                    *response.status_mut() = StatusCode::UNAUTHORIZED;
+                    response.headers_mut().insert(
+                        WWW_AUTHENTICATE,
+                        HeaderValue::from_static("Basic realm=\"neo-rpc\""),
+                    );
+                    return response;
+                }
+
+                let event_rx = event_tx.subscribe();
+                let mgr = subscription_mgr.clone();
+                ws.on_upgrade(move |socket| super::ws::ws_handler(socket, event_rx, mgr))
+                    .into_response()
+            },
+        )
 }
 
 fn with_filters(

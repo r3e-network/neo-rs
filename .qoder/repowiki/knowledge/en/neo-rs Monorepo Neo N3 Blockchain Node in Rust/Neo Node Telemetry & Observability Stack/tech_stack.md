@@ -1,0 +1,1 @@
+Rust crate using `tracing` + `tracing-subscriber` + `tracing-appender` for structured logging, `prometheus` for metrics collection, `hyper` for the HTTP health/metrics server, `sysinfo` for OS resource stats, `tokio` async runtime, `serde`/`serde_json` for configuration and health payloads, and `thiserror`/`anyhow` for error handling.

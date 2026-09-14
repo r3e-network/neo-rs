@@ -4,6 +4,7 @@
 
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
+use crate::cryptography::Crypto;
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_vm::StackItem;
 use crate::smart_contract::interoperable::Interoperable;
@@ -67,8 +68,8 @@ impl ContractGroup {
         let signature_array: [u8; 64] = <[u8; 64]>::try_from(self.signature.as_slice())
             .map_err(|_| Error::invalid_data("Invalid signature length"))?;
 
-        match crate::cryptography::crypto_utils::Secp256r1Crypto::verify(
-            contract_hash,
+        match crate::cryptography::crypto_utils::Secp256r1Crypto::verify_prehash(
+            &Crypto::sha256(contract_hash),
             &signature_array,
             &public_key_bytes,
         ) {

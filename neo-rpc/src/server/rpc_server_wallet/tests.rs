@@ -38,8 +38,13 @@ fn temp_wallet_path() -> String {
         .duration_since(UNIX_EPOCH)
         .expect("timestamp")
         .as_nanos();
-    std::env::temp_dir()
-        .join(format!("rpc_wallet_{nanos}.json"))
+    // Keep fixtures under CWD so openwallet path jail (audit A08) accepts them.
+    let dir = std::env::current_dir()
+        .expect("cwd")
+        .join("target")
+        .join("rpc-wallet-tests");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join(format!("rpc_wallet_{nanos}.json"))
         .to_string_lossy()
         .to_string()
 }

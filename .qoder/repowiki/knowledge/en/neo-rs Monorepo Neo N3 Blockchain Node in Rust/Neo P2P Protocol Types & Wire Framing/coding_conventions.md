@@ -1,0 +1,6 @@
+- Protocol command enums are generated via the `neo_primitives::p2p_message_command!` macro rather than hand-written, ensuring a single source of truth for byte discriminators, parsing, and string aliases.
+- Wire-format messages are handled through a two-stage split: `RawMessage` carries opaque `Vec<u8>` payloads and handles flags/command/varint framing, while typed deserialization is deferred to callers in higher layers.
+- LZ4 compression is applied conditionally during serialization based on `COMPRESSION_MIN_SIZE` and the `COMPRESSED` flag, and decompression is gated on the same flag during deserialization.
+- Error variants use `thiserror` derive with named fields and provide constructor helpers (e.g. `P2PError::protocol_error`, `protocol_violation`, `timeout`) that accept `Into<String>` for ergonomic construction.
+- Public API surface is curated through `lib.rs` re-exports, with internal modules (e.g. `oracle_response_code`, `transaction_removal_reason`, `witness_condition_type`) acting as thin re-export namespaces over `neo_primitives`.
+- Payload structs live one-per-file under `src/payloads/` and are aggregated via a `mod.rs` that re-exports each type at the package root for convenient consumption.

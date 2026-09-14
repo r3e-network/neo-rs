@@ -289,7 +289,8 @@ impl ApplicationEngine {
     }
 
     fn prepare_external_vm_execution(&self) -> Option<ExternalVmExecution> {
-        if self.diagnostic.is_some() || !self.pending_native_calls.is_empty() {
+        // Diagnostics must not change consensus semantics by forcing the jump-table path.
+        if !self.pending_native_calls.is_empty() {
             return None;
         }
 

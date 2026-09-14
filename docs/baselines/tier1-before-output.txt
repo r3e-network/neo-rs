@@ -1,0 +1,23 @@
+﻿cargo :    Compiling neo-crypto v0.17.0 (D:\Git\neo-rs\neo-crypto)
+At line:1 char:2
++  cargo bench -p neo-benches -- --save-baseline tier1-before-optimizat ...
++  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling ne...-rs\neo-crypto) 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling neo-core v0.17.0 (D:\Git\neo-rs\neo-core)
+error[E0425]: cannot find value `GLOBAL_NODE_CACHE` in this scope
+   --> neo-crypto\src\mpt_trie\cache.rs:182:5
+    |
+182 |     GLOBAL_NODE_CACHE.stats()
+    |     ^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `GLOBAL_NODE_CACHE` in this scope
+   --> neo-crypto\src\mpt_trie\cache.rs:187:5
+    |
+187 |     GLOBAL_NODE_CACHE.inner.read().len()
+    |     ^^^^^^^^^^^^^^^^^ not found in this scope
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `neo-crypto` (lib) due to 2 previous errors

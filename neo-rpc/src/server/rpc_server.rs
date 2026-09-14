@@ -25,6 +25,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use super::routes::{BasicAuth, build_rpc_routes, build_ws_route};
+use super::rpc_error::RpcError;
 use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
 use crate::server::rpc_exception::RpcException;
@@ -233,7 +234,7 @@ impl RpcServer {
         let rpc_routes = build_rpc_routes(
             handle.clone(),
             disabled_methods,
-            auth,
+            auth.clone(),
             self.settings.clone(),
         )
         .with(compression::gzip())
@@ -245,7 +246,7 @@ impl RpcServer {
             (&self.ws_bridge, &self.ws_subscription_mgr)
         {
             info!("WebSocket subscriptions enabled at /ws");
-            let ws_route = build_ws_route(bridge.sender(), Arc::clone(subscription_mgr));
+            let ws_route = build_ws_route(bridge.sender(), Arc::clone(subscription_mgr), auth.clone());
             rpc_routes.or(ws_route).unify().boxed()
         } else {
             rpc_routes.boxed()
@@ -605,10 +606,17 @@ impl RpcServer {
         guard.retain(|_, session| !session.is_expired(expiration));
     }
 
-    pub fn store_session(&self, session: Session) -> Uuid {
+    pub fn store_session(&self, session: Session) -> Result<Uuid, RpcError> {
+        self.purge_expired_sessions();
+        let mut guard = self.sessions.lock();
+        let max_sessions = self.settings.max_sessions.max(1);
+        if guard.len() >= max_sessions {
+            return Err(RpcError::session_capacity_exceeded()
+                .with_data(format!("Maximum sessions ({max_sessions}) reached")));
+        }
         let id = Uuid::new_v4();
-        self.sessions.lock().insert(id, session);
-        id
+        guard.insert(id, session);
+        Ok(id)
     }
 
     pub fn with_session_mut<F, R>(&self, id: &Uuid, func: F) -> Option<R>

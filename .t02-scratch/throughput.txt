@@ -1,0 +1,9 @@
+=== THROUGHPUT: [0,2000] p=16, default 5-seed reference fan-out ===
+verify plan: [0, 2000] total=2001 resumed=0 todo=2001 parallel=16 references=5
+progress 500/2001 (35.7 heights/s, matched=500)
+progress 1000/2001 (38.0 heights/s, matched=1000)
+progress 1500/2001 (38.8 heights/s, matched=1500)
+progress 2000/2001 (39.2 heights/s, matched=2000)
+Report -> .t02-scratch\smoke2\throughput.json
+PASS: contiguous [0, 2000] matched C# state roots (2001 heights, 51.083s)
+EXIT=0 wall=53s

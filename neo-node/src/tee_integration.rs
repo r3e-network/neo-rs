@@ -63,12 +63,23 @@ impl TeeRuntime {
         info!(target: "neo::tee", "Initializing TEE runtime");
 
         // Create enclave configuration
+        let allow_simulation = std::env::var("NEO_TEE_ALLOW_SIMULATION")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let simulation = !cfg!(feature = "tee-sgx");
+        if simulation && !cfg!(debug_assertions) && !allow_simulation {
+            return Err(neo_tee::TeeError::enclave_init_error(
+                neo_tee::EnclaveInitError::InvalidConfiguration,
+                "TEE simulation mode is not allowed in release builds without NEO_TEE_ALLOW_SIMULATION=1",
+            ));
+        }
+
         let enclave_config = EnclaveConfig {
             sealed_data_path: data_path.clone(),
             debug_mode: cfg!(debug_assertions),
             heap_size_mb: 256,
             tcs_count: 4,
-            simulation: !cfg!(feature = "tee-sgx"),
+            simulation,
             allow_debug_in_production: cfg!(debug_assertions),
             ..Default::default()
         };

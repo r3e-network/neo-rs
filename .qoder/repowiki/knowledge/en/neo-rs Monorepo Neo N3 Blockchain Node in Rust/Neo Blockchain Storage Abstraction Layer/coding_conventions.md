@@ -1,0 +1,6 @@
+- Trait interfaces are split into focused generics (`ReadOnlyStoreGeneric`, `WriteStore`) and then composed into domain-specific aliases like `ReadOnlyStore` and `Store`, so implementors can opt into read-only or read-write behavior independently.
+- Default methods on traits provide fallbacks based on core operations (e.g. `contains` delegates to `try_get`, `get` delegates to `try_get`, `put_sync` delegates to `put`), letting implementors override only what differs.
+- Pluggable backends are registered through a named `StoreProvider` trait and a global `StoreFactory` registry keyed by string names, with an empty-string fallback to the built-in memory provider.
+- Public API surface is kept minimal by re-exporting only the essential types from each submodule via `pub use` in `lib.rs` and `persistence/mod.rs`, hiding internal implementation modules.
+- Error handling uses a unified `StorageResult<T>` alias over `Result<T, StorageError>` defined in the `error` module, consistently returned by write and factory operations.
+- Caching layers expose change tracking via a `Trackable`/`TrackState` enum pattern, allowing caches to record Added/Changed/Deleted/NotFound states per entry rather than relying on external diffing.

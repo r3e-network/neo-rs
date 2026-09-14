@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: neo_json
+title: Neo JSON Value Types and JSONPath
+scope:
+    - neo-json/
+source_files: []
+depends_on: []
+related_to: []

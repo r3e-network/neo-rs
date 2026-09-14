@@ -70,9 +70,21 @@ impl ConsensusService {
             self.context.extend_timer_by_factor(current_timestamp(), 4);
         }
         if !is_current_view {
-            // An off-view Commit is authenticated above but cannot occupy the
-            // current view's validator slot. Recovery carries these messages
-            // separately and replays them only when their view is admissible.
+            // Store off-view commit as recovery evidence. The witness signature
+            // has already been verified above, which proves this validator sent
+            // this payload. We cannot verify the block-hash signature without
+            // that view's proposed block hash, so we store the raw signature for
+            // recovery relay and skip the block-hash verification and check_commits.
+            self.context.add_commit(
+                payload.validator_index,
+                payload.view_number,
+                payload.data.clone(),
+            )?;
+            // Witness is guaranteed non-empty (validated above).
+            self.context.commit_invocations.insert(
+                payload.validator_index,
+                invocation_script_from_signature(&payload.witness),
+            );
             return Ok(());
         }
 
@@ -136,6 +148,15 @@ impl ConsensusService {
             return Ok(());
         }
 
+        let Some(block_hash) = self.context.proposed_block_hash else {
+            warn!(
+                block_index = self.context.block_index,
+                commits = self.context.commits.len(),
+                "Enough commits but no verified proposal hash; withholding BlockCommitted"
+            );
+            return Ok(());
+        };
+
         // We have enough commits - block is finalized!
         info!(
             block_index = self.context.block_index,
@@ -147,8 +168,6 @@ impl ConsensusService {
 
         // Prepare block data for upper layer to assemble the final Block structure
         let block_data = self.prepare_block_data()?;
-
-        let block_hash = self.context.proposed_block_hash.unwrap_or_default();
 
         self.send_event(ConsensusEvent::BlockCommitted {
             block_index: self.context.block_index,

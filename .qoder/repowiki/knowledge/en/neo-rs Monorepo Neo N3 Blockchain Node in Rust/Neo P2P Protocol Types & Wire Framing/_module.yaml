@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: neo_p2p
+title: Neo P2P Protocol Types & Wire Framing
+scope:
+    - neo-p2p/
+source_files: []
+depends_on: []
+related_to:
+    - path: fuzzing
+    - path: integration_tests
+    - path: neo_consensus

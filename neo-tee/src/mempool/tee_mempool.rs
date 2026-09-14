@@ -46,21 +46,21 @@ impl Default for TeeMempoolConfig {
 /// A transaction in the TEE mempool
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-struct TeeMempoolEntry {
+pub struct TeeMempoolEntry {
     /// Transaction hash
-    hash: [u8; 32],
+    pub hash: [u8; 32],
     /// Serialized transaction data
-    data: Vec<u8>,
+    pub data: Vec<u8>,
     /// Timing information assigned by enclave
-    timing: TransactionTiming,
+    pub timing: TransactionTiming,
     /// Computed ordering key
-    ordering_key: OrderingKey,
+    pub ordering_key: OrderingKey,
     /// Network fee
-    network_fee: i64,
+    pub network_fee: i64,
     /// System fee
-    system_fee: i64,
-    /// Sender script hash
-    sender: [u8; 20],
+    pub system_fee: i64,
+    /// Sender account hash (first signer)
+    pub sender: [u8; 20],
 }
 
 /// TEE-protected mempool
@@ -394,7 +394,7 @@ impl TeeMempool {
         message.extend_from_slice(&counter.to_le_bytes());
         message.extend_from_slice(policy_hash);
 
-        let signature = Secp256r1Crypto::sign(&message, &private_key)
+        let signature = Secp256r1Crypto::sign_prehash(&Crypto::sha256(&message), &private_key)
             .map_err(|e| TeeError::Other(format!("Failed to sign proof: {e}")))?;
         Ok((public_key, signature.to_vec()))
     }

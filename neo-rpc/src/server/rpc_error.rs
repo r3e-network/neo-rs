@@ -214,6 +214,8 @@ impl RpcError {
         invalid_proof => (-607, "Invalid state proof");
         /// Contract execution failed.
         execution_failed => (-608, "Contract execution failed");
+        /// Maximum concurrent iterator sessions reached.
+        session_capacity_exceeded => (-609, "Session capacity exceeded");
     }
 }
 
@@ -295,6 +297,7 @@ mod tests {
             RpcError::unsupported_state(),
             RpcError::invalid_proof(),
             RpcError::execution_failed(),
+            RpcError::session_capacity_exceeded(),
         ];
 
         for error in errors.iter() {
@@ -366,6 +369,7 @@ mod tests {
             RpcError::unsupported_state(),
             RpcError::invalid_proof(),
             RpcError::execution_failed(),
+            RpcError::session_capacity_exceeded(),
         ];
 
         let mut seen = HashSet::new();

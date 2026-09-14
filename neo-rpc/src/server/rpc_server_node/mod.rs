@@ -134,6 +134,15 @@ impl RpcServerNode {
                 json!(protocol.initial_gas_distribution),
             );
 
+            // NOTE: The hardfork list below is built from neo-core::ProtocolSettings, which stores
+            // hardforks as a HashMap<Hardfork, u32> keyed by the typed neo-core::Hardfork enum.
+            // This is a SEPARATE representation from neo-config::HardforkHeights (a named-field
+            // struct). When adding a new hardfork these three sites must be updated in lockstep:
+            //   1. Add the field to neo-config::HardforkHeights
+            //   2. Add the variant to neo-core::Hardfork enum (and Hardfork::all())
+            //   3. Wire neo-core::ProtocolSettings::from_config to read the new field
+            // Failing to keep them in sync will silently omit the hardfork from getversion output.
+            // TODO: Unify the two representations so a single source of truth drives both.
             let hardforks = Hardfork::all()
                 .iter()
                 .filter_map(|fork| {

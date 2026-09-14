@@ -1,0 +1,1 @@
+No special build commands — standard Cargo workspace package. Tests live in `src/execution_engine/tests.rs` and `tests/protocol_integration.rs`; run via `cargo test -p neo-vm`.

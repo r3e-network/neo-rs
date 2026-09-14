@@ -120,7 +120,10 @@ pub async fn initialize_hsm(cli: &NodeCli, address_version: u8) -> Result<HsmRun
             _ => {
                 // Prompt for PIN
                 let pin = neo_hsm::prompt_pin(&device_name).context("Failed to read PIN")?;
-                signer.unlock(&pin).await.context("Failed to unlock HSM")?;
+                signer
+                    .unlock(pin.as_str())
+                    .await
+                    .context("Failed to unlock HSM")?;
             }
         }
     }

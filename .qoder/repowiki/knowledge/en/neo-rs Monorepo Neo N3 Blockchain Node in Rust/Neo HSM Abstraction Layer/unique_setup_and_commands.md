@@ -1,0 +1,1 @@
+Build with `cargo build --features ledger,pkcs11` to enable hardware backends; the default build includes only the `simulation` backend. The integration test `tests/t07_hsm_failopen_proof.rs` exercises fail-open behavior under the simulation feature.

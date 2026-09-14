@@ -1,0 +1,12 @@
+=== compile ===
+compile OK
+=== SMOKE-1 positive [0,20] ===
+POSITIVE exit=0
+=== SMOKE-2 negative @5 ===
+NEGATIVE exit=1
+=== SMOKE-3 resume ===
+verify plan: [0, 20] total=21 resumed=21 todo=0 parallel=4 references=1
+PASS: contiguous [0, 20] matched C# state roots (21 heights, 0.0s)
+RESUME exit=0
+=== SMOKE-4 unreachable local ===
+UNREACHABLE exit=1

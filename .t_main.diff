@@ -1,0 +1,341 @@
+warning: in the working copy of 'neo-core/src/neo_system/storage.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'neo-core/src/state_service/state_store.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'neo-core/src/state_service/state_store/backend.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'neo-node/src/import_acc.rs', LF will be replaced by CRLF the next time Git touches it
+diff --git a/neo-core/src/neo_system/storage.rs b/neo-core/src/neo_system/storage.rs
+index b714a4ab..b9837e70 100644
+--- a/neo-core/src/neo_system/storage.rs
++++ b/neo-core/src/neo_system/storage.rs
+@@ -27,8 +27,24 @@ pub(crate) fn init_store(
+         let backend = Arc::new(SnapshotBackedStateStoreBackend::new(state_db));
+         let verifier = StateRootVerifier::from_store(store.clone(), settings);
+         let mut ss = StateStore::new_with_verifier(backend, state_settings, Some(verifier));
+-        // Load reference state roots for validation if available.
+-        ss.load_reference_roots("data/reference_stateroots.jsonl");
++        // Load reference state roots for validation when available or required.
++        let default_ref_path = "data/reference_stateroots.jsonl";
++        let ref_path_override = std::env::var("NEO_REFERENCE_ROOTS_PATH").ok();
++        let target_ref_path = ref_path_override.as_deref().unwrap_or(default_ref_path);
++
++        if std::path::Path::new(target_ref_path).exists() {
++            ss.load_reference_roots(target_ref_path).map_err(|e| {
++                crate::error::CoreError::system(format!(
++                    "failed to load reference roots from '{target_ref_path}': {e}"
++                ))
++            })?;
++        } else if std::env::var("NEO_REQUIRE_REFERENCE_ROOTS").as_deref() == Ok("1")
++            || ref_path_override.is_some()
++        {
++            return Err(crate::error::CoreError::system(format!(
++                "reference roots file required but not found: '{target_ref_path}'"
++            )));
++        }
+         let ss = Arc::new(ss);
+         // Populate the trie with current blockchain storage if the trie is empty.
+         // Without this, only block deltas would be in the trie, producing wrong roots.
+diff --git a/neo-core/src/state_service/state_store.rs b/neo-core/src/state_service/state_store.rs
+index b623afe2..b41e3f24 100644
+--- a/neo-core/src/state_service/state_store.rs
++++ b/neo-core/src/state_service/state_store.rs
+@@ -108,6 +108,8 @@ pub struct StateStore {
+     verifier: Option<StateRootVerifier>,
+     /// Reference state roots for validation (loaded from JSONL file).
+     reference_roots: HashMap<u32, UInt256>,
++    reference_min_height: Option<u32>,
++    reference_max_height: Option<u32>,
+ }
+ 
+ impl StateStore {
+@@ -132,6 +134,8 @@ impl StateStore {
+             state_snapshot: RwLock::new(None),
+             verifier,
+             reference_roots: HashMap::new(),
++            reference_min_height: None,
++            reference_max_height: None,
+         }
+     }
+ 
+@@ -143,32 +147,93 @@ impl StateStore {
+ 
+     /// Loads reference state roots from a JSONL file for validation.
+     /// Each line: {"height": N, "roothash": "0x..."}
+-    pub fn load_reference_roots(&mut self, path: &str) {
+-        let file = match std::fs::File::open(path) {
+-            Ok(f) => f,
+-            Err(e) => {
+-                warn!(target: "neo::state_service", "reference roots file not found: {path}: {e}");
+-                return;
+-            }
+-        };
++    ///
++    /// Fail-closed gate: fails hard on missing file, read errors, malformed JSON,
++    /// invalid UInt256 hashes, duplicate heights, empty file, or height gaps in the range.
++    pub fn load_reference_roots(&mut self, path: &str) -> Result<u32, String> {
++        let file = std::fs::File::open(path)
++            .map_err(|e| format!("reference roots file not found: {path}: {e}"))?;
+         let reader = std::io::BufReader::new(file);
+         use std::io::BufRead;
+         let mut count = 0u32;
+-        for line in reader.lines() {
+-            let Ok(line) = line else { continue };
+-            if line.trim().is_empty() {
++        let mut min_height: Option<u32> = None;
++        let mut max_height: Option<u32> = None;
++
++        for (line_idx, line) in reader.lines().enumerate() {
++            let line_no = line_idx + 1;
++            let line = line
++                .map_err(|e| format!("failed to read line {line_no} from '{path}': {e}"))?;
++            let trimmed = line.trim();
++            if trimmed.is_empty() {
+                 continue;
+             }
+ 
+-            let Ok(reference) = serde_json::from_str::<ReferenceRootLine>(&line) else {
+-                continue;
+-            };
+-            if let Ok(hash) = UInt256::parse(&reference.roothash) {
+-                self.reference_roots.insert(reference.height, hash);
+-                count += 1;
++            let reference: ReferenceRootLine = serde_json::from_str(trimmed).map_err(|e| {
++                format!("failed to parse reference root JSON at line {line_no} in '{path}': {trimmed} ({e})")
++            })?;
++
++            let hash = UInt256::parse(&reference.roothash).map_err(|_| {
++                format!(
++                    "invalid roothash format at line {line_no} in '{path}': '{}'",
++                    reference.roothash
++                )
++            })?;
++
++            if let Some(existing) = self.reference_roots.get(&reference.height) {
++                if *existing != hash {
++                    return Err(format!(
++                        "conflicting duplicate reference root at height {} (line {line_no} in '{path}'): existing {existing}, new {hash}",
++                        reference.height
++                    ));
++                }
++                return Err(format!(
++                    "duplicate reference root at height {} at line {line_no} in '{path}'",
++                    reference.height
++                ));
++            }
++
++            min_height = Some(min_height.map_or(reference.height, |m| m.min(reference.height)));
++            max_height = Some(max_height.map_or(reference.height, |m| m.max(reference.height)));
++
++            self.reference_roots.insert(reference.height, hash);
++            count += 1;
++        }
++
++        if count == 0 {
++            return Err(format!("reference roots file is empty: {path}"));
++        }
++
++        let min_h = min_height.unwrap();
++        let max_h = max_height.unwrap();
++        let expected_span = (max_h - min_h + 1) as usize;
++        if self.reference_roots.len() != expected_span {
++            for h in min_h..=max_h {
++                if !self.reference_roots.contains_key(&h) {
++                    return Err(format!(
++                        "reference roots has missing entry at height {h} within range [{min_h}, {max_h}] in '{path}'"
++                    ));
++                }
+             }
+         }
+-        info!(target: "neo::state_service", "loaded {count} reference state roots for validation");
++
++        self.reference_min_height = Some(min_h);
++        self.reference_max_height = Some(max_h);
++
++        info!(
++            target: "neo::state_service",
++            "loaded {count} reference state roots for validation covering heights [{min_h}, {max_h}]"
++        );
++        Ok(count)
++    }
++
++    /// Returns the number of loaded reference state roots.
++    pub fn reference_roots_len(&self) -> usize {
++        self.reference_roots.len()
++    }
++
++    /// Returns the inclusive range `[min_height, max_height]` of loaded reference roots.
++    pub fn reference_range(&self) -> (Option<u32>, Option<u32>) {
++        (self.reference_min_height, self.reference_max_height)
+     }
+ 
+     /// Returns whether the state store keeps full historical state.
+@@ -544,6 +609,15 @@ impl StateStore {
+             match state {
+                 TrackState::Added | TrackState::Changed => {
+                     let value_bytes = item.value_bytes();
++                    if height == 5107 {
++                        eprintln!(
++                            "[DEBUG 5107] contract {} key {} val {} state {:?}",
++                            key.id,
++                            hex::encode(&key_bytes),
++                            hex::encode(&value_bytes),
++                            state
++                        );
++                    }
+                     snapshot.trie.put(&key_bytes, &value_bytes).map_err(|e| {
+                         format!(
+                             "state root trie put failed at height {height} for contract {}: {e}",
+@@ -570,7 +644,7 @@ impl StateStore {
+         // Get new root hash
+         let root_hash = snapshot.trie.root_hash().unwrap_or_else(UInt256::zero);
+ 
+-        // Validate against reference if available
++        // Validate against reference roots (fail-closed)
+         if let Some(expected) = self.reference_roots.get(&height) {
+             if root_hash == *expected {
+                 if height.is_multiple_of(5000) {
+@@ -586,6 +660,21 @@ impl StateStore {
+                     "state root mismatch at height {height}: computed {root_hash}, expected {expected}, put_count {put_count}, del_count {del_count}"
+                 ));
+             }
++        } else if let (Some(min_h), Some(max_h)) = (self.reference_min_height, self.reference_max_height) {
++            if height >= min_h && height <= max_h {
++                return Err(format!(
++                    "missing reference state root at height {height} within active reference range [{min_h}, {max_h}]"
++                ));
++            } else if height.is_multiple_of(5000) {
++                tracing::info!(
++                    target: "neo::state_service",
++                    height,
++                    put_count,
++                    del_count,
++                    root_hash = %root_hash,
++                    "state root computed (beyond reference range [{min_h}, {max_h}])"
++                );
++            }
+         } else if height.is_multiple_of(5000) {
+             tracing::info!(
+                 target: "neo::state_service",
+@@ -652,6 +741,17 @@ impl StateStore {
+     pub fn get_state_root(&self, index: u32) -> Option<StateRoot> {
+         self.snapshot().get_state_root(index)
+     }
++
++    /// Flushes committed writes to durable storage.
++    ///
++    /// The state service keeps its roots in a store that is *separate* from the
++    /// blockchain store, and the high-throughput RocksDB batch profile disables
++    /// the write-ahead log. Callers (offline importers, the node shutdown path)
++    /// must therefore invoke this before the process exits, otherwise the
++    /// committed roots remain in the memtable and are lost on restart.
++    pub fn flush(&self) {
++        self.store.flush();
++    }
+ }
+ 
+ #[cfg(test)]
+diff --git a/neo-core/src/state_service/state_store/backend.rs b/neo-core/src/state_service/state_store/backend.rs
+index cbd02667..83f0a722 100644
+--- a/neo-core/src/state_service/state_store/backend.rs
++++ b/neo-core/src/state_service/state_store/backend.rs
+@@ -44,6 +44,13 @@ pub trait StateStoreBackend: Send + Sync {
+     fn commit(&self) -> Result<(), String>;
+     /// Discard uncommitted changes.
+     fn discard_pending(&self) {}
++    /// Flushes buffered writes to durable storage when the backend supports it.
++    ///
++    /// Callers must invoke this before process exit to guarantee that locally
++    /// computed state roots survive a restart. The high-throughput RocksDB batch
++    /// profile disables the write-ahead log, so without an explicit flush the
++    /// committed writes live only in the memtable and are lost on exit.
++    fn flush(&self) {}
+ }
+ 
+ /// Isolated write overlay used while a blockchain transaction is still pending.
+@@ -99,6 +106,12 @@ impl StateStoreBackend for StagedStateStoreBackend {
+     fn discard_pending(&self) {
+         self.pending.lock().clear();
+     }
++
++    fn flush(&self) {
++        // Staged writes live in `pending` until `commit`; they are already
++        // copied into the base backend by then, so flushing the base is enough.
++        self.base.flush();
++    }
+ }
+ 
+ /// Minimal transactional wrapper over a `StateStoreBackend`.
+@@ -257,4 +270,8 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
+     fn discard_pending(&self) {
+         self.pending.lock().clear();
+     }
++
++    fn flush(&self) {
++        self.store.flush();
++    }
+ }
+diff --git a/neo-node/src/import_acc.rs b/neo-node/src/import_acc.rs
+index e26a55ea..a8a59347 100644
+--- a/neo-node/src/import_acc.rs
++++ b/neo-node/src/import_acc.rs
+@@ -137,6 +137,21 @@ fn flush_and_verify_checkpoint(
+ ) -> Result<u32> {
+     let started_at = Instant::now();
+     system.store().flush();
++
++    // The state service persists its roots in a *separate* store from the chain
++    // store. Under the high-throughput import profile the write-ahead log is
++    // disabled, so the state store's memtable must be flushed explicitly —
++    // otherwise every computed root is lost when the process exits and
++    // `getstateroot` returns null after a restart. Flush it here, then fail
++    // closed below if the local root index has not reached the expected height.
++    let state_store = system.state_store().ok().flatten();
++    if let Some(state_store) = state_store.as_ref() {
++        state_store.flush();
++    }
++    let state_root_index = state_store
++        .as_ref()
++        .map(|store| store.local_root_index().unwrap_or(0));
++
+     let local_view_height = read_local_view_height(system).unwrap_or(0);
+ 
+     let (verification_source, persisted_height, current_hash_written) =
+@@ -169,6 +184,19 @@ fn flush_and_verify_checkpoint(
+         );
+     }
+ 
++    // Fail closed: when the state service is enabled, its durable local root
++    // index must have reached the imported height, otherwise the computed roots
++    // would be silently unservable after a restart.
++    if let Some(state_root_index) = state_root_index
++        && state_root_index < expected_height
++    {
++        bail!(
++            "flush verification failed ({reason}): state service local root index {} is behind expected height {}",
++            state_root_index,
++            expected_height
++        );
++    }
++
+     info!(
+         target: "neo",
+         reason,
+@@ -177,6 +205,7 @@ fn flush_and_verify_checkpoint(
+         expected_height,
+         persisted_height,
+         local_view_height,
++        state_root_index = ?state_root_index,
+         verification_source,
+         flush_elapsed_ms = started_at.elapsed().as_millis(),
+         "acc import storage checkpoint flush completed"
+@@ -426,6 +455,12 @@ pub fn import_acc_file(
+         }
+         Err(err) => {
+             system.store().flush();
++            // Preserve whatever state roots were computed before the failure so a
++            // restart can still serve them (the state store is a separate store
++            // and is not covered by `system.store().flush()`).
++            if let Ok(Some(state_store)) = system.state_store() {
++                state_store.flush();
++            }
+             info!(
+                 target: "neo",
+                 "storage flush completed after .acc import error"

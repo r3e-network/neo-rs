@@ -266,6 +266,10 @@ impl ApplicationEngine {
             let context_mut = engine
                 .current_context_mut()
                 .ok_or_else(|| Error::invalid_operation("No current execution context"))?;
+            // The native CALLNATIVE handler pops arguments in declaration order
+            // (arg[0] first).  Therefore arg[0] must be the topmost item here;
+            // push in reverse order to match C# CallContractInternal's stack
+            // layout and preserve the original argument order for the callee.
             for arg in args.iter().rev() {
                 context_mut
                     .push(arg.clone())
@@ -422,10 +426,21 @@ impl ApplicationEngine {
     ///
     /// This is invoked by `System.Contract.CallNative` after a native method
     /// returns, and may also be called directly by tests.
+    ///
+    /// All callbacks share the native-invoke context as `calling_context`.
+    /// Without that, loading N>1 pending calls would chain each callback as
+    /// the previous one's caller — breaking `CalledByEntry` for the first
+    /// queued payment when NEO.transfer also mints GAS with `onNEP17Payment`
+    /// (MainNet divergence class: block 980196 / CheckWitness in receiver).
     pub fn process_pending_native_calls(&mut self) -> Result<()> {
         if self.pending_native_calls.is_empty() {
             return Ok(());
         }
+
+        let native_invoke_context = self
+            .current_context()
+            .cloned()
+            .ok_or_else(|| Error::invalid_operation("No current execution context".to_string()))?;
 
         let pending = std::mem::take(&mut self.pending_native_calls);
         for call in pending.into_iter().rev() {
@@ -435,6 +450,14 @@ impl ApplicationEngine {
                 &call.method,
                 call.args,
             )?;
+
+            // Re-bind calling_context to the native invoke frame. `call_contract_internal`
+            // would otherwise set it to the previously loaded pending callback.
+            if let Some(loaded) = self.current_context().cloned() {
+                let state_arc = loaded
+                    .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+                state_arc.lock().calling_context = Some(native_invoke_context.clone());
+            }
         }
 
         Ok(())
@@ -499,5 +522,60 @@ mod tests {
             engine.get_calling_script_hash(),
             Some(logical_contract_hash)
         );
+    }
+
+    #[test]
+    fn pending_native_callbacks_share_native_invoke_calling_context() {
+        use crate::network::p2p::payloads::{signer::Signer, transaction::Transaction};
+        use crate::smart_contract::execution_context_state::ExecutionContextState;
+        use crate::smart_contract::native::NativeContract;
+        use crate::witness::Witness;
+        use crate::{UInt160, Verifiable, WitnessScope};
+        use neo_vm::StackItem;
+
+        let account = UInt160::from_bytes(&[0x30; 20]).unwrap();
+        let mut tx = Transaction::new();
+        tx.set_signers(vec![Signer::new(account, WitnessScope::CALLED_BY_ENTRY)]);
+        tx.add_witness(Witness::new());
+        let container: Arc<dyn Verifiable> = Arc::new(tx);
+
+        let snapshot = Arc::new(DataCache::new(false));
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            Some(container),
+            snapshot,
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            None,
+        )
+        .expect("engine");
+
+        let entry_hash = UInt160::from_bytes(&[0x31; 20]).unwrap();
+        engine
+            .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, Some(entry_hash))
+            .expect("load entry");
+        let entry_ctx = engine.current_context().cloned().expect("entry");
+
+        let gas_hash = GasToken::new().hash();
+        let arg = StackItem::from_byte_string(UInt160::zero().to_bytes());
+        engine.queue_contract_call_from_native(gas_hash, gas_hash, "balanceOf", vec![arg.clone()]);
+        engine.queue_contract_call_from_native(gas_hash, gas_hash, "balanceOf", vec![arg]);
+        engine
+            .process_pending_native_calls()
+            .expect("load pending native calls");
+
+        assert!(engine.invocation_stack().len() >= 3);
+        for ctx in engine.invocation_stack().iter().skip(1) {
+            let state_arc =
+                ctx.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let calling = state_arc
+                .lock()
+                .calling_context
+                .clone()
+                .expect("callback calling_context");
+            assert_eq!(calling.script_hash(), entry_ctx.script_hash());
+        }
+        assert!(engine.check_witness_hash(&account).unwrap());
     }
 }

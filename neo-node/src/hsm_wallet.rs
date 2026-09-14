@@ -448,7 +448,7 @@ mod tests {
     use neo_core::WitnessScope;
     use neo_core::network::p2p::payloads::signer::Signer;
     use neo_core::smart_contract::helper::Helper as ContractHelper;
-    use neo_crypto::Secp256r1Crypto;
+    use neo_crypto::{Crypto, Secp256r1Crypto};
     use neo_hsm::{HsmConfig, SimulationSigner};
     use neo_vm::OpCode;
 
@@ -474,7 +474,7 @@ mod tests {
         let signature = wallet.sign(payload, &script_hash).await.expect("sign data");
         let signature_bytes: [u8; 64] = signature.as_slice().try_into().expect("sig");
         assert!(
-            Secp256r1Crypto::verify(payload, &signature_bytes, &key.public_key).expect("verify")
+            Secp256r1Crypto::verify_prehash(&Crypto::sha256(payload), &signature_bytes, &key.public_key).expect("verify")
         );
 
         let mut tx = Transaction::new();
@@ -495,7 +495,7 @@ mod tests {
         let sig_bytes: [u8; 64] = sig_slice.try_into().expect("sig slice");
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
         assert!(
-            Secp256r1Crypto::verify(&sign_data, &sig_bytes, &key.public_key)
+            Secp256r1Crypto::verify_prehash(&Crypto::sha256(&sign_data), &sig_bytes, &key.public_key)
                 .expect("verify tx signature")
         );
     }

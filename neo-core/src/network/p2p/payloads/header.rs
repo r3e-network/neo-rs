@@ -149,8 +149,7 @@ impl Header {
         match self.try_hash() {
             Ok(hash) => hash,
             Err(err) => {
-                tracing::error!("Header unsigned serialization failed: {err}");
-                UInt256::zero()
+                panic!("Header unsigned serialization failed: {err}");
             }
         }
     }

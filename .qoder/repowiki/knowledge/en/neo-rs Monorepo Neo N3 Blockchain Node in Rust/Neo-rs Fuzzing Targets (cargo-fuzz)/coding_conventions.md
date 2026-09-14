@@ -1,0 +1,4 @@
+- Each fuzz target is a `#![no_main]` binary that registers a single `fuzz_target!(|data: &[u8]| { ... })` closure via `libfuzzer_sys::fuzz_target!`.
+- Targets call only fallible deserialization/validation APIs and explicitly ignore results with `let _ = ...` so malformed input returns errors rather than panicking.
+- Binary entries are declared in `Cargo.toml` using `[[bin]]` blocks with `test = false` and `doc = false`, keeping fuzz binaries isolated from normal crate builds.
+- Targets depend on sibling crates via local `path = "../neo-*"` dependencies rather than published versions, ensuring fuzzing exercises the exact source tree under test.

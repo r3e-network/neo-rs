@@ -1,0 +1,1 @@
+Defines Neo N3's peer-to-peer protocol types, wire-format message framing, payload structs, and trait abstractions for the networking layer used by higher-level node implementations.

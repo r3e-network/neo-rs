@@ -282,8 +282,11 @@ async fn recovery_message_commits_for_other_view_do_not_commit_block() {
     }
 
     assert!(committed.is_none());
-    // Off-view commits are routed out and remain eligible for the active view.
-    assert!(service.context().commits.is_empty());
+    // After the C-5 fix, off-view commits from recovery messages ARE stored as
+    // recovery evidence. They have view_number != current view_number (0), so
+    // has_enough_commits() correctly excludes them and no block is committed.
+    assert!(!service.context().commits.is_empty());
+    assert!(!service.context().has_enough_commits());
 }
 
 #[tokio::test]
@@ -701,4 +704,69 @@ async fn recovery_response_includes_compact_payloads() {
         .expect("commit");
     assert_eq!(commit.signature, vec![0xDD; 64]);
     assert_eq!(commit.invocation_script, invocation_script(&[0xEE; 64]));
+}
+
+#[tokio::test]
+async fn recovery_without_prepare_request_does_not_sign_zero_hash_commit() {
+    // A01: preparation_hash + M prepare votes without PrepareRequest / proposed
+    // block hash must not cause this node to Commit over UInt256::zero.
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    let preparation_hash = UInt256::from_bytes(&[0xAB; 32]).expect("hash");
+    let mut recovery = RecoveryMessage::new(0, 0, 1);
+    recovery.preparation_hash = Some(preparation_hash);
+
+    let mut preparation_messages = Vec::new();
+    for (idx, key) in [(1u8, &keys[1]), (2, &keys[2]), (3, &keys[3])] {
+        let mut prep_payload = ConsensusPayload::new(
+            network,
+            0,
+            idx,
+            0,
+            ConsensusMessageType::PrepareResponse,
+            PrepareResponseMessage::new(0, 0, idx, preparation_hash).serialize(),
+        );
+        sign_payload(&service, &mut prep_payload, key);
+        preparation_messages.push(PreparationPayloadCompact {
+            validator_index: idx,
+            invocation_script: invocation_script(&prep_payload.witness),
+        });
+    }
+    recovery.preparation_messages = preparation_messages;
+
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        1,
+        0,
+        ConsensusMessageType::RecoveryMessage,
+        recovery.serialize(),
+    );
+    sign_payload(&service, &mut payload, &keys[1]);
+
+    service.process_message(payload).unwrap();
+
+    let mut saw_commit_broadcast = false;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(msg) = event
+            && msg.message_type == ConsensusMessageType::Commit
+        {
+            saw_commit_broadcast = true;
+        }
+    }
+
+    assert!(
+        !saw_commit_broadcast,
+        "must not broadcast Commit without a verified proposal"
+    );
+    assert!(
+        service.context().commits.is_empty(),
+        "must not occupy local commit slot for a zero-hash signature"
+    );
+    assert!(service.context().proposed_block_hash.is_none());
 }

@@ -1,0 +1,10 @@
+﻿This script must be run from an elevated PowerShell window (Run as 
+administrator).
+At D:\Git\neo-rs\tools\csharp-vm-runner\FIX-MACHINE-ENV.ps1:6 char:5
++     throw 'This script must be run from an elevated PowerShell window ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (This script mus...administrat 
+   or).:String) [], RuntimeException
+    + FullyQualifiedErrorId : This script must be run from an elevated PowerSh 
+   ell window (Run as administrator).
+ 

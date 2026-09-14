@@ -45,8 +45,8 @@ impl Transaction {
             return Err(IoError::invalid_data("Invalid network fee"));
         }
 
-        if system_fee + network_fee < system_fee {
-            return Err(IoError::invalid_data("Invalid combined fee"));
+        if system_fee.checked_add(network_fee).is_none() {
+            return Err(IoError::invalid_data("Combined fee overflow"));
         }
 
         let valid_until_block = reader.read_u32()?;

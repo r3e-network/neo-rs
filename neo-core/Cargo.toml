@@ -76,6 +76,10 @@ subtle = { workspace = true }
 # Parallel processing for bulk sync
 rayon = { workspace = true }
 
+# Cross-thread communication for parallel pipeline
+crossbeam-channel = "0.5"
+num_cpus = "1.15"
+
 # Internal dependencies
 chrono.workspace = true
 futures.workspace = true
@@ -132,6 +136,8 @@ oracle = ["dep:reqwest"]
 neofs-grpc = ["dep:tonic", "dep:prost", "oracle"]
 # Parallel processing for bulk sync (rayon is always available)
 parallel = []
+# Account prefetch cache (Solana-inspired optimization) - requires runtime
+prefetch = ["runtime"]
 # All optional features for full functionality
 full = ["rocksdb", "upnp", "monitoring", "oracle", "neofs-grpc", "parallel"]
 runtime = []

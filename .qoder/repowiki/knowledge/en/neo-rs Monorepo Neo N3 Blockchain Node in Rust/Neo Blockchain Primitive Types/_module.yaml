@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: neo_primitives
+title: Neo Blockchain Primitive Types
+scope:
+    - neo-primitives/
+source_files: []
+depends_on: []
+related_to: []

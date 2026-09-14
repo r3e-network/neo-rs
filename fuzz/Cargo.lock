@@ -1168,7 +1168,7 @@ checksum = "9252111cf132ba0929b6f8e030cac2a24b507f3a4d6db6fb2896f27b354c714b"
 
 [[package]]
 name = "neo-config"
-version = "0.15.0"
+version = "0.17.0"
 dependencies = [
  "dirs",
  "serde",
@@ -1179,7 +1179,7 @@ dependencies = [
 
 [[package]]
 name = "neo-core"
-version = "0.15.0"
+version = "0.17.0"
 dependencies = [
  "aes",
  "async-trait",
@@ -1245,7 +1245,7 @@ dependencies = [
 
 [[package]]
 name = "neo-crypto"
-version = "0.15.0"
+version = "0.17.0"
 dependencies = [
  "base64",
  "bitvec",
@@ -1278,7 +1278,7 @@ dependencies = [
 
 [[package]]
 name = "neo-io"
-version = "0.15.0"
+version = "0.17.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1298,7 +1298,7 @@ dependencies = [
 
 [[package]]
 name = "neo-json"
-version = "0.15.0"
+version = "0.17.0"
 dependencies = [
  "hashbrown 0.14.5",
  "indexmap",
@@ -1309,7 +1309,7 @@ dependencies = [
 
 [[package]]
 name = "neo-p2p"
-version = "0.15.0"
+version = "0.17.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -1325,7 +1325,7 @@ dependencies = [
 
 [[package]]
 name = "neo-primitives"
-version = "0.15.0"
+version = "0.17.0"
 dependencies = [
  "bitflags",
  "bs58",
@@ -1354,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "neo-storage"
-version = "0.15.0"
+version = "0.17.0"
 dependencies = [
  "fastbloom",
  "hashbrown 0.14.5",
@@ -1371,7 +1371,7 @@ dependencies = [
 
 [[package]]
 name = "neo-vm"
-version = "0.15.0"
+version = "0.17.0"
 dependencies = [
  "base64",
  "bitflags",

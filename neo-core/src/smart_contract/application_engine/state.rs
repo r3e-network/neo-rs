@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "prefetch")]
+use crate::state_service::AccountPrefetchCache;
 
 impl ApplicationEngine {
     /// Creates a new application engine for the given trigger and script container.
@@ -37,6 +39,22 @@ impl ApplicationEngine {
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
         let engine = ExecutionEngine::new(Some(JumpTable::default()));
 
+        // Initialize account prefetcher if enabled
+        let enable_prefetcher = std::env::var("ENABLE_ACCOUNT_PREFETCH")
+            .ok()
+            .map(|v| v != "0" && v.to_lowercase() != "false")
+            .unwrap_or(false);
+        
+        // Only initialize prefetcher if feature is enabled
+        #[cfg(feature = "prefetch")]
+        let mut prefetcher = AccountPrefetchCache::new();
+        #[cfg(not(feature = "prefetch"))]
+        let mut _prefetcher_disabled = false; // Placeholder, won't be used
+        
+        if cfg!(feature = "prefetch") && enable_prefetcher {
+            tracing::info!(target: "prefetcher", "Account prefetch cache enabled");
+        }
+
         let mut app = Self {
             trigger,
             script_container,
@@ -74,7 +92,20 @@ impl ApplicationEngine {
             runtime_context: None,
         };
 
+        // Initialize prefetch cache if enabled
+        #[cfg(feature = "prefetch")]
+        {
+            app.prefetch_cache = if enable_prefetcher { Some(std::sync::Arc::new(prefetcher)) } else { None };
+        }
+
         app.select_hardfork_vm_semantics();
+        
+        // Initialize static syscall registry (once per application lifetime)
+        // NOTE: This is now handled by VM layer - commented out to avoid duplication
+        // SYSCALL_REGISTRY_INIT.call_once(|| {
+        //     init_syscall_registry();
+        // });
+        
         app.attach_host();
         app.register_native_contracts();
         app.refresh_policy_settings();
@@ -147,6 +178,22 @@ impl ApplicationEngine {
             runtime_context: None,
         };
 
+        // A05/R06: persist path must apply hardfork-dependent VM semantics
+        // (e.g. Gorgon zero-shift typing), matching `new` / `new_with_shared_block`.
+        app.select_hardfork_vm_semantics();
+        
+        // Initialize prefetch cache if enabled
+        #[cfg(feature = "prefetch")]
+        {
+            app.prefetch_cache = if enable_prefetcher { Some(std::sync::Arc::new(prefetcher)) } else { None };
+        }
+        
+        // Initialize static syscall registry (once per application lifetime)
+        // NOTE: This is now handled by VM layer - commented out to avoid duplication
+        // SYSCALL_REGISTRY_INIT.call_once(|| {
+        //     init_syscall_registry();
+        // });
+        
         app.attach_host();
         app.refresh_policy_settings();
         app.register_default_interops()?;
@@ -268,6 +315,18 @@ impl ApplicationEngine {
             states.mark_vm_state(hash, vm_state)
         } else {
             false
+        }
+        
+        /// Check if prefetch cache is available.
+        #[cfg(feature = "prefetch")]
+        pub fn has_prefetch_cache(&self) -> bool {
+            self.prefetch_cache.is_some()
+        }
+        
+        /// Get prefetch cache metrics (if enabled).
+        #[cfg(feature = "prefetch")]
+        pub fn prefetch_metrics(&self) -> Option<crate::state_service::PrefetcherMetrics> {
+            self.prefetch_cache.as_ref().map(|cache| cache.metrics())
         }
     }
 

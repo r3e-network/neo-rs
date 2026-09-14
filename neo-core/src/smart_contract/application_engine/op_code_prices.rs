@@ -1,4 +1,19 @@
 //! ApplicationEngine.OpCodePrices - matches C# Neo.SmartContract.ApplicationEngine.OpCodePrices.cs exactly
+//!
+// TODO(M-17): This table needs cross-validation against the Neo N3 C# reference
+// (Neo/src/Neo/SmartContract/ApplicationEngine.OpCodePrices.cs).  The 256-entry
+// array maps OpCode byte values (index) to execution-unit costs before the
+// ExecFeeFactor multiplier is applied.  Representative known C# reference values
+// for a spot-check (opcode → price in exec units):
+//   NOP (0x21)     → 1
+//   PUSH0 (0x00)   → 1
+//   PUSHDATA1(0x0c)→ 8
+//   SYSCALL(0x41)  → 0 (priced per-syscall)
+//   NEWARRAY(0xc5) → 512
+//   APPEND(0xc8)   → 8192
+//
+// Until a full automated comparison against the C# source is run, treat any
+// price as potentially stale.
 
 use crate::smart_contract::ApplicationEngine;
 

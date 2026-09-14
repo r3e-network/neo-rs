@@ -48,12 +48,14 @@ serde = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
+lazy_static = { workspace = true }
 
 # Constant-time operations and secure memory handling
 subtle = { workspace = true }
 zeroize = { workspace = true }
 parking_lot = { workspace = true }
 tracing = { workspace = true }
+lru = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

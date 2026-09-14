@@ -73,6 +73,10 @@ pub(super) fn validate_incoming_block(
         return IncomingBlockOutcome::Store { index, block };
     };
 
+    // Clone required: `existing` is `&Block` (shared reference), but
+    // `try_hash` requires `&mut self`. Changing the parameter to
+    // `Option<&mut Block>` would ripple through all callers; a targeted
+    // clone here is the least-invasive safe approach.
     let mut existing = existing.clone();
     match existing.try_hash() {
         Ok(existing_hash) if existing_hash == incoming_hash => IncomingBlockOutcome::KeepExisting,
@@ -92,6 +96,9 @@ pub(super) fn validate_incoming_block(
 }
 
 pub(super) fn persisted_block_hash(block: &Block) -> Result<UInt256, CoreError> {
+    // Clone required: `try_hash` requires `&mut self` but callers hold `&Block`.
+    // Changing to `&mut Block` would require all call sites to hold a mutable
+    // reference, which is not always convenient at the call site.
     let mut block = block.clone();
     block.try_hash()
 }
@@ -108,6 +115,7 @@ pub(super) fn match_persisted_block(
 }
 
 pub(super) fn block_matches_hash(block: &Block, expected_hash: &UInt256) -> BlockHashMatch {
+    // Clone required: `try_hash` requires `&mut self` but callers hold `&Block`.
     let mut candidate = block.clone();
     match candidate.try_hash() {
         Ok(candidate_hash) if candidate_hash == *expected_hash => BlockHashMatch::Matches,

@@ -1,0 +1,6 @@
+- Fixed-width integer types are declared by invoking the `uint_type!` macro with `size`, `size_const`, `ZERO`, `as_ref`, and named `valueN` fields rather than hand-written structs.
+- Protocol enums are defined through `protocol_enum!` / `protocol_enum_repr!` / `protocol_enum_with_unknown!` macros so each variant carries an explicit `#[repr(u8)]` wire byte plus generated `to_byte`/`from_byte`/`as_str` helpers.
+- Enums that must survive unknown future bytes use `protocol_enum_with_unknown!` with an `unknown` tuple variant instead of returning `None` or panicking on unrecognized values.
+- Parsing functions return `PrimitiveResult<Self>` (a `Result<T, PrimitiveError>` alias) and map lower-level decode errors into `PrimitiveError::InvalidFormat` variants with human-readable messages.
+- C# compatibility is preserved by implementing `hash_code()` and nullable `equals(&self, Option<&Self>)` methods on uint types that mirror C# `GetHashCode` and `Equals(object?)` semantics.
+- Each module groups related small types into its own file and re-exports them at the crate root via `pub use` statements in `lib.rs`, keeping the public surface flat.

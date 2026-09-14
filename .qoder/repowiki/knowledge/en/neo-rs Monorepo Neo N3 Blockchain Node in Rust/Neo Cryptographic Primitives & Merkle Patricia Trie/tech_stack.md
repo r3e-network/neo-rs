@@ -1,0 +1,1 @@
+Rust workspace crate built on `sha2`/`sha3`/`ripemd`/`blake2`/`blake2b_simd` for hashing, `secp256k1` + `p256` + `ed25519-dalek` for ECDSA/EdDSA, `blst` for BLS12-381, `murmur3` for MurmurHash3, `bitvec` for Bloom filters, `subtle`/`zeroize` for constant-time ops and secure memory, `parking_lot`+`lru` for the MPT cache, and `thiserror` for error types.

@@ -915,7 +915,7 @@ async fn traverse_iterator_rejects_expired_session() {
         None,
     )
     .expect("session");
-    let session_id = server.store_session(session);
+    let session_id = server.store_session(session).expect("store session");
 
     let params = [
         Value::String(session_id.to_string()),
@@ -1028,7 +1028,7 @@ async fn traverse_iterator_returns_items_and_can_terminate_session() {
         .register_iterator_interface(&interop)
         .expect("iterator uuid");
 
-    let session_id = server.store_session(session);
+    let session_id = server.store_session(session).expect("store session");
     let params = [
         Value::String(session_id.to_string()),
         Value::String(iterator_uuid.to_string()),

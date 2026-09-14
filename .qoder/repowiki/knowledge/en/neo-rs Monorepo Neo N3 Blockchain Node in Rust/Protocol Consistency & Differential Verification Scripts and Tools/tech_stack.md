@@ -1,0 +1,1 @@
+Python 3 scripts using only stdlib (`urllib.request`, `json`, `gzip`, `subprocess`, `http.client`); Bash orchestrators with `set -euo pipefail`; C# tool targeting net10.0 and pinning `Neo.VM 3.10.1` / `Neo 3.10.1` via `csharp-vm-runner.csproj`; C++ SGX enclave built with Intel SGX SDK and DCAP quote libraries referenced in `tools/sgx-evidence-helper/Makefile`.

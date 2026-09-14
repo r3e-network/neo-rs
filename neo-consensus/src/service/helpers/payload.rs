@@ -2,7 +2,7 @@ use super::super::ConsensusEvent;
 use super::super::ConsensusService;
 use crate::messages::ConsensusPayload;
 use crate::{ConsensusError, ConsensusMessageType, ConsensusResult};
-use tracing::debug;
+use tracing::warn;
 
 impl ConsensusService {
     /// Creates a consensus payload
@@ -22,14 +22,14 @@ impl ConsensusService {
 
         // Sign the payload as an ExtensiblePayload ("dBFT") Verifiable:
         // signature is over `[network:4][payload_hash:32]`.
-        if let Ok(sign_data) = self.dbft_sign_data(&payload) {
-            match self.sign(&sign_data) {
-                Ok(signature) => payload.set_witness(signature),
-                Err(err) => {
-                    debug!(error = %err, "Consensus payload signing failed");
-                }
-            }
-        }
+        // Fail closed: never return an unsigned payload that callers would still
+        // broadcast and count toward local quorum (audit A06).
+        let sign_data = self.dbft_sign_data(&payload)?;
+        let signature = self.sign(&sign_data).map_err(|err| {
+            warn!(error = %err, "Consensus payload signing failed");
+            err
+        })?;
+        payload.set_witness(signature);
 
         Ok(payload)
     }

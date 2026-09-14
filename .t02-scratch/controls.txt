@@ -1,0 +1,13 @@
+=== marker discipline ===
+campaign-aborted present: YES -> status=not-clean imported_exit=1 range=[0,29999] at=2026-09-11T23:34:03Z
+campaign-complete present: NO
+import-complete present:   NO
+=== CONTROL 1: clean full pass (expect rc=0, status=clean, prefix[0,29999]) ===
+rc=0
+status= clean prefix= {'start': 0, 'end': 29999}
+=== CONTROL 2: partial (exit0, final 10000) (expect rc=1, status=partial, prefix[0,10000]) ===
+rc=1
+status= partial prefix= {'start': 0, 'end': 10000}
+=== CONTROL 3: gate failed (expect rc=1, status=gate_failed, prefix=None) ===
+rc=1
+status= gate_failed prefix= None
