@@ -1684,11 +1684,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "d:\\Git\\neo-rs\\tools\\csharp-vm-runner\\csharp-vm-runner.csproj",
+      "projectUniqueName": "D:\\Git\\neo-rs\\tools\\csharp-vm-runner\\csharp-vm-runner.csproj",
       "projectName": "csharp-vm-runner",
-      "projectPath": "d:\\Git\\neo-rs\\tools\\csharp-vm-runner\\csharp-vm-runner.csproj",
+      "projectPath": "D:\\Git\\neo-rs\\tools\\csharp-vm-runner\\csharp-vm-runner.csproj",
       "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-      "outputPath": "d:\\Git\\neo-rs\\tools\\csharp-vm-runner\\obj\\",
+      "outputPath": "D:\\Git\\neo-rs\\tools\\csharp-vm-runner\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "D:\\Microsoft Visual Studio\\Shared\\NuGetPackages"

@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "4yaLdeCV/KA=",
+  "dgSpecHash": "g6bWKqaBTA4=",
   "success": true,
-  "projectFilePath": "d:\\Git\\neo-rs\\tools\\csharp-vm-runner\\csharp-vm-runner.csproj",
+  "projectFilePath": "D:\\Git\\neo-rs\\tools\\csharp-vm-runner\\csharp-vm-runner.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Administrator\\.nuget\\packages\\akka\\1.5.58\\akka.1.5.58.nupkg.sha512",
     "C:\\Users\\Administrator\\.nuget\\packages\\akka.analyzers\\0.3.3\\akka.analyzers.0.3.3.nupkg.sha512",
@@ -47,9 +47,9 @@
       "code": "NU1510",
       "level": "Warning",
       "message": "PackageReference System.Text.Json will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary.",
-      "projectPath": "d:\\Git\\neo-rs\\tools\\csharp-vm-runner\\csharp-vm-runner.csproj",
+      "projectPath": "D:\\Git\\neo-rs\\tools\\csharp-vm-runner\\csharp-vm-runner.csproj",
       "warningLevel": 1,
-      "filePath": "d:\\Git\\neo-rs\\tools\\csharp-vm-runner\\csharp-vm-runner.csproj",
+      "filePath": "D:\\Git\\neo-rs\\tools\\csharp-vm-runner\\csharp-vm-runner.csproj",
       "libraryId": "System.Text.Json",
       "targetGraphs": [
         "net10.0"

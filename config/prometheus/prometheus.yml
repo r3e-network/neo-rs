@@ -1,0 +1,76 @@
+# Neo-N3 Production Monitoring Configuration
+# Prometheus configuration for optimized testnet node
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+  scrape_timeout: 5s
+
+# External labels to add to all metrics
+external_labels:
+  cluster: 'neo-testnet-cluster'
+  job: 'neo-node-production'
+  environment: 'testnet'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - localhost:9093
+      timeout: 10s
+      api_version: v2
+
+# Rule files for alerts
+rule_files:
+  - "alerts/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Neo-N3 Node metrics endpoint
+  - job_name: 'neo-node'
+    static_configs:
+      - targets:
+          - '127.0.0.1:9090'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    scheme: http
+    
+    # Metric relabeling to add instance labels
+    metric_relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '(.+):(.+)'
+        replacement: '${1}:${2}'
+    
+    # Honor labels from the node
+    honor_labels: true
+
+  # Blackbox exporter for endpoint probing (optional)
+  - job_name: 'neo-blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://127.0.0.1:9090/healthz
+          - http://127.0.0.1:9090/ready
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: localhost:9115
+
+# Storage settings
+storage:
+  tsdb:
+    retention_time: 30d
+    retention_size: 100GB
+    out_of_order_time_window: 15m
+
+# Logging configuration
+log_level: info
+log_format: logfmt

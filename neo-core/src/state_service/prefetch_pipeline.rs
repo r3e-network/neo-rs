@@ -415,17 +415,19 @@ impl PrefetchPipeline {
         let blocks_processed = 0u64; // Would be tracked internally
         let transactions_verified = 0u64; // Would be tracked internally
         
-        let avg_io_latency = 5.0; // Placeholder
-        let avg_verification_latency = 15.0; // Placeholder
+        // Placeholder metrics - actual values would come from internal counters
+        const DEFAULT_AVG_IO_LATENCY_MS: f64 = 5.0;
+        const DEFAULT_AVG_VERIFICATION_LATENCY_MS: f64 = 15.0;
+        const DEFAULT_AVG_EXECUTION_LATENCY_MS: f64 = 20.0;
         
         let channel_depth = self._io_receiver.len();
         
         PipelineMetrics {
             blocks_processed,
             transactions_verified,
-            avg_io_latency_ms: avg_io_latency,
-            avg_verification_latency_ms: avg_verification_latency,
-            avg_execution_latency_ms: 20.0, // Placeholder
+            avg_io_latency_ms: DEFAULT_AVG_IO_LATENCY_MS,
+            avg_verification_latency_ms: DEFAULT_AVG_VERIFICATION_LATENCY_MS,
+            avg_execution_latency_ms: DEFAULT_AVG_EXECUTION_LATENCY_MS,
             state: *state,
             active_workers: self._verification_handles.len(),
             io_channel_depth: channel_depth,
@@ -528,48 +530,13 @@ fn spawn_io_prefetcher(
                 let start_time = Instant::now();
 
                 // Check if we have pre-fetched bytes (from network)
-                let block_data = if let Some(pre_fetched) = req.optional_bytes {
-                    pre_fetched
-                } else {
-                    // TODO: Implement actual disk read
-                    // For now, simulate with placeholder
-                    trace!(target: "pipeline", height, "reading block from disk (placeholder)");
+                // Placeholder: full implementation requires neo-storage integration
+                // For now, skip processing without pre-fetched data
+                if req.optional_bytes.is_none() {
+                    trace!(target: "pipeline", height, "skipping block without pre-fetched data");
                     continue;
-                };
-
-                // Deserialize asynchronously
-                // In production, would use binary serialization with neo-io
-                let block = deserialize_block_placeholder(&block_data);
-                
-                // Compute hash
-                let hash = match block.hash() {
-                    Ok(h) => h,
-                    Err(e) => {
-                        warn!(target: "pipeline", height, %e, "failed to compute block hash");
-                        continue;
-                    }
-                };
-
-                let elapsed = start_time.elapsed();
-                
-                let deserialized = DeserializedBlock {
-                    height,
-                    block: Arc::new(block),
-                    hash,
-                };
-
-                if tx.send(deserialized).is_err() {
-                    warn!(target: "pipeline", height, "failed to send deserialized block - receiver disconnected");
-                    break;
                 }
 
-                trace!(
-                    target: "pipeline",
-                    height,
-                    elapsed_ms = elapsed.as_millis(),
-                    "I/O prefetch complete"
-                );
-            }
 
             debug!(target: "pipeline", "I/O prefetcher stopped");
         })
@@ -646,19 +613,17 @@ fn spawn_execution_worker(receiver: Sender<ExecutedTransaction>) -> JoinHandle<(
         .spawn(move || {
             debug!(target: "pipeline", "execution worker started");
             
-            // This would integrate with the ApplicationEngine
-            // For now, it's a placeholder for future implementation
             loop {
                 thread::sleep(Duration::from_millis(10));
-                // Execution logic would go here
+                // Execution worker not yet implemented - requires ApplicationEngine integration
+                // In production, this would consume VerifiedTxPool and execute VM transactions
             }
         })
         .expect("failed to spawn execution worker")
 }
 
-/// Helper function to verify a batch of transactions
-/// Uses Rayon to parallelize signature verification across multiple threads
-fn verify_transaction_batch(transactions: &[Arc<Transaction>]) -> Vec<Arc<Transaction>> {
+// This function is not yet implemented - prefetched pipeline requires full storage integration
+// In production, this would integrate with neo-storage to read blocks from disk
     use std::sync::atomic::{AtomicBool, Ordering};
     
     let mut verified = Vec::with_capacity(transactions.len());
@@ -667,34 +632,11 @@ fn verify_transaction_batch(transactions: &[Arc<Transaction>]) -> Vec<Arc<Transa
     transactions.iter().filter(|_| should_verify.load(Ordering::Relaxed)).for_each(|tx| {
         // Placeholder for actual cryptographic verification
         // In production, this would call neo-crypto signature verification:
-        //
-        // for witness in &tx.witnesses {
-        //     let pub_keys = extract_public_keys(&witness.invocation_script);
-        //     for (i, public_key) in pub_keys.iter().enumerate() {
-        //         let signature = &witness.invocation_script[i*64..(i+1)*64];
-        //         let message = compute_message_hash(tx);
-        //         if !Crypto::verify_signature(public_key, &message, signature).unwrap() {
-        //             return Err(VerificationError::InvalidSignature);
-        //         }
-        //     }
-        // }
-        
-        // For demonstration: mark as "verified" by keeping the reference
-        verified.push(Arc::clone(tx));
     });
     
     verified
 }
 
-/// Placeholder for actual block deserialization
-/// In production, this would use neo-io serialization
-fn deserialize_block_placeholder(data: &[u8]) -> Block {
-    // This is a stub - actual implementation would use:
-    // let mut reader = MemoryReader::new(data);
-    // Block::deserialize(&mut reader)
-    
-    panic!("Block deserialization not yet implemented - requires neo-io integration");
-}
 
 #[cfg(test)]
 mod tests {

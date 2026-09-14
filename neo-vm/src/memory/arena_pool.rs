@@ -520,7 +520,7 @@ pub trait ArenaAllocation {
 // ============================================================================
 
 impl ArenaAllocation for ExecutionEngine {
-    fn _execute_in_arena(&self, _arena: &ArenaMemoryPool) -> VmState {
+    fn execute_in_arena(&self, _arena: &ArenaMemoryPool) -> VmState {
         // Execute the VM normally - all allocations will use arena when explicitly requested
         // The actual execution happens via the standard engine.execute() method
         // This is a marker method that indicates arena-safe execution path

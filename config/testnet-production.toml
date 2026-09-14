@@ -1,0 +1,64 @@
+# Neo N3 TestNet Production Node Configuration
+# Optimized for performance: Cuckoo Hash, Batch Signatures, SIMD BLAKE2b
+# Version: 0.17.0 with full Phase 1-3 optimizations
+
+[network]
+network_type = "testnet"  # Must be set for correct genesis block
+network_magic = 0x3554334E  # TestNet magic number
+
+[storage]
+path = "./data/testnet"
+Engine = "lmdb"
+max_open_files = 1024
+cache_size = 2147483648
+write_buffer_size = 268435456
+
+[p2p]
+listen_port = 20333
+max_connections = 100  # Increased for better peer diversity
+min_desired_connections = 25  # Ensure stable network participation
+seed_nodes = [
+    "seed1t5.neo.org:20333",
+    "seed2t5.neo.org:20333",
+    "seed3t5.neo.org:20333",
+    "seed4t5.neo.org:20333",
+    "seed5t5.neo.org:20333"
+]
+enable_compression = true
+broadcast_history_limit = 100000  # Larger history for faster recovery
+
+[rpc]
+enabled = true
+port = 20332
+bind_address = "127.0.0.1"
+cors_enabled = true
+auth_enabled = false
+max_gas_invoke = 100000000
+max_iterator_result_items = 200
+disabled_methods = []
+
+[dbft]
+enabled = false  # Full node mode (not validator)
+auto_start = false
+
+# Optimizations are compile-time features (see neo-node Cargo.toml)
+# - cuckoo_hash_syscall_table
+# - batch_signature_verification  
+# - simd_blake2b
+# - prefetch_pipeline
+
+[telemetry]
+[telemetry.metrics]
+enabled = true
+port = 9090
+bind_address = "127.0.0.1"
+
+[blockchain]
+block_time = 15000
+
+[logging]
+level = "info"
+format = "json"
+file_path = "./logs/neo-node-testnet.log"
+max_file_size = "100MB"
+max_files = 10

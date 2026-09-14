@@ -1,0 +1,133 @@
+# Alertmanager Configuration for Neo-N3 Production Node
+# Manages alert routing, grouping, and notification
+
+global:
+  # Smtp configuration for email notifications
+  smtp_default_from: 'neo-monitoring@r3e.network'
+  smtp_smarthost: 'smtp.r3e.network:587'
+  smtp_auth_username: 'neo-monitoring@r3e.network'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+  smtp_require_tls: true
+  
+  # Slack webhook URL (configure via environment variable)
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+  
+  # Resolve timeout
+  resolve_timeout: 5m
+
+# Templates for notification formatting
+templates:
+  - 'alerts/*.tmpl'
+
+# Route configuration
+route:
+  # Default receiver for unmatched alerts
+  receiver: 'default-notifications'
+  
+  # Group alerts by these labels
+  group_by: ['alertname', 'severity', 'component']
+  
+  # How long to wait before sending a notification about a group
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  # Nested routes for different severity levels
+  routes:
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: true
+
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 30s
+      repeat_interval: 2h
+
+    - match:
+        severity: info
+      receiver: 'info-alerts'
+      group_wait: 1m
+      repeat_interval: 12h
+
+# Inhibit rules to suppress related alerts
+inhibit_rules:
+  # Suppress warning alerts when critical alert is firing
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ['alertname', 'instance']
+
+  # Suppress info alerts when warning/critical alert is active
+  - source_match:
+      severity: warning
+    target_match:
+      severity: info
+    equal: ['alertname', 'instance']
+
+# Receivers and notification configurations
+receivers:
+  - name: 'default-notifications'
+    email_configs:
+      - to: 'ops-team@r3e.network'
+        send_resolved: true
+        subject: '{{ template "email.subject" . }}'
+        html: '{{ template "email.body" . }}'
+
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'ops-critical@r3e.network'
+        send_resolved: true
+        priority: high
+        subject: '[CRITICAL] {{ .GroupLabels.alertname }} on {{ .GroupLabels.cluster }}'
+        html: '{{ template "critical.email.body" . }}'
+    
+    slack_configs:
+      - channel: '#neo-alerts-critical'
+        send_resolved: true
+        title: '{{ template "slack.critical.title" . }}'
+        text: '{{ template "slack.critical.text" . }}'
+        color: '{{ if eq .Status "firing" }}danger{{ else }}success{{ end }}'
+
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY}'
+        severity: critical
+        description: '{{ .GroupLabels.alertname }}: {{ .GroupLabels.severity }}'
+
+  - name: 'warning-alerts'
+    email_configs:
+      - to: 'ops-team@r3e.network'
+        send_resolved: true
+        subject: '[WARNING] {{ .GroupLabels.alertname }} on {{ .GroupLabels.cluster }}'
+        html: '{{ template "email.body" . }}'
+
+    slack_configs:
+      - channel: '#neo-alerts-warnings'
+        send_resolved: true
+        title: '{{ template "slack.warning.title" . }}'
+        text: '{{ template "slack.warning.text" . }}'
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+
+  - name: 'info-alerts'
+    email_configs:
+      - to: 'ops-team@r3e.network'
+        send_resolved: true
+        subject: '[INFO] {{ .GroupLabels.alertname }} on {{ .GroupLabels.cluster }}'
+        html: '{{ template "email.body" . }}'
+
+    slack_configs:
+      - channel: '#neo-alerts-info'
+        send_resolved: true
+        title: '{{ template "slack.info.title" . }}'
+        text: '{{ template "slack.info.text" . }}'
+        color: 'good'
+
+# Email templates
+templates:
+- 'html_templates/email.tmpl'
+- 'html_templates/critical_email.tmpl'
+- 'html_templates/slack.tmpl'

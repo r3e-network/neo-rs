@@ -1,0 +1,273 @@
+# Neo-N3 Production Alert Rules
+# Critical alerts for production node monitoring
+
+groups:
+  # ============================================================================
+  # SYNC STATUS ALERTS
+  # ============================================================================
+  - name: neo-sync-alerts
+    interval: 30s
+    rules:
+      # Sync lag exceeded 1000 blocks
+      - alert: TestnetNodeSyncLag
+        expr: neo_sync_tip_height - neo_sync_current_height > 1000
+        for: 5m
+        labels:
+          severity: critical
+          component: sync
+        annotations:
+          summary: "Neo-N3 node sync lag exceeded 1000 blocks"
+          description: "Current height: {{ $labels.current_height }}, Tip: {{ $labels.tip_height }} (lag: {{ $value | humanizeNum }} blocks)"
+          runbook_url: "https://github.com/r3e-network/neo-rs/blob/main/docs/MONITORING.md#sync-lag"
+
+      # Fast sync mode active for extended period
+      - alert: TestnetNodeFastSyncActive
+        expr: neo_fast_sync_enabled == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: sync
+        annotations:
+          summary: "Node has been in fast sync mode for 15+ minutes"
+          description: "This indicates significant sync lag. Current header lag: {{ $value | humanizeNum }} blocks"
+          runbook_url: "https://github.com/r3e-network/neo-rs/blob/main/docs/MONITORING.md#fast-sync-mode"
+
+      # Peer count dropped below minimum threshold
+      - alert: TestnetNodePeerCountLow
+        expr: neo_peer_count < 25
+        for: 5m
+        labels:
+          severity: critical
+          component: network
+        annotations:
+          summary: "Neo-N3 peer count below minimum threshold"
+          description: "Current peers: {{ $value }}, Minimum required: 25"
+          runbook_url: "https://github.com/r3e-network/neo-rs/blob/main/docs/MONITORING.md#peer-connection"
+
+  # ============================================================================
+  # RESOURCE UTILIZATION ALERTS
+  # ============================================================================
+  - name: neo-resource-alerts
+    interval: 30s
+    rules:
+      # Memory usage above 90%
+      - alert: TestnetNodeMemoryHigh
+        expr: system_memory_usage_bytes / system_memory_total_bytes * 100 > 90
+        for: 10m
+        labels:
+          severity: critical
+          component: resources
+        annotations:
+          summary: "Neo-N3 node memory usage critical"
+          description: "Memory usage: {{ $value | humanizePercentage }}, Threshold: 90%"
+
+      # CPU usage above 95%
+      - alert: TestnetNodeCPUHigh
+        expr: system_cpu_usage_ratio * 100 > 95
+        for: 10m
+        labels:
+          severity: warning
+          component: resources
+        annotations:
+          summary: "Neo-N3 node CPU usage high"
+          description: "CPU usage: {{ $value | humanizePercentage }}, Threshold: 95%"
+
+      # Disk space below 15% free
+      - alert: TestnetNodeDiskSpaceLow
+        expr: neo_storage_free_bytes / neo_storage_total_bytes * 100 < 15
+        for: 30m
+        labels:
+          severity: critical
+          component: storage
+        annotations:
+          summary: "Neo-N3 node disk space critically low"
+          description: "Free space: {{ $value | humanizePercentage }}, Total: {{ $labels.neo_storage_total_bytes | humanize }}"
+          runbook_url: "https://github.com/r3e-network/neo-rs/blob/main/docs/MONITORING.md#disk-space"
+
+  # ============================================================================
+  # BLOCK PROCESSING ALERTS
+  # ============================================================================
+  - name: neo-block-processing-alerts
+    interval: 30s
+    rules:
+      # Block processing duration exceeds threshold
+      - alert: TestnetNodeBlockProcessingSlow
+        expr: histogram_quantile(0.99, rate(block_processing_duration_bucket[5m])) > 2
+        for: 10m
+        labels:
+          severity: warning
+          component: blockchain
+        annotations:
+          summary: "Neo-N3 block processing latency elevated"
+          description: "99th percentile block processing time: {{ $value | humanizeDuration }}, Threshold: 2s"
+
+      # State root validation failures detected
+      - alert: TestnetNodeStateRootValidationFailure
+        expr: rate(neo_state_roots_rejected_total[1h]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: state
+        annotations:
+          summary: "Neo-N3 state root validation failures detected"
+          description: "State roots rejected in last hour: {{ $value | humanize }}"
+          runbook_url: "https://github.com/r3e-network/neo-rs/blob/main/docs/MONITORING.md#state-divergence"
+
+      # State validation lag exceeding 100 blocks
+      - alert: TestnetNodeStateValidationLag
+        expr: neo_state_validated_lag > 100
+        for: 15m
+        labels:
+          severity: warning
+          component: state
+        annotations:
+          summary: "Neo-N3 state validation lag elevated"
+          description: "State validation lag: {{ $value | humanizeNum }} blocks"
+
+  # ============================================================================
+  # OPTIMIZATION PERFORMANCE ALERTS
+  # ============================================================================
+  - name: neo-optimization-alerts
+    interval: 30s
+    rules:
+      # Cuckoo hash lookup latency spike (>500ns average)
+      - alert: TestnetNodeSyscallLatencySpiked
+        expr: histogram_quantile(0.95, rate(get_syscall_lookup_latency_bucket[5m])) > 500e-9
+        for: 10m
+        labels:
+          severity: warning
+          component: optimization
+        annotations:
+          summary: "Neo-N3 syscall lookup latency spiked"
+          description: "95th percentile syscall lookup: {{ $value | humanizeDuration }}, Threshold: 500ns"
+          runbook_url: "https://github.com/r3e-network/neo-rs/blob/main/docs/MONITORING.md#cuckoo-hash-performance"
+
+      # Low cuckoo hash hit rate (<70%)
+      - alert: TestnetNodeCuckooHashLowHitRate
+        expr: sum(rate(neo_cuckoo_hash_lookups_total{result="hit"}[1h])) / sum(rate(neo_cuckoo_hash_lookups_total[1h])) * 100 < 70
+        for: 30m
+        labels:
+          severity: info
+          component: optimization
+        annotations:
+          summary: "Neo-N3 cuckoo hash hit rate below optimal"
+          description: "Current hit rate: {{ $value | humanizePercentage }", ideal: ">70%"
+
+      # Batch verification efficiency degradation
+      - alert: TestnetNodeBatchVerificationDegraded
+        expr: avg_over_time(batch_verification_efficiency[1h]) < 256
+        for: 30m
+        labels:
+          severity: info
+          component: optimization
+        annotations:
+          summary: "Neo-N3 batch verification efficiency reduced"
+          description: "Average signatures per batch: {{ $value | humanizeNum }}, Target: >=256"
+
+      # SIMD BLAKE2b throughput below expected
+      - alert: TestnetNodeSIMDBLKE2bLowThroughput
+        expr: neo_simd_blake2b_throughput_bytes_per_second < 500e6  # 500 MB/s
+        for: 15m
+        labels:
+          severity: info
+          component: optimization
+        annotations:
+          summary: "Neo-N3 SIMD BLAKE2b throughput below expected"
+          description: "Current throughput: {{ $value | humanize }}/s, Expected: >500MB/s"
+          runbook_url: "https://github.com/r3e-network/neo-rs/blob/main/docs/MONITORING.md#simd-blake2b"
+
+      # Prefetch pipeline stalled or not making progress
+      - alert: TestnetNodePrefetchPipelineStalled
+        expr: rate(prefetch_stage_latencies{stage="execute"}[5m]) == 0 and neo_sync_current_height increases[5m] == 0
+        for: 10m
+        labels:
+          severity: critical
+          component: optimization
+        annotations:
+          summary: "Neo-N3 prefetch pipeline appears stalled"
+          description: "No execution progress detected while syncing"
+          runbook_url: "https://github.com/r3e-network/neo-rs/blob/main/docs/MONITORING.md#prefetch-pipeline"
+
+  # ============================================================================
+  # NETWORK AND P2P ALERTS
+  # ============================================================================
+  - name: neo-network-alerts
+    interval: 30s
+    rules:
+      # Excessive read timeouts
+      - alert: TestnetNodeReadTimeoutsHigh
+        expr: rate(neo_p2p_timeouts_read_total[5m]) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "Neo-N3 excessive P2P read timeouts"
+          description: "Read timeout rate: {{ $value | humanize }}/min"
+
+      # Excessive write timeouts
+      - alert: TestnetNodeWriteTimeoutsHigh
+        expr: rate(neo_p2p_timeouts_write_total[5m]) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "Neo-N3 excessive P2P write timeouts"
+          description: "Write timeout rate: {{ $value | humanize }}/min"
+
+  # ============================================================================
+  # HEALTH ENDPOINT ALERTS
+  # ============================================================================
+  - name: neo-health-alerts
+    interval: 30s
+    rules:
+      # Health endpoint returning degraded status
+      - alert: TestnetNodeHealthDegraded
+        expr: up{job="neo-node"} == 0 or neo_health_status != "ok"
+        for: 2m
+        labels:
+          severity: critical
+          component: health
+        annotations:
+          summary: "Neo-N3 node health degraded"
+          description: "Health status: {{ $value }}"
+
+      # Readiness probe failing
+      - alert: TestnetNodeNotReady
+        expr: neo_ready_status != 1
+        for: 5m
+        labels:
+          severity: critical
+          component: health
+        annotations:
+          summary: "Neo-N3 node not ready to accept traffic"
+          description: "Readiness probe failed for 5+ minutes"
+
+  # ============================================================================
+  # INFO LEVEL ALERTS
+  # ============================================================================
+  - name: neo-info-alerts
+    interval: 1m
+    rules:
+      # Mempool size growing unreasonably
+      - alert: TestnetNodeMempoolGrowing
+        expr: neo_mempool_size > 40000
+        for: 30m
+        labels:
+          severity: info
+          component: mempool
+        annotations:
+          summary: "Neo-N3 mempool size elevated"
+          description: "Mempool size: {{ $value | humanizeNum }} transactions"
+
+      # Significant header lag but still syncing
+      - alert: TestnetNodeHeaderLagNormal
+        expr: neo_header_lag > 100 and neo_is_syncing == 1
+        for: 1h
+        labels:
+          severity: info
+          component: sync
+        annotations:
+          summary: "Neo-N3 node syncing with normal header lag"
+          description: "Header lag: {{ $value | humanizeNum }} blocks (normal during initial sync)"

@@ -14,7 +14,9 @@ fn main() {
         .parent()
         .expect("repo root")
         .to_path_buf();
-    let state_root_path = repo_root.join("data/mainnet/StateRoot");
+    let state_root_path = std::env::var("STATE_ROOT_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| repo_root.join("data/mainnet/StateRoot"));
     let provider = RocksDBStoreProvider::new(StorageConfig {
         path: state_root_path.clone(),
         read_only: true,

@@ -57,6 +57,10 @@ pub mod murmur;
 pub mod named_curve_hash;
 /// Signature and key helpers used by Neo cryptographic APIs.
 pub mod signature;
+/// SIMD-accelerated BLAKE2b hashing for high-throughput MPT operations.
+pub mod simd;
+/// Batch signature verification for high-throughput blockchain operations.
+pub mod batch_verifier;
 
 // Re-exports
 pub use bip32::Bip32Crypto;

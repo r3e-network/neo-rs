@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("csharp-vm-runner")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+59cb04236fe23e1a7b7da37e5ffd3007ee643431")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+593a0959d4029c1b74ef4c877dee04c58ae4e544")]
 [assembly: System.Reflection.AssemblyProductAttribute("csharp-vm-runner")]
 [assembly: System.Reflection.AssemblyTitleAttribute("csharp-vm-runner")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

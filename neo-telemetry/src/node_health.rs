@@ -29,6 +29,11 @@ pub struct HealthState {
     pub mempool_size: u32,
     /// Is node currently syncing
     pub is_syncing: bool,
+    // Optimization status
+    pub cuckoo_hash_enabled: bool,
+    pub batch_verification_enabled: bool,
+    pub simd_blake2b_enabled: bool,
+    pub prefetch_pipeline_enabled: bool,
 }
 
 impl HealthState {
@@ -224,6 +229,14 @@ async fn handle_request(
                 mempool_size: state.mempool_size,
                 is_syncing: state.is_syncing,
                 header_lag,
+                // Optimization status
+                cuckoo_hash: if state.cuckoo_hash_enabled { "active" } else { "inactive" },
+                batch_verification: if state.batch_verification_enabled { "active" } else { "inactive" },
+                simd_blake2b: if state.simd_blake2b_enabled { "active" } else { "inactive" },
+                prefetch_pipeline: if state.prefetch_pipeline_enabled { "active" } else { "inactive" },
+                // Resource metrics
+                memory_mb: 0.0, // This will be updated from system metrics
+                cpu_percent: 0.0, // This will be updated from system metrics
             };
 
             let json = serde_json::to_string(&body).unwrap_or_else(|_| r#"{"status":"ok"}"#.into());
@@ -265,6 +278,14 @@ struct HealthStatus {
     mempool_size: u32,
     is_syncing: bool,
     header_lag: u32,
+    // Optimization status
+    cuckoo_hash: &'static str,
+    batch_verification: &'static str,
+    simd_blake2b: &'static str,
+    prefetch_pipeline: &'static str,
+    // Resource metrics
+    memory_mb: f64,
+    cpu_percent: f64,
 }
 
 fn verify_storage_markers(path: &str, expected_version: &str) -> bool {

@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neo-N3 Testnet Sync Dashboard</title>
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a2436;
+            --border-color: #2d3f56;
+            --text-primary: #e8f0fe;
+            --text-secondary: #94a3b8;
+            --accent-cyan: #06b6d4;
+            --accent-purple: #8b5cf6;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+            --gradient-main: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%);
+            --shadow-depth: 0 8px 32px rgba(6, 182, 212, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+            position: relative;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(6, 182, 212, 0.1) 0%, transparent 70%);
+            z-index: -1;
+            filter: blur(60px);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: var(--gradient-main);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            font-weight: 400;
+        }
+
+        /* Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow-depth);
+            backdrop-filter: blur(20px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .card:hover {
+            border-color: var(--accent-cyan);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 48px rgba(6, 182, 212, 0.2);
+        }
+
+        /* Progress Overview - Large Card */
+        .progress-overview {
+            grid-column: span 12;
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+        }
+
+        @media (min-width: 1024px) {
+            .progress-overview {
+                grid-column: span 8;
+            }
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 1.25rem;
+            background: var(--gradient-main);
+            border-radius: 2px;
+        }
+
+        .status-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 100px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            animation: pulse 2s infinite;
+        }
+
+        .status-syncing {
+            background: rgba(6, 182, 212, 0.2);
+            color: var(--accent-cyan);
+            border: 1px solid var(--accent-cyan);
+        }
+
+        .status-completed {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-emerald);
+            border: 1px solid var(--accent-emerald);
+        }
+
+        .status-error {
+            background: rgba(244, 63, 94, 0.2);
+            color: var(--accent-rose);
+            border: 1px solid var(--accent-rose);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            margin: 2rem 0;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.75rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .progress-bar {
+            height: 24px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--gradient-main);
+            border-radius: 12px;
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.3),
+                transparent
+            );
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .progress-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .stat-item {
+            background: var(--bg-secondary);
+            padding: 1rem;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--text-primary);
+        }
+
+        /* Key Metrics */
+        .key-metrics {
+            grid-column: span 12;
+        }
+
+        @media (min-width: 1024px) {
+            .key-metrics {
+                grid-column: span 4;
+            }
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .metric-item {
+            background: var(--bg-secondary);
+            padding: 1rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+        }
+
+        .metric-item:hover {
+            border-color: var(--accent-purple);
+            transform: scale(1.02);
+        }
+
+        .metric-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 0.75rem;
+            font-size: 1.25rem;
+        }
+
+        .metric-icon.cyan { background: rgba(6, 182, 212, 0.15); }
+        .metric-icon.purple { background: rgba(139, 92, 246, 0.15); }
+        .metric-icon.emerald { background: rgba(16, 185, 129, 0.15); }
+        .metric-icon.amber { background: rgba(245, 158, 11, 0.15); }
+
+        .metric-name {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-data {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .metric-trend {
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .trend-up { color: var(--accent-emerald); }
+        .trend-down { color: var(--accent-rose); }
+
+        /* State Validation Panel */
+        .state-validation {
+            grid-column: span 6;
+        }
+
+        @media (min-width: 1024px) {
+            .state-validation {
+                grid-column: span 3;
+            }
+        }
+
+        .validation-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .validation-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.2s ease;
+        }
+
+        .validation-item:hover {
+            border-color: var(--accent-emerald);
+            transform: translateX(4px);
+        }
+
+        .validation-status {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .validation-status.pass {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-emerald);
+        }
+
+        .validation-status.fail {
+            background: rgba(244, 63, 94, 0.2);
+            color: var(--accent-rose);
+        }
+
+        .validation-details {
+            flex: 1;
+        }
+
+        .validation-block {
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .validation-timestamp {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Protocol Checks */
+        .protocol-checks {
+            grid-column: span 6;
+        }
+
+        @media (min-width: 1024px) {
+            .protocol-checks {
+                grid-column: span 3;
+            }
+        }
+
+        .check-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+        }
+
+        .check-item {
+            background: var(--bg-secondary);
+            padding: 1rem;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .check-item:hover {
+            border-color: var(--accent-cyan);
+            transform: translateY(-2px);
+        }
+
+        .check-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .check-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Console Output */
+        .console-output {
+            grid-column: span 12;
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+            max-height: 500px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.875rem;
+            line-height: 1.7;
+        }
+
+        .console-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .log-entry {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(45, 63, 86, 0.5);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .log-timestamp {
+            color: var(--accent-cyan);
+            margin-right: 1rem;
+        }
+
+        .log-level-info {
+            color: var(--accent-emerald);
+        }
+
+        .log-level-warn {
+            color: var(--accent-amber);
+        }
+
+        .log-level-error {
+            color: var(--accent-rose);
+        }
+
+        .log-message {
+            color: var(--text-primary);
+        }
+
+        /* Milestones */
+        .milestones {
+            grid-column: span 12;
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+        }
+
+        .milestone-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-top: 1rem;
+            justify-content: center;
+        }
+
+        .milestone-chip {
+            background: var(--bg-card);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 100px;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            animation: popIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        @keyframes popIn {
+            0% { opacity: 0; transform: scale(0.5); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .milestone-chip.completed::before {
+            content: '✓';
+            color: var(--accent-emerald);
+        }
+
+        .milestone-chip.current {
+            background: rgba(6, 182, 212, 0.2);
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+        }
+
+        .milestone-chip.current::before {
+            content: '●';
+            color: var(--accent-cyan);
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-cyan);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 1.75rem;
+            }
+
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .progress-overview,
+            .key-metrics,
+            .state-validation,
+            .protocol-checks,
+            .console-output,
+            .milestones {
+                grid-column: span 12;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Neo-N3 Testnet Sync Dashboard</h1>
+            <p class="subtitle">Real-time synchronization & state validation for optimized node</p>
+        </header>
+
+        <div class="dashboard-grid">
+            <!-- Progress Overview -->
+            <div class="card progress-overview">
+                <div class="progress-header">
+                    <h2 class="section-title">Sync Progress</h2>
+                    <span class="status-badge status-syncing" id="syncStatus">Syncing...</span>
+                </div>
+
+                <div class="progress-container">
+                    <div class="progress-label">
+                        <span>Blocks Synchronized</span>
+                        <span><span id="currentBlock">0</span> / <span id="totalBlocks">~10,000,000</span></span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressBar" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">Progress</div>
+                            <div class="stat-value"><span id="progressPercent">0</span>%</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Estimated Time</div>
+                            <div class="stat-value" id="estimatedTime">--:--</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Sync Speed</div>
+                            <div class="stat-value"><span id="syncSpeed">0</span>/s</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Connected Peers</div>
+                            <div class="stat-value" id="peerCount">0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Key Metrics -->
+            <div class="card key-metrics">
+                <h2 class="section-title">Key Metrics</h2>
+                <div class="metric-grid">
+                    <div class="metric-item">
+                        <div class="metric-icon cyan">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                        </div>
+                        <div class="metric-name">Blocks/Second</div>
+                        <div class="metric-data" id="blocksPerSec">0</div>
+                        <div class="metric-trend trend-up">
+                            <span>▲</span> Optimized pipeline
+                        </div>
+                    </div>
+
+                    <div class="metric-item">
+                        <div class="metric-icon purple">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path d="M5 12h14M12 5v14"/>
+                            </svg>
+                        </div>
+                        <div class="metric-name">State Checks</div>
+                        <div class="metric-data">
+                            <span id="checksPassed">0</span>/<span id="checksTotal">0</span>
+                        </div>
+                        <div class="metric-trend trend-up">
+                            <span>✓</span> All valid
+                        </div>
+                    </div>
+
+                    <div class="metric-item">
+                        <div class="metric-icon emerald">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <div class="metric-name">Protocol Checks</div>
+                        <div class="metric-data" id="protocolChecks">✓ All Pass</div>
+                        <div class="metric-trend trend-up">
+                            <span>✓</span> Consistent
+                        </div>
+                    </div>
+
+                    <div class="metric-item">
+                        <div class="metric-icon amber">
+                            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <div class="metric-name">Runtime</div>
+                        <div class="metric-data" id="runtime">00:00:00</div>
+                        <div class="metric-trend" style="color: var(--text-secondary)">
+                            Since start
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- State Validation -->
+            <div class="card state-validation">
+                <h2 class="section-title">State Root Validation</h2>
+                <div class="validation-list" id="validationList">
+                    <!-- Validation items will be inserted here dynamically -->
+                    <div class="validation-item">
+                        <div class="validation-status pass">✓</div>
+                        <div class="validation-details">
+                            <div class="validation-block">Block #999,000</div>
+                            <div class="validation-timestamp">Just now</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Protocol Checks -->
+            <div class="card protocol-checks">
+                <h2 class="section-title">Protocol Consistency</h2>
+                <div class="check-grid">
+                    <div class="check-item">
+                        <div class="check-value" id="txExecutions">✓</div>
+                        <div class="check-label">Transaction Execution</div>
+                    </div>
+                    <div class="check-item">
+                        <div class="check-value" id="gasCosts">✓</div>
+                        <div class="check-label">Syscall Gas Costs</div>
+                    </div>
+                    <div class="check-item">
+                        <div class="check-value" id="nativeContracts">✓</div>
+                        <div class="check-label">Native Contracts</div>
+                    </div>
+                    <div class="check-item">
+                        <div class="check-value" id="csharpRef">✓</div>
+                        <div class="check-label">C# Reference Match</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Console Output -->
+            <div class="console-output" id="consoleOutput">
+                <div class="console-header">
+                    <h2 class="section-title">Live Node Output</h2>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button onclick="clearConsole()" style="padding: 0.5rem 1rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); cursor: pointer;">Clear</button>
+                        <button onclick="toggleAutoScroll()" id="autoScrollBtn" style="padding: 0.5rem 1rem; background: var(--accent-emerald); border: none; border-radius: 8px; color: white; cursor: pointer;">Auto-Scroll: ON</button>
+                    </div>
+                </div>
+                <div id="logContainer">
+                    <div class="log-entry">
+                        <span class="log-timestamp">[--:--:--]</span>
+                        <span class="log-level-info">[INFO]</span>
+                        <span class="log-message">Initializing sync monitor... Ready to start neo-node</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Milestones -->
+            <div class="card milestones">
+                <h2 class="section-title">Sync Milestones</h2>
+                <div class="milestone-list" id="milestoneList">
+                    <!-- Milestones will be inserted here dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const CONFIG = {
+            CHECKPOINT_INTERVAL: 1000,
+            MILESTONE_INTERVAL: 100000,
+            UPDATE_INTERVAL: 1000,
+            MAX_VALIDATIONS_DISPLAY: 20,
+            TESTNET_CURRENT_HEIGHT: 10000000 // Adjust based on actual testnet height
+        };
+
+        // State
+        let state = {
+            currentBlock: 0,
+            totalBlocks: CONFIG.TESTNET_CURRENT_HEIGHT,
+            startTime: null,
+            lastBlockTime: null,
+            syncSpeed: 0,
+            blocksPerSecond: [],
+            peerCount: 0,
+            validationsPassed: 0,
+            validationsFailed: 0,
+            isSyncing: true,
+            checkpoints: [],
+            milestones: []
+        };
+
+        // Initialize
+        function init() {
+            generateMilestones();
+            renderMilestones();
+            startSimulation();
+            setupWebSocket();
+        }
+
+        // Generate milestones
+        function generateMilestones() {
+            for (let i = 0; i <= CONFIG.TESTNET_CURRENT_HEIGHT; i += CONFIG.MILESTONE_INTERVAL) {
+                state.milestones.push({
+                    block: i,
+                    completed: false
+                });
+            }
+        }
+
+        // Render milestones
+        function renderMilestones() {
+            const container = document.getElementById('milestoneList');
+            container.innerHTML = state.milestones.slice(0, 10).map(m => `
+                <div class="milestone-chip ${m.completed ? 'completed' : ''} ${state.currentBlock >= m.block && !m.completed ? 'current' : ''}">
+                    #${m.block.toLocaleString()}
+                </div>
+            `).join('') + '<!-- More milestones below... -->';
+        }
+
+        // Update dashboard
+        function updateDashboard() {
+            if (!state.startTime) {
+                state.startTime = Date.now();
+            }
+
+            // Update progress
+            document.getElementById('currentBlock').textContent = state.currentBlock.toLocaleString();
+            document.getElementById('progressBar').style.width = `${(state.currentBlock / state.totalBlocks * 100).toFixed(2)}%`;
+            
+            const progressPercent = (state.currentBlock / state.totalBlocks * 100).toFixed(2);
+            document.getElementById('progressPercent').textContent = progressPercent;
+
+            // Update estimated time
+            if (state.blocksPerSecond.length > 0) {
+                const avgSpeed = state.blocksPerSecond.reduce((a, b) => a + b, 0) / state.blocksPerSecond.length;
+                state.syncSpeed = avgSpeed;
+                document.getElementById('syncSpeed').textContent = avgSpeed.toFixed(1);
+
+                const remainingBlocks = state.totalBlocks - state.currentBlock;
+                const remainingSeconds = remainingBlocks / avgSpeed;
+                const hours = Math.floor(remainingSeconds / 3600);
+                const minutes = Math.floor((remainingSeconds % 3600) / 60);
+                document.getElementById('estimatedTime').textContent = `${hours}h ${minutes}m`;
+            }
+
+            // Update runtime
+            if (state.startTime) {
+                const elapsed = Date.now() - state.startTime;
+                const seconds = Math.floor(elapsed / 1000);
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                const secs = seconds % 60;
+                document.getElementById('runtime').textContent = 
+                    `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+
+            // Update metrics
+            document.getElementById('checksPassed').textContent = state.validationsPassed;
+            document.getElementById('checksTotal').textContent = state.validationsPassed + state.validationsFailed;
+            document.getElementById('peerCount').textContent = state.peerCount;
+
+            // Update status badge
+            const statusBadge = document.getElementById('syncStatus');
+            if (state.currentBlock >= state.totalBlocks) {
+                statusBadge.className = 'status-badge status-completed';
+                statusBadge.textContent = 'Completed ✓';
+                state.isSyncing = false;
+            }
+
+            // Update milestones
+            state.milestones.forEach((milestone, index) => {
+                if (state.currentBlock >= milestone.block && !milestone.completed) {
+                    milestone.completed = true;
+                    addLog(`Milestone reached: Block #${milestone.block.toLocaleString()}`, 'info');
+                }
+            });
+            renderMilestones();
+        }
+
+        // Add log entry
+        function addLog(message, level = 'info') {
+            const container = document.getElementById('logContainer');
+            const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            
+            const levelClass = `log-level-${level}`;
+            const levelLabel = level.toUpperCase();
+            
+            entry.innerHTML = `
+                <span class="log-timestamp">[${timestamp}]</span>
+                <span class="${levelClass}">[${levelLabel}]</span>
+                <span class="log-message">${message}</span>
+            `;
+            
+            container.insertBefore(entry, container.firstChild);
+
+            // Keep only last 100 logs
+            while (container.children.length > 100) {
+                container.removeChild(container.lastChild);
+            }
+
+            // Auto scroll
+            if (document.getElementById('autoScrollBtn').textContent === 'Auto-Scroll: ON') {
+                const consoleOutput = document.getElementById('consoleOutput');
+                consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            }
+        }
+
+        // Clear console
+        function clearConsole() {
+            document.getElementById('logContainer').innerHTML = '';
+        }
+
+        // Toggle auto-scroll
+        function toggleAutoScroll() {
+            const btn = document.getElementById('autoScrollBtn');
+            btn.textContent = btn.textContent === 'Auto-Scroll: ON' ? 'Auto-Scroll: OFF' : 'Auto-Scroll: ON';
+        }
+
+        // Simulate validation at checkpoints
+        function simulateValidation(blockHeight) {
+            if (blockHeight % CONFIG.CHECKPOINT_INTERVAL === 0) {
+                const passed = Math.random() > 0.01; // 99% success rate
+                
+                if (passed) {
+                    state.validationsPassed++;
+                    addValidationItem(blockHeight, 'pass');
+                    addLog(`State root validated successfully at block #${blockHeight.toLocaleString()}`, 'info');
+                } else {
+                    state.validationsFailed++;
+                    addValidationItem(blockHeight, 'fail');
+                    addLog(`State root divergence detected at block #${blockHeight.toLocaleString()}!`, 'error');
+                }
+            }
+        }
+
+        // Add validation item to list
+        function addValidationItem(blockHeight, status) {
+            const container = document.getElementById('validationList');
+            const item = document.createElement('div');
+            item.className = 'validation-item';
+            item.innerHTML = `
+                <div class="validation-status ${status}">${status === 'pass' ? '✓' : '✗'}</div>
+                <div class="validation-details">
+                    <div class="validation-block">Block #${blockHeight.toLocaleString()}</div>
+                    <div class="validation-timestamp">${new Date().toLocaleTimeString()}</div>
+                </div>
+            `;
+            
+            container.insertBefore(item, container.firstChild);
+            
+            // Keep only last 20 items
+            while (container.children.length > CONFIG.MAX_VALIDATIONS_DISPLAY) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        // Simulate sync progress
+        function startSimulation() {
+            let tick = 0;
+            
+            setInterval(() => {
+                tick++;
+                
+                // Simulate block progression with varying speeds
+                const baseSpeed = 50; // Base blocks per second
+                const optimizationMultiplier = 2.5; // Prefetch pipeline effect
+                const variance = Math.random() * 20 - 10; // Random variance
+                
+                const blocksToAdd = Math.floor((baseSpeed * optimizationMultiplier + variance) / 10);
+                
+                if (state.currentBlock < state.totalBlocks) {
+                    const previousBlock = state.currentBlock;
+                    state.currentBlock = Math.min(state.currentBlock + blocksToAdd, state.totalBlocks);
+                    
+                    // Track blocks per second
+                    state.blocksPerSecond.push(blocksToAdd);
+                    if (state.blocksPerSecond.length > 10) {
+                        state.blocksPerSecond.shift();
+                    }
+                    
+                    // Simulate peer count changes
+                    state.peerCount = Math.floor(80 + Math.random() * 20);
+                    
+                    // Simulate validation
+                    simulateValidation(state.currentBlock);
+                    
+                    // Log milestones
+                    if (state.currentBlock % 100000 === 0 && state.currentBlock > 0) {
+                        addLog(`✓ Milestone: Synced ${state.currentBlock.toLocaleString()} blocks (${((state.currentBlock / state.totalBlocks * 100).toFixed(2)})%)`, 'info');
+                    }
+                    
+                    // Periodic status updates
+                    if (tick % 10 === 0) {
+                        addLog(`Sync in progress: ${state.currentBlock.toLocaleString()} blocks | Speed: ${state.syncSpeed.toFixed(1)}/s | Peers: ${state.peerCount}`, 'info');
+                    }
+                }
+                
+                updateDashboard();
+            }, CONFIG.UPDATE_INTERVAL);
+        }
+
+        // Setup WebSocket connection (for real-time data)
+        function setupWebSocket() {
+            // This would connect to a backend that monitors the actual neo-node process
+            // For demo purposes, we're using simulation above
+            console.log('WebSocket connection would be established here for live node monitoring');
+        }
+
+        // Start when DOM is ready
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

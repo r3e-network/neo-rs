@@ -581,22 +581,21 @@ impl StateStore {
         // The overlay is applied to the base backend only from update_local_state_root.
         let staged_backend = Arc::new(StagedStateStoreBackend::new(self.store.clone()));
         let mut snapshot = StateSnapshot::new(staged_backend, self.settings.clone());
+        let root_hash_before = snapshot.trie.root_hash().unwrap_or_else(UInt256::zero);
         let mut put_count: u32 = 0;
         let mut del_count: u32 = 0;
         let mut _skip_count: u32 = 0;
         let mut _ledger_skip: u32 = 0;
-        let debug_dump =
-            height == 172613 || height == 182902 || height == 203262 || height == 274157;
+        let debug_dump = std::env::var("NEO_DEBUG_STATE_ROOT").is_ok()
+            || height == 172613 || height == 182902 || height == 203262 || height == 274157;
         for (key, item, state) in change_set {
             if debug_dump {
-                tracing::warn!(
-                    target: "neo::state_service",
-                    height,
-                    contract_id = key.id,
-                    key = %hex::encode(key.as_bytes()),
-                    state = ?state,
-                    value = %hex::encode(item.value_bytes()),
-                    "DEBUG_WRITE"
+                eprintln!(
+                    "[DEBUG_STATE_ROOT h={height}] contract_id={} key={} state={:?} val={}",
+                    key.id,
+                    hex::encode(key.as_bytes()),
+                    state,
+                    hex::encode(item.value_bytes())
                 );
             }
             // Match Neo.Plugins.StateService behaviour: exclude ledger contract storage
@@ -643,6 +642,12 @@ impl StateStore {
 
         // Get new root hash
         let root_hash = snapshot.trie.root_hash().unwrap_or_else(UInt256::zero);
+        if debug_dump {
+            eprintln!(
+                "[DEBUG_STATE_ROOT h={height}] root_hash_before={root_hash_before} root_hash_after={root_hash} expected={:?}",
+                self.reference_roots.get(&height)
+            );
+        }
 
         // Validate against reference roots (fail-closed)
         if let Some(expected) = self.reference_roots.get(&height) {

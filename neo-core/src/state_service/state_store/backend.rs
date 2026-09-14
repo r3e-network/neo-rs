@@ -101,6 +101,10 @@ impl StateStoreBackend for StagedStateStoreBackend {
     fn discard_pending(&self) {
         self.pending.lock().clear();
     }
+
+    fn flush(&self) {
+        self.base.flush();
+    }
 }
 
 /// Minimal transactional wrapper over a `StateStoreBackend`.
@@ -258,5 +262,9 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
 
     fn discard_pending(&self) {
         self.pending.lock().clear();
+    }
+
+    fn flush(&self) {
+        self.store.flush();
     }
 }

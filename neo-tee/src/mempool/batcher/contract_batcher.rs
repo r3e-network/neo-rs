@@ -237,8 +237,7 @@ impl ContractBatchScheduler {
                 }
 
                 OP_CALLT => {
-                    // CALLT instruction - skip for now (requires token ID → contract mapping)
-                    // In production, maintain a registry of known call targets
+                    // CALLT instruction - not supported (requires token ID → contract mapping)
                     break;
                 }
 
@@ -533,7 +532,7 @@ mod tests {
     /// Helper to create a test mempool entry
     fn make_test_entry(index: u8, syscalls: u32) -> TeeMempoolEntry {
         // Create minimal valid-looking script with SYSCALL instructions
-        let mut script = vec![0x00]; // NOP placeholder
+        let mut script = vec![0x00]; // NOP - minimal valid script
         for _ in 0..syscalls {
             script.push(0x41); // SYSCALL opcode
             script.extend_from_slice(&(index as u32).to_le_bytes()); // Descriptor
