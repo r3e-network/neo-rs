@@ -520,7 +520,7 @@ pub trait ArenaAllocation {
 // ============================================================================
 
 impl ArenaAllocation for ExecutionEngine {
-    fn execute_in_arena(&self, arena: &ArenaMemoryPool) -> VmState {
+    fn _execute_in_arena(&self, _arena: &ArenaMemoryPool) -> VmState {
         // Execute the VM normally - all allocations will use arena when explicitly requested
         // The actual execution happens via the standard engine.execute() method
         // This is a marker method that indicates arena-safe execution path
@@ -582,7 +582,7 @@ impl<'a> ArenaAwareExecutionEngine<'a> {
     pub fn push_stack_item(&mut self, item: StackItem) {
         unsafe {
             let ptr = self.arena.allocate(item);
-            self.engine.result_stack_mut().push(ptr.clone());
+            let _ = self.engine.result_stack_mut().push(ptr.clone());
         }
     }
 
