@@ -173,6 +173,22 @@ Phase A 收尾批次，覆盖 neo-crypto 编码长度族与 Base58Check 地址�
 
 ---
 
+## 4.4 batch5 / verus4 扩展：dBFT 法定人数与 WitnessScope（2026-09-20 追加）
+
+Phase B 首批，协议正确性最直接的两族（均实测 exit 0）：
+
+- **`pilot_batch5.rs`（Prusti，18 items 全绿）**：`ConsensusContext::f/M` 忠实镜像 + dBFT 安全性数值核心——3f≤n−1、M≥1、**M≥f+1**、**法定人数交集定理 2M−n>f**（任意两个 M 集合交集超过 f，故 f 个拜占庭节点下两个 quorum 必有诚实节点重叠）、f/M 对 n 单调、`count≥M ⇒ count>f`（more_than_f 语义一致性）、C# parity spots（n=4/7/21 → f=1/2/6，M=3/5/15）。
+- **`pilot_verus4.rs`（Verus，27 verified, 0 errors）**：同族法定人数（int 域参数化）+ **WitnessScope 字节级语义**——GLOBAL（bit7⟺≥128）、CALLED_BY_ENTRY（⟺%2==1）、未知位（mask 0x0E ⟺%16≥2）、`from_byte`/`is_valid` 等价、GLOBAL 不可组合（0x81/0xF1 拒绝）、GLOBAL-free 组合封闭（任意 v%16≤1 且 v<128 全收）。
+
+**新工具事实（本轮实证）**：
+1. Prusti 0.2.2 对非布尔整数位运算报"unsupported feature"，官方开关 `encode_bitvectors` **经 PRUSTI_OPTIONS 启用后直接 ICE**——位运算族彻底归 Verus/Coq。
+2. Verus 0.2026.09 把 u8 `&`/`|`/`!` 编码为**不透明函数**（引理全挂 "postcondition not satisfied"，`#[verifier::bitvector]` 属性不被接受）→ 位测试按 u8 域算术谓词重编码（完全等价）即可证；OR 组合语义留给 Coq witness 模型。
+3. Verus 不接受无参 `spec fn NAME: T = v` 常量写法（改普通 `pub const`）与链式相等 `a == b == c`（改 if/else）。
+
+累计：**Prusti 105 items**（14+8+12+24+29+18）+ **Verus 66 items**（7+13+19+27）= **171 个纯函数规格项**，覆盖 271 条盘点的约 **63%**。
+
+---
+
 ## 5. 选型建议
 
 **推荐：Verus 作为「纯函数 + 数值/编码/序列化不变式」主力层**，理由：
