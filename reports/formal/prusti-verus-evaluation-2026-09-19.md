@@ -204,6 +204,22 @@ Phase B 收尾批次（均实测 exit 0）：
 
 ---
 
+## 4.6 batch7 / verus6 扩展：区块校验界、EC 尺寸、bloom 种子（2026-09-20 追加）
+
+Phase C 首批（均实测 exit 0）：
+
+- **`pilot_batch7.rs`（Prusti，27 items 全绿）**：区块校验界（块 ≤2 MiB、交易 ≤512、版本 0、primary<验证人数、时间戳 ≥ 创世 1468595301000 且 ≤ now+900000ms 全带溢出守卫）+ ECCurve 尺寸（r1/k1=33/65、Ed25519=32/32、compressed<uncompressed）+ bloom bit_index 取模界。**Z3 抓到一个真实规范方向错误**：块大小单调性最初写反（a≤b ∧ ok(a) ⇒ ok(b) 为假；正确向下封闭 ok(b) ⇒ ok(a)）——验证器拒绝假命题的实例。
+- **`pilot_verus6.rs`（Verus，13 verified, 0 errors）**：同族参数化 + **bloom_seed wrapping 乘法族**（Prusti 证不了的）：spec=(hi·0xFBA4C795+t) mod 2^32，exec 用 wrapping_mul/wrapping_add 原生镜像，recurrence 引理（步进=加 M mod 2^32）int 域可证。
+
+**新工具事实**：
+1. **Prusti 第五限制**：`wrapping_add/wrapping_mul` 判"非纯"；u64/u128 重编码的乘法溢出检查 Z3 也证不动 → wrapping 算术族归 Verus。
+2. Verus 字面量在混合 int 表达式里需显式后缀（`0xFBA4C795int`）或 `as u64` 转换；**两个工具都证不动 `hash % bit_size == hash`（hash<bit_size）这一平凡 mod 恒等引理**（Prusti 嵌套调用/Verus 机器 int 与 int 域两种编码均失败）——已如实记录，in-range 界性质（两工具均过）为承重属性。
+3. Verus 的溢出 recommend 会连坐 postcondition：drift 引理 requires 须收紧到 u64::MAX−900001（差一错误被工具抓到）。
+
+累计：**Prusti 161 items**（…+27）+ **Verus 98 items**（…+13）= **259 个纯函数规格项**，覆盖 271 条盘点的约 **96%**。
+
+---
+
 ## 5. 选型建议
 
 **推荐：Verus 作为「纯函数 + 数值/编码/序列化不变式」主力层**，理由：
