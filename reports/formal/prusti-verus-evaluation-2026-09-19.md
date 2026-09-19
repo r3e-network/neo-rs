@@ -189,6 +189,21 @@ Phase B 首批，协议正确性最直接的两族（均实测 exit 0）：
 
 ---
 
+## 4.5 batch6 / verus5 扩展：协议枚举与共识消息校验（2026-09-20 追加）
+
+Phase B 收尾批次（均实测 exit 0）：
+
+- **`pilot_batch6.rs`（Prusti，29 items 全绿）**：TransactionAttributeType（5 个 wire 字节，仅 Conflicts=0x21 允许多实例 + roundtrip 不动点）、ContractParameterType（13 个字节码 + **0x21 线格式陷阱**——属性字节合法但参数类型未指派）、ChangeView（new_view_number=view+1 溢出拒绝；无溢出时严格递增恒成立故 validate 的严格检查必过）、Commit（ECDSA 签名恰 64 字节）、UInt from_bytes（长度恰等 N：20/32）。
+- **`pilot_verus5.rs`（Verus，19 verified, 0 errors）**：同族交叉验证，Option/match 原生支持故镜像与真实代码结构一致；参数化引理（仅 Conflicts 多实例、accept⇒fixed-point roundtrip）。
+
+**新工具事实**：
+1. **Prusti 第四限制**：`Option::is_some/is_none` 在纯代码中判为"非纯"，且 spec 不支持 `Option` 常量 → 镜像用 u16 哨兵 0x0100 表示 None（合法字节 0x00/0xFF 不会冲突）。
+2. **Verus**：spec 模式 u8+u8 恒提升为 int（`1u8` 后缀无效）→ 用 `(view + 1) as u8` 截断转换（view<255 时无损）；`Some(0x21)` 字面量也需 `0x21u8` 后缀防 Option<int> 推断。
+
+累计：**Prusti 134 items**（14+8+12+24+29+18+29）+ **Verus 85 items**（7+13+19+27+19）= **219 个纯函数规格项**，覆盖 271 条盘点的约 **81%**——已越过「~200 纯函数展开」目标线。
+
+---
+
 ## 5. 选型建议
 
 **推荐：Verus 作为「纯函数 + 数值/编码/序列化不变式」主力层**，理由：
