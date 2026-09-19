@@ -1,0 +1,261 @@
+{
+  "impl_name": "neo-rs",
+  "total": 42,
+  "roundtrip_pass": 42,
+  "roundtrip_fail": 0,
+  "failures": [],
+  "results": [
+    {
+      "name": "varint_0",
+      "kind": "varint",
+      "size": 1,
+      "roundtrip": true
+    },
+    {
+      "name": "varint_1",
+      "kind": "varint",
+      "size": 1,
+      "roundtrip": true
+    },
+    {
+      "name": "varint_252",
+      "kind": "varint",
+      "size": 1,
+      "roundtrip": true
+    },
+    {
+      "name": "varint_253",
+      "kind": "varint",
+      "size": 3,
+      "roundtrip": true
+    },
+    {
+      "name": "varint_254",
+      "kind": "varint",
+      "size": 3,
+      "roundtrip": true
+    },
+    {
+      "name": "varint_255",
+      "kind": "varint",
+      "size": 3,
+      "roundtrip": true
+    },
+    {
+      "name": "varint_65535",
+      "kind": "varint",
+      "size": 3,
+      "roundtrip": true
+    },
+    {
+      "name": "varint_65536",
+      "kind": "varint",
+      "size": 5,
+      "roundtrip": true
+    },
+    {
+      "name": "varint_u32_max",
+      "kind": "varint",
+      "size": 5,
+      "roundtrip": true
+    },
+    {
+      "name": "varint_2pow32",
+      "kind": "varint",
+      "size": 9,
+      "roundtrip": true
+    },
+    {
+      "name": "varint_i64_max",
+      "kind": "varint",
+      "size": 9,
+      "roundtrip": true
+    },
+    {
+      "name": "varbytes_len_0",
+      "kind": "varbytes",
+      "size": 1,
+      "roundtrip": true
+    },
+    {
+      "name": "varbytes_len_1",
+      "kind": "varbytes",
+      "size": 2,
+      "roundtrip": true
+    },
+    {
+      "name": "varbytes_len_251",
+      "kind": "varbytes",
+      "size": 252,
+      "roundtrip": true
+    },
+    {
+      "name": "varbytes_len_252",
+      "kind": "varbytes",
+      "size": 253,
+      "roundtrip": true
+    },
+    {
+      "name": "varbytes_len_253",
+      "kind": "varbytes",
+      "size": 256,
+      "roundtrip": true
+    },
+    {
+      "name": "varbytes_len_254",
+      "kind": "varbytes",
+      "size": 257,
+      "roundtrip": true
+    },
+    {
+      "name": "varbytes_len_255",
+      "kind": "varbytes",
+      "size": 258,
+      "roundtrip": true
+    },
+    {
+      "name": "varbytes_len_65534",
+      "kind": "varbytes",
+      "size": 65537,
+      "roundtrip": true
+    },
+    {
+      "name": "varbytes_len_65535",
+      "kind": "varbytes",
+      "size": 65538,
+      "roundtrip": true
+    },
+    {
+      "name": "header_basic",
+      "kind": "header",
+      "size": 116,
+      "roundtrip": true
+    },
+    {
+      "name": "header_empty_witness",
+      "kind": "header",
+      "size": 112,
+      "roundtrip": true
+    },
+    {
+      "name": "header_witness_scripts_len_1",
+      "kind": "header",
+      "size": 114,
+      "roundtrip": true
+    },
+    {
+      "name": "header_witness_scripts_len_252",
+      "kind": "header",
+      "size": 616,
+      "roundtrip": true
+    },
+    {
+      "name": "header_witness_scripts_len_253",
+      "kind": "header",
+      "size": 622,
+      "roundtrip": true
+    },
+    {
+      "name": "header_witness_scripts_len_254",
+      "kind": "header",
+      "size": 624,
+      "roundtrip": true
+    },
+    {
+      "name": "header_witness_scripts_len_1024",
+      "kind": "header",
+      "size": 2164,
+      "roundtrip": true
+    },
+    {
+      "name": "tx_minimal",
+      "kind": "transaction",
+      "size": 53,
+      "roundtrip": true
+    },
+    {
+      "name": "tx_multiple_signers_witnesses",
+      "kind": "transaction",
+      "size": 122,
+      "roundtrip": true
+    },
+    {
+      "name": "tx_attributes_all",
+      "kind": "transaction",
+      "size": 108,
+      "roundtrip": true
+    },
+    {
+      "name": "tx_signers_custom_scopes",
+      "kind": "transaction",
+      "size": 263,
+      "roundtrip": true
+    },
+    {
+      "name": "tx_script_len_1",
+      "kind": "transaction",
+      "size": 53,
+      "roundtrip": true
+    },
+    {
+      "name": "tx_script_len_252",
+      "kind": "transaction",
+      "size": 304,
+      "roundtrip": true
+    },
+    {
+      "name": "tx_script_len_253",
+      "kind": "transaction",
+      "size": 307,
+      "roundtrip": true
+    },
+    {
+      "name": "tx_script_len_254",
+      "kind": "transaction",
+      "size": 308,
+      "roundtrip": true
+    },
+    {
+      "name": "tx_script_len_65535",
+      "kind": "transaction",
+      "size": 65589,
+      "roundtrip": true
+    },
+    {
+      "name": "block_empty_tx",
+      "kind": "block",
+      "size": 115,
+      "roundtrip": true
+    },
+    {
+      "name": "block_single_tx",
+      "kind": "block",
+      "size": 171,
+      "roundtrip": true
+    },
+    {
+      "name": "block_three_tx",
+      "kind": "block",
+      "size": 283,
+      "roundtrip": true
+    },
+    {
+      "name": "block_252_tx",
+      "kind": "block",
+      "size": 14227,
+      "roundtrip": true
+    },
+    {
+      "name": "block_253_tx",
+      "kind": "block",
+      "size": 14285,
+      "roundtrip": true
+    },
+    {
+      "name": "block_256_tx",
+      "kind": "block",
+      "size": 14453,
+      "roundtrip": true
+    }
+  ]
+}

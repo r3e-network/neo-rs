@@ -1,0 +1,6 @@
+Bounded quorum abstraction only; n=3/f=1 exceeds configured fault tolerance.
+tlc_neo_4f1: PASS (complete bounded search)
+tlc_neo_7f2: PASS (complete bounded search)
+tlc_neo_3f1_M3: PASS (complete bounded search)
+nonvacuity: PASS (NoFinalization counterexample, expected TLC exit 12)
+overall_exit: 0

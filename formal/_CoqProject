@@ -1,0 +1,4 @@
+# Verified subset on Coq 8.18.0 (Ubuntu 24.04).
+# Legacy files are inventoried separately by ci/check_coq.py --all.
+-Q coqlib CoqLib
+coqlib/rw_set_minimal.v

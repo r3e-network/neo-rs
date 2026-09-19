@@ -1,0 +1,482 @@
+{
+  "toolchain": "The Coq Proof Assistant, version 8.18.0\ncompiled with OCaml 4.14.1\n",
+  "mode": "legacy-inventory",
+  "results": [
+    {
+      "source": "formal/coqlib/abi_encoding_refinement.v",
+      "sha256": "5a725197456cf083724264a08c3027cec8f46a45d74e91f3070408b11ea5bac0",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 5,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/abi_encoding_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/block_transaction_roundtrip_refinement.v",
+      "sha256": "dd612c646b2543d4889870f5e31cb13b11ee3fa98cbc676e3823945417aec01a",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 3,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/block_transaction_roundtrip_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/block_validation_refinement.v",
+      "sha256": "378382371be75c79f0cd776ce4781e8ee8716f13739509fb721adb407508ee83",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 4,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/block_validation_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/block_validation_roundtrip_refinement.v",
+      "sha256": "4f96befbe8af1a01c237f5a60b6f85fc9e2f19a0159fd3801c763cda19b073c9",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 8,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/block_validation_roundtrip_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/change_view_message_refinement.v",
+      "sha256": "45419357e06c2f996b7c0e7a2bb7b6dfcaa248e0e35f26149bd83fc9dc875d0c",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 1,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/change_view_message_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/commit_message_refinement.v",
+      "sha256": "ab3af92faa51ddc9f3d3398983177ffefd21b8e8afb21217f4ab47b266a5c7f3",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/commit_message_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/commit_response_refinement.v",
+      "sha256": "14900db91508bfc821bbb73121185e3ea15fc1774314e1d046856d3a645c675a",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/commit_response_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/consensus_roundtrip_refinement.v",
+      "sha256": "359cbf9caf120c4baa5388ab888579495bc494f885412cfac82de2f230f74278",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/consensus_roundtrip_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/crypto_hash_refinement.v",
+      "sha256": "127f46234db3df220080bbc12ca876ef8cbe41242e4df62fa8624725c7688b3d",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 7,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/crypto_hash_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/example_proof.v",
+      "sha256": "0f4c5e437b8950e62030df7658edd66c8957d8678916aaa5b2e4914d74c32cca",
+      "compile_exit": 0,
+      "kernel_exit": 0,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/example_proof.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/gas_price_refinement.v",
+      "sha256": "d3ca64d90ba4a4cca6bb682662570ba64d47c7f7babeacbfd0d55cc4caac997a",
+      "compile_exit": 0,
+      "kernel_exit": 0,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/gas_price_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/mempool_validation_refinement.v",
+      "sha256": "675481e97e50b39d2a3a5791e86c05f224f9f55071cb806248e84af0b9c6b006",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 9,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/mempool_validation_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/merkle_tree_refinement.v",
+      "sha256": "364bc307d374cf663f7e66eb1c4109ec8b61f94a4322e20ecfa42de31598fb02",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 1,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/merkle_tree_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/mpt_cache_cleanup_refinement.v",
+      "sha256": "455bb006beb973bb731235edc222255b15f34a60fedd73c6c995b5706ab3222e",
+      "compile_exit": 0,
+      "kernel_exit": 0,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/mpt_cache_cleanup_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/multisig_depth_refinement.v",
+      "sha256": "603e98b407498d4adf3b47c542504f96f196c9cc230d514615aa8a14d8f391df",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 5,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/multisig_depth_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/multisig_validation_refinement.v",
+      "sha256": "4c8b1aae2d90f2d1fb44f4301aca77f13588c940f634286d8c6e3a5830855f19",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 4,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/multisig_validation_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/opcode_price_full_256.v",
+      "sha256": "7ec12730daf73e3ccdc0ba6ac5a141cc96d12d861c9ffa6675055c7925a38385",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/opcode_price_full_256.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/opcode_price_refinement.v",
+      "sha256": "6158ac32ffe8d3eafa51210f269fb34ec45e07d8494b4da422f5ac05f22ed342",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/opcode_price_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/oracle_response_refinement.v",
+      "sha256": "4aec7b5a49efb1863636ce7b90a4c7f070d43eb716fef79cb6777f2058235428",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/oracle_response_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/parallel_execution_safety_refinement.v",
+      "sha256": "1c1c6a6628b1558912b34b6e4b0dcfac9e904b0ab97bb0c7a1509a315cdae4de",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 5,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/parallel_execution_safety_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/prepare_request_refinement.v",
+      "sha256": "65aaba067171db1a7d1010f1906e3207e65031b37273193135a793a29cc63e0a",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 1,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/prepare_request_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/prepare_response_refinement.v",
+      "sha256": "2a49a8d07572b1604b3cfa8f5fc1e3911dd30cf3b6be9182d2b94e53ff4c45d1",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 2,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/prepare_response_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/rw_set_minimal.v",
+      "sha256": "d1e6fd997e1a4cf7eb0b213badfd6297b6b20db6f3f63ad071e178e8cc864272",
+      "compile_exit": 0,
+      "kernel_exit": 0,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/rw_set_minimal.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/serialization_roundtrip_refinement.v",
+      "sha256": "23c323529e5060cc0bd756eed9acba7bc8e743fd3cbfee08564fd4e44d656abb",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/serialization_roundtrip_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/smart_contract_validation_refinement.v",
+      "sha256": "3b11e72838ef167c2b1d67a88057fbaee6d2fe340461b9a7cc01ff27314231c7",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/smart_contract_validation_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/state_root_refinement.v",
+      "sha256": "d5fa642705b8e9b7ec805eb40c81ad812c10288abe3f144df4f5f5202671faf7",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 6,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/state_root_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/tx_attribute_enum_refinement.v",
+      "sha256": "439b60d6fd9c20319d8c3635c8ec287e300f3e00549e089a1aff0b97162ca200",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/tx_attribute_enum_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/uint_refinement.v",
+      "sha256": "aef66d1994c9de31eeb42fe2f531aa7891d725323a21801b9095ebdb0349e520",
+      "compile_exit": 0,
+      "kernel_exit": 0,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/uint_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/varint_encoding_refinement.v",
+      "sha256": "ef3f917619eea77f2dd7f49192abb35db6e604b7d5bb75d8cb5eb69e28432313",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 5,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/varint_encoding_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/varint_roundtrip_refinement.v",
+      "sha256": "e2612ea7cb5d529c25f2bf3e9ceab97d251cd1365f78359330c5afd3a6d74ae0",
+      "compile_exit": 0,
+      "kernel_exit": 0,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/varint_roundtrip_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/viewchange_message_refinement.v",
+      "sha256": "431cdcdf0e84255f2d5d98646cfcabf9c32ca89f1b65332e2eb36148358a0cdf",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/viewchange_message_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/wire_format_refinement.v",
+      "sha256": "a562b983f626b02adbc71d2fd00c36d2338b35a28d109cd359501a746bfba52d",
+      "compile_exit": 0,
+      "kernel_exit": 0,
+      "admission_or_assumption_markers": 0,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/wire_format_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/witness_script_hash_refinement.v",
+      "sha256": "66156cfb2a639a22ba8db5fab240b614c220ab79f2f8f3d4920a9bd59785e7e8",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 9,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/witness_script_hash_refinement.v"
+      ]
+    },
+    {
+      "source": "formal/coqlib/witness_validation_refinement.v",
+      "sha256": "7e1d2f6a341d458b644f496a8986a1e9797c6c3c16d1ca3fa3a0c669f5aa7d2c",
+      "compile_exit": 1,
+      "kernel_exit": null,
+      "admission_or_assumption_markers": 12,
+      "command": [
+        "coqc",
+        "-Q",
+        "coqlib",
+        "CoqLib",
+        "coqlib/witness_validation_refinement.v"
+      ]
+    }
+  ]
+}

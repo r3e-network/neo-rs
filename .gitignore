@@ -123,3 +123,11 @@ neo-csharp-latest/
 
 # Cache for C# parity sources fetched by scripts/verify-native-parity.py
 /.cache/
+
+# Coq build artifacts (regenerate from .v sources; never commit)
+formal/**/*.vo
+formal/**/*.vok
+formal/**/*.vos
+formal/**/*.glob
+formal/**/.lia.cache
+formal/**/.mimosa/

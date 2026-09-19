@@ -1,0 +1,38 @@
+name: Coq evidence
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'formal/**'
+      - 'neo-vm/src/runtime/rw_set_tracker.rs'
+      - 'neo-vm/tests/rw_set_refinement_tests.rs'
+      - '.github/workflows/coq-evidence.yml'
+permissions:
+  contents: read
+jobs:
+  verified-subset:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Coq 8.18 toolchain
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends coq
+      - name: Compile and kernel-check verified subset
+        run: python3 formal/ci/check_coq.py --output reports/formal/ci-verified
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coq-verified-evidence
+          path: reports/formal/ci-verified
+  legacy-inventory:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Coq toolchain
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends coq
+      - name: Check every legacy model (expected red until repaired)
+        run: python3 formal/ci/check_coq.py --all --output reports/formal/ci-legacy
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coq-legacy-evidence
+          path: reports/formal/ci-legacy

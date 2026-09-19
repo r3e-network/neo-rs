@@ -1,0 +1,142 @@
+name: Formal Verification (fail-closed)
+
+# Required, blocking pipeline for the formal verification assets that exist in
+# this repository:
+#   - Coq: every file under formal/coqlib must compile and kernel-check with
+#     zero Admitted/Axiom/Parameter markers (formal/ci/check_coq.py --all).
+#     This gate is REQUIRED: any admission, compile, or kernel failure fails
+#     the run. No `|| true`, no skips.
+#   - TLC: the bounded quorum-abstraction model neo_dbft_complete.tla in its
+#     existing safe configurations, plus a nonvacuity witness that must fire
+#     (formal/ci/run_tlc_ci.sh fails closed on any missing config, tool, or
+#     unverifiable output).
+# There is deliberately no Krilla job: no such tool exists in this repo and
+# the previous placeholder job only echoed success.
+# NOTE: the checked-in model is a bounded quorum abstraction (single height,
+# single view, honest votes globally visible), not the full Neo dBFT protocol.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TLA2TOOLS_VERSION: v1.7.4
+  # SHA-256 measured from the existing local .tools/tla2tools.jar.
+  # Manifest: v1.7.4, revision 5a47802; size 2,274,532 bytes matches the
+  # official release API. That API has no digest for this old release:
+  # upstream byte identity was NOT independently verified by downloading.
+  # CI fails closed if the pinned official asset differs from this hash.
+  TLA2TOOLS_SHA256: 936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
+
+jobs:
+  # ------------------------------------------------------------------
+  # REQUIRED gate 1: full Coq suite (inventory + compile + coqchk).
+  # check_coq.py --all exits nonzero on any compile error, kernel-check
+  # failure, or Admitted/admit/Axiom/Parameter marker in any
+  # formal/coqlib/*.v file. Its exit status is the step status.
+  # ------------------------------------------------------------------
+  coq-full:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Coq toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends coq
+          coqc --version
+
+      - name: Full Coq compile + kernel check (fail on any admission)
+        run: python3 formal/ci/check_coq.py --all --output reports/formal/full-run
+
+      - name: Upload Coq evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coq-full-evidence
+          path: reports/formal/full-run
+          retention-days: 7
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # REQUIRED gate 2: TLC bounded model checking with nonvacuity witness.
+  # The driver script fails closed; pinned tool download is checksum
+  # verified before use.
+  # ------------------------------------------------------------------
+  tlc-bounded:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TLA2TOOLS_JAR: ${{ github.workspace }}/.tools/tla2tools.jar
+      TLC_WORKERS: '2'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java for TLC
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Download tla2tools.jar (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          mkdir -p .tools
+          url="https://github.com/tlaplus/tlaplus/releases/download/${TLA2TOOLS_VERSION}/tla2tools.jar"
+          echo "Downloading $url"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output .tools/tla2tools.jar "$url"
+          echo "expected sha256: $TLA2TOOLS_SHA256"
+          actual="$(sha256sum .tools/tla2tools.jar | cut -d' ' -f1)"
+          echo "actual   sha256: $actual"
+          if [ "$actual" != "$TLA2TOOLS_SHA256" ]; then
+            echo "FATAL: tla2tools.jar checksum mismatch" >&2
+            exit 1
+          fi
+
+      - name: Test fail-closed TLC driver
+        run: bash formal/ci/test_run_tlc_ci.sh
+
+      - name: Fail-closed TLC runs (safe configs + nonvacuity witness)
+        run: bash formal/ci/run_tlc_ci.sh
+
+      - name: Upload TLC evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tlc-bounded-evidence
+          path: reports/tlc
+          retention-days: 7
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Final required gate: both verification jobs must have succeeded.
+  # ------------------------------------------------------------------
+  verification-gate:
+    runs-on: ubuntu-24.04
+    needs: [coq-full, tlc-bounded]
+    if: always()
+    steps:
+      - name: Assert both verification jobs passed
+        run: |
+          set -euo pipefail
+          echo "coq-full result:    ${{ needs.coq-full.result }}"
+          echo "tlc-bounded result: ${{ needs.tlc-bounded.result }}"
+          if [ "${{ needs.coq-full.result }}" != "success" ] \
+            || [ "${{ needs.tlc-bounded.result }}" != "success" ]; then
+            echo "Formal verification gate failed: every job must succeed" >&2
+            exit 1
+          fi

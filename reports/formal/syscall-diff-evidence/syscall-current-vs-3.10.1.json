@@ -1,0 +1,12 @@
+{
+  "left_impl": "rust-neo-rs-application-engine",
+  "right_impl": "csharp-neo-3.10.1-application-engine",
+  "summary": {
+    "total": 14,
+    "matched": 14,
+    "different": 0,
+    "missing_left": 0,
+    "missing_right": 0
+  },
+  "differences": []
+}

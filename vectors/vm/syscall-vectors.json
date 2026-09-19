@@ -1,0 +1,91 @@
+{
+ "description": "Syscall differential-execution vectors (hosted ApplicationEngine). Requires pinned engine env: network=0, address_version=53, TriggerType=Application, persisting-block timestamp=1700000000.",
+ "generator": "scripts/gen-syscall-vectors.py",
+ "baseline": "C# neo 3.10.1 / neo-rs",
+ "vectors": [
+  {
+   "name": "rs.platform",
+   "group": "runtime",
+   "note": "platform -> 'NEO' ByteString",
+   "script": "41b279fcf640"
+  },
+  {
+   "name": "rs.network",
+   "group": "runtime",
+   "note": "network -> Integer (both impls default network=0)",
+   "script": "41c5fba0e040"
+  },
+  {
+   "name": "rs.address_version",
+   "group": "runtime",
+   "note": "address_version -> Integer 53 (both impls default)",
+   "script": "414c4992dc40"
+  },
+  {
+   "name": "rs.trigger",
+   "group": "runtime",
+   "note": "trigger -> Integer 64 (Application)",
+   "script": "41e97d38a040"
+  },
+  {
+   "name": "rs.invocation_counter",
+   "group": "runtime",
+   "note": "invocation counter -> 1 for entry script",
+   "script": "418427114340"
+  },
+  {
+   "name": "rs.time",
+   "group": "runtime",
+   "note": "persisting-block timestamp -> Integer 1700000000",
+   "script": "41b7c3880340"
+  },
+  {
+   "name": "rs.calling_hash",
+   "group": "runtime",
+   "note": "calling script hash -> Null at entry context",
+   "script": "4139536e3c40"
+  },
+  {
+   "name": "rs.executing_hash",
+   "group": "runtime",
+   "note": "executing script hash -> script hash of loaded bytes",
+   "script": "41dbfea87440"
+  },
+  {
+   "name": "rs.entry_hash",
+   "group": "runtime",
+   "note": "entry script hash -> script hash of loaded bytes",
+   "script": "41f9b4e23840"
+  },
+  {
+   "name": "crypto.checksig.false",
+   "group": "crypto",
+   "note": "valid pubkey + zero signature -> false (message-independent)",
+   "script": "0c40000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c21024b817ef37f2fc3d4a33fe36687e592d9f30fe24b3e28187dc8f12b3b3b2b839e4156e7b32740"
+  },
+  {
+   "name": "crypto.checksig.invalid_pubkey_len",
+   "group": "crypto",
+   "note": "70-byte pubkey -> FAULT (invalid public key length)",
+   "script": "0c40000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c46000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004156e7b32740"
+  },
+  {
+   "name": "crypto.checkmultisig.empty_pubkeys",
+   "group": "crypto",
+   "note": "empty pubkey array -> FAULT (invalid public key count)",
+   "script": "0c400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011c0c2419ed0dc3a40"
+  },
+  {
+   "name": "crypto.checkmultisig.invalid_sig",
+   "group": "crypto",
+   "note": "2-of-2 with all-zero signatures -> false",
+   "script": "0c40000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000012c00c21024b817ef37f2fc3d4a33fe36687e592d9f30fe24b3e28187dc8f12b3b3b2b839e0c21024b817ef37f2fc3d4a33fe36687e592d9f30fe24b3e28187dc8f12b3b3b2b839e12c0419ed0dc3a40"
+  },
+  {
+   "name": "cw.not_signer",
+   "group": "witness",
+   "note": "non-signer 20-byte hash -> false",
+   "script": "0c14000000000000000000000000000000000000000041f827ec8c40"
+  }
+ ]
+}

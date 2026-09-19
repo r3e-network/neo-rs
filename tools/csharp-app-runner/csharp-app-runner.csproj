@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>csharp-app-runner</AssemblyName>
+    <RootNamespace>CSharpAppRunner</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- This harness is audit tooling, not shipped code: keep warnings quiet. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pinned to the audit baseline. Do NOT float this version. -->
+    <PackageReference Include="Neo.VM" Version="3.10.1" />
+    <PackageReference Include="Neo" Version="3.10.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

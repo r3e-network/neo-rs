@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "purpose": "Coq↔TLA+ 桥单一事实来源：dBFT quorum 与 varint 语义常量。只对协议规格层数值/常量语义做对应，不做程序级精化。",
+    "rust_spec_dBFT": "neo-consensus/src/context/mod.rs: f=(n-1)/3, m=n-f",
+    "rust_spec_varint": "neo-io/src/var_int.rs: 253/65535/4294967295 分档"
+  },
+  "dBFT": {
+    "n": 7,
+    "expected_f": 2,
+    "expected_M": 5
+  },
+  "varint": {
+    "samples": [
+      {"value": 0, "len": 1},
+      {"value": 252, "len": 1},
+      {"value": 253, "len": 3},
+      {"value": 65535, "len": 3},
+      {"value": 65536, "len": 5},
+      {"value": 4294967295, "len": 5},
+      {"value": 4294967296, "len": 9}
+    ]
+  }
+}
