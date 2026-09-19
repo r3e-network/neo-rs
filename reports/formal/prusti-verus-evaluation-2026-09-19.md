@@ -152,6 +152,27 @@ exec fn charge_gas(available: i64, cost: i64) -> (result: i64)
 
 ---
 
+## 4.3 batch4 / verus3 扩展与第三个 Prusti 限制（2026-09-20 追加）
+
+Phase A 收尾批次，覆盖 neo-crypto 编码长度族与 Base58Check 地址校验（均实测 exit 0）：
+
+- **`pilot_batch4.rs`（Prusti，29 items 全绿）**：Hex=2n（含偶性/单调性，u64::MAX/2 溢出守卫）、Base64 标准 padded=4·⌈n/3⌉（4 的倍数、单调、守卫收紧至 n≤13835058055282163707）、URL no-pad=padded−pad（pad=(3−n%3)%3 全域安全）、地址 payload 校验顺序镜像（长度 21 先于版本 0x35，含优先级引理）。
+- **`pilot_verus3.rs`（Verus，19 verified, 0 errors）**：同族属性 spec/proof/exec 三层交叉验证——int 域参数化引理、`b64_fits` 守卫（`usize::MAX` 算术式，绕开 Verus usize 字面量 >2^63−1 解析拒绝）、布局恒等 padded=nopad+pad、地址校验优先级。
+
+**第三个 Prusti 0.2.2 硬限制（最小探针坐实）**：`#[pure]` 函数体引用 `const` 项即 ICE（同一 `interface.rs:255`）；规避=纯函数内一律字面量（体与 ensures 皆然），const 仅作文档。已修订 §4.1 表：
+
+| 限制 | 触发 | 规避 |
+|---|---|---|
+| `Shl` 不支持 | `1 << N` | 字面量/乘法 |
+| 纯函数内 `match` | 参数化纯函数 match（`_` 兜底同样） | if/else 链 |
+| 纯函数体引用 `const` | 体/ensures 引用 const 项 | 全字面量化 |
+
+另两点实证经验：① Prusti/Verus 都会查算术溢出——凡乘/加函数体需 `requires` 上界（如 2n 需 n≤MAX/2，4·⌈n/3⌉ 需 n≤13835058055282163707）；② Verus 规范模式算术是数学 int，spec fn 返回 usize 遇 `*`/`-` 会类型错——spec 返回 `int` + exec 侧 `as int` 对齐是标准写法；Verus usize 字面量解析上限 2^63−1，大界用 `usize::MAX` 算术式表达。
+
+累计：**Prusti 87 items**（14+8+12+24+29）+ **Verus 39 items**（7+13+19）= **126 个纯函数规格项**，覆盖 271 条盘点的约 46%。
+
+---
+
 ## 5. 选型建议
 
 **推荐：Verus 作为「纯函数 + 数值/编码/序列化不变式」主力层**，理由：
