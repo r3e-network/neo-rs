@@ -141,6 +141,17 @@ exec fn charge_gas(available: i64, cost: i64) -> (result: i64)
 
 ---
 
+## 4.2 batch3 / verus2 扩展（2026-09-20 追加）
+
+继续向「~200 纯函数属性」目标推进，新增两个文件（均镜像 `neo-io/src/var_int.rs` 真实实现，实测 exit 0）：
+
+- **`pilot_batch3.rs`（Prusti，24 items 全绿）**：varint 分档边界（0/252/253/65535/65536/4294967295/4294967296/u64::MAX → 1/3/5/9）、**分档单调性定理**（a<=b ⇒ encoded_len(a)<=encoded_len(b)）、`read_var_int_prefix` 尺寸（253→3/254→5/255→9/其余→1）、`write_var_bytes` 布局恒等（total = encoded_len(len)+len，带 usize 溢出守卫）、前缀宽度与编码器分档一致性。遵循 §4.1 限制：全 if/else、全字面量。
+- **`pilot_verus2.rs`（Verus，13 verified, 0 errors）**：同一 varint 族的 spec/proof/exec 三层交叉验证——参数化分档引理（tier_single/u16/u32/u64 对任意区间内值成立，强于枚举 spot）、单调性、前缀-编码器一致性、`var_bytes_total_len` 的 **u64 溢出推理**（requires len <= MAX-9 ⇒ header+len 不溢出）。
+
+累计：**Prusti 58 items**（14+8+12+24）+ **Verus 20 items**（7+13）= **78 个纯函数规格项**，对 271 条盘点覆盖约 29%。两工具对同一族属性给出一致结论，互为印证。
+
+---
+
 ## 5. 选型建议
 
 **推荐：Verus 作为「纯函数 + 数值/编码/序列化不变式」主力层**，理由：
