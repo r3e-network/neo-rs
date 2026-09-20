@@ -131,3 +131,7 @@ formal/**/*.vos
 formal/**/*.glob
 formal/**/.lia.cache
 formal/**/.mimosa/
+
+# C# differential runner build artifacts
+/tools/csharp-*/bin/
+/tools/csharp-*/obj/
