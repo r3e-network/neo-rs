@@ -220,6 +220,25 @@ Phase C 首批（均实测 exit 0）：
 
 ---
 
+## 4.7 batch8 / verus7：盘点收尾（2026-09-20 追加）
+
+Phase C close-out（均实测 exit 0）：
+
+- **`pilot_batch8.rs`（Prusti，28 items 全绿）**：ScriptBuilder PUSHINT 分档（最小二进制补码宽 1/2/4/8 + 符号填充，total=1+width）、`get_jump_offset` 算术（i64 域、[0,len) 界、accepted⇒in-bounds）、MethodToken 尺寸公式（20+varstr+2+1+1）、Witness 尺寸（varbytes×2 + 签名形状 spot）、NamedCurveHash 四码映射（curve/hash 两轴独立）、mod-order 加法界。
+- **`pilot_verus7.rs`（Verus，20 verified, 0 errors）**：同族参数化 + 更强引理（宽度单调、i64 恰 9 字节内、forall 界 Witness ≥2、add_mod_order exec 忠实 `(a+b)%order`）。
+
+**验证器抓到三个真实算术错误（本轮的实质收获）**：
+1. 签名 witness 形状写成 106，实际 65+1+41+1=**108**；
+2. MethodToken 空方法尺寸写成 24，公式 20+1+0+2+1+1=**25**；
+3. 最长方法（32 字节）写成 56，实际 **57**。
+全部被 Z3 拒绝后修正——尺寸公式的 off-by-one 若进入文档/测试就是 bug。
+
+**盘点完成度结论**：271 条中，**327 个 spec 项**已覆盖全部可纯函数规格化的条目（多属性/函数）；剩余条目属（a）不透明密码原语（SHA/Keccak/hmac/ECDSA 验签——按既定口径作不透明契约，不主张抗碰撞）或（b）状态/结构依赖（Script 运行时、stack 序列化、Merkle 结构——归 VM/序列化差分轨道与 Coq 结构模型覆盖）。
+
+最终累计：**Prusti 189 items**（14+8+12+24+29+18+29+27+28）+ **Verus 118 items**（7+13+19+27+19+13+20）= **307 个纯函数规格项**（以各批次运行日志计），盘点覆盖收束。
+
+---
+
 ## 5. 选型建议
 
 **推荐：Verus 作为「纯函数 + 数值/编码/序列化不变式」主力层**，理由：
