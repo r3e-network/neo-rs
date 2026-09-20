@@ -1,0 +1,95 @@
+{
+  "total": 9,
+  "matched": 9,
+  "mismatched": 0,
+  "results": [
+    {
+      "name": "version_payload_basic",
+      "kind": "version",
+      "expected": "4f454f000000000000f15365785634120f2f6e656f2d72733a302e31372e302f02015d281064000000",
+      "actual": "4f454f000000000000f15365785634120f2f6e656f2d72733a302e31372e302f02015d281064000000",
+      "match": true
+    },
+    {
+      "name": "ping_payload",
+      "kind": "ping",
+      "expected": "9210000001f15365efbeadde",
+      "actual": "9210000001f15365efbeadde",
+      "match": true
+    },
+    {
+      "name": "inv_payload_tx",
+      "kind": "inv",
+      "expected": "2b03010101010101010101010101010101010101010101010101010101010101010102020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303",
+      "actual": "2b03010101010101010101010101010101010101010101010101010101010101010102020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303",
+      "match": true
+    },
+    {
+      "name": "getblocks_payload",
+      "kind": "getblocks",
+      "expected": "0404040404040404040404040404040404040404040404040404040404040404ffff",
+      "actual": "0404040404040404040404040404040404040404040404040404040404040404ffff",
+      "match": true
+    },
+    {
+      "name": "getblockbyindex_payload",
+      "kind": "getblockbyindex",
+      "expected": "e80300006400",
+      "actual": "e80300006400",
+      "match": true
+    },
+    {
+      "name": "addr_payload",
+      "kind": "addr",
+      "expected": "0202f1536500000000000000000000ffff7f00000101015d2803f1536520010db8000000000000000000000001011007000000",
+      "actual": "0202f1536500000000000000000000ffff7f00000101015d2803f1536520010db8000000000000000000000001011007000000",
+      "match": true
+    },
+    {
+      "name": "filterload_payload",
+      "kind": "filterload",
+      "expected": "040102030403aa55aa55",
+      "actual": "040102030403aa55aa55",
+      "match": true
+    },
+    {
+      "name": "filteradd_payload",
+      "kind": "filteradd",
+      "expected": "0caaaaaaaaaaaaaaaaaaaaaaaa",
+      "actual": "0caaaaaaaaaaaaaaaaaaaaaaaa",
+      "match": true
+    },
+    {
+      "name": "message_frame_ping",
+      "kind": "message",
+      "expected": "00180c9210000001f15365efbeadde",
+      "actual": "00180c9210000001f15365efbeadde",
+      "match": true
+    }
+  ],
+  "command_table": {
+    "Version": 0,
+    "Verack": 1,
+    "GetAddr": 16,
+    "Addr": 17,
+    "Ping": 24,
+    "Pong": 25,
+    "GetHeaders": 32,
+    "Headers": 33,
+    "GetBlocks": 36,
+    "Mempool": 37,
+    "Inv": 39,
+    "GetData": 40,
+    "GetBlockByIndex": 41,
+    "NotFound": 42,
+    "Transaction": 43,
+    "Block": 44,
+    "Extensible": 46,
+    "Reject": 47,
+    "FilterLoad": 48,
+    "FilterAdd": 49,
+    "FilterClear": 50,
+    "MerkleBlock": 56,
+    "Alert": 64
+  }
+}

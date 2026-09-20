@@ -1,0 +1,72 @@
+{
+  "vectors": [
+    {
+      "name": "version_payload_basic",
+      "kind": "version",
+      "bytes": "4f454f000000000000f15365785634120f2f6e656f2d72733a302e31372e302f02015d281064000000"
+    },
+    {
+      "name": "ping_payload",
+      "kind": "ping",
+      "bytes": "9210000001f15365efbeadde"
+    },
+    {
+      "name": "inv_payload_tx",
+      "kind": "inv",
+      "bytes": "2b03010101010101010101010101010101010101010101010101010101010101010102020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303"
+    },
+    {
+      "name": "getblocks_payload",
+      "kind": "getblocks",
+      "bytes": "0404040404040404040404040404040404040404040404040404040404040404ffff"
+    },
+    {
+      "name": "getblockbyindex_payload",
+      "kind": "getblockbyindex",
+      "bytes": "e80300006400"
+    },
+    {
+      "name": "addr_payload",
+      "kind": "addr",
+      "bytes": "0202f1536500000000000000000000ffff7f00000101015d2803f1536520010db8000000000000000000000001011007000000"
+    },
+    {
+      "name": "filterload_payload",
+      "kind": "filterload",
+      "bytes": "040102030403aa55aa55"
+    },
+    {
+      "name": "filteradd_payload",
+      "kind": "filteradd",
+      "bytes": "0caaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "message_frame_ping",
+      "kind": "message",
+      "bytes": "00180c9210000001f15365efbeadde"
+    }
+  ],
+  "command_table": {
+    "version": 0,
+    "verack": 1,
+    "getaddr": 16,
+    "addr": 17,
+    "ping": 24,
+    "pong": 25,
+    "getheaders": 32,
+    "headers": 33,
+    "getblocks": 36,
+    "mempool": 37,
+    "inv": 39,
+    "getdata": 40,
+    "getblkbyidx": 41,
+    "notfound": 42,
+    "extensible": 46,
+    "reject": 47,
+    "filterload": 48,
+    "filteradd": 49,
+    "filterclear": 50,
+    "merkleblock": 56,
+    "alert": 64
+  }
+}

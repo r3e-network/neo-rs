@@ -1,0 +1,9 @@
+{
+  "rust_total": 534,
+  "rust_verify_ok": 534,
+  "csharp_total": 534,
+  "csharp_agree": 534,
+  "both_verify": 534,
+  "signature_outcomes_agree": true,
+  "mismatched_signatures": []
+}

@@ -1,0 +1,15 @@
+{
+  "rust_vectors": 9,
+  "rust_roundtrip_pass": 30,
+  "rust_total": 30,
+  "csharp_total": 9,
+  "csharp_matched": 9,
+  "csharp_mismatched": 0,
+  "command_bytes_agree": true,
+  "command_mismatched": [],
+  "csharp_only_commands": [
+    "block",
+    "transaction"
+  ],
+  "byte_compatible": true
+}
