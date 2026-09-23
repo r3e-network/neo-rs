@@ -13,16 +13,22 @@
 | 签名原语 | Phase 2 | ✅ 完成 | 534 真实 MainNet 签名 vs C# 3.10.1（534/534 一致） |
 | 纯函数规格 | 既有 | ✅ 完成 | 307 项 Prusti 189 + Verus 118 |
 | Coq 模型 | 既有 | ✅ 完成 | 34/34 全绿门禁 |
-| dBFT 互操作冒烟 | Phase 3 | ⏸ 待运行时基建 | 需验证人钱包 + 多进程 + 存储隔离 |
+| dBFT 共识逻辑 | Phase 3a | ✅ 单元测试 | 114 测试（quorum/状态转换）+ Coq/TLA+ 模型 |
+| dBFT 多节点互操作 | Phase 3b | ⏸ 待运行时基建 | 需验证人钱包 + 多进程 + 存储隔离 |
 | RPC 读接口差分 | Phase 4 | ⏸ 待运行时基建 | 需起 RPC 服务对比返回 JSON 形状 |
 | 端到端状态根差分 | Phase 5 | ⏸ 长期轨道 | 需与 C# 节点并行同步比对状态根 |
 
 ## 后续轨道（需节点运行时工程）
 
-**Phase 3 — dBFT 私网冒烟**：dbft 服务已接线（`neo-node/src/consensus.rs` 的
-`DbftConsensusController` + `WalletConsensusSigner`，可经 RPC `startconsensus` 启动，
+**Phase 3a — dBFT 共识逻辑单元测试**：✅ **已完成**，neo-consensus 有 114 个单元测试
+（ConsensusContext quorum 计算、PrepareRequest/Response/Commit 处理、view change、recovery、
+状态转换）全绿，配合 Coq 34/34 形式化模型与 TLA+ 规约，**共识核心逻辑已验证**。
+
+**Phase 3b — dBFT 多节点私网互操作**：ConsensusService 已完整接线（`neo-node/src/consensus.rs`
+的 `DbftConsensusController` + `WalletConsensusSigner`，可经 RPC `startconsensus` 启动，
 `auto_start` 可配）。前置：验证人钱包（持有私钥、未锁定）、`ValidatorInfo`
-（index/pubkey/script_hash）、≥2 进程、存储隔离、统一网络配置。这是独立集成任务。
+（index/pubkey/script_hash）、≥2 进程、存储隔离、统一网络配置。这是独立集成任务，需要钱包
+文件生成/导入、多进程编排、P2P 网络时序验证。
 
 **Phase 4 — RPC 读接口差分**：返回 JSON 字段名/形状（`getblock` 等）需起 RPC 服务后与
 C# RpcServer 对比。离线无字节级可比（JSON-RPC 是标准 JSON）。
