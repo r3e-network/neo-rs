@@ -55,10 +55,12 @@ use std::sync::Arc;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::error::CoreResult;
-use crate::persistence::{store::Store, store_snapshot::StoreSnapshot, write_batch_buffer::WriteBatch};
+use crate::persistence::{
+    store::Store, store_snapshot::StoreSnapshot, write_batch_buffer::WriteBatch,
+};
 use crate::state_service::async_state_root::AsyncStateRootService;
-use crate::state_service::prefetch_worker::BlockPrefetchService;
 use crate::state_service::metrics_ops::get_pipeline_metrics;
+use crate::state_service::prefetch_worker::BlockPrefetchService;
 use neo_primitives::error::Error as PrimitiveError;
 
 /// Configuration for pipeline processing
@@ -167,7 +169,8 @@ impl<S: Store + 'static> AsyncBlockPipeline<S> {
         let snapshot = self.db.snapshot();
         let snapshot_for_mpt = snapshot.clone();
 
-        self.state_root_service.on_commit(height as u64, snapshot_for_mpt);
+        self.state_root_service
+            .on_commit(height as u64, snapshot_for_mpt);
 
         if self.metrics_enabled {
             get_pipeline_metrics().record_mpt_trigger(height);
@@ -209,12 +212,15 @@ impl<S: Store + 'static> AsyncBlockPipeline<S> {
         // Placeholder - would integrate with actual P2P network receiver
         // For demo, return dummy data
         Err(PrimitiveError::Custom(
-            "Network receiver not implemented".to_string()
+            "Network receiver not implemented".to_string(),
         ))
     }
 
     /// Execute transactions in block (call Wave 1 parallel executor)
-    fn execute_transactions_in_block(&self, _block_data: &prefetch_worker::PrefetchedBlockData) -> CoreResult<()> {
+    fn execute_transactions_in_block(
+        &self,
+        _block_data: &prefetch_worker::PrefetchedBlockData,
+    ) -> CoreResult<()> {
         // Placeholder - would call Wave 1 parallel execution engine
         // let parallel_executor = ParallelTxExecutor::new(...);
         // parallel_executor.execute_block(block_data)?;
@@ -292,7 +298,7 @@ pub struct PipelineMetrics {
 #[tokio::main]
 async fn main() {
     let db = Arc::new(RocksDbStore::open("data").unwrap());
-    
+
     let config = PipelineConfig {
         prefetch_count: 10,
         mpt_workers: 4,
@@ -319,7 +325,7 @@ mod tests {
     #[test]
     fn test_pipeline_creation() {
         let config = PipelineConfig::default();
-        
+
         // Can't easily instantiate without full DB setup
         assert!(config.prefetch_count == 10);
         assert!(config.mpt_workers == 4);

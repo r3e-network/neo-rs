@@ -115,6 +115,7 @@ curl -s http://localhost:10332 -H 'Content-Type: application/json' \
 
 | neo-rs Version | Neo N3 Version | C# Reference                                                                                      |
 | -------------- | -------------- | ------------------------------------------------------------------------------------------------- |
+| 0.18.0         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (presets & serialization validated) |
 | 0.17.0         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (presets & serialization validated) |
 | 0.4.x          | 3.8.2          | [`ede620e`](https://github.com/neo-project/neo/commit/ede620e5722c48e199a0f3f2ab482ae090c1b878) |
 

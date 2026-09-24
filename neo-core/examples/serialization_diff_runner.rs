@@ -17,20 +17,20 @@
 //! Exit code: 0 = all internal roundtrips passed, 1 = at least one failed.
 
 use neo_core::cryptography::{ECCurve, ECPoint, Secp256r1Crypto};
+use neo_core::neo_io::Serializable;
 use neo_core::network::p2p::payloads::{
     Block, Conflicts, Header, NotValidBefore, NotaryAssisted, OracleResponse, OracleResponseCode,
     Signer, Transaction, TransactionAttribute, Witness, WitnessCondition, WitnessRule,
     WitnessRuleAction,
 };
-use neo_core::neo_io::Serializable;
 use neo_core::{UInt160, UInt256, WitnessScope};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// A single differential-test vector.
 struct Vector {
     name: String,
     kind: &'static str, // "varint" | "varbytes" | "header" | "transaction" | "block"
-    value: Option<u64>,      // for varint
+    value: Option<u64>, // for varint
     payload: Option<Vec<u8>>, // for varbytes
     bytes: Vec<u8>,
 }
@@ -251,11 +251,7 @@ fn build_all() -> Vec<Vector> {
             ],
             Vec::new(),
             vec![0x02, 0x03, 0x04],
-            vec![
-                make_witness(1, 2),
-                make_witness(3, 4),
-                make_witness(5, 6),
-            ],
+            vec![make_witness(1, 2), make_witness(3, 4), make_witness(5, 6)],
         ),
         "transaction",
     ));
@@ -288,9 +284,7 @@ fn build_all() -> Vec<Vector> {
     // signer with custom scopes
     {
         let mut custom = make_signer(0x06, WitnessScope::CUSTOM_CONTRACTS);
-        custom
-            .allowed_contracts
-            .push(UInt160::from([0x07; 20]));
+        custom.allowed_contracts.push(UInt160::from([0x07; 20]));
         custom.allowed_contracts.push(UInt160::from([0x08; 20]));
 
         let privk = Secp256r1Crypto::generate_private_key();
@@ -301,33 +295,29 @@ fn build_all() -> Vec<Vector> {
         group_signer.allowed_groups.push(point);
 
         let mut rules_signer = make_signer(0x0A, WitnessScope::WITNESS_RULES);
-        rules_signer
-            .rules
-            .push(WitnessRule::new(
-                WitnessRuleAction::Allow,
-                WitnessCondition::Boolean { value: true },
-            ));
-        rules_signer
-            .rules
-            .push(WitnessRule::new(
-                WitnessRuleAction::Deny,
-                WitnessCondition::Boolean { value: false },
-            ));
+        rules_signer.rules.push(WitnessRule::new(
+            WitnessRuleAction::Allow,
+            WitnessCondition::Boolean { value: true },
+        ));
+        rules_signer.rules.push(WitnessRule::new(
+            WitnessRuleAction::Deny,
+            WitnessCondition::Boolean { value: false },
+        ));
 
         let mut combined = make_signer(
             0x0B,
-            WitnessScope::CUSTOM_CONTRACTS | WitnessScope::CUSTOM_GROUPS | WitnessScope::WITNESS_RULES,
+            WitnessScope::CUSTOM_CONTRACTS
+                | WitnessScope::CUSTOM_GROUPS
+                | WitnessScope::WITNESS_RULES,
         );
         combined.allowed_contracts.push(UInt160::from([0x0C; 20]));
         combined
             .allowed_groups
             .push(ECPoint::decode_compressed_with_curve(ECCurve::secp256r1(), &pubk).unwrap());
-        combined
-            .rules
-            .push(WitnessRule::new(
-                WitnessRuleAction::Allow,
-                WitnessCondition::Boolean { value: true },
-            ));
+        combined.rules.push(WitnessRule::new(
+            WitnessRuleAction::Allow,
+            WitnessCondition::Boolean { value: true },
+        ));
 
         v.push(roundtrip_check(
             "tx_signers_custom_scopes",
@@ -403,9 +393,9 @@ fn build_all() -> Vec<Vector> {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let vectors_path = args
-        .next()
-        .unwrap_or_else(|| panic!("usage: serialization_diff_runner <vectors.json> <rust_results.json>"));
+    let vectors_path = args.next().unwrap_or_else(|| {
+        panic!("usage: serialization_diff_runner <vectors.json> <rust_results.json>")
+    });
     let results_path = args.next().expect("missing results path");
 
     let vectors = build_all();
@@ -447,8 +437,11 @@ fn main() {
             Value::Object(obj)
         }).collect::<Vec<_>>()
     });
-    std::fs::write(&vectors_path, serde_json::to_string_pretty(&vectors_json).unwrap())
-        .expect("write vectors");
+    std::fs::write(
+        &vectors_path,
+        serde_json::to_string_pretty(&vectors_json).unwrap(),
+    )
+    .expect("write vectors");
 
     // Emit the Rust-side results (per-vector roundtrip status + summary).
     let summary = json!({
@@ -459,8 +452,11 @@ fn main() {
         "failures": failures,
         "results": results,
     });
-    std::fs::write(&results_path, serde_json::to_string_pretty(&summary).unwrap())
-        .expect("write rust results");
+    std::fs::write(
+        &results_path,
+        serde_json::to_string_pretty(&summary).unwrap(),
+    )
+    .expect("write rust results");
 
     if failures.is_empty() {
         println!(

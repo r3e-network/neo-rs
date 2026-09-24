@@ -109,6 +109,7 @@ impl TransactionManager {
 
     /// Add Signature
     /// Matches C# `AddSignature`
+    #[must_use]
     pub fn add_signature(&mut self, key: &KeyPair) -> Result<&mut Self, RpcError> {
         let public_point = key.get_public_key_point()?;
         let contract = Contract::create_signature_contract(public_point);
@@ -148,6 +149,7 @@ impl TransactionManager {
 
     /// Add witness with contract
     /// Matches C# `AddWitness`
+    #[must_use]
     pub fn add_witness(&mut self, contract: Contract) -> Result<&mut Self, RpcError> {
         if !self.context.add_contract(contract) {
             return Err("AddWitness failed!".into());
@@ -159,6 +161,7 @@ impl TransactionManager {
     /// Matches C# `AddWitness` with `UInt160`.
     ///
     /// Note: Contract lookup requires an RPC call; use [`Self::add_witness_with_hash_async`].
+    #[must_use]
     pub fn add_witness_with_hash(&mut self, script_hash: &UInt160) -> Result<&mut Self, RpcError> {
         let contract = Contract::create_with_hash(*script_hash, Vec::new());
         self.add_witness(contract)
@@ -175,6 +178,7 @@ impl TransactionManager {
 
     /// Sign the transaction
     /// Matches C# `SignAsync`
+    #[must_use]
     pub async fn sign(&mut self) -> Result<Transaction, RpcError> {
         let script_hashes = self.tx.script_hashes_for_verifying(&DataCache::new(true));
         let mut witnesses = Vec::with_capacity(script_hashes.len());

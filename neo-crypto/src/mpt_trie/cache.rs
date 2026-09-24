@@ -1,15 +1,15 @@
 use super::error::{MptError, MptResult};
 use super::node::Node;
+use lru::LruCache;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_primitives::UINT256_SIZE;
 use neo_primitives::UInt256;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::LazyLock;
-use lru::LruCache;
-use parking_lot::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use std::num::NonZero;
 
@@ -17,11 +17,11 @@ use std::num::NonZero;
 const DEFAULT_NODE_CACHE_CAPACITY: usize = 1_000_000; // Increased from 500K
 
 /// High-performance global LRU cache for MPT nodes with statistics tracking.
-/// 
+///
 /// This cache persists across block boundaries and stores fully-deserialized `Arc<Node>`
 /// objects, eliminating ~250K+ deserializations per block. Critical fix confirmed by
 /// Sarah's research that identified the old Vec<u8> caching as a major bottleneck.
-/// 
+///
 /// Features:
 /// - Thread-safe using `parking_lot::RwLock` for better concurrency
 /// - Atomic hit/miss counters for real-time monitoring
@@ -51,7 +51,7 @@ impl GlobalNodeCache {
     }
 
     /// Gets a cached node by hash, updating hit/miss statistics.
-    /// 
+    ///
     /// Returns `None` if the node is not in the cache (counts as miss).
     #[must_use]
     pub fn get(&self, key: &UInt256) -> Option<Arc<Node>> {
@@ -60,7 +60,7 @@ impl GlobalNodeCache {
             let mut guard = self.inner.write();
             guard.get(&key_copy).cloned()
         };
-        
+
         if result.is_some() {
             self.hits.fetch_add(1, Ordering::Relaxed);
         } else {
@@ -75,7 +75,7 @@ impl GlobalNodeCache {
     }
 
     /// Returns cache statistics as `(hits, misses, hit_rate_percent)`.
-    /// 
+    ///
     /// The hit rate is expressed as a percentage (0.0 to 100.0).
     #[must_use]
     pub fn stats(&self) -> (u64, u64, f32) {
@@ -116,8 +116,7 @@ impl Default for GlobalNodeCache {
 }
 
 /// Global cross-block LRU cache singleton instance.
-pub static GLOBAL_NODE_CACHE: LazyLock<GlobalNodeCache> =
-    LazyLock::new(GlobalNodeCache::new);
+pub static GLOBAL_NODE_CACHE: LazyLock<GlobalNodeCache> = LazyLock::new(GlobalNodeCache::new);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TrackState {
@@ -263,32 +262,32 @@ where
 
     fn load_from_store_snapshot(store: &S, prefix: u8, hash: &UInt256) -> MptResult<Option<Node>> {
         let key = Self::key_for(prefix, hash);
-        
+
         // TIER 1: Check global LRU cache (NOW RETURNS Arc<Node>)
         // CRITICAL OPTIMIZATION: Cache hit returns clone of Arc pointer (nanoseconds!)
         // Before: Cached Vec<u8> → deserialize (~1-5μs per node) → node
         // After:  Cached Arc<Node> → clone Arc (nanoseconds) → deref → node
         let cached_arc = GLOBAL_NODE_CACHE.get(hash);
-        
+
         if let Some(cached_arc) = cached_arc {
             // ✅ CACHE HIT: Clone the Arc (cheap!), then deref to Node
             // Note: This clones the Arc reference count, NOT copying Node data
             return Ok(Some(cached_arc.as_ref().clone()));
         }
-        
+
         // TIER 2: Load from RocksDB (only on miss - disk I/O bound)
         let Some(bytes) = store.try_get(&key)? else {
             return Ok(None);
         };
-        
+
         let mut reader = MemoryReader::new(&bytes);
         let node = Node::deserialize(&mut reader).map_err(MptError::from)?;
         let node_arc = Arc::new(node.clone());
-        
+
         // INSERT FULLY-DESERIALIZED NODE WRAPPED IN ARC
         // This enables zero-deserialization hits for next block
         GLOBAL_NODE_CACHE.put(*hash, node_arc);
-        
+
         Ok(Some(node))
     }
 
@@ -389,7 +388,7 @@ mod tests {
         fn test_cache_capacity_and_eviction() {
             const CAPACITY: usize = 100;
             let cache = GlobalNodeCache::test_new();
-            
+
             // Fill cache with entries
             for i in 0..CAPACITY {
                 let hash = UInt256::from([i as u8; 32]);
@@ -406,8 +405,14 @@ mod tests {
 
             // May have 100 or 101 depending on timing, both acceptable
             let len = cache.inner.read().len();
-            assert!(len == CAPACITY || len == CAPACITY + 1, "Expected {} or {}, got {}", CAPACITY, CAPACITY + 1, len);
-            
+            assert!(
+                len == CAPACITY || len == CAPACITY + 1,
+                "Expected {} or {}, got {}",
+                CAPACITY,
+                CAPACITY + 1,
+                len
+            );
+
             // Oldest entry should be evicted
             let old_hash = UInt256::from([0u8; 32]);
             let evicted = cache.get(&old_hash).is_none();
@@ -437,7 +442,7 @@ mod tests {
 
             // Put doesn't clone - it takes ownership of the Arc
             cache.put(hash, node.clone());
-            
+
             let cached1 = cache.get(&hash);
             let cached2 = cache.get(&hash);
 
@@ -455,7 +460,7 @@ mod tests {
         #[test]
         fn test_cross_block_persistence() {
             let cache = GlobalNodeCache::test_new();
-            
+
             // Block 1: Insert nodes into cache
             let node1 = Arc::new(Node::new_branch());
             let hash1 = node1.try_hash().unwrap();
@@ -473,10 +478,11 @@ mod tests {
         #[test]
         fn test_zero_deserialization_on_hit() {
             let cache = GlobalNodeCache::test_new();
-            
+
             // Pre-populate cache with a complex node
             let mut branch = Node::new_branch();
-            for i in 0..17 { // Using inline constant instead of BRANCH_CHILD_COUNT
+            for i in 0..17 {
+                // Using inline constant instead of BRANCH_CHILD_COUNT
                 let child = Node::new_leaf(vec![i as u8; 100]);
                 branch.set_child(i, child);
             }
@@ -491,14 +497,18 @@ mod tests {
             let elapsed = start.elapsed();
 
             // Should complete in < 1ms total (arc clone ~100ns each)
-            assert!(elapsed.as_micros() < 1_000_000, "Cache hit too slow: {:?}", elapsed);
+            assert!(
+                elapsed.as_micros() < 1_000_000,
+                "Cache hit too slow: {:?}",
+                elapsed
+            );
         }
 
         /// Test realistic scenario: Multiple concurrent readers.
         #[test]
         fn test_concurrent_access_safety() {
             let cache = Arc::new(GlobalNodeCache::test_new());
-            
+
             // Populate cache
             for i in 0..1000 {
                 let hash = UInt256::from([i as u8; 32]);
@@ -526,12 +536,20 @@ mod tests {
                 .collect();
 
             let total_hits: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-            
+
             // All reads should succeed (at least 10,000, may be slightly more from other tests)
-            assert!(total_hits >= 10_000, "Expected at least 10000 hits, got {}", total_hits);
-            
+            assert!(
+                total_hits >= 10_000,
+                "Expected at least 10000 hits, got {}",
+                total_hits
+            );
+
             let (hits, _, _) = cache.stats();
-            assert!(hits >= 10_000, "Expected at least 10000 stats hits, got {}", hits);
+            assert!(
+                hits >= 10_000,
+                "Expected at least 10000 stats hits, got {}",
+                hits
+            );
         }
     }
 }

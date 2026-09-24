@@ -4,9 +4,9 @@
 //! They document behaviour observed in the working tree. Where the working tree
 //! differs from git HEAD (v0.17.0), that is called out in the test name/comment.
 
+use neo_tee::TeeEnclave;
 use neo_tee::enclave::EnclaveConfig;
 use neo_tee::wallet::SealedKey;
-use neo_tee::TeeEnclave;
 
 fn config(dir: &std::path::Path) -> EnclaveConfig {
     EnclaveConfig {
@@ -83,14 +83,13 @@ fn unseal_replay_floor_is_self_referential() {
     let enclave = TeeEnclave::new(config(temp.path()));
     enclave.initialize().expect("init");
 
-    let sealed = SealedKey::seal(&enclave, &[7u8; 32], &[0x03u8; 33], &[0x11u8; 20], None)
-        .expect("seal");
+    let sealed =
+        SealedKey::seal(&enclave, &[7u8; 32], &[0x03u8; 33], &[0x11u8; 20], None).expect("seal");
 
     // The floor passed by `SealedKey::unseal` is `sealed.sealed_data.counter`,
     // i.e. exactly the value it is compared against -> never rejects.
     assert_eq!(
-        sealed.sealed_data.counter,
-        sealed.sealed_data.counter,
+        sealed.sealed_data.counter, sealed.sealed_data.counter,
         "floor == blob counter, so `counter < floor` is always false"
     );
 }

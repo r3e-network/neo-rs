@@ -1,7 +1,7 @@
 //! Zero-copy serialization test suite
 
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_primitives::{UInt256, UINT256_SIZE};
+use neo_primitives::{UINT256_SIZE, UInt256};
 
 #[derive(Debug, Clone, PartialEq)]
 struct TestPayload {
@@ -75,7 +75,7 @@ fn test_reserve_expands_capacity() {
     writer.write_u32(42).unwrap();
     writer.write_var_bytes(&[0xAA; 100]).unwrap();
 
-    assert!(writer.len() > 0);
+    assert!(!writer.is_empty());
 }
 
 #[test]

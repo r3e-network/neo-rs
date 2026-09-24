@@ -6,10 +6,10 @@
 //! This buffer exploits the fact that most storage key lookups are short (≤ 4 bytes)
 //! and map directly to the first few levels of the Merkle Patricia Trie structure.
 
-use smallvec::SmallVec;
-use std::sync::LazyLock;
 use super::node::Node;
 use parking_lot::RwLock;
+use smallvec::SmallVec;
+use std::sync::LazyLock;
 
 /// Maximum capacity: 4 levels × 16 slots per level = 64 entries
 const MAX_CAPACITY: usize = 64;
@@ -20,10 +20,10 @@ const MAX_CAPACITY: usize = 64;
 pub struct RootBranchBuffer {
     /// [Level][SlotIndex] → optional node reference count (4 levels × 16 slots = 64 bits)
     mask: u64,
-    
+
     /// Cached nodes (avoid Arc duplication)
     nodes: SmallVec<[NodeCacheEntry; MAX_CAPACITY]>,
-    
+
     /// Statistics
     hits: std::sync::atomic::AtomicUsize,
     misses: std::sync::atomic::AtomicUsize,
@@ -32,10 +32,10 @@ pub struct RootBranchBuffer {
 impl RootBranchBuffer {
     /// Maximum number of cache entries
     pub const CAPACITY: usize = MAX_CAPACITY;
-    
+
     /// Number of depth levels supported (root + 3 additional)
     pub const DEPTH_LIMIT: usize = 4;
-    
+
     /// Creates a new empty root branch buffer
     #[must_use]
     pub fn new() -> Self {
@@ -69,15 +69,16 @@ impl RootBranchBuffer {
         if path_prefix.is_empty() || path_prefix.len() > Self::DEPTH_LIMIT {
             return None;
         }
-        
+
         let depth = path_prefix.len();
         let slot_index = path_prefix[depth - 1] as usize % 16; // Only use lower 4 bits
-        
+
         if !self.is_populated(depth, slot_index) {
-            self.misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.misses
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return None;
         }
-        
+
         // Find matching node in our compact storage
         for entry in self.nodes.iter() {
             if entry.path_depth == depth && entry.slot_index == slot_index {
@@ -85,7 +86,7 @@ impl RootBranchBuffer {
                 return Some(&entry.node);
             }
         }
-        
+
         None
     }
 
@@ -95,20 +96,22 @@ impl RootBranchBuffer {
     /// Replaces existing entry if slot already occupied.
     pub fn insert(&mut self, path_prefix: &[u8], node: Node) -> bool {
         let depth = path_prefix.len();
-        
+
         // Only support root branches (levels 1-4)
         if depth == 0 || depth > Self::DEPTH_LIMIT {
             return false;
         }
-        
+
         let slot_index = path_prefix[depth - 1] as usize % 16;
-        
+
         // Check if slot already populated
         if self.is_populated(depth, slot_index) {
             // Replace existing entry
-            if let Some(entry) = self.nodes.iter_mut().find(|e| {
-                e.path_depth == depth && e.slot_index == slot_index
-            }) {
+            if let Some(entry) = self
+                .nodes
+                .iter_mut()
+                .find(|e| e.path_depth == depth && e.slot_index == slot_index)
+            {
                 entry.node = node;
                 return true;
             }
@@ -117,18 +120,18 @@ impl RootBranchBuffer {
             if self.nodes.len() >= Self::CAPACITY {
                 self.nodes.remove(0);
             }
-            
+
             self.nodes.push(NodeCacheEntry {
                 path_prefix: path_prefix.to_vec(),
                 path_depth: depth,
                 slot_index,
                 node,
             });
-            
+
             self.mark_populated(depth, slot_index);
             return true;
         }
-        
+
         false
     }
 
@@ -137,14 +140,14 @@ impl RootBranchBuffer {
     pub fn stats(&self) -> (usize, usize, f32) {
         let hits = self.hits.load(std::sync::atomic::Ordering::Relaxed);
         let misses = self.misses.load(std::sync::atomic::Ordering::Relaxed);
-        
+
         let total = hits + misses;
         let hit_rate = if total > 0 {
             hits as f32 / total as f32 * 100.0
         } else {
             0.0
         };
-        
+
         (hits, misses, hit_rate)
     }
 
@@ -193,18 +196,18 @@ pub fn get_branch_buffer_stats() -> (usize, usize, f32) {
 
 /// Static singleton instance for global buffer
 #[allow(dead_code)] // WIP: global buffer not yet wired
-static ROOT_BRANCH_BUFFER: LazyLock<RwLock<RootBranchBuffer>> = 
+static ROOT_BRANCH_BUFFER: LazyLock<RwLock<RootBranchBuffer>> =
     LazyLock::new(|| RwLock::new(RootBranchBuffer::new()));
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_initialization() {
         let buffer = RootBranchBuffer::new();
         assert_eq!(buffer.usage_stats(), (0, RootBranchBuffer::CAPACITY));
-        
+
         let (hits, misses, rate) = buffer.stats();
         assert_eq!(hits, 0);
         assert_eq!(misses, 0);
@@ -216,10 +219,10 @@ mod tests {
         let mut buffer = RootBranchBuffer::new();
         let mut node = Node::new();
         node.reference = 1;
-        
+
         let path = vec![0x05]; // Single byte prefix
         buffer.insert(&path, node.clone());
-        
+
         let result = buffer.get_no_alloc(&path);
         assert!(result.is_some());
         assert_eq!(result.unwrap().reference, node.reference);
@@ -230,10 +233,10 @@ mod tests {
         let mut buffer = RootBranchBuffer::new();
         let mut node = Node::new();
         node.reference = 1;
-        
+
         let path = vec![0x01, 0x02, 0x03, 0x04]; // Max depth 4
         buffer.insert(&path, node.clone());
-        
+
         let result = buffer.get_no_alloc(&path);
         assert!(result.is_some());
     }
@@ -242,7 +245,7 @@ mod tests {
     fn test_reject_depth_zero() {
         let mut buffer = RootBranchBuffer::new();
         let node = Node::new();
-        
+
         let path: Vec<u8> = vec![]; // Empty path rejected
         assert!(!buffer.insert(&path, node));
     }
@@ -252,7 +255,7 @@ mod tests {
         let mut buffer = RootBranchBuffer::new();
         let mut node = Node::new();
         node.reference = 1;
-        
+
         let path = vec![0x01, 0x02, 0x03, 0x04, 0x05]; // Exceeds depth 4
         assert!(!buffer.insert(&path, node));
     }
@@ -260,25 +263,25 @@ mod tests {
     #[test]
     fn test_capacity_eviction() {
         let mut buffer = RootBranchBuffer::new();
-        
+
         // Fill buffer to capacity with 64 DISTINCT (depth, slot) cells.
         for i in 0..MAX_CAPACITY {
             let mut node = Node::new();
             node.reference = 1;
 
-            let depth = i / 16 + 1;   // 1..=4
+            let depth = i / 16 + 1; // 1..=4
             let slot = (i % 16) as u8;
             let path = vec![slot; depth];
             buffer.insert(&path, node);
         }
-        
+
         assert_eq!(buffer.usage_stats().0, MAX_CAPACITY);
-        
+
         // Next insertion should evict oldest
         let mut node = Node::new();
         node.reference = 1;
         buffer.insert(&[0x02, 0x03], node);
-        
+
         assert_eq!(buffer.usage_stats().0, MAX_CAPACITY);
     }
 
@@ -287,19 +290,19 @@ mod tests {
         let mut buffer = RootBranchBuffer::new();
         let mut node = Node::new();
         node.reference = 1;
-        
+
         let path = vec![0x07];
         buffer.insert(&path, node.clone());
-        
+
         // First hit
         assert!(buffer.get_no_alloc(&path).is_some());
-        
+
         let (hits, _, _) = buffer.stats();
         assert_eq!(hits, 1);
-        
+
         // Second hit
         assert!(buffer.get_no_alloc(&path).is_some());
-        
+
         let (hits, _, _) = buffer.stats();
         assert_eq!(hits, 2);
     }
@@ -320,12 +323,12 @@ mod tests {
         let mut buffer = RootBranchBuffer::new();
         buffer.insert(&[0x01], Node::new());
         buffer.insert(&[0x02, 0x03], Node::new());
-        
+
         assert!(buffer.usage_stats().0 != 0);
-        
+
         buffer.clear();
         assert_eq!(buffer.usage_stats().0, 0);
-        
+
         let (hits, misses, _) = buffer.stats();
         assert_eq!(hits, 0);
         assert_eq!(misses, 0);

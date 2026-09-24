@@ -14,8 +14,8 @@
 //! 4. **Determinism**: Always resolve in consistent order for protocol compatibility
 
 use crate::state_service::prefetch_pipeline::ExecutedTransaction;
-use neo_vm::RwSetTracker;
 use crate::{Transaction, UInt256};
+use neo_vm::RwSetTracker;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -97,16 +97,17 @@ impl ConflictDetector {
     pub fn submit_tx(&mut self, tx_index: usize, result: ExecutedTransactionWithRwSet) {
         // Ensure vector is large enough (should be sequential)
         while self.current_block_executions.len() <= tx_index {
-            self.current_block_executions.push(ExecutedTransactionWithRwSet {
-                executed_tx: ExecutedTransaction {
-                    height: 0,
-                    hash: UInt256::zero(),
-                    tx_index: 0,
-                    transaction: Arc::new(Transaction::default()),
-                    execution_result: Err(crate::CoreError::system("missing")),
-                },
-                rw_set: RwSetTracker::new(),
-            });
+            self.current_block_executions
+                .push(ExecutedTransactionWithRwSet {
+                    executed_tx: ExecutedTransaction {
+                        height: 0,
+                        hash: UInt256::zero(),
+                        tx_index: 0,
+                        transaction: Arc::new(Transaction::default()),
+                        execution_result: Err(crate::CoreError::system("missing")),
+                    },
+                    rw_set: RwSetTracker::new(),
+                });
         }
 
         // Store the result
@@ -120,12 +121,8 @@ impl ConflictDetector {
     fn _compute_hash_signature_for_tx(&self, tx_idx: usize) -> Vec<(u64, bool)> {
         // Returns (hash, is_write_set) tuples
         let mut hashes = Vec::with_capacity(
-            self.current_block_executions[tx_idx]
-                .rw_set
-                .read_keys
-                .len()
-                + self
-                    .current_block_executions[tx_idx]
+            self.current_block_executions[tx_idx].rw_set.read_keys.len()
+                + self.current_block_executions[tx_idx]
                     .rw_set
                     .write_keys
                     .len(),
@@ -159,8 +156,10 @@ impl ConflictDetector {
                 read_set.insert(Self::_hash_uint256(key));
             }
 
-            self.write_key_hashes.push(write_set.iter().copied().collect());
-            self.read_key_hashes.push(read_set.iter().copied().collect());
+            self.write_key_hashes
+                .push(write_set.iter().copied().collect());
+            self.read_key_hashes
+                .push(read_set.iter().copied().collect());
         }
     }
 
@@ -370,8 +369,8 @@ pub enum ConflictResolutionError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_service::prefetch_pipeline::ExecutedTransaction;
     use crate::Transaction;
+    use crate::state_service::prefetch_pipeline::ExecutedTransaction;
 
     fn make_key(value: u64) -> UInt256 {
         let mut bytes = [0; 32];
@@ -379,7 +378,11 @@ mod tests {
         UInt256::from(bytes)
     }
 
-    fn make_mock_exec(tx_index: usize, _write_keys: &[u64], _read_keys: &[u64]) -> ExecutedTransaction {
+    fn make_mock_exec(
+        tx_index: usize,
+        _write_keys: &[u64],
+        _read_keys: &[u64],
+    ) -> ExecutedTransaction {
         let tx = Transaction::default();
         ExecutedTransaction {
             height: 1000,
@@ -404,10 +407,13 @@ mod tests {
         rw_set.record_write(make_key(42u64));
 
         let exec = make_mock_exec(0, &[42], &[]);
-        detector.submit_tx(0, ExecutedTransactionWithRwSet {
-            executed_tx: exec,
-            rw_set,
-        });
+        detector.submit_tx(
+            0,
+            ExecutedTransactionWithRwSet {
+                executed_tx: exec,
+                rw_set,
+            },
+        );
 
         let resolution = detector.resolve_conflicts().unwrap();
         assert_eq!(resolution.non_conflicting_order.len(), 1);
@@ -426,20 +432,29 @@ mod tests {
         let mut rw_set1 = RwSetTracker::new();
         rw_set1.record_write(make_key(100u64));
 
-        detector.submit_tx(0, ExecutedTransactionWithRwSet {
-            executed_tx: make_mock_exec(0, &[100], &[]),
-            rw_set: rw_set0,
-        });
+        detector.submit_tx(
+            0,
+            ExecutedTransactionWithRwSet {
+                executed_tx: make_mock_exec(0, &[100], &[]),
+                rw_set: rw_set0,
+            },
+        );
 
-        detector.submit_tx(1, ExecutedTransactionWithRwSet {
-            executed_tx: make_mock_exec(1, &[100], &[]),
-            rw_set: rw_set1,
-        });
+        detector.submit_tx(
+            1,
+            ExecutedTransactionWithRwSet {
+                executed_tx: make_mock_exec(1, &[100], &[]),
+                rw_set: rw_set1,
+            },
+        );
 
         let resolution = detector.resolve_conflicts().unwrap();
         assert_eq!(resolution.non_conflicting_order.len(), 1);
         assert_eq!(resolution.needs_retry.len(), 1);
-        assert!(resolution.needs_retry[0].original_index == 1 || resolution.needs_retry[0].original_index == 0);
+        assert!(
+            resolution.needs_retry[0].original_index == 1
+                || resolution.needs_retry[0].original_index == 0
+        );
     }
 
     #[test]
@@ -454,15 +469,21 @@ mod tests {
         let mut rw_set1 = RwSetTracker::new();
         rw_set1.record_write(make_key(200u64));
 
-        detector.submit_tx(0, ExecutedTransactionWithRwSet {
-            executed_tx: make_mock_exec(0, &[200], &[200]),
-            rw_set: rw_set0,
-        });
+        detector.submit_tx(
+            0,
+            ExecutedTransactionWithRwSet {
+                executed_tx: make_mock_exec(0, &[200], &[200]),
+                rw_set: rw_set0,
+            },
+        );
 
-        detector.submit_tx(1, ExecutedTransactionWithRwSet {
-            executed_tx: make_mock_exec(1, &[200], &[]),
-            rw_set: rw_set1,
-        });
+        detector.submit_tx(
+            1,
+            ExecutedTransactionWithRwSet {
+                executed_tx: make_mock_exec(1, &[200], &[]),
+                rw_set: rw_set1,
+            },
+        );
 
         let resolution = detector.resolve_conflicts().unwrap();
         assert_eq!(resolution.needs_retry.len(), 1);
@@ -480,15 +501,21 @@ mod tests {
         let mut rw_set1 = RwSetTracker::new();
         rw_set1.record_write(make_key(222u64));
 
-        detector.submit_tx(0, ExecutedTransactionWithRwSet {
-            executed_tx: make_mock_exec(0, &[111], &[]),
-            rw_set: rw_set0,
-        });
+        detector.submit_tx(
+            0,
+            ExecutedTransactionWithRwSet {
+                executed_tx: make_mock_exec(0, &[111], &[]),
+                rw_set: rw_set0,
+            },
+        );
 
-        detector.submit_tx(1, ExecutedTransactionWithRwSet {
-            executed_tx: make_mock_exec(1, &[222], &[]),
-            rw_set: rw_set1,
-        });
+        detector.submit_tx(
+            1,
+            ExecutedTransactionWithRwSet {
+                executed_tx: make_mock_exec(1, &[222], &[]),
+                rw_set: rw_set1,
+            },
+        );
 
         let resolution = detector.resolve_conflicts().unwrap();
         assert_eq!(resolution.non_conflicting_order.len(), 2);
@@ -509,15 +536,21 @@ mod tests {
         rw_set1.record_write(make_key(4u64));
         rw_set1.set_gas_used(2000);
 
-        detector.submit_tx(0, ExecutedTransactionWithRwSet {
-            executed_tx: make_mock_exec(0, &[2], &[1]),
-            rw_set: rw_set0,
-        });
+        detector.submit_tx(
+            0,
+            ExecutedTransactionWithRwSet {
+                executed_tx: make_mock_exec(0, &[2], &[1]),
+                rw_set: rw_set0,
+            },
+        );
 
-        detector.submit_tx(1, ExecutedTransactionWithRwSet {
-            executed_tx: make_mock_exec(1, &[4], &[3]),
-            rw_set: rw_set1,
-        });
+        detector.submit_tx(
+            1,
+            ExecutedTransactionWithRwSet {
+                executed_tx: make_mock_exec(1, &[4], &[3]),
+                rw_set: rw_set1,
+            },
+        );
 
         let final_rw_set = detector.compute_final_rw_set();
 

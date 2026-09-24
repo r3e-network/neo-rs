@@ -246,7 +246,8 @@ impl RpcServer {
             (&self.ws_bridge, &self.ws_subscription_mgr)
         {
             info!("WebSocket subscriptions enabled at /ws");
-            let ws_route = build_ws_route(bridge.sender(), Arc::clone(subscription_mgr), auth.clone());
+            let ws_route =
+                build_ws_route(bridge.sender(), Arc::clone(subscription_mgr), auth.clone());
             rpc_routes.or(ws_route).unify().boxed()
         } else {
             rpc_routes.boxed()
@@ -606,6 +607,7 @@ impl RpcServer {
         guard.retain(|_, session| !session.is_expired(expiration));
     }
 
+    #[must_use]
     pub fn store_session(&self, session: Session) -> Result<Uuid, RpcError> {
         self.purge_expired_sessions();
         let mut guard = self.sessions.lock();

@@ -448,7 +448,10 @@ mod tests {
         // C# reference always rejects duplicate signers during deserialization
         let serialized = tx.to_bytes();
         let result = Transaction::from_bytes(&serialized);
-        assert!(result.is_err(), "Duplicate signers must be rejected during deserialization");
+        assert!(
+            result.is_err(),
+            "Duplicate signers must be rejected during deserialization"
+        );
     }
 
     /// Test maximum signers limit (matches C# UT_Transaction.Transaction_Serialize_Deserialize_MaxSizeSigners)

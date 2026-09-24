@@ -123,10 +123,7 @@ fn run_one(vector: &Vector) -> VectorResult {
     let items: Vec<neo_vm::StackItem> = engine.result_stack().iter().cloned().collect();
     let (stack, harness_error) = match stack_items_rpc_json_per_item(&items, RPC_STACK_BUDGET) {
         Ok(values) => (values, None),
-        Err(err) => (
-            Vec::new(),
-            Some(format!("stack render failed: {err:?}")),
-        ),
+        Err(err) => (Vec::new(), Some(format!("stack render failed: {err:?}"))),
     };
 
     VectorResult {

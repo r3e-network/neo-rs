@@ -1,0 +1,240 @@
+{
+  "dashboard": {
+    "title": "Neo N3 - Latency Distribution",
+    "tags": ["neo", "latency", "performance"],
+    "timezone": "browser",
+    "refresh": "10s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Operation Latency Percentiles",
+        "type": "graph",
+        "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(neo_operation_latency_seconds_bucket[5m]))",
+            "legendFormat": "P50 (Median)",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(neo_operation_latency_seconds_bucket[5m]))",
+            "legendFormat": "P95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(neo_operation_latency_seconds_bucket[5m]))",
+            "legendFormat": "P99",
+            "refId": "C"
+          },
+          {
+            "expr": "0.1",
+            "legendFormat": "Warning Threshold (100ms)",
+            "refId": "D"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Latency", "logBase": 10},
+          {"format": "short"}
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [0.1], "type": "gt"},
+              "query": {"params": ["C", "5m", "now"]},
+              "type": "query"
+            }
+          ],
+          "name": "High P99 latency alert",
+          "message": "P99 latency has exceeded 100ms threshold"
+        }
+      },
+      {
+        "id": 2,
+        "title": "Current P50 Latency",
+        "type": "stat",
+        "gridPos": {"h": 5, "w": 8, "x": 0, "y": 10},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(neo_operation_latency_seconds_bucket[1m])) * 1000",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "ms"
+        },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"value": 0, "color": "green"},
+            {"value": 50, "color": "yellow"},
+            {"value": 100, "color": "red"}
+          ]
+        }
+      },
+      {
+        "id": 3,
+        "title": "Current P95 Latency",
+        "type": "stat",
+        "gridPos": {"h": 5, "w": 8, "x": 8, "y": 10},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(neo_operation_latency_seconds_bucket[1m])) * 1000",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "ms"
+        },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"value": 0, "color": "green"},
+            {"value": 75, "color": "yellow"},
+            {"value": 100, "color": "red"}
+          ]
+        }
+      },
+      {
+        "id": 4,
+        "title": "Current P99 Latency",
+        "type": "stat",
+        "gridPos": {"h": 5, "w": 8, "x": 16, "y": 10},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.99, rate(neo_operation_latency_seconds_bucket[1m])) * 1000",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "ms"
+        },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"value": 0, "color": "green"},
+            {"value": 100, "color": "yellow"},
+            {"value": 200, "color": "red"}
+          ]
+        }
+      },
+      {
+        "id": 5,
+        "title": "Block Processing Time",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(block_processing_duration_bucket[5m]))",
+            "legendFormat": "P50",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(block_processing_duration_bucket[5m]))",
+            "legendFormat": "P95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(block_processing_duration_bucket[5m]))",
+            "legendFormat": "P99",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Transaction Verification Time",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 15},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(neo_ledger_tx_verification_seconds_bucket[5m]))",
+            "legendFormat": "P50",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(neo_ledger_tx_verification_seconds_bucket[5m]))",
+            "legendFormat": "P95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(neo_ledger_tx_verification_seconds_bucket[5m]))",
+            "legendFormat": "P99",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "VM Execution Time",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 23},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(neo_vm_execution_seconds_bucket[5m]))",
+            "legendFormat": "P50",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(neo_vm_execution_seconds_bucket[5m]))",
+            "legendFormat": "P95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(neo_vm_execution_seconds_bucket[5m]))",
+            "legendFormat": "P99",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Consensus Round Time",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 23},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(neo_consensus_round_seconds_bucket[5m]))",
+            "legendFormat": "P50",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(neo_consensus_round_seconds_bucket[5m]))",
+            "legendFormat": "P95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(neo_consensus_round_seconds_bucket[5m]))",
+            "legendFormat": "P99",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ]
+      }
+    ]
+  }
+}

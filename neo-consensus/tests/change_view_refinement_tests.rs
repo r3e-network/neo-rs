@@ -8,7 +8,7 @@ use neo_consensus::{ChangeViewMessage, ChangeViewReason};
 fn test_view_number_bounds_minimum() {
     // Corresponds to Coq lemma: view_number_bounds (view = 0 case)
     let msg = ChangeViewMessage::new(100, 0, 1, 1_000_000, ChangeViewReason::Timeout);
-    
+
     assert!(msg.validate().is_ok());
     assert_eq!(msg.view_number, 0);
 }
@@ -18,7 +18,7 @@ fn test_view_number_bounds_minimum() {
 fn test_view_number_bounds_maximum_safe() {
     // Corresponds to Coq theorem: view_always_advances with view=254 -> new_view=255
     let msg = ChangeViewMessage::new(100, 254, 1, 1_000_000, ChangeViewReason::Timeout);
-    
+
     assert!(msg.validate().is_ok());
     assert_eq!(msg.new_view_number().unwrap(), 255);
 }
@@ -28,9 +28,12 @@ fn test_view_number_bounds_maximum_safe() {
 fn test_view_number_bounds_overflow() {
     // Corresponds to Coq theorem: invalid_changeview_overflow_rejected
     let msg = ChangeViewMessage::new(100, 255, 1, 1_000_000, ChangeViewReason::Timeout);
-    
+
     assert!(msg.validate().is_err());
-    assert_eq!(msg.new_view_number().unwrap_err().to_string(), "Invalid block proposal: View number overflow");
+    assert_eq!(
+        msg.new_view_number().unwrap_err().to_string(),
+        "Invalid block proposal: View number overflow"
+    );
 }
 
 /// Test 4: validation_safety - Timeout reason validates successfully
@@ -38,7 +41,7 @@ fn test_view_number_bounds_overflow() {
 fn test_timeout_reason_validates() {
     // Corresponds to Coq example: valid_changeview_view0 with reason=Timeout (0x0)
     let msg = ChangeViewMessage::new(100, 0, 1, 1_000_000, ChangeViewReason::Timeout);
-    
+
     assert!(msg.validate().is_ok());
     assert_eq!(msg.reason, ChangeViewReason::Timeout);
 }
@@ -55,10 +58,14 @@ fn test_all_reason_variants_validate() {
         ChangeViewReason::TxInvalid,
         ChangeViewReason::BlockRejectedByPolicy,
     ];
-    
+
     for reason in reasons {
         let msg = ChangeViewMessage::new(100, 0, 1, 1_000_000, reason);
-        assert!(msg.validate().is_ok(), "Reason {:?} should be valid", reason);
+        assert!(
+            msg.validate().is_ok(),
+            "Reason {:?} should be valid",
+            reason
+        );
     }
 }
 
@@ -67,9 +74,13 @@ fn test_all_reason_variants_validate() {
 fn test_serialization_length() {
     // Corresponds to Coq theorem: serialize_exact_length_for_valid_message (SERIALIZED_LENGTH = 9)
     let msg = ChangeViewMessage::new(100, 0, 1, 1_234_567, ChangeViewReason::TxNotFound);
-    
+
     let serialized = msg.serialize();
-    assert_eq!(serialized.len(), 9, "Serialized ChangeView must be exactly 9 bytes");
+    assert_eq!(
+        serialized.len(),
+        9,
+        "Serialized ChangeView must be exactly 9 bytes"
+    );
 }
 
 /// Test 7: serialization_format - Timestamp encoded as little-endian 8-byte integer
@@ -78,9 +89,9 @@ fn test_serialization_timestamp_le_bytes() {
     // Verifies timestamp byte ordering matches Coq model's 8-byte component
     let timestamp = 0x0102_0304_0506_0708u64;
     let msg = ChangeViewMessage::new(100, 0, 1, timestamp, ChangeViewReason::Timeout);
-    
+
     let serialized = msg.serialize();
-    
+
     // Little-endian encoding: least significant byte first
     assert_eq!(serialized[0], 0x08);
     assert_eq!(serialized[1], 0x07);
@@ -98,9 +109,9 @@ fn test_serialization_timestamp_le_bytes() {
 fn test_serialization_reason_byte_position() {
     // Verifies reason occupies last byte as specified in Coq model
     let msg = ChangeViewMessage::new(100, 5, 3, 1_000_000, ChangeViewReason::TxInvalid);
-    
+
     let serialized = msg.serialize();
-    
+
     assert_eq!(serialized[8], ChangeViewReason::TxInvalid.to_byte());
     assert_eq!(serialized.len(), 9);
 }
@@ -122,7 +133,7 @@ fn test_validator_index_boundaries() {
     // Validator index is u8, bounded [0, 255]
     let msg_min = ChangeViewMessage::new(100, 0, 0, 1_000_000, ChangeViewReason::Timeout);
     let msg_max = ChangeViewMessage::new(100, 0, 255, 1_000_000, ChangeViewReason::Timeout);
-    
+
     assert!(msg_min.validate().is_ok());
     assert!(msg_max.validate().is_ok());
 }
@@ -133,7 +144,7 @@ fn test_timestamp_boundaries() {
     // Timestamp can be 0 or any u64 value
     let msg_zero = ChangeViewMessage::new(100, 0, 1, 0, ChangeViewReason::Timeout);
     let msg_large = ChangeViewMessage::new(100, 0, 1, u64::MAX, ChangeViewReason::Timeout);
-    
+
     assert!(msg_zero.validate().is_ok());
     assert!(msg_large.validate().is_ok());
 }
@@ -142,12 +153,12 @@ fn test_timestamp_boundaries() {
 #[test]
 fn test_validation_enables_view_advancement() {
     // Corresponds to Coq lemma: validation_preserves_safety
-    
+
     // Valid message enables advancement
     let valid_msg = ChangeViewMessage::new(100, 5, 1, 1_000_000, ChangeViewReason::Timeout);
     assert!(valid_msg.validate().is_ok());
     assert_eq!(valid_msg.new_view_number().unwrap(), 6);
-    
+
     // Invalid message blocks advancement
     let invalid_msg = ChangeViewMessage::new(100, 255, 1, 1_000_000, ChangeViewReason::Timeout);
     assert!(invalid_msg.validate().is_err());
@@ -159,15 +170,15 @@ fn test_deserialize_preserves_validation() {
     // Serialize and deserialize a valid message
     let original = ChangeViewMessage::new(100, 10, 5, 2_000_000, ChangeViewReason::TxNotFound);
     let serialized = original.serialize();
-    
+
     let reconstructed = ChangeViewMessage::deserialize(&serialized, 100, 10, 5).unwrap();
-    
+
     assert_eq!(original.block_index, reconstructed.block_index);
     assert_eq!(original.view_number, reconstructed.view_number);
     assert_eq!(original.validator_index, reconstructed.validator_index);
     assert_eq!(original.timestamp, reconstructed.timestamp);
     assert_eq!(original.reason, reconstructed.reason);
-    
+
     // Reconstruction must preserve validity
     assert!(reconstructed.validate().is_ok());
 }
@@ -176,16 +187,16 @@ fn test_deserialize_preserves_validation() {
 #[test]
 fn test_no_view_regression() {
     // If msg1 and msg2 have valid views, new_view(msg2) >= new_view(msg1) when msg2.view >= msg1.view
-    
+
     let msg1 = ChangeViewMessage::new(100, 5, 1, 1_000_000, ChangeViewReason::Timeout);
     let msg2 = ChangeViewMessage::new(100, 10, 1, 2_000_000, ChangeViewReason::Timeout);
-    
+
     assert!(msg1.validate().is_ok());
     assert!(msg2.validate().is_ok());
-    
+
     let view1_new = msg1.new_view_number().unwrap();
     let view2_new = msg2.new_view_number().unwrap();
-    
+
     assert!(view2_new >= view1_new);
     assert_eq!(view2_new, view1_new + 5); // Increment property
 }
@@ -200,7 +211,7 @@ fn test_reason_bounds_verification() {
     assert_eq!(ChangeViewReason::TxRejectedByPolicy.to_byte(), 0x3);
     assert_eq!(ChangeViewReason::TxInvalid.to_byte(), 0x4);
     assert_eq!(ChangeViewReason::BlockRejectedByPolicy.to_byte(), 0x5);
-    
+
     // Verify all are within protocol bounds
     for reason in [
         ChangeViewReason::Timeout,
@@ -224,7 +235,7 @@ fn test_coq_integration_constant_values() {
     assert_eq!(ChangeViewReason::TxRejectedByPolicy.to_byte(), 3);
     assert_eq!(ChangeViewReason::TxInvalid.to_byte(), 4);
     assert_eq!(ChangeViewReason::BlockRejectedByPolicy.to_byte(), 5);
-    
+
     // Maximum view constant
     const MAX_VIEW: u8 = 255;
     assert_eq!(MAX_VIEW, 255);

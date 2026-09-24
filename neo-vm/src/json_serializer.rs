@@ -27,6 +27,7 @@ impl JsonSerializer {
     /// The default encoder escapes `"`, `\`, control chars, all non-ASCII, plus
     /// `<`, `>`, `&`, `'`, `+`, `` ` ``. This differs from serde_json's minimal escape
     /// set, so we bypass serde_json's string output and write our own JSON encoder.
+    #[must_use]
     pub fn serialize_to_byte_array(item: &StackItem, max_size: u32) -> Result<Vec<u8>, String> {
         let json = Self::serialize_to_json(item)?;
         let mut payload = Vec::new();
@@ -124,6 +125,7 @@ impl JsonSerializer {
     }
 
     /// Serializes a stack item to a [`JsonValue`].
+    #[must_use]
     pub fn serialize_to_json(item: &StackItem) -> Result<JsonValue, String> {
         let mut seen = HashSet::new();
         Self::serialize_internal(item, &mut seen)
@@ -229,12 +231,14 @@ impl JsonSerializer {
     }
 
     /// Deserializes a JSON payload into a [`StackItem`].
+    #[must_use]
     pub fn deserialize(json: &[u8], max_depth: usize) -> Result<StackItem, String> {
         let value: JsonValue = serde_json::from_slice(json).map_err(|e| e.to_string())?;
         Self::deserialize_from_json(&value, max_depth)
     }
 
     /// Deserializes a [`JsonValue`] into a stack item.
+    #[must_use]
     pub fn deserialize_from_json(value: &JsonValue, max_depth: usize) -> Result<StackItem, String> {
         Self::deserialize_internal(value, 0, max_depth)
     }
@@ -308,10 +312,7 @@ mod tests {
             ("-456", Some(BigInt::from(-456))),
             ("1.0", Some(BigInt::from(1))),
             ("1e5", Some(BigInt::from(100000))),
-            (
-                "1000000000000000000000",
-                BigInt::from_f64(1e21),
-            ),
+            ("1000000000000000000000", BigInt::from_f64(1e21)),
             ("1.5", None),
             ("-2.7", None),
         ];

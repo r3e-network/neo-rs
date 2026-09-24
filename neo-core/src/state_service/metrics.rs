@@ -1,6 +1,6 @@
 #![allow(missing_docs, dead_code)] // WIP metrics; docs pending cleanup
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// State root ingestion metrics (network side)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,7 +96,8 @@ impl StateRootMetrics {
 
     pub fn inc_verification_failure(&self, height: u64) {
         let _ = height; // Future implementation
-        self.total_verification_failures.fetch_add(1, Ordering::Relaxed);
+        self.total_verification_failures
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn snapshot(&self) -> AsyncStateRootStats {

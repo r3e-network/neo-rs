@@ -609,7 +609,12 @@ mod tests {
         let key = tee_wallet.default_account().expect("default tee key");
         let signature_bytes: [u8; 64] = signature.as_slice().try_into().expect("sig bytes");
         assert!(
-            Secp256r1Crypto::verify_prehash(&Crypto::sha256(payload), &signature_bytes, &key.public_key).expect("verify")
+            Secp256r1Crypto::verify_prehash(
+                &Crypto::sha256(payload),
+                &signature_bytes,
+                &key.public_key
+            )
+            .expect("verify")
         );
 
         let mut tx = Transaction::new();
@@ -630,8 +635,12 @@ mod tests {
         let sig_bytes: [u8; 64] = sig_slice.try_into().expect("sig slice");
         let sign_data = get_sign_data_vec(&tx, settings.network).expect("sign data");
         assert!(
-            Secp256r1Crypto::verify_prehash(&Crypto::sha256(&sign_data), &sig_bytes, &key.public_key)
-                .expect("verify tx signature")
+            Secp256r1Crypto::verify_prehash(
+                &Crypto::sha256(&sign_data),
+                &sig_bytes,
+                &key.public_key
+            )
+            .expect("verify tx signature")
         );
     }
 }

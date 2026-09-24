@@ -1,0 +1,40 @@
+# Prometheus configuration for Neo N3 node monitoring
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'neo-n3'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'alertmanager:9093'
+
+# Load alerting rules
+rule_files:
+  - 'alerts/*.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Neo node metrics
+  - job_name: 'neo-node'
+    static_configs:
+      - targets: ['localhost:9090']
+    metric_relabel_configs:
+      # Keep all neo_ prefixed metrics
+      - source_labels: [__name__]
+        regex: 'neo_.*'
+        action: keep
+
+  # System metrics (if node_exporter is used)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

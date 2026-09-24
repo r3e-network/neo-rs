@@ -1,0 +1,1147 @@
+warning: variable does not need to be mutable
+   --> neo-core\src\state_service\tiered_storage.rs:312:17
+    |
+312 |             let mut cache = self.tier2_prefix_cache.write();
+    |                 ----^^^^^
+    |                 |
+    |                 help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated constant `MAX_INPUT_LENGTH` is never used
+  --> neo-core\src\smart_contract\native\std_lib\mod.rs:29:11
+   |
+27 | impl StdLib {
+   | ----------- associated constant in this implementation
+28 |     const ID: i32 = -2;
+29 |     const MAX_INPUT_LENGTH: usize = 1024;
+   |           ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `capacity_per_group` is never read
+  --> neo-core\src\state_service\tiered_storage.rs:68:5
+   |
+65 | pub struct ContractPrefixCache {
+   |            ------------------- field in this struct
+...
+68 |     capacity_per_group: usize,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: field `backing_store` is never read
+   --> neo-core\src\state_service\tiered_storage.rs:182:5
+    |
+165 | pub struct TieredStorage<S>
+    |            ------------- field in this struct
+...
+182 |     backing_store: Arc<S>,
+    |     ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> neo-core\src\state_service\tiered_storage.rs:22:5
+   |
+22 |     pub tier0_hits: u64,
+   |     ^^^^^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> neo-core\src\lib.rs:83:9
+   |
+83 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> neo-core\src\state_service\tiered_storage.rs:23:5
+   |
+23 |     pub tier0_misses: u64,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> neo-core\src\state_service\tiered_storage.rs:24:5
+   |
+24 |     pub tier1_hits: u64,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> neo-core\src\state_service\tiered_storage.rs:25:5
+   |
+25 |     pub tier1_misses: u64,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> neo-core\src\state_service\tiered_storage.rs:26:5
+   |
+26 |     pub tier2_hits: u64,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> neo-core\src\state_service\tiered_storage.rs:27:5
+   |
+27 |     pub tier2_misses: u64,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> neo-core\src\state_service\tiered_storage.rs:28:5
+   |
+28 |     pub tier3_hits: u64,
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> neo-core\src\state_service\tiered_storage.rs:29:5
+   |
+29 |     pub tier3_misses: u64,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> neo-core\src\state_service\tiered_storage.rs:34:5
+   |
+34 |     pub fn total_hits(&self) -> u64 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> neo-core\src\state_service\tiered_storage.rs:39:5
+   |
+39 |     pub fn total_misses(&self) -> u64 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> neo-core\src\state_service\tiered_storage.rs:44:5
+   |
+44 |     pub fn hit_rate(&self) -> f32 {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+  --> neo-core\src\state_service\tiered_storage.rs:65:1
+   |
+65 | pub struct ContractPrefixCache {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+  --> neo-core\src\state_service\tiered_storage.rs:73:5
+   |
+73 |     pub fn new(max_prefixes: usize) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> neo-core\src\state_service\tiered_storage.rs:90:5
+   |
+90 |     pub fn get(&self, key: &[u8]) -> Option<Arc<Node>> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> neo-core\src\state_service\tiered_storage.rs:106:5
+    |
+106 |     pub fn insert_prefix(&mut self, full_key: &[u8], node: Arc<Node>) {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> neo-core\src\state_service\tiered_storage.rs:122:5
+    |
+122 |     pub fn clear(&self) {
+    |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a trait
+   --> neo-core\src\state_service\tiered_storage.rs:351:1
+    |
+351 | pub trait MptStoreSnapshot: Send + Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> neo-core\src\state_service\tiered_storage.rs:352:5
+    |
+352 |     fn try_get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, String>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> neo-core\src\state_service\tiered_storage.rs:353:5
+    |
+353 |     fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), String>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> neo-core\src\state_service\tiered_storage.rs:354:5
+    |
+354 |     fn delete(&self, key: Vec<u8>) -> Result<(), String>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `neo-core` (lib) generated 24 warnings (run `cargo fix --lib -p neo-core` to apply 1 suggestion)
+warning: unused imports: `Display` and `self`
+ --> neo-rpc\src\server\rpc_error.rs:8:16
+  |
+8 | use std::fmt::{self, Display};
+  |                ^^^^  ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `neo-rpc` (lib) generated 1 warning (run `cargo fix --lib -p neo-rpc` to apply 1 suggestion)
+warning: `neo-rpc` (lib test) generated 1 warning (1 duplicate)
+warning: unused import: `crate::smart_contract::native::LedgerContract`
+ --> neo-core\src\state_service\state_store\test_batching.rs:5:5
+  |
+5 | use crate::smart_contract::native::LedgerContract;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `neo-core` (lib test) generated 25 warnings (24 duplicates) (run `cargo fix --lib -p neo-core --tests` to apply 1 suggestion)
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.37s
+     Running unittests src\lib.rs (target\debug\deps\neo_config-932150703d3c7adc.exe)
+
+running 14 tests
+test genesis::tests::test_invalid_genesis ... ok
+test genesis::tests::test_testnet_genesis ... ok
+test genesis::tests::test_private_genesis ... ok
+test genesis::tests::test_mainnet_genesis ... ok
+test network::tests::test_effective_values ... ok
+test network::tests::test_network_from_str ... ok
+test protocol::tests::test_committee_count ... ok
+test network::tests::test_network_magic ... ok
+test protocol::tests::test_mainnet_settings ... ok
+test protocol::tests::test_hardfork_enabled ... ok
+test settings::tests::test_testnet_settings ... ok
+test settings::tests::test_validation ... ok
+test settings::tests::test_default_settings ... ok
+test settings::tests::test_toml_roundtrip ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\neo_consensus-7030c5ea0d836be7.exe)
+
+running 114 tests
+test change_view_reason::tests::test_change_view_reason_default ... ok
+test change_view_reason::tests::test_change_view_reason_from_byte ... ok
+test change_view_reason::tests::test_change_view_reason_values ... ok
+test change_view_reason::tests::test_change_view_reason_display ... ok
+test change_view_reason::tests::test_change_view_reason_roundtrip ... ok
+test context::tests::mismatched_prepare_response_hashes_do_not_count_toward_quorum ... ok
+test context::tests::test_change_timer_and_extend_timer_by_factor ... ok
+test context::tests::test_consensus_context_new ... ok
+test context::tests::test_count_committed ... ok
+test context::tests::test_count_failed_empty ... ok
+test context::tests::test_count_failed_threshold ... ok
+test context::tests::primary_mismatched_response_without_prepare_request_does_not_count ... ok
+test context::tests::test_f_and_m_calculations ... ok
+test context::tests::test_count_failed_with_old_messages ... ok
+test context::tests::test_extend_timer_does_not_change_view_changing_or_commit_timer ... ok
+test context::tests::test_has_enough_responses ... ok
+test context::tests::prepare_request_and_primary_response_do_not_double_count ... ok
+test context::tests::test_load_nonexistent_file ... ok
+test context::tests::test_message_cache_cleared_on_new_block ... ok
+test context::tests::test_message_cache_not_cleared_on_view_change ... ok
+test context::tests::test_message_cache_prevents_replay ... ok
+test context::tests::test_more_than_f_nodes_committed_or_lost ... ok
+test context::tests::test_message_hash_caching ... ok
+test context::tests::test_more_than_f_nodes_with_failed ... ok
+test context::tests::test_not_accepting_payloads_due_to_view_changing ... ok
+test context::tests::test_more_than_f_nodes_edge_case ... ok
+test context::tests::test_primary_index ... ok
+test context::tests::test_recovery_response_hash_cache_is_independent ... ok
+test context::tests::test_load_corrupted_file ... ok
+test context::tests::test_reset_for_new_view ... ok
+test message_type::tests::test_consensus_message_type_display ... ok
+test context::tests::test_update_last_seen_message ... ok
+test context::tests::test_timeout_calculation ... ok
+test message_type::tests::test_consensus_message_type_from_byte ... ok
+test message_type::tests::test_consensus_message_type_roundtrip ... ok
+test message_type::tests::test_consensus_message_type_values ... ok
+test messages::change_view::tests::test_change_view_deserialize_too_short ... ok
+test messages::change_view::tests::test_change_view_new ... ok
+test messages::change_view::tests::test_change_view_serialize ... ok
+test messages::change_view::tests::test_change_view_serialize_deserialize_roundtrip ... ok
+test messages::change_view::tests::test_change_view_validate ... ok
+test messages::change_view::tests::test_change_view_wire_format_bytes ... ok
+test messages::commit::tests::test_commit_new ... ok
+test messages::commit::tests::test_commit_serialize ... ok
+test messages::commit::tests::test_commit_validate ... ok
+test messages::prepare_request::tests::test_prepare_request_new ... ok
+test messages::prepare_request::tests::test_prepare_request_serialize ... ok
+test context::tests::test_message_cache_lru_limit ... ok
+test messages::prepare_request::tests::test_prepare_request_validate ... ok
+test context::tests::test_message_cache_duplicate_and_contains_do_not_refresh_lru_order ... ok
+test messages::prepare_request::tests::test_prepare_request_wire_format_bytes ... ok
+test messages::prepare_response::tests::test_prepare_response_serialize ... ok
+test messages::prepare_response::tests::test_prepare_response_new ... ok
+test messages::prepare_response::tests::test_prepare_response_validate ... ok
+test messages::recovery::tests::recovery_message_roundtrip_minimal_without_prepare_request ... ok
+test messages::recovery::tests::recovery_message_wire_format_bytes_without_prepare_request ... ok
+test messages::recovery::tests::recovery_request_serializes_timestamp_only ... ok
+test messages::wire_format_tests::consensus_payload_from_message_bytes_rejects_invalid_type ... ok
+test messages::wire_format_tests::consensus_payload_from_message_bytes_rejects_short_buffer ... ok
+test messages::wire_format_tests::consensus_payload_to_message_bytes_layout ... ok
+test context::tests::test_save_and_load_roundtrip ... ok
+test context::tests::test_save_empty_state ... ok
+test service::tests::change_view::view_change_rotates_primary_by_view ... ok
+test context::tests::test_save_atomic_write ... ok
+test service::tests::core::invalid_validator_index_rejected ... ok
+test service::tests::core::backup_on_transactions_received_is_noop ... ok
+test service::tests::change_view::timer_tick_triggers_change_view_broadcast ... ok
+test service::tests::change_view::stale_change_view_only_sends_one_recovery_response ... ok
+test service::tests::change_view::m_minus_one_change_views_not_enough ... ok
+test service::tests::core::test_replay_attack_prevention ... ok
+test service::tests::prepare::consensus_merkle_root_matches_core_merkle_tree ... ok
+test service::tests::change_view::no_view_change_after_commit_sent ... ok
+test service::tests::core::test_consensus_start ... ok
+test service::tests::core::test_message_cache_cleared_on_new_block ... ok
+test service::tests::core::test_primary_calculation ... ok
+test service::tests::core::test_consensus_not_validator ... ok
+test service::tests::change_view::timeout_view_change_allows_new_prepare_request ... ok
+test service::tests::core::primary_rotation_across_blocks_is_deterministic ... ok
+test service::tests::core::test_consensus_service_new ... ok
+test service::tests::change_view::recovery_request_when_more_than_f_committed ... ok
+test service::tests::change_view::change_view_threshold_triggers_view_change ... ok
+test service::tests::prepare::prepare_request_with_wrong_primary_rejected ... ok
+test service::tests::prepare::prepare_response_with_future_block_is_ignored ... ok
+test service::tests::prepare::byzantine_conflicting_prepare_responses_do_not_replace_first ... ok
+test service::tests::prepare::prepare_response_with_wrong_block_rejected ... ok
+test service::tests::prepare::multi_round_prepare_requests_rotate_primary ... ok
+test service::tests::core::test_message_deduplication ... ok
+test service::tests::prepare::prepare_response_duplicate_from_same_validator_rejected ... ok
+test service::tests::prepare::prepare_response_rejects_mismatched_hash ... ok
+test service::tests::prepare::primary_proposal_waits_for_initial_timer_and_is_one_shot ... ok
+test service::tests::prepare::primary_broadcasts_prepare_request_with_transactions ... ok
+test service::tests::prepare::prepare_response_with_future_view_can_be_reprocessed_after_view_change ... ok
+test service::tests::prepare::prepare_responses_trigger_commit_broadcast ... ok
+test service::tests::prepare::primary_prepare_request_timeout_is_explicit_per_view ... ok
+test service::tests::recovery::recovery_message_rejects_duplicate_compact_validators_and_clears_flag ... ok
+test service::tests::recovery::recovery_message_ignores_invalid_prepare_response_signature ... ok
+test service::tests::recovery::recovery_message_commits_for_other_view_do_not_commit_block ... ok
+test service::tests::recovery::off_view_commit_does_not_block_current_view_commit ... ok
+test service::tests::recovery::recovery_message_ignores_invalid_prepare_request_signature ... ok
+test service::tests::prepare::consensus_round_emits_block_committed ... ok
+test service::tests::recovery::recovery_message_change_view_triggers_view_change ... ok
+test service::tests::recovery::recovery_message_ignores_invalid_commit_signature ... ok
+test service::tests::recovery::recovery_message_ignores_prepare_response_with_mismatched_hash ... ok
+test service::tests::change_view::view_change_allows_consensus_to_complete ... ok
+test service::tests::recovery::recovery_response_includes_compact_payloads ... ok
+test service::tests::recovery::recovery_request_ignored_by_non_selected_validator ... ok
+test service::tests::prepare::commits_reach_threshold_emit_block_committed ... ok
+test service::tests::recovery::recovery_request_broadcasts_recovery_message ... ok
+test service::tests::recovery::recovery_request_responds_when_commit_sent ... ok
+test service::tests::recovery::recovery_without_prepare_request_does_not_sign_zero_hash_commit ... ok
+test service::tests::recovery::recovery_message_with_commits_triggers_block_commit ... ok
+test service::tests::persist::persist_completed_round_emits_block_committed ... ok
+test service::tests::persist::persist_completed_starts_consensus_round ... ok
+test service::tests::persist::persist_completed_multiple_rounds ... ok
+
+test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src\lib.rs (target\debug\deps\neo_core-6092ad6bc28c56ce.exe)
+
+running 801 tests
+test actors::tests::default_mailbox_prioritizes_system_messages ... ok
+test application_logs::service::tests::write_log_propagates_snapshot_put_failure ... ok
+test application_logs::service::tests::commit_error_disables_service_when_policy_stops_plugin ... ok
+test application_logs::service::tests::commit_batch_propagates_snapshot_try_commit_failure ... ok
+test constants::tests::test_wire_limit_distinct_from_consensus ... ok
+test constants::tests::test_size_constants ... ok
+test constants::tests::test_time_constants ... ok
+test actors::tests::event_stream_publish_delivers_messages ... ok
+test actors::tests::shutdown_stops_and_waits_for_user_actors ... ok
+test actors::tests::actor_selection_returns_ref ... ok
+test error::tests::test_buffer_overflow_error ... ok
+test actors::tests::actor_of_rejects_duplicate_name ... ok
+test error::tests::test_error_categories ... ok
+test error::tests::test_error_creation ... ok
+test error::tests::test_user_vs_system_errors ... ok
+test hardfork::tests::test_hardfork_manager ... ok
+test hardfork::tests::test_mainnet_hardforks ... ok
+test error::tests::test_retryable_errors ... ok
+test ledger::blockchain::tests::tests::classify_import_block_detects_future_gap ... ok
+test error::tests::test_insufficient_gas_error ... ok
+test ledger::blockchain::tests::tests::classify_import_block_returns_already_seen_for_past_height ... ok
+test error::tests::test_from_std_errors ... ok
+test ledger::blockchain::tests::tests::classify_import_block_returns_next_expected_when_in_sequence ... ok
+test hardfork::tests::test_testnet_hardforks ... ok
+test ledger::blockchain::tests::tests::inventory_cache_keeps_first_payload_for_duplicate_key ... ok
+test ledger::blockchain::tests::tests::inventory_cache_get_does_not_refresh_fifo_order ... ok
+test ledger::blockchain::tests::tests::inventory_cache_duplicate_insert_does_not_refresh_fifo_order ... ok
+test ledger::blockchain::tests::tests::schedule_idle_only_when_more_pending_without_backlog ... ok
+test ledger::genesis::tests::genesis_block_has_correct_index ... ok
+test ledger::genesis::tests::genesis_block_has_correct_timestamp ... ok
+test ledger::blockchain_application_executed::tests::application_executed_records_vm_state_for_ledger_contract ... ok
+test ledger::genesis::tests::genesis_block_has_no_transactions ... ok
+test ledger::genesis::tests::genesis_block_has_zero_prev_hash ... ok
+test ledger::genesis::tests::mainnet_genesis_hash_matches_csharp ... ok
+test ledger::genesis::tests::mainnet_genesis_next_consensus_matches_csharp ... ok
+test ledger::header_cache::tests::remove_up_to_discards_lower_indices ... ok
+test ledger::ledger_context::tests::detects_future_headers ... ok
+test ledger::ledger_context::tests::insert_transaction_caches_valid_hash ... ok
+test ledger::ledger_context::tests::insert_transaction_rejects_unserializable_hash_without_zero_cache ... ok
+test ledger::memory_pool::tests::arc_transaction_returns_correct_data ... ok
+test ledger::header_cache::tests::refuses_to_add_when_full ... ok
+test ledger::memory_pool::tests::block_persist_removes_one_same_payer_fee_only_once ... ok
+test ledger::memory_pool::tests::can_transaction_fit_in_pool_checks_lowest_fee ... ok
+test ledger::memory_pool::tests::capacity_enforces_high_fee_eviction ... ok
+test actors::tests::counter_tell_and_ask ... ok
+test ledger::memory_pool::tests::capacity_exceeded_emits_removed_event ... ok
+test ledger::blockchain::tests::tests::actor_persist_failure_clears_state_service_staging_for_retry ... ok
+test ledger::memory_pool::tests::conflict_chain_rejects_lower_fee_replacement ... ok
+test ledger::memory_pool::tests::conflict_chain_allows_nonexistent_conflict_replacement ... ok
+test ledger::memory_pool::tests::conflict_replacement_emits_conflict_reason ... ok
+test ledger::memory_pool::tests::contains_key_tracks_verified_and_unverified ... ok
+test ledger::memory_pool::tests::conflict_with_different_sender_is_rejected ... ok
+test ledger::memory_pool::tests::invalidate_verified_resets_state_even_when_verified_is_empty ... ok
+test ledger::memory_pool::tests::higher_fee_conflict_replaces_multiple_transactions ... ok
+test ledger::memory_pool::tests::invalidate_all_clears_pool ... ok
+test ledger::memory_pool::tests::iter_unverified_returns_transactions_in_priority_order ... ok
+test ledger::memory_pool::tests::iter_verified_returns_transactions_in_priority_order ... ok
+test ledger::memory_pool::tests::iterator_returns_verified_and_unverified_transactions ... ok
+test ledger::memory_pool::tests::new_transaction_event_can_cancel ... ok
+test ledger::memory_pool::tests::max_transactions_per_sender_limit_is_enforced ... ok
+test ledger::memory_pool::tests::max_transactions_per_sender_allows_conflict_replacement ... ok
+test ledger::memory_pool::tests::reverify_restores_higher_fee_conflict ... ok
+test ledger::memory_pool::tests::reverify_promotes_highest_fee_first ... ok
+test actors::tests::watch_sends_terminated ... ok
+test actors::tests::scheduler_repeated_messages_stop_when_handle_is_dropped ... ok
+test ledger::memory_pool::tests::transaction_added_event_is_emitted ... ok
+test ledger::memory_pool::tests::sorted_verified_transactions_respects_limit_and_order ... ok
+test ledger::memory_pool::tests::reverify_uses_requested_count_when_verified_exceeds_max_per_block ... ok
+test ledger::memory_pool::tests::try_add_rejects_unhashable_transaction ... ok
+test ledger::memory_pool::tests::try_add_rejects_duplicate_transactions ... ok
+test ledger::memory_pool::tests::try_get_returns_unverified_transactions ... ok
+test ledger::memory_pool::tests::sorted_verified_transactions_subset_is_consistent ... ok
+test ledger::memory_pool::tests::update_pool_for_block_persisted_keeps_conflict_without_shared_signer ... ok
+test ledger::memory_pool::tests::update_pool_with_header_backlog_moves_to_unverified ... ok
+test ledger::memory_pool::tests::verified_and_unverified_transactions_are_sorted_descending ... ok
+test ledger::pool_item::tests::pool_item_compare_orders_by_fee ... ok
+test ledger::pool_item::tests::pool_item_compare_orders_by_hash_descending ... ok
+test ledger::pool_item::tests::pool_item_compare_respects_high_priority ... ok
+test macros::tests::test_impl_ord_by_fields ... ok
+test neo_system::actors::tests::transaction_router_handle_delivers_preverify_completed_to_blockchain ... ok
+test neo_system::actors::tests::transaction_router_handle_preserves_sender_for_blockchain_replies ... ok
+test neo_system::builder::tests::builder_chain_methods ... ok
+test neo_system::builder::tests::builder_creates_with_defaults ... ok
+test neo_system::builder::tests::builder_testnet_sets_settings ... ok
+test neo_system::converters::tests::convert_header_preserves_fields ... ok
+test neo_system::converters::tests::convert_witness_roundtrip ... ok
+test ledger::memory_pool::tests::verified_transactions_vec_returns_only_verified ... ok
+test neo_system::core::tests::convert_ledger_block_transfers_transactions ... ok
+test neo_system::core::tests::convert_ledger_header_preserves_fields ... ok
+test neo_system::core::tests::hydrate_ledger_from_empty_store_is_noop ... ok
+test ledger::memory_pool::tests::try_add_handles_multi_conflict_scenarios ... ok
+test neo_system::core::tests::hydrate_ledger_restores_height_and_headers ... ok
+test actors::tests::counter_restart_on_failure ... ok
+test neo_system::core::tests::hydrate_ledger_respects_bounded_window ... ok
+test neo_system::core::tests::typed_service_registry_registers_and_fetches_by_type ... ok
+test ledger::blockchain::tests::tests::extensible_payload_accepts_validator_sender ... ok
+test neo_system::helpers::tests::to_core_error_preserves_message ... ok
+test neo_system::registry::tests::named_service_lookup_works ... ok
+test neo_system::registry::tests::typed_service_registry_registers_and_fetches_by_type ... ok
+test neo_system::relay::tests::ledger_hydration_window_is_reasonable ... ok
+test neo_system::relay::tests::relay_cache_capacity_is_reasonable ... ok
+test neo_system::system::tests::readiness_status_unhealthy_default ... ok
+test neo_system::system::tests::readiness_status_with_services_updates_health ... ok
+test network::p2p::ban_list_tests::ban_list_active_bans_exclude_expired_entries ... ok
+test network::p2p::ban_list_tests::ban_list_cleanup_expired_returns_removed_count ... ok
+test network::p2p::ban_list_tests::ban_list_reports_active_ban_and_metadata ... ok
+test network::p2p::ban_list_tests::ban_list_unban_removes_active_ban ... ok
+test network::p2p::connection::tests::connection_stats_default ... ok
+test actors::tests::scheduler_once_message_can_be_cancelled ... ok
+test actors::tests::scheduler_repeated_messages_can_be_cancelled ... ok
+test network::p2p::connection::tests::from_channels_config_applies_frame_config ... ok
+test network::p2p::connection::tests::receive_message_preserves_second_frame_from_single_tcp_write ... ok
+test network::p2p::connection::tests::flush_sends_buffered_small_message ... ok
+test network::p2p::framed::tests::frame_config_default_matches_channels_defaults ... ok
+test network::p2p::connection::tests::send_message_fails_when_connection_inactive ... ok
+test network::p2p::connection::tests::stats_updated_after_send ... ok
+test network::p2p::framed::tests::read_frame_decodes_message_from_stream ... ok
+test network::p2p::framed::tests::read_frame_rejects_partial_frame_eof ... ok
+test network::p2p::framed::tests::read_frame_preserves_buffered_next_frame ... ok
+test ledger::blockchain::tests::tests::extensible_payload_requires_whitelisted_sender ... ok
+test actors::tests::dropping_cloned_schedule_handle_cancels_repeated_messages ... ok
+test network::p2p::framed::tests::write_all_vectored_with_timeout_finishes_short_writes ... ok
+test network::p2p::framed::tests::read_frame_times_out_when_partial_frame_stalls ... ok
+test network::p2p::framed::tests::read_frame_times_out_in_active_session_when_peer_silent ... ok
+test network::p2p::framed::tests::write_all_vectored_with_timeout_rejects_zero_byte_write ... ok
+test network::p2p::framed::tests::write_buffer_basic_operations ... ok
+test network::p2p::framed::tests::write_buffer_empty_push ... ok
+test network::p2p::framed::tests::write_buffer_remaining_capacity ... ok
+test network::p2p::framed::tests::write_buffer_take_clears ... ok
+test network::p2p::framed_codec::tests::canonicalizes_large_non_canonical_var_int_prefix ... ok
+test network::p2p::framed_codec::tests::canonicalizes_var_int_prefix ... ok
+test network::p2p::framed_codec::tests::decodes_complete_frame ... ok
+test network::p2p::framed_codec::tests::framed_read_canonicalizes_non_canonical_var_int_prefix ... ok
+test network::p2p::framed_codec::tests::framed_read_decodes_complete_frame ... ok
+test network::p2p::framed_codec::tests::framed_read_decodes_empty_payload_commands ... ok
+test network::p2p::framed_codec::tests::framed_read_decodes_split_header_var_int_and_payload ... ok
+test network::p2p::framed_codec::tests::framed_read_preserves_two_frames_from_one_read ... ok
+test network::p2p::framed_codec::tests::framed_read_rejects_oversized_payload ... ok
+test network::p2p::framed_codec::tests::rejects_oversized_payload ... ok
+test network::p2p::framed_codec::tests::framed_write_matches_network_message_bytes ... ok
+test network::p2p::framed_codec::tests::waits_for_partial_frame ... ok
+test network::p2p::framed_codec::tests::waits_for_partial_payload_after_var_int ... ok
+test network::p2p::inbound_rate_limiter_tests::inbound_rate_limiter_allows_initial_burst_then_rejects ... ok
+test network::p2p::inbound_rate_limiter_tests::inbound_rate_limiter_zero_capacity_rejects ... ok
+test ledger::memory_pool::tests::block_persist_reverify_drops_transactions_after_balance_change ... ok
+test network::p2p::local_node::tests::tests::allow_new_connection_respects_limits ... ok
+test network::p2p::local_node::tests::tests::ban_peer_rejects_inbound_until_unbanned ... ok
+test network::p2p::local_node::tests::tests::broadcast_history_can_be_disabled ... ok
+test network::p2p::local_node::tests::tests::compression_capability_respects_configuration ... ok
+test network::p2p::local_node::tests::tests::expired_ban_is_not_active_and_cleanup_removes_it ... ok
+test network::p2p::local_node::tests::tests::broadcast_history_is_bounded ... ok
+test network::p2p::local_node::tests::tests::tcp_server_capability_tracks_channels_config ... ok
+test network::p2p::message::tests::compresses_only_whitelisted_commands ... ok
+test network::p2p::message::tests::create_uses_strict_compression_min_size_threshold ... ok
+test network::p2p::message::tests::from_payload_with_flags_compresses_small_payload_when_flagged ... ok
+test network::p2p::message::tests::from_payload_with_flags_forces_existing_compression_flag ... ok
+test network::p2p::message::tests::from_payload_with_flags_keeps_uncompressed_payload_raw ... ok
+test network::p2p::message::tests::from_payload_with_flags_preserves_unknown_compressed_bits ... ok
+test network::p2p::message::tests::serialize_into_reuses_buffer ... ok
+test network::p2p::message::tests::to_bytes_respects_compression_flag ... ok
+test network::p2p::message::tests::uses_shared_var_int_size_calculation ... ok
+test network::p2p::message_command::tests::compression_whitelist_matches_protocol_commands ... ok
+test network::p2p::message_command::tests::extended_parse_aliases_preserve_legacy_unknown_commands ... ok
+test network::p2p::message_command::tests::outbound_queue_high_priority_set_matches_remote_node_policy ... ok
+test network::p2p::message_command::tests::outbound_queue_single_command_set_matches_remote_node_policy ... ok
+test network::p2p::message_command::tests::protocol_enum_guard_preserves_unknown_message_command_bytes ... ok
+test network::p2p::message_flags::tests::default_and_display_match_p2p_api ... ok
+test network::p2p::message_flags::tests::protocol_enum_guard_preserves_unknown_message_flag_bits ... ok
+test network::p2p::messages::tests::network_message_uses_strict_compression_min_size_threshold ... ok
+test network::p2p::messages::tests::protocol_message_deserializes_typed_empty_raw_and_unknown_families ... ok
+test network::p2p::messages::tests::protocol_message_rejects_non_empty_empty_payloads ... ok
+test network::p2p::messages::tests::protocol_message_rejects_typed_payload_trailing_bytes ... ok
+test network::p2p::messages::tests::protocol_message_serializes_empty_and_raw_payload_families ... ok
+test network::p2p::messages::tests::unknown_protocol_message_never_uses_command_compression_whitelist ... ok
+test network::p2p::payloads::block::tests::block_try_get_hash_data_matches_header_hash_data ... ok
+test network::p2p::payloads::block::tests::block_try_hash_delegates_to_header ... ok
+test network::p2p::payloads::block::tests::duplicate_transaction_check_rejects_unserializable_transaction_hash ... ok
+test network::p2p::payloads::block::tests::iverifiable_block_hash_uses_try_hash ... ok
+test network::p2p::payloads::block::tests::try_rebuild_merkle_root_rejects_unserializable_transaction_hash ... ok
+test network::p2p::payloads::block::tests::verify_merkle_root_rejects_unserializable_transaction_hash ... ok
+test network::p2p::payloads::extensible_payload::tests::iverifiable_extensible_hash_uses_try_hash ... ok
+test network::p2p::payloads::extensible_payload::tests::try_hash_matches_legacy_hash_for_valid_payload ... ok
+test network::p2p::payloads::extensible_payload::tests::try_hash_rejects_oversized_category_without_caching_zero_hash ... ok
+test network::p2p::payloads::header::tests::iverifiable_header_hash_uses_try_hash ... ok
+test network::p2p::payloads::header::tests::try_get_hash_data_matches_serialize_unsigned ... ok
+test network::p2p::payloads::block::tests::verify_with_cache_delegates_to_header_without_transaction_checks ... ok
+test network::p2p::payloads::header::tests::try_hash_matches_legacy_hash_for_valid_header ... ok
+test network::p2p::payloads::header::tests::verify_with_cache_rejects_when_timestamp_not_increasing ... ok
+test network::p2p::payloads::header::tests::verify_uses_persisted_state_when_cache_empty ... ok
+test network::p2p::payloads::merkle_block_payload::tests::pack_flags_uses_neo_lsb_first_byte_order ... ok
+test network::p2p::payloads::header::tests::verify_with_cache_succeeds_for_sequential_header ... ok
+test network::p2p::payloads::merkle_block_payload::tests::pad_flags_extends_and_truncates_to_width ... ok
+test network::p2p::payloads::merkle_block_payload::tests::pad_flags_single_depth_adds_placeholder ... ok
+test network::p2p::payloads::merkle_block_payload::tests::try_create_matches_legacy_create_for_valid_block ... ok
+test network::p2p::payloads::merkle_block_payload::tests::try_create_rejects_unserializable_transaction_hash ... ok
+test network::p2p::payloads::signer::tests::signer_deserialize_rejects_global_combined_scope ... ok
+test network::p2p::payloads::signer::tests::signer_deserialize_rejects_too_many_allowed_contracts ... ok
+test network::p2p::payloads::signer::tests::signer_deserialize_rejects_too_many_rules ... ok
+test network::p2p::payloads::signer::tests::signer_projects_to_neo_vm_rs_stack_value ... ok
+test network::p2p::payloads::signer::tests::signer_stack_item_projection_matches_stack_value_projection ... ok
+test network::p2p::payloads::transaction::core::tests::try_get_hash_data_rejects_oversized_script ... ok
+test network::p2p::payloads::transaction::core::tests::try_hash_rejects_oversized_script_without_caching_zero_hash ... ok
+test network::p2p::payloads::transaction::core::tests::verifiable_hash_rejects_oversized_script ... ok
+test network::p2p::payloads::transaction::core::tests::try_to_bytes_rejects_oversized_script ... ok
+test network::p2p::payloads::transaction::verification::tests::get_sign_data_rejects_unserializable_transaction ... ok
+test network::p2p::payloads::transaction::verification::tests::helper_get_sign_data_vec_rejects_unserializable_transaction ... ok
+test ledger::memory_pool::tests::block_persist_moves_to_unverified_and_reverify ... ok
+test network::p2p::payloads::transaction::verification::tests::verify_state_dependent_rejects_unserializable_sign_data ... ok
+test network::p2p::payloads::transaction_attribute::tests::multiplicity_matches_attribute_type_table ... ok
+test network::p2p::payloads::transaction_attribute::tests::wire_mapping_preserves_attribute_type_bytes ... ok
+test network::p2p::remote_node::alerts::tests::summarize_alert_payload_serializes_binary_as_hex ... ok
+test network::p2p::remote_node::alerts::tests::summarize_alert_payload_strips_control_chars ... ok
+test network::p2p::remote_node::alerts::tests::summarize_alert_payload_truncates_output ... ok
+test network::p2p::remote_node::bloom_filter::tests::bloom_filter_does_not_match_unrelated_transaction ... ok
+test network::p2p::remote_node::bloom_filter::tests::bloom_filter_flags_preserve_transaction_order ... ok
+test network::p2p::remote_node::bloom_filter::tests::bloom_filter_flags_return_none_without_loaded_filter ... ok
+test network::p2p::remote_node::bloom_filter::tests::bloom_filter_matches_transaction_signer_account ... ok
+test network::p2p::remote_node::bloom_filter::tests::bloom_filter_matches_valid_transaction_hash ... ok
+test network::p2p::remote_node::bloom_filter::tests::bloom_filter_rejects_unserializable_transaction_hash ... ok
+test network::p2p::remote_node::bloom_filter::tests::filter_add_updates_loaded_filter ... ok
+test network::p2p::remote_node::bloom_filter::tests::filter_add_without_loaded_filter_is_noop ... ok
+test network::p2p::remote_node::bloom_filter::tests::filter_clear_removes_loaded_filter ... ok
+test network::p2p::remote_node::bloom_filter::tests::filter_load_accepts_valid_filter_payload ... ok
+test network::p2p::remote_node::bloom_filter::tests::filter_load_empty_or_zero_hash_functions_clears_filter ... ok
+test network::p2p::remote_node::bloom_filter::tests::filter_rate_limit_allows_initial_burst_then_rejects ... ok
+test network::p2p::remote_node::bloom_filter::tests::filter_load_rejects_oversized_or_excessive_hash_function_payloads ... ok
+test network::p2p::remote_node::outbound_queue::tests::command_bit_set_tracks_unknown_command_bytes ... ok
+test network::p2p::remote_node::outbound_queue::tests::command_bit_sets_are_independent_boolean_trackers ... ok
+test network::p2p::remote_node::outbound_queue::tests::duplicate_single_command_is_detected ... ok
+test network::p2p::remote_node::outbound_queue::tests::duplicate_single_command_wins_over_full_queue ... ok
+test network::p2p::remote_node::outbound_queue::tests::duplicate_single_command_wins_over_memory_limit ... ok
+test network::p2p::remote_node::outbound_queue::tests::high_priority_messages_do_not_bypass_global_byte_limit ... ok
+test network::p2p::remote_node::outbound_queue::tests::inventory_message_estimate_scales_with_hash_count ... ok
+test network::p2p::remote_node::outbound_queue::tests::non_duplicate_message_still_reports_full_queue ... ok
+test network::p2p::remote_node::outbound_queue::tests::non_single_command_is_not_deduplicated ... ok
+test network::p2p::remote_node::outbound_queue::tests::outbound_queue_pop_releases_stored_byte_estimates ... ok
+test network::p2p::remote_node::outbound_queue::tests::outbound_queues_capacity_is_per_lane ... ok
+test network::p2p::remote_node::outbound_queue::tests::outbound_queues_memory_limit_rejects_without_mutating_state ... ok
+test network::p2p::remote_node::outbound_queue::tests::outbound_queues_pop_high_priority_before_low_fifo_within_lane ... ok
+test network::p2p::remote_node::outbound_queue::tests::popped_single_command_can_be_queued_again ... ok
+test network::p2p::remote_node::peer_messages::tests::addr_endpoint_collection_drops_zero_port_and_deduplicates ... ok
+test network::p2p::remote_node::peer_messages::tests::header_request_count_is_capped_to_protocol_max ... ok
+test network::p2p::remote_node::peer_messages::tests::negative_header_request_count_uses_protocol_max ... ok
+test network::p2p::remote_node::pending_known_hashes::tests::clear_removes_all_hashes ... ok
+test network::p2p::remote_node::pending_known_hashes::tests::contains_does_not_promote_recency ... ok
+test network::p2p::remote_node::pending_known_hashes::tests::duplicate_add_does_not_refresh_timestamp_when_not_full ... ok
+test network::p2p::remote_node::pending_known_hashes::tests::full_duplicate_preserves_legacy_eviction_before_duplicate_check ... ok
+test network::p2p::remote_node::pending_known_hashes::tests::prune_older_than_removes_stale_front_entries ... ok
+test network::p2p::remote_node::pending_known_hashes::tests::remove_keeps_remaining_fifo_order ... ok
+test network::p2p::remote_node::pending_known_hashes::tests::try_add_evicts_oldest_when_full ... ok
+test network::p2p::remote_node::pending_known_hashes::tests::zero_capacity_matches_legacy_single_entry_behavior ... ok
+test network::p2p::remote_node::tests::build_wire_message_reconstructs_flagged_compressed_message_for_handlers ... ok
+test network::p2p::remote_node::tests::handler_iteration_allows_unregister_during_callback ... ok
+test network::p2p::remote_node::tests::handshake_gate_rejects_duplicate_handshake_messages_after_completion ... ok
+test network::p2p::remote_node::tests::handshake_gate_requires_verack_after_version ... ok
+test network::p2p::remote_node::tests::handshake_gate_requires_version_first ... ok
+test network::p2p::remote_node::tests::register_handler_tracks_subscription ... ok
+test network::p2p::remote_node::tests::relay_inventory_hash_matches_valid_block_try_hash ... ok
+test network::p2p::remote_node::tests::relay_inventory_hash_matches_valid_extensible_try_hash ... ok
+test network::p2p::remote_node::tests::relay_inventory_hash_matches_valid_transaction_try_hash ... ok
+test network::p2p::remote_node::tests::relay_inventory_hash_rejects_unserializable_extensible_payload ... ok
+test network::p2p::remote_node::tests::relay_inventory_hash_rejects_unserializable_transaction ... ok
+test network::p2p::remote_node::tests::timeout_stats_increment ... ok
+test network::p2p::task_manager::block_validation::tests::block_hash_match_compares_hashes ... ok
+test network::p2p::remote_node::tests::timeout_stats_logged ... ok
+test ledger::blockchain::tests::tests::relay_rejects_mismatched_signers_and_witnesses ... ok
+test network::p2p::task_manager::block_validation::tests::incoming_block_conflicting_with_cached_copy_disconnects ... ok
+test network::p2p::task_manager::block_validation::tests::incoming_block_matching_cached_copy_is_kept ... ok
+test network::p2p::task_manager::block_validation::tests::incoming_block_without_cached_copy_is_stored ... ok
+test network::p2p::task_manager::block_validation::tests::persisted_block_match_compares_hashes ... ok
+test network::p2p::task_manager::scheduling::tests::available_inventory_plan_removes_stale_and_schedules_under_capacity_hashes ... ok
+test network::p2p::task_manager::scheduling::tests::block_index_plan_respects_batch_limit ... ok
+test network::p2p::task_manager::scheduling::tests::block_index_plan_skips_in_flight_heights_and_stops_before_next_gap ... ok
+test network::p2p::task_manager::scheduling::tests::effective_header_height_uses_highest_known_source ... ok
+test network::p2p::task_manager::scheduling::tests::header_request_plan_requires_peer_ahead_retry_and_global_capacity ... ok
+test network::p2p::task_manager::scheduling::tests::task_counter_limits_and_removes_zero_entries ... ok
+test network::p2p::payloads::transaction::verification::tests::verify_state_independent_rejects_unserializable_sign_data ... ok
+test network::p2p::task_manager::tests::complete_inventory_records_non_header_hashes_only ... ok
+test network::p2p::task_manager::scheduling::tests::block_index_plan_returns_none_when_window_is_already_full ... ok
+test network::p2p::task_manager::tests::complete_inventory_disconnects_conflicting_block ... ok
+test network::p2p::task_manager::tests::complete_inventory_stores_hashable_block ... ok
+test network::p2p::task_manager::tests::mempool_request_is_one_shot_and_marks_sent_before_delivery_result ... ok
+test network::p2p::task_manager::tests::persist_completed_disconnects_mismatched_cached_block ... ok
+test network::p2p::framed::tests::read_frame_times_out_when_peer_silent ... ok
+test network::p2p::local_node::actor::tests::stop_background_tasks_cancels_tracked_background_tasks ... ok
+test network::p2p::local_node::actor::tests::resolve_seed_endpoints_delegates_to_standard_socket_parser ... ok
+test oracle_service::service::tests::filter_json::filter_matches_csharp_examples ... ok
+test ledger::blockchain::tests::tests::relay_rejects_on_chain_conflict_with_same_sender ... ok
+test persistence::compression::tests::compress_lz4_empty_data ... ok
+test persistence::compression::tests::compress_lz4_large_data ... ok
+test persistence::compression::tests::compress_lz4_roundtrip ... ok
+test persistence::compression::tests::compress_none_returns_original_data ... ok
+test persistence::compression::tests::compress_zstd_empty_data ... ok
+test persistence::compression::tests::compress_zstd_roundtrip ... ok
+test persistence::compression::tests::decompress_lz4_missing_length_prefix_fails ... ok
+test persistence::compression::tests::decompress_none_returns_original_data ... ok
+test persistence::compression::tests::estimate_compressed_size_empty_data ... ok
+test persistence::compression::tests::estimate_compressed_size_lz4_returns_smaller_estimate ... ok
+test persistence::compression::tests::estimate_compressed_size_none_returns_original_length ... ok
+test persistence::compression::tests::estimate_compressed_size_zstd_returns_smaller_estimate ... ok
+test persistence::compression::tests::get_compression_ratio_calculates_correctly ... ok
+test persistence::compression::tests::get_compression_ratio_no_compression ... ok
+test persistence::compression::tests::get_compression_ratio_zero_original_size ... ok
+test persistence::serialization::tests::compress_data_and_decompress_roundtrip ... ok
+test persistence::serialization::tests::compress_data_large_input ... ok
+test persistence::serialization::tests::decompress_data_empty_returns_error ... ok
+test persistence::serialization::tests::deserialize_empty_data_returns_error ... ok
+test persistence::serialization::tests::deserialize_json_empty_returns_error ... ok
+test persistence::serialization::tests::deserialize_json_whitespace_only_returns_error ... ok
+test persistence::serialization::tests::estimate_serialized_size_matches_actual ... ok
+test persistence::serialization::tests::serialize_and_deserialize_roundtrip ... ok
+test persistence::serialization::tests::serialize_json_and_deserialize_roundtrip ... ok
+test persistence::serialization::tests::serialize_json_string ... ok
+test persistence::serialization::tests::serialize_string ... ok
+test persistence::serialization::tests::validate_serialization_returns_true_for_valid_data ... ok
+test persistence::serialization::tests::validate_serialization_string ... ok
+test persistence::storage::tests::batch_operation_delete_equality ... ok
+test persistence::storage::tests::batch_operation_different_types_not_equal ... ok
+test persistence::storage::tests::batch_operation_put_equality ... ok
+test persistence::storage::tests::compaction_strategy_equality ... ok
+test persistence::storage::tests::compression_algorithm_clone ... ok
+test persistence::storage::tests::compression_algorithm_equality ... ok
+test persistence::storage::tests::storage_config_clone ... ok
+test persistence::storage::tests::storage_config_default_values ... ok
+test persistence::storage::tests::storage_error_converts_to_core_error ... ok
+test persistence::storage::tests::storage_error_not_found_display ... ok
+test persistence::storage::tests::storage_error_other_display ... ok
+test persistence::storage::tests::storage_error_read_only_display ... ok
+test persistence::storage::tests::storage_item_default_is_empty ... ok
+test persistence::storage::tests::storage_item_new_creates_item ... ok
+test persistence::storage::tests::storage_key_equality ... ok
+test persistence::storage::tests::storage_key_from_bytes_exact_four_bytes ... ok
+test persistence::storage::tests::storage_key_hash_consistency ... ok
+test persistence::storage::tests::storage_key_new_creates_key ... ok
+test persistence::storage::tests::storage_key_to_bytes_and_from_bytes_roundtrip ... ok
+test persistence::storage_key::tests::storage_key_basic ... ok
+test persistence::storage_key::tests::storage_key_create ... ok
+test persistence::storage_key::tests::storage_key_create_with_uint160 ... ok
+test persistence::storage_key::tests::storage_key_create_with_uint256 ... ok
+test persistence::storage_key::tests::storage_key_from_bytes ... ok
+test persistence::storage_key::tests::storage_key_get_hash_code ... ok
+test persistence::storage_key::tests::storage_key_ordering ... ok
+test persistence::storage_key::tests::storage_key_to_array ... ok
+test script_validation::tests::accepts_empty_and_simple_scripts ... ok
+test script_validation::tests::exposes_instruction_metadata_for_disassembly_tools ... ok
+test script_validation::tests::rejects_any_type_for_convert ... ok
+test script_validation::tests::rejects_invalid_jump_targets ... ok
+test script_validation::tests::rejects_truncated_pushdata ... ok
+test script_validation::tests::rejects_unknown_opcodes ... ok
+test script_validation::tests::relaxed_validation_parses_offsets_without_strict_jump_checks ... ok
+test services::traits::tests::mock_ledger_service_works ... ok
+test services::traits::tests::mock_mempool_service_works ... ok
+test services::traits::tests::traits_are_object_safe ... ok
+test smart_contract::application_engine::contract::tests::decode_native_result_any_deserializes_stack_item_payloads ... ok
+test smart_contract::application_engine::contract::tests::decode_native_result_any_empty_is_null ... ok
+test smart_contract::application_engine::contract::tests::decode_native_result_any_invalid_payload_preserves_raw_bytes ... ok
+test smart_contract::application_engine::contract::tests::decode_native_result_array_empty_is_null ... ok
+test smart_contract::application_engine::contract::tests::decode_native_result_array_payload_roundtrips ... ok
+test smart_contract::application_engine::contracts::tests::call_contract_uses_execution_state_script_hash_for_caller ... ok
+test smart_contract::application_engine::contracts::tests::pending_native_callbacks_share_native_invoke_calling_context ... ok
+test smart_contract::contract::tests::get_address_uses_default_protocol_base58_check_payload ... ok
+test smart_contract::contract_state::tests::contract_state_projects_to_stack_value ... ok
+test smart_contract::contract_state::tests::contract_state_reads_stack_value ... ok
+test smart_contract::contract_state::tests::contract_state_roundtrip_matches_signed_id ... ok
+test smart_contract::contract_state::tests::contract_state_stack_item_projection_matches_stack_value_projection ... ok
+test smart_contract::env_flags::tests::parse_env_flag_accepts_existing_truthy_values ... ok
+test smart_contract::env_flags::tests::parse_env_flag_rejects_other_values ... ok
+test smart_contract::interop_parameter_descriptor::tests::converts_primitive_stack_values_without_local_stack_item ... ok
+test smart_contract::interop_parameter_descriptor::tests::non_nullable_string_rejects_null ... ok
+test smart_contract::key_builder::tests::test_add_ecpoint ... ok
+test smart_contract::key_builder::tests::test_try_add_big_endian_negative ... ok
+test smart_contract::key_builder::tests::test_try_add_exceeds_max_length ... ok
+test smart_contract::key_builder::tests::test_try_new_with_zero_max_length ... ok
+test smart_contract::manifest::contract_abi::tests::contract_abi_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_abi::tests::contract_abi_reads_from_neo_vm_rs_stack_value_and_clears_method_cache ... ok
+test smart_contract::manifest::contract_abi::tests::contract_abi_reads_struct_sequences_from_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_abi::tests::contract_abi_stack_item_projection_matches_stack_value_projection ... ok
+test smart_contract::manifest::contract_event_descriptor::tests::event_descriptor_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_event_descriptor::tests::event_descriptor_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_event_descriptor::tests::event_descriptor_reads_struct_parameter_sequence ... ok
+test smart_contract::manifest::contract_event_descriptor::tests::event_descriptor_stack_item_projection_matches_stack_value_projection ... ok
+test smart_contract::manifest::contract_group::tests::contract_group_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_group::tests::contract_group_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_group::tests::contract_group_stack_item_projection_matches_stack_value_projection ... ok
+test smart_contract::manifest::contract_manifest::manifest_extra_escape_tests::contract_manifest_projects_to_stack_value ... ok
+test smart_contract::manifest::contract_manifest::manifest_extra_escape_tests::contract_manifest_reads_stack_value ... ok
+test smart_contract::manifest::contract_manifest::manifest_extra_escape_tests::contract_manifest_stack_item_projection_matches_stack_value_projection ... ok
+test smart_contract::manifest::contract_manifest::manifest_extra_escape_tests::extra_with_ampersand_uses_csharp_escape ... ok
+test smart_contract::manifest::contract_method_descriptor::tests::method_descriptor_keeps_invalid_return_type_fallback ... ok
+test smart_contract::manifest::contract_method_descriptor::tests::method_descriptor_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_method_descriptor::tests::method_descriptor_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_method_descriptor::tests::method_descriptor_reads_struct_parameter_sequence ... ok
+test smart_contract::manifest::contract_method_descriptor::tests::method_descriptor_stack_item_projection_matches_stack_value_projection ... ok
+test smart_contract::manifest::contract_parameter_definition::tests::parameter_definition_keeps_invalid_type_fallback ... ok
+test smart_contract::manifest::contract_parameter_definition::tests::parameter_definition_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_parameter_definition::tests::parameter_definition_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_parameter_definition::tests::parameter_definition_stack_item_projection_matches_stack_value_projection ... ok
+test smart_contract::manifest::contract_permission::tests::contract_permission_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_permission::tests::contract_permission_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_permission::tests::contract_permission_stack_item_projection_matches_stack_value_projection ... ok
+test smart_contract::manifest::contract_permission_descriptor::tests::permission_descriptor_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_permission_descriptor::tests::permission_descriptor_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::manifest::contract_permission_descriptor::tests::permission_descriptor_stack_item_projection_matches_stack_value_projection ... ok
+test smart_contract::manifest::wild_card_container::tests::string_list_projects_to_neo_vm_rs_byte_string_array ... ok
+test smart_contract::manifest::wild_card_container::tests::string_list_reads_from_neo_vm_rs_array ... ok
+test smart_contract::manifest::wild_card_container::tests::string_list_reads_from_neo_vm_rs_struct_for_compatibility ... ok
+test smart_contract::manifest::wild_card_container::tests::string_stack_item_projection_matches_stack_value_projection ... ok
+test smart_contract::manifest::wild_card_container::tests::string_wildcard_projects_to_neo_vm_rs_null ... ok
+test smart_contract::manifest::wild_card_container::tests::string_wildcard_reads_from_neo_vm_rs_null ... ok
+test smart_contract::max_length_attribute::tests::compound_lengths_use_stack_value_shapes ... ok
+test smart_contract::max_length_attribute::tests::integer_length_uses_neo_vm_rs_byte_string_rules ... ok
+test smart_contract::native::account_state::tests::account_state_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::native::account_state::tests::account_state_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::native::contract_management::tests::contract_hashes_sorted_and_non_native ... ok
+test smart_contract::native::contract_management::tests::deploy_accepts_manifest_with_empty_permissions ... ok
+test smart_contract::native::contract_management::tests::deploy_increments_contract_id_after_store_roundtrip ... ok
+test smart_contract::native::contract_management::tests::deploy_reads_next_contract_id_from_variable_length_storage_integer ... ok
+test smart_contract::native::contract_management::tests::deploy_rejects_missing_sender_and_invalid_payloads ... ok
+test smart_contract::native::contract_management::tests::deploy_returns_expected_hash_and_prevents_duplicates ... ok
+test smart_contract::native::contract_management::tests::destroy_removes_contract_and_storage ... ok
+test smart_contract::native::contract_management::tests::get_contract_hashes_excludes_destroyed_contract_in_same_snapshot ... ok
+test smart_contract::native::contract_management::tests::get_contract_hashes_returns_iterator ... ok
+test smart_contract::native::contract_management::tests::has_method_accepts_any_parameter_count ... ok
+test smart_contract::native::contract_management::tests::hydrate_from_engine_rejects_duplicate_non_native_ids ... ok
+test smart_contract::native::contract_management::tests::is_contract_and_list_contracts_filter_native ... ok
+test smart_contract::native::contract_management::tests::list_contracts_rejects_malformed_contract_payload ... ok
+test ledger::memory_pool::tests::unverified_high_priority_transactions_prevent_low_fee_admission ... ok
+test smart_contract::native::contract_management::tests::update_preserves_storage_and_increments_counter ... ok
+test smart_contract::native::contract_management::tests::update_rejects_empty_payloads ... ok
+test smart_contract::native::contract_management::tests::update_rejects_oversized_manifest ... ok
+test smart_contract::native::contract_management::tests::update_requires_calling_context ... ok
+test smart_contract::native::contract_management::tests::validate_snapshot_integrity_rejects_duplicate_non_native_ids ... ok
+test smart_contract::native::crypto_lib::tests::dispatch_method_covers_declared_metadata_names ... ok
+test smart_contract::native::crypto_lib::tests::dispatch_method_routes_crypto_methods_and_unknowns ... ok
+test smart_contract::native::crypto_lib::tests::test_ripemd160 ... ok
+test smart_contract::native::crypto_lib::tests::test_sha256 ... ok
+test smart_contract::native::hash_index_state::tests::hash_index_state_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::native::hash_index_state::tests::hash_index_state_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::native::ledger_contract::tests::batch_vm_state_update_applies_all_entries ... ok
+test smart_contract::native::ledger_contract::native_impl::tests::dispatch_method_covers_declared_metadata_names ... ok
+test smart_contract::native::ledger_contract::tests::conflict_stub_requires_traceable_base_and_matching_signer ... ok
+test smart_contract::native::ledger_contract::tests::ledger_transaction_states_mark_vm_state ... ok
+test smart_contract::native::ledger_contract::tests::ledger_transaction_states_try_into_updates_rejects_unserializable_hash ... ok
+test smart_contract::native::ledger_contract::tests::persist_transaction_state_rejects_unserializable_hash_without_zero_key ... ok
+test smart_contract::native::ledger_contract::tests::store_block_state_rejects_unserializable_transaction_before_tracking_writes ... ok
+test smart_contract::native::ledger_contract::tests::traceable_block_window_matches_protocol_boundaries ... ok
+test smart_contract::native::ledger_contract::tests::update_vm_state_overwrites_persisted_value ... ok
+test smart_contract::native::neo_token::bonus::tests::full_bonus_calculation_with_vote ... ok
+test smart_contract::native::neo_token::bonus::tests::gas_per_block_encode_decode_roundtrip ... ok
+test smart_contract::native::neo_token::bonus::tests::get_sorted_gas_records_filters_and_orders_correctly ... ok
+test smart_contract::native::neo_token::bonus::tests::holder_reward_division_order_invariant ... ok
+test smart_contract::native::neo_token::bonus::tests::holder_reward_over_56k_blocks_exact ... ok
+test smart_contract::native::neo_token::bonus::tests::holder_reward_single_neo_single_block_is_zero ... ok
+test smart_contract::native::neo_token::bonus::tests::holder_reward_two_neo_single_block ... ok
+test smart_contract::native::neo_token::bonus::tests::neo_holder_reward_matches_csharp_for_small_balance ... ok
+test smart_contract::native::neo_token::bonus::tests::neo_holder_reward_truncation_matches_csharp ... ok
+test smart_contract::native::neo_token::bonus::tests::neo_holder_reward_with_gas_rate_change ... ok
+test smart_contract::native::neo_token::bonus::tests::no_gas_records_returns_zero_reward ... ok
+test smart_contract::native::neo_token::bonus::tests::unclaimed_gas_helper_allows_future_end_heights_like_csharp_calculate_bonus ... ok
+test smart_contract::native::neo_token::bonus::tests::unclaimed_gas_contract_method_still_requires_expected_end_height ... ok
+test smart_contract::native::neo_token::bonus::tests::voter_reward_accumulation_over_many_epochs_no_drift ... ok
+test smart_contract::native::neo_token::bonus::tests::voter_reward_per_neo_accumulation_matches_csharp ... ok
+test smart_contract::native::neo_token::bonus::tests::voter_reward_truncation_matches_csharp_exactly ... ok
+test smart_contract::native::neo_token::committee::tests::committee_public_key_from_stack_value_accepts_byte_arrays ... ok
+test smart_contract::native::neo_token::committee::tests::committee_public_key_from_stack_value_rejects_non_byte_arrays ... ok
+test smart_contract::native::neo_token::committee::tests::committee_public_key_from_stack_value_reports_invalid_points ... ok
+test smart_contract::native::neo_token::types::tests::candidate_state_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::native::neo_token::types::tests::candidate_state_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::native::neo_token::types::tests::candidate_state_reads_legacy_integer_stack_value ... ok
+test smart_contract::native::neo_token::types::tests::neo_account_state_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::native::neo_token::types::tests::neo_account_state_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::native::neo_token::types::tests::neo_account_state_reads_legacy_integer_stack_value ... ok
+test smart_contract::native::notary::deposit::tests::deposit_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::native::notary::deposit::tests::deposit_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::native::notary::deposit::tests::deposit_serialization_roundtrips ... ok
+test smart_contract::native::notary::tests::test_notary_creation ... ok
+test smart_contract::native::oracle_contract::config::tests::default_limits_match_csharp_oracle_contract ... ok
+test smart_contract::native::oracle_contract::config::tests::user_data_limit_is_not_the_wire_tx_limit ... ok
+test smart_contract::native::oracle_contract::tests::native_methods_match_oracle_protocol_metadata ... ok
+test smart_contract::native::oracle_request::tests::oracle_request_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::native::oracle_request::tests::oracle_request_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::native::oracle_contract::tests::dispatch_method_covers_declared_metadata_names ... ok
+test ledger::memory_pool::tests::reverify_batches_progress_without_exhausting_pool ... ok
+test smart_contract::native::policy_contract::tests::check_block_account_faun_pre_blocked_migrates_timestamp ... ok
+test smart_contract::native::policy_contract::tests::check_block_account ... ok
+test smart_contract::native::policy_contract::tests::check_default ... ok
+test smart_contract::native::policy_contract::tests::check_block_unblock_account ... ok
+test ledger::blockchain::tests::tests::import_rejects_out_of_order_blocks ... ok
+test smart_contract::native::policy_contract::tests::check_set_base_exec_fee ... ok
+test smart_contract::native::policy_contract::tests::check_recover_funds_complete_flow ... ok
+test smart_contract::native::policy_contract::tests::check_set_attribute_fee ... ok
+test smart_contract::native::policy_contract::tests::check_set_fee_per_byte ... ok
+test smart_contract::native::policy_contract::tests::check_set_max_traceable_blocks ... ok
+test smart_contract::native::policy_contract::tests::on_persist_engine_defers_policy_initialize_until_native_on_persist ... ok
+test smart_contract::native::policy_contract::tests::policy_dispatch_method_covers_declared_metadata_names ... ok
+test smart_contract::native::policy_contract::tests::check_set_milliseconds_per_block ... ok
+test ledger::blockchain::tests::tests::state_service_payload_ingests_into_shared_state_store ... ok
+test smart_contract::native::policy_contract::tests::check_set_max_valid_until_block_increment ... ok
+test smart_contract::native::policy_contract::tests::check_set_storage_price ... ok
+test smart_contract::native::policy_contract::tests::recover_fund_requires_allow_call_permissions ... ok
+test smart_contract::native::policy_contract::tests::test_set_whitelist_fee_contract_negative_fixed_fee ... ok
+test smart_contract::native::policy_contract::tests::test_list_blocked_accounts ... ok
+test smart_contract::native::policy_contract::tests::test_set_whitelist_fee_contract_set_contract ... ok
+test smart_contract::native::policy_contract::tests::test_set_whitelist_fee_contract_when_arg_count_mismatch ... ok
+test ledger::blockchain::tests::tests::import_rejects_invalid_block_when_verify_enabled ... ok
+test smart_contract::native::policy_contract::tests::test_whitelist_stack_value_roundtrip ... ok
+test smart_contract::native::policy_contract::tests::whitelisted_contract_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::native::policy_contract::tests::whitelisted_contract_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::native::role::tests::role_all_values_match_declaration_order ... ok
+test smart_contract::native::policy_contract::tests::test_set_whitelist_fee_contract_when_contract_not_found ... ok
+test smart_contract::native::role::tests::role_display_and_name_match_variant_names ... ok
+test smart_contract::native::role::tests::role_from_byte_rejects_unknown_values ... ok
+test smart_contract::native::role::tests::role_serde_keeps_derived_enum_shape ... ok
+test smart_contract::native::role::tests::role_values_match_protocol_bytes ... ok
+test smart_contract::native::role_management::tests::dispatch_method_covers_declared_metadata_names ... ok
+test smart_contract::native::role_management::tests::designate_as_role_rejects_duplicate_public_keys ... ok
+test smart_contract::native::role_management::tests::role_key_suffix_is_role_plus_big_endian_index ... ok
+test smart_contract::native::role_management::tests::designate_as_role_reports_existing_designation_before_duplicate_validation ... ok
+test smart_contract::native::role_management::tests::find_designation_returns_latest_entry ... ok
+test smart_contract::native::role_management::tests::serialize_and_parse_roundtrip ... ok
+test smart_contract::native::role_management::tests::serialize_public_keys_uses_stack_value_array_payload ... ok
+test smart_contract::native::security_fixes::tests::test_reentrancy_guard ... ok
+test smart_contract::native::security_fixes::tests::test_safe_sub ... ok
+test smart_contract::native::security_fixes::tests::test_state_validator ... ok
+test smart_contract::native::security_fixes::tests::test_validate_account_hash ... ok
+test smart_contract::native::security_fixes::tests::test_validate_balance_change ... ok
+test smart_contract::native::security_fixes::tests::test_validate_public_key ... ok
+test smart_contract::native::role_management::tests::vm_get_designated_by_role_accepts_compact_integer_index ... ok
+test smart_contract::native::security_fixes::tests::test_validate_range ... ok
+test smart_contract::native::security_fixes::tests::test_validate_total_supply_change ... ok
+test smart_contract::native::stack_value_numeric::tests::numeric_stack_values_convert_to_bigint ... ok
+test smart_contract::native::stack_value_numeric::tests::oversized_byte_values_do_not_convert_to_bigint ... ok
+test smart_contract::native::stack_value_numeric::tests::stack_values_convert_to_u32_only_when_in_range ... ok
+test smart_contract::native::std_lib::tests::test_atoi_itoa ... ok
+test smart_contract::native::std_lib::tests::test_base64_encode_decode ... ok
+test smart_contract::native::std_lib::tests::test_memory_compare ... ok
+test smart_contract::native::std_lib::tests::test_memory_search_backward ... ok
+test smart_contract::native::std_lib::tests::test_memory_search_basic ... ok
+test smart_contract::native::std_lib::tests::test_memory_search_with_start ... ok
+test smart_contract::native::std_lib::tests::test_json_serialize_deserialize ... ok
+test smart_contract::native::std_lib::tests::test_method_metadata_snapshot ... ok
+test smart_contract::native::std_lib::tests::test_str_len_basic ... ok
+test smart_contract::native::std_lib::tests::test_str_len_unicode ... ok
+test smart_contract::native::std_lib::tests::test_metadata_methods_all_dispatch ... ok
+test smart_contract::native::tests::test_native_registry_all_hashes ... ok
+test smart_contract::native::std_lib::tests::test_string_split_basic ... ok
+test smart_contract::native::std_lib::tests::test_string_split_with_empty_entries ... ok
+test smart_contract::native::tests::test_native_registry_contract_iteration_order ... ok
+test smart_contract::native::tests::test_native_registry_creation ... ok
+test smart_contract::native::tests::test_native_registry_hashes_follow_iteration_order ... ok
+test smart_contract::native::policy_contract::tests::test_set_whitelist_fee_contract_when_not_committee ... ok
+test smart_contract::native::token_management::methods::tests::token_management_method_metadata_snapshot ... ok
+test smart_contract::native::tests::test_non_native_contract ... ok
+test smart_contract::native::tests::test_native_registry_take_preserves_remaining_order ... ok
+test smart_contract::native::policy_contract::tests::test_set_whitelist_fee_contract_when_contract_not_in_abi ... ok
+test smart_contract::native::token_management::tests::account_state_projects_to_stack_value ... ok
+test smart_contract::native::token_management::tests::account_state_reads_stack_value ... ok
+test smart_contract::native::token_management::tests::nft_state_projects_to_stack_value ... ok
+test smart_contract::native::token_management::tests::nft_state_reads_stack_value ... ok
+test smart_contract::native::token_management::tests::test_account_state_new ... ok
+test smart_contract::native::token_management::tests::test_nft_state_new ... ok
+test smart_contract::native::token_management::tests::test_token_state_default ... ok
+test smart_contract::native::token_management::tests::token_state_projects_to_stack_value ... ok
+test smart_contract::native::token_management::tests::token_state_reads_stack_value ... ok
+test smart_contract::native::transaction_state::tests::binary_roundtrip_matches_csharp_transaction_state ... ok
+test smart_contract::native::transaction_state::tests::conflict_stub_roundtrip ... ok
+test smart_contract::native::transaction_state::tests::full_roundtrip_preserves_transaction_and_state ... ok
+test smart_contract::native::transaction_state::tests::transaction_state_clone_is_independent ... ok
+test smart_contract::native::transaction_state::tests::transaction_state_from_stack_value_updates_fields ... ok
+test smart_contract::native::transaction_state::tests::transaction_state_projects_conflict_stub_to_neo_vm_rs_stack_value ... ok
+test smart_contract::native::transaction_state::tests::transaction_state_reads_from_neo_vm_rs_stack_value ... ok
+test smart_contract::native::transaction_state::tests::trimmed_transaction_state_roundtrip_via_binary_serializer ... ok
+test smart_contract::native::trimmed_block::tests::trimmed_block_projects_to_neo_vm_rs_stack_value ... ok
+test smart_contract::native::trimmed_block::tests::trimmed_block_stack_item_projection_matches_stack_value_projection ... ok
+test smart_contract::native::trimmed_block::tests::try_from_block_rejects_unserializable_transaction_hash ... ok
+test smart_contract::native::trimmed_block::tests::try_hash_matches_legacy_hash_for_valid_trimmed_block ... ok
+test state_service::commit_handlers::tests::committing_handler_disables_after_error_when_policy_stops_plugin ... ok
+test state_service::async_state_root::tests::test_async_state_root_creation ... ok
+test state_service::async_state_root::tests::test_verify_root_match_success ... ok
+test state_service::async_state_root::tests::test_verify_root_match_failure ... ok
+test state_service::commit_handlers::tests::committing_handler_keeps_running_after_error_when_policy_continues ... ok
+test state_service::commit_handlers::tests::committing_stages_root_without_advancing_until_block_is_committed ... ok
+test state_service::conflict_detector::tests::test_compute_final_rw_set ... ok
+test state_service::commit_handlers::tests::try_committing_handler_stages_storage_changes_before_commit_gate ... ok
+test state_service::conflict_detector::tests::test_empty_detector_resolves ... ok
+test state_service::conflict_detector::tests::test_new_detector_is_empty ... ok
+test state_service::conflict_detector::tests::test_no_conflict_different_keys ... ok
+test state_service::conflict_detector::tests::test_read_write_conflict ... ok
+test state_service::conflict_detector::tests::test_single_tx_no_conflicts ... ok
+test state_service::conflict_detector::tests::test_two_tx_same_write_key_conflict ... ok
+test state_service::keys::tests::test_constant_keys ... ok
+test state_service::keys::tests::test_state_root_key ... ok
+test state_service::message_type::tests::message_type_matches_state_service_wire_values ... ok
+test state_service::message_type::tests::message_type_preserves_existing_debug_names ... ok
+test state_service::message_type::tests::message_type_serde_uses_wire_byte ... ok
+test state_service::optimistic_executor::tests::test_default_config ... ok
+test state_service::optimistic_executor::tests::test_metrics_default ... ok
+test state_service::optimistic_executor::tests::test_new_executor_with_config ... ok
+test state_service::prefetch_pipeline::tests::test_pipeline_creation ... ok
+test state_service::prefetch_pipeline::tests::test_pause_resume ... ok
+test state_service::prefetch_pipeline::tests::test_submit_block ... ok
+test smart_contract::native::policy_contract::tests::test_white_list_fee ... ok
+test ledger::blockchain::tests::tests::relay_rejects_unserializable_transaction_hash_before_pool_checks ... ok
+test state_service::read_only_store::tests::test_iter_prefix_creation ... ok
+test state_service::read_only_store::tests::test_read_only_store_creation ... ok
+test state_service::read_only_store::tests::test_zero_copy_get ... ok
+test state_service::root_cache::tests::cache_clear_removes_all ... ok
+test state_service::prefetch_pipeline::tests::test_shutdown_graceful ... ok
+test state_service::root_cache::tests::cache_contains ... ok
+test state_service::root_cache::tests::cache_default_capacity ... ok
+test state_service::root_cache::tests::cache_eviction_preserves_shared_hash_index ... ok
+test state_service::root_cache::tests::cache_eviction_removes_hash_index ... ok
+test state_service::root_cache::tests::cache_eviction_when_full ... ok
+test state_service::root_cache::tests::cache_get_by_hash ... ok
+test state_service::root_cache::tests::cache_insert_and_get ... ok
+test state_service::root_cache::tests::cache_mark_validated ... ok
+test state_service::root_cache::tests::cache_new_creates_empty_cache ... ok
+test state_service::root_cache::tests::cache_remove ... ok
+test state_service::root_cache::tests::cache_remove_preserves_shared_hash_index ... ok
+test state_service::root_cache::tests::cache_remove_remaps_current_shared_hash_index ... ok
+test state_service::root_cache::tests::cache_replacing_index_does_not_record_eviction ... ok
+test state_service::root_cache::tests::cache_replacing_index_removes_old_hash_index ... ok
+test state_service::root_cache::tests::cache_stats_track_hits_and_misses ... ok
+test state_service::state_root::tests::test_state_root_creation ... ok
+test state_service::state_root::tests::test_state_root_serialization ... ok
+test state_service::state_store::test_batching::test_batch_commit_error_handling ... ok
+test state_service::state_store::test_batching::test_mixed_operations_batch ... ok
+test state_service::state_store::test_batching::test_staged_backend_batches_writes ... ok
+test state_service::state_store::test_batching::test_snapshot_backed_backend_batches_efficiently ... ok
+test state_service::state_store::test_batching::test_staged_backend_discards_on_error ... ok
+test state_service::state_store::test_batching::test_staged_backend_reads_pending_writes ... ok
+test state_service::state_store::test_batching::test_large_batch_commit ... ok
+test state_service::state_store::tests::clear_root_cache_removes_all ... ok
+test state_service::state_store::tests::compare_with_network_root_matches ... ok
+test state_service::state_store::tests::compare_with_network_root_missing ... ok
+test state_service::state_store::tests::failed_local_root_commit_does_not_leak_staged_overlay ... ok
+test state_service::state_store::tests::ledger_storage_is_excluded_from_state_trie ... ok
+test state_service::state_store::tests::load_reference_roots_fails_on_missing_file ... ok
+test state_service::state_store::test_batching::test_state_store_batch_commit_performance ... ok
+test state_service::state_store::tests::load_reference_roots_fails_on_duplicate_height ... ok
+test state_service::state_store::tests::load_reference_roots_fails_on_malformed_json ... ok
+test state_service::state_store::tests::open_with_provider_uses_snapshot_backend ... ok
+test state_service::state_store::tests::load_reference_roots_fails_on_invalid_hash ... ok
+test state_service::state_store::tests::preload_recent_roots_populates_cache ... ok
+test state_service::state_store::tests::produces_and_verifies_storage_proof ... ok
+test state_service::state_store::tests::rejects_state_root_without_verifier ... ok
+test state_service::state_store::tests::root_cache_stats_tracked ... ok
+test state_service::state_store::tests::snapshot_backed_backend_commit_propagates_snapshot_try_commit_failure ... ok
+test state_service::state_store::tests::snapshot_backed_backend_keeps_pending_on_commit_failure ... ok
+test state_service::state_store::tests::state_root_cache_retrieves_by_hash ... ok
+test state_service::state_store::tests::load_reference_roots_fails_on_range_gap ... ok
+test state_service::state_store::tests::state_root_cache_returns_none_for_missing ... ok
+test state_service::state_store::tests::state_root_cache_stores_and_retrieves ... ok
+test state_service::state_store::tests::state_root_cache_eviction_policy ... ok
+test state_service::state_store::tests::state_root_verification_result_display ... ok
+test state_service::state_store::tests::rejects_state_root_with_invalid_signature ... ok
+test state_service::state_store::tests::state_snapshot_commit_propagates_backend_commit_failure ... ok
+test state_service::state_store::tests::state_store_flush_reaches_backing_store ... ok
+test state_service::state_store::tests::state_store_transaction_applies_pending_writes ... ok
+test state_service::state_store::tests::state_store_transaction_commit_propagates_backend_commit_failure ... ok
+test state_service::state_store::tests::load_reference_roots_succeeds_on_valid_contiguous_range ... ok
+test state_service::state_root::multisig_verify_tests::verify_accepts_signatures_as_subsequence_of_sorted_keys ... ok
+test state_service::state_store::tests::test_memory_backend ... ok
+test state_service::state_store::tests::test_state_root_storage ... ok
+test state_service::state_store::tests::test_state_snapshot_operations ... ok
+test state_service::state_store::tests::test_state_store_creation ... ok
+test state_service::state_store::tests::update_local_state_root_returns_commit_error ... ok
+test state_service::state_store::tests::validate_state_root_exists_checks_presence ... ok
+test state_service::state_store::tests::validated_root_hash_prefers_validated_index ... ok
+test state_service::state_store::tests::verify_state_root_on_persist_fails_for_mismatch ... ok
+test state_service::state_store::tests::verify_state_root_on_persist_fails_for_missing_index ... ok
+test state_service::state_store::tests::verify_state_root_on_persist_succeeds ... ok
+test state_service::state_store::tests::verify_state_root_returns_mismatch_for_different_root ... ok
+test state_service::state_store::tests::verify_state_root_returns_not_found_for_missing_root ... ok
+test state_service::state_store::tests::verify_state_root_returns_valid_for_matching_root ... ok
+test state_service::state_store::tests::verify_state_root_with_witness_missing_witness ... ok
+test state_service::state_store::tests::verify_state_root_with_witness_no_verifier ... ok
+test state_service::state_store::tests::update_local_state_root_snapshot_rejects_missing_reference_in_active_range ... ok
+test state_service::state_store::tests::update_local_state_root_snapshot_rejects_reference_root_mismatch ... ok
+test state_service::state_store::tests::verifies_state_root_witness_against_designated_state_validators ... ok
+test telemetry::metrics::tests::counter_increments ... ok
+test telemetry::metrics::tests::gauge_sets_and_increments ... ok
+test telemetry::metrics::tests::histogram_records_observations ... ok
+test telemetry::recorder::tests::recorder_stores_gauges ... ok
+test telemetry::recorder::tests::recorder_stores_counters ... ok
+test telemetry::recorder::tests::snapshot_exports_json ... ok
+test telemetry::recorder::tests::snapshot_exports_prometheus_format ... ok
+test telemetry::tests::telemetry_records_blockchain_metrics ... ok
+test telemetry::tests::telemetry_increments_counters ... ok
+test telemetry::tests::telemetry_records_gauges ... ok
+test tests::big_decimal_tests::big_decimal_tests::test_big_decimal_constructor ... ok
+test tests::big_decimal_tests::big_decimal_tests::test_change_decimals ... ok
+test tests::persistence::data_cache_tests::data_cache_tests::test_data_cache_add_and_get ... ok
+test tests::persistence::data_cache_tests::data_cache_tests::test_data_cache_delete ... ok
+test tests::persistence::data_cache_tests::data_cache_tests::test_data_cache_new_is_empty ... ok
+test tests::persistence::data_cache_tests::data_cache_tests::test_data_cache_snapshot ... ok
+test tests::persistence::data_cache_tests::data_cache_tests::test_storage_item_creation ... ok
+test state_service::async_state_root::tests::test_on_commit_triggers_background_task ... ok
+test tests::persistence::data_cache_tests::data_cache_tests::test_storage_item_default ... ok
+test tests::persistence::data_cache_tests::data_cache_tests::test_storage_key_creation ... ok
+test tests::persistence::data_cache_tests::data_cache_tests::test_storage_key_with_byte ... ok
+test tests::persistence::data_cache_tests::data_cache_tests::test_storage_key_with_uint160 ... ok
+test tests::persistence::data_cache_tests::data_cache_tests::test_storage_key_with_uint256 ... ok
+test tests::wallets::wallet_tests::wallet_tests::test_wallet_account_operations ... ok
+test tests::wallets::wallet_tests::wallet_tests::test_wallet_basic_creation ... ok
+test tests::wallets::wallet_tests::wallet_tests::test_wallet_import_functions ... ok
+test tests::wallets::wallet_tests::wallet_tests::test_wallet_key_management ... ok
+test tests::wallets::wallet_tests::wallet_tests::test_wallet_multisig_operations ... ok
+test tests::wallets::wallet_tests::wallet_tests::test_wallet_nep2_encryption ... ok
+test tests::wallets::wallet_tests::wallet_tests::test_wallet_signing_operations ... ok
+test tests::wallets::wallet_tests::wallet_tests::test_wallet_transaction_creation ... ok
+test tests::wallets::wallet_tests::wallet_tests::test_wallet_verification_operations ... ok
+test tests::wallets::wallet_tests::wallet_tests::test_wallet_wif_operations ... ok
+test time_provider::tests::test_time_provider_override ... ok
+test tokens_tracker::runtime::tests::result_action_disables_tracker_when_commit_error_stops_plugin ... ok
+test tokens_tracker::runtime::tests::result_action_keeps_tracker_enabled_when_commit_error_continues ... ok
+test tokens_tracker::trackers::nep_11::tests::nep11_key_size_matches_serialized_varbytes_boundaries ... ok
+test utils::bigint_utils::tests::test_bigint_to_bytes_le ... ok
+test utils::bigint_utils::tests::test_bigint_to_i32_overflow ... ok
+test utils::bigint_utils::tests::test_bigint_to_i32_success ... ok
+test utils::bigint_utils::tests::test_bigint_to_u32_negative ... ok
+test utils::bigint_utils::tests::test_bigint_to_u32_success ... ok
+test utils::bigint_utils::tests::test_bigint_to_usize_success ... ok
+test utils::bigint_utils::tests::test_bytes_to_bigint_le ... ok
+test utils::string_utils::tests::test_invalid_utf8_conversion ... ok
+test utils::string_utils::tests::test_owned_utf8_conversion ... ok
+test utils::string_utils::tests::test_utf8_conversion_with_context ... ok
+test utils::string_utils::tests::test_valid_utf8_conversion ... ok
+test utils::validation::tests::test_extract_first_arg_as_string_invalid_utf8 ... ok
+test utils::validation::tests::test_extract_first_arg_as_string_success ... ok
+test utils::validation::tests::test_extract_first_arg_empty ... ok
+test utils::validation::tests::test_extract_first_arg_success ... ok
+test utils::validation::tests::test_validate_args_not_empty_failure ... ok
+test utils::validation::tests::test_validate_args_not_empty_success ... ok
+test utils::validation::tests::test_validate_max_input_length_failure ... ok
+test utils::validation::tests::test_validate_max_input_length_success ... ok
+test validation::tests::block_validation_error_display_messages_remain_stable ... ok
+test validation::tests::max_constants_are_correct ... ok
+test validation::tests::validate_block_size_raw_accepts_valid_size ... ok
+test validation::tests::validate_block_size_raw_rejects_oversized ... ok
+test validation::tests::validate_block_version_accepts_version_0 ... ok
+test validation::tests::validate_block_version_rejects_unsupported_versions ... ok
+test validation::tests::validate_merkle_root_accepts_empty_block ... ok
+test validation::tests::validate_merkle_root_rejects_wrong_root_for_empty ... ok
+test validation::tests::validate_no_duplicate_transactions_accepts_unique ... ok
+test validation::tests::validate_primary_index_accepts_valid ... ok
+test validation::tests::validate_primary_index_rejects_invalid ... ok
+test validation::tests::validate_timestamp_bounds_accepts_valid_timestamp ... ok
+test validation::tests::validate_timestamp_bounds_rejects_far_future ... ok
+test validation::tests::validate_timestamp_bounds_rejects_past_timestamp ... ok
+test validation::tests::validate_timestamp_progression_accepts_increasing ... ok
+test validation::tests::validate_timestamp_progression_rejects_non_increasing ... ok
+test validation::tests::validate_transaction_count_raw_accepts_valid_count ... ok
+test validation::tests::validate_transaction_count_raw_rejects_too_many ... ok
+test validation::tests::validate_witness_scripts_accepts_valid ... ok
+test validation::tests::validate_witness_scripts_rejects_oversized_invocation ... ok
+test validation::tests::validate_witness_scripts_rejects_oversized_verification ... ok
+test wallets::key_pair::tests::test_key_pair_generation ... ok
+test state_service::tiered_storage::tests::test_clear_all_tiers ... ok
+test wallets::key_pair::tests::test_sign_verify ... ok
+test wallets::key_pair::tests::test_wif_round_trip ... ok
+test witness::tests::test_witness_clone ... ok
+test witness::tests::test_witness_empty ... ok
+test witness::tests::test_witness_new ... ok
+test witness::tests::test_witness_new_with_scripts ... ok
+test witness::tests::test_witness_serialization ... ok
+test witness::tests::test_witness_size ... ok
+test witness::tests::witness_size_matches_serialized_length_at_var_size_boundaries ... ok
+test witness_rule::tests::boolean_condition_json_matches_csharp_structure ... ok
+test witness_rule::tests::group_condition_json_roundtrip_without_prefix ... ok
+test witness_rule::tests::protocol_enum_guard_rejects_unknown_witness_condition_type_bytes ... ok
+test witness_rule::tests::protocol_enum_guard_rejects_unknown_witness_rule_action_bytes ... ok
+test witness_rule::tests::test_witness_condition_type_values ... ok
+test witness_rule::tests::test_witness_condition_validation ... ok
+test witness_rule::tests::test_witness_rule_action_values ... ok
+test witness_rule::tests::test_witness_rule_creation ... ok
+test witness_rule::tests::witness_rule_projects_to_neo_vm_rs_stack_value ... ok
+test witness_rule::tests::witness_rule_stack_item_projection_matches_stack_value_projection ... ok
+test witness::tests::test_witness_verify_multi_signature ... ok
+test telemetry::tests::timer_records_duration ... ok
+test state_service::tiered_storage::tests::test_tier_initialization ... ok
+test state_service::tiered_storage::tests::test_statistics_tracking ... ok
+test state_service::tiered_storage::tests::test_tier_routing_by_type ... ok
+test ledger::blockchain::tests::tests::persist_completed_updates_memory_pool_during_fast_sync ... ok
+test ledger::blockchain::tests::tests::relay_accepts_valid_transaction_then_reports_already_in_pool ... ok
+test neo_system::core::tests::add_unconnected_peers_tracks_queue ... ok
+test neo_system::core::tests::local_node_actor_tracks_peers ... ok
+test ledger::blockchain::tests::tests::reverify_accepts_deserialized_payload ... ok
+test ledger::blockchain::tests::tests::reverify_accepts_raw_transaction_payload ... ok
+test neo_system::core::tests::wallet_changed_handlers_receive_events ... ok
+test network::p2p::task_manager::tests::request_tasks_rolls_back_header_and_index_tasks_when_peer_send_fails ... ok
+test oracle_service::service::tests::dedup::dedup_cache_prunes_expired_urls_before_checking_recent_duplicates ... ok
+test oracle_service::service::tests::dedup::dedup_cache_retains_future_urls_without_marking_them_recent ... ok
+test neo_system::core::tests::local_node_defaults_match_csharp ... ok
+test oracle_service::service::tests::dedup::dedup_cache_tracks_in_flight_and_recent_urls ... ok
+test oracle_service::service::tests::dedup::disabled_deduplication_does_not_track_urls ... ok
+test oracle_service::service::tests::dedup::finished_cache_entries_clear_on_timer_sweep ... ok
+test oracle_service::service::tests::response_tx::create_response_tx_matches_csharp_fee_math ... FAILED
+test tokens_tracker::trackers::tracker_base::tests::tracker_base_commit_propagates_snapshot_try_commit_failure ... ok
+test network::p2p::framed::tests::read_frame_allows_progressing_frame_across_total_timeout_budget ... ok
+test ledger::blockchain::tests::tests::reverify_does_not_schedule_idle_when_header_backlog_exists ... ok
+
+failures:
+
+---- oracle_service::service::tests::response_tx::create_response_tx_matches_csharp_fee_math stdout ----
+ExecutionEngine fault: InvalidOperation { operation: "Missing required call flags: CallFlags(READ_STATES)", reason: "Missing required call flags: CallFlags(READ_STATES)" }
+
+thread 'oracle_service::service::tests::response_tx::create_response_tx_matches_csharp_fee_math' (52668) panicked at neo-core\src\oracle_service\service\tests\response_tx.rs:92:10:
+response tx: Processing("Invalid operation: Invalid operation: Missing required call flags: CallFlags(READ_STATES), reason: Missing required call flags: CallFlags(READ_STATES) [ip=29 opcode=SYSCALL eval_depth=1]")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    oracle_service::service::tests::response_tx::create_response_tx_matches_csharp_fee_math
+
+test result: FAILED. 800 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+
+error: test failed, to rerun pass `-p neo-core --lib`

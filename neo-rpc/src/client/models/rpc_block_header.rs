@@ -34,6 +34,7 @@ pub struct RpcBlockHeader {
 impl RpcBlockHeader {
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let version = json
             .get("version")

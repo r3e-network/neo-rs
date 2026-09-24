@@ -1,5 +1,4 @@
 use super::*;
-
 impl InteropHost for ApplicationEngine {
     fn invoke_syscall(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
         if let Some(entry) = self.interop_handlers.get(&hash).copied() {
@@ -15,7 +14,6 @@ impl InteropHost for ApplicationEngine {
             })
         }
     }
-
     fn on_context_loaded(
         &mut self,
         engine: &mut ExecutionEngine,
@@ -25,13 +23,11 @@ impl InteropHost for ApplicationEngine {
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         let call_flags = state_arc.lock().call_flags;
         engine.set_call_flags(call_flags);
-
         if let Some(diagnostic) = self.diagnostic.as_mut() {
             diagnostic.context_loaded(context);
         }
         Ok(())
     }
-
     fn on_context_unloaded(
         &mut self,
         engine: &mut ExecutionEngine,
@@ -47,7 +43,6 @@ impl InteropHost for ApplicationEngine {
         // acquire the caller state lock.
         let state_arc =
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-
         // Phase 1: Extract values under a short-lived lock. Do not reset the
         // shared state yet: same-script unloads (for example `_initialize`
         // frames cloned from the real contract method) reuse the same
@@ -63,7 +58,6 @@ impl InteropHost for ApplicationEngine {
             (snapshot, notif_count, dynamic_call, script_hash)
         };
         // Lock is now dropped — safe to acquire caller's state lock
-
         // Match C# semantics: only cross-contract unloads (different script)
         // trigger child snapshot commit and dynamic-call return normalization.
         // Compare script hashes first because this engine may materialize fresh
@@ -78,7 +72,6 @@ impl InteropHost for ApplicationEngine {
             !std::sync::Arc::ptr_eq(&current_ctx.script_arc(), &context.script_arc())
         });
         let _ = unloaded_script_hash;
-
         // Phase 2: Commit snapshot and propagate state to caller (cross-contract only)
         if is_cross_contract_unload {
             {
@@ -86,7 +79,6 @@ impl InteropHost for ApplicationEngine {
                 state.notification_count = 0;
                 state.is_dynamic_call = false;
             }
-
             if engine.uncaught_exception().is_none() {
                 if let Some(snapshot) = snapshot_cache {
                     // Commit errors must not be swallowed: continuing as if
@@ -100,7 +92,6 @@ impl InteropHost for ApplicationEngine {
                         ))
                     })?;
                 }
-
                 if let Some(current_ctx) = engine.current_context() {
                     let current_state_arc = current_ctx
                         .get_state_with_factory::<ExecutionContextState, _>(
@@ -110,7 +101,6 @@ impl InteropHost for ApplicationEngine {
                     current_state.notification_count = current_state
                         .notification_count
                         .saturating_add(notification_count);
-
                     if is_dynamic_call {
                         let return_count = context.evaluation_stack().len();
                         match return_count {
@@ -138,14 +128,11 @@ impl InteropHost for ApplicationEngine {
                 }
             }
         }
-
         self.refresh_context_tracking()
             .map_err(|e| VmError::invalid_operation_msg(e.to_string()))?;
-
         if let Some(diagnostic) = self.diagnostic.as_mut() {
             diagnostic.context_unloaded(context);
         }
-
         if let Some(current_context) = engine.current_context() {
             let current_state_arc = current_context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
@@ -153,10 +140,8 @@ impl InteropHost for ApplicationEngine {
         } else {
             engine.set_call_flags(CallFlags::ALL);
         }
-
         Ok(())
     }
-
     fn pre_execute_instruction(
         &mut self,
         _engine: &mut ExecutionEngine,
@@ -167,13 +152,11 @@ impl InteropHost for ApplicationEngine {
             self.add_cpu_fee(opcode_price)
                 .map_err(map_core_error_to_vm_error)?;
         }
-
         if let Some(diagnostic) = self.diagnostic.as_mut() {
             diagnostic.pre_execute_instruction(instruction);
         }
         Ok(())
     }
-
     fn post_execute_instruction(
         &mut self,
         _engine: &mut ExecutionEngine,
@@ -184,7 +167,6 @@ impl InteropHost for ApplicationEngine {
         }
         Ok(())
     }
-
     /// Handles CALLT opcode - calls a contract method via method token.
     ///
     /// This implements the C# ApplicationEngine.OnCallT logic:
@@ -199,19 +181,16 @@ impl InteropHost for ApplicationEngine {
         let current_flags = self.get_current_call_flags().map_err(|e| {
             VmError::invalid_operation_msg(format!("Failed to get call flags: {}", e))
         })?;
-
         if !current_flags.contains(required_flags) {
             return Err(VmError::invalid_operation_msg(format!(
                 "CALLT requires {:?} but current context has {:?}",
                 required_flags, current_flags
             )));
         }
-
         // 2. Get the current execution context and contract state
         let context = engine
             .current_context()
             .ok_or_else(|| VmError::invalid_operation_msg("No current execution context"))?;
-
         let state_arc =
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         let contract = {
@@ -220,7 +199,6 @@ impl InteropHost for ApplicationEngine {
                 VmError::invalid_operation_msg("No contract in current execution context")
             })?
         };
-
         // 3. Validate token index and get the method token
         let token_idx = token_id as usize;
         if token_idx >= contract.nef.tokens.len() {
@@ -231,7 +209,6 @@ impl InteropHost for ApplicationEngine {
             )));
         }
         let token = contract.nef.tokens[token_idx].clone();
-
         // 4. Validate stack has enough parameters
         let stack_count = context.evaluation_stack().len();
         if (token.parameters_count as usize) > stack_count {
@@ -240,13 +217,11 @@ impl InteropHost for ApplicationEngine {
                 token.parameters_count, stack_count
             )));
         }
-
         // 5. Pop arguments from the stack (in reverse order)
         let mut args = Vec::with_capacity(token.parameters_count as usize);
         for _ in 0..token.parameters_count {
             args.push(engine.pop()?);
         }
-
         // 6. Look up the target contract
         let target_contract = self.fetch_contract(&token.hash).map_err(|e| {
             VmError::invalid_operation_msg(format!(
@@ -254,7 +229,6 @@ impl InteropHost for ApplicationEngine {
                 token.hash, e
             ))
         })?;
-
         // 7. Find the method descriptor in the target contract's ABI
         let method = target_contract
             .manifest
@@ -267,7 +241,6 @@ impl InteropHost for ApplicationEngine {
                     token.method, token.parameters_count, token.hash
                 ))
             })?;
-
         // 8. Execute the cross-contract call
         self.call_contract_internal(
             &target_contract,
@@ -277,7 +250,6 @@ impl InteropHost for ApplicationEngine {
             &args,
         )
         .map_err(|e| VmError::invalid_operation_msg(format!("CALLT failed: {}", e)))?;
-
         Ok(())
     }
 }

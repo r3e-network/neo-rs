@@ -12,8 +12,12 @@ use tracing::instrument;
 const DRAIN_BATCH_SIZE: usize = 50;
 
 impl Blockchain {
-    #[instrument(name = "blockchain_process_block", skip(self, block), fields(height = block.index(), hash = %block.hash().unwrap_or_default()))]
+    #[instrument(name = "blockchain_process_block", skip(self, block), fields(height = block.index(), hash = tracing::field::Empty))]
     pub(super) async fn on_new_block(&self, block: Arc<Block>, verify: bool) -> VerifyResult {
+        let span = tracing::Span::current();
+        if let Ok(hash) = Self::try_block_hash(block.as_ref()) {
+            span.record("hash", &tracing::field::display(&hash));
+        }
         let Some(context) = &self.system_context else {
             return VerifyResult::Invalid;
         };

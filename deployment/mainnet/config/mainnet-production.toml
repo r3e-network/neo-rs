@@ -1,0 +1,162 @@
+# Neo N3 MainNet Production Configuration
+# Hardened configuration for production deployment
+
+[network]
+network_magic = 0x334F454E  # MainNet magic number
+
+[storage]
+backend = "rocksdb"
+data_dir = "/opt/neo-node/data/mainnet"  # Production path
+read_only = false
+
+# RocksDB tuning for production
+[storage.rocksdb]
+max_open_files = 4096
+max_background_jobs = 8
+write_buffer_size = 128  # MB
+max_write_buffer_number = 4
+block_cache_size = 2048  # 2GB cache
+enable_statistics = true
+
+[p2p]
+port = 10333
+max_connections = 100
+min_desired_connections = 10
+seed_nodes = [
+    "seed1.neo.org:10333",
+    "seed2.neo.org:10333",
+    "seed3.neo.org:10333",
+    "seed4.neo.org:10333",
+    "seed5.neo.org:10333"
+]
+enable_compression = true
+broadcast_history_limit = 100000
+
+# Connection management
+connection_timeout_secs = 10
+handshake_timeout_secs = 30
+ping_interval_secs = 60
+
+[rpc]
+enabled = true
+port = 10332
+bind_address = "127.0.0.1"  # SECURITY: localhost only
+cors_enabled = false  # SECURITY: disabled
+auth_enabled = true  # SECURITY: enable authentication
+username = "CHANGE_ME"  # TODO: Set secure credentials
+password = "CHANGE_ME"  # TODO: Set secure credentials
+max_gas_invoke = 50000000
+max_iterator_results = 100
+disabled_methods = [
+    "openwallet",
+    "closewallet",
+    "importprivkey",
+    "dumpprivkey"
+]
+
+# Rate Limiting - DoS Protection
+max_requests_per_second = 100
+rate_limit_burst = 200
+
+# Request size limits
+max_request_size_bytes = 10485760  # 10MB
+max_batch_requests = 50
+
+[consensus]
+enabled = false  # Set to true if consensus node
+auto_start = false
+
+# Consensus node configuration (if enabled)
+# wallet_path = "/secure/location/consensus-wallet.json"
+# unlock_wallet = false  # Manual unlock for security
+
+[telemetry]
+[telemetry.metrics]
+enabled = true
+port = 9090
+bind_address = "127.0.0.1"  # Internal monitoring only
+
+# Prometheus metric groups
+expose_system_metrics = true
+expose_blockchain_metrics = true
+expose_p2p_metrics = true
+expose_rpc_metrics = true
+expose_vm_metrics = true
+
+[logging]
+level = "info"  # Production: info, Debug: debug, Quiet: warn
+format = "json"  # Structured logging for log aggregation
+file_path = "/opt/neo-node/logs/neo-node-mainnet.log"
+max_file_size = "100MB"
+max_files = 10
+console_output = false  # Log to file only in production
+
+# Log filters - reduce noise
+filters = [
+    "tokio_util=warn",
+    "hyper=warn",
+    "h2=warn"
+]
+
+[blockchain]
+block_time = 15000  # 15 seconds in milliseconds
+max_transactions_per_block = 512
+seconds_per_block = 15
+standalone_net = false
+
+[mempool]
+max_transactions = 50000
+max_per_sender = 100
+min_relay_tx_fee = 0  # GAS per byte
+
+# StateService - Required for full node
+[state_service]
+enabled = true
+full_state = true
+path = "/opt/neo-node/data/mainnet/StateRoot"
+max_validators_history = 100
+
+# Performance Optimizations
+[performance.predictive_prefetch]
+enabled = true
+prediction_window_blocks = 10
+hot_keys_per_block = 800
+prefetch_batch_size = 200
+prefetch_worker_threads = 4
+
+[performance.tiered_cache]
+tier0_capacity = 512
+tier1_capacity = 100000
+tier2_max_prefixes = 5000000
+tier3_lru_size_mb = 512
+
+# Resource Limits
+[resource_limits]
+max_memory_mb = 32768  # 32GB soft limit
+max_disk_cache_mb = 4096  # 4GB disk cache
+max_network_threads = 8
+max_rpc_threads = 16
+max_vm_execution_time_ms = 30000
+
+# Security Settings
+[security]
+# Require TLS for RPC (when using reverse proxy)
+require_tls = false  # Enable with nginx/caddy reverse proxy
+allowed_rpc_origins = []  # Empty = none allowed (CORS disabled)
+
+# Process hardening
+drop_privileges = true  # Drop root after binding privileged ports
+chroot_dir = ""  # Optional: chroot jail
+
+# Network security
+max_peers_per_ip = 3
+blacklist_threshold = 10  # Blacklist after N violations
+ban_duration_secs = 3600  # 1 hour
+
+# Backup and Disaster Recovery
+[backup]
+enabled = false  # Enable for automatic backups
+backup_dir = "/opt/neo-node/backups"
+backup_interval_hours = 24
+keep_backups = 7  # Keep last 7 days
+compress_backups = true

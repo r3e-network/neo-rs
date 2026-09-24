@@ -892,7 +892,7 @@ impl ConsensusContext {
             // Leaving view_start_time at 0 will cause the timeout logic to fire
             // instantly on the first on_timer_tick call.
             view_start_time: 0,
-            expected_block_time: 0,         // Caller should update
+            expected_block_time: 0, // Caller should update
             timer_timeout: None,
             proposal_requested: state.prepare_request_received,
             version: 0,

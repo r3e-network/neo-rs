@@ -84,6 +84,7 @@ impl RpcClientBuilder {
         self
     }
 
+    #[must_use]
     pub fn build(self) -> Result<RpcClient, RpcError> {
         let mut client_builder = Client::builder().no_proxy().timeout(self.timeout);
 

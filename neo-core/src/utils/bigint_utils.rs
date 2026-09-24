@@ -3,9 +3,9 @@
 //! This module provides reusable helper functions for common BigInt operations
 //! that appear frequently throughout the codebase.
 
+use crate::error::{CoreError, CoreResult};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
-use crate::error::{CoreError, CoreResult};
 
 /// Converts bytes to BigInt using signed little-endian format.
 ///
@@ -28,7 +28,10 @@ pub fn bigint_to_bytes_le(value: &BigInt) -> Vec<u8> {
 /// Returns an error if the conversion fails due to overflow.
 pub fn bigint_to_i32(value: &BigInt, context: &str) -> CoreResult<i32> {
     value.to_i32().ok_or_else(|| {
-        CoreError::native_contract(format!("{}: Integer overflow converting BigInt to i32", context))
+        CoreError::native_contract(format!(
+            "{}: Integer overflow converting BigInt to i32",
+            context
+        ))
     })
 }
 
@@ -37,7 +40,10 @@ pub fn bigint_to_i32(value: &BigInt, context: &str) -> CoreResult<i32> {
 /// Returns an error if the conversion fails due to overflow.
 pub fn bigint_to_i64(value: &BigInt, context: &str) -> CoreResult<i64> {
     value.to_i64().ok_or_else(|| {
-        CoreError::native_contract(format!("{}: Integer overflow converting BigInt to i64", context))
+        CoreError::native_contract(format!(
+            "{}: Integer overflow converting BigInt to i64",
+            context
+        ))
     })
 }
 

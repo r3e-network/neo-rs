@@ -1,5 +1,4 @@
 use super::*;
-
 struct ExternalVmExecution {
     script: Vec<u8>,
     initial_stack: Vec<VmStackValue>,
@@ -8,13 +7,11 @@ struct ExternalVmExecution {
     max_instructions: u64,
     instructions_executed: u64,
 }
-
 struct ExternalVmHost<'a> {
     engine: &'a mut ApplicationEngine,
     instructions_executed: u64,
     max_instructions: u64,
 }
-
 impl<'a> ExternalVmHost<'a> {
     fn new(engine: &'a mut ApplicationEngine, execution: &ExternalVmExecution) -> Self {
         Self {
@@ -24,7 +21,6 @@ impl<'a> ExternalVmHost<'a> {
         }
     }
 }
-
 impl SyscallProvider for ExternalVmHost<'_> {
     fn on_instruction(&mut self, opcode: u8) -> std::result::Result<(), String> {
         if self.instructions_executed >= self.max_instructions {
@@ -34,17 +30,14 @@ impl SyscallProvider for ExternalVmHost<'_> {
             ));
         }
         self.instructions_executed = self.instructions_executed.saturating_add(1);
-
         let opcode_price = ApplicationEngine::get_opcode_price(opcode);
         if opcode_price > 0 {
             self.engine
                 .add_cpu_fee(opcode_price)
                 .map_err(|error| error.to_string())?;
         }
-
         Ok(())
     }
-
     fn syscall(
         &mut self,
         api: u32,
@@ -55,7 +48,6 @@ impl SyscallProvider for ExternalVmHost<'_> {
         self.handle_runtime_syscall(api, stack)
     }
 }
-
 impl ExternalVmHost<'_> {
     fn charge_syscall_fee(&mut self, api: u32) -> std::result::Result<(), String> {
         let entry = self
@@ -77,7 +69,6 @@ impl ExternalVmHost<'_> {
         }
         Ok(())
     }
-
     fn handle_runtime_syscall(
         &mut self,
         api: u32,
@@ -164,7 +155,6 @@ impl ExternalVmHost<'_> {
             Some(ExternalRuntimeSyscall::GetRandom) => {
                 let network = self.engine.protocol_settings().network;
                 let aspid_enabled = self.engine.is_hardfork_enabled(Hardfork::HfAspidochelone);
-
                 let buffer = if aspid_enabled {
                     let seed = network.wrapping_add(self.engine.random_counter());
                     self.engine.increment_random_counter();
@@ -174,12 +164,10 @@ impl ExternalVmHost<'_> {
                     self.engine.set_nonce_bytes(bytes);
                     bytes
                 };
-
                 let price = if aspid_enabled { 1 << 13 } else { 1 << 4 };
                 self.engine
                     .add_cpu_fee(price)
                     .map_err(|error| error.to_string())?;
-
                 let integer = num_bigint::BigInt::from_bytes_le(num_bigint::Sign::Plus, &buffer);
                 stack.push(vm_integer_from_bigint(integer));
                 Ok(())
@@ -197,7 +185,6 @@ impl ExternalVmHost<'_> {
                     stack.push(VmStackValue::Null);
                     return Ok(());
                 };
-
                 stack.push(VmStackValue::Array(
                     transaction
                         .signers()
@@ -212,7 +199,6 @@ impl ExternalVmHost<'_> {
                     .engine
                     .get_script_container()
                     .ok_or_else(|| "No script container".to_string())?;
-
                 let Some(transaction) = container
                     .as_ref()
                     .as_any()
@@ -220,7 +206,6 @@ impl ExternalVmHost<'_> {
                 ) else {
                     return Err("Script container does not implement Interoperable".to_string());
                 };
-
                 stack.push(
                     transaction
                         .to_stack_value()
@@ -237,7 +222,6 @@ impl ExternalVmHost<'_> {
                         MAX_NOTIFICATION_SIZE
                     ));
                 }
-
                 let message = String::from_utf8(message_bytes).map_err(|_| {
                     "Failed to convert byte array to string: Invalid UTF-8 sequence".to_string()
                 })?;
@@ -257,7 +241,6 @@ impl ExternalVmHost<'_> {
         }
     }
 }
-
 impl ApplicationEngine {
     pub(super) fn try_execute_with_external_vm(&mut self) -> Option<VMState> {
         let execution = self.prepare_external_vm_execution()?;
@@ -281,19 +264,16 @@ impl ApplicationEngine {
             };
             (result, host.instructions_executed)
         };
-
         match result {
             Ok(result) => Some(self.apply_external_vm_result(result, instructions_executed)),
             Err(message) => Some(self.apply_external_vm_fault(message, instructions_executed)),
         }
     }
-
     fn prepare_external_vm_execution(&self) -> Option<ExternalVmExecution> {
         // Diagnostics must not change consensus semantics by forcing the jump-table path.
         if !self.pending_native_calls.is_empty() {
             return None;
         }
-
         let engine = self.vm_engine.engine();
         // The fast interpreter only implements current (Gorgon) numeric
         // semantics; pre-Gorgon execution must use the fork-aware jump table.
@@ -306,7 +286,6 @@ impl ApplicationEngine {
         if engine.invocation_stack().len() != 1 {
             return None;
         }
-
         let context = engine.current_context()?;
         if context.local_variables().is_some()
             || context.arguments().is_some()
@@ -318,19 +297,16 @@ impl ApplicationEngine {
         if !context.evaluation_stack().is_empty() {
             return None;
         }
-
         let script = context.script().as_bytes();
         if script_uses_application_engine_host(script) {
             return None;
         }
-
         let initial_stack = context
             .evaluation_stack()
             .iter()
             .cloned()
             .map(|v| VmStackValue::try_from(v).unwrap())
             .collect::<Vec<_>>();
-
         Some(ExternalVmExecution {
             script: script.to_vec(),
             initial_stack,
@@ -340,14 +316,12 @@ impl ApplicationEngine {
             instructions_executed: engine.instructions_executed,
         })
     }
-
     fn apply_external_vm_result(
         &mut self,
         result: neo_vm::ExecutionResult,
         instructions_executed: u64,
     ) -> VMState {
         self.vm_engine.engine_mut().instructions_executed = instructions_executed;
-
         match result.state {
             VMState::HALT => self.apply_external_vm_halt(result.stack),
             VMState::FAULT => {
@@ -360,13 +334,11 @@ impl ApplicationEngine {
             }
         }
     }
-
     fn apply_external_vm_halt(&mut self, stack: Vec<VmStackValue>) -> VMState {
         let stack_items: Vec<StackItem> = stack
             .into_iter()
             .map(|v| StackItem::try_from(v).unwrap())
             .collect();
-
         let context_index = match self
             .vm_engine
             .engine()
@@ -382,21 +354,17 @@ impl ApplicationEngine {
                 );
             }
         };
-
         if let Err(error) = self.vm_engine.engine_mut().remove_context(context_index) {
             return self.apply_external_vm_fault(error.to_string(), 0);
         }
-
         let result_stack = self.vm_engine.engine_mut().result_stack_mut();
         for item in stack_items {
             if let Err(error) = result_stack.push(item) {
                 return self.apply_external_vm_fault(error.to_string(), 0);
             }
         }
-
         VMState::HALT
     }
-
     fn apply_external_vm_fault(&mut self, message: String, instructions_executed: u64) -> VMState {
         if instructions_executed > 0 {
             self.vm_engine.engine_mut().instructions_executed = instructions_executed;
@@ -411,13 +379,11 @@ impl ApplicationEngine {
         VMState::FAULT
     }
 }
-
 fn script_uses_application_engine_host(script: &[u8]) -> bool {
     let instructions = match neo_vm::parse_script_instructions(script) {
         Ok(instructions) => instructions,
         Err(_) => return true,
     };
-
     for instruction in instructions {
         match instruction.opcode() {
             OpCode::SYSCALL if !is_external_vm_supported_syscall(instruction.token_u32()) => {
@@ -429,7 +395,6 @@ fn script_uses_application_engine_host(script: &[u8]) -> bool {
     }
     false
 }
-
 #[derive(Clone, Copy)]
 enum ExternalRuntimeSyscall {
     Platform,
@@ -449,7 +414,6 @@ enum ExternalRuntimeSyscall {
     GetScriptContainer,
     Log,
 }
-
 fn external_runtime_syscall(api: u32) -> Option<ExternalRuntimeSyscall> {
     if api == neo_vm::interop_hash("System.Runtime.Platform") {
         Some(ExternalRuntimeSyscall::Platform)
@@ -487,11 +451,9 @@ fn external_runtime_syscall(api: u32) -> Option<ExternalRuntimeSyscall> {
         None
     }
 }
-
 fn is_external_vm_supported_syscall(api: u32) -> bool {
     external_runtime_syscall(api).is_some()
 }
-
 fn vm_integer_from_u64(value: u64) -> VmStackValue {
     if value <= i64::MAX as u64 {
         VmStackValue::Integer(value as i64)
@@ -499,21 +461,18 @@ fn vm_integer_from_u64(value: u64) -> VmStackValue {
         VmStackValue::BigInteger(num_bigint::BigInt::from(value).to_signed_bytes_le())
     }
 }
-
 fn vm_integer_from_bigint(value: num_bigint::BigInt) -> VmStackValue {
     match value.to_i64() {
         Some(value) => VmStackValue::Integer(value),
         None => VmStackValue::BigInteger(value.to_signed_bytes_le()),
     }
 }
-
 fn vm_hash_from_option(hash: Option<UInt160>) -> VmStackValue {
     match hash {
         Some(hash) => VmStackValue::ByteString(hash.to_bytes()),
         None => VmStackValue::Null,
     }
 }
-
 fn pop_vm_i64(stack: &mut Vec<VmStackValue>, syscall: &str) -> std::result::Result<i64, String> {
     let value = stack
         .pop()
@@ -522,7 +481,6 @@ fn pop_vm_i64(stack: &mut Vec<VmStackValue>, syscall: &str) -> std::result::Resu
         format!("{syscall} expects an Integer argument that fits into i64, got {value:?}")
     })
 }
-
 fn pop_vm_bytes(
     stack: &mut Vec<VmStackValue>,
     syscall: &str,
@@ -534,7 +492,6 @@ fn pop_vm_bytes(
         .to_byte_string_bytes()
         .ok_or_else(|| format!("{syscall} expects a byte-convertible argument, got {value:?}"))
 }
-
 fn external_vm_fault_message(message: Option<String>, ip: Option<u32>) -> String {
     let message = message.unwrap_or_else(|| "VM execution faulted".to_string());
     match ip {

@@ -74,6 +74,7 @@ impl RpcTransaction {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let transaction = super::super::utility::transaction_from_json(json, protocol_settings)?;
 

@@ -188,37 +188,44 @@ fn compute_syscall_gas_price(method_name: &str) -> i64 {
 
     match name {
         // Storage operations
-        StorageGet | StorageDelete => 1 << 15,      // 32768 - expensive database read
-        StoragePut => 1 << 15,                      // 32768 - expensive write with persistence
-        StorageFind => 1 << 15,                     // 32768 - complex iteration
-        StorageGetContext | StorageGetReadOnlyContext => 1 << 4,     // 16 - cheap context creation
-        StorageAsReadOnly => 1 << 4,                // 16 - cheap wrapper
+        StorageGet | StorageDelete => 1 << 15, // 32768 - expensive database read
+        StoragePut => 1 << 15,                 // 32768 - expensive write with persistence
+        StorageFind => 1 << 15,                // 32768 - complex iteration
+        StorageGetContext | StorageGetReadOnlyContext => 1 << 4, // 16 - cheap context creation
+        StorageAsReadOnly => 1 << 4,           // 16 - cheap wrapper
 
         // Runtime operations
-        RuntimePlatform | RuntimeGetTrigger | RuntimeGetNetwork
-        | RuntimeGetAddressVersion | RuntimeGetTime | RuntimeGetScriptContainer
-        | RuntimeGetExecutingScriptHash | RuntimeGetCallingScriptHash
-        | RuntimeGetEntryScriptHash | RuntimeGetInvocationCounter
-        | RuntimeGasLeft | RuntimeCurrentSigners => 1 << 3,             // 8 - very cheap metadata
-        RuntimeBurnGas | RuntimeGetRandom => 1 << 4,                      // 16 - moderate cost
-        RuntimeCheckWitness => 1 << 10,                                   // 1024 - cryptographic operation
-        RuntimeLoadScript => 1 << 15,                     // 32768 - expensive dynamic loading
-        RuntimeLog | RuntimeNotify => 1 << 15,            // 32768 - event emission
+        RuntimePlatform
+        | RuntimeGetTrigger
+        | RuntimeGetNetwork
+        | RuntimeGetAddressVersion
+        | RuntimeGetTime
+        | RuntimeGetScriptContainer
+        | RuntimeGetExecutingScriptHash
+        | RuntimeGetCallingScriptHash
+        | RuntimeGetEntryScriptHash
+        | RuntimeGetInvocationCounter
+        | RuntimeGasLeft
+        | RuntimeCurrentSigners => 1 << 3, // 8 - very cheap metadata
+        RuntimeBurnGas | RuntimeGetRandom => 1 << 4, // 16 - moderate cost
+        RuntimeCheckWitness => 1 << 10,              // 1024 - cryptographic operation
+        RuntimeLoadScript => 1 << 15,                // 32768 - expensive dynamic loading
+        RuntimeLog | RuntimeNotify => 1 << 15,       // 32768 - event emission
 
         // Contract operations
-        ContractCall | ContractCreate | ContractUpdate => 1 << 15,          // 32768 - cross-contract call
-        ContractCallNative => 1 << 15,                                      // 32768 - native invocation
-        ContractGetCallFlags => 1 << 4,                                     // 16 - cheap flag query
-        ContractCreateStandardAccount => 1 << 8,                            // 256 - address derivation
-        ContractCreateMultisigAccount => 1 << 9,                            // 512 - multisig setup
+        ContractCall | ContractCreate | ContractUpdate => 1 << 15, // 32768 - cross-contract call
+        ContractCallNative => 1 << 15,                             // 32768 - native invocation
+        ContractGetCallFlags => 1 << 4,                            // 16 - cheap flag query
+        ContractCreateStandardAccount => 1 << 8,                   // 256 - address derivation
+        ContractCreateMultisigAccount => 1 << 9,                   // 512 - multisig setup
 
         // Crypto operations
-        CryptoCheckSig => 1 << 15,                                          // 32768 - secp256r1 verify
-        CryptoCheckMultisig => 1 << 15,                                     // 32768 - multiple sigs
+        CryptoCheckSig => 1 << 15,      // 32768 - secp256r1 verify
+        CryptoCheckMultisig => 1 << 15, // 32768 - multiple sigs
 
         // Iterator operations
-        IteratorNext | IteratorValue => 1 << 15,                            // 32768 - memory traversal
-        
+        IteratorNext | IteratorValue => 1 << 15, // 32768 - memory traversal
+
         // Native contract lifecycle methods (no execution overhead)
         SyscallName::ContractNativeOnPersist | SyscallName::ContractNativePostPersist => 1 << 10,
     }
@@ -432,7 +439,7 @@ pub fn find_by_method_name(name: &str) -> Option<SyscallEntry> {
     use sha2::{Digest, Sha256};
     let digest = Sha256::digest(name.as_bytes());
     let hash: [u8; 32] = digest.into();
-    
+
     get_syscall_entry(&hash)
 }
 
@@ -446,11 +453,11 @@ pub fn get_gas_cost(hash: &[u8; 32]) -> Option<i64> {
 #[inline]
 pub fn verify_registry_completeness() -> bool {
     let registry = SYS_CALL_REGISTRY.get();
-    
+
     if registry.is_none() {
         return false;
     }
-    
+
     // If we got here, initialization succeeded
     true
 }
@@ -466,7 +473,7 @@ mod tests {
     fn test_syscall_hashes_match_known_values() {
         // Initialize registry
         init();
-        
+
         // Test specific syscalls against hardcoded known hashes
         let test_cases = vec![
             ("System.Runtime.Platform", 0xf6fc79b2),
@@ -475,23 +482,19 @@ mod tests {
             ("System.Contract.Call", 0x525b7d62),
             ("System.Crypto.CheckSig", 0x27b3e756),
         ];
-        
+
         for (name, expected_hash) in test_cases {
-            let entry = find_by_method_name(name)
-                .unwrap_or_else(|| panic!("Syscall {} not found", name));
-            
+            let entry =
+                find_by_method_name(name).unwrap_or_else(|| panic!("Syscall {} not found", name));
+
             let computed_hash = u32::from_le_bytes([
                 entry.hash_full[0],
                 entry.hash_full[1],
                 entry.hash_full[2],
                 entry.hash_full[3],
             ]);
-            
-            assert_eq!(
-                computed_hash, expected_hash,
-                "Hash mismatch for {}",
-                name
-            );
+
+            assert_eq!(computed_hash, expected_hash, "Hash mismatch for {}", name);
         }
     }
 
@@ -501,7 +504,7 @@ mod tests {
         init();
         init();
         init();
-        
+
         // Verify registry still correct
         assert!(verify_registry_completeness());
     }
@@ -509,34 +512,42 @@ mod tests {
     #[test]
     fn test_method_names_match_registry() {
         init();
-        
+
         // Verify every method in BUILTIN_METHODS has an entry
         for (idx, &method_name) in BUILTIN_METHODS.iter().enumerate() {
             let entry = find_by_method_name(method_name)
                 .unwrap_or_else(|| panic!("Missing entry for {}", method_name));
-            
-            assert_eq!(entry.method_id, idx, "Method ID mismatch for {}", method_name);
+
+            assert_eq!(
+                entry.method_id, idx,
+                "Method ID mismatch for {}",
+                method_name
+            );
         }
     }
 
     #[test]
     fn test_gas_costs_reasonable() {
         init();
-        
+
         // Verify no syscall has zero or negative gas cost
         // Use BUILTIN_METHODS to build hashes and verify each one
         for (idx, &method_name) in BUILTIN_METHODS.iter().enumerate() {
             use sha2::{Digest, Sha256};
             let digest = Sha256::digest(method_name.as_bytes());
             let hash: [u8; 32] = digest.into();
-            
+
             if let Some(entry) = get_syscall_entry(&hash) {
                 assert!(
                     entry.gas_price >= 0,
                     "Negative gas cost for method {}",
                     method_name
                 );
-                assert_eq!(entry.method_id, idx, "Method ID mismatch for {}", method_name);
+                assert_eq!(
+                    entry.method_id, idx,
+                    "Method ID mismatch for {}",
+                    method_name
+                );
             }
         }
     }
@@ -544,38 +555,42 @@ mod tests {
     #[test]
     fn test_unknown_hash_returns_none() {
         init();
-        
+
         // Try a hash that definitely doesn't exist
-        let unknown_hash = [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let unknown_hash = [
+            0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+        ];
         assert!(get_syscall_entry(&unknown_hash).is_none());
     }
 
     #[test]
     fn test_call_flags_set_correctly() {
         init();
-        
+
         // Storage syscalls should have READ_STATES
-        let storage_get = find_by_method_name("System.Storage.Get")
-            .expect("Storage.Get must exist");
+        let storage_get =
+            find_by_method_name("System.Storage.Get").expect("Storage.Get must exist");
         assert_eq!(storage_get.call_flags & READ_STATES_MASK, READ_STATES_MASK);
-        
+
         // Runtime syscalls should have no storage flags
-        let runtime_platform = find_by_method_name("System.Runtime.Platform")
-            .expect("Runtime.Platform must exist");
+        let runtime_platform =
+            find_by_method_name("System.Runtime.Platform").expect("Runtime.Platform must exist");
         assert_eq!(runtime_platform.call_flags, 0);
     }
 
     #[test]
     fn test_all_syscall_names_unique() {
         init();
-        
+
         // Use BUILTIN_METHODS directly to verify uniqueness
         let mut names = Vec::with_capacity(NUM_BUILTINS);
-        
+
         for method_name in BUILTIN_METHODS {
             names.push(*method_name);
         }
-        
+
         // Verify all names are unique
         for (i, name_i) in names.iter().enumerate() {
             for (j, name_j) in names.iter().enumerate() {

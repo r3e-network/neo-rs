@@ -7,27 +7,22 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use tracing::info;
-
 #[derive(Default)]
 struct NativeOnPersistPerfStats {
     blocks: AtomicU64,
     total_ns_by_contract: Mutex<HashMap<String, u64>>,
 }
-
 fn native_on_persist_perf_stats() -> &'static NativeOnPersistPerfStats {
     static STATS: OnceLock<NativeOnPersistPerfStats> = OnceLock::new();
     STATS.get_or_init(NativeOnPersistPerfStats::default)
 }
-
 fn native_on_persist_perf_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| env_flag_enabled("NEO_PERSIST_PROFILE", false))
 }
-
 fn duration_to_u64_ns(duration: std::time::Duration) -> u64 {
     duration.as_nanos().min(u128::from(u64::MAX)) as u64
 }
-
 impl ApplicationEngine {
     pub(crate) fn add_runtime_fee(&mut self, fee: u64) -> Result<()> {
         self.add_fee_datoshi(
@@ -35,7 +30,6 @@ impl ApplicationEngine {
                 .map_err(|_| Error::invalid_operation("Fee does not fit into i64"))?,
         )
     }
-
     /// Adds datoshis to `FeeConsumed` / `GasConsumed`.
     pub(crate) fn add_fee_datoshi(&mut self, datoshi: i64) -> Result<()> {
         let pico_gas = datoshi
@@ -43,7 +37,6 @@ impl ApplicationEngine {
             .ok_or_else(|| Error::invalid_operation("Fee multiplication overflow"))?;
         self.add_fee_pico(pico_gas)
     }
-
     /// Adds picoGAS to `FeeConsumed` / `GasConsumed`.
     fn add_fee_pico(&mut self, pico_gas: i64) -> Result<()> {
         if let Ok(state_arc) = self.current_execution_state()
@@ -51,30 +44,24 @@ impl ApplicationEngine {
         {
             return Ok(());
         }
-
         if pico_gas < 0 {
             return Err(Error::invalid_operation(
                 "Negative gas fee is not allowed".to_string(),
             ));
         }
-
         let total = self
             .fee_consumed
             .checked_add(pico_gas)
             .ok_or_else(|| Error::invalid_operation("Fee addition overflow"))?;
-
         self.fee_consumed = total;
         self.gas_consumed = total;
-
         if self.fee_consumed > self.fee_amount {
             let required = (self.fee_consumed.max(0) as u64).div_ceil(FEE_FACTOR as u64);
             let available = (self.fee_amount.max(0) as u64) / (FEE_FACTOR as u64);
             return Err(Error::insufficient_gas(required, available));
         }
-
         Ok(())
     }
-
     /// Adds a fee expressed in execution units.
     ///
     /// C# formula: `AddFee(ExecFeeFactor * feeUnits)` where `ExecFeeFactor` is
@@ -89,22 +76,21 @@ impl ApplicationEngine {
         if fee_units == 0 {
             return Ok(());
         }
-
         let pico_gas = fee_units
             .checked_mul(i64::from(self.exec_fee_factor))
             .ok_or_else(|| Error::invalid_operation("CPU fee overflow"))?;
         self.add_fee_pico(pico_gas)
     }
-
     /// Charges an execution fee expressed directly in datoshi.
+    #[must_use]
     pub fn charge_execution_fee(&mut self, fee: u64) -> Result<()> {
         self.add_fee_datoshi(
             i64::try_from(fee)
                 .map_err(|_| Error::invalid_operation("Fee does not fit into i64"))?,
         )
     }
-
     /// Emits a notification event.
+    #[must_use]
     pub fn notify(&mut self, event_name: String, state: Vec<u8>) -> Result<()> {
         if let (Some(container), Some(contract_hash)) =
             (self.script_container.as_ref(), self.current_script_hash)
@@ -119,8 +105,8 @@ impl ApplicationEngine {
         }
         Ok(())
     }
-
     /// Emits a log event.
+    #[must_use]
     pub fn log(&mut self, message: String) -> Result<()> {
         if let (Some(container), Some(contract_hash)) =
             (self.script_container.as_ref(), self.current_script_hash)
@@ -130,35 +116,30 @@ impl ApplicationEngine {
         }
         Ok(())
     }
-
     /// Emits an event.
+    #[must_use]
     pub fn emit_event(&mut self, event_name: &str, args: Vec<Vec<u8>>) -> Result<()> {
         // 1. Validate event name length (must not exceed HASH_SIZE bytes)
         if event_name.len() > HASH_SIZE {
             return Err(Error::invalid_operation("Event name too long"));
         }
-
         // 2. Validate arguments count (must not exceed 16 arguments)
         if args.len() > 16 {
             return Err(Error::invalid_operation("Too many arguments"));
         }
-
         // 3. Get current contract hash
         let Some(contract_hash) = self.current_script_hash else {
             return Err(Error::invalid_operation("No current contract"));
         };
-
         let Some(container) = &self.script_container else {
             return Err(Error::invalid_operation(
                 "Cannot emit event without a script container".to_string(),
             ));
         };
-
         let state_items = args
             .into_iter()
             .map(StackItem::from_byte_string)
             .collect::<Vec<_>>();
-
         let notification = NotifyEventArgs::new(
             Arc::clone(container),
             contract_hash,
@@ -166,31 +147,27 @@ impl ApplicationEngine {
             state_items.clone(),
         );
         self.emit_notify_event(notification);
-
         Ok(())
     }
-
     /// Gets the calling script hash.
     pub fn calling_script_hash(&self) -> UInt160 {
         self.calling_script_hash.unwrap_or_else(UInt160::zero)
     }
-
     /// Checks if enough gas is available for an operation.
+    #[must_use]
     pub fn check_gas(&self, required_gas: i64) -> Result<()> {
         let required_pico = required_gas
             .checked_mul(FEE_FACTOR)
             .ok_or_else(|| Error::invalid_operation("Gas multiplication overflow"))?;
-
-        let total_gas = self.gas_consumed
+        let total_gas = self
+            .gas_consumed
             .checked_add(required_pico)
             .ok_or_else(|| Error::invalid_operation("Gas consumption overflow"))?;
-
         if total_gas > self.gas_limit {
             return Err(Error::invalid_operation("Out of gas"));
         }
         Ok(())
     }
-
     /// Calls a native contract method.
     pub fn call_native_contract(
         &mut self,
@@ -199,12 +176,10 @@ impl ApplicationEngine {
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
         self.refresh_context_tracking()?;
-
         let native = self
             .native_registry
             .get(&contract_hash)
             .ok_or_else(|| Error::not_found(contract_hash.to_string()))?;
-
         let block_height = self.current_block_index();
         if !native.is_active(&self.protocol_settings, block_height) {
             return Err(Error::invalid_operation(format!(
@@ -213,7 +188,6 @@ impl ApplicationEngine {
                 block_height
             )));
         }
-
         let cache_arc = self.native_contract_cache();
         let method_meta = {
             let mut cache = cache_arc.lock();
@@ -231,7 +205,6 @@ impl ApplicationEngine {
                 block_height
             ))
         })?;
-
         let required_flags =
             CallFlags::from_bits(method_meta.required_call_flags).ok_or_else(|| {
                 Error::invalid_operation(format!(
@@ -246,7 +219,6 @@ impl ApplicationEngine {
                 self.call_flags, required_flags, method
             )));
         }
-
         let mut is_whitelisted = false;
         if self
             .protocol_settings
@@ -265,7 +237,6 @@ impl ApplicationEngine {
                 is_whitelisted = true;
             }
         }
-
         if !is_whitelisted {
             // Charge native contract fees upfront (matches C# NativeContract.Invoke).
             if method_meta.cpu_fee != 0 {
@@ -279,7 +250,6 @@ impl ApplicationEngine {
                 self.add_fee_datoshi(storage_fee)?;
             }
         }
-
         let result = native.invoke(self, method, args).map_err(|err| {
             Error::native_contract(format!(
                 "{}({}) method `{}` failed: {}",
@@ -289,31 +259,27 @@ impl ApplicationEngine {
                 err
             ))
         })?;
-
         Ok(result)
     }
-
     /// Runs `onPersist` for every active native contract
     /// (`System.Contract.NativeOnPersist`); only valid under the OnPersist trigger.
+    #[must_use]
     pub fn native_on_persist(&mut self) -> Result<()> {
         if self.trigger != TriggerType::OnPersist {
             return Err(Error::invalid_operation(
                 "System.Contract.NativeOnPersist is only valid during OnPersist".to_string(),
             ));
         }
-
         let block_height = self
             .persisting_block
             .as_ref()
             .map(|block| block.header.index)
             .unwrap_or_else(|| self.current_block_index());
-
         let active_contracts: Vec<Arc<dyn NativeContract>> = self
             .native_registry
             .contracts()
             .filter(|contract| contract.is_active(&self.protocol_settings, block_height))
             .collect();
-
         let profiling = native_on_persist_perf_enabled();
         for contract in active_contracts {
             if profiling {
@@ -328,7 +294,6 @@ impl ApplicationEngine {
                 contract.on_persist(self)?;
             }
         }
-
         if profiling {
             let stats = native_on_persist_perf_stats();
             let blocks = stats.blocks.fetch_add(1, Ordering::Relaxed) + 1;
@@ -356,73 +321,61 @@ impl ApplicationEngine {
                 );
             }
         }
-
         Ok(())
     }
-
     /// Runs `postPersist` for every active native contract
     /// (`System.Contract.NativePostPersist`); only valid under the PostPersist trigger.
+    #[must_use]
     pub fn native_post_persist(&mut self) -> Result<()> {
         if self.trigger != TriggerType::PostPersist {
             return Err(Error::invalid_operation(
                 "System.Contract.NativePostPersist is only valid during PostPersist".to_string(),
             ));
         }
-
         let block_height = self
             .persisting_block
             .as_ref()
             .map(|block| block.header.index)
             .unwrap_or_else(|| self.current_block_index());
-
         let active_contracts: Vec<Arc<dyn NativeContract>> = self
             .native_registry
             .contracts()
             .filter(|contract| contract.is_active(&self.protocol_settings, block_height))
             .collect();
-
         for contract in active_contracts {
             contract.post_persist(self)?;
         }
-
         Ok(())
     }
-
     /// Consumes the given amount of GAS (in datoshi), failing if it exceeds
     /// the engine's configured fee amount.
+    #[must_use]
     pub fn consume_gas(&mut self, gas: i64) -> Result<()> {
         if gas < 0 {
             return Err(Error::invalid_operation(
                 "Negative gas consumption".to_string(),
             ));
         }
-
         let pico_gas = gas
             .checked_mul(FEE_FACTOR)
             .ok_or_else(|| Error::invalid_operation("Gas multiplication overflow"))?;
-
         let Some(total) = self.fee_consumed.checked_add(pico_gas) else {
             return Err(Error::invalid_operation(
                 "Gas addition overflow".to_string(),
             ));
         };
-
         if total > self.fee_amount {
             return Err(Error::invalid_operation("Out of gas"));
         }
-
         self.fee_consumed = total;
         self.gas_consumed = total;
-
         self.vm_engine
             .engine_mut()
             .add_gas_consumed(gas)
             .map_err(|e| Error::invalid_operation(e.to_string()))?;
-
         self.update_vm_gas_counter(gas)?;
         Ok(())
     }
-
     /// Ensures gas usage stays within configured limits.
     fn update_vm_gas_counter(&mut self, _gas: i64) -> Result<()> {
         if self.gas_consumed > self.gas_limit {
@@ -430,21 +383,17 @@ impl ApplicationEngine {
                 "VM exceeded gas limit during execution".to_string(),
             ));
         }
-
         Ok(())
     }
-
     /// Gets the script container (transaction or block).
     pub fn get_script_container(&self) -> Option<&Arc<dyn Verifiable>> {
         self.script_container.as_ref()
     }
-
     /// Gets the transaction sender if the container is a transaction.
     /// This matches C# ApplicationEngine.GetTransactionSender exactly.
     pub fn get_transaction_sender(&self) -> Option<UInt160> {
         // 1. Check if we have a container
         let container = self.script_container.as_ref()?;
-
         // 2. Try to downcast to Transaction
         if let Some(transaction) = container.as_any().downcast_ref::<Transaction>() {
             // 3. Get the first signer's script hash (matches C# logic)
@@ -452,7 +401,6 @@ impl ApplicationEngine {
                 return Some(first_signer.account);
             }
         }
-
         // 4. Not a transaction or no signers
         None
     }

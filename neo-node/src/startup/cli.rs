@@ -92,10 +92,7 @@ pub(crate) fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
             "sendmany",
             "sendrawtransaction",
         ] {
-            if !disabled
-                .iter()
-                .any(|m| m.eq_ignore_ascii_case(method))
-            {
+            if !disabled.iter().any(|m| m.eq_ignore_ascii_case(method)) {
                 if method == "sendrawtransaction" {
                     tracing::warn!(
                         "RPC hardened mode: sendrawtransaction is disabled. \

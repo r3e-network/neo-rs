@@ -10,10 +10,8 @@
 //! - State inconsistency detection
 
 use neo_core::error::CoreError;
-use neo_crypto::{ECCurve, ECPoint, HashableForVec};
+use neo_crypto::{Crypto, ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::{StorageError, StorageProvider};
-use std::sync::Arc;
 
 // ============================================================================
 // Error Creation and Classification Tests
@@ -69,12 +67,12 @@ fn test_error_user_vs_system_classification() {
 fn test_invalid_uint160_from_bytes() {
     // Too short
     let short_bytes = vec![0u8; 10];
-    let result = UInt160::from_slice(&short_bytes);
+    let result = UInt160::from_bytes(&short_bytes);
     assert!(result.is_err());
 
     // Too long
     let long_bytes = vec![0u8; 30];
-    let result = UInt160::from_slice(&long_bytes);
+    let result = UInt160::from_bytes(&long_bytes);
     assert!(result.is_err());
 }
 
@@ -82,12 +80,12 @@ fn test_invalid_uint160_from_bytes() {
 fn test_invalid_uint256_from_bytes() {
     // Too short
     let short_bytes = vec![0u8; 16];
-    let result = UInt256::from_slice(&short_bytes);
+    let result = UInt256::from_bytes(&short_bytes);
     assert!(result.is_err());
 
     // Too long
     let long_bytes = vec![0u8; 40];
-    let result = UInt256::from_slice(&long_bytes);
+    let result = UInt256::from_bytes(&long_bytes);
     assert!(result.is_err());
 }
 
@@ -251,7 +249,7 @@ fn test_signature_verification_failure() {
     assert!(point.is_infinity());
 
     // Infinity point should not be valid for signature verification
-    let encoded = point.encode_point(true);
+    let encoded = point.encode_point(true).unwrap();
     assert_eq!(encoded, vec![0x00]);
 }
 
@@ -382,7 +380,6 @@ fn test_special_characters_in_errors() {
 
 #[tokio::test]
 async fn test_concurrent_error_creation() {
-    use std::sync::Arc;
     use tokio::task;
 
     let handles: Vec<_> = (0..100)
@@ -408,14 +405,14 @@ async fn test_concurrent_error_creation() {
 #[test]
 fn test_hash_empty_data() {
     let empty: Vec<u8> = vec![];
-    let hash = empty.hash256();
+    let hash = UInt256::from(Crypto::hash256(&empty));
     assert_ne!(hash, UInt256::zero());
 }
 
 #[test]
 fn test_hash_large_data() {
     let large_data = vec![0xAA; 1_000_000];
-    let hash = large_data.hash256();
+    let hash = UInt256::from(Crypto::hash256(&large_data));
     assert_ne!(hash, UInt256::zero());
 }
 

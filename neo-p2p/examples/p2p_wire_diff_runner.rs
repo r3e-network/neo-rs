@@ -18,7 +18,7 @@ use neo_p2p::payloads::{
 };
 use neo_p2p::{InventoryType, MessageCommand, MessageFlags};
 use neo_primitives::UInt256;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::net::IpAddr;
 use std::str::FromStr;
 
@@ -197,10 +197,27 @@ fn main() {
         "filterclear": 0x32, "merkleblock": 0x38, "alert": 0x40,
     });
     let commands = [
-        "version", "verack", "getaddr", "addr", "ping", "pong", "getheaders",
-        "headers", "getblocks", "mempool", "inv", "getdata", "getblkbyidx",
-        "notfound", "extensible", "reject", "filterload", "filteradd",
-        "filterclear", "merkleblock", "alert",
+        "version",
+        "verack",
+        "getaddr",
+        "addr",
+        "ping",
+        "pong",
+        "getheaders",
+        "headers",
+        "getblocks",
+        "mempool",
+        "inv",
+        "getdata",
+        "getblkbyidx",
+        "notfound",
+        "extensible",
+        "reject",
+        "filterload",
+        "filteradd",
+        "filterclear",
+        "merkleblock",
+        "alert",
     ];
     for cmd_name in commands {
         // Verify the Rust enum byte matches the table we assert here.

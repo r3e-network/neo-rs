@@ -71,5 +71,8 @@ async fn pin_guessing_is_not_throttled() {
     }
 
     // After 100 wrong attempts the correct PIN still works: no lockout.
-    signer.unlock("1234").await.expect("no lockout after 100 tries");
+    signer
+        .unlock("1234")
+        .await
+        .expect("no lockout after 100 tries");
 }

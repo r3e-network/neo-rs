@@ -17,9 +17,7 @@ impl Base58 {
     /// Decodes a Base58 string to bytes.
     pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
         use crate::encoding_utils::map_base58_error;
-        bs58::decode(s)
-            .into_vec()
-            .map_err(map_base58_error)
+        bs58::decode(s).into_vec().map_err(map_base58_error)
     }
 
     /// Encodes data to `Base58Check` with a 4-byte Neo/Bitcoin-style checksum.
@@ -81,7 +79,8 @@ impl Base64 {
             &base64::alphabet::STANDARD,
             general_purpose::GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
         );
-        decoder.decode(normalized.as_bytes())
+        decoder
+            .decode(normalized.as_bytes())
             .map_err(map_base64_error)
     }
 

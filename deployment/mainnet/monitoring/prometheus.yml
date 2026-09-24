@@ -1,0 +1,62 @@
+# Prometheus Configuration for Neo-RS Node Monitoring
+# Scrapes metrics from neo-node and system exporters
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'mainnet'
+    environment: 'production'
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - 'localhost:9093'
+
+# Load alerting rules
+# rule_files:
+#   - "alerts/neo-node-alerts.yml"
+
+scrape_configs:
+  # Neo-RS Node Metrics
+  - job_name: 'neo-node'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          instance: 'neo-mainnet-1'
+          service: 'neo-node'
+
+    # Scrape settings
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+    # Metric relabeling
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'neo_.*'
+        action: keep
+
+  # Node Exporter - System Metrics (optional)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+        labels:
+          instance: 'neo-mainnet-1'
+    scrape_interval: 30s
+
+  # Process Exporter - Neo-Node Process (optional)
+  - job_name: 'process-exporter'
+    static_configs:
+      - targets: ['localhost:9256']
+        labels:
+          instance: 'neo-mainnet-1'
+    scrape_interval: 30s
+
+# Storage configuration
+storage:
+  tsdb:
+    path: /var/lib/prometheus/data
+    retention.time: 30d
+    retention.size: 50GB

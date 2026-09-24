@@ -1,0 +1,75 @@
+# Neo N3 Performance Alerting Rules
+groups:
+  - name: neo_performance
+    interval: 30s
+    rules:
+      # Block processing throughput alerts
+      - alert: BlockProcessingSlowWarning
+        expr: neo_blocks_per_second < 700
+        for: 2m
+        labels:
+          severity: warning
+          component: blockchain
+        annotations:
+          summary: "Block processing rate below target ({{ $value }} blocks/sec)"
+          description: "Neo node {{ $labels.instance }} is processing blocks at {{ $value | humanize }} blocks/second, which is below the warning threshold of 700 blocks/sec."
+          runbook: "Check CPU utilization, disk I/O, and network connectivity. Review logs for processing bottlenecks."
+
+      - alert: BlockProcessingSlowCritical
+        expr: neo_blocks_per_second < 500
+        for: 1m
+        labels:
+          severity: critical
+          component: blockchain
+        annotations:
+          summary: "Block processing rate critically low ({{ $value }} blocks/sec)"
+          description: "Neo node {{ $labels.instance }} is processing blocks at {{ $value | humanize }} blocks/second, which is below the critical threshold of 500 blocks/sec. Immediate attention required."
+          runbook: "1. Check system resources (CPU, RAM, disk). 2. Review application logs. 3. Consider restarting the node if no issues found. 4. Escalate to on-call engineer."
+
+      # Latency alerts (P99)
+      - alert: HighLatencyWarning
+        expr: histogram_quantile(0.99, rate(neo_operation_latency_seconds_bucket[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "P99 latency exceeds 100ms ({{ $value }}s)"
+          description: "Neo node {{ $labels.instance }} has P99 latency of {{ $value | humanize }}s, which exceeds the 100ms warning threshold."
+          runbook: "Monitor system resources. Check for slow storage operations. Review recent code changes."
+
+      # Cache performance alerts
+      - alert: LowCacheHitRate
+        expr: neo_cache_hit_rate < 0.80
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Cache hit rate below 80% ({{ $value | humanizePercentage }})"
+          description: "Neo node {{ $labels.instance }} has a cache hit rate of {{ $value | humanizePercentage }}, which is below the 80% threshold. This may impact performance."
+          runbook: "1. Check cache configuration and size. 2. Review access patterns. 3. Consider increasing cache size if memory is available."
+
+      # Transaction throughput
+      - alert: LowTransactionThroughput
+        expr: neo_transactions_per_second < 100
+        for: 5m
+        labels:
+          severity: warning
+          component: blockchain
+        annotations:
+          summary: "Transaction processing rate low ({{ $value }} tx/sec)"
+          description: "Neo node {{ $labels.instance }} is processing {{ $value | humanize }} transactions/second, which may indicate performance issues."
+          runbook: "Check mempool size, verification performance, and system resources."
+
+      # State operations performance
+      - alert: StateOperationsSlowdown
+        expr: rate(neo_state_operations_per_second[5m]) < 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: state
+        annotations:
+          summary: "State operations rate below expected ({{ $value }} ops/sec)"
+          description: "Neo node {{ $labels.instance }} is performing {{ $value | humanize }} state operations/second, which is below expected throughput."
+          runbook: "Check storage backend performance and database configuration."

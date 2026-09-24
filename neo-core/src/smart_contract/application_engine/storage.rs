@@ -1,5 +1,4 @@
 //! ApplicationEngine.Storage - matches C# Neo.SmartContract.ApplicationEngine.Storage.cs exactly
-
 use crate::hardfork::Hardfork;
 use crate::neo_vm::error::VmError;
 use crate::neo_vm::{ExecutionEngine, StackItem, VmResult};
@@ -8,19 +7,18 @@ use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use crate::smart_contract::storage_context::StorageContext;
-
 impl ApplicationEngine {
     /// Gets storage context for reading
+    #[must_use]
     pub fn storage_get_context(&mut self) -> Result<StorageContext, String> {
         self.get_storage_context().map_err(|err| err.to_string())
     }
-
     /// Gets storage context for reading (readonly)
+    #[must_use]
     pub fn storage_get_read_only_context(&mut self) -> Result<StorageContext, String> {
         self.get_read_only_storage_context()
             .map_err(|err| err.to_string())
     }
-
     /// Converts context to read-write
     pub fn storage_as_read_write(
         &mut self,
@@ -29,10 +27,8 @@ impl ApplicationEngine {
         if !self.has_call_flags(CallFlags::WRITE_STATES) {
             return Err("Write states not allowed".to_string());
         }
-
         Ok(StorageContext::read_write(context.id))
     }
-
     /// Gets a storage value
     pub fn storage_get(
         &mut self,
@@ -42,15 +38,12 @@ impl ApplicationEngine {
         if !self.has_call_flags(CallFlags::READ_STATES) {
             return Err("Read states not allowed".to_string());
         }
-
         // Check key size
         if key.len() > crate::constants::MAX_STORAGE_KEY_SIZE {
             return Err("Key too large".to_string());
         }
-
         Ok(self.get_storage_item(&context, &key))
     }
-
     /// Sets a storage value
     pub fn storage_put(
         &mut self,
@@ -61,47 +54,37 @@ impl ApplicationEngine {
         if context.is_read_only {
             return Err("Context is read-only".to_string());
         }
-
         if !self.has_call_flags(CallFlags::WRITE_STATES) {
             return Err("Write states not allowed".to_string());
         }
-
         // Check sizes
         if key.len() > crate::constants::MAX_STORAGE_KEY_SIZE {
             return Err("Key too large".to_string());
         }
-
         if value.len() > crate::constants::MAX_STORAGE_VALUE_SIZE {
             return Err("Value too large".to_string());
         }
-
         self.put_storage_item(&context, &key, &value)
             .map_err(|err| err.to_string())?;
-
         Ok(())
     }
-
     /// Deletes a storage value
+    #[must_use]
     pub fn storage_delete(&mut self, context: StorageContext, key: Vec<u8>) -> Result<(), String> {
         if context.is_read_only {
             return Err("Context is read-only".to_string());
         }
-
         if !self.has_call_flags(CallFlags::WRITE_STATES) {
             return Err("Write states not allowed".to_string());
         }
-
         // Check key size
         if key.len() > crate::constants::MAX_STORAGE_KEY_SIZE {
             return Err("Key too large".to_string());
         }
-
         self.delete_storage_item(&context, &key)
             .map_err(|err| err.to_string())?;
-
         Ok(())
     }
-
     /// Finds storage values
     pub fn storage_find(
         &mut self,
@@ -112,33 +95,30 @@ impl ApplicationEngine {
         if !self.has_call_flags(CallFlags::READ_STATES) {
             return Err("Read states not allowed".to_string());
         }
-
         // Check prefix size
         if prefix.len() > crate::constants::MAX_STORAGE_KEY_SIZE {
             return Err("Prefix too large".to_string());
         }
-
         self.find_storage_entries(&context, &prefix, options)
     }
-
     /// Gets a value from the current contract's storage context.
+    #[must_use]
     pub fn storage_get_local(&mut self, key: Vec<u8>) -> Result<Option<Vec<u8>>, String> {
         let context = self.storage_get_read_only_context()?;
         self.storage_get(context, key)
     }
-
     /// Puts a key/value pair into the current contract's storage context.
+    #[must_use]
     pub fn storage_put_local(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<(), String> {
         let context = self.storage_get_context()?;
         self.storage_put(context, key, value)
     }
-
     /// Deletes an entry from the current contract's storage context.
+    #[must_use]
     pub fn storage_delete_local(&mut self, key: Vec<u8>) -> Result<(), String> {
         let context = self.storage_get_context()?;
         self.storage_delete(context, key)
     }
-
     /// Finds entries with the given prefix in the current contract's storage context.
     pub fn storage_find_local(
         &mut self,
@@ -149,14 +129,12 @@ impl ApplicationEngine {
         self.storage_find(context, prefix, options)
     }
 }
-
 fn map_storage_error(service: &str, error: String) -> VmError {
     VmError::InteropService {
         service: service.to_string(),
         error,
     }
 }
-
 fn pop_storage_bytes(app: &mut ApplicationEngine, service: &str, label: &str) -> VmResult<Vec<u8>> {
     let item = app.pop().map_err(|e| map_storage_error(service, e))?;
     item.as_bytes().map_err(|error| {
@@ -169,7 +147,6 @@ fn pop_storage_bytes(app: &mut ApplicationEngine, service: &str, label: &str) ->
         )
     })
 }
-
 fn storage_get_context_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -181,7 +158,6 @@ fn storage_get_context_handler(
         .map_err(|e| map_storage_error("System.Storage.GetContext", e))?;
     Ok(())
 }
-
 fn storage_get_read_only_context_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -193,7 +169,6 @@ fn storage_get_read_only_context_handler(
         .map_err(|e| map_storage_error("System.Storage.GetReadOnlyContext", e))?;
     Ok(())
 }
-
 fn storage_as_read_only_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -207,14 +182,12 @@ fn storage_as_read_only_handler(
         .map_err(|e| map_storage_error("System.Storage.AsReadOnly", e))?;
     Ok(())
 }
-
 fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngine) -> VmResult<()> {
     let context_item = app
         .pop()
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
     let context = StorageContext::from_stack_item(&context_item)
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
-
     let key = pop_storage_bytes(app, "System.Storage.Get", "key")?;
     let trace_enabled = std::env::var_os("NEO_TRACE_STORAGE_GET").is_some();
     let trace_context_id = context.id;
@@ -230,11 +203,9 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
     } else {
         None
     };
-
     let value = app
         .storage_get(context, key.clone())
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
-
     if trace_enabled {
         eprintln!(
             "trace storage.get: ctx_id={} readonly={} key_len={} key_prefix={} hit={} value_len={}",
@@ -246,7 +217,6 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
             value.as_ref().map(|v| v.len()).unwrap_or(0)
         );
     }
-
     match value {
         Some(value) => app
             .push_bytes(value)
@@ -258,18 +228,14 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
     }
     Ok(())
 }
-
 fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngine) -> VmResult<()> {
     let context_item = app
         .pop()
         .map_err(|e| map_storage_error("System.Storage.Put", e))?;
     let context = StorageContext::from_stack_item(&context_item)
         .map_err(|e| map_storage_error("System.Storage.Put", e))?;
-
     let key = pop_storage_bytes(app, "System.Storage.Put", "key")?;
-
     let value = pop_storage_bytes(app, "System.Storage.Put", "value")?;
-
     if std::env::var_os("NEO_TRACE_STORAGE_PUT").is_some() {
         let key_preview = key
             .iter()
@@ -285,12 +251,10 @@ fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
             key_preview,
         );
     }
-
     app.storage_put(context, key, value)
         .map_err(|e| map_storage_error("System.Storage.Put", e))?;
     Ok(())
 }
-
 fn storage_delete_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -300,14 +264,11 @@ fn storage_delete_handler(
         .map_err(|e| map_storage_error("System.Storage.Delete", e))?;
     let context = StorageContext::from_stack_item(&context_item)
         .map_err(|e| map_storage_error("System.Storage.Delete", e))?;
-
     let key = pop_storage_bytes(app, "System.Storage.Delete", "key")?;
-
     app.storage_delete(context, key)
         .map_err(|e| map_storage_error("System.Storage.Delete", e))?;
     Ok(())
 }
-
 fn storage_get_local_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -315,7 +276,6 @@ fn storage_get_local_handler(
     let key = app
         .pop_bytes()
         .map_err(|e| map_storage_error("System.Storage.Local.Get", e))?;
-
     match app
         .storage_get_local(key)
         .map_err(|e| map_storage_error("System.Storage.Local.Get", e))?
@@ -329,20 +289,16 @@ fn storage_get_local_handler(
     }
     Ok(())
 }
-
 fn storage_put_local_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     let value = pop_storage_bytes(app, "System.Storage.Local.Put", "value")?;
-
     let key = pop_storage_bytes(app, "System.Storage.Local.Put", "key")?;
-
     app.storage_put_local(key, value)
         .map_err(|e| map_storage_error("System.Storage.Local.Put", e))?;
     Ok(())
 }
-
 fn storage_delete_local_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -354,7 +310,6 @@ fn storage_delete_local_handler(
         .map_err(|e| map_storage_error("System.Storage.Local.Delete", e))?;
     Ok(())
 }
-
 fn storage_find_local_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -371,15 +326,12 @@ fn storage_find_local_handler(
     options
         .validate()
         .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
-
     let prefix = app
         .pop_bytes()
         .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
-
     let iterator = app
         .storage_find_local(prefix, options)
         .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
-
     let iterator_id = app
         .store_storage_iterator(iterator)
         .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
@@ -387,7 +339,6 @@ fn storage_find_local_handler(
         .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
     Ok(())
 }
-
 fn storage_find_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -397,11 +348,9 @@ fn storage_find_handler(
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
     let context = StorageContext::from_stack_item(&context_item)
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
-
     let prefix = app
         .pop_bytes()
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
-
     let options_bits = app
         .pop_integer()
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
@@ -414,11 +363,9 @@ fn storage_find_handler(
     options
         .validate()
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
-
     let iterator = app
         .storage_find(context, prefix.clone(), options)
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
-
     let iterator_id = app
         .store_storage_iterator(iterator)
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
@@ -426,7 +373,6 @@ fn storage_find_handler(
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
     Ok(())
 }
-
 pub(crate) fn register_storage_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
     engine.register_host_service(
         "System.Storage.GetContext",

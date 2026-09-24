@@ -1,5 +1,4 @@
 //! ApplicationEngine.Contract - ports Neo.SmartContract.ApplicationEngine.Contract.cs
-
 use crate::UInt160;
 use crate::neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 use crate::smart_contract::BinarySerializer;
@@ -14,9 +13,7 @@ use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::sync::OnceLock;
-
 const SYSTEM_CONTRACT_CALL_PRICE: i64 = 1 << 15;
-
 /// Bitmask tracking which native-call args were originally `StackItem::Null`.
 ///
 /// Bit `i` (LSB) is set if arg index `i` was popped as `StackItem::Null`.
@@ -26,12 +23,10 @@ const SYSTEM_CONTRACT_CALL_PRICE: i64 = 1 << 15;
 /// `Null` from `ByteString("")` (both of which collapse to ambiguous bytes
 /// at the `Vec<u8>` args layer — see `OracleContract::request` filter handling).
 pub struct NativeArgNullMask(pub u32);
-
 fn native_call_trace_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| env_flag_enabled("NEO_TRACE_CALL_NATIVE", false))
 }
-
 pub(crate) fn register_contract_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
     engine.register_host_service(
         "System.Contract.Call",
@@ -39,59 +34,50 @@ pub(crate) fn register_contract_interops(engine: &mut ApplicationEngine) -> VmRe
         CallFlags::READ_STATES | CallFlags::ALLOW_CALL,
         contract_call_handler,
     )?;
-
     engine.register_host_service(
         "System.Contract.GetCallFlags",
         1 << 10,
         CallFlags::NONE,
         contract_get_call_flags_handler,
     )?;
-
     engine.register_host_service(
         "System.Contract.CreateStandardAccount",
         0,
         CallFlags::NONE,
         contract_create_standard_account_handler,
     )?;
-
     engine.register_host_service(
         "System.Contract.CreateMultisigAccount",
         0,
         CallFlags::NONE,
         contract_create_multisig_account_handler,
     )?;
-
     engine.register_host_service(
         "System.Contract.CallNative",
         0,
         CallFlags::NONE,
         contract_call_native_handler,
     )?;
-
     engine.register_host_service(
         "System.Contract.NativeOnPersist",
         0,
         CallFlags::STATES,
         contract_native_on_persist_handler,
     )?;
-
     engine.register_host_service(
         "System.Contract.NativePostPersist",
         0,
         CallFlags::STATES,
         contract_native_post_persist_handler,
     )?;
-
     Ok(())
 }
-
 fn map_contract_result(service: &str, result: Result<(), String>) -> VmResult<()> {
     result.map_err(|error| VmError::InteropService {
         service: service.to_string(),
         error,
     })
 }
-
 fn contract_call_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -105,44 +91,34 @@ fn contract_call_handler(
         service: "System.Contract.Call".to_string(),
         error: e,
     })?;
-
     let method = app.pop_string().map_err(|e| VmError::InteropService {
         service: "System.Contract.Call".to_string(),
         error: e,
     })?;
-
     let call_flags_value = app.pop_integer().map_err(|e| VmError::InteropService {
         service: "System.Contract.Call".to_string(),
         error: e,
     })?;
-
     let args = app.pop_array().map_err(|e| VmError::InteropService {
         service: "System.Contract.Call".to_string(),
         error: e,
     })?;
-
     let result = (|| {
         if hash_bytes.len() != 20 {
             return Err("Contract hash must be 20 bytes".to_string());
         }
-
         let contract_hash = UInt160::from_bytes(&hash_bytes)
             .map_err(|e| format!("Invalid contract hash: {}", e))?;
-
         if call_flags_value < 0 || call_flags_value > u8::MAX as i64 {
             return Err("Invalid call flags value".to_string());
         }
-
         let call_flags = CallFlags::from_bits(call_flags_value as u8)
             .ok_or_else(|| "Call flags contain unsupported bits".to_string())?;
-
         app.call_contract_dynamic(&contract_hash, &method, call_flags, args)
             .map_err(|e| e.to_string())
     })();
-
     map_contract_result("System.Contract.Call", result)
 }
-
 fn contract_get_call_flags_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -152,10 +128,8 @@ fn contract_get_call_flags_handler(
         app.push_integer(i64::from(flags.bits()))?;
         Ok(())
     })();
-
     map_contract_result("System.Contract.GetCallFlags", result)
 }
-
 fn contract_create_standard_account_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -164,7 +138,6 @@ fn contract_create_standard_account_handler(
         service: "System.Contract.CreateStandardAccount".to_string(),
         error: e,
     })?;
-
     let result = match app.create_standard_account(&pub_key_bytes) {
         Ok(account) => app
             .push_bytes(account.to_bytes())
@@ -176,10 +149,8 @@ fn contract_create_standard_account_handler(
             .map_err(|e| e.to_string()),
         Err(err) => Err(err.to_string()),
     };
-
     map_contract_result("System.Contract.CreateStandardAccount", result)
 }
-
 fn contract_create_multisig_account_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -192,17 +163,14 @@ fn contract_create_multisig_account_handler(
         service: "System.Contract.CreateMultisigAccount".to_string(),
         error: e,
     })?;
-
     let public_keys_items = app.pop_array().map_err(|e| VmError::InteropService {
         service: "System.Contract.CreateMultisigAccount".to_string(),
         error: e,
     })?;
-
     let result = (|| {
         if m < 0 || m > i32::MAX as i64 {
             return Err("Invalid multisig threshold".to_string());
         }
-
         let account = app
             .create_multisig_account(m as i32, public_keys_items)
             .map_err(|e| e.to_string())?;
@@ -210,10 +178,8 @@ fn contract_create_multisig_account_handler(
             .map_err(|e| e.to_string())?;
         Ok(())
     })();
-
     map_contract_result("System.Contract.CreateMultisigAccount", result)
 }
-
 fn contract_call_native_handler(
     app: &mut ApplicationEngine,
     engine: &mut ExecutionEngine,
@@ -227,7 +193,6 @@ fn contract_call_native_handler(
                 version_big
             ));
         }
-
         let (state_arc, stack_len) = {
             let context = engine
                 .current_context()
@@ -237,7 +202,6 @@ fn contract_call_native_handler(
             let stack_len = context.evaluation_stack().len();
             (state_arc, stack_len)
         };
-
         let (script_hash, method_name, arg_count, return_type, parameter_types) = {
             let state = state_arc.lock();
             let script_hash = state
@@ -258,7 +222,6 @@ fn contract_call_native_handler(
                 parameter_types,
             )
         };
-
         if native_call_trace_enabled() {
             let caller_hash = app.get_calling_script_hash().unwrap_or_else(UInt160::zero);
             let current_hash = app.current_script_hash().unwrap_or_else(UInt160::zero);
@@ -267,14 +230,12 @@ fn contract_call_native_handler(
                 script_hash, method_name, arg_count, parameter_types, current_hash, caller_hash
             );
         }
-
         if arg_count > stack_len {
             return Err(format!(
                 "Native contract expected {} argument(s) but stack contains {}",
                 arg_count, stack_len
             ));
         }
-
         let mut args = Vec::with_capacity(arg_count);
         let mut null_mask: u32 = 0;
         for index in 0..arg_count {
@@ -308,12 +269,10 @@ fn contract_call_native_handler(
             }
             args.push(bytes);
         }
-
         app.set_state(NativeArgNullMask(null_mask));
         let call_result = app.call_native_contract(script_hash, &method_name, &args);
         app.take_state::<NativeArgNullMask>();
         let result_bytes = call_result.map_err(|e| e.to_string())?;
-
         if native_call_trace_enabled() {
             let preview_len = result_bytes.len().min(24);
             eprintln!(
@@ -324,7 +283,6 @@ fn contract_call_native_handler(
                 hex::encode(&result_bytes[..preview_len])
             );
         }
-
         {
             let mut state = state_arc.lock();
             state.argument_count = 0;
@@ -332,21 +290,16 @@ fn contract_call_native_handler(
             state.return_type = None;
             state.parameter_types.clear();
         }
-
         if let Some(ret_type) = return_type {
             push_native_result(engine, ret_type, result_bytes)?;
         }
-
         // Load any queued calls requested by the native method (e.g. NEP-17 callbacks).
         app.process_pending_native_calls()
             .map_err(|e| e.to_string())?;
-
         Ok(())
     })();
-
     map_contract_result("System.Contract.CallNative", result)
 }
-
 fn push_native_result(
     engine: &mut ExecutionEngine,
     return_type: ContractParameterType,
@@ -357,7 +310,6 @@ fn push_native_result(
     };
     engine.push(item).map_err(|e| e.to_string())
 }
-
 fn decode_native_result(
     return_type: ContractParameterType,
     result: Vec<u8>,
@@ -412,14 +364,12 @@ fn decode_native_result(
                     iterator_id,
                 ))));
             }
-
             Bls12381Interop::from_encoded_bytes(&result).map_err(|e| e.to_string())?;
             Ok(Some(StackItem::from_byte_string(result)))
         }
         _ => Ok(Some(StackItem::from_byte_string(result))),
     }
 }
-
 fn stack_item_to_interop_bytes(item: StackItem) -> Result<Vec<u8>, String> {
     match &item {
         StackItem::InteropInterface(_) => {
@@ -447,7 +397,6 @@ fn stack_item_to_interop_bytes(item: StackItem) -> Result<Vec<u8>, String> {
         _ => Err("Stack item is not an InteropInterface".to_string()),
     }
 }
-
 fn contract_native_on_persist_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -455,7 +404,6 @@ fn contract_native_on_persist_handler(
     let result = app.native_on_persist().map_err(|e| e.to_string());
     map_contract_result("System.Contract.NativeOnPersist", result)
 }
-
 fn contract_native_post_persist_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -463,11 +411,9 @@ fn contract_native_post_persist_handler(
     let result = app.native_post_persist().map_err(|e| e.to_string());
     map_contract_result("System.Contract.NativePostPersist", result)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn decode_native_result_array_empty_is_null() {
         let item = decode_native_result(ContractParameterType::Array, Vec::new())
@@ -475,7 +421,6 @@ mod tests {
             .expect("stack item");
         assert!(item.is_null());
     }
-
     #[test]
     fn decode_native_result_any_empty_is_null() {
         let item = decode_native_result(ContractParameterType::Any, Vec::new())
@@ -483,7 +428,6 @@ mod tests {
             .expect("stack item");
         assert!(item.is_null());
     }
-
     #[test]
     fn decode_native_result_any_invalid_payload_preserves_raw_bytes() {
         let item = decode_native_result(ContractParameterType::Any, vec![0xff])
@@ -491,7 +435,6 @@ mod tests {
             .expect("stack item");
         assert_eq!(item.as_bytes().expect("bytes"), vec![0xff]);
     }
-
     #[test]
     fn decode_native_result_any_deserializes_stack_item_payloads() {
         let original = StackItem::from_array(vec![StackItem::from_int(BigInt::from(1u8))]);
@@ -502,7 +445,6 @@ mod tests {
             .expect("stack item");
         assert!(matches!(decoded, StackItem::Array(_)));
     }
-
     #[test]
     fn decode_native_result_array_payload_roundtrips() {
         let original = StackItem::from_array(vec![StackItem::from_int(BigInt::from(1u8))]);

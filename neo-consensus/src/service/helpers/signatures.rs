@@ -93,11 +93,7 @@ impl ConsensusService {
             None => return Ok(()),
         };
 
-        if self
-            .context
-            .commit_view_numbers
-            .get(&my_index)
-            .copied()
+        if self.context.commit_view_numbers.get(&my_index).copied()
             == Some(self.context.view_number)
         {
             return Ok(());

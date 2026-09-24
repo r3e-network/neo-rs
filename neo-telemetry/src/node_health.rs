@@ -230,12 +230,28 @@ async fn handle_request(
                 is_syncing: state.is_syncing,
                 header_lag,
                 // Optimization status
-                cuckoo_hash: if state.cuckoo_hash_enabled { "active" } else { "inactive" },
-                batch_verification: if state.batch_verification_enabled { "active" } else { "inactive" },
-                simd_blake2b: if state.simd_blake2b_enabled { "active" } else { "inactive" },
-                prefetch_pipeline: if state.prefetch_pipeline_enabled { "active" } else { "inactive" },
+                cuckoo_hash: if state.cuckoo_hash_enabled {
+                    "active"
+                } else {
+                    "inactive"
+                },
+                batch_verification: if state.batch_verification_enabled {
+                    "active"
+                } else {
+                    "inactive"
+                },
+                simd_blake2b: if state.simd_blake2b_enabled {
+                    "active"
+                } else {
+                    "inactive"
+                },
+                prefetch_pipeline: if state.prefetch_pipeline_enabled {
+                    "active"
+                } else {
+                    "inactive"
+                },
                 // Resource metrics
-                memory_mb: 0.0, // This will be updated from system metrics
+                memory_mb: 0.0,   // This will be updated from system metrics
                 cpu_percent: 0.0, // This will be updated from system metrics
             };
 

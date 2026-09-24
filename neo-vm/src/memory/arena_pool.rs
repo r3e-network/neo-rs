@@ -47,7 +47,6 @@
 //! arena.reset();
 //! ```
 
-
 /// Thread-safe arena pool for VM allocations.
 ///
 /// Uses thread-local storage for zero-cost allocation and reset operations.
@@ -90,7 +89,7 @@ impl ArenaMemoryPool {
             capacity_bytes: Self::DEFAULT_CAPACITY,
             used_bytes: std::cell::Cell::new(0),
         }));
-        
+
         Self {
             inner: std::cell::Cell::new(inner),
         }
@@ -113,7 +112,7 @@ impl ArenaMemoryPool {
             capacity_bytes: capacity,
             used_bytes: std::cell::Cell::new(0),
         }));
-        
+
         Self {
             inner: std::cell::Cell::new(inner),
         }
@@ -184,9 +183,17 @@ impl ArenaMemoryPool {
         }
         // Allocate `len` contiguous elements, each a copy of `initial_value`.
         let raw_ptr = self.inner.get();
-        let slice = unsafe { (*raw_ptr).arena.alloc_slice_fill_with(len, |_| initial_value) };
+        let slice = unsafe {
+            (*raw_ptr)
+                .arena
+                .alloc_slice_fill_with(len, |_| initial_value)
+        };
         let used = unsafe { (*raw_ptr).used_bytes.get() };
-        unsafe { (*raw_ptr).used_bytes.set(used + std::mem::size_of::<T>() * len) };
+        unsafe {
+            (*raw_ptr)
+                .used_bytes
+                .set(used + std::mem::size_of::<T>() * len)
+        };
         slice
     }
 
@@ -217,7 +224,9 @@ impl ArenaMemoryPool {
     /// ```
     pub fn reset(&self) {
         let raw_ptr = self.inner.get();
-        unsafe { (*raw_ptr).arena.reset(); }
+        unsafe {
+            (*raw_ptr).arena.reset();
+        }
         unsafe { (*raw_ptr).used_bytes.set(0) };
     }
 
@@ -315,7 +324,10 @@ mod benchmarks {
         );
 
         // Arena should be at least 2-10x faster
-        assert!(system_time > arena_time, "Arena allocation should be faster");
+        assert!(
+            system_time > arena_time,
+            "Arena allocation should be faster"
+        );
     }
 
     /// Benchmark: Arena reset vs garbage collection
@@ -339,10 +351,7 @@ mod benchmarks {
         arena.reset();
         let reset_time = start.elapsed();
 
-        println!(
-            "Reset {} allocations took {:?}",
-            allocations, reset_time
-        );
+        println!("Reset {} allocations took {:?}", allocations, reset_time);
         println!(
             "Reset time per allocation: {:.2}ns",
             reset_time.as_secs_f64() * 1_000_000_000.0 / allocations as f64
@@ -350,8 +359,10 @@ mod benchmarks {
         println!("Peak usage: {} MB", peak_usage / 1024 / 1024);
 
         // Reset should be < 10μs even for 100K allocations
-        assert!(reset_time < std::time::Duration::from_micros(10),
-            "Reset should be near-instant (O(1))");
+        assert!(
+            reset_time < std::time::Duration::from_micros(10),
+            "Reset should be near-instant (O(1))"
+        );
     }
 
     /// Benchmark: Simulate full VM transaction workload
@@ -433,9 +444,7 @@ mod property_tests {
     fn test_duplicate_values() {
         let arena = ArenaMemoryPool::new();
 
-        let refs: Vec<&u32> = (0..100)
-            .map(|i| unsafe { arena.allocate(i) })
-            .collect();
+        let refs: Vec<&u32> = (0..100).map(|i| unsafe { arena.allocate(i) }).collect();
 
         for (i, &val) in refs.iter().enumerate() {
             assert_eq!(val, &(i as u32));

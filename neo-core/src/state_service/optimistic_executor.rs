@@ -30,14 +30,16 @@
 //! 5. **Protocol Parity**: Final state matches C# byte-for-byte
 
 use crate::persistence::DataCache;
-use crate::state_service::conflict_detector::{ConflictDetector, ConflictResolution, ConflictResolutionError, ExecutedTransactionWithRwSet};
-use crate::state_service::prefetch_pipeline::{ExecutedTransaction, CoreResult};
-use neo_vm::RwSetTracker;
+use crate::state_service::conflict_detector::{
+    ConflictDetector, ConflictResolution, ConflictResolutionError, ExecutedTransactionWithRwSet,
+};
+use crate::state_service::prefetch_pipeline::{CoreResult, ExecutedTransaction};
 use crate::{Block, Transaction, UInt256};
+use neo_vm::RwSetTracker;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
 use std::thread;
 use std::time::Instant;
+use tokio::sync::mpsc;
 
 /// Configuration for optimistic executor pool
 #[derive(Debug, Clone)]
@@ -102,7 +104,7 @@ pub struct ParallelTxResult {
 /// Main entry point for optimistic parallel execution
 pub struct OptimisticExecutor {
     config: OptimisticExecutorConfig,
-    
+
     /// Sender channel for submitting tasks to workers
     task_tx: Option<mpsc::Sender<ParallelTxTask>>,
 
@@ -196,10 +198,10 @@ impl OptimisticExecutor {
         }
 
         let start_time = Instant::now();
-        
+
         // Create isolated state copies for each transaction
         let mut tasks = Vec::with_capacity(block.transactions.len());
-        
+
         for (idx, tx) in block.transactions.iter().enumerate() {
             let state_copy = initial_state.clone(); // Uses CoW internally
             let rw_set = RwSetTracker::new();
@@ -224,10 +226,10 @@ impl OptimisticExecutor {
 
         // Collect results (in theory order doesn't matter due to conflict detection)
         let results = Vec::new();
-        
+
         // This would need proper receiver channel (simplified for now)
         // In real implementation, use mpsc::Receiver to collect results
-        
+
         let end_parallel_time = Instant::now();
 
         // Run conflict detection
@@ -247,7 +249,8 @@ impl OptimisticExecutor {
             transaction_results: results,
             conflict_resolution: resolution,
             timing_metrics: ParallelExecutionTiming {
-                parallel_execution_ms: end_parallel_time.duration_since(start_time).as_millis() as u64,
+                parallel_execution_ms: end_parallel_time.duration_since(start_time).as_millis()
+                    as u64,
                 conflict_detection_ms: total_time.as_millis() as u64,
                 total_execution_ms: total_time.as_millis() as u64,
                 transactions_executed: expected_results as u64,
@@ -270,10 +273,13 @@ impl OptimisticExecutor {
                 execution_result: result.execution_result.clone(),
             };
 
-            detector.submit_tx(result.tx_index, ExecutedTransactionWithRwSet {
-                executed_tx,
-                rw_set: result.rw_set.clone(),
-            });
+            detector.submit_tx(
+                result.tx_index,
+                ExecutedTransactionWithRwSet {
+                    executed_tx,
+                    rw_set: result.rw_set.clone(),
+                },
+            );
         }
 
         Ok(detector)
@@ -320,7 +326,7 @@ fn worker_loop(
         let task = task.unwrap();
         // TODO: Execute transaction speculatively here
         // This requires integration with ApplicationEngine
-        
+
         let _result = ParallelTxResult {
             tx_index: task.tx_index,
             execution_result: Ok(vec![]), // Placeholder
@@ -416,7 +422,7 @@ pub enum OptimisticExecutorError {
 
 // Note: Implementing full executor requires:
 // 1. Integration with ApplicationEngine for tx execution
-// 2. Proper channel setup for task/result communication  
+// 2. Proper channel setup for task/result communication
 // 3. State isolation mechanism (CoW already in DataCache)
 // 4. Serialization for cross-thread transfer
 

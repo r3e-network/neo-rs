@@ -1,0 +1,85 @@
+# Neo N3 Resource Alerting Rules
+groups:
+  - name: neo_resources
+    interval: 30s
+    rules:
+      # Memory usage alerts
+      - alert: HighMemoryUsage
+        expr: (neo_memory_usage_bytes / neo_system_memory_total_bytes) > 0.90
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Memory usage above 90% ({{ $value | humanizePercentage }})"
+          description: "Neo node {{ $labels.instance }} is using {{ $value | humanizePercentage }} of available memory. Risk of OOM."
+          runbook: "1. Check for memory leaks. 2. Review recent changes. 3. Consider increasing memory allocation. 4. May need to restart node."
+
+      - alert: MemoryUsageHigh
+        expr: (neo_memory_usage_bytes / neo_system_memory_total_bytes) > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Memory usage above 80% ({{ $value | humanizePercentage }})"
+          description: "Neo node {{ $labels.instance }} is using {{ $value | humanizePercentage }} of available memory."
+          runbook: "Monitor memory trends. Check cache sizes and optimize if needed."
+
+      # CPU utilization alerts
+      - alert: HighCPUUtilization
+        expr: neo_cpu_utilization > 0.90
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "CPU utilization above 90% ({{ $value | humanizePercentage }})"
+          description: "Neo node {{ $labels.instance }} CPU utilization is at {{ $value | humanizePercentage }}."
+          runbook: "Check for CPU-intensive operations. Review recent load changes. Consider scaling if sustained."
+
+      # Disk space alerts
+      - alert: DiskSpaceLow
+        expr: (neo_storage_free_bytes / neo_storage_total_bytes) < 0.20
+        for: 5m
+        labels:
+          severity: warning
+          component: storage
+        annotations:
+          summary: "Disk space below 20% ({{ $value | humanizePercentage }} free)"
+          description: "Neo node {{ $labels.instance }} has only {{ $value | humanizePercentage }} disk space remaining."
+          runbook: "1. Clean up old logs and temporary files. 2. Archive old blockchain data if possible. 3. Plan for disk expansion."
+
+      - alert: DiskSpaceCritical
+        expr: (neo_storage_free_bytes / neo_storage_total_bytes) < 0.10
+        for: 2m
+        labels:
+          severity: critical
+          component: storage
+        annotations:
+          summary: "Disk space critically low ({{ $value | humanizePercentage }} free)"
+          description: "Neo node {{ $labels.instance }} has only {{ $value | humanizePercentage }} disk space remaining. Immediate action required."
+          runbook: "1. Immediately free up disk space. 2. Stop non-critical services. 3. Expand disk capacity urgently."
+
+      # Peer connectivity
+      - alert: LowPeerCount
+        expr: neo_peer_count < 3
+        for: 5m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "Low peer count ({{ $value }})"
+          description: "Neo node {{ $labels.instance }} has only {{ $value }} connected peers."
+          runbook: "Check network connectivity and firewall rules. Verify seed node configuration."
+
+      - alert: NoPeers
+        expr: neo_peer_count == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: network
+        annotations:
+          summary: "No connected peers"
+          description: "Neo node {{ $labels.instance }} has no connected peers. Node is isolated."
+          runbook: "1. Check network connectivity. 2. Verify P2P port is open. 3. Check seed nodes. 4. Review firewall rules."

@@ -1,5 +1,4 @@
 //! ApplicationEngine.Helper - matches C# Neo.SmartContract.ApplicationEngine helper methods exactly
-
 use crate::cryptography::Crypto;
 use crate::hardfork::Hardfork;
 // Old wrapper types removed - StackValue compounds are flat Vecs now
@@ -16,7 +15,6 @@ use neo_vm::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
-
 impl ApplicationEngine {
     /// Provides detailed stack information when the engine faults.
     pub fn get_engine_stack_info_on_fault(
@@ -27,13 +25,10 @@ impl ApplicationEngine {
         if self.state() != VMState::FAULT {
             return String::new();
         }
-
         if self.fault_exception_string().is_none() {
             return String::new();
         }
-
         let mut output = String::new();
-
         if let Some(calling_hash) = self.get_calling_script_hash() {
             let _ = writeln!(
                 output,
@@ -44,7 +39,6 @@ impl ApplicationEngine {
                     .unwrap_or_default()
             );
         }
-
         if let Some(current_hash) = self.current_script_hash() {
             let _ = writeln!(
                 output,
@@ -55,11 +49,9 @@ impl ApplicationEngine {
                     .unwrap_or_default()
             );
         }
-
         if let Some(entry_hash) = self.entry_script_hash() {
             let _ = writeln!(output, "EntryScriptHash={entry_hash}");
         }
-
         for context in self.invocation_stack().iter().rev() {
             let script_len = context.script().len();
             let ip = context.instruction_pointer();
@@ -67,24 +59,20 @@ impl ApplicationEngine {
                 .current_instruction()
                 .map(|instruction| format!("{:?}", instruction.opcode))
                 .unwrap_or_else(|_| "<none>".to_string());
-
             let script_hash =
                 UInt160::from_bytes(&context.script_hash()).unwrap_or_else(|_| UInt160::zero());
             let contract_suffix = self
                 .contract_display_name(&script_hash)
                 .map(|name| format!("[{name}]"))
                 .unwrap_or_default();
-
             let _ = writeln!(
                 output,
                 "\tInstructionPointer={ip}, OpCode {opcode}, Script Length={script_len} {script_hash}{contract_suffix}"
             );
         }
-
         output.push_str(&self.get_engine_exception_info(exception_stack_trace, exception_message));
         output
     }
-
     /// Provides formatted exception details matching the C# helper.
     pub fn get_engine_exception_info(
         &self,
@@ -94,57 +82,53 @@ impl ApplicationEngine {
         if self.state() != VMState::FAULT {
             return String::new();
         }
-
         let Some(message) = self.fault_exception_string() else {
             return String::new();
         };
-
         let mut output = String::new();
-
         if exception_message && !message.is_empty() {
             let _ = writeln!(output, "{message}");
         }
-
         output
     }
-
     /// Helper to push a boolean to the stack
+    #[must_use]
     pub fn push_boolean(&mut self, value: bool) -> Result<(), String> {
         self.push(StackItem::from_bool(value))
     }
-
     /// Helper to push an integer to the stack
+    #[must_use]
     pub fn push_integer(&mut self, value: i64) -> Result<(), String> {
         self.push(StackItem::from_int(value))
     }
-
     /// Helper to push bytes to the stack
+    #[must_use]
     pub fn push_bytes(&mut self, value: Vec<u8>) -> Result<(), String> {
         self.push(StackItem::from_byte_string(value))
     }
-
     /// Helper to push a string to the stack
+    #[must_use]
     pub fn push_string(&mut self, value: String) -> Result<(), String> {
         self.push(StackItem::from_byte_string(value.into_bytes()))
     }
-
     /// Helper to push an array to the stack
+    #[must_use]
     pub fn push_array(&mut self, value: Vec<StackItem>) -> Result<(), String> {
         self.push(StackItem::from_array(value))
     }
-
     /// Helper to push null to the stack
+    #[must_use]
     pub fn push_null(&mut self) -> Result<(), String> {
         self.push(StackItem::null())
     }
-
     /// Helper to pop a boolean from the stack
+    #[must_use]
     pub fn pop_boolean(&mut self) -> Result<bool, String> {
         let item = self.pop()?;
         item.as_bool().map_err(|e| e.to_string())
     }
-
     /// Helper to pop an integer from the stack
+    #[must_use]
     pub fn pop_integer(&mut self) -> Result<i64, String> {
         let item = self.pop()?;
         let integer = item.into_int().map_err(|e| e.to_string())?;
@@ -152,21 +136,21 @@ impl ApplicationEngine {
             .to_i64()
             .ok_or_else(|| "Integer too large".to_string())
     }
-
     /// Helper to pop bytes from the stack
+    #[must_use]
     pub fn pop_bytes(&mut self) -> Result<Vec<u8>, String> {
         let item = self.pop()?;
         item.as_bytes().map_err(|e| e.to_string())
     }
-
     /// Helper to pop a string from the stack
+    #[must_use]
     pub fn pop_string(&mut self) -> Result<String, String> {
         let item = self.pop()?;
         let bytes = item.as_bytes().map_err(|e| e.to_string())?;
         String::from_utf8(bytes).map_err(|_| "Invalid UTF-8".to_string())
     }
-
     /// Helper to pop an array from the stack
+    #[must_use]
     pub fn pop_array(&mut self) -> Result<Vec<StackItem>, String> {
         let item = self.pop()?;
         match item {
@@ -175,13 +159,12 @@ impl ApplicationEngine {
             _ => Err("Expected array".to_string()),
         }
     }
-
     /// Helper to check if top of stack is null
+    #[must_use]
     pub fn peek_is_null(&self, index: usize) -> Result<bool, String> {
         let item = self.peek(index)?;
         Ok(item.is_null())
     }
-
     /// Helper to convert public key to script hash
     pub fn pubkey_to_hash(&self, pubkey: &[u8]) -> UInt160 {
         // Create signature redeem script
@@ -190,17 +173,16 @@ impl ApplicationEngine {
         let hash_bytes = Crypto::hash160(&script);
         UInt160::from_bytes(&hash_bytes).expect("hash160 produces 20 bytes")
     }
-
     /// Helper to get current block time
+    #[must_use]
     pub fn get_current_block_time(&self) -> Result<u64, String> {
         self.current_block_timestamp()
     }
-
     /// Reserves a notification slot, enforcing hardfork limits.
+    #[must_use]
     pub fn reserve_notification_slot(&mut self) -> Result<(), String> {
         let state_arc = self.current_execution_state().map_err(|e| e.to_string())?;
         let mut state = state_arc.lock();
-
         if self.is_hardfork_enabled(Hardfork::HfEchidna)
             && self.trigger_type() == TriggerType::Application
             && state.notification_count >= MAX_NOTIFICATION_COUNT
@@ -210,22 +192,19 @@ impl ApplicationEngine {
                 MAX_NOTIFICATION_COUNT
             ));
         }
-
         state.notification_count = state.notification_count.saturating_add(1);
         Ok(())
     }
-
     /// Helper to emit log event
     pub fn emit_log_event(&mut self, event: crate::smart_contract::LogEventArgs) {
         self.push_log(event);
     }
-
     /// Helper to emit notify event
     pub fn emit_notify_event(&mut self, event: crate::smart_contract::NotifyEventArgs) {
         self.push_notification(event);
     }
-
     /// Ensures the notification payload size stays within protocol limits.
+    #[must_use]
     pub fn ensure_notification_size(&self, state: &[StackItem]) -> Result<(), String> {
         detect_circular_reference(state)?;
         let limits = self.execution_limits();
@@ -241,7 +220,6 @@ impl ApplicationEngine {
         }
         Ok(())
     }
-
     /// Sends a notification once all validation passes.
     /// The container can be None for system invocations (OnPersist/PostPersist).
     pub fn send_notification(
@@ -252,9 +230,7 @@ impl ApplicationEngine {
     ) -> Result<(), String> {
         // Get optional container (can be None for OnPersist/PostPersist triggers)
         let container = self.script_container().cloned();
-
         let copied = clone_notification_state(&state)?;
-
         let notification = NotifyEventArgs::new_with_optional_container(
             container,
             script_hash,
@@ -264,8 +240,8 @@ impl ApplicationEngine {
         self.emit_notify_event(notification);
         Ok(())
     }
-
     /// Helper to get notifications
+    #[must_use]
     pub fn get_notifications(&self, hash: Option<UInt160>) -> Result<Vec<StackItem>, String> {
         let limits = self.execution_limits();
         let mut result = Vec::new();
@@ -280,14 +256,12 @@ impl ApplicationEngine {
         Ok(result)
     }
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum CompoundKey {
     Array(usize),
     Struct(usize),
     Map(usize),
 }
-
 fn detect_circular_reference(state: &[StackItem]) -> Result<(), String> {
     let mut visiting = HashSet::new();
     let mut visited = HashSet::new();
@@ -296,7 +270,6 @@ fn detect_circular_reference(state: &[StackItem]) -> Result<(), String> {
     }
     Ok(())
 }
-
 fn detect_stack_item_cycle(
     item: &StackItem,
     visiting: &mut HashSet<CompoundKey>,
@@ -342,7 +315,6 @@ fn detect_stack_item_cycle(
         _ => Ok(()),
     }
 }
-
 fn detect_compound_cycle(
     key: CompoundKey,
     visiting: &mut HashSet<CompoundKey>,
@@ -363,7 +335,6 @@ fn detect_compound_cycle(
     visited.insert(key);
     Ok(())
 }
-
 fn clone_notification_state(state: &[StackItem]) -> Result<Vec<StackItem>, String> {
     let mut seen = HashMap::new();
     let mut copied = Vec::with_capacity(state.len());
@@ -372,7 +343,6 @@ fn clone_notification_state(state: &[StackItem]) -> Result<Vec<StackItem>, Strin
     }
     Ok(copied)
 }
-
 fn clone_stack_item_as_immutable(
     item: &StackItem,
     seen: &mut HashMap<CompoundKey, StackItem>,

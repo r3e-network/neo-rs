@@ -59,7 +59,11 @@ fn combined_fee_overflow_behaviour_is_profile_dependent() {
             let message = panic_payload
                 .downcast_ref::<String>()
                 .cloned()
-                .or_else(|| panic_payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
+                .or_else(|| {
+                    panic_payload
+                        .downcast_ref::<&str>()
+                        .map(|s| (*s).to_string())
+                })
                 .unwrap_or_else(|| "<non-string panic payload>".to_string());
             println!("T07-EVIDENCE: PANIC on i64::MAX fees: {message}");
             // With overflow-checks enabled the addition panics instead of

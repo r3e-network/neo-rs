@@ -1,6 +1,5 @@
 use super::*;
 use crate::VerifiableExt;
-
 impl ApplicationEngine {
     /// Validates that the provided hash has a matching witness in the current transaction.
     /// This matches C# ApplicationEngine.CheckWitnessInternal exactly, including witness rules.
@@ -9,18 +8,15 @@ impl ApplicationEngine {
         if self.get_calling_script_hash() == Some(*hash) {
             return Ok(true);
         }
-
         let Some(container) = self.script_container.as_ref() else {
             return Ok(false);
         };
-
         // 2. Transaction container path (witness rules and scopes).
         if let Some(tx) = container
             .as_any()
             .downcast_ref::<crate::network::p2p::payloads::Transaction>()
         {
             let mut signers: Vec<_> = tx.signers().to_vec();
-
             // OracleResponse transactions inherit signers from the original request.
             if let Some(oracle_id) = tx.attributes().iter().find_map(|attr| match attr {
                 TransactionAttribute::OracleResponse(resp) => Some(resp.id),
@@ -31,55 +27,47 @@ impl ApplicationEngine {
                 else {
                     return Ok(false);
                 };
-
                 let ledger = crate::smart_contract::native::LedgerContract::new();
                 let Some(state) = ledger
                     .get_transaction_state(self.snapshot_cache.as_ref(), &request.original_tx_id)?
                 else {
                     return Ok(false);
                 };
-
                 signers = state.transaction().signers().to_vec();
             }
-
             let Some(signer) = signers.iter().find(|s| s.account == *hash) else {
                 return Ok(false);
             };
-
             for rule in signer.get_all_rules() {
                 if self.match_witness_condition(&rule.condition)? {
                     return Ok(rule.action == WitnessRuleAction::Allow);
                 }
             }
-
             return Ok(false);
         }
-
         // 3. Non-transaction containers require ReadStates and use verifying script hashes.
         if !self.has_call_flags(CallFlags::READ_STATES) {
             return Err(Error::invalid_operation(
                 "Read states not allowed".to_string(),
             ));
         }
-
         // Downcast to concrete types to call VerifiableExt::script_hashes_for_verifying
         let hashes =
             script_hashes_for_verifying_dyn(container.as_ref(), self.snapshot_cache.as_ref());
         Ok(hashes.contains(hash))
     }
-
     /// Checks whether the specified hash has witnessed the current execution.
     ///
     /// Public wrapper for C# `CheckWitness(UInt160)` semantics.
+    #[must_use]
     pub fn check_witness(&self, hash: &UInt160) -> Result<bool> {
         self.check_witness_internal(hash)
     }
-
     /// Backwards-compatible alias mirroring `check_witness`.
+    #[must_use]
     pub fn check_witness_hash(&self, hash: &UInt160) -> Result<bool> {
         self.check_witness_internal(hash)
     }
-
     /// Evaluates a witness condition in the current execution context.
     /// Matches all Neo N3 witness condition types.
     fn match_witness_condition(&self, condition: &WitnessCondition) -> Result<bool> {
@@ -116,11 +104,9 @@ impl ApplicationEngine {
                     let state = state_arc.lock();
                     state.calling_context.clone()
                 };
-
                 let Some(calling_ctx) = calling_context else {
                     return Ok(true);
                 };
-
                 let calling_state_arc = calling_ctx
                     .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
                 let calling_state = calling_state_arc.lock();
@@ -140,14 +126,12 @@ impl ApplicationEngine {
             }
         }
     }
-
     fn contract_matches_group(&self, contract_hash: &UInt160, group: &[u8]) -> Result<bool> {
         if !self.has_call_flags(CallFlags::READ_STATES) {
             return Err(Error::invalid_operation(
                 "Read states not allowed".to_string(),
             ));
         }
-
         let Some(contract) = ContractManagement::get_contract_from_snapshot(
             self.snapshot_cache.as_ref(),
             contract_hash,
@@ -155,7 +139,6 @@ impl ApplicationEngine {
         else {
             return Ok(false);
         };
-
         let group_point = crate::cryptography::ECPoint::from_bytes(group)
             .map_err(|e| Error::invalid_data(format!("Invalid witness group: {e}")))?;
         Ok(contract
@@ -164,15 +147,14 @@ impl ApplicationEngine {
             .iter()
             .any(|entry| entry.pub_key == group_point))
     }
-
     /// Gets the current execution context.
     /// This matches C# ApplicationEngine.CurrentContext exactly.
     pub fn current_context(&self) -> Option<&ExecutionContext> {
         // This implements the C# logic: engine.CurrentContext property
         self.vm_engine.current_context()
     }
-
     /// Deletes storage items by prefix.
+    #[must_use]
     pub fn delete_storage_by_prefix(&mut self, prefix: &[u8]) -> Result<()> {
         let keys: Vec<_> = self
             .snapshot_cache
@@ -180,19 +162,15 @@ impl ApplicationEngine {
             .filter(|(key, _)| key.suffix().starts_with(prefix))
             .map(|(key, _)| key)
             .collect();
-
         for key in keys {
             self.snapshot_cache.delete(&key);
         }
-
         Ok(())
     }
-
     /// Gets the trigger type.
     pub fn get_trigger_type(&self) -> TriggerType {
         self.trigger
     }
-
     /// Returns all storage entries for a given contract.
     pub fn storage_entries_for_contract(
         &self,
@@ -206,7 +184,6 @@ impl ApplicationEngine {
             .find(Some(&prefix), SeekDirection::Forward)
             .collect()
     }
-
     /// Finds storage entries with a prefix.
     pub fn find_storage_entries_with_prefix(
         &self,
@@ -221,7 +198,6 @@ impl ApplicationEngine {
             .find(Some(&search_key), SeekDirection::Forward)
             .collect()
     }
-
     /// Creates a storage iterator.
     /// This matches C# Neo's ApplicationEngine.Find method exactly.
     pub fn create_storage_iterator(
@@ -229,13 +205,10 @@ impl ApplicationEngine {
         results: Vec<(StorageKey, StorageItem)>,
     ) -> Result<u32> {
         let iterator_id = self.allocate_iterator_id()?;
-
         let iterator = StorageIterator::new(results, 0, FindOptions::None);
         self.storage_iterators.insert(iterator_id, iterator);
-
         Ok(iterator_id)
     }
-
     /// Creates a storage iterator with specific options.
     /// This matches C# Neo's ApplicationEngine.Find method with FindOptions exactly.
     pub fn create_storage_iterator_with_options(
@@ -247,27 +220,23 @@ impl ApplicationEngine {
         let iterator_id = self.allocate_iterator_id()?;
         let iterator = StorageIterator::new(results, prefix_length, options);
         self.storage_iterators.insert(iterator_id, iterator);
-
         Ok(iterator_id)
     }
-
     /// Stores an existing storage iterator and returns its identifier.
+    #[must_use]
     pub fn store_storage_iterator(&mut self, iterator: StorageIterator) -> Result<u32, String> {
         let iterator_id = self.allocate_iterator_id().map_err(|err| err.to_string())?;
         self.storage_iterators.insert(iterator_id, iterator);
         Ok(iterator_id)
     }
-
     /// Gets a storage iterator by ID.
     pub fn get_storage_iterator(&self, iterator_id: u32) -> Option<&StorageIterator> {
         self.storage_iterators.get(&iterator_id)
     }
-
     /// Gets a mutable storage iterator by ID.
     pub fn get_storage_iterator_mut(&mut self, iterator_id: u32) -> Option<&mut StorageIterator> {
         self.storage_iterators.get_mut(&iterator_id)
     }
-
     /// Removes a storage iterator from the engine and returns it.
     ///
     /// This is primarily used by the RPC layer to persist iterators across requests
@@ -275,9 +244,9 @@ impl ApplicationEngine {
     pub fn take_storage_iterator(&mut self, iterator_id: u32) -> Option<StorageIterator> {
         self.storage_iterators.remove(&iterator_id)
     }
-
     /// Advances a storage iterator to the next element.
     /// Returns true if successful, false if at the end.
+    #[must_use]
     pub fn iterator_next(&mut self, iterator_id: u32) -> Result<bool> {
         match self.storage_iterators.get_mut(&iterator_id) {
             Some(iterator) => Ok(iterator.next()),
@@ -287,8 +256,8 @@ impl ApplicationEngine {
             ))),
         }
     }
-
     /// Gets the current value from a storage iterator.
+    #[must_use]
     pub fn iterator_value(&self, iterator_id: u32) -> Result<StackItem> {
         match self.storage_iterators.get(&iterator_id) {
             Some(iterator) => Ok(iterator.value()),
@@ -298,18 +267,16 @@ impl ApplicationEngine {
             ))),
         }
     }
-
     /// Removes a storage iterator (cleanup).
+    #[must_use]
     pub fn dispose_iterator(&mut self, iterator_id: u32) -> Result<()> {
         self.storage_iterators.remove(&iterator_id);
         Ok(())
     }
-
     /// Sets the current script hash.
     pub fn set_current_script_hash(&mut self, hash: Option<UInt160>) {
         self.current_script_hash = hash;
     }
-
     /// Sets the calling script hash.
     /// This is primarily used for testing purposes to simulate contract callers.
     ///
@@ -332,7 +299,6 @@ impl ApplicationEngine {
         // invocations in tests).
         self.native_calling_override = hash;
     }
-
     fn allocate_iterator_id(&mut self) -> Result<u32> {
         let id = self.next_iterator_id;
         self.next_iterator_id = self
@@ -341,7 +307,6 @@ impl ApplicationEngine {
             .ok_or_else(|| Error::invalid_operation("Iterator identifier overflow"))?;
         Ok(id)
     }
-
     /// Gets contract ID for a given hash.
     pub(super) fn get_contract_id_by_hash(&self, hash: &UInt160) -> Option<i32> {
         if let Some(contract) = self.contracts.get(hash) {
@@ -349,8 +314,8 @@ impl ApplicationEngine {
         }
         self.native_registry.get(hash).map(|native| native.id())
     }
-
     /// Sets a storage item directly (for testing and internal use).
+    #[must_use]
     pub fn set_storage(&mut self, key: StorageKey, item: StorageItem) -> Result<()> {
         if self.snapshot_cache.get(&key).is_some() {
             self.snapshot_cache.update(key, item);
@@ -359,19 +324,18 @@ impl ApplicationEngine {
         }
         Ok(())
     }
-
     /// Gets a storage item directly (for testing and internal use).
     pub fn get_storage(&self, key: &StorageKey) -> Option<StorageItem> {
         self.snapshot_cache.get(key)
     }
-
     /// Deletes a storage item directly (for testing and internal use).
+    #[must_use]
     pub fn delete_storage(&mut self, key: &StorageKey) -> Result<()> {
         self.snapshot_cache.delete(key);
         Ok(())
     }
-
     /// Gets the storage context for a native contract.
+    #[must_use]
     pub fn get_native_storage_context(&self, contract_hash: &UInt160) -> Result<StorageContext> {
         // Create storage context for native contracts using the best available source:
         // preloaded contract metadata first, then native registry fallback.
@@ -386,13 +350,11 @@ impl ApplicationEngine {
             .ok_or_else(|| {
                 Error::not_found(format!("Native contract not found: {}", contract_hash))
             })?;
-
         Ok(StorageContext {
             id: contract_id,
             is_read_only: false,
         })
     }
-
     /// Gets a storage item by key (legacy API for native contracts).
     pub fn get_storage_item_legacy(&self, key: &[u8]) -> Option<Vec<u8>> {
         if let Some(current_hash) = &self.current_script_hash
@@ -402,8 +364,8 @@ impl ApplicationEngine {
         }
         None
     }
-
     /// Puts a storage item (legacy API for native contracts).
+    #[must_use]
     pub fn put_storage_item_legacy(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         if let Some(current_hash) = &self.current_script_hash {
             let context = self.get_native_storage_context(current_hash)?;
@@ -413,31 +375,26 @@ impl ApplicationEngine {
             "No current contract context".to_string(),
         ))
     }
-
     /// Creates the script hash of a single-key (signature) account, charging the
     /// CheckSig fee (`System.Contract.CreateStandardAccount`).
+    #[must_use]
     pub fn create_standard_account(&mut self, public_key: &[u8]) -> Result<UInt160> {
         if public_key.len() != 33 {
             return Err(Error::invalid_operation(
                 "Public key must be 33 bytes".to_string(),
             ));
         }
-
         let fee = if self.is_hardfork_enabled(Hardfork::HfAspidochelone) {
             CHECK_SIG_PRICE
         } else {
             1 << 8
         };
-
         self.add_cpu_fee(fee)?;
-
         let script = Helper::signature_redeem_script(public_key);
         let hash = UInt160::from_bytes(&Crypto::hash160(&script))
             .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {}", e)))?;
-
         Ok(hash)
     }
-
     /// Creates the script hash of an m-of-n multisig account
     /// (`System.Contract.CreateMultisigAccount`).
     pub fn create_multisig_account(
@@ -450,7 +407,6 @@ impl ApplicationEngine {
                 "Multisig threshold must be positive".to_string(),
             ));
         }
-
         let m = required_signatures as usize;
         // C# parity (Contract.CreateMultiSigRedeemScript): up to 1024 pubkeys.
         if public_keys_items.is_empty()
@@ -461,7 +417,6 @@ impl ApplicationEngine {
                 "Invalid multisig public key count".to_string(),
             ));
         }
-
         let mut public_keys: Vec<Vec<u8>> = Vec::with_capacity(public_keys_items.len());
         for item in public_keys_items {
             let bytes = item
@@ -474,7 +429,6 @@ impl ApplicationEngine {
             }
             public_keys.push(bytes);
         }
-
         let fee = if self.is_hardfork_enabled(Hardfork::HfAspidochelone) {
             CHECK_SIG_PRICE
                 .checked_mul(public_keys.len() as i64)
@@ -482,17 +436,14 @@ impl ApplicationEngine {
         } else {
             1 << 8
         };
-
         self.add_cpu_fee(fee)?;
-
         let script = Helper::multi_sig_redeem_script(m, &public_keys);
         let hash = UInt160::from_bytes(&Crypto::hash160(&script))
             .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {}", e)))?;
-
         Ok(hash)
     }
-
     /// Deletes a storage item (legacy API for native contracts).
+    #[must_use]
     pub fn delete_storage_item_legacy(&mut self, key: &[u8]) -> Result<()> {
         if let Some(current_hash) = &self.current_script_hash {
             let context = self.get_native_storage_context(current_hash)?;
@@ -532,12 +483,10 @@ impl ApplicationEngine {
                     state.snapshot_cache.clone(),
                 )
             };
-
             self.current_script_hash = Some(current_hash);
             if self.entry_script_hash.is_none() {
                 self.entry_script_hash = Some(current_hash);
             }
-
             self.call_flags = call_flags;
             self.calling_script_hash = calling_script_hash;
             self.snapshot_cache =
@@ -551,10 +500,8 @@ impl ApplicationEngine {
             self.call_flags = CallFlags::ALL;
             self.snapshot_cache = Arc::clone(&self.original_snapshot_cache);
         }
-
         Ok(())
     }
-
     /// Registers native contracts in the contracts HashMap so they can be found
     pub(super) fn register_native_contracts(&mut self) {
         let block_height = self.current_block_index();
@@ -568,14 +515,12 @@ impl ApplicationEngine {
             if !should_initialize {
                 continue;
             }
-
             let hash = contract.hash();
             if !self.contracts.contains_key(&hash)
                 && let Some(state) = contract.contract_state(&self.protocol_settings, block_height)
             {
                 self.contracts.insert(hash, state);
             }
-
             if let Err(error) = contract.initialize(self) {
                 // C# parity: ApplicationEngine.Log fires only for the
                 // System.Runtime.Log syscall (RuntimeService.Log). Native
@@ -594,7 +539,6 @@ impl ApplicationEngine {
             }
         }
     }
-
     pub(super) fn refresh_policy_settings(&mut self) {
         if let Some(policy) = self.policy_contract() {
             let mut got_pico = false;
@@ -611,7 +555,6 @@ impl ApplicationEngine {
                 self.exec_fee_factor = u32::from_le_bytes(buffer);
                 got_pico = true;
             }
-
             if !got_pico {
                 if let Ok(raw) = policy.invoke(self, "getExecFeeFactor", &[])
                     && !raw.is_empty()
@@ -630,7 +573,6 @@ impl ApplicationEngine {
             {
                 self.exec_fee_factor = self.exec_fee_factor.saturating_mul(FEE_FACTOR as u32);
             }
-
             if let Ok(raw) = policy.invoke(self, "getStoragePrice", &[])
                 && !raw.is_empty()
             {
@@ -641,31 +583,27 @@ impl ApplicationEngine {
             }
         }
     }
-
     pub(super) fn initialize_nonce_data(
         container: Option<&Arc<dyn Verifiable>>,
         persisting_block: Option<&Block>,
     ) -> [u8; 16] {
         let mut data = [0u8; 16];
-
         if let Some(container) = container
             && let Some(transaction) = container.as_any().downcast_ref::<Transaction>()
         {
             let hash_bytes = transaction.hash().to_bytes();
             data.copy_from_slice(&hash_bytes[..16]);
         }
-
         if let Some(block) = persisting_block {
             let nonce_bytes = block.header.nonce.to_le_bytes();
             for (slot, byte) in data.iter_mut().take(8).zip(nonce_bytes.iter()) {
                 *slot ^= *byte;
             }
         }
-
         data
     }
-
     /// Converts a VM stack item into bytes, mirroring the C# helper.
+    #[must_use]
     pub fn stack_item_to_bytes(item: StackItem) -> Result<Vec<u8>, String> {
         if matches!(item, StackItem::Null) {
             return crate::smart_contract::binary_serializer::BinarySerializer::serialize(
@@ -682,7 +620,6 @@ impl ApplicationEngine {
         }
     }
 }
-
 /// Helper to call `script_hashes_for_verifying` on a `dyn Verifiable` by
 /// downcasting to known concrete types that implement `VerifiableExt`.
 fn script_hashes_for_verifying_dyn(
@@ -692,7 +629,6 @@ fn script_hashes_for_verifying_dyn(
     use crate::network::p2p::payloads::block::Block as PayloadBlock;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
     use crate::network::p2p::payloads::header::Header;
-
     if let Some(tx) = verifiable.as_any().downcast_ref::<Transaction>() {
         return tx.script_hashes_for_verifying(snapshot);
     }

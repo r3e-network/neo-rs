@@ -109,14 +109,14 @@
 //! pipeline.shutdown();
 //! ```
 
-use crossbeam_channel::{bounded, Sender, Receiver, TryRecvError};
+use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use tracing::{debug, info, trace, warn, instrument};
+use tracing::{debug, info, instrument, trace, warn};
 
-use crate::network::p2p::payloads::transaction::Transaction;
 use crate::network::p2p::payloads::block::Block;
+use crate::network::p2p::payloads::transaction::Transaction;
 pub use crate::{CoreError, CoreResult};
 
 /// Blocks persisted per drain pass (mirrors blockchain block_processing constant).
@@ -233,28 +233,28 @@ pub struct PipelineMetrics {
 pub struct PrefetchPipeline {
     /// Sender for Stage 1: I/O Prefetcher
     io_sender: Sender<BlockRequest>,
-    
+
     /// Receiver for deserialized blocks from Stage 1
     _io_receiver: Receiver<DeserializedBlock>,
-    
+
     /// Senders for Stage 2: Verification Worker Pool
     verification_senders: Vec<Sender<VerifiedTxPool>>,
-    
+
     /// Receiver for execution channel (Stage 3)
     execution_receiver: Receiver<ExecutedTransaction>,
-    
+
     /// Handle to I/O prefetcher thread
     _io_handle: Option<std::thread::JoinHandle<()>>,
-    
+
     /// Handles to verification workers
     _verification_handles: Vec<Option<std::thread::JoinHandle<()>>>,
-    
+
     /// Handle to main pipeline controller
     _controller_handle: Option<std::thread::JoinHandle<()>>,
-    
+
     /// Pipeline state (protected by mutex for thread-safe access)
     state: Arc<std::sync::Mutex<PipelineState>>,
-    
+
     /// Metrics collector handle
     metrics_handle: Option<std::thread::JoinHandle<()>>,
 }
@@ -265,7 +265,7 @@ impl PrefetchPipeline {
         let num_cores = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or_else(|_| num_cpus::get());
-        
+
         // Use (cores - 1) workers if specified, otherwise auto-detect
         let num_workers = num_workers.unwrap_or_else(|| {
             if num_cores > 1 {
@@ -286,23 +286,23 @@ impl PrefetchPipeline {
         let (io_tx, io_rx) = bounded::<DeserializedBlock>(DEFAULT_CHANNEL_CAPACITY);
         // Request channel (controller -> I/O prefetcher): which blocks to prefetch
         let (req_tx, req_rx) = bounded::<BlockRequest>(DEFAULT_CHANNEL_CAPACITY);
-        
+
         // Create channel between Stage 2 (Verification) and Stage 3 (Execution)
         let (vm_tx, _vm_rx) = bounded::<VerifiedTxPool>(DEFAULT_CHANNEL_CAPACITY);
-        
+
         // Create execution channel
         let (exec_tx, exec_rx) = bounded::<ExecutedTransaction>(DEFAULT_CHANNEL_CAPACITY);
 
         // Spawn I/O prefetcher worker
         let io_handle = spawn_io_prefetcher(io_tx.clone(), req_rx);
-        
+
         // Spawn verification worker pool using Rayon
         let mut verification_handles = Vec::with_capacity(num_workers);
         for i in 0..num_workers {
             let handle = spawn_verification_worker(io_rx.clone(), vm_tx.clone(), i);
             verification_handles.push(handle);
         }
-        
+
         // Spawn execution worker
         let state = Arc::new(std::sync::Mutex::new(PipelineState::Running));
         let exec_handle = spawn_execution_worker(exec_tx, Arc::clone(&state));
@@ -335,7 +335,7 @@ impl PrefetchPipeline {
 
             loop {
                 thread::sleep(interval);
-                
+
                 match state.lock() {
                     Ok(state) => {
                         if *state == PipelineState::ShuttingDown {
@@ -346,7 +346,9 @@ impl PrefetchPipeline {
                 }
 
                 let current_counted = sample_count;
-                if current_counted > last_counted && current_counted.saturating_sub(last_counted) >= 1000 {
+                if current_counted > last_counted
+                    && current_counted.saturating_sub(last_counted) >= 1000
+                {
                     // Calculate averages
                     let samples = current_counted.saturating_sub(last_counted);
                     let avg_io = total_io_time / samples as f64;
@@ -384,7 +386,7 @@ impl PrefetchPipeline {
         drop(state);
 
         let req = BlockRequest::new(height);
-        
+
         match self.io_sender.send(req) {
             Ok(()) => {
                 debug!(target: "pipeline", height, "submitted block request");
@@ -417,14 +419,14 @@ impl PrefetchPipeline {
         let state = self.state.lock().unwrap();
         let blocks_processed = 0u64; // Would be tracked internally
         let transactions_verified = 0u64; // Would be tracked internally
-        
+
         // Placeholder metrics - actual values would come from internal counters
         const DEFAULT_AVG_IO_LATENCY_MS: f64 = 5.0;
         const DEFAULT_AVG_VERIFICATION_LATENCY_MS: f64 = 15.0;
         const DEFAULT_AVG_EXECUTION_LATENCY_MS: f64 = 20.0;
-        
+
         let channel_depth = self._io_receiver.len();
-        
+
         PipelineMetrics {
             blocks_processed,
             transactions_verified,
@@ -441,7 +443,7 @@ impl PrefetchPipeline {
     /// Shuts down the pipeline gracefully
     pub fn shutdown(mut self) {
         debug!(target: "pipeline", "initiating pipeline shutdown");
-        
+
         // Mark as shutting down
         {
             let mut state = self.state.lock().expect("pipeline state poisoned");
@@ -464,13 +466,13 @@ impl PrefetchPipeline {
         if let Some(handle) = _io_handle {
             let _ = handle.join();
         }
-        
+
         // Use std::mem::take and into_iter() to handle Vec<Option<JoinHandle>>
         let verification_handles = std::mem::take(&mut self._verification_handles);
         for handle in verification_handles.into_iter().flatten() {
             let _ = handle.join();
         }
-        
+
         let _controller_handle = std::mem::take(&mut self._controller_handle);
         if let Some(handle) = _controller_handle {
             let _ = handle.join();
@@ -511,7 +513,7 @@ impl Drop for PrefetchPipeline {
             Ok(s) => s,
             Err(_) => return,
         };
-        
+
         if *state == PipelineState::Running || *state == PipelineState::Paused {
             *state = PipelineState::ShuttingDown;
         }
@@ -533,7 +535,7 @@ fn spawn_io_prefetcher(
         .name("io-prefetcher".to_string())
         .spawn(move || {
             debug!(target: "pipeline", "I/O prefetcher started");
-            
+
             while let Ok(req) = rx.recv() {
                 let height = req.height;
                 let _start_time = Instant::now();
@@ -546,8 +548,7 @@ fn spawn_io_prefetcher(
                     continue;
                 }
 
-
-            debug!(target: "pipeline", "I/O prefetcher stopped");
+                debug!(target: "pipeline", "I/O prefetcher stopped");
             }
         })
         .expect("failed to spawn I/O prefetcher")
@@ -565,13 +566,13 @@ fn spawn_verification_worker(
         .name(name)
         .spawn(move || {
             debug!(target: "pipeline", worker_id, "verification worker started");
-            
+
             // Each verification worker processes blocks from the I/O receiver
             while let Ok(deserialized_block) = io_rx.recv() {
                 let height = deserialized_block.height;
                 let hash = deserialized_block.hash;
                 let transactions = &deserialized_block.block.transactions;
-                
+
                 debug!(
                     target: "pipeline",
                     worker_id,
@@ -579,20 +580,22 @@ fn spawn_verification_worker(
                     tx_count = transactions.len(),
                     "started processing block"
                 );
-                
+
                 // Use Rayon for parallel ECDSA verification
                 let verified_transactions: Vec<Arc<Transaction>> = rayon::join(
-                    || verify_transaction_batch(&transactions[0..transactions.len()/2]),
-                    || verify_transaction_batch(&transactions[transactions.len()/2..])
-                ).0.to_vec();
-                
+                    || verify_transaction_batch(&transactions[0..transactions.len() / 2]),
+                    || verify_transaction_batch(&transactions[transactions.len() / 2..]),
+                )
+                .0
+                .to_vec();
+
                 let verified_pool = VerifiedTxPool {
                     height,
                     hash,
                     transactions: verified_transactions,
                 };
                 let tx_count = verified_pool.transactions.len();
-                
+
                 if sender.send(verified_pool).is_err() {
                     warn!(
                         target: "pipeline",
@@ -602,7 +605,7 @@ fn spawn_verification_worker(
                     );
                     break;
                 }
-                
+
                 trace!(
                     target: "pipeline",
                     worker_id,
@@ -639,7 +642,6 @@ fn spawn_execution_worker(
         .expect("failed to spawn execution worker")
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -647,10 +649,12 @@ mod tests {
     #[test]
     fn test_pipeline_creation() {
         let pipeline = PrefetchPipeline::new(None);
-        assert_eq!(pipeline.get_metrics().active_workers, 
-                   std::thread::available_parallelism()
-                       .map(|n| n.get().saturating_sub(1))
-                       .unwrap_or(1));
+        assert_eq!(
+            pipeline.get_metrics().active_workers,
+            std::thread::available_parallelism()
+                .map(|n| n.get().saturating_sub(1))
+                .unwrap_or(1)
+        );
     }
 
     #[test]
@@ -659,7 +663,7 @@ mod tests {
         pipeline.submit_block(1);
         pipeline.submit_block(2);
         pipeline.submit_block(3);
-        
+
         // Should not block even though no consumers
         // (in real usage, pipeline spawns its own consumers)
     }

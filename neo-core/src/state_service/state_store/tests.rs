@@ -484,7 +484,11 @@ fn update_local_state_root_snapshot_rejects_missing_reference_in_active_range() 
     let err = store
         .update_local_state_root_snapshot(1, std::iter::empty())
         .expect_err("missing reference in active range must fail closed");
-    assert!(err.contains("missing reference state root at height 1 within active reference range [0, 1]"));
+    assert!(
+        err.contains(
+            "missing reference state root at height 1 within active reference range [0, 1]"
+        )
+    );
 }
 
 #[test]
@@ -1117,13 +1121,9 @@ fn state_roots_survive_reopen_after_flush() {
     }
 
     // Reopen a fresh store over the same directory (the writer has been dropped).
-    let reopened = StateStore::open_with_provider(
-        make_provider(),
-        &path_str,
-        settings,
-        protocol_settings,
-    )
-    .expect("reopen state store");
+    let reopened =
+        StateStore::open_with_provider(make_provider(), &path_str, settings, protocol_settings)
+            .expect("reopen state store");
 
     let root = reopened
         .get_state_root(height)

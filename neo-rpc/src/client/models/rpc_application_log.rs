@@ -41,6 +41,7 @@ pub struct RpcApplicationLog {
 impl RpcApplicationLog {
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let tx_id = json
             .get("txid")
@@ -110,6 +111,7 @@ pub struct Execution {
 impl Execution {
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let trigger_str = required_string(json, "trigger")?;
         let trigger = TriggerType::from_str(&trigger_str)

@@ -1,5 +1,4 @@
 //! Application engine core implementation aligned with Neo C# version.
-
 //! This module implements the Neo N3 smart contract execution engine, providing
 //! the runtime environment for executing NeoVM scripts with blockchain context.
 //!
@@ -67,7 +66,6 @@
 //! The `ApplicationEngine` implementation is split across multiple files in this
 //! directory to keep individual methods readable while preserving a single Rust
 //! module boundary (matching the C# layout).
-
 pub mod contract;
 pub mod crypto;
 pub mod helper;
@@ -75,7 +73,6 @@ pub mod iterator;
 pub mod op_code_prices;
 pub mod runtime;
 pub mod storage;
-
 use crate::cryptography::{Crypto, murmur128};
 use crate::error::{CoreError as Error, Result};
 use crate::hardfork::Hardfork;
@@ -135,7 +132,6 @@ use parking_lot::Mutex;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
-
 /// Maximum GAS (in datoshi) available to an engine created for testing/invoke (C# `TestModeGas`).
 pub const TEST_MODE_GAS: i64 = 20_000_000_000;
 /// Maximum length (in bytes) of an event name.
@@ -148,17 +144,14 @@ pub const MAX_NOTIFICATION_COUNT: usize = 512;
 pub const CHECK_SIG_PRICE: i64 = 1 << 15;
 /// Scaling factor between raw internal fee counters and datoshi GAS amounts.
 pub const FEE_FACTOR: i64 = 10000;
-
 type InteropHandler = fn(&mut ApplicationEngine, &mut ExecutionEngine) -> VmResult<()>;
 type StdResult<T> = std::result::Result<T, String>;
-
 #[derive(Clone, Copy)]
 struct HostInteropHandler {
     price: i64,
     required_call_flags: CallFlags,
     handler: InteropHandler,
 }
-
 fn map_core_error_to_vm_error(error: Error) -> VmError {
     match error {
         Error::InsufficientGas {
@@ -168,29 +161,23 @@ fn map_core_error_to_vm_error(error: Error) -> VmError {
         other => VmError::invalid_operation_msg(other.to_string()),
     }
 }
-
 struct VmEngineHost {
     engine: ExecutionEngine,
 }
-
 impl VmEngineHost {
     fn new(engine: ExecutionEngine) -> Self {
         Self { engine }
     }
-
     fn engine(&self) -> &ExecutionEngine {
         &self.engine
     }
-
     fn engine_mut(&mut self) -> &mut ExecutionEngine {
         &mut self.engine
     }
-
     fn current_context(&self) -> Option<&ExecutionContext> {
         self.engine.current_context()
     }
 }
-
 /// Represents a contract call queued by a native contract.
 ///
 /// Native contracts sometimes need to invoke a user contract (e.g., NEP-17
@@ -205,7 +192,6 @@ struct PendingNativeCall {
     method: String,
     args: Vec<StackItem>,
 }
-
 /// The Neo N3 application engine: executes smart contracts on the VM,
 /// charging GAS for syscalls and collecting notifications and logs.
 pub struct ApplicationEngine {
@@ -246,7 +232,6 @@ pub struct ApplicationEngine {
     states: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
     runtime_context: Option<Arc<dyn SystemContext>>,
 }
-
 mod contracts;
 mod drop;
 mod external_vm;

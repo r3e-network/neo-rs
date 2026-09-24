@@ -105,6 +105,7 @@ impl RpcUtility {
 
     /// Parse WIF or private key hex string to `KeyPair`
     /// Matches C# `GetKeyPair`
+    #[must_use]
     pub fn key_pair(key: &str) -> Result<KeyPair, String> {
         if key.is_empty() {
             return Err("Key cannot be empty".to_string());
@@ -265,16 +266,19 @@ impl RpcUtility {
     }
 
     /// Converts a `neo-json` representation of a stack item into `neo-vm-rs`.
+    #[must_use]
     pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
         stack::stack_item_from_json(json)
     }
 
     /// Converts a `neo-vm-rs` stack value into a `neo-json` representation.
+    #[must_use]
     pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
         stack::stack_item_to_json(item)
     }
 
     /// Converts an RPC stack value using the same integer rules as local VM clients.
+    #[must_use]
     pub fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
         stack::stack_value_to_bigint(value)
     }
@@ -286,11 +290,13 @@ impl RpcUtility {
     }
 
     /// Converts an RPC stack value to a display/API string.
+    #[must_use]
     pub fn stack_value_to_string(value: &StackValue) -> Result<String, String> {
         stack::stack_value_to_string(value)
     }
 
     /// Creates a witness from JSON (invocation/verification scripts encoded as base64).
+    #[must_use]
     pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
         witness::witness_from_json(json)
     }
@@ -327,14 +333,17 @@ pub fn transaction_from_json(
     RpcUtility::transaction_from_json(json, protocol_settings)
 }
 
+#[must_use]
 pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
     RpcUtility::stack_item_from_json(json)
 }
 
+#[must_use]
 pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
     RpcUtility::stack_item_to_json(item)
 }
 
+#[must_use]
 pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
     RpcUtility::witness_from_json(json)
 }

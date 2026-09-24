@@ -5,6 +5,7 @@ use neo_json::JObject;
 
 use super::parsing::parse_base64_token;
 
+#[must_use]
 pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
     let (invocation_bytes, verification_bytes) = parse_witness_scripts(json)?;
 
@@ -14,6 +15,7 @@ pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
     ))
 }
 
+#[must_use]
 pub fn payload_witness_from_json(json: &JObject) -> Result<PayloadWitness, String> {
     let (invocation_bytes, verification_bytes) = parse_witness_scripts(json)?;
     Ok(PayloadWitness::new_with_scripts(

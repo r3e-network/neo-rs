@@ -74,13 +74,13 @@ pub const BLAKE2B_BLOCK_BYTES: usize = 128;
 pub enum CpuFeatures {
     /// No SIMD support available (scalar only)
     ScalarOnly,
-    
+
     /// SSE2 support (baseline x86_64)
     SSE2,
-    
+
     /// AVX2 support (Broadwell and newer)
     AVX2,
-    
+
     /// AVX-512 support (Skylake-X and newer, Ice Lake+)
     AVX512,
 }
@@ -116,9 +116,8 @@ pub fn get_cpu_features() -> CpuFeatures {
     *DETECTED_CPU_FEATURES.get_or_init(detect_cpu_features)
 }
 
-
 /// SIMD-accelerated BLAKE2b hash function
-/// 
+///
 /// Uses optimized blake2b-simd crate which automatically detects CPU features and uses SIMD instructions.
 /// Automatically leverages AVX-512/AVX2/SSE2 on supported CPUs for optimal performance.
 ///
@@ -150,7 +149,7 @@ pub fn blake2b_simd(data: &[u8]) -> [u8; BLAKE2B_OUT_BYTES] {
 }
 
 /// Batch hash multiple inputs
-/// 
+///
 /// Processes each input through SIMD-optimized blake2b hashing.
 /// The blake2b-simd crate automatically uses best available SIMD instructions for each input.
 ///
@@ -171,62 +170,66 @@ pub fn batch_blake2b(inputs: &[&[u8]]) -> Vec<[u8; BLAKE2B_OUT_BYTES]> {
 #[cfg(test)]
 mod benchmarks {
     use super::*;
-    
+
     /// Generate random test data
+    #[allow(dead_code)]
     fn generate_test_data(size: usize) -> Vec<u8> {
         (0..size).map(|i| (i % 256) as u8).collect()
     }
-    
+
     /// Measure scalar BLAKE2b hash time
+    #[allow(dead_code)]
     fn bench_scalar_iterative(times: usize) -> std::time::Duration {
         let data = generate_test_data(1024);
         let start = std::time::Instant::now();
-        
+
         for _ in 0..times {
             let _hash = blake2b_simd(&data);
         }
-        
+
         start.elapsed()
     }
-    
+
     #[test]
     fn test_blake2b_output_size() {
         let data = b"Test data for BLAKE2b";
         let hash = blake2b_simd(data);
-        
+
         assert_eq!(hash.len(), BLAKE2B_OUT_BYTES);
     }
-    
+
     #[test]
     fn test_blake2b_deterministic() {
         let data = b"Deterministic test data";
         let hash1 = blake2b_simd(data);
         let hash2 = blake2b_simd(data);
-        
+
         assert_eq!(hash1, hash2);
     }
-    
+
     #[test]
     fn test_blake2b_different_inputs() {
         let data1 = b"Input one";
         let data2 = b"Input two";
-        
+
         let hash1 = blake2b_simd(data1);
         let hash2 = blake2b_simd(data2);
-        
+
         assert_ne!(hash1, hash2);
     }
-    
+
     #[test]
     fn test_detect_cpu_features() {
         let features = detect_cpu_features();
         println!("Detected CPU features: {:?}", features);
-        
+
         match features {
-            CpuFeatures::ScalarOnly | CpuFeatures::SSE2 | CpuFeatures::AVX2 | CpuFeatures::AVX512 => {
+            CpuFeatures::ScalarOnly
+            | CpuFeatures::SSE2
+            | CpuFeatures::AVX2
+            | CpuFeatures::AVX512 => {
                 // All are valid outcomes
             }
         }
     }
-    
 }

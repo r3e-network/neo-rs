@@ -23,7 +23,7 @@ use neo_core::network::p2p::payloads::{Block, Transaction};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::Helper;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 fn main() {

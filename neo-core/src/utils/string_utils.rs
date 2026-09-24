@@ -25,8 +25,7 @@ pub fn bytes_to_utf8_string(bytes: &[u8]) -> CoreResult<String> {
 ///
 /// This variant consumes the input bytes, avoiding an extra allocation when possible.
 pub fn bytes_to_utf8_string_owned(bytes: Vec<u8>) -> CoreResult<String> {
-    String::from_utf8(bytes)
-        .map_err(|e| CoreError::serialization(format!("Invalid UTF-8: {}", e)))
+    String::from_utf8(bytes).map_err(|e| CoreError::serialization(format!("Invalid UTF-8: {}", e)))
 }
 
 /// Converts bytes to UTF-8 string with a custom error message.

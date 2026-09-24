@@ -62,6 +62,6 @@ pub mod blake2b_avx512;
 
 // Re-export main APIs
 pub use blake2b_avx512::{
-    blake2b_simd, batch_blake2b, detect_cpu_features, get_cpu_features,
-    CpuFeatures, BLAKE2B_OUT_BYTES,
+    BLAKE2B_OUT_BYTES, CpuFeatures, batch_blake2b, blake2b_simd, detect_cpu_features,
+    get_cpu_features,
 };

@@ -213,9 +213,8 @@ impl ContractBatchScheduler {
                     // SYSCALL instruction format: 0x41 followed by 4-byte descriptor
                     if pos + 5 <= data.len() {
                         // Extract the 4-byte descriptor
-                        let descriptor: [u8; 4] = data[pos + 1..pos + 5]
-                            .try_into()
-                            .unwrap_or_else(|_| [0; 4]);
+                        let descriptor: [u8; 4] =
+                            data[pos + 1..pos + 5].try_into().unwrap_or_else(|_| [0; 4]);
 
                         // Convert descriptor to UInt160
                         // NEO uses Hash160 for contract IDs - we can directly use descriptor
@@ -270,23 +269,22 @@ impl ContractBatchScheduler {
 
         // Instruction operand sizes based on Neo VM spec
         const INSTRUCTION_SIZES: [(u8, usize); 10] = [
-            (0x41, 5), // SYSCALL: 1 byte opcode + 4 byte operand
-            (0x4E, 3), // CALLT: 1 byte opcode + 2 byte token
-            (0x20, 1), // PUSHINT8
-            (0x21, 9), // PUSHINT16
-            (0x22, 17), // PUSHINT32
-            (0x23, 33), // PUSHINT64
-            (0x24, 65), // PUSHINT128
+            (0x41, 5),   // SYSCALL: 1 byte opcode + 4 byte operand
+            (0x4E, 3),   // CALLT: 1 byte opcode + 2 byte token
+            (0x20, 1),   // PUSHINT8
+            (0x21, 9),   // PUSHINT16
+            (0x22, 17),  // PUSHINT32
+            (0x23, 33),  // PUSHINT64
+            (0x24, 65),  // PUSHINT128
             (0x25, 129), // PUSHINT256
-            (0xC0, 1), // PUSHDATA0 (minimum)
-            (0xC1, 1), // PUSHDATA1 (minimum)
+            (0xC0, 1),   // PUSHDATA0 (minimum)
+            (0xC1, 1),   // PUSHDATA1 (minimum)
         ];
 
         for (op, size) in &INSTRUCTION_SIZES {
             if *op == opcode {
                 if pos + size <= data.len() {
                     return Some(InstructionInfo {
-                        opcode: *op,
                         size: *size,
                     });
                 }
@@ -294,7 +292,7 @@ impl ContractBatchScheduler {
         }
 
         // Unknown instruction - assume 1 byte
-        Some(InstructionInfo { opcode, size: 1 })
+        Some(InstructionInfo { size: 1 })
     }
 
     /// Analyze all pending transactions and organize into batches
@@ -313,8 +311,7 @@ impl ContractBatchScheduler {
     /// - Contract-bound transactions clustered together
     /// - Identical output for identical input (deterministic)
     pub fn schedule(&self, mempool: &[TeeMempoolEntry]) -> Vec<ExecBatch> {
-        let mut contract_queues: HashMap<UInt160, PriorityQ<TeeMempoolEntry>> =
-            HashMap::new();
+        let mut contract_queues: HashMap<UInt160, PriorityQ<TeeMempoolEntry>> = HashMap::new();
         let mut default_queue: VecDeque<TeeMempoolEntry> = VecDeque::new();
 
         // Step 1: Classify each transaction by target contract
@@ -337,7 +334,11 @@ impl ContractBatchScheduler {
         // Process identified contract queues first (higher priority)
         // Native contracts and well-known ERC20 transfers benefit most
         for (_contract, queue) in contract_queues.drain() {
-            batches.extend(greedy_pack(queue.into_iter(), self.max_batch_size, self.max_batch_gas));
+            batches.extend(greedy_pack(
+                queue.into_iter(),
+                self.max_batch_size,
+                self.max_batch_gas,
+            ));
         }
 
         // Then process default queue (unidentified contracts)
@@ -391,7 +392,6 @@ impl Default for ContractBatchScheduler {
 /// Information about a parsed VM instruction
 #[derive(Debug, Clone, Copy)]
 struct InstructionInfo {
-    opcode: u8,
     size: usize,
 }
 
@@ -410,15 +410,15 @@ fn greedy_pack(
     queue: impl Iterator<Item = TeeMempoolEntry>,
     max_count: usize,
     max_gas: u64,
-) -> Vec<ExecBatch>
-{
+) -> Vec<ExecBatch> {
     let mut batches: Vec<ExecBatch> = Vec::new();
     let mut current_batch = ExecBatch::with_capacity(max_count.min(16)); // Preallocate reasonable size
 
     for tx in queue {
         let estimated_gas = estimate_gas_cost(&tx);
 
-        if current_batch.total_count >= max_count || current_batch.total_gas + estimated_gas > max_gas
+        if current_batch.total_count >= max_count
+            || current_batch.total_gas + estimated_gas > max_gas
         {
             // Fill current batch and start new one
             if !current_batch.transactions.is_empty() {
@@ -477,7 +477,9 @@ pub fn estimate_gas_cost(tx: &TeeMempoolEntry) -> u64 {
     let syscall_count = tx.data.iter().filter(|&&b| b == 0x41).count();
     let op_multiplier = (syscall_count as u64).max(1) * 1; // Minimal overhead for syscalls
 
-    base_gas.saturating_add(size_bonus as u64).saturating_add(op_multiplier)
+    base_gas
+        .saturating_add(size_bonus as u64)
+        .saturating_add(op_multiplier)
 }
 
 /// Priority queue implementation for contract-ordered transactions
@@ -507,7 +509,7 @@ impl<T> PriorityQ<T> {
         self.items.len()
     }
 
-    /// Check if empty
+    /// Check if queue is empty
     fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -568,8 +570,8 @@ mod tests {
 
         // Script with SYSCALL instruction - minimal script
         let script = vec![
-            0x41,          // SYSCALL opcode
-            0x00, 0x00,    // Descriptor (little-endian 4-byte)
+            0x41, // SYSCALL opcode
+            0x00, 0x00, // Descriptor (little-endian 4-byte)
             0x00, 0x01,
         ];
 
@@ -626,9 +628,7 @@ mod tests {
     fn test_schedule_respects_gas_limits() {
         let scheduler = ContractBatchScheduler::with_limits(100, 1_000_000); // Very high limit
 
-        let txs: Vec<TeeMempoolEntry> = (0..50)
-            .map(|i| make_test_entry(i, 1))
-            .collect();
+        let txs: Vec<TeeMempoolEntry> = (0..50).map(|i| make_test_entry(i, 1)).collect();
 
         let batches = scheduler.schedule(&txs);
 

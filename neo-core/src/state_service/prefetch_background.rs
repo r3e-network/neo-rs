@@ -7,24 +7,24 @@
 //! frequently accessed keys into Tier 0 (root branch) and Tier 1 (hot native leaves)
 //! caches during idle periods.
 
+use neo_primitives::UInt256;
 use std::collections::HashMap;
-use std::sync::mpsc::{Sender, Receiver, RecvTimeoutError};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-use neo_primitives::UInt256;
 
 /// Target cache tier for prefetching operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TargetTier {
     /// Pre-warm root branch buffer (<100ns path)
     RootBranch,
-    
+
     /// Warm hot native contract leaves (~1μs path)
     HotNativeLeaves,
-    
+
     /// Populate contract prefix groups (~5μs path)
     ContractPrefixes,
-    
+
     /// Fallback to general purpose LRU (~500μs disk miss)
     GeneralPurpose,
 }
@@ -45,10 +45,10 @@ impl std::fmt::Display for TargetTier {
 pub struct PredictionRequest {
     /// Block height being processed
     pub height: u64,
-    
+
     /// Keys predicted to be hot in next block (sorted by score)
     pub predicted_keys: Vec<(UInt256, u32)>,
-    
+
     /// Maximum number of keys to prefetch in this batch
     pub batch_size: usize,
 }
@@ -58,7 +58,7 @@ pub struct PredictionRequest {
 struct PreloadCommand {
     /// Keys to pre-fetch from backing store
     pub keys_to_prefetch: Vec<UInt256>,
-    
+
     /// Target tier to optimize (determines cache warming strategy)
     pub target_tier: TargetTier,
 }
@@ -68,16 +68,16 @@ struct PreloadCommand {
 pub struct PrefetchConfig {
     /// Enable/disable predictive prefetching
     pub enabled: bool,
-    
+
     /// Number of blocks to consider when building prediction model
     pub prediction_window_blocks: usize,
-    
+
     /// Maximum hot keys to track per block
     pub hot_keys_per_block: usize,
-    
+
     /// Size of prefetch batch (workers process this many at once)
     pub prefetch_batch_size: usize,
-    
+
     /// Number of background prefetch worker threads
     pub prefetch_worker_threads: usize,
 }
@@ -98,10 +98,10 @@ impl Default for PrefetchConfig {
 pub struct PredictivePrefetchWorker {
     /// Channel for receiving prediction requests
     channel_rx: Receiver<PredictionRequest>,
-    
+
     /// Handle to main worker thread (or pooled threads)
     _worker_thread: Option<JoinHandle<()>>,
-    
+
     /// Configuration
     config: PrefetchConfig,
 }
@@ -110,15 +110,10 @@ impl PredictivePrefetchWorker {
     const DEFAULT_BATCH_TIMEOUT_MS: u64 = 50;
 
     /// Spawn prefetcher with configuration
-    pub fn spawn(
-        config: PrefetchConfig,
-        prediction_sender: Sender<PredictionRequest>,
-    ) -> Self {
-        let channel_rx = Self::start_background_workers(
-            prediction_sender,
-            config.prefetch_worker_threads,
-        );
-        
+    pub fn spawn(config: PrefetchConfig, prediction_sender: Sender<PredictionRequest>) -> Self {
+        let channel_rx =
+            Self::start_background_workers(prediction_sender, config.prefetch_worker_threads);
+
         Self {
             channel_rx,
             _worker_thread: None, // Actually we'd manage multiple workers here
@@ -134,33 +129,34 @@ impl PredictivePrefetchWorker {
         if !rx.is_empty() || !Self::spawn_single_worker(rx) {
             // Fallback or retry logic
         }
-        
+
         // Return cloned/shared receiver
         rx
     }
 
     /// Spawn single prefetch worker thread
-    fn spawn_single_worker(
-        channel_rx: Receiver<PredictionRequest>,
-    ) -> bool {
+    fn spawn_single_worker(channel_rx: Receiver<PredictionRequest>) -> bool {
         thread::Builder::new()
             .name("predictive-prefetch-worker".to_string())
-            .spawn(move || loop {
-                // Wait for prediction request with timeout
-                let recv_result = channel_rx.recv_timeout(Duration::from_millis(Self::DEFAULT_BATCH_TIMEOUT_MS));
-                
-                match recv_result {
-                    Ok(request) => {
-                        Self::process_prediction_request(request);
-                    }
-                    Err(RecvTimeoutError::Timeout) => {
-                        // No pending work, continue waiting
-                        continue;
-                    }
-                    Err(RecvTimeoutError::Disconnected) => {
-                        // Channel closed, exit worker
-                        log::info!("Predictive prefetch worker shutting down");
-                        break;
+            .spawn(move || {
+                loop {
+                    // Wait for prediction request with timeout
+                    let recv_result = channel_rx
+                        .recv_timeout(Duration::from_millis(Self::DEFAULT_BATCH_TIMEOUT_MS));
+
+                    match recv_result {
+                        Ok(request) => {
+                            Self::process_prediction_request(request);
+                        }
+                        Err(RecvTimeoutError::Timeout) => {
+                            // No pending work, continue waiting
+                            continue;
+                        }
+                        Err(RecvTimeoutError::Disconnected) => {
+                            // Channel closed, exit worker
+                            log::info!("Predictive prefetch worker shutting down");
+                            break;
+                        }
                     }
                 }
             })
@@ -176,7 +172,8 @@ impl PredictivePrefetchWorker {
         );
 
         // Limit to batch size
-        let batch: Vec<_> = request.predicted_keys
+        let batch: Vec<_> = request
+            .predicted_keys
             .into_iter()
             .take(request.batch_size)
             .map(|(key, _)| key)
@@ -188,7 +185,7 @@ impl PredictivePrefetchWorker {
 
         // Group keys by target tier for optimized loading
         let tiered_batches = Self::group_by_tier(&batch);
-        
+
         // Load each tier's batch into appropriate cache
         let tier_count = tiered_batches.len();
         for (tier, keys) in tiered_batches {
@@ -206,12 +203,12 @@ impl PredictivePrefetchWorker {
     /// Categorize keys by which tier they should warm
     fn group_by_tier(keys: &[UInt256]) -> HashMap<TargetTier, Vec<UInt256>> {
         let mut batches: HashMap<TargetTier, Vec<UInt256>> = HashMap::new();
-        
+
         for key in keys {
             let tier = Self::determine_target_tier(key);
             batches.entry(tier).or_default().push(*key);
         }
-        
+
         batches
     }
 
@@ -219,14 +216,14 @@ impl PredictivePrefetchWorker {
     fn determine_target_tier(key: &UInt256) -> TargetTier {
         // Simple heuristic based on first few bytes
         let key_bytes = key.as_ref();
-        
+
         if key_bytes.is_empty() {
             return TargetTier::GeneralPurpose;
         }
 
         match key_bytes[0] {
-            0x09 | 0x0B | 0x0D => TargetTier::HotNativeLeaves,      // Native contracts
-            0x00 => TargetTier::ContractPrefixes,                   // Contract prefixes
+            0x09 | 0x0B | 0x0D => TargetTier::HotNativeLeaves, // Native contracts
+            0x00 => TargetTier::ContractPrefixes,              // Contract prefixes
             _ => {
                 // Check if it's a short path (root branch candidate)
                 if key_bytes.len() <= 4 {
@@ -244,14 +241,10 @@ impl PredictivePrefetchWorker {
             return;
         }
 
-        log::debug!(
-            "Preloading {} keys into tier {}",
-            keys.len(),
-            tier
-        );
+        log::debug!("Preloading {} keys into tier {}", keys.len(), tier);
 
         // In production, this would call actual storage provider methods:
-        // 
+        //
         // For Tier 0 (RootBranch):
         //   Let buffer = ROOT_BRANCH_BUFFER.write();
         //   for key in keys {
@@ -268,7 +261,7 @@ impl PredictivePrefetchWorker {
         //
         // For Tier 3 (General):
         //   Insert into standard DataCache with normal priority
-        
+
         // Placeholder implementation
         log::trace!("  Loading {} keys into {:?}", keys.len(), tier);
     }
@@ -342,24 +335,24 @@ mod tests {
         let mut native_key = vec![0x09];
         native_key.extend(vec![0; 31]);
         let key = UInt256::from_byte_slice(&native_key);
-        
+
         let tier = PredictivePrefetchWorker::determine_target_tier(&key);
         assert_eq!(tier, TargetTier::HotNativeLeaves);
-        
+
         // Short path (root branch candidate)
         let mut short_key = vec![0xFF];
         short_key.push(0x01);
         short_key.push(0x02);
         let key = UInt256::from_byte_slice(&short_key);
-        
+
         let tier = PredictivePrefetchWorker::determine_target_tier(&key);
         assert_eq!(tier, TargetTier::RootBranch);
-        
+
         // Generic long path
         let mut generic_key = vec![0x12];
         generic_key.extend(vec![0xFF; 20]);
         let key = UInt256::from_byte_slice(&generic_key);
-        
+
         let tier = PredictivePrefetchWorker::determine_target_tier(&key);
         assert_eq!(tier, TargetTier::GeneralPurpose);
     }
@@ -367,36 +360,36 @@ mod tests {
     #[test]
     fn test_group_by_tier() {
         let mut keys = Vec::new();
-        
+
         // Add native contract keys
         for i in 0..3 {
             let mut key = vec![0x09];
             key.extend(vec![i; 31]);
             keys.push(UInt256::from_byte_slice(&key));
         }
-        
+
         // Add root branch keys
         let mut rb1 = vec![0x01, 0x02];
         rb1.extend(vec![0; 30]);
         let key1 = UInt256::from_byte_slice(&rb1);
-        
+
         let mut rb2 = vec![0x03, 0x04];
         rb2.extend(vec![0; 30]);
         let key2 = UInt256::from_byte_slice(&rb2);
-        
+
         keys.push(key1);
         keys.push(key2);
-        
+
         // Add generic keys
         let generic = UInt256::from([0x12; 32]);
         keys.push(generic);
-        
+
         let batches = PredictivePrefetchWorker::group_by_tier(&keys);
-        
+
         assert!(batches.contains_key(&TargetTier::HotNativeLeaves));
         assert!(batches.contains_key(&TargetTier::RootBranch));
         assert!(batches.contains_key(&TargetTier::GeneralPurpose));
-        
+
         assert_eq!(batches.get(&TargetTier::HotNativeLeaves).unwrap().len(), 3);
         assert_eq!(batches.get(&TargetTier::RootBranch).unwrap().len(), 2);
         assert_eq!(batches.get(&TargetTier::GeneralPurpose).unwrap().len(), 1);
@@ -409,17 +402,17 @@ mod tests {
             total_keys_prefetched: 500,
             predictions_accurate: 7,
         };
-        
+
         assert_eq!(stats.accuracy_rate(), 0.7);
         assert_eq!(stats.avg_prefetch_per_request(), 50.0);
-        
+
         // Edge case: no processing
         let empty = PrefetchStats {
             total_requests_processed: 0,
             total_keys_prefetched: 0,
             predictions_accurate: 0,
         };
-        
+
         assert_eq!(empty.accuracy_rate(), 0.0);
     }
 }

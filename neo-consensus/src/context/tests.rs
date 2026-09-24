@@ -81,8 +81,7 @@ fn test_has_enough_responses() {
     ctx.prepare_request_received = true;
     for idx in 1u8..=3 {
         ctx.prepare_responses.insert(idx, vec![idx]);
-        ctx.prepare_response_hashes
-            .insert(idx, preparation_hash);
+        ctx.prepare_response_hashes.insert(idx, preparation_hash);
     }
     assert!(!ctx.has_enough_prepare_responses()); // 4 < 5
 

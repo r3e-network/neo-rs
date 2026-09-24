@@ -1,6 +1,6 @@
 [package]
 name = "neo-tests"
-version = "0.17.0"
+version = "0.18.0"
 edition = "2024"
 publish = false
 license = "MIT"
@@ -37,6 +37,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+parking_lot = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }

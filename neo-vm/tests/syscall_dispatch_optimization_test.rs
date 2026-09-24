@@ -32,7 +32,11 @@ fn test_builtin_syscall_fast_path() {
         assert!(entry.is_some(), "Built-in syscall {} should be found", name);
 
         let entry = entry.unwrap();
-        assert!(entry.gas_price > 0, "Syscall {} should have gas price", name);
+        assert!(
+            entry.gas_price > 0,
+            "Syscall {} should have gas price",
+            name
+        );
 
         // Verify method name matches
         let method_name = syscalls::get_method_name(entry.method_id);
@@ -60,7 +64,10 @@ fn test_interop_service_initialization() {
     let hash_u32 = u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]);
 
     let entry = syscalls::get_syscall_entry_by_u32(hash_u32);
-    assert!(entry.is_some(), "Registry should be initialized after InteropService::new()");
+    assert!(
+        entry.is_some(),
+        "Registry should be initialized after InteropService::new()"
+    );
 }
 
 #[test]

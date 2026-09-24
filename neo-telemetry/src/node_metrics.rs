@@ -125,12 +125,8 @@ pub static SYNC_CURRENT_HEIGHT: LazyLock<Gauge> = LazyLock::new(|| {
 });
 
 /// Tip height (network maximum)
-pub static SYNC_TIP_HEIGHT: LazyLock<Gauge> = LazyLock::new(|| {
-    register_gauge(
-        "neo_sync_tip_height",
-        "Tip height from network peers",
-    )
-});
+pub static SYNC_TIP_HEIGHT: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_sync_tip_height", "Tip height from network peers"));
 
 /// Total transactions verified (counter)
 pub static TRANSACTIONS_VERIFIED_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
@@ -165,13 +161,15 @@ pub static CUCKOO_HASH_LOOKUPS_MISS: LazyLock<Counter> = LazyLock::new(|| {
 
 // Histogram for syscall lookup latency
 pub static SYSCALL_LOOKUP_LATENCY_BUCKETS: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
-    let histogram = Histogram::with_opts(
-        HistogramOpts::new(
-            "get_syscall_lookup_latency_bucket",
-            "Histogram of syscall lookup latency in seconds",
-        )
-    ).unwrap_or_else(|_| Histogram::with_opts(HistogramOpts::new("get_syscall_lookup_latency", "Fallback")).expect("fallback"));
-    
+    let histogram = Histogram::with_opts(HistogramOpts::new(
+        "get_syscall_lookup_latency_bucket",
+        "Histogram of syscall lookup latency in seconds",
+    ))
+    .unwrap_or_else(|_| {
+        Histogram::with_opts(HistogramOpts::new("get_syscall_lookup_latency", "Fallback"))
+            .expect("fallback")
+    });
+
     // Register the histogram but ignore any register errors
     let _ = prometheus::register(Box::new(histogram.clone()));
     histogram
@@ -202,56 +200,45 @@ pub static SIMD_BLAKE2B_THROUGHPUT_BYTES_PER_SECOND: LazyLock<Gauge> = LazyLock:
 });
 
 /// Prefetch stage latencies (histogram by stage)
-pub static PREFETCH_STAGE_LATENCIES_BUCKETS: LazyLock<prometheus::HistogramVec> = LazyLock::new(|| {
-    let histogram_vec = HistogramVec::new(
-        HistogramOpts::new(
-            "prefetch_stage_latencies_bucket",
-            "Histogram of prefetch stage latencies in seconds",
-        ),
-        &["stage"],
-    ).unwrap_or_else(|_| HistogramVec::new(
-        HistogramOpts::new("prefetch_stage_latencies", "Fallback"),
-        &["stage"],
-    ).expect("fallback"));
-    
-    // Register the histogram vector but ignore any register errors
-    let _ = prometheus::register(Box::new(histogram_vec.clone()));
-    histogram_vec
-});
+pub static PREFETCH_STAGE_LATENCIES_BUCKETS: LazyLock<prometheus::HistogramVec> =
+    LazyLock::new(|| {
+        let histogram_vec = HistogramVec::new(
+            HistogramOpts::new(
+                "prefetch_stage_latencies_bucket",
+                "Histogram of prefetch stage latencies in seconds",
+            ),
+            &["stage"],
+        )
+        .unwrap_or_else(|_| {
+            HistogramVec::new(
+                HistogramOpts::new("prefetch_stage_latencies", "Fallback"),
+                &["stage"],
+            )
+            .expect("fallback")
+        });
+
+        // Register the histogram vector but ignore any register errors
+        let _ = prometheus::register(Box::new(histogram_vec.clone()));
+        histogram_vec
+    });
 
 // System metrics
-pub static CPU_USAGE_RATIO: LazyLock<Gauge> = LazyLock::new(|| {
-    register_gauge(
-        "cpu_usage_ratio",
-        "CPU usage ratio (0.0 to 1.0)",
-    )
-});
+pub static CPU_USAGE_RATIO: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("cpu_usage_ratio", "CPU usage ratio (0.0 to 1.0)"));
 
-pub static MEMORY_USAGE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
-    register_gauge(
-        "memory_usage_bytes",
-        "Memory usage in bytes",
-    )
-});
+pub static MEMORY_USAGE_BYTES: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("memory_usage_bytes", "Memory usage in bytes"));
 
-pub static SYSTEM_MEMORY_TOTAL_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
-    register_gauge(
-        "system_memory_total_bytes",
-        "Total system memory in bytes",
-    )
-});
+pub static SYSTEM_MEMORY_TOTAL_BYTES: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("system_memory_total_bytes", "Total system memory in bytes"));
 
 // ============================================================================
 // SUBSYSTEM METRICS (All Neo-rs Modules)
 // ============================================================================
 
 // VM Metrics
-pub static VM_EXECUTION_COUNT: LazyLock<Counter> = LazyLock::new(|| {
-    register_counter(
-        "neo_vm_executions_total",
-        "Total VM script executions",
-    )
-});
+pub static VM_EXECUTION_COUNT: LazyLock<Counter> =
+    LazyLock::new(|| register_counter("neo_vm_executions_total", "Total VM script executions"));
 
 pub static VM_EXECUTION_TIME: LazyLock<Histogram> = LazyLock::new(|| {
     register_histogram(
@@ -275,26 +262,15 @@ pub static VM_GAS_CONSUMED: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-pub static VM_FAULTS: LazyLock<Counter> = LazyLock::new(|| {
-    register_counter(
-        "neo_vm_faults_total",
-        "Total VM execution faults",
-    )
-});
+pub static VM_FAULTS: LazyLock<Counter> =
+    LazyLock::new(|| register_counter("neo_vm_faults_total", "Total VM execution faults"));
 
 // Storage Metrics
-pub static STORAGE_READ_COUNT: LazyLock<Counter> = LazyLock::new(|| {
-    register_counter(
-        "neo_storage_reads_total",
-        "Total storage read operations",
-    )
-});
+pub static STORAGE_READ_COUNT: LazyLock<Counter> =
+    LazyLock::new(|| register_counter("neo_storage_reads_total", "Total storage read operations"));
 
 pub static STORAGE_WRITE_COUNT: LazyLock<Counter> = LazyLock::new(|| {
-    register_counter(
-        "neo_storage_writes_total",
-        "Total storage write operations",
-    )
+    register_counter("neo_storage_writes_total", "Total storage write operations")
 });
 
 pub static STORAGE_DELETE_COUNT: LazyLock<Counter> = LazyLock::new(|| {
@@ -318,12 +294,8 @@ pub static STORAGE_WRITE_BYTES: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-pub static STORAGE_CACHE_HIT: LazyLock<Counter> = LazyLock::new(|| {
-    register_counter(
-        "neo_storage_cache_hits_total",
-        "Total storage cache hits",
-    )
-});
+pub static STORAGE_CACHE_HIT: LazyLock<Counter> =
+    LazyLock::new(|| register_counter("neo_storage_cache_hits_total", "Total storage cache hits"));
 
 pub static STORAGE_CACHE_MISS: LazyLock<Counter> = LazyLock::new(|| {
     register_counter(
@@ -347,12 +319,8 @@ pub static CONSENSUS_PREPARE_RESPONSE: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-pub static CONSENSUS_COMMIT: LazyLock<Counter> = LazyLock::new(|| {
-    register_counter(
-        "neo_consensus_commit_total",
-        "Total Commit messages sent",
-    )
-});
+pub static CONSENSUS_COMMIT: LazyLock<Counter> =
+    LazyLock::new(|| register_counter("neo_consensus_commit_total", "Total Commit messages sent"));
 
 pub static CONSENSUS_CHANGE_VIEW: LazyLock<Counter> = LazyLock::new(|| {
     register_counter(
@@ -492,10 +460,7 @@ pub static NATIVE_CONTRACT_GAS_TRANSFER: LazyLock<Counter> = LazyLock::new(|| {
 });
 
 pub static NATIVE_CONTRACT_VOTE_CAST: LazyLock<Counter> = LazyLock::new(|| {
-    register_counter(
-        "neo_native_votes_cast_total",
-        "Total governance votes cast",
-    )
+    register_counter("neo_native_votes_cast_total", "Total governance votes cast")
 });
 
 pub static NATIVE_CONTRACT_CANDIDATE_REGISTERED: LazyLock<Counter> = LazyLock::new(|| {
@@ -505,12 +470,8 @@ pub static NATIVE_CONTRACT_CANDIDATE_REGISTERED: LazyLock<Counter> = LazyLock::n
     )
 });
 
-pub static NATIVE_CONTRACT_ORACLE_REQUEST: LazyLock<Counter> = LazyLock::new(|| {
-    register_counter(
-        "neo_native_oracle_requests_total",
-        "Total oracle requests",
-    )
-});
+pub static NATIVE_CONTRACT_ORACLE_REQUEST: LazyLock<Counter> =
+    LazyLock::new(|| register_counter("neo_native_oracle_requests_total", "Total oracle requests"));
 
 pub static NATIVE_CONTRACT_ORACLE_RESPONSE: LazyLock<Counter> = LazyLock::new(|| {
     register_counter(
@@ -625,12 +586,8 @@ pub static LEDGER_TX_VERIFICATION_TIME: LazyLock<Histogram> = LazyLock::new(|| {
 });
 
 // Oracle Service Metrics
-pub static ORACLE_REQUESTS_PENDING: LazyLock<Gauge> = LazyLock::new(|| {
-    register_gauge(
-        "neo_oracle_requests_pending",
-        "Pending oracle requests",
-    )
-});
+pub static ORACLE_REQUESTS_PENDING: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_oracle_requests_pending", "Pending oracle requests"));
 
 pub static ORACLE_REQUESTS_COMPLETED: LazyLock<Counter> = LazyLock::new(|| {
     register_counter(
@@ -655,17 +612,87 @@ pub static FAST_SYNC_ENABLED: LazyLock<Gauge> = LazyLock::new(|| {
 });
 
 /// Block processing duration histogram
-pub static BLOCK_PROCESSING_DURATION_BUCKETS: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
+pub static BLOCK_PROCESSING_DURATION_BUCKETS: LazyLock<prometheus::Histogram> =
+    LazyLock::new(|| {
+        let histogram = Histogram::with_opts(
+            HistogramOpts::new(
+                "block_processing_duration",
+                "Histogram of block processing duration in seconds",
+            )
+            .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0]),
+        )
+        .unwrap_or_else(|_| {
+            Histogram::with_opts(HistogramOpts::new("block_processing_duration", "Fallback"))
+                .expect("fallback")
+        });
+
+        // Register the histogram but ignore any register errors
+        let _ = prometheus::register(Box::new(histogram.clone()));
+        histogram
+    });
+
+// ============================================================================
+// PERFORMANCE METRICS (Throughput & Latency)
+// ============================================================================
+
+/// Blocks per second gauge
+pub static BLOCKS_PER_SECOND: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge(
+        "neo_blocks_per_second",
+        "Current blocks per second processing rate",
+    )
+});
+
+/// Transactions per second gauge
+pub static TRANSACTIONS_PER_SECOND: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge(
+        "neo_transactions_per_second",
+        "Current transactions per second processing rate",
+    )
+});
+
+/// State operations per second gauge
+pub static STATE_OPERATIONS_PER_SECOND: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge(
+        "neo_state_operations_per_second",
+        "Current state operations per second",
+    )
+});
+
+/// Cache hit rate gauge (0.0 to 1.0)
+pub static CACHE_HIT_RATE: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge(
+        "neo_cache_hit_rate",
+        "Cache hit rate ratio (0.0 to 1.0)",
+    )
+});
+
+/// Latency histogram with p50/p95/p99 buckets
+pub static OPERATION_LATENCY: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
     let histogram = Histogram::with_opts(
         HistogramOpts::new(
-            "block_processing_duration",
-            "Histogram of block processing duration in seconds",
-        ).buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0])
-    ).unwrap_or_else(|_| Histogram::with_opts(HistogramOpts::new("block_processing_duration", "Fallback")).expect("fallback"));
-    
-    // Register the histogram but ignore any register errors
+            "neo_operation_latency_seconds",
+            "Operation latency histogram for p50/p95/p99 tracking",
+        )
+        .buckets(vec![
+            0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 1.0,
+        ]),
+    )
+    .unwrap_or_else(|_| {
+        Histogram::with_opts(HistogramOpts::new("neo_operation_latency_seconds", "Fallback"))
+            .expect("fallback")
+    });
+
     let _ = prometheus::register(Box::new(histogram.clone()));
     histogram
+});
+
+/// CPU utilization gauge (0.0 to 1.0)
+pub static CPU_UTILIZATION: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge(
+        "neo_cpu_utilization",
+        "CPU utilization ratio (0.0 to 1.0)",
+    )
 });
 
 // Internal tracking for deltas
@@ -690,9 +717,10 @@ fn register_counter(name: &str, help: &str) -> Counter {
 
 /// Helper to create and register a histogram
 fn register_histogram(name: &str, help: &str, buckets: Vec<f64>) -> Histogram {
-    let histogram = Histogram::with_opts(
-        HistogramOpts::new(name, help).buckets(buckets)
-    ).unwrap_or_else(|_| Histogram::with_opts(HistogramOpts::new("neo_invalid", "Invalid")).expect("fallback"));
+    let histogram = Histogram::with_opts(HistogramOpts::new(name, help).buckets(buckets))
+        .unwrap_or_else(|_| {
+            Histogram::with_opts(HistogramOpts::new("neo_invalid", "Invalid")).expect("fallback")
+        });
     let _ = prometheus::register(Box::new(histogram.clone()));
     histogram
 }
@@ -809,9 +837,15 @@ pub fn update_optimization_metrics(
     SIMD_BLAKE2B_THROUGHPUT_BYTES_PER_SECOND.set(blake2b_throughput_bytes_per_sec);
 
     // Prefetch stage latencies
-    PREFETCH_STAGE_LATENCIES_BUCKETS.with_label_values(&["io"]).observe(prefetch_io_latency_ns / 1e9);
-    PREFETCH_STAGE_LATENCIES_BUCKETS.with_label_values(&["verify"]).observe(prefetch_verify_latency_ns / 1e9);
-    PREFETCH_STAGE_LATENCIES_BUCKETS.with_label_values(&["execute"]).observe(prefetch_execute_latency_ns / 1e9);
+    PREFETCH_STAGE_LATENCIES_BUCKETS
+        .with_label_values(&["io"])
+        .observe(prefetch_io_latency_ns / 1e9);
+    PREFETCH_STAGE_LATENCIES_BUCKETS
+        .with_label_values(&["verify"])
+        .observe(prefetch_verify_latency_ns / 1e9);
+    PREFETCH_STAGE_LATENCIES_BUCKETS
+        .with_label_values(&["execute"])
+        .observe(prefetch_execute_latency_ns / 1e9);
 
     // System metrics
     CPU_USAGE_RATIO.set(cpu_usage_ratio.clamp(0.0, 1.0));
@@ -863,6 +897,14 @@ pub fn gather_prometheus() -> Vec<u8> {
     let _ = &*SYSTEM_MEMORY_TOTAL_BYTES;
     let _ = &*FAST_SYNC_ENABLED;
     let _ = &*BLOCK_PROCESSING_DURATION_BUCKETS;
+
+    // Performance metrics
+    let _ = &*BLOCKS_PER_SECOND;
+    let _ = &*TRANSACTIONS_PER_SECOND;
+    let _ = &*STATE_OPERATIONS_PER_SECOND;
+    let _ = &*CACHE_HIT_RATE;
+    let _ = &*OPERATION_LATENCY;
+    let _ = &*CPU_UTILIZATION;
 
     // All subsystem metrics
     let _ = &*VM_EXECUTION_COUNT;

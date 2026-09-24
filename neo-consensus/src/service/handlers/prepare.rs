@@ -4,9 +4,7 @@ use super::super::helpers::{
     compute_header_hash, compute_merkle_root, compute_next_consensus_address, current_timestamp,
 };
 use crate::context::{ConsensusState, MAX_PREPARE_REQUEST_FUTURE_MS_FACTOR};
-use crate::messages::{
-    ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage,
-};
+use crate::messages::{ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage};
 use crate::{ConsensusError, ConsensusMessageType, ConsensusResult};
 use tracing::{debug, info, warn};
 

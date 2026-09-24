@@ -50,6 +50,7 @@ impl RpcRawMemPool {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let height_token = json
             .get("height")

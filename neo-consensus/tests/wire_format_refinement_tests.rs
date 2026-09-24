@@ -16,8 +16,8 @@
 
 #![cfg(test)]
 
+use neo_consensus::{ConsensusMessageType, messages::ConsensusPayload};
 use proptest::prelude::*;
-use neo_consensus::{messages::ConsensusPayload, ConsensusMessageType};
 
 // ============================================================================
 // COQ CONSTANT TIE-INS
@@ -38,20 +38,46 @@ fn test_consensus_payload_header_size_is_7_bytes() {
         // Empty body
         ConsensusPayload::new(0x4E454F, 0, 0, 0, ConsensusMessageType::Commit, vec![]),
         // Minimal body
-        ConsensusPayload::new(0x4E454F, 1, 2, 3, ConsensusMessageType::PrepareRequest, vec![0xAB]),
+        ConsensusPayload::new(
+            0x4E454F,
+            1,
+            2,
+            3,
+            ConsensusMessageType::PrepareRequest,
+            vec![0xAB],
+        ),
         // Standard body (hash)
-        ConsensusPayload::new(0x4E454F, 42, 9, 1, ConsensusMessageType::PrepareResponse, vec![0xCD; 32]),
+        ConsensusPayload::new(
+            0x4E454F,
+            42,
+            9,
+            1,
+            ConsensusMessageType::PrepareResponse,
+            vec![0xCD; 32],
+        ),
         // Large body
-        ConsensusPayload::new(0x4E454F, 1000, 15, 5, ConsensusMessageType::RecoveryMessage, vec![0xEF; 256]),
+        ConsensusPayload::new(
+            0x4E454F,
+            1000,
+            15,
+            5,
+            ConsensusMessageType::RecoveryMessage,
+            vec![0xEF; 256],
+        ),
     ];
-    
+
     for (i, payload) in test_cases.iter().enumerate() {
         let bytes = payload.to_message_bytes();
         let body_len = payload.data.len();
-        
+
         // Assert: header is always exactly 7 bytes regardless of body content
-        assert_eq!(bytes.len(), COQ_HEADER_BYTES + body_len, 
-            "Test case {}: total length = 7 (Coq constant) + body len ({})", i, body_len);
+        assert_eq!(
+            bytes.len(),
+            COQ_HEADER_BYTES + body_len,
+            "Test case {}: total length = 7 (Coq constant) + body len ({})",
+            i,
+            body_len
+        );
     }
 }
 
@@ -64,19 +90,31 @@ fn test_consensus_payload_header_size_is_7_bytes() {
 fn test_serialization_preserves_structure() {
     let payloads = vec![
         ConsensusPayload::new(0x4E454F, 0, 0, 0, ConsensusMessageType::ChangeView, vec![]),
-        ConsensusPayload::new(0x4E454F, u32::MAX, u8::MAX, u8::MAX, 
-                             ConsensusMessageType::PrepareRequest, vec![0xFF; 64]),
-        ConsensusPayload::new(0x4E454F, 12345, 5, 3, 
-                             ConsensusMessageType::Commit, vec![0xAA; 32]),
+        ConsensusPayload::new(
+            0x4E454F,
+            u32::MAX,
+            u8::MAX,
+            u8::MAX,
+            ConsensusMessageType::PrepareRequest,
+            vec![0xFF; 64],
+        ),
+        ConsensusPayload::new(
+            0x4E454F,
+            12345,
+            5,
+            3,
+            ConsensusMessageType::Commit,
+            vec![0xAA; 32],
+        ),
     ];
-    
+
     for payload in payloads {
         let bytes = payload.to_message_bytes();
-        
+
         // Deserialize
         let parsed = ConsensusPayload::from_message_bytes(payload.network, &bytes, Vec::new())
             .expect("parse successful");
-        
+
         // Assert all fields preserved
         assert_eq!(parsed.block_index, payload.block_index);
         assert_eq!(parsed.validator_index, payload.validator_index);
@@ -99,27 +137,36 @@ fn test_consensus_message_framing() {
     let validator_index = 0xABu8;
     let view_number = 0xCDu8;
     let body = vec![0xDE, 0xAD, 0xBE, 0xEF];
-    
-    let payload = ConsensusPayload::new(0x4E454F, block_index, validator_index, 
-                                        view_number, msg_type, body.clone());
+
+    let payload = ConsensusPayload::new(
+        0x4E454F,
+        block_index,
+        validator_index,
+        view_number,
+        msg_type,
+        body.clone(),
+    );
     let bytes = payload.to_message_bytes();
-    
+
     // Byte 0: message type
     assert_eq!(bytes[0], msg_type.to_byte(), "type byte correct");
-    
+
     // Bytes 1-4: block_index (little-endian)
-    assert_eq!(&bytes[1..5], &block_index.to_le_bytes(), 
-               "block_index LE encoding correct");
-    
+    assert_eq!(
+        &bytes[1..5],
+        &block_index.to_le_bytes(),
+        "block_index LE encoding correct"
+    );
+
     // Byte 5: validator_index
     assert_eq!(bytes[5], validator_index, "validator_index byte correct");
-    
+
     // Byte 6: view_number
     assert_eq!(bytes[6], view_number, "view_number byte correct");
-    
+
     // Bytes 7+: body
     assert_eq!(&bytes[7..], &body[..], "body bytes correct");
-    
+
     // Total length check
     assert_eq!(bytes.len(), 7 + body.len(), "total framing correct");
 }
@@ -143,19 +190,19 @@ proptest! {
             ConsensusMessageType::Commit,
             vec![0u8; body_size],
         );
-        
+
         let bytes = payload.to_message_bytes();
         let expected_len = COQ_HEADER_BYTES + body_size;
-        
+
         // Coq invariant: total length equals header + body
         prop_assert_eq!(bytes.len(), expected_len,
             "Line length invariant failed for body_size={}", body_size);
-        
+
         // Coq lemma: wire_len_at_least_header (7 <= wire_len b)
         prop_assert!(bytes.len() >= 7,
             "Wire length must be at least header size (7 bytes)");
     }
-    
+
     /// Test Coq lemma: `wire_len_monotone: forall a b, a <= b -> wire_len a <= wire_len b`
     /// A longer body yields a longer wire message (no truncation).
     #[test]
@@ -165,21 +212,21 @@ proptest! {
     ) {
         if body_a_size <= body_b_size {
             let payload_a = ConsensusPayload::new(
-                0x4E454F, 0, 0, 0, ConsensusMessageType::Commit, 
+                0x4E454F, 0, 0, 0, ConsensusMessageType::Commit,
                 vec![0u8; body_a_size]);
             let payload_b = ConsensusPayload::new(
-                0x4E454F, 0, 0, 0, ConsensusMessageType::Commit, 
+                0x4E454F, 0, 0, 0, ConsensusMessageType::Commit,
                 vec![0u8; body_b_size]);
-            
+
             let len_a = payload_a.to_message_bytes().len();
             let len_b = payload_b.to_message_bytes().len();
-            
-            prop_assert!(len_a <= len_b, 
+
+            prop_assert!(len_a <= len_b,
                 "Monotonicity violated: smaller body {} should not produce larger wire",
                 body_a_size);
         }
     }
-    
+
     /// Test Coq lemma: `wire_len_equal_if_body_equal: forall a b, a = b -> wire_len a = wire_len b`
     /// Equal bodies yield equal wire lengths (deterministic header size).
     #[test]
@@ -190,21 +237,21 @@ proptest! {
     ) {
         // Create two payloads with identical body sizes but different seeds
         let payload_a = ConsensusPayload::new(
-            0x4E454F, 0, 0, 0, ConsensusMessageType::Commit, 
+            0x4E454F, 0, 0, 0, ConsensusMessageType::Commit,
             vec![seed_a as u8; body_size]);
         let payload_b = ConsensusPayload::new(
-            0x4E454F, 0, 0, 0, ConsensusMessageType::Commit, 
+            0x4E454F, 0, 0, 0, ConsensusMessageType::Commit,
             vec![seed_b as u8; body_size]);
-        
+
         let len_a = payload_a.to_message_bytes().len();
         let len_b = payload_b.to_message_bytes().len();
-        
-        prop_assert_eq!(len_a, len_b, 
+
+        prop_assert_eq!(len_a, len_b,
             "Equal body sizes must produce equal wire lengths (deterministic)");
         prop_assert_eq!(len_a, COQ_HEADER_BYTES + body_size);
         prop_assert_eq!(len_b, COQ_HEADER_BYTES + body_size);
     }
-    
+
     /// Comprehensive property-based test matching Coq spec
     #[test]
     fn proptest_wire_format_properties(
@@ -220,26 +267,26 @@ proptest! {
             ConsensusMessageType::Commit,
             body.clone(),
         );
-        
+
         // Serialize
         let bytes = payload.to_message_bytes();
-        
+
         // Coq invariant 1: wire_len = HEADER_BYTES + body_len
         prop_assert_eq!(bytes.len(), COQ_HEADER_BYTES + body.len());
-        
+
         // Coq invariant 2: header bytes are deterministic
         prop_assert_eq!(bytes[0], ConsensusMessageType::Commit.to_byte());
         prop_assert_eq!(&bytes[1..5], &block_index.to_le_bytes());
         prop_assert_eq!(bytes[5], validator_index);
         prop_assert_eq!(bytes[6], view_number);
-        
+
         // Coq invariant 3: body starts at byte 7
         prop_assert_eq!(&bytes[7..], &body[..]);
-        
+
         // Round-trip preservation
         let parsed = ConsensusPayload::from_message_bytes(network, &bytes, Vec::new())
             .expect("parse should succeed");
-        
+
         prop_assert_eq!(parsed.block_index, block_index);
         prop_assert_eq!(parsed.validator_index, validator_index);
         prop_assert_eq!(parsed.view_number, view_number);
@@ -262,21 +309,18 @@ fn test_all_message_types_use_seven_byte_header() {
         ConsensusMessageType::RecoveryRequest,
         ConsensusMessageType::RecoveryMessage,
     ];
-    
+
     for msg_type in message_types {
-        let payload = ConsensusPayload::new(
-            0x4E454F,
-            0,
-            0,
-            0,
-            msg_type,
-            vec![0u8; 16],
-        );
-        
+        let payload = ConsensusPayload::new(0x4E454F, 0, 0, 0, msg_type, vec![0u8; 16]);
+
         let bytes = payload.to_message_bytes();
-        assert_eq!(bytes.len(), COQ_HEADER_BYTES + 16,
-            "Message type {:?} uses incorrect header size", msg_type);
-        
+        assert_eq!(
+            bytes.len(),
+            COQ_HEADER_BYTES + 16,
+            "Message type {:?} uses incorrect header size",
+            msg_type
+        );
+
         // First byte must match the message type
         assert_eq!(bytes[0], msg_type.to_byte());
     }
@@ -298,7 +342,7 @@ fn test_boundary_minimum_message_size() {
         ConsensusMessageType::Commit,
         vec![], // empty body
     );
-    
+
     let bytes = min_payload.to_message_bytes();
     assert_eq!(bytes.len(), 7, "Minimum message is exactly header size");
     assert_eq!(bytes.len(), COQ_HEADER_BYTES);
@@ -316,10 +360,13 @@ fn test_boundary_maximum_message_size() {
         ConsensusMessageType::RecoveryMessage,
         max_data.clone(),
     );
-    
+
     let bytes = max_payload.to_message_bytes();
-    assert_eq!(bytes.len(), COQ_HEADER_BYTES + max_data.len(),
-               "Maximum size formula holds");
+    assert_eq!(
+        bytes.len(),
+        COQ_HEADER_BYTES + max_data.len(),
+        "Maximum size formula holds"
+    );
 }
 
 // ============================================================================
@@ -336,17 +383,19 @@ fn documentation_coq_rust_mapping() {
     //   Lemma wire_len_at_least_header: forall b, 7 <= wire_len b.
     //   Lemma wire_len_monotone: forall a b, a <= b -> wire_len a <= wire_len b.
     //   Lemma wire_len_equal_if_body_equal: forall a b, a = b -> wire_len a = wire_len b.
-    
+
     const RUST_HEADER_SIZE: usize = 7;
-    
+
     // Verify Rust constant matches Coq
     assert_eq!(RUST_HEADER_SIZE, COQ_HEADER_BYTES);
-    
+
     // Example: demonstrate wire_len function
     let body_len = 32;
     let rust_total = RUST_HEADER_SIZE + body_len;
     let coq_total = COQ_HEADER_BYTES + body_len;
-    
-    assert_eq!(rust_total, coq_total, 
-               "Rust wire_len calculation matches Coq definition");
+
+    assert_eq!(
+        rust_total, coq_total,
+        "Rust wire_len calculation matches Coq definition"
+    );
 }

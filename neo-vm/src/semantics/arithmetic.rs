@@ -41,6 +41,7 @@ pub(crate) fn numeric_bigint(value: StackValue) -> Result<BigInt, String> {
 }
 
 /// Bitwise inversion.
+#[must_use]
 pub fn invert_value(value: StackValue) -> Result<StackValue, String> {
     let value = numeric_bigint(value).map_err(|error| {
         if error == "expected integer-compatible value" {
@@ -53,6 +54,7 @@ pub fn invert_value(value: StackValue) -> Result<StackValue, String> {
 }
 
 /// Add two integer-compatible values.
+#[must_use]
 pub fn add_values(left: StackValue, right: StackValue) -> Result<StackValue, String> {
     numeric_stack_value(
         numeric_bigint(left)? + numeric_bigint(right)?,
@@ -61,6 +63,7 @@ pub fn add_values(left: StackValue, right: StackValue) -> Result<StackValue, Str
 }
 
 /// Subtract two integer-compatible values.
+#[must_use]
 pub fn sub_values(left: StackValue, right: StackValue) -> Result<StackValue, String> {
     numeric_stack_value(
         numeric_bigint(left)? - numeric_bigint(right)?,
@@ -69,6 +72,7 @@ pub fn sub_values(left: StackValue, right: StackValue) -> Result<StackValue, Str
 }
 
 /// Multiply two integer-compatible values.
+#[must_use]
 pub fn mul_values(left: StackValue, right: StackValue) -> Result<StackValue, String> {
     numeric_stack_value(
         numeric_bigint(left)? * numeric_bigint(right)?,
@@ -77,6 +81,7 @@ pub fn mul_values(left: StackValue, right: StackValue) -> Result<StackValue, Str
 }
 
 /// Divide two integer-compatible values.
+#[must_use]
 pub fn div_values(left: StackValue, right: StackValue) -> Result<StackValue, String> {
     let right = numeric_bigint(right)?;
     if right.is_zero() {
@@ -86,6 +91,7 @@ pub fn div_values(left: StackValue, right: StackValue) -> Result<StackValue, Str
 }
 
 /// Compute integer remainder for two integer-compatible values.
+#[must_use]
 pub fn modulo_values(left: StackValue, right: StackValue) -> Result<StackValue, String> {
     let right = numeric_bigint(right)?;
     if right.is_zero() {
@@ -95,11 +101,13 @@ pub fn modulo_values(left: StackValue, right: StackValue) -> Result<StackValue, 
 }
 
 /// Negate an integer-compatible value.
+#[must_use]
 pub fn negate_value(value: StackValue) -> Result<StackValue, String> {
     numeric_stack_value(-numeric_bigint(value)?, "integer overflow for NEGATE")
 }
 
 /// Return absolute value for an integer-compatible value.
+#[must_use]
 pub fn abs_value(value: StackValue) -> Result<StackValue, String> {
     numeric_stack_value(
         numeric::bigint_abs(numeric_bigint(value)?),
@@ -108,6 +116,7 @@ pub fn abs_value(value: StackValue) -> Result<StackValue, String> {
 }
 
 /// Return sign as -1, 0, or 1.
+#[must_use]
 pub fn sign_value(value: StackValue) -> Result<StackValue, String> {
     Ok(StackValue::Integer(numeric::bigint_sign(&numeric_bigint(
         value,
@@ -115,6 +124,7 @@ pub fn sign_value(value: StackValue) -> Result<StackValue, String> {
 }
 
 /// Increment an integer-compatible value.
+#[must_use]
 pub fn inc_value(value: StackValue) -> Result<StackValue, String> {
     numeric_stack_value(
         numeric_bigint(value)? + BigInt::from(1),
@@ -123,6 +133,7 @@ pub fn inc_value(value: StackValue) -> Result<StackValue, String> {
 }
 
 /// Decrement an integer-compatible value.
+#[must_use]
 pub fn dec_value(value: StackValue) -> Result<StackValue, String> {
     numeric_stack_value(
         numeric_bigint(value)? - BigInt::from(1),
@@ -131,6 +142,7 @@ pub fn dec_value(value: StackValue) -> Result<StackValue, String> {
 }
 
 /// Raise `base` to `exponent`.
+#[must_use]
 pub fn pow_values(base: StackValue, exponent: StackValue) -> Result<StackValue, String> {
     let exponent = numeric_bigint(exponent)?;
     if exponent < BigInt::from(0) {
@@ -146,6 +158,7 @@ pub fn pow_values(base: StackValue, exponent: StackValue) -> Result<StackValue, 
 }
 
 /// Integer square root.
+#[must_use]
 pub fn sqrt_value(value: StackValue) -> Result<StackValue, String> {
     let value = numeric_bigint(value)?;
     if value < BigInt::from(0) {
@@ -189,6 +202,7 @@ pub fn modpow_values(
 /// Shift left. The result is always an `Integer` (Gorgon hardfork semantics:
 /// a zero shift converts the operand to `Integer` instead of preserving its
 /// original stack item type).
+#[must_use]
 pub fn shl_value(value: StackValue, shift: i64) -> Result<StackValue, String> {
     if !(0..=256).contains(&shift) {
         return Err("shift count out of range for SHL".into());
@@ -202,6 +216,7 @@ pub fn shl_value(value: StackValue, shift: i64) -> Result<StackValue, String> {
 /// Arithmetic shift right. The result is always an `Integer` (Gorgon hardfork
 /// semantics: a zero shift converts the operand to `Integer` instead of
 /// preserving its original stack item type).
+#[must_use]
 pub fn shr_value(value: StackValue, shift: i64) -> Result<StackValue, String> {
     if !(0..=256).contains(&shift) {
         return Err("shift count out of range for SHR".into());
@@ -213,6 +228,7 @@ pub fn shr_value(value: StackValue, shift: i64) -> Result<StackValue, String> {
 }
 
 /// Pre-Gorgon shift left: a zero shift preserves the operand's original type.
+#[must_use]
 pub fn shl_value_pre_gorgon(value: StackValue, shift: i64) -> Result<StackValue, String> {
     if !(0..=256).contains(&shift) {
         return Err("shift count out of range for SHL".into());
@@ -228,6 +244,7 @@ pub fn shl_value_pre_gorgon(value: StackValue, shift: i64) -> Result<StackValue,
 
 /// Pre-Gorgon arithmetic shift right: a zero shift preserves the operand's
 /// original type.
+#[must_use]
 pub fn shr_value_pre_gorgon(value: StackValue, shift: i64) -> Result<StackValue, String> {
     if !(0..=256).contains(&shift) {
         return Err("shift count out of range for SHR".into());
@@ -242,16 +259,19 @@ pub fn shr_value_pre_gorgon(value: StackValue, shift: i64) -> Result<StackValue,
 }
 
 /// Bitwise AND.
+#[must_use]
 pub fn bitwise_and_values(left: StackValue, right: StackValue) -> Result<StackValue, String> {
     bitwise_values(&left, &right, |left, right| left & right)
 }
 
 /// Bitwise OR.
+#[must_use]
 pub fn bitwise_or_values(left: StackValue, right: StackValue) -> Result<StackValue, String> {
     bitwise_values(&left, &right, |left, right| left | right)
 }
 
 /// Bitwise XOR.
+#[must_use]
 pub fn bitwise_xor_values(left: StackValue, right: StackValue) -> Result<StackValue, String> {
     bitwise_values(&left, &right, |left, right| left ^ right)
 }
@@ -297,6 +317,7 @@ fn bigint_or_integer(bytes: Vec<u8>) -> Result<StackValue, String> {
 }
 
 /// Return the larger integer-compatible value.
+#[must_use]
 pub fn max_values(left: StackValue, right: StackValue) -> Result<StackValue, String> {
     let left = numeric_bigint(left)?;
     let right = numeric_bigint(right)?;
@@ -307,6 +328,7 @@ pub fn max_values(left: StackValue, right: StackValue) -> Result<StackValue, Str
 }
 
 /// Return the smaller integer-compatible value.
+#[must_use]
 pub fn min_values(left: StackValue, right: StackValue) -> Result<StackValue, String> {
     let left = numeric_bigint(left)?;
     let right = numeric_bigint(right)?;

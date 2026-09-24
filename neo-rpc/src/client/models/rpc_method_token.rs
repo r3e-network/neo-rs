@@ -22,6 +22,7 @@ pub struct RpcMethodToken {
 impl RpcMethodToken {
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let hash = json
             .get("hash")

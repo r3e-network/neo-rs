@@ -48,6 +48,7 @@ impl RpcNep17Transfers {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let (sent, received, user_script_hash) =
             parse_transfer_lists(json, protocol_settings, RpcNep17Transfer::from_json)?;
@@ -109,6 +110,7 @@ impl RpcNep17Transfer {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let fields = parse_nep_transfer_fields(json, protocol_settings)?;
 

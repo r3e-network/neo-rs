@@ -9,12 +9,12 @@
 //! Expected benefits: Reduces disk misses from 70% → 15%,
 //! improves average latency from 500μs → 120μs, increases throughput to ~20 blk/s
 
+use lru::LruCache;
+use neo_crypto::mpt_trie::{Node, RootBranchBuffer};
+use neo_primitives::UInt256;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::RwLock;
-use lru::LruCache;
-use neo_primitives::UInt256;
-use neo_crypto::mpt_trie::{Node, RootBranchBuffer};
 
 /// Statistics tracker for each cache tier
 #[derive(Debug, Clone)]
@@ -72,14 +72,14 @@ impl ContractPrefixCache {
     #[must_use]
     pub fn new(max_prefixes: usize) -> Self {
         let mut prefixes = HashMap::new();
-        
+
         for i in 0..PREFIX_GROUPS {
             prefixes.insert(
                 i as u8,
                 LruCache::new(std::num::NonZero::new(capacity_per_prefix(max_prefixes)).unwrap()),
             );
         }
-        
+
         Self {
             prefixes: RwLock::new(prefixes),
             capacity_per_group: capacity_per_prefix(max_prefixes),
@@ -162,25 +162,25 @@ fn extract_mpt_depth(path_prefix: &[u8]) -> usize {
 }
 
 /// Main multi-tier cache implementation
-pub struct TieredStorage<S> 
+pub struct TieredStorage<S>
 where
     S: MptStoreSnapshot,
 {
     /// Tier 0: Root branch buffer (<100ns)
     tier0_root_branch: Tier0RootBranch,
-    
+
     /// Tier 1: Hot native leaves (~1μs)
     tier1_hot_leaves: RwLock<Tier1HotNativeLeaves>,
-    
+
     /// Tier 2: Contract prefixes (~5μs)
     tier2_prefix_cache: RwLock<ContractPrefixCache>,
-    
+
     /// Tier 3: General fallback (~500μs disk miss)
     tier3_general: Tier3GeneralPurpose,
-    
+
     /// Backing store snapshot
     backing_store: Arc<S>,
-    
+
     /// Hit/miss statistics
     stats: RwLock<TieredCacheStats>,
 }
@@ -196,13 +196,9 @@ where
     pub fn new(store: Arc<S>) -> Self {
         Self {
             tier0_root_branch: RootBranchBuffer::new(),
-            tier1_hot_leaves: RwLock::new(LruCache::new(
-                std::num::NonZero::new(50_000).unwrap(),
-            )),
+            tier1_hot_leaves: RwLock::new(LruCache::new(std::num::NonZero::new(50_000).unwrap())),
             tier2_prefix_cache: RwLock::new(ContractPrefixCache::new(1_000_000)),
-            tier3_general: LruCache::new(
-                std::num::NonZero::new(1_000_000).unwrap(),
-            ),
+            tier3_general: LruCache::new(std::num::NonZero::new(1_000_000).unwrap()),
             backing_store: store,
             stats: RwLock::new(TieredCacheStats {
                 tier0_hits: 0,
@@ -220,7 +216,7 @@ where
     /// Get a node from any tier (tries tiers in order of expected latency)
     pub fn get(&mut self, path_prefix: &[u8]) -> Option<Arc<Node>> {
         // Try tiers sequentially by expected latency
-        
+
         // Tier 0: Root branch (fastest - no allocation)
         if let Some(node) = self.tier0_root_branch.get_no_alloc(path_prefix) {
             self.stats.write().tier0_hits += 1;
@@ -245,7 +241,7 @@ where
         // Tier 2: Contract prefix cache
         if has_contract_prefix_pattern(path_prefix) {
             {
-                let mut cache = self.tier2_prefix_cache.write();
+                let cache = self.tier2_prefix_cache.write();
                 if let Some(node) = cache.get(path_prefix) {
                     self.stats.write().tier2_hits += 1;
                     return Some(node);
@@ -269,7 +265,7 @@ where
     /// Insert a node into the most appropriate tier
     pub fn insert(&mut self, path_prefix: &[u8], node: Arc<Node>) {
         let depth = extract_mpt_depth(path_prefix);
-        
+
         // Route to appropriate tier based on characteristics
         if depth > 0 && depth <= Self::MAX_DEPTH {
             // Tier 0: Root branch nodes (levels 1-4)
@@ -278,13 +274,15 @@ where
             // Tier 1: Hot native leaves
             let hash = compute_node_hash(path_prefix);
             self.tier1_hot_leaves.write().push(hash, node.clone());
-            
+
             // Also copy to tier 3 for general lookup
             self.tier3_general.push(path_prefix.to_vec(), node.clone());
         } else if has_contract_prefix_pattern(path_prefix) {
             // Tier 2: Contract prefixes
-            self.tier2_prefix_cache.write().insert_prefix(path_prefix, node.clone());
-            
+            self.tier2_prefix_cache
+                .write()
+                .insert_prefix(path_prefix, node.clone());
+
             // Also copy to tier 3
             self.tier3_general.push(path_prefix.to_vec(), node.clone());
         } else {
@@ -294,7 +292,7 @@ where
     }
 
     /// Load from backing store (disk I/O bound operation)
-    fn load_from_backing_store(&self, path_prefix: &[u8]) -> Option<Arc<Node>> {
+    fn load_from_backing_store(&self, _path_prefix: &[u8]) -> Option<Arc<Node>> {
         // TODO: Implement actual disk loading from backing_store
         // For now, return None to force disk read elsewhere
         None
@@ -315,7 +313,7 @@ where
             cache.clear();
         }
         self.tier3_general.clear();
-        
+
         *self.stats.write() = TieredCacheStats {
             tier0_hits: 0,
             tier0_misses: 0,
@@ -334,11 +332,16 @@ where
         // Rough estimate based on typical entry sizes
         let tier0 = self.tier0_root_branch.usage_stats().0;
         let tier1 = self.tier1_hot_leaves.read().len();
-        let tier2 = self.tier2_prefix_cache.read().prefixes.read().iter()
+        let tier2 = self
+            .tier2_prefix_cache
+            .read()
+            .prefixes
+            .read()
+            .iter()
             .map(|(_, g)| g.len())
             .sum::<usize>();
         let tier3 = self.tier3_general.len();
-        
+
         // Average size estimates
         (tier0 * 2000) + (tier1 * 2000) + (tier2 * 1500) + (tier3 * 1000)
     }
@@ -369,9 +372,30 @@ fn compute_node_hash(path_prefix: &[u8]) -> UInt256 {
         (hash >> 40) as u8,
         (hash >> 48) as u8,
         (hash >> 56) as u8,
-        0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
     ])
 }
 
@@ -409,7 +433,7 @@ mod tests {
     fn test_tier_initialization() {
         let store = Arc::new(MockStore::new());
         let tiered = TieredStorage::new(store);
-        
+
         let stats = tiered.stats();
         assert_eq!(stats.tier0_hits, 0);
         assert_eq!(stats.tier1_hits, 0);
@@ -421,11 +445,11 @@ mod tests {
     fn test_tier_routing_by_type() {
         let mut tiered = TieredStorage::new(Arc::new(MockStore::new()));
         let node = Arc::new(Node::new());
-        
+
         // Native contract routing requires a full-length key.
         let native_key = vec![0x09; 21];
         tiered.insert(&native_key, node.clone());
-        
+
         // Should be retrievable from tier 1
         let retrieved = tiered.get(&native_key);
         assert!(Arc::ptr_eq(&retrieved.unwrap(), &node));
@@ -446,10 +470,10 @@ mod tests {
     fn test_statistics_tracking() {
         let mut tiered = TieredStorage::new(Arc::new(MockStore::new()));
         let node = Arc::new(Node::new());
-        
+
         let key = vec![0xFF, 0x01, 0x02];
         tiered.insert(&key, node);
-        
+
         assert_eq!(tiered.stats().total_hits(), 0);
         assert_eq!(tiered.stats().total_misses(), 0);
         assert!(tiered.get(&key).is_some());
@@ -469,7 +493,7 @@ mod tests {
     #[test]
     fn test_clear_all_tiers() {
         let mut tiered = TieredStorage::new(Arc::new(MockStore::new()));
-        
+
         // Populate various tiers
         tiered.insert(&[0x01], Arc::new(Node::new()));
         tiered.insert(&[0x09; 21], Arc::new(Node::new()));
@@ -484,10 +508,10 @@ mod tests {
         assert!(tiered.get(&[0x09; 21]).is_some());
         assert!(tiered.get(&[0xFF; 5]).is_some());
         assert!(tiered.stats().total_hits() > 0);
-        
+
         // Clear
         tiered.clear();
-        
+
         let stats = tiered.stats();
         assert_eq!(stats.total_hits(), 0);
         assert_eq!(stats.total_misses(), 0);

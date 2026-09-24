@@ -1,0 +1,187 @@
+{
+  "dashboard": {
+    "title": "Neo N3 - Real-time Throughput",
+    "tags": ["neo", "blockchain", "throughput"],
+    "timezone": "browser",
+    "refresh": "5s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Blocks Per Second",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "neo_blocks_per_second",
+            "legendFormat": "Blocks/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "700",
+            "legendFormat": "Warning Threshold",
+            "refId": "B"
+          },
+          {
+            "expr": "500",
+            "legendFormat": "Critical Threshold",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Blocks/sec"},
+          {"format": "short"}
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [700], "type": "lt"},
+              "query": {"params": ["A", "5m", "now"]},
+              "type": "query"
+            }
+          ],
+          "name": "Blocks per second alert",
+          "message": "Block processing rate has dropped below 700 blocks/sec"
+        }
+      },
+      {
+        "id": 2,
+        "title": "Transactions Per Second",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "neo_transactions_per_second",
+            "legendFormat": "Transactions/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(neo_transactions_processed_total[1m])",
+            "legendFormat": "Processed (1m rate)",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Transactions/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 3,
+        "title": "State Operations Per Second",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "neo_state_operations_per_second",
+            "legendFormat": "State Ops/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(neo_storage_reads_total[1m]) + rate(neo_storage_writes_total[1m]) + rate(neo_storage_deletes_total[1m])",
+            "legendFormat": "Total Storage Ops (1m rate)",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Operations/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Block Processing Rate (5m avg)",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "avg_over_time(neo_blocks_per_second[5m])",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "ops"
+        },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"value": 0, "color": "red"},
+            {"value": 500, "color": "orange"},
+            {"value": 700, "color": "green"}
+          ]
+        }
+      },
+      {
+        "id": 5,
+        "title": "Total Blocks Processed",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 8},
+        "targets": [
+          {
+            "expr": "neo_blocks_processed_total",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "short"
+        }
+      },
+      {
+        "id": 6,
+        "title": "Mempool Size",
+        "type": "graph",
+        "gridPos": {"h": 6, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "neo_mempool_size",
+            "legendFormat": "Total Transactions",
+            "refId": "A"
+          },
+          {
+            "expr": "neo_mempool_verified_transactions",
+            "legendFormat": "Verified",
+            "refId": "B"
+          },
+          {
+            "expr": "neo_mempool_unverified_transactions",
+            "legendFormat": "Unverified",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Transactions"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Block Height Progress",
+        "type": "graph",
+        "gridPos": {"h": 6, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "neo_block_height",
+            "legendFormat": "Current Height",
+            "refId": "A"
+          },
+          {
+            "expr": "neo_header_height",
+            "legendFormat": "Header Height",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Block Height"},
+          {"format": "short"}
+        ]
+      }
+    ]
+  }
+}

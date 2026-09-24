@@ -42,17 +42,17 @@ impl RwSetTracker {
     pub fn record_log_event(&mut self, key: UInt256) {
         self.log_events.push(key);
     }
-    
+
     /// Record a key read (for conflict detection)
     pub fn record_read(&mut self, key: UInt256) {
         self.read_keys.push(key);
     }
-    
+
     /// Record a key write (triggers conflict detection)
     pub fn record_write(&mut self, key: UInt256) {
         self.write_keys.push(key);
     }
-    
+
     /// Check if this tracker conflicts with another
     /// Write-write: both write same key → CONFLICT
     /// Write-read: we write what other reads → CONFLICT  
@@ -66,12 +66,12 @@ impl RwSetTracker {
         }
         false
     }
-    
+
     /// Set gas used
     pub fn set_gas_used(&mut self, gas: i64) {
         self.gas_used = gas;
     }
-    
+
     /// Clear all tracked data
     pub fn clear(&mut self) {
         self.read_keys.clear();
@@ -111,40 +111,40 @@ impl Default for RwSetTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_no_conflict_disjoint_keys() {
         let mut tracker1 = RwSetTracker::new();
         let mut tracker2 = RwSetTracker::new();
-        
+
         tracker1.record_write(UInt256::from_bytes(&[1u8; 32]).unwrap());
         tracker2.record_write(UInt256::from_bytes(&[2u8; 32]).unwrap());
-        
+
         assert!(!tracker1.conflicts_with(&tracker2));
         assert!(!tracker2.conflicts_with(&tracker1));
     }
-    
+
     #[test]
     fn test_write_write_conflict() {
         let mut tracker1 = RwSetTracker::new();
         let mut tracker2 = RwSetTracker::new();
-        
+
         let key = UInt256::from_bytes(&[42u8; 32]).unwrap();
         tracker1.record_write(key);
         tracker2.record_write(key);
-        
+
         assert!(tracker1.conflicts_with(&tracker2));
     }
-    
+
     #[test]
     fn test_write_read_conflict() {
         let mut tracker1 = RwSetTracker::new();
         let mut tracker2 = RwSetTracker::new();
-        
+
         let key = UInt256::from_bytes(&[42u8; 32]).unwrap();
         tracker1.record_write(key);
         tracker2.record_read(key);
-        
+
         assert!(tracker1.conflicts_with(&tracker2));
     }
 }

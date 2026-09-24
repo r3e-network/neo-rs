@@ -35,6 +35,8 @@
 //! let script_hash = Crypto::hash160(b"contract script");
 //! ```
 
+/// Batch signature verification for high-throughput blockchain operations.
+pub mod batch_verifier;
 /// BIP-32 helper primitives.
 pub mod bip32;
 /// Bloom filter implementation for probabilistic set membership testing.
@@ -61,8 +63,6 @@ pub mod named_curve_hash;
 pub mod signature;
 /// SIMD-accelerated BLAKE2b hashing for high-throughput MPT operations.
 pub mod simd;
-/// Batch signature verification for high-throughput blockchain operations.
-pub mod batch_verifier;
 
 // Re-exports
 pub use bip32::Bip32Crypto;

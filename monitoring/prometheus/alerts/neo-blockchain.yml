@@ -1,0 +1,100 @@
+# Neo N3 Blockchain Alerting Rules
+groups:
+  - name: neo_blockchain
+    interval: 30s
+    rules:
+      # Block processing health
+      - alert: BlockSyncStalled
+        expr: increase(neo_block_height[5m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: blockchain
+        annotations:
+          summary: "Block sync has stalled"
+          description: "Neo node {{ $labels.instance }} has not processed any new blocks in the last 5 minutes. Current height: {{ $value }}."
+          runbook: "1. Check if node is connected to peers. 2. Review logs for errors. 3. Verify consensus participation. 4. Check storage backend health."
+
+      # Header lag
+      - alert: HighHeaderLag
+        expr: neo_header_lag > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: blockchain
+        annotations:
+          summary: "Header lag exceeds 100 blocks"
+          description: "Neo node {{ $labels.instance }} has a header lag of {{ $value }} blocks, indicating slow block processing or network issues."
+          runbook: "Monitor block processing rate. Check system resources and network connectivity."
+
+      # Mempool saturation
+      - alert: MempoolSaturation
+        expr: neo_mempool_size > 5000
+        for: 10m
+        labels:
+          severity: warning
+          component: mempool
+        annotations:
+          summary: "Mempool size exceeds 5000 transactions"
+          description: "Neo node {{ $labels.instance }} mempool has {{ $value }} transactions, which may indicate processing delays."
+          runbook: "Check transaction verification performance and block production rate."
+
+      # State root validation lag
+      - alert: StateRootValidationLag
+        expr: neo_state_validated_lag > 50
+        for: 10m
+        labels:
+          severity: warning
+          component: state
+        annotations:
+          summary: "State root validation lagging behind"
+          description: "Neo node {{ $labels.instance }} has a state root validation lag of {{ $value }} blocks."
+          runbook: "Check state root validation process and validator connectivity."
+
+      # VM execution failures
+      - alert: HighVMFaultRate
+        expr: rate(neo_vm_faults_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: vm
+        annotations:
+          summary: "High VM fault rate detected"
+          description: "Neo node {{ $labels.instance }} is experiencing {{ $value }} VM faults per second."
+          runbook: "Review smart contract executions and check for malicious or buggy contracts."
+
+      # Consensus participation
+      - alert: ConsensusViewChangesFrequent
+        expr: rate(neo_consensus_change_view_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: consensus
+        annotations:
+          summary: "Frequent consensus view changes"
+          description: "Neo node {{ $labels.instance }} is experiencing {{ $value }} view changes per second, indicating consensus instability."
+          runbook: "Check validator connectivity and network stability. Review consensus logs."
+
+      # Oracle service issues
+      - alert: OracleRequestBacklog
+        expr: neo_oracle_requests_pending > 100
+        for: 10m
+        labels:
+          severity: warning
+          component: oracle
+        annotations:
+          summary: "Large oracle request backlog"
+          description: "Neo node {{ $labels.instance }} has {{ $value }} pending oracle requests."
+          runbook: "Check oracle service health and external data source availability."
+
+      # RPC rate limiting
+      - alert: HighRPCRateLimiting
+        expr: rate(neo_rpc_rate_limited_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: rpc
+        annotations:
+          summary: "High RPC rate limiting activity"
+          description: "Neo node {{ $labels.instance }} is rate limiting {{ $value }} requests per second."
+          runbook: "Review RPC rate limit configuration. Check for potential abuse or misconfigured clients."

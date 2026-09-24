@@ -1,5 +1,4 @@
 //! ApplicationEngine.Runtime - matches C# Neo.SmartContract.ApplicationEngine.Runtime.cs exactly
-
 use crate::UInt160;
 use crate::cryptography::murmur128;
 use crate::hardfork::Hardfork;
@@ -19,43 +18,42 @@ use num_traits::ToPrimitive;
 use std::convert::TryFrom;
 use std::string::String as StdString;
 use std::sync::Arc;
-
 impl ApplicationEngine {
     /// Gets the platform name
+    #[must_use]
     pub fn runtime_platform(&mut self) -> Result<(), String> {
         self.push_string("NEO".to_string())
     }
-
     /// Gets the trigger type
+    #[must_use]
     pub fn runtime_get_trigger(&mut self) -> Result<(), String> {
         self.push_integer(i64::from(self.trigger_type().bits()))
     }
-
     /// Gets the network magic number
+    #[must_use]
     pub fn runtime_get_network(&mut self) -> Result<(), String> {
         self.push_integer(self.protocol_settings().network as i64)
     }
-
     /// Gets the address version of the current network
+    #[must_use]
     pub fn runtime_get_address_version(&mut self) -> Result<(), String> {
         self.push_integer(self.protocol_settings().address_version as i64)
     }
-
     /// Gets the current block time
+    #[must_use]
     pub fn runtime_get_time(&mut self) -> Result<(), String> {
         let time = self.get_current_block_time()?;
         let big = BigInt::from(time);
         self.push(StackItem::from_int(big))
             .map_err(|e| e.to_string())
     }
-
     /// Gets the script container
+    #[must_use]
     pub fn runtime_get_script_container(&mut self) -> Result<(), String> {
         let container = self
             .get_script_container()
             .cloned()
             .ok_or_else(|| "No script container".to_string())?;
-
         if let Some(transaction) = container
             .as_any()
             .downcast_ref::<crate::network::p2p::payloads::Transaction>()
@@ -65,7 +63,6 @@ impl ApplicationEngine {
             Err("Script container does not implement Interoperable".to_string())
         }
     }
-
     /// Loads a script at runtime (matches C# RuntimeLoadScript).
     pub fn runtime_load_script(
         &mut self,
@@ -76,31 +73,25 @@ impl ApplicationEngine {
         if call_flags.bits() & !CallFlags::ALL.bits() != 0 {
             return Err(format!("Invalid call flags: {call_flags:?}"));
         }
-
         let calling_context = self
             .current_context()
             .cloned()
             .ok_or_else(|| "No current execution context".to_string())?;
-
         let state_call_flags = self.get_current_call_flags().map_err(|e| e.to_string())?;
-
         let effective_flags = call_flags & state_call_flags & CallFlags::READ_ONLY;
-
         self.load_script_with_state(script, -1, 0, move |state| {
             state.calling_context = Some(calling_context);
             state.call_flags = effective_flags;
             state.is_dynamic_call = true;
         })
         .map_err(|e| e.to_string())?;
-
         for item in args.into_iter().rev() {
             self.push(item)?;
         }
-
         Ok(())
     }
-
     /// Gets the executing script hash
+    #[must_use]
     pub fn runtime_get_executing_script_hash(&mut self) -> Result<(), String> {
         if let Some(hash) = self.current_script_hash() {
             self.push_bytes(hash.to_bytes())
@@ -108,8 +99,8 @@ impl ApplicationEngine {
             self.push_null()
         }
     }
-
     /// Gets the calling script hash
+    #[must_use]
     pub fn runtime_get_calling_script_hash(&mut self) -> Result<(), String> {
         let hash = self.get_calling_script_hash();
         if let Some(hash) = hash {
@@ -118,8 +109,8 @@ impl ApplicationEngine {
             self.push_null()
         }
     }
-
     /// Gets the entry script hash
+    #[must_use]
     pub fn runtime_get_entry_script_hash(&mut self) -> Result<(), String> {
         if let Some(hash) = self.entry_script_hash() {
             self.push_bytes(hash.to_bytes())
@@ -127,11 +118,10 @@ impl ApplicationEngine {
             self.push_null()
         }
     }
-
     /// Checks witness
+    #[must_use]
     pub fn runtime_check_witness(&mut self) -> Result<(), String> {
         let hash_or_pubkey = self.pop_bytes()?;
-
         // Check if it's a hash (20 bytes) or public key (33 bytes)
         let result = match hash_or_pubkey.len() {
             20 => {
@@ -147,23 +137,20 @@ impl ApplicationEngine {
                 return Err("Invalid hashOrPubkey length".to_string());
             }
         };
-
         self.push_boolean(result)
     }
-
     /// Gets invocation counter
+    #[must_use]
     pub fn runtime_get_invocation_counter(&mut self) -> Result<(), String> {
         let hash = self.current_script_hash().ok_or("No current script")?;
-
         let counter = self.get_invocation_counter(&hash);
         self.push_integer(counter as i64)
     }
-
     /// Gets the next random number derived from VRF-like construction (matches C# GetRandom exactly).
+    #[must_use]
     pub fn runtime_get_random(&mut self) -> Result<(), String> {
         let network = self.protocol_settings().network;
         let aspid_enabled = self.is_hardfork_enabled(Hardfork::HfAspidochelone);
-
         let buffer = if aspid_enabled {
             let seed = network.wrapping_add(self.random_counter());
             self.increment_random_counter();
@@ -173,27 +160,24 @@ impl ApplicationEngine {
             self.set_nonce_bytes(bytes);
             bytes
         };
-
         // C# v3.9.1 ApplicationEngine.Runtime.cs:315-324:
         // HF_Aspidochelone enabled → price 1<<13 (new per-call counter, more work)
         // HF_Aspidochelone disabled → price 1<<4 (legacy single-shot path)
         let price: i64 = if aspid_enabled { 1 << 13 } else { 1 << 4 };
         self.add_cpu_fee(price).map_err(|e| e.to_string())?;
-
         let bigint = BigInt::from_bytes_le(Sign::Plus, &buffer);
         self.push(StackItem::from_int(bigint))
             .map_err(|e| e.to_string())
     }
-
     /// Gets the remaining GAS available for execution (matches C# GasLeft).
+    #[must_use]
     pub fn runtime_gas_left(&mut self) -> Result<(), String> {
         self.push_integer(self.gas_left())
     }
-
     /// Logs a message
+    #[must_use]
     pub fn runtime_log(&mut self) -> Result<(), String> {
         let message_bytes = self.pop_bytes()?;
-
         if message_bytes.len() > MAX_NOTIFICATION_SIZE {
             return Err(format!(
                 "Notification size {} exceeds maximum allowed size of {} bytes",
@@ -201,24 +185,19 @@ impl ApplicationEngine {
                 MAX_NOTIFICATION_SIZE
             ));
         }
-
         let message = StdString::from_utf8(message_bytes).map_err(|_| {
             "Failed to convert byte array to string: Invalid UTF-8 sequence".to_string()
         })?;
-
         let container = self
             .script_container()
             .ok_or_else(|| "No script container".to_string())?;
-
         let script_hash = self.current_script_hash().unwrap_or_else(UInt160::zero);
-
         let event = LogEventArgs::new(Arc::clone(container), script_hash, message);
-
         self.emit_log_event(event);
         Ok(())
     }
-
     /// Sends a notification
+    #[must_use]
     pub fn runtime_notify(&mut self) -> Result<(), String> {
         // Match C# interop argument binding order:
         // System.Runtime.Notify(eventName, state)
@@ -226,7 +205,6 @@ impl ApplicationEngine {
         // is popped first, then state.
         let event_name = self.pop_bytes()?;
         let state = self.pop_array()?;
-
         if event_name.len() > MAX_EVENT_NAME {
             return Err(format!(
                 "Event name size {} exceeds maximum allowed size of {} bytes",
@@ -234,14 +212,11 @@ impl ApplicationEngine {
                 MAX_EVENT_NAME
             ));
         }
-
         if !self.is_hardfork_enabled(Hardfork::HfBasilisk) {
             return self.runtime_notify_legacy(event_name, state);
         }
-
         self.runtime_notify_basilisk(event_name, state)
     }
-
     fn runtime_notify_legacy(
         &mut self,
         event_name_bytes: Vec<u8>,
@@ -249,7 +224,6 @@ impl ApplicationEngine {
     ) -> Result<(), String> {
         let event_name = StdString::from_utf8(event_name_bytes)
             .map_err(|_| "Failed to convert event name to UTF-8 string".to_string())?;
-
         {
             let state_arc = self.current_execution_state().map_err(|e| e.to_string())?;
             let state_guard = state_arc.lock();
@@ -257,15 +231,11 @@ impl ApplicationEngine {
                 return Err("Notifications are not allowed in dynamic scripts.".to_string());
             }
         }
-
         self.ensure_notification_size(&state)?;
         self.reserve_notification_slot()?;
-
         let script_hash = self.current_script_hash().unwrap_or_else(UInt160::zero);
-
         self.send_notification(script_hash, event_name, state)
     }
-
     fn runtime_notify_basilisk(
         &mut self,
         event_name_bytes: Vec<u8>,
@@ -273,9 +243,7 @@ impl ApplicationEngine {
     ) -> Result<(), String> {
         let event_name = StdString::from_utf8(event_name_bytes)
             .map_err(|_| "Failed to convert event name to UTF-8 string".to_string())?;
-
         let script_hash = self.current_script_hash().unwrap_or_else(UInt160::zero);
-
         let parameters = {
             let state_arc = self.current_execution_state().map_err(|e| e.to_string())?;
             let guard = state_arc.lock();
@@ -293,24 +261,21 @@ impl ApplicationEngine {
                 .ok_or_else(|| format!("Event `{}` does not exist.", event_name))?;
             event.parameters
         };
-
         if parameters.len() != state.len() {
             return Err(
                 "The number of the arguments does not match the formal parameters of the event."
                     .to_string(),
             );
         }
-
         validate_event_parameters(&state, &parameters)?;
         self.ensure_notification_size(&state)?;
         self.reserve_notification_slot()?;
-
         // Basilisk: notification state normalizes Buffer to ByteString (C# parity).
         let state = coerce_notify_state_basilisk(state);
         self.send_notification(script_hash, event_name, state)
     }
-
     /// Gets notifications
+    #[must_use]
     pub fn runtime_get_notifications(&mut self) -> Result<(), String> {
         let hash = if self.peek_is_null(0)? {
             self.pop()?;
@@ -322,31 +287,27 @@ impl ApplicationEngine {
             }
             Some(UInt160::from_bytes(&bytes).map_err(|e| e.to_string())?)
         };
-
         // Get notifications for the specified contract (or all if None)
         let notifications = self.get_notifications(hash)?;
-
         self.push_array(notifications)
     }
-
     /// Burns gas
+    #[must_use]
     pub fn runtime_burn_gas(&mut self, amount: i64) -> Result<(), String> {
         if amount <= 0 {
             return Err("GAS must be positive.".to_string());
         }
-
         let datoshi = u64::try_from(amount).map_err(|_| "GAS amount overflow".to_string())?;
         self.charge_execution_fee(datoshi)
             .map_err(|e| e.to_string())?;
         Ok(())
     }
-
     /// Gets the signers of the current transaction (matches C# GetCurrentSigners).
+    #[must_use]
     pub fn runtime_current_signers(&mut self) -> Result<(), String> {
         let Some(container) = self.get_script_container() else {
             return self.push_null();
         };
-
         let Some(tx) = container
             .as_ref()
             .as_any()
@@ -354,13 +315,11 @@ impl ApplicationEngine {
         else {
             return self.push_null();
         };
-
         let items = tx
             .signers()
             .iter()
             .map(|s| s.to_stack_item().map_err(|e| e.to_string()))
             .collect::<std::result::Result<Vec<_>, _>>()?;
-
         self.push_array(items)
     }
 }
@@ -370,28 +329,24 @@ fn map_runtime_result(service: &str, result: Result<(), String>) -> VmResult<()>
         error,
     })
 }
-
 fn runtime_platform_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     map_runtime_result("System.Runtime.Platform", app.runtime_platform())
 }
-
 fn runtime_get_trigger_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     map_runtime_result("System.Runtime.GetTrigger", app.runtime_get_trigger())
 }
-
 fn runtime_get_network_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     map_runtime_result("System.Runtime.GetNetwork", app.runtime_get_network())
 }
-
 fn runtime_get_address_version_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -401,14 +356,12 @@ fn runtime_get_address_version_handler(
         app.runtime_get_address_version(),
     )
 }
-
 fn runtime_get_time_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     map_runtime_result("System.Runtime.GetTime", app.runtime_get_time())
 }
-
 fn runtime_get_script_container_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -418,7 +371,6 @@ fn runtime_get_script_container_handler(
         app.runtime_get_script_container(),
     )
 }
-
 fn runtime_load_script_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -427,33 +379,26 @@ fn runtime_load_script_handler(
         service: "System.Runtime.LoadScript".to_string(),
         error: e,
     })?;
-
     let call_flags_value = app.pop_integer().map_err(|e| VmError::InteropService {
         service: "System.Runtime.LoadScript".to_string(),
         error: e,
     })?;
-
     let script = app.pop_bytes().map_err(|e| VmError::InteropService {
         service: "System.Runtime.LoadScript".to_string(),
         error: e,
     })?;
-
     let result = (|| {
         if call_flags_value < 0 || call_flags_value > u8::MAX as i64 {
             return Err("Invalid call flags value".to_string());
         }
-
         let raw = call_flags_value as u8;
         let Some(call_flags) = CallFlags::from_bits(raw) else {
             return Err(format!("Invalid call flags: {call_flags_value}"));
         };
-
         app.runtime_load_script(script, call_flags, args)
     })();
-
     map_runtime_result("System.Runtime.LoadScript", result)
 }
-
 fn runtime_get_executing_script_hash_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -463,7 +408,6 @@ fn runtime_get_executing_script_hash_handler(
         app.runtime_get_executing_script_hash(),
     )
 }
-
 fn runtime_get_calling_script_hash_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -473,7 +417,6 @@ fn runtime_get_calling_script_hash_handler(
         app.runtime_get_calling_script_hash(),
     )
 }
-
 fn runtime_get_entry_script_hash_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -483,14 +426,12 @@ fn runtime_get_entry_script_hash_handler(
         app.runtime_get_entry_script_hash(),
     )
 }
-
 fn runtime_check_witness_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     map_runtime_result("System.Runtime.CheckWitness", app.runtime_check_witness())
 }
-
 fn runtime_get_invocation_counter_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -500,32 +441,27 @@ fn runtime_get_invocation_counter_handler(
         app.runtime_get_invocation_counter(),
     )
 }
-
 fn runtime_get_random_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     map_runtime_result("System.Runtime.GetRandom", app.runtime_get_random())
 }
-
 fn runtime_gas_left_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     map_runtime_result("System.Runtime.GasLeft", app.runtime_gas_left())
 }
-
 fn runtime_log_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngine) -> VmResult<()> {
     map_runtime_result("System.Runtime.Log", app.runtime_log())
 }
-
 fn runtime_notify_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
 ) -> VmResult<()> {
     map_runtime_result("System.Runtime.Notify", app.runtime_notify())
 }
-
 fn runtime_get_notifications_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -535,7 +471,6 @@ fn runtime_get_notifications_handler(
         app.runtime_get_notifications(),
     )
 }
-
 fn runtime_burn_gas_handler(
     app: &mut ApplicationEngine,
     engine: &mut ExecutionEngine,
@@ -550,7 +485,6 @@ fn runtime_burn_gas_handler(
         })?;
     map_runtime_result("System.Runtime.BurnGas", app.runtime_burn_gas(amount))
 }
-
 fn runtime_current_signers_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -560,7 +494,6 @@ fn runtime_current_signers_handler(
         app.runtime_current_signers(),
     )
 }
-
 pub(crate) fn register_runtime_interops(engine: &mut ApplicationEngine) -> VmResult<()> {
     engine.register_host_service(
         "System.Runtime.Platform",
@@ -678,7 +611,6 @@ pub(crate) fn register_runtime_interops(engine: &mut ApplicationEngine) -> VmRes
     )?;
     Ok(())
 }
-
 fn validate_event_parameters(
     state: &[StackItem],
     parameters: &[ContractParameterDefinition],
@@ -693,10 +625,8 @@ fn validate_event_parameters(
     }
     Ok(())
 }
-
 fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> bool {
     use ContractParameterType::*;
-
     let item_type = item.stack_item_type();
     match expected {
         Any => true,
@@ -762,7 +692,6 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
         _ => false,
     }
 }
-
 /// Basilisk notify-state normalization: coerces `Buffer` stack items to
 /// `ByteString` (recursing through arrays and structs), matching C# Neo's
 /// post-`HF_Basilisk` `System.Runtime.Notify` behavior.
@@ -775,7 +704,6 @@ fn coerce_notify_state_basilisk(
         .map(coerce_item_basilisk)
         .collect::<Vec<StackItem>>()
 }
-
 fn coerce_item_basilisk(item: neo_core::neo_vm::StackItem) -> neo_core::neo_vm::StackItem {
     use neo_core::neo_vm::StackItem;
     match item {

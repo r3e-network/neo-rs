@@ -19,14 +19,20 @@ use neo_primitives::{UINT160_SIZE, UINT256_SIZE, UInt160, UInt256};
 // ============================================================================
 
 /// Verifies Rust constants match Coq definitions exactly.
-/// 
+///
 /// **Coq parallel**: `Definition UINT160_LEN : nat := 20.` and `Definition UINT256_LEN : nat := 32.`
 /// This test ensures the Rust source truth uses identical byte sizes.
 #[test]
 fn uint160_size_match_coq() {
     // Direct tie-in: Rust constant MUST equal Coq constant
-    assert_eq!(UINT160_SIZE, 20, "Rust UINT160_SIZE must match Coq UINT160_LEN");
-    assert_eq!(UINT256_SIZE, 32, "Rust UINT256_SIZE must match Coq UINT256_LEN");
+    assert_eq!(
+        UINT160_SIZE, 20,
+        "Rust UINT160_SIZE must match Coq UINT160_LEN"
+    );
+    assert_eq!(
+        UINT256_SIZE, 32,
+        "Rust UINT256_SIZE must match Coq UINT256_LEN"
+    );
 }
 
 /// Verifies ADDRESS_SIZE and HASH_SIZE also match the uint constants
@@ -49,7 +55,10 @@ fn address_and_hash_sizes_consistent() {
 /// From a 20-byte buffer → valid UInt160 is produced.
 #[test]
 fn uint160_accepts_exactly_20_bytes() {
-    assert!(UInt160::from_bytes(&[0u8; 20]).is_ok(), "20-byte UInt160 must be valid");
+    assert!(
+        UInt160::from_bytes(&[0u8; 20]).is_ok(),
+        "20-byte UInt160 must be valid"
+    );
 }
 
 /// Mirrors Coq lemma `uint256_from_bytes_valid`:
@@ -58,7 +67,10 @@ fn uint160_accepts_exactly_20_bytes() {
 /// From a 32-byte buffer → valid UInt256 is produced.
 #[test]
 fn uint256_accepts_exactly_32_bytes() {
-    assert!(UInt256::from_bytes(&[0u8; 32]).is_ok(), "32-byte UInt256 must be valid");
+    assert!(
+        UInt256::from_bytes(&[0u8; 32]).is_ok(),
+        "32-byte UInt256 must be valid"
+    );
 }
 
 /// Negative test: from_bytes rejects non-conforming sizes for UInt160
@@ -66,27 +78,60 @@ fn uint256_accepts_exactly_32_bytes() {
 #[test]
 fn uint160_rejects_invalid_byte_counts() {
     // Test undersized inputs
-    assert!(UInt160::from_bytes(&[]).is_err(), "empty slice is not a UInt160");
-    assert!(UInt160::from_bytes(&[0u8; 1]).is_err(), "1 byte is not a UInt160");
-    assert!(UInt160::from_bytes(&[0u8; 19]).is_err(), "19 bytes is not a UInt160");
+    assert!(
+        UInt160::from_bytes(&[]).is_err(),
+        "empty slice is not a UInt160"
+    );
+    assert!(
+        UInt160::from_bytes(&[0u8; 1]).is_err(),
+        "1 byte is not a UInt160"
+    );
+    assert!(
+        UInt160::from_bytes(&[0u8; 19]).is_err(),
+        "19 bytes is not a UInt160"
+    );
 
     // Test oversized inputs
-    assert!(UInt160::from_bytes(&[0u8; 21]).is_err(), "21 bytes is not a UInt160");
-    assert!(UInt160::from_bytes(&[0u8; 32]).is_err(), "32 bytes is not a UInt160");
-    assert!(UInt160::from_bytes(&[0u8; 64]).is_err(), "64 bytes is not a UInt160");
+    assert!(
+        UInt160::from_bytes(&[0u8; 21]).is_err(),
+        "21 bytes is not a UInt160"
+    );
+    assert!(
+        UInt160::from_bytes(&[0u8; 32]).is_err(),
+        "32 bytes is not a UInt160"
+    );
+    assert!(
+        UInt160::from_bytes(&[0u8; 64]).is_err(),
+        "64 bytes is not a UInt160"
+    );
 }
 
 /// Negative test: from_bytes rejects non-conforming sizes for UInt256
 #[test]
 fn uint256_rejects_invalid_byte_counts() {
     // Test undersized inputs
-    assert!(UInt256::from_bytes(&[]).is_err(), "empty slice is not a UInt256");
-    assert!(UInt256::from_bytes(&[0u8; 1]).is_err(), "1 byte is not a UInt256");
-    assert!(UInt256::from_bytes(&[0u8; 31]).is_err(), "31 bytes is not a UInt256");
+    assert!(
+        UInt256::from_bytes(&[]).is_err(),
+        "empty slice is not a UInt256"
+    );
+    assert!(
+        UInt256::from_bytes(&[0u8; 1]).is_err(),
+        "1 byte is not a UInt256"
+    );
+    assert!(
+        UInt256::from_bytes(&[0u8; 31]).is_err(),
+        "31 bytes is not a UInt256"
+    );
 
     // Test oversized inputs
-    assert!(UInt256::from_bytes(&[0u8; 33]).is_err(), "33 bytes is not a UInt256");
-    assert!(UInt256::from_bytes(&[0u8; 64]).is_err(), "64 bytes is not a UInt256");
+    assert!(
+        UInt256::from_bytes(&[0u8; 33]).is_err(),
+        "33 bytes is not a UInt256"
+    );
+    assert!(
+        UInt256::from_bytes(&[0u8; 64]).is_err(),
+        "64 bytes is not a UInt256"
+    );
 }
 
 // ============================================================================
@@ -117,7 +162,12 @@ fn uint160_is_not_uint256() {
 /// Additional proof: Rust const evaluation shows size difference
 #[test]
 fn uint256_longer_than_uint160() {
-    const { assert!(UINT256_SIZE > UINT160_SIZE, "UInt256 must be larger than UInt160"); }
+    const {
+        assert!(
+            UINT256_SIZE > UINT160_SIZE,
+            "UInt256 must be larger than UInt160"
+        );
+    }
     // Provable at compile time, just like Coq's `uint256_longer_than_uint160` lemma
 }
 
@@ -131,12 +181,12 @@ fn uint256_longer_than_uint160() {
 fn uint160_roundtrip_preserves_value() {
     // Generate various test vectors including edge cases
     let test_cases = vec![
-        [0u8; 20],                           // All zeros
-        [255u8; 20],                         // All ones
+        [0u8; 20],                                                      // All zeros
+        [255u8; 20],                                                    // All ones
         [1u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Minimal non-zero
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // High bit
-        [170u8; 20],                         // Pattern
-        [85u8; 20],                          // Inverse pattern
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],   // High bit
+        [170u8; 20],                                                    // Pattern
+        [85u8; 20],                                                     // Inverse pattern
     ];
 
     for bytes in test_cases {
@@ -152,8 +202,10 @@ fn uint256_roundtrip_preserves_value() {
     let test_cases = vec![
         [0u8; 32],
         [255u8; 32],
-        [1u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [
+            1u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0,
+        ],
         [170u8; 32],
         [85u8; 32],
     ];
@@ -207,7 +259,11 @@ fn uint160_default_matches_zero() {
     let zero = UInt160::zero();
 
     assert_eq!(default, zero, "Default and ZERO must be identical");
-    assert_eq!(default.to_array(), [0u8; 20], "Default bytes must be all zeros");
+    assert_eq!(
+        default.to_array(),
+        [0u8; 20],
+        "Default bytes must be all zeros"
+    );
 }
 
 // ============================================================================

@@ -239,13 +239,12 @@ pub mod memory;
 pub mod abi;
 mod host;
 mod interpreter;
-#[cfg(feature = "pooled-engine")]
-pub mod application_engine_pooled; // Feature-gated for production use
 mod runtime;
 pub mod semantics;
 mod vm;
 
 // Full public re-export surface (mirrors the vendored crate's `lib.rs`).
+pub use abi::fast_codec::{decode_stack, encode_stack};
 pub use abi::{
     BackendKind, COMPACT_TAG_ARRAY, COMPACT_TAG_BIG_INTEGER, COMPACT_TAG_BOOLEAN,
     COMPACT_TAG_BUFFER, COMPACT_TAG_BYTESTRING, COMPACT_TAG_INTEGER, COMPACT_TAG_INTEROP,
@@ -265,7 +264,6 @@ pub use abi::{
     stack_value_as_bytes, stack_value_as_fixed_bytes, stack_value_as_i64, stack_value_as_string,
     stack_value_as_u8, stack_value_as_u32, stack_value_into_items, stack_value_span_bytes,
 };
-pub use abi::fast_codec::{decode_stack, encode_stack};
 pub use host::{interop_hash, syscall_arg_count};
 pub use interpreter::{
     CALLT_MARKER, CALLT_MARKER_HI, INITIALIZER_COMPLETE_MARKER, SyscallProvider, interpret,
@@ -275,8 +273,8 @@ pub use interpreter::{
     interpret_with_stack_and_syscalls_at_with_result_limit, interpret_with_syscalls,
     last_interpreter_ip, last_result_limit, last_result_stack_len, last_result_stage,
 };
-pub use runtime::{RuntimeStack, VmContext};
 pub use runtime::rw_set_tracker::RwSetTracker;
+pub use runtime::{RuntimeStack, VmContext};
 pub use vm::{
     DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, ExceptionHandlingContext,
     ExceptionHandlingState, ExecutionEngineLimits, FromOperand, Instruction, InstructionError,
@@ -300,10 +298,6 @@ pub use execution_engine::ExecutionEngine;
 pub use interop_service::InteropService;
 
 // Syscall registry - publicly accessible for static lookups
-pub use syscalls::{
-    get_syscall_entry, init as init_syscall_registry, verify_registry_completeness,
-    NUM_BUILTINS, SyscallEntry, SyscallHash, GasCost,
-};
 pub use interoperable::Interoperable;
 pub use json_serializer::JsonSerializer;
 pub use jump_table::JumpTable;
@@ -317,6 +311,10 @@ pub use script_builder::ScriptBuilder;
 pub use slot::Slot;
 pub use stack_item::{StackItem, StackItemExt};
 pub use storage_context::StorageContext;
+pub use syscalls::{
+    GasCost, NUM_BUILTINS, SyscallEntry, SyscallHash, get_syscall_entry,
+    init as init_syscall_registry, verify_registry_completeness,
+};
 // pub use rw_set_tracker::RwSetTracker;  // REMOVED - use crate::runtime::rw_set_tracker::RwSetTracker instead
 
 // ============================================================================

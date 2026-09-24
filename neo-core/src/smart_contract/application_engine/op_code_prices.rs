@@ -14,9 +14,7 @@
 //
 // Until a full automated comparison against the C# source is run, treat any
 // price as potentially stale.
-
 use crate::smart_contract::ApplicationEngine;
-
 impl ApplicationEngine {
     /// The prices of all opcodes (in execution units, before ExecFeeFactor).
     pub const OPCODE_PRICE_TABLE: [i64; 256] = [
@@ -27,11 +25,10 @@ impl ApplicationEngine {
         2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 256, 2048, 0, 2048, 2048,
         2048, 2048, 0, 4, 8, 8, 8, 0, 0, 0, 32, 32, 4, 4, 4, 4, 4, 8, 8, 8, 8, 8, 64, 64, 32, 2048,
         0, 8, 8, 4, 8, 8, 0, 0, 0, 0, 4, 0, 8, 8, 8, 8, 8, 8, 8, 8, 8, 0, 0, 2048, 2048, 2048,
-        2048, 16, 512, 512, 512, 512, 0, 8192, 0, 4, 64, 16, 8192, 64, 8192, 8192, 8192, 16, 16, 16, 0,
-        0, 0, 2, 2, 0, 8192, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2048, 16, 512, 512, 512, 512, 0, 8192, 0, 4, 64, 16, 8192, 64, 8192, 8192, 8192, 16, 16,
+        16, 0, 0, 0, 2, 2, 0, 8192, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
-
     /// Gets the execution unit cost for an opcode.
     pub fn get_opcode_price(opcode: u8) -> i64 {
         Self::OPCODE_PRICE_TABLE[opcode as usize]

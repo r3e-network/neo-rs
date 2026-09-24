@@ -59,6 +59,7 @@ impl ContractNameOrHashOrId {
         None
     }
 
+    #[must_use]
     pub fn as_id(&self) -> Result<i32, RpcError> {
         match self {
             Self::Id(id) => Ok(*id),
@@ -67,6 +68,7 @@ impl ContractNameOrHashOrId {
         }
     }
 
+    #[must_use]
     pub fn as_hash(&self) -> Result<UInt160, RpcError> {
         match self {
             Self::Hash(hash) => Ok(*hash),
@@ -75,6 +77,7 @@ impl ContractNameOrHashOrId {
         }
     }
 
+    #[must_use]
     pub fn as_name(&self) -> Result<&str, RpcError> {
         match self {
             Self::Name(name) => Ok(name.as_str()),

@@ -5,8 +5,8 @@
 
 #[cfg(test)]
 mod wave1_integration_tests {
+    use neo_core::{Transaction, UInt256};
     use neo_vm::RwSetTracker;
-    use neo_core::{UInt256, Transaction};
     use std::sync::Arc;
 
     fn make_key(value: u64) -> UInt256 {
@@ -28,7 +28,7 @@ mod wave1_integration_tests {
         let sender_balance_key = make_key(0x1000u64);
         rw_set.record_read(sender_balance_key);
 
-        // Contract reads receiver balance  
+        // Contract reads receiver balance
         let receiver_balance_key = make_key(0x2000u64);
         rw_set.record_read(receiver_balance_key);
 
@@ -57,7 +57,10 @@ mod wave1_integration_tests {
         tx1_rws.record_read(shared_key);
         tx2_rws.record_read(shared_key);
 
-        assert!(!tx1_rws.conflicts_with(&tx2_rws), "Read-read should never conflict");
+        assert!(
+            !tx1_rws.conflicts_with(&tx2_rws),
+            "Read-read should never conflict"
+        );
         assert!(!tx2_rws.conflicts_with(&tx1_rws));
     }
 
@@ -76,13 +79,16 @@ mod wave1_integration_tests {
         reader_rws.record_read(storage_key);
 
         // Detection works both directions
-        assert!(writer_rws.conflicts_with(&reader_rws), "Writer must detect reader");
+        assert!(
+            writer_rws.conflicts_with(&reader_rws),
+            "Writer must detect reader"
+        );
         // Note: Reader doesn't conflict with writer from perspective of committing first
         // This is correct - we commit writer, then retry reader if needed
     }
 
     // ============================================
-    // Conflict Detection Tests  
+    // Conflict Detection Tests
     // ============================================
 
     #[test]
@@ -98,27 +104,33 @@ mod wave1_integration_tests {
         tx0_rwset.record_write(conflicting_key);
         tx1_rwset.record_write(conflicting_key);
 
-        detector.submit_tx(0, neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
-            executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
-                height: 1000,
-                hash: UInt256::zero(),
-                tx_index: 0,
-                transaction: Arc::new(Transaction::default()),
-                execution_result: Ok(vec![1]),
+        detector.submit_tx(
+            0,
+            neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
+                executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
+                    height: 1000,
+                    hash: UInt256::zero(),
+                    tx_index: 0,
+                    transaction: Arc::new(Transaction::default()),
+                    execution_result: Ok(vec![1]),
+                },
+                rw_set: tx0_rwset,
             },
-            rw_set: tx0_rwset,
-        });
+        );
 
-        detector.submit_tx(1, neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
-            executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
-                height: 1000,
-                hash: UInt256::zero(),
-                tx_index: 1,
-                transaction: Arc::new(Transaction::default()),
-                execution_result: Ok(vec![2]),
+        detector.submit_tx(
+            1,
+            neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
+                executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
+                    height: 1000,
+                    hash: UInt256::zero(),
+                    tx_index: 1,
+                    transaction: Arc::new(Transaction::default()),
+                    execution_result: Ok(vec![2]),
+                },
+                rw_set: tx1_rwset,
             },
-            rw_set: tx1_rwset,
-        });
+        );
 
         let resolution = detector.resolve_conflicts().unwrap();
 
@@ -153,38 +165,47 @@ mod wave1_integration_tests {
         tx2.record_write(key_c);
         tx2.record_write(key_a);
 
-        detector.submit_tx(0, neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
-            executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
-                height: 1000,
-                hash: UInt256::zero(),
-                tx_index: 0,
-                transaction: Arc::new(Transaction::default()),
-                execution_result: Ok(vec![0]),
+        detector.submit_tx(
+            0,
+            neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
+                executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
+                    height: 1000,
+                    hash: UInt256::zero(),
+                    tx_index: 0,
+                    transaction: Arc::new(Transaction::default()),
+                    execution_result: Ok(vec![0]),
+                },
+                rw_set: tx0,
             },
-            rw_set: tx0,
-        });
+        );
 
-        detector.submit_tx(1, neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
-            executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
-                height: 1000,
-                hash: UInt256::zero(),
-                tx_index: 1,
-                transaction: Arc::new(Transaction::default()),
-                execution_result: Ok(vec![1]),
+        detector.submit_tx(
+            1,
+            neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
+                executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
+                    height: 1000,
+                    hash: UInt256::zero(),
+                    tx_index: 1,
+                    transaction: Arc::new(Transaction::default()),
+                    execution_result: Ok(vec![1]),
+                },
+                rw_set: tx1,
             },
-            rw_set: tx1,
-        });
+        );
 
-        detector.submit_tx(2, neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
-            executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
-                height: 1000,
-                hash: UInt256::zero(),
-                tx_index: 2,
-                transaction: Arc::new(Transaction::default()),
-                execution_result: Ok(vec![2]),
+        detector.submit_tx(
+            2,
+            neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
+                executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
+                    height: 1000,
+                    hash: UInt256::zero(),
+                    tx_index: 2,
+                    transaction: Arc::new(Transaction::default()),
+                    execution_result: Ok(vec![2]),
+                },
+                rw_set: tx2,
             },
-            rw_set: tx2,
-        });
+        );
 
         let resolution = detector.resolve_conflicts().unwrap();
 
@@ -204,35 +225,38 @@ mod wave1_integration_tests {
 
     #[test]
     fn conflict_detection_100_tx() {
-
         // All 100 access sets write the same ten keys.
         let mut tx_sets: Vec<RwSetTracker> = Vec::with_capacity(100);
-        
+
         for _ in 0..100 {
             let mut rws = RwSetTracker::new();
             rws.write_keys.reserve(10);
-            
+
             for i in 0..10 {
                 rws.record_write(make_key(i as u64));
             }
-            
+
             tx_sets.push(rws);
         }
 
         {
             let mut d = neo_core::state_service::conflict_detector::ConflictDetector::new();
-            
+
             for (idx, rws) in tx_sets.iter().enumerate() {
-                d.submit_tx(idx, neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
-                    executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
-                        height: 0,
-                        hash: UInt256::zero(),
-                        tx_index: idx,
-                        transaction: Arc::new(Transaction::default()),
-                        execution_result: Ok(vec![]),
+                d.submit_tx(
+                    idx,
+                    neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
+                        executed_tx:
+                            neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
+                                height: 0,
+                                hash: UInt256::zero(),
+                                tx_index: idx,
+                                transaction: Arc::new(Transaction::default()),
+                                execution_result: Ok(vec![]),
+                            },
+                        rw_set: rws.clone(),
                     },
-                    rw_set: rws.clone(),
-                });
+                );
             }
 
             let resolution = d.resolve_conflicts().unwrap();
@@ -283,16 +307,19 @@ mod wave1_integration_tests {
         let mut rws = RwSetTracker::new();
         rws.record_write(make_key(42u64));
 
-        detector.submit_tx(0, neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
-            executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
-                height: 1000,
-                hash: UInt256::zero(),
-                tx_index: 0,
-                transaction: Arc::new(Transaction::default()),
-                execution_result: Ok(vec![1]),
+        detector.submit_tx(
+            0,
+            neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
+                executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
+                    height: 1000,
+                    hash: UInt256::zero(),
+                    tx_index: 0,
+                    transaction: Arc::new(Transaction::default()),
+                    execution_result: Ok(vec![1]),
+                },
+                rw_set: rws,
             },
-            rw_set: rws,
-        });
+        );
 
         let resolution = detector.resolve_conflicts().unwrap();
 
@@ -313,11 +340,11 @@ mod wave1_integration_tests {
 
         // Should track all instances but still work correctly
         assert_eq!(rws.read_keys.len(), 10);
-        
+
         // Conflict detection still correct despite duplicates
         let mut other = RwSetTracker::new();
         other.record_write(key);
-        
+
         assert!(other.conflicts_with(&rws));
         assert!(!rws.conflicts_with(&other));
     }
@@ -341,27 +368,33 @@ mod wave1_integration_tests {
         tx1.record_write(make_key(4u64));
         tx1.set_gas_used(2000);
 
-        detector.submit_tx(0, neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
-            executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
-                height: 1000,
-                hash: UInt256::zero(),
-                tx_index: 0,
-                transaction: Arc::new(Transaction::default()),
-                execution_result: Ok(vec![]),
+        detector.submit_tx(
+            0,
+            neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
+                executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
+                    height: 1000,
+                    hash: UInt256::zero(),
+                    tx_index: 0,
+                    transaction: Arc::new(Transaction::default()),
+                    execution_result: Ok(vec![]),
+                },
+                rw_set: tx0,
             },
-            rw_set: tx0,
-        });
+        );
 
-        detector.submit_tx(1, neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
-            executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
-                height: 1000,
-                hash: UInt256::zero(),
-                tx_index: 1,
-                transaction: Arc::new(Transaction::default()),
-                execution_result: Ok(vec![]),
+        detector.submit_tx(
+            1,
+            neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
+                executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
+                    height: 1000,
+                    hash: UInt256::zero(),
+                    tx_index: 1,
+                    transaction: Arc::new(Transaction::default()),
+                    execution_result: Ok(vec![]),
+                },
+                rw_set: tx1,
             },
-            rw_set: tx1,
-        });
+        );
 
         let final_rwset = detector.compute_final_rw_set();
 
@@ -379,33 +412,36 @@ mod wave1_integration_tests {
     fn simulate_low_conflict_blockchain_scenario() {
         // Typical scenario: most txs independent (DeFi swaps on different pools)
         let mut detector = neo_core::state_service::conflict_detector::ConflictDetector::new();
-        
+
         const NUM_TXS: usize = 100;
-        
+
         for i in 0..NUM_TXS {
             let mut rws = RwSetTracker::new();
             // Each tx touches unique key (no conflict)
             let unique_key = make_key(i as u64);
             rws.record_write(unique_key);
-            
-            detector.submit_tx(i, neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
-                executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
-                    height: 1000,
-                    hash: UInt256::zero(),
-                    tx_index: i,
-                    transaction: Arc::new(Transaction::default()),
-                    execution_result: Ok(vec![i as u8]),
+
+            detector.submit_tx(
+                i,
+                neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
+                    executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
+                        height: 1000,
+                        hash: UInt256::zero(),
+                        tx_index: i,
+                        transaction: Arc::new(Transaction::default()),
+                        execution_result: Ok(vec![i as u8]),
+                    },
+                    rw_set: rws,
                 },
-                rw_set: rws,
-            });
+            );
         }
 
         let resolution = detector.resolve_conflicts().unwrap();
-        
+
         // With no conflicts, ALL should be non-conflicting
         assert_eq!(resolution.non_conflicting_order.len(), NUM_TXS);
         assert!(resolution.needs_retry.is_empty());
-        
+
         // Expected throughput: ~2-3× improvement over serial
     }
 
@@ -413,33 +449,36 @@ mod wave1_integration_tests {
     fn simulate_high_conflict_scenarion() {
         // Stress scenario: multiple txs modifying same state (popular NFT mint)
         let mut detector = neo_core::state_service::conflict_detector::ConflictDetector::new();
-        
+
         const NUM_TXS: usize = 50;
         let hot_key = make_key(0xFFFFu64);
-        
+
         for i in 0..NUM_TXS {
             let mut rws = RwSetTracker::new();
             // All txs hit same key (maximum conflicts)
             rws.record_write(hot_key);
-            
-            detector.submit_tx(i, neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
-                executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
-                    height: 1000,
-                    hash: UInt256::zero(),
-                    tx_index: i,
-                    transaction: Arc::new(Transaction::default()),
-                    execution_result: Ok(vec![i as u8]),
+
+            detector.submit_tx(
+                i,
+                neo_core::state_service::conflict_detector::ExecutedTransactionWithRwSet {
+                    executed_tx: neo_core::state_service::prefetch_pipeline::ExecutedTransaction {
+                        height: 1000,
+                        hash: UInt256::zero(),
+                        tx_index: i,
+                        transaction: Arc::new(Transaction::default()),
+                        execution_result: Ok(vec![i as u8]),
+                    },
+                    rw_set: rws,
                 },
-                rw_set: rws,
-            });
+            );
         }
 
         let resolution = detector.resolve_conflicts().unwrap();
-        
+
         // Only first tx commits immediately, rest require retry
         assert_eq!(resolution.non_conflicting_order.len(), 1);
         assert_eq!(resolution.needs_retry.len(), NUM_TXS - 1);
-        
+
         // Still better than pure serial due to early commit of first tx
     }
 }

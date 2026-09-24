@@ -2,9 +2,9 @@
 //! Represents a set of mutually trusted contracts identified by a public key
 //! and accompanied by a signature for the contract hash.
 
+use crate::cryptography::Crypto;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use crate::cryptography::Crypto;
 use crate::neo_config::ADDRESS_SIZE;
 use crate::neo_vm::StackItem;
 use crate::smart_contract::interoperable::Interoperable;

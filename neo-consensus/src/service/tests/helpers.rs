@@ -50,7 +50,8 @@ pub(super) fn sign_payload(
     private_key: &[u8; 32],
 ) {
     let sign_data = service.dbft_sign_data(payload).expect("sign data");
-    let signature = Secp256r1Crypto::sign_prehash(&Crypto::sha256(&sign_data), private_key).expect("sign");
+    let signature =
+        Secp256r1Crypto::sign_prehash(&Crypto::sha256(&sign_data), private_key).expect("sign");
     payload.set_witness(signature.to_vec());
 }
 

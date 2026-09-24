@@ -135,7 +135,10 @@ pub struct RpcServerConfig {
     )]
     pub max_batch_size: usize,
     /// Directory that `openwallet` paths must resolve under (empty = process CWD).
-    #[serde(default = "RpcServerConfig::default_wallet_directory", alias = "WalletDirectory")]
+    #[serde(
+        default = "RpcServerConfig::default_wallet_directory",
+        alias = "WalletDirectory"
+    )]
     pub wallet_directory: String,
     /// Maximum concurrent invoke iterator sessions when `SessionEnabled` is true.
     #[serde(

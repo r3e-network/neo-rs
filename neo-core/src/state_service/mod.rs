@@ -3,30 +3,30 @@
 //! This module provides the state root computation and verification service
 //! that matches the C# StateService plugin exactly.
 
+pub mod async_state_root;
 #[cfg(feature = "runtime")]
 pub(crate) mod commit_handlers;
 #[cfg(feature = "runtime")]
 pub mod conflict_detector;
+pub mod keys;
+pub mod message_type;
+/// Metrics counters for state root ingestion from the network.
+pub mod metrics;
 #[cfg(feature = "runtime")]
 pub mod optimistic_executor;
 #[cfg(feature = "runtime")]
 pub mod parallel_execution_integration;
 #[cfg(feature = "runtime")]
 pub mod prefetch_pipeline;
-pub mod async_state_root;
-pub mod keys;
-pub mod message_type;
-/// Metrics counters for state root ingestion from the network.
-pub mod metrics;
 // WIP: the prefetch subsystem (background worker, BlockPrefetchService, pipeline
 // demo) is not yet implemented; gate it behind the `prefetch` feature (not in
 // default) so the default lib still builds without inventing the missing subsystem.
 #[cfg(feature = "prefetch")]
+pub mod pipeline_integration_example;
+#[cfg(feature = "prefetch")]
 pub mod prefetch_background;
 #[cfg(feature = "prefetch")]
 pub mod prefetch_worker;
-#[cfg(feature = "prefetch")]
-pub mod pipeline_integration_example;
 pub mod read_only_store;
 pub mod root_cache;
 pub mod state_root;

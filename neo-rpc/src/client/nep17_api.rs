@@ -72,6 +72,7 @@ impl Nep17Api {
 
     /// Get symbol of NEP17 token
     /// Matches C# `SymbolAsync`
+    #[must_use]
     pub async fn symbol(&self, script_hash: &UInt160) -> Result<String, RpcError> {
         let result = self
             .contract_client
@@ -85,6 +86,7 @@ impl Nep17Api {
 
     /// Get decimals of NEP17 token
     /// Matches C# `DecimalsAsync`
+    #[must_use]
     pub async fn decimals(&self, script_hash: &UInt160) -> Result<u8, RpcError> {
         let result = self
             .contract_client
@@ -99,6 +101,7 @@ impl Nep17Api {
 
     /// Get total supply of NEP17 token
     /// Matches C# `TotalSupplyAsync`
+    #[must_use]
     pub async fn total_supply(&self, script_hash: &UInt160) -> Result<BigInt, RpcError> {
         let result = self
             .contract_client

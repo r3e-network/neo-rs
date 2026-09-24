@@ -21,7 +21,9 @@ async fn test_consensus_start() {
     let validators = create_test_validators(7);
     let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-    service.start(100, 1000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(100, 1000, UInt256::zero(), 0)
+        .expect("consensus service should start");
 
     assert!(service.is_running());
     assert_eq!(service.context().block_index, 100);
@@ -43,10 +45,14 @@ async fn test_primary_calculation() {
     let validators = create_test_validators(7);
     let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-    service.start(0, 1000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 1000, UInt256::zero(), 0)
+        .expect("consensus service should start");
     assert!(service.context().is_primary());
 
-    service.start(1, 1000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(1, 1000, UInt256::zero(), 0)
+        .expect("consensus service should start");
     assert!(!service.context().is_primary());
 }
 
@@ -57,7 +63,9 @@ async fn test_message_deduplication() {
     let (validators, keys) = create_validators_with_keys(7);
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
-    service.start(100, 1000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(100, 1000, UInt256::zero(), 0)
+        .expect("consensus service should start");
 
     // Primary for block 100, view 0 is `(100 - 0) % 7 == 2`.
     assert_eq!(service.context().primary_index(), 2);
@@ -112,7 +120,9 @@ async fn test_message_cache_cleared_on_new_block() {
     let validators = create_test_validators(7);
     let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-    service.start(100, 1000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(100, 1000, UInt256::zero(), 0)
+        .expect("consensus service should start");
 
     let payload = ConsensusPayload::new(
         0x4E454F,
@@ -125,7 +135,9 @@ async fn test_message_cache_cleared_on_new_block() {
 
     let _ = service.process_message(payload.clone());
 
-    service.start(101, 2000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(101, 2000, UInt256::zero(), 0)
+        .expect("consensus service should start");
 
     let result = service.process_message(payload);
     assert!(matches!(result, Err(ConsensusError::WrongBlock { .. })));
@@ -137,7 +149,9 @@ async fn test_replay_attack_prevention() {
     let validators = create_test_validators(7);
     let mut service = ConsensusService::new(0x4E454F, validators, Some(0), vec![], tx);
 
-    service.start(100, 1000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(100, 1000, UInt256::zero(), 0)
+        .expect("consensus service should start");
 
     let payload = ConsensusPayload::new(
         0x4E454F,
@@ -148,7 +162,9 @@ async fn test_replay_attack_prevention() {
         vec![5, 6, 7, 8],
     );
 
-    let msg_hash = service.dbft_payload_hash(&payload).expect("should compute payload hash");
+    let msg_hash = service
+        .dbft_payload_hash(&payload)
+        .expect("should compute payload hash");
 
     assert!(!service.context().has_seen_message(&msg_hash));
 
@@ -170,7 +186,9 @@ async fn invalid_validator_index_rejected() {
     let validators = create_test_validators(4);
     let mut service = ConsensusService::new(network, validators, Some(0), vec![], tx);
 
-    service.start(0, 1_000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
 
     let msg = PrepareRequestMessage::new(0, 99, 0, 0, UInt256::zero(), 1_000, 1, Vec::new());
     let payload = ConsensusPayload::new(
@@ -196,7 +214,9 @@ async fn backup_on_transactions_received_is_noop() {
     let (validators, _keys) = create_validators_with_keys(4);
     let mut service = ConsensusService::new(network, validators, Some(1), vec![], tx);
 
-    service.start(0, 1_000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
 
     service
         .on_transactions_received(vec![UInt256::from([0x11; 32])])
@@ -213,14 +233,20 @@ async fn primary_rotation_across_blocks_is_deterministic() {
     let validators = create_test_validators(7);
     let mut service = ConsensusService::new(network, validators, Some(0), vec![], tx);
 
-    service.start(0, 0, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 0, UInt256::zero(), 0)
+        .expect("consensus service should start");
     assert!(service.context().is_primary());
 
-    service.start(1, 0, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(1, 0, UInt256::zero(), 0)
+        .expect("consensus service should start");
     assert!(!service.context().is_primary());
     assert_eq!(service.context().primary_index(), 1);
 
-    service.start(2, 0, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(2, 0, UInt256::zero(), 0)
+        .expect("consensus service should start");
     assert!(!service.context().is_primary());
     assert_eq!(service.context().primary_index(), 2);
 }

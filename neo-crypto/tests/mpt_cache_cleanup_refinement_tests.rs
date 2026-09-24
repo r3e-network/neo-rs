@@ -98,7 +98,10 @@ fn test_eviction_preserves_consistency() {
     assert_eq!(cache.len(), 50);
     assert!(cache.get(&key(0)).is_none());
     assert!(weak.upgrade().is_some());
-    assert_eq!(held.try_hash().unwrap(), Node::new_leaf(vec![42]).try_hash().unwrap());
+    assert_eq!(
+        held.try_hash().unwrap(),
+        Node::new_leaf(vec![42]).try_hash().unwrap()
+    );
     drop(held);
     assert!(weak.upgrade().is_none());
 }

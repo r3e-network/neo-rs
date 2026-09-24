@@ -9,8 +9,12 @@ fn key(n: u8) -> UInt256 {
 
 fn tracker(reads: &[u8], writes: &[u8]) -> RwSetTracker {
     let mut result = RwSetTracker::new();
-    for &r in reads { result.record_read(key(r)); }
-    for &w in writes { result.record_write(key(w)); }
+    for &r in reads {
+        result.record_read(key(r));
+    }
+    for &w in writes {
+        result.record_write(key(w));
+    }
     result
 }
 
@@ -31,13 +35,21 @@ fn check(ar: &[u8], aw: &[u8], br: &[u8], bw: &[u8]) {
 }
 
 #[test]
-fn empty() { check(&[], &[], &[], &[]); }
+fn empty() {
+    check(&[], &[], &[], &[]);
+}
 #[test]
-fn read_read() { check(&[1], &[], &[1], &[]); }
+fn read_read() {
+    check(&[1], &[], &[1], &[]);
+}
 #[test]
-fn write_write() { check(&[], &[1], &[], &[1]); }
+fn write_write() {
+    check(&[], &[1], &[], &[1]);
+}
 #[test]
-fn write_read() { check(&[], &[1], &[1], &[]); }
+fn write_read() {
+    check(&[], &[1], &[1], &[]);
+}
 #[test]
 fn read_write_is_directional() {
     check(&[1], &[], &[], &[1]);
@@ -47,7 +59,9 @@ fn read_write_is_directional() {
     assert!(writer.conflicts_with(&reader));
 }
 #[test]
-fn disjoint() { check(&[0, 1], &[2, 3], &[4], &[5]); }
+fn disjoint() {
+    check(&[0, 1], &[2, 3], &[4], &[5]);
+}
 #[test]
 fn duplicate_accesses() {
     check(&[1, 1], &[2, 2], &[2, 2], &[3, 3]);
@@ -87,7 +101,10 @@ fn clear_resets_all_observations() {
     assert_eq!(t.total_accesses(), 0);
     assert!(t.notify_events.is_empty() && t.log_events.is_empty());
     assert_eq!(t.gas_used, 0);
-    assert_eq!(t.conflicts_with(&tracker(&[2], &[1])), reference(&[], &[2], &[1]));
+    assert_eq!(
+        t.conflicts_with(&tracker(&[2], &[1])),
+        reference(&[], &[2], &[1])
+    );
 }
 #[test]
 fn reserve_and_clone_preserve_conflicts() {
@@ -104,9 +121,15 @@ fn exhaustive_three_key_universe() {
     fn subset(mask: u8) -> Vec<u8> {
         (0..3).filter(|k| mask & (1 << k) != 0).collect()
     }
-    for ar in 0..8 { for aw in 0..8 { for br in 0..8 { for bw in 0..8 {
-        check(&subset(ar), &subset(aw), &subset(br), &subset(bw));
-    }}}}
+    for ar in 0..8 {
+        for aw in 0..8 {
+            for br in 0..8 {
+                for bw in 0..8 {
+                    check(&subset(ar), &subset(aw), &subset(br), &subset(bw));
+                }
+            }
+        }
+    }
 }
 #[test]
 fn equality_uses_all_256_bits() {

@@ -1,0 +1,301 @@
+{
+  "dashboard": {
+    "title": "Neo N3 - Resource Utilization",
+    "tags": ["neo", "system", "resources"],
+    "timezone": "browser",
+    "refresh": "10s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "CPU Utilization",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "neo_cpu_utilization * 100",
+            "legendFormat": "CPU Usage",
+            "refId": "A"
+          },
+          {
+            "expr": "cpu_usage_ratio * 100",
+            "legendFormat": "CPU Ratio (legacy)",
+            "refId": "B"
+          },
+          {
+            "expr": "90",
+            "legendFormat": "Warning Threshold",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "percent", "label": "CPU %", "min": 0, "max": 100},
+          {"format": "short"}
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [90], "type": "gt"},
+              "query": {"params": ["A", "5m", "now"]},
+              "type": "query"
+            }
+          ],
+          "name": "High CPU utilization alert",
+          "message": "CPU utilization has exceeded 90%"
+        }
+      },
+      {
+        "id": 2,
+        "title": "Memory Usage",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "neo_memory_usage_bytes / (1024 * 1024 * 1024)",
+            "legendFormat": "Used Memory",
+            "refId": "A"
+          },
+          {
+            "expr": "neo_system_memory_total_bytes / (1024 * 1024 * 1024)",
+            "legendFormat": "Total Memory",
+            "refId": "B"
+          },
+          {
+            "expr": "(neo_system_memory_total_bytes * 0.90) / (1024 * 1024 * 1024)",
+            "legendFormat": "90% Threshold",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "decgbytes", "label": "Memory (GB)"},
+          {"format": "short"}
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [0.90], "type": "gt"},
+              "query": {"params": ["A", "2m", "now"]},
+              "type": "query"
+            }
+          ],
+          "name": "High memory usage alert",
+          "message": "Memory usage has exceeded 90% of total"
+        }
+      },
+      {
+        "id": 3,
+        "title": "Memory Usage Percentage",
+        "type": "gauge",
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "(neo_memory_usage_bytes / neo_system_memory_total_bytes) * 100",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": true,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 80, "color": "yellow"},
+                {"value": 90, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "CPU Utilization Percentage",
+        "type": "gauge",
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+        "targets": [
+          {
+            "expr": "neo_cpu_utilization * 100",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": true,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 75, "color": "yellow"},
+                {"value": 90, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Disk Space Usage",
+        "type": "gauge",
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+        "targets": [
+          {
+            "expr": "((neo_storage_total_bytes - neo_storage_free_bytes) / neo_storage_total_bytes) * 100",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": true,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 80, "color": "yellow"},
+                {"value": 90, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Disk Space Details",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "neo_storage_free_bytes / (1024 * 1024 * 1024)",
+            "legendFormat": "Free Space",
+            "refId": "A"
+          },
+          {
+            "expr": "(neo_storage_total_bytes - neo_storage_free_bytes) / (1024 * 1024 * 1024)",
+            "legendFormat": "Used Space",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "decgbytes", "label": "Disk Space (GB)"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Storage I/O Throughput",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "rate(neo_storage_read_bytes_total[1m]) / (1024 * 1024)",
+            "legendFormat": "Read MB/s",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(neo_storage_write_bytes_total[1m]) / (1024 * 1024)",
+            "legendFormat": "Write MB/s",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "MBs", "label": "Throughput"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Network Peers",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "neo_peer_count",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "short"
+        },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"value": 0, "color": "red"},
+            {"value": 3, "color": "yellow"},
+            {"value": 10, "color": "green"}
+          ]
+        }
+      },
+      {
+        "id": 9,
+        "title": "P2P Connections",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 6, "y": 24},
+        "targets": [
+          {
+            "expr": "neo_p2p_connections_inbound",
+            "legendFormat": "Inbound",
+            "refId": "A"
+          },
+          {
+            "expr": "neo_p2p_connections_outbound",
+            "legendFormat": "Outbound",
+            "refId": "B"
+          },
+          {
+            "expr": "neo_peer_count",
+            "legendFormat": "Total Peers",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Connections"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Network Throughput",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 24},
+        "targets": [
+          {
+            "expr": "rate(neo_p2p_messages_received_bytes_total[1m]) / 1024",
+            "legendFormat": "Received KB/s",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(neo_p2p_messages_sent_bytes_total[1m]) / 1024",
+            "legendFormat": "Sent KB/s",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "KBs", "label": "Network KB/s"},
+          {"format": "short"}
+        ]
+      }
+    ]
+  }
+}

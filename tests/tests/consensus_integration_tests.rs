@@ -452,14 +452,17 @@ async fn r01_primary_request_and_response_share_one_vote_slot() {
     ctx.preparation_hash = Some(UInt256::zero());
     // The primary's extra response must occupy its existing slot, adding no
     // second vote.
-    ctx.add_prepare_response(0, vec![], Some(UInt256::zero())).unwrap();
+    ctx.add_prepare_response(0, vec![], Some(UInt256::zero()))
+        .unwrap();
     assert!(!ctx.has_enough_prepare_responses());
 
-    ctx.add_prepare_response(2, vec![], Some(UInt256::zero())).unwrap();
+    ctx.add_prepare_response(2, vec![], Some(UInt256::zero()))
+        .unwrap();
     // Old counting: request (1) + responses (2) = 3 >= M -> wrongly enough.
     assert!(!ctx.has_enough_prepare_responses());
 
-    ctx.add_prepare_response(3, vec![], Some(UInt256::zero())).unwrap();
+    ctx.add_prepare_response(3, vec![], Some(UInt256::zero()))
+        .unwrap();
     assert!(ctx.has_enough_prepare_responses());
 }
 
@@ -470,11 +473,14 @@ async fn r01_primary_response_counts_once_without_request() {
     let mut ctx = ConsensusContext::new(100, validators, Some(1), None);
     ctx.preparation_hash = Some(UInt256::zero());
 
-    ctx.add_prepare_response(0, vec![], Some(UInt256::zero())).unwrap(); // primary's vote
-    ctx.add_prepare_response(1, vec![], Some(UInt256::zero())).unwrap();
+    ctx.add_prepare_response(0, vec![], Some(UInt256::zero()))
+        .unwrap(); // primary's vote
+    ctx.add_prepare_response(1, vec![], Some(UInt256::zero()))
+        .unwrap();
     assert!(!ctx.has_enough_prepare_responses());
 
-    ctx.add_prepare_response(3, vec![], Some(UInt256::zero())).unwrap();
+    ctx.add_prepare_response(3, vec![], Some(UInt256::zero()))
+        .unwrap();
     assert!(ctx.has_enough_prepare_responses());
 }
 

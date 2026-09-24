@@ -3,7 +3,7 @@
 //! These benchmarks measure cache hit rates, eviction behavior, and overall
 //  latency improvements from prefetching native contract account states.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_core::state_service::AccountPrefetchCache;
 use neo_primitives::UInt160;
 use std::sync::Arc;
@@ -56,13 +56,13 @@ fn bench_lru_eviction(c: &mut Criterion) {
 
 fn bench_prefetch_simulation(c: &mut Criterion) {
     let cache = AccountPrefetchCache::new();
-    
+
     // Simulate a typical transfer transaction: sender + receiver access
     let sender = UInt160::repeat_byte(0x01);
     let receiver = UInt160::repeat_byte(0x02);
     let accounts_to_touch = vec![sender, receiver];
     let transactions = 1000;
-    
+
     c.bench_function("prefetch_simulation_1k_transfers", |b| {
         b.iter(|| {
             // Phase 1: Prefetch (cold - no cache warmup yet)
@@ -72,12 +72,12 @@ fn bench_prefetch_simulation(c: &mut Criterion) {
                     cache.cache.write().put(*acc, data);
                 }
             }
-            
+
             // Phase 2: Warm - simulate real transaction execution
             for _ in 0..transactions {
                 // Sender balance check (hit)
                 cache.get_cached(&sender);
-                
+
                 // Receiver balance check (hit)
                 cache.get_cached(&receiver);
             }
@@ -93,12 +93,12 @@ fn bench_metrics_overhead(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..1000 {
                 if i % 10 == 0 {
-                    cache.record_access(true);  // Hit
+                    cache.record_access(true); // Hit
                 } else {
                     cache.record_access(false); // Miss
                 }
             }
-            
+
             // Verify metrics updated
             let metrics = cache.metrics();
             assert_eq!(metrics.cache_hits + metrics.cache_misses, 1000);
@@ -107,9 +107,11 @@ fn bench_metrics_overhead(c: &mut Criterion) {
 }
 
 fn bench_extract_account_refs(c: &mut Criterion) {
-    use neo_core::network::p2p::payloads::{Transaction, Signer, TransactionAttribute, TransactionAttributeType, Witness};
+    use neo_core::network::p2p::payloads::{
+        Signer, Transaction, TransactionAttribute, TransactionAttributeType, Witness,
+    };
     use neo_primitives::ContractParameterType;
-    
+
     // Create a realistic transaction with signers
     let tx = Transaction {
         script: vec![/* dummy bytecode */ 0x01, 0x02, 0x03],
@@ -122,13 +124,11 @@ fn bench_extract_account_refs(c: &mut Criterion) {
         version: 0,
         nonce: 0,
         signer_count: 2,
-        scripts: vec![
-            Witness {
-                invocation_script: vec![],
-                verification_script: vec![0x01, 0x40, /* contract hash here */],
-                authorization_script: vec![],
-            }
-        ],
+        scripts: vec![Witness {
+            invocation_script: vec![],
+            verification_script: vec![0x01, 0x40 /* contract hash here */],
+            authorization_script: vec![],
+        }],
         signers: vec![
             Signer {
                 id: 0,
@@ -143,10 +143,10 @@ fn bench_extract_account_refs(c: &mut Criterion) {
                 rules: vec![],
                 scopes: Some(neo_primitives::WitnessScope::Global),
                 account: UInt160::repeat_byte(0xBB),
-            }
+            },
         ],
     };
-    
+
     c.bench_function("extract_accounts_from_transaction", |b| {
         b.iter(|| {
             // This would normally call extract_account_refs, but it's private

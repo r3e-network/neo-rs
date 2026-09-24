@@ -9,6 +9,7 @@ use super::parsing::{
 };
 
 /// Converts a `neo-json` representation of an RPC stack item into `neo-vm-rs`.
+#[must_use]
 pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
     let item_type = json
         .get("type")
@@ -78,6 +79,7 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, String> {
 }
 
 /// Converts an RPC stack value into its `neo-json` representation.
+#[must_use]
 pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
     let mut json = JObject::new();
     json.insert(
@@ -131,6 +133,7 @@ pub fn stack_item_to_json(item: &StackValue) -> Result<JObject, String> {
     Ok(json)
 }
 
+#[must_use]
 pub fn stack_items_to_json(items: &[StackValue]) -> Result<JToken, String> {
     fallible_object_array(items, stack_item_to_json)
 }
@@ -193,6 +196,7 @@ fn insert_base64_value(json: &mut JObject, bytes: &[u8]) {
     );
 }
 
+#[must_use]
 pub fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
     match value {
         StackValue::Boolean(value) => Ok(BigInt::from(if *value { 1 } else { 0 })),
@@ -214,6 +218,7 @@ pub fn stack_value_to_bool(value: &StackValue) -> bool {
     value.to_bool()
 }
 
+#[must_use]
 pub fn stack_value_to_string(value: &StackValue) -> Result<String, String> {
     match value {
         StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {

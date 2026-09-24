@@ -26,6 +26,7 @@ pub fn internal_error(message: impl ToString) -> RpcException {
 
 /// Serializes a Neo wire-compatible payload and encodes it with standard Base64.
 #[inline]
+#[must_use]
 pub fn serialize_to_base64<T>(value: &T) -> Result<String, RpcException>
 where
     T: Serializable,
@@ -110,6 +111,7 @@ pub fn decode_trimmed_base64_text(
 
 /// Extracts a u32 parameter from JSON-RPC params.
 #[inline]
+#[must_use]
 pub fn expect_u32_param(params: &[Value], index: usize, method: &str) -> Result<u32, RpcException> {
     let value = params.get(index).ok_or_else(|| {
         invalid_params(format!(
@@ -132,6 +134,7 @@ pub fn expect_u32_param(params: &[Value], index: usize, method: &str) -> Result<
 
 /// Extracts a u64 parameter from JSON-RPC params.
 #[inline]
+#[must_use]
 pub fn expect_u64_param(params: &[Value], index: usize, method: &str) -> Result<u64, RpcException> {
     let value = params.get(index).ok_or_else(|| {
         invalid_params(format!(
@@ -202,6 +205,7 @@ pub fn expect_hash_param(
 
 /// Parses an optional boolean parameter (defaults to false).
 #[inline]
+#[must_use]
 pub fn parse_verbose(param: Option<&Value>) -> Result<bool, RpcException> {
     match param {
         None | Some(Value::Null) => Ok(false),

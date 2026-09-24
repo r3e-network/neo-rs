@@ -41,9 +41,9 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use tracing::{debug, trace};
 
-use neo_primitives::UInt256;
 use crate::error::CoreResult;
 use crate::persistence::store_snapshot::StoreSnapshot;
+use neo_primitives::UInt256;
 use neo_storage::persistence::seek_direction::SeekDirection;
 
 /// Read-only store backed by RocksDB snapshot
@@ -99,11 +99,7 @@ impl ReadOnlyStore {
     }
 
     /// Get leaf node hash at specific depth in trie
-    pub fn get_leaf_at_depth(
-        &self,
-        path_prefix: &[u8],
-        depth: usize,
-    ) -> Option<UInt256> {
+    pub fn get_leaf_at_depth(&self, path_prefix: &[u8], depth: usize) -> Option<UInt256> {
         // Placeholder - actual implementation would traverse MPT structure
         // This requires integrating with Trie type from neo-crypto
         debug!(
@@ -155,10 +151,7 @@ pub struct SeekableIterator<'a> {
 
 impl<'a> SeekableIterator<'a> {
     /// Create new iterator from snapshot and prefix
-    fn from_snapshot(
-        snapshot: Arc<dyn StoreSnapshot>,
-        prefix: &[u8],
-    ) -> Self {
+    fn from_snapshot(snapshot: Arc<dyn StoreSnapshot>, prefix: &[u8]) -> Self {
         Self {
             snapshot,
             prefix: prefix.to_vec(),
@@ -206,11 +199,7 @@ pub trait StateQueryExt {
     fn get_contract_storage(&self, contract_id: &[u8]) -> Vec<(Cow<'_, [u8]>, Cow<'_, [u8]>)>;
 
     /// Get account balance at specific height
-    fn get_account_balance(
-        &self,
-        account: &[u8],
-        asset: &[u8],
-    ) -> Option<u64>;
+    fn get_account_balance(&self, account: &[u8], asset: &[u8]) -> Option<u64>;
 }
 
 impl StateQueryExt for ReadOnlyStore {
@@ -221,11 +210,7 @@ impl StateQueryExt for ReadOnlyStore {
             .collect()
     }
 
-    fn get_account_balance(
-        &self,
-        _account: &[u8],
-        _asset: &[u8],
-    ) -> Option<u64> {
+    fn get_account_balance(&self, _account: &[u8], _asset: &[u8]) -> Option<u64> {
         // Placeholder - would parse Neo balance storage format
         None
     }
@@ -255,7 +240,8 @@ mod mpt_trie_cache {
                 self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 Some(value.clone())
             } else {
-                self.misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.misses
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 None
             }
         }
@@ -284,10 +270,10 @@ mod mpt_trie_cache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_storage::persistence::{Store, ReadOnlyStoreGeneric, WriteStore};
     use neo_storage::StorageResult;
-    use neo_storage::persistence::store_snapshot::SnapshotCommitResult;
     use neo_storage::persistence::seek_direction::SeekDirection;
+    use neo_storage::persistence::store_snapshot::SnapshotCommitResult;
+    use neo_storage::persistence::{ReadOnlyStoreGeneric, Store, WriteStore};
 
     #[test]
     fn test_read_only_store_creation() {

@@ -227,6 +227,7 @@ pub fn new_array_default_value_for_neovm_type_tag(type_tag: u8) -> StackValue {
 /// NeoVM byte syscalls accept ByteString and Buffer values as raw bytes. This
 /// deliberately does not accept BigInteger, even though it has a byte
 /// representation, because syscall argument validation is type based.
+#[must_use]
 pub fn pop_byte_arg(stack: &mut Vec<StackValue>, context: &str) -> Result<Vec<u8>, String> {
     match stack.pop() {
         Some(StackValue::ByteString(bytes)) | Some(StackValue::Buffer(bytes)) => Ok(bytes),

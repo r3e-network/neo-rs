@@ -25,8 +25,8 @@ use k256::{
 };
 use p256::{
     AffinePoint as P256AffinePoint, EncodedPoint as P256EncodedPoint,
-    ecdsa::signature::hazmat::PrehashVerifier,
     ecdsa::signature::Verifier,
+    ecdsa::signature::hazmat::PrehashVerifier,
     ecdsa::{
         Signature as P256Signature, SigningKey as P256SigningKey, VerifyingKey as P256VerifyingKey,
     },

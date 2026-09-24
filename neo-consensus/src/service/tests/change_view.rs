@@ -17,7 +17,9 @@ async fn timer_tick_triggers_change_view_broadcast() {
     let (validators, keys) = create_validators_with_keys(4);
     let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
 
-    service.start(0, 0, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 0, UInt256::zero(), 0)
+        .expect("consensus service should start");
     service
         .on_timer_tick(crate::context::BLOCK_TIME_MS * 2 + 1)
         .expect("timer tick should succeed");
@@ -41,7 +43,10 @@ async fn timer_tick_triggers_change_view_broadcast() {
     )
     .expect("change view deserialize");
     assert_eq!(msg.reason, ChangeViewReason::Timeout);
-    assert_eq!(msg.new_view_number().expect("should have new view number"), 1);
+    assert_eq!(
+        msg.new_view_number().expect("should have new view number"),
+        1
+    );
 }
 
 #[tokio::test]
@@ -51,7 +56,9 @@ async fn view_change_rotates_primary_by_view() {
     let validators = create_test_validators(7);
     let mut service = ConsensusService::new(network, validators, Some(0), vec![], tx);
 
-    service.start(10, 0, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(10, 0, UInt256::zero(), 0)
+        .expect("consensus service should start");
     assert_eq!(service.context().primary_index(), 3);
 
     service
@@ -72,7 +79,9 @@ async fn timeout_view_change_allows_new_prepare_request() {
     let (validators, keys) = create_validators_with_keys(4);
     let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
 
-    service.start(0, 0, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 0, UInt256::zero(), 0)
+        .expect("consensus service should start");
     while rx.try_recv().is_ok() {}
 
     service
@@ -97,7 +106,9 @@ async fn timeout_view_change_allows_new_prepare_request() {
         change_view.validator_index,
     )
     .expect("change view message");
-    let new_view = change_view_msg.new_view_number().expect("should have new view number");
+    let new_view = change_view_msg
+        .new_view_number()
+        .expect("should have new view number");
 
     let validator_count = service.context.validator_count() as i64;
     let new_primary =
@@ -107,11 +118,15 @@ async fn timeout_view_change_allows_new_prepare_request() {
         .context
         .reset_for_new_view(new_view, change_view_msg.timestamp);
     let new_deadline = service.context().view_start_time + service.context().get_timeout();
-    service.on_timer_tick(new_deadline + 1).expect("timer tick should succeed");
+    service
+        .on_timer_tick(new_deadline + 1)
+        .expect("timer tick should succeed");
     while rx.try_recv().is_ok() {}
 
     let tx_hashes = vec![UInt256::from([0x33; 32])];
-    service.on_transactions_received(tx_hashes.clone()).expect("should process transactions");
+    service
+        .on_transactions_received(tx_hashes.clone())
+        .expect("should process transactions");
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
@@ -142,7 +157,9 @@ async fn view_change_allows_consensus_to_complete() {
     let (validators, keys) = create_validators_with_keys(4);
     let mut service = ConsensusService::new(network, validators, Some(3), keys[3].to_vec(), tx);
 
-    service.start(0, 1_000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
     while rx.try_recv().is_ok() {}
 
     for validator_index in 0..=2 {
@@ -162,7 +179,9 @@ async fn view_change_allows_consensus_to_complete() {
             msg.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).expect("should process message");
+        service
+            .process_message(payload)
+            .expect("should process message");
     }
 
     let mut requested = false;
@@ -177,10 +196,14 @@ async fn view_change_allows_consensus_to_complete() {
     assert_eq!(service.context().view_number, 1);
     assert!(service.context().is_primary());
     let new_deadline = service.context().view_start_time + service.context().get_timeout();
-    service.on_timer_tick(new_deadline + 1).expect("timer tick should succeed");
+    service
+        .on_timer_tick(new_deadline + 1)
+        .expect("timer tick should succeed");
 
     let tx_hashes = vec![UInt256::from([0x44; 32])];
-    service.on_transactions_received(tx_hashes.clone()).expect("should process transactions");
+    service
+        .on_transactions_received(tx_hashes.clone())
+        .expect("should process transactions");
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
@@ -209,7 +232,9 @@ async fn view_change_allows_consensus_to_complete() {
             response.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).expect("should process message");
+        service
+            .process_message(payload)
+            .expect("should process message");
     }
 
     let mut commit_payload = None;
@@ -241,7 +266,9 @@ async fn view_change_allows_consensus_to_complete() {
             commit.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).expect("should process message");
+        service
+            .process_message(payload)
+            .expect("should process message");
     }
 
     let mut committed = None;
@@ -262,7 +289,9 @@ async fn change_view_threshold_triggers_view_change() {
     let (validators, keys) = create_validators_with_keys(4);
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
-    service.start(0, 1_000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
 
     for validator_index in 1..=3 {
         let msg = ChangeViewMessage::new(
@@ -281,7 +310,9 @@ async fn change_view_threshold_triggers_view_change() {
             msg.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).expect("should process message");
+        service
+            .process_message(payload)
+            .expect("should process message");
     }
 
     let mut view_changed = None;
@@ -314,7 +345,9 @@ async fn recovery_request_when_more_than_f_committed() {
     let (validators, keys) = create_validators_with_keys(4);
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
-    service.start(0, 1_000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
     while rx.try_recv().is_ok() {}
 
     // Simulate 2 nodes committed (F=1 for 4 validators, so 2 > F)
@@ -332,7 +365,9 @@ async fn recovery_request_when_more_than_f_committed() {
             commit.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).expect("should process message");
+        service
+            .process_message(payload)
+            .expect("should process message");
     }
 
     service
@@ -366,7 +401,9 @@ async fn stale_change_view_only_sends_one_recovery_response() {
     let (validators, keys) = create_validators_with_keys(4);
     let mut service = ConsensusService::new(network, validators, Some(2), keys[2].to_vec(), tx);
 
-    service.start(0, 1_000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
     service.context.reset_for_new_view(1, 2_000);
     let message = ChangeViewMessage::new(0, 0, 1, 1_500, ChangeViewReason::Timeout);
     let mut payload = ConsensusPayload::new(
@@ -379,8 +416,12 @@ async fn stale_change_view_only_sends_one_recovery_response() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload.clone()).expect("should process message");
-    service.process_message(payload).expect("should process message");
+    service
+        .process_message(payload.clone())
+        .expect("should process message");
+    service
+        .process_message(payload)
+        .expect("should process message");
 
     let recovery_count = std::iter::from_fn(|| rx.try_recv().ok())
         .filter(|event| matches!(event, ConsensusEvent::BroadcastMessage(payload) if payload.message_type == ConsensusMessageType::RecoveryMessage))
@@ -398,7 +439,9 @@ async fn no_view_change_after_commit_sent() {
     let (validators, keys) = create_validators_with_keys(4);
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
-    service.start(0, 1_000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
 
     let block_hash = UInt256::from([0x66; 32]);
     service.context.proposed_block_hash = Some(block_hash);
@@ -416,7 +459,9 @@ async fn no_view_change_after_commit_sent() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).expect("should process message");
+    service
+        .process_message(payload)
+        .expect("should process message");
 
     assert_eq!(service.context.view_number, 0);
     assert!(service.context.change_views.is_empty());
@@ -429,7 +474,9 @@ async fn m_minus_one_change_views_not_enough() {
     let (validators, keys) = create_validators_with_keys(4);
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
-    service.start(0, 1_000, UInt256::zero(), 0).expect("consensus service should start");
+    service
+        .start(0, 1_000, UInt256::zero(), 0)
+        .expect("consensus service should start");
 
     // M = 4 - 1 = 3, send only 2 ChangeView messages (M-1)
     for validator_index in 1..=2 {
@@ -449,7 +496,9 @@ async fn m_minus_one_change_views_not_enough() {
             msg.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).expect("should process message");
+        service
+            .process_message(payload)
+            .expect("should process message");
     }
 
     assert_eq!(service.context.view_number, 0);

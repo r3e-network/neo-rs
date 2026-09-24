@@ -5,12 +5,16 @@
 use super::*;
 
 impl Blockchain {
-    #[tracing::instrument(name = "blockchain_tx_exists", skip(self, tx, snapshot), fields(tx_hash = %tx.hash().unwrap_or_default()))]
+    #[tracing::instrument(name = "blockchain_tx_exists", skip(self, tx, snapshot), fields(tx_hash = tracing::field::Empty))]
     pub(super) fn transaction_exists_on_chain(
         &self,
         tx: &Transaction,
         snapshot: &StoreCache,
     ) -> bool {
+        let span = tracing::Span::current();
+        if let Ok(hash) = tx.try_hash() {
+            span.record("tx_hash", &tracing::field::display(&hash));
+        }
         let hash = match tx.try_hash() {
             Ok(hash) => hash,
             Err(error) => {
@@ -70,8 +74,12 @@ impl Blockchain {
             })
     }
 
-    #[tracing::instrument(name = "blockchain_new_tx", skip(self, transaction), fields(tx_hash = %transaction.hash().unwrap_or_default()))]
+    #[tracing::instrument(name = "blockchain_new_tx", skip(self, transaction), fields(tx_hash = tracing::field::Empty))]
     pub(super) fn on_new_transaction(&self, transaction: &Transaction) -> VerifyResult {
+        let span = tracing::Span::current();
+        if let Ok(hash) = transaction.try_hash() {
+            span.record("tx_hash", &tracing::field::display(&hash));
+        }
         let Some(context) = &self.system_context else {
             return VerifyResult::Invalid;
         };
@@ -141,8 +149,11 @@ impl Blockchain {
         let snapshot = store_cache.data_cache();
         let settings = context.protocol_settings();
 
-        memory_pool
-            .lock()
-            .try_add(transaction.clone(), snapshot, &settings)
+        // Pass to mempool - scope the lock to avoid lifetime issues
+        let result = {
+            let mut pool = memory_pool.lock();
+            pool.try_add(transaction.clone(), snapshot, &settings)
+        };
+        result
     }
 }

@@ -231,7 +231,9 @@ impl Secp256r1Crypto {
         let verifying_key = VerifyingKey::from(public_key);
         let signature = Signature::try_from(signature.as_slice())
             .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
-        Ok(verifying_key.verify_prehash(message_digest, &signature).is_ok())
+        Ok(verifying_key
+            .verify_prehash(message_digest, &signature)
+            .is_ok())
     }
 
     /// Signs NeoFS data using P-256 over a SHA-512 prehash.

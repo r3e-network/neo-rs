@@ -80,10 +80,7 @@ pub(super) fn invoke_script(server: &RpcServer, params: &[Value]) -> Result<Valu
         "invalid script payload",
     )?;
 
-    tracing::debug!(
-        script_length = script.len(),
-        "Invoking script"
-    );
+    tracing::debug!(script_length = script.len(), "Invoking script");
 
     let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(1))?;
     let use_diagnostic = params
@@ -210,9 +207,7 @@ fn execute_script(
 
     if server.session_enabled() && session.has_iterators() {
         server.purge_expired_sessions();
-        let session_id = server
-            .store_session(session)
-            .map_err(RpcException::from)?;
+        let session_id = server.store_session(session).map_err(RpcException::from)?;
         result.insert("session".to_string(), Value::String(session_id.to_string()));
     }
 

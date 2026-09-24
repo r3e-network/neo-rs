@@ -4,7 +4,7 @@
 //! `to_message_bytes` / `from_message_bytes` — across thousands of random
 //! inputs, asserting the wire format invariants and a full round-trip.
 
-use neo_consensus::{messages::ConsensusPayload, ConsensusMessageType};
+use neo_consensus::{ConsensusMessageType, messages::ConsensusPayload};
 use proptest::prelude::*;
 
 /// Strategy that always yields one of the six real dBFT message types.
@@ -112,6 +112,10 @@ fn wire_format_length_invariants() {
             ConsensusMessageType::Commit,
             vec![0u8; data_len],
         );
-        assert_eq!(payload.to_message_bytes().len(), 7 + data_len, "wire length for body {data_len}");
+        assert_eq!(
+            payload.to_message_bytes().len(),
+            7 + data_len,
+            "wire length for body {data_len}"
+        );
     }
 }

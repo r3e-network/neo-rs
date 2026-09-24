@@ -19,10 +19,10 @@
 //!     <blocks.json> <out_rust.json>
 
 use neo_core::cryptography::Secp256r1Crypto;
-use neo_core::network::p2p::payloads::Block;
-use neo_core::network::p2p::helper::get_sign_data;
 use neo_core::neo_io::{MemoryReader, Serializable};
-use serde_json::{json, Value};
+use neo_core::network::p2p::helper::get_sign_data;
+use neo_core::network::p2p::payloads::Block;
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 const PUSH1: u8 = 0x0c;

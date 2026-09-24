@@ -3,7 +3,7 @@
 //! This benchmark demonstrates the performance improvement from using
 //! cuckoo hash lookup instead of HashMap for built-in syscall dispatch.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_vm::syscalls;
 use sha2::{Digest, Sha256};
 

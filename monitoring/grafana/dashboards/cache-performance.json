@@ -1,0 +1,215 @@
+{
+  "dashboard": {
+    "title": "Neo N3 - Cache Performance",
+    "tags": ["neo", "cache", "performance"],
+    "timezone": "browser",
+    "refresh": "10s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Cache Hit Rate",
+        "type": "graph",
+        "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "neo_cache_hit_rate",
+            "legendFormat": "Hit Rate",
+            "refId": "A"
+          },
+          {
+            "expr": "0.80",
+            "legendFormat": "Warning Threshold",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "percentunit", "label": "Hit Rate", "min": 0, "max": 1},
+          {"format": "short"}
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [0.80], "type": "lt"},
+              "query": {"params": ["A", "5m", "now"]},
+              "type": "query"
+            }
+          ],
+          "name": "Low cache hit rate alert",
+          "message": "Cache hit rate has dropped below 80%"
+        }
+      },
+      {
+        "id": 2,
+        "title": "Current Cache Hit Rate",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 12, "x": 0, "y": 10},
+        "targets": [
+          {
+            "expr": "neo_cache_hit_rate * 100",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "percent"
+        },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"value": 0, "color": "red"},
+            {"value": 80, "color": "yellow"},
+            {"value": 90, "color": "green"}
+          ]
+        }
+      },
+      {
+        "id": 3,
+        "title": "Storage Cache Hit Rate (Calculated)",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 12, "x": 12, "y": 10},
+        "targets": [
+          {
+            "expr": "100 * neo_storage_cache_hits_total / (neo_storage_cache_hits_total + neo_storage_cache_misses_total)",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "percent"
+        },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"value": 0, "color": "red"},
+            {"value": 80, "color": "yellow"},
+            {"value": 90, "color": "green"}
+          ]
+        }
+      },
+      {
+        "id": 4,
+        "title": "Cache Operations Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "rate(neo_storage_cache_hits_total[1m])",
+            "legendFormat": "Cache Hits/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(neo_storage_cache_misses_total[1m])",
+            "legendFormat": "Cache Misses/sec",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Operations/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Cumulative Cache Operations",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "neo_storage_cache_hits_total",
+            "legendFormat": "Total Hits",
+            "refId": "A"
+          },
+          {
+            "expr": "neo_storage_cache_misses_total",
+            "legendFormat": "Total Misses",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Count"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Cuckoo Hash Performance",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "rate(neo_cuckoo_hash_lookups_total[1m])",
+            "legendFormat": "Successful Lookups/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(neo_cuckoo_hash_lookups_miss_total[1m])",
+            "legendFormat": "Failed Lookups/sec",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Lookups/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Cuckoo Hash Hit Rate",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+        "targets": [
+          {
+            "expr": "100 * neo_cuckoo_hash_lookups_total / (neo_cuckoo_hash_lookups_total + neo_cuckoo_hash_lookups_miss_total)",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "unit": "percent"
+        },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"value": 0, "color": "red"},
+            {"value": 70, "color": "yellow"},
+            {"value": 90, "color": "green"}
+          ]
+        }
+      },
+      {
+        "id": 8,
+        "title": "Storage I/O Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32},
+        "targets": [
+          {
+            "expr": "rate(neo_storage_reads_total[1m])",
+            "legendFormat": "Reads/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(neo_storage_writes_total[1m])",
+            "legendFormat": "Writes/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(neo_storage_deletes_total[1m])",
+            "legendFormat": "Deletes/sec",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Operations/sec"},
+          {"format": "short"}
+        ]
+      }
+    ]
+  }
+}

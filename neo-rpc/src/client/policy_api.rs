@@ -38,6 +38,7 @@ impl PolicyApi {
 
     /// Get Fee Factor
     /// Matches C# `GetExecFeeFactorAsync`
+    #[must_use]
     pub async fn get_exec_fee_factor(&self) -> Result<u32, RpcError> {
         let result = self
             .contract_client
@@ -52,6 +53,7 @@ impl PolicyApi {
 
     /// Get Storage Price
     /// Matches C# `GetStoragePriceAsync`
+    #[must_use]
     pub async fn get_storage_price(&self) -> Result<u32, RpcError> {
         let result = self
             .contract_client
@@ -66,6 +68,7 @@ impl PolicyApi {
 
     /// Get Network Fee Per Byte
     /// Matches C# `GetFeePerByteAsync`
+    #[must_use]
     pub async fn get_fee_per_byte(&self) -> Result<i64, RpcError> {
         let result = self
             .contract_client
@@ -80,6 +83,7 @@ impl PolicyApi {
 
     /// Get Policy Blocked Accounts
     /// Matches C# `IsBlockedAsync`
+    #[must_use]
     pub async fn is_blocked(&self, account: &UInt160) -> Result<bool, RpcError> {
         let result = self
             .contract_client

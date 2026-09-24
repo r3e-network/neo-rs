@@ -1,7 +1,6 @@
 use super::*;
 use crate::smart_contract::ContractBasicMethod;
 use std::sync::OnceLock;
-
 fn trace_block_range() -> Option<(u32, u32)> {
     static RANGE: OnceLock<Option<(u32, u32)>> = OnceLock::new();
     *RANGE.get_or_init(|| {
@@ -21,7 +20,6 @@ fn trace_block_range() -> Option<(u32, u32)> {
         })
     })
 }
-
 impl ApplicationEngine {
     pub(crate) fn should_trace_block(block_idx: u32) -> bool {
         trace_block_range()
@@ -32,10 +30,8 @@ impl ApplicationEngine {
         if let Some(contract) = self.contracts.get(hash) {
             return Ok(contract.clone());
         }
-
         let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
         let diag = Self::should_trace_block(block_idx);
-
         match ContractManagement::get_contract_from_snapshot(self.snapshot_cache.as_ref(), hash) {
             Ok(Some(contract)) => {
                 if diag {
@@ -56,7 +52,6 @@ impl ApplicationEngine {
                 return Err(Error::invalid_operation(e.to_string()));
             }
         }
-
         if let Some(native) = self.native_registry.get(hash) {
             let block_height = self.current_block_index();
             if let Some(contract) = native.contract_state(&self.protocol_settings, block_height) {
@@ -67,17 +62,14 @@ impl ApplicationEngine {
                 return Ok(contract);
             }
         }
-
         if diag {
             tracing::warn!(target: "neo", block_index = block_idx, %hash, "TRACE: fetch_contract FAILED - not found anywhere");
         }
         Err(Error::not_found(format!("Contract not found: {hash:?}")))
     }
-
     fn is_contract_blocked(&mut self, contract_hash: &UInt160) -> Result<bool> {
         PolicyContract::new().is_blocked_snapshot(self.snapshot_cache.as_ref(), contract_hash)
     }
-
     /// Refreshes the engine's per-tx contract cache after ContractManagement
     /// mutates a contract record. Without this, a queued `_deploy` invocation
     /// would re-fetch the OLD cached `ContractState` and execute the previous
@@ -85,7 +77,6 @@ impl ApplicationEngine {
     pub fn put_contract_cache(&mut self, hash: UInt160, contract: ContractState) {
         self.contracts.insert(hash, contract);
     }
-
     #[allow(clippy::too_many_arguments)]
     pub(super) fn load_contract_context(
         &mut self,
@@ -102,16 +93,13 @@ impl ApplicationEngine {
                 "Method offset cannot be negative".to_string(),
             ));
         }
-
         let script_bytes = contract.nef.script.clone();
         let rvcount = if has_return_value { 1 } else { 0 };
         let offset = method.offset as usize;
-
         let contract_clone = contract.clone();
         let method_clone = method.clone();
         let prev_context_clone = previous_context.clone();
         let prev_hash = previous_hash;
-
         let context = self.load_script_with_state(script_bytes, rvcount, offset, move |state| {
             state.call_flags = flags;
             state.contract = Some(contract_clone.clone());
@@ -129,7 +117,6 @@ impl ApplicationEngine {
             state.calling_context = prev_context_clone.clone();
             state.calling_script_hash = prev_hash;
         })?;
-
         if let Some(init) = contract.manifest.abi.get_method_ref(
             ContractBasicMethod::INITIALIZE,
             ContractBasicMethod::INITIALIZE_P_COUNT as usize,
@@ -139,7 +126,6 @@ impl ApplicationEngine {
                     "Initialization method offset cannot be negative".to_string(),
                 ));
             }
-
             let init_context = context.clone_with_position(init.offset as usize);
             self.vm_engine
                 .engine_mut()
@@ -147,10 +133,8 @@ impl ApplicationEngine {
                 .map_err(|e| Error::invalid_operation(e.to_string()))?;
             self.refresh_context_tracking()?;
         }
-
         Ok(context)
     }
-
     pub(super) fn call_contract_internal(
         &mut self,
         contract: &ContractState,
@@ -167,27 +151,23 @@ impl ApplicationEngine {
                 args.len()
             )));
         }
-
         if has_return_value != (method.return_type != ContractParameterType::Void) {
             return Err(Error::invalid_operation(
                 "The return value type does not match.".to_string(),
             ));
         }
-
         if self.is_contract_blocked(&contract.hash)? {
             return Err(Error::invalid_operation(format!(
                 "The contract {} has been blocked.",
                 contract.hash
             )));
         }
-
         let previous_context = self
             .vm_engine
             .engine()
             .current_context()
             .cloned()
             .ok_or_else(|| Error::invalid_operation("No current execution context"))?;
-
         let state_arc = previous_context
             .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         let (calling_flags, executing_contract, previous_hash_from_state) = {
@@ -197,7 +177,6 @@ impl ApplicationEngine {
         let previous_hash = previous_hash_from_state
             .or_else(|| UInt160::from_bytes(&previous_context.script_hash()).ok())
             .ok_or_else(|| Error::invalid_operation("Invalid script hash in execution context"))?;
-
         if method.safe {
             flags.remove(CallFlags::WRITE_STATES | CallFlags::ALLOW_NOTIFY);
         } else {
@@ -211,7 +190,6 @@ impl ApplicationEngine {
                 .ok()
                 .flatten()
             };
-
             if let Some(executing_contract) = executing_contract
                 && !executing_contract.manifest.can_call(
                     &contract.manifest,
@@ -225,9 +203,7 @@ impl ApplicationEngine {
                 )));
             }
         }
-
         flags &= calling_flags;
-
         let whitelisted_fixed_fee = if self
             .protocol_settings
             .is_hardfork_enabled(Hardfork::HfFaun, self.current_block_index())
@@ -241,9 +217,7 @@ impl ApplicationEngine {
         } else {
             None
         };
-
         self.increment_invocation_counter(&contract.hash);
-
         let new_context = self.load_contract_context(
             contract.clone(),
             method.clone(),
@@ -253,14 +227,12 @@ impl ApplicationEngine {
             Some(previous_hash),
             has_return_value,
         )?;
-
         if let Some(fixed_fee) = whitelisted_fixed_fee {
             self.add_fee_datoshi(fixed_fee)?;
             let state_arc = new_context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
             state_arc.lock().whitelisted = true;
         }
-
         {
             let engine = self.vm_engine.engine_mut();
             let context_mut = engine
@@ -276,12 +248,9 @@ impl ApplicationEngine {
                     .map_err(|err| Error::invalid_operation(err.to_string()))?;
             }
         }
-
         self.refresh_context_tracking()?;
-
         Ok(new_context)
     }
-
     /// Dynamically invokes a contract method (C# `System.Contract.Call`):
     /// validates the method name and contract state, applies the call flags,
     /// pushes the arguments, and enters the callee's execution context.
@@ -294,14 +263,12 @@ impl ApplicationEngine {
     ) -> Result<()> {
         let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
         let diag = Self::should_trace_block(block_idx);
-
         if method.starts_with('_') {
             return Err(Error::invalid_operation(format!(
                 "Method name '{}' cannot start with underscore.",
                 method
             )));
         }
-
         let contract = self.fetch_contract(contract_hash)?;
         if diag {
             let caller = self
@@ -333,7 +300,6 @@ impl ApplicationEngine {
                     contract_hash
                 ))
             })?;
-
         if diag {
             tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, offset = method_descriptor.offset, "TRACE: method found, calling internal");
         }
@@ -345,14 +311,11 @@ impl ApplicationEngine {
             has_return_value,
             &args,
         )?;
-
         let state_arc =
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         state_arc.lock().is_dynamic_call = true;
-
         Ok(())
     }
-
     /// Calls a contract from a native contract context with the calling hash set
     /// to the native contract.
     ///
@@ -383,7 +346,6 @@ impl ApplicationEngine {
                     contract_hash
                 ))
             })?;
-
         let has_return_value = method_descriptor.return_type != ContractParameterType::Void;
         let context = self.call_contract_internal(
             &contract,
@@ -392,17 +354,13 @@ impl ApplicationEngine {
             has_return_value,
             &args,
         )?;
-
         let state_arc =
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         state_arc.lock().native_calling_script_hash = Some(*calling_script_hash);
-
         // Refresh cached hashes so `GetCallingScriptHash` sees the native caller.
         self.refresh_context_tracking()?;
-
         Ok(())
     }
-
     /// Queues a contract call requested by a native contract.
     ///
     /// The queued call will be loaded after the current native syscall finishes,
@@ -421,7 +379,6 @@ impl ApplicationEngine {
             args,
         });
     }
-
     /// Loads any queued native calls (FIFO order) into the VM.
     ///
     /// This is invoked by `System.Contract.CallNative` after a native method
@@ -432,16 +389,15 @@ impl ApplicationEngine {
     /// the previous one's caller — breaking `CalledByEntry` for the first
     /// queued payment when NEO.transfer also mints GAS with `onNEP17Payment`
     /// (MainNet divergence class: block 980196 / CheckWitness in receiver).
+    #[must_use]
     pub fn process_pending_native_calls(&mut self) -> Result<()> {
         if self.pending_native_calls.is_empty() {
             return Ok(());
         }
-
         let native_invoke_context = self
             .current_context()
             .cloned()
             .ok_or_else(|| Error::invalid_operation("No current execution context".to_string()))?;
-
         let pending = std::mem::take(&mut self.pending_native_calls);
         for call in pending.into_iter().rev() {
             self.call_from_native_contract_dynamic(
@@ -450,7 +406,6 @@ impl ApplicationEngine {
                 &call.method,
                 call.args,
             )?;
-
             // Re-bind calling_context to the native invoke frame. `call_contract_internal`
             // would otherwise set it to the previously loaded pending callback.
             if let Some(loaded) = self.current_context().cloned() {
@@ -459,17 +414,14 @@ impl ApplicationEngine {
                 state_arc.lock().calling_context = Some(native_invoke_context.clone());
             }
         }
-
         Ok(())
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::smart_contract::native::GasToken;
     use neo_vm::OpCode;
-
     #[test]
     fn call_contract_uses_execution_state_script_hash_for_caller() {
         let snapshot = Arc::new(DataCache::new(false));
@@ -483,25 +435,21 @@ mod tests {
             None,
         )
         .expect("engine");
-
         engine
             .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
             .expect("load entry script");
-
         let entry_context = engine.current_context().cloned().expect("entry context");
         let vm_script_hash =
             UInt160::from_bytes(&entry_context.script_hash()).expect("entry vm script hash");
         let logical_contract_hash =
             UInt160::parse("0xc198d687cc67e244662c3b9c1325f095f8e663b1").expect("hash");
         assert_ne!(logical_contract_hash, vm_script_hash);
-
         let state_arc = entry_context
             .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         state_arc.lock().script_hash = Some(logical_contract_hash);
         engine
             .refresh_context_tracking()
             .expect("refresh context tracking");
-
         let gas_hash = GasToken::new().hash();
         engine
             .call_contract_dynamic(
@@ -511,19 +459,16 @@ mod tests {
                 vec![StackItem::from_byte_string(UInt160::zero().to_bytes())],
             )
             .expect("load GAS balanceOf call");
-
         let gas_context = engine.current_context().cloned().expect("gas context");
         let gas_state_arc = gas_context
             .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         let gas_state = gas_state_arc.lock();
-
         assert_eq!(gas_state.calling_script_hash, Some(logical_contract_hash));
         assert_eq!(
             engine.get_calling_script_hash(),
             Some(logical_contract_hash)
         );
     }
-
     #[test]
     fn pending_native_callbacks_share_native_invoke_calling_context() {
         use crate::network::p2p::payloads::{signer::Signer, transaction::Transaction};
@@ -532,13 +477,11 @@ mod tests {
         use crate::witness::Witness;
         use crate::{UInt160, Verifiable, WitnessScope};
         use neo_vm::StackItem;
-
         let account = UInt160::from_bytes(&[0x30; 20]).unwrap();
         let mut tx = Transaction::new();
         tx.set_signers(vec![Signer::new(account, WitnessScope::CALLED_BY_ENTRY)]);
         tx.add_witness(Witness::new());
         let container: Arc<dyn Verifiable> = Arc::new(tx);
-
         let snapshot = Arc::new(DataCache::new(false));
         let mut engine = ApplicationEngine::new(
             TriggerType::Application,
@@ -550,13 +493,11 @@ mod tests {
             None,
         )
         .expect("engine");
-
         let entry_hash = UInt160::from_bytes(&[0x31; 20]).unwrap();
         engine
             .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, Some(entry_hash))
             .expect("load entry");
         let entry_ctx = engine.current_context().cloned().expect("entry");
-
         let gas_hash = GasToken::new().hash();
         let arg = StackItem::from_byte_string(UInt160::zero().to_bytes());
         engine.queue_contract_call_from_native(gas_hash, gas_hash, "balanceOf", vec![arg.clone()]);
@@ -564,7 +505,6 @@ mod tests {
         engine
             .process_pending_native_calls()
             .expect("load pending native calls");
-
         assert!(engine.invocation_stack().len() >= 3);
         for ctx in engine.invocation_stack().iter().skip(1) {
             let state_arc =

@@ -22,10 +22,7 @@ pub fn prompt_pin(device_name: &str) -> HsmResult<Zeroizing<String>> {
 }
 
 /// Prompt for PIN with retry logic.
-pub fn prompt_pin_with_retry(
-    device_name: &str,
-    max_attempts: u32,
-) -> HsmResult<Zeroizing<String>> {
+pub fn prompt_pin_with_retry(device_name: &str, max_attempts: u32) -> HsmResult<Zeroizing<String>> {
     for attempt in 1..=max_attempts {
         match prompt_pin(device_name) {
             Ok(pin) => return Ok(pin),

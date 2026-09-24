@@ -33,6 +33,7 @@ pub struct RpcStateRoot {
 impl RpcStateRoot {
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let version = json
             .get("version")

@@ -161,8 +161,8 @@ impl StateStore {
 
         for (line_idx, line) in reader.lines().enumerate() {
             let line_no = line_idx + 1;
-            let line = line
-                .map_err(|e| format!("failed to read line {line_no} from '{path}': {e}"))?;
+            let line =
+                line.map_err(|e| format!("failed to read line {line_no} from '{path}': {e}"))?;
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
@@ -587,7 +587,10 @@ impl StateStore {
         let mut _skip_count: u32 = 0;
         let mut _ledger_skip: u32 = 0;
         let debug_dump = std::env::var("NEO_DEBUG_STATE_ROOT").is_ok()
-            || height == 172613 || height == 182902 || height == 203262 || height == 274157;
+            || height == 172613
+            || height == 182902
+            || height == 203262
+            || height == 274157;
         for (key, item, state) in change_set {
             if debug_dump {
                 eprintln!(
@@ -665,7 +668,9 @@ impl StateStore {
                     "state root mismatch at height {height}: computed {root_hash}, expected {expected}, put_count {put_count}, del_count {del_count}"
                 ));
             }
-        } else if let (Some(min_h), Some(max_h)) = (self.reference_min_height, self.reference_max_height) {
+        } else if let (Some(min_h), Some(max_h)) =
+            (self.reference_min_height, self.reference_max_height)
+        {
             if height >= min_h && height <= max_h {
                 return Err(format!(
                     "missing reference state root at height {height} within active reference range [{min_h}, {max_h}]"
@@ -760,6 +765,6 @@ impl StateStore {
 }
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod test_batching;
+#[cfg(test)]
+mod tests;

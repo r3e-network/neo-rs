@@ -12,21 +12,21 @@ pub mod error;
 pub mod node;
 /// Node type enumeration
 pub mod node_type;
-/// MPT trie implementation
-pub mod trie;
 /// Root branch buffer for optimized trie operations
 pub mod root_branch_buffer;
+/// MPT trie implementation
+pub mod trie;
 
 #[cfg(test)]
 mod tests;
 
-pub use cache::{MptCache, MptStoreSnapshot, GlobalNodeCache};
-pub use cache::get_cache_stats;
 pub use cache::get_cache_count;
+pub use cache::get_cache_stats;
+pub use cache::{GlobalNodeCache, MptCache, MptStoreSnapshot};
 /// Type alias for [`MptCache`].
 pub type Cache<S> = MptCache<S>;
 pub use error::{MptError, MptResult};
 pub use node::Node;
 pub use node_type::NodeType;
-pub use trie::{Trie, TrieEntry};
 pub use root_branch_buffer::RootBranchBuffer;
+pub use trie::{Trie, TrieEntry};

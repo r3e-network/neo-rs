@@ -280,7 +280,7 @@ loop {
         // Fallback: receive from network
         let msg = network_receiver.recv()?;
         prefetch_service.process_network_message(&msg);
-        
+
         // If still nothing prefetched after processing, fall back
         prefetch_service.get_next_block().or_else(|| {
             // Last resort: direct receive
@@ -312,13 +312,13 @@ mod tests {
     #[test]
     fn test_prefetch_add_and_retrieve() {
         let service = BlockPrefetchService::new(5);
-        
+
         // Simulate receiving a block
         service.process_network_message(&[1, 2, 3, 4]);
-        
+
         assert!(service.is_next_block_ready());
         assert_eq!(service.current_buffer_size(), 1);
-        
+
         // Retrieve the block
         let block = service.get_next_block();
         assert!(block.is_some());
@@ -328,17 +328,17 @@ mod tests {
     #[test]
     fn test_prefetch_buffer_overflow() {
         let service = BlockPrefetchService::new(2);
-        
+
         // Fill buffer
         service.process_network_message(&[1]);
         service.process_network_message(&[2]);
-        
+
         assert_eq!(service.current_buffer_size(), 2);
         assert!(service.is_at_capacity());
-        
+
         // Try to add one more (should drop)
         service.process_network_message(&[3]);
-        
+
         // Buffer size should remain at capacity
         assert_eq!(service.current_buffer_size(), 2);
     }
@@ -346,12 +346,12 @@ mod tests {
     #[test]
     fn test_prefetch_clear() {
         let service = BlockPrefetchService::new(5);
-        
+
         service.process_network_message(&[1]);
         service.process_network_message(&[2]);
-        
+
         service.clear_buffer();
-        
+
         assert_eq!(service.current_buffer_size(), 0);
         assert!(service.is_next_block_ready() == false);
     }

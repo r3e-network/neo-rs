@@ -5,15 +5,15 @@
 //! and existing block processing loops. It demonstrates how to swap
 //! serial execution for parallel execution without breaking changes.
 
+use crate::Block;
+use crate::persistence::DataCache;
+use crate::state_service::conflict_detector::ConflictResolution;
 use crate::state_service::optimistic_executor::{
-    OptimisticExecutor, OptimisticExecutorConfig, OptimisticExecutorError, BlockExecutionOutcome,
+    BlockExecutionOutcome, OptimisticExecutor, OptimisticExecutorConfig, OptimisticExecutorError,
     ParallelTxResult,
 };
-use crate::state_service::conflict_detector::ConflictResolution;
 use crate::state_service::prefetch_pipeline::CoreResult;
-use crate::persistence::DataCache;
 use neo_vm::RwSetTracker;
-use crate::Block;
 
 /// Optional integration hook - replaces serial tx execution with parallel version
 pub struct OptimisticExecutionHook {
@@ -37,10 +37,10 @@ impl OptimisticExecutionHook {
     /// Enables optimistic parallel execution
     pub fn enable(&mut self) -> anyhow::Result<()> {
         self.config.enabled = true;
-        
+
         let mut executor = OptimisticExecutor::new(self.config.clone());
         executor.initialize()?;
-        
+
         self.executor = Some(executor);
         Ok(())
     }
@@ -75,13 +75,14 @@ impl OptimisticExecutionHook {
     ) -> CoreResult<BlockExecutionOutcome> {
         if let Some(ref executor) = self.executor {
             // Parallel mode
-            executor.execute_block_optimistically(block, initial_state)
+            executor
+                .execute_block_optimistically(block, initial_state)
                 .await
                 .map_err(|e| crate::CoreError::system(e.to_string()))
         } else {
             // Fallback to serial - caller handles this
             Err(crate::CoreError::system(
-                "Serial execution not implemented in optimizer_hook".to_string()
+                "Serial execution not implemented in optimizer_hook".to_string(),
             ))
         }
     }
@@ -100,14 +101,15 @@ pub async fn execute_optimistically_inline(
 ) -> Result<(Vec<ParallelTxResult>, ConflictResolution), OptimisticExecutorError> {
     // Quick initialization of executor just for this block
     let mut executor = OptimisticExecutor::new(OptimisticExecutorConfig::default());
-    executor.initialize().map_err(|e| OptimisticExecutorError::ExecutionFailed(e.to_string()))?;
+    executor
+        .initialize()
+        .map_err(|e| OptimisticExecutorError::ExecutionFailed(e.to_string()))?;
 
-    let outcome = executor.execute_block_optimistically(block, &snapshot).await?;
+    let outcome = executor
+        .execute_block_optimistically(block, &snapshot)
+        .await?;
 
-    Ok((
-        outcome.transaction_results,
-        outcome.conflict_resolution,
-    ))
+    Ok((outcome.transaction_results, outcome.conflict_resolution))
 }
 
 /// Helper to convert RwSetTracker conflicts into retry order

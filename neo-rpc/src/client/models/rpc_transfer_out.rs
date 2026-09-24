@@ -48,6 +48,7 @@ impl RpcTransferOut {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let asset_str = json
             .get("asset")

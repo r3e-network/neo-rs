@@ -41,6 +41,7 @@ impl StateApi {
 
     /// Get state root by index
     /// Matches C# `GetStateRootAsync`
+    #[must_use]
     pub async fn get_state_root(&self, index: u32) -> Result<RpcStateRoot, RpcError> {
         let result = self
             .rpc_client
@@ -98,6 +99,7 @@ impl StateApi {
 
     /// Get state height information
     /// Matches C# `GetStateHeightAsync`
+    #[must_use]
     pub async fn get_state_height(&self) -> Result<(Option<u32>, Option<u32>), RpcError> {
         let result = self
             .rpc_client

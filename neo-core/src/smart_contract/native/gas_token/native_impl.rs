@@ -134,7 +134,11 @@ impl NativeContract for GasToken {
             })?;
             total_network_fee = total_network_fee.saturating_add(tx.network_fee());
 
-            total_network_fee = total_network_fee.saturating_sub(Self::notary_fee_deduction(&policy, snapshot_ref, tx)?);
+            total_network_fee = total_network_fee.saturating_sub(Self::notary_fee_deduction(
+                &policy,
+                snapshot_ref,
+                tx,
+            )?);
         }
 
         // Mint total network fee to the primary consensus node

@@ -105,9 +105,7 @@ fn run_one(vector: &Vector) -> VectorResult {
     let signer = match vector.signer.as_deref() {
         None => None,
         Some(hex) => match decode_hex(hex) {
-            Ok(bytes) if bytes.len() == 20 => {
-                Some(<[u8; 20]>::try_from(bytes).unwrap())
-            }
+            Ok(bytes) if bytes.len() == 20 => Some(<[u8; 20]>::try_from(bytes).unwrap()),
             Ok(_) => {
                 return VectorResult {
                     name: vector.name.clone(),
@@ -164,10 +162,7 @@ fn run_one(vector: &Vector) -> VectorResult {
     let items: Vec<neo_vm::StackItem> = engine.result_stack().iter().cloned().collect();
     let (stack, harness_error) = match stack_items_rpc_json_per_item(&items, RPC_STACK_BUDGET) {
         Ok(values) => (values, None),
-        Err(err) => (
-            Vec::new(),
-            Some(format!("stack render failed: {err:?}")),
-        ),
+        Err(err) => (Vec::new(), Some(format!("stack render failed: {err:?}"))),
     };
 
     VectorResult {
@@ -192,10 +187,10 @@ fn build_engine(signer: Option<[u8; 20]>) -> Result<ApplicationEngine, String> {
     let snapshot = Arc::new(DataCache::new(false));
 
     let header = BlockHeader::new(
-        1,                                   // index
-        Default::default(),                  // prev_hash
-        Default::default(),                  // merkle_root
-        PINNED_BLOCK_TIMESTAMP,              // timestamp
+        1,                      // index
+        Default::default(),     // prev_hash
+        Default::default(),     // merkle_root
+        PINNED_BLOCK_TIMESTAMP, // timestamp
         0,
         0,
         0,

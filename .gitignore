@@ -137,3 +137,8 @@ formal/**/.mimosa/
 # C# differential runner build artifacts
 /tools/csharp-*/bin/
 /tools/csharp-*/obj/
+# Ignore large JAR files that exceed GitHub limits
+.tools/*.jar
+.tools/*/*.jar
+.tools/**/*.jar
+*.jar

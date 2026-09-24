@@ -234,11 +234,14 @@ impl Witness {
                 .try_into()
                 .map_err(|_| CoreError::invalid_data("Invalid signature length"))?;
 
-            let verified =
-                Secp256r1Crypto::verify_prehash(&Crypto::sha256(message), &signature_bytes, &sorted_keys[key_index])
-                    .map_err(|e| CoreError::Cryptographic {
-                        message: format!("ECDSA verification failed: {e}"),
-                    })?;
+            let verified = Secp256r1Crypto::verify_prehash(
+                &Crypto::sha256(message),
+                &signature_bytes,
+                &sorted_keys[key_index],
+            )
+            .map_err(|e| CoreError::Cryptographic {
+                message: format!("ECDSA verification failed: {e}"),
+            })?;
 
             if verified {
                 sig_index += 1;
@@ -317,11 +320,10 @@ impl Witness {
             .try_into()
             .map_err(|_| CoreError::invalid_data("Invalid signature length"))?;
 
-        Secp256r1Crypto::verify_prehash(&Crypto::sha256(hash_data), &signature_bytes, public_key).map_err(|e| {
-            CoreError::Cryptographic {
+        Secp256r1Crypto::verify_prehash(&Crypto::sha256(hash_data), &signature_bytes, public_key)
+            .map_err(|e| CoreError::Cryptographic {
                 message: format!("ECDSA verification failed: {e}"),
-            }
-        })
+            })
     }
 
     /// Computes script hash from public key (matches C# Contract.CreateSignatureContract exactly).
@@ -502,7 +504,11 @@ mod tests {
         let signatures: Vec<Vec<u8>> = pairs
             .iter()
             .take(m)
-            .map(|(_, pk)| Secp256r1Crypto::sign_prehash(&Crypto::sha256(message), pk).unwrap().to_vec())
+            .map(|(_, pk)| {
+                Secp256r1Crypto::sign_prehash(&Crypto::sha256(message), pk)
+                    .unwrap()
+                    .to_vec()
+            })
             .collect();
 
         let witness = Witness::new();

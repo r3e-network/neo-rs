@@ -214,9 +214,9 @@ impl RpcServerWallet {
         let system = server.system();
         let settings = Arc::new(system.settings().clone());
         let wallet = Nep6Wallet::from_file(
-            resolved.to_str().ok_or_else(|| {
-                RpcException::from(RpcError::wallet_not_found())
-            })?,
+            resolved
+                .to_str()
+                .ok_or_else(|| RpcException::from(RpcError::wallet_not_found()))?,
             &password,
             settings,
         );
@@ -245,10 +245,7 @@ impl RpcServerWallet {
     }
 
     /// Resolves `openwallet` paths under `WalletDirectory` (or CWD when empty).
-    fn resolve_jailed_wallet_path(
-        server: &RpcServer,
-        path: &str,
-    ) -> Result<PathBuf, RpcException> {
+    fn resolve_jailed_wallet_path(server: &RpcServer, path: &str) -> Result<PathBuf, RpcException> {
         let not_found = || RpcException::from(RpcError::wallet_not_found());
         let requested = Path::new(path);
         if requested

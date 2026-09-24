@@ -1,6 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_primitives::{UInt256, UINT256_SIZE};
+use neo_primitives::{UINT256_SIZE, UInt256};
 
 // Benchmark payload: typical transaction-like structure
 #[derive(Clone)]
@@ -116,17 +116,13 @@ fn bench_var_int_encoding(c: &mut Criterion) {
     let mut group = c.benchmark_group("var_int");
 
     for value in [0u64, 252, 0xFFFF, 0xFFFF_FFFF, u64::MAX] {
-        group.bench_with_input(
-            BenchmarkId::new("encode", value),
-            &value,
-            |b, &value| {
-                b.iter(|| {
-                    let mut buf = Vec::new();
-                    neo_io::var_int::write_var_int(value, &mut buf);
-                    black_box(buf)
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("encode", value), &value, |b, &value| {
+            b.iter(|| {
+                let mut buf = Vec::new();
+                neo_io::var_int::write_var_int(value, &mut buf);
+                black_box(buf)
+            });
+        });
     }
 
     group.finish();

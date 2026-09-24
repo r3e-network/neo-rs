@@ -34,9 +34,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info, trace, warn};
 
-use neo_primitives::{PrimitiveError, PrimitiveResult, UInt256};
 use crate::persistence::store_snapshot::StoreSnapshot;
 use crate::state_service::metrics::StateRootMetrics;
+use neo_primitives::{PrimitiveError, PrimitiveResult, UInt256};
 
 /// Trigger signal sent when a WriteBatch commits
 #[derive(Debug, Clone)]
@@ -120,7 +120,12 @@ impl AsyncStateRootService {
         let local_snapshots = snapshots.clone();
 
         rayon::spawn(move || {
-            Self::worker_loop(&local_trigger_rx, &worker_result_tx, &local_pending, &local_snapshots);
+            Self::worker_loop(
+                &local_trigger_rx,
+                &worker_result_tx,
+                &local_pending,
+                &local_snapshots,
+            );
         });
 
         Self {
@@ -174,7 +179,11 @@ impl AsyncStateRootService {
                 let _ = callback.send(result.clone());
             }
 
-            let status = if result.success { "completed" } else { "failed" };
+            let status = if result.success {
+                "completed"
+            } else {
+                "failed"
+            };
             info!(
                 target: "neo::async_state",
                 height,
@@ -199,17 +208,17 @@ impl AsyncStateRootService {
             Some(_snapshot) => {
                 // Start MPT computation from committed state
                 let start_time = std::time::Instant::now();
-                
+
                 // TODO: Create ReadOnlyStore from snapshot and traverse trie
                 // This is placeholder logic - actual implementation will:
                 // 1. Wrap snapshot in ReadOnlyStore
                 // 2. Initialize Trie from stored nodes
                 // 3. Recompute merkle root from current state
                 // 4. Return computed root
-                
+
                 let computed_root = UInt256::zero(); // Placeholder
                 let duration = start_time.elapsed();
-                
+
                 info!(
                     target: "neo::async_state",
                     height,
@@ -217,7 +226,7 @@ impl AsyncStateRootService {
                     root = %computed_root,
                     "Async MPT computation completed"
                 );
-                
+
                 MptResult {
                     height,
                     root_hash: computed_root,
@@ -231,7 +240,7 @@ impl AsyncStateRootService {
                     height,
                     "No snapshot available for async MPT computation"
                 );
-                
+
                 MptResult {
                     height,
                     root_hash: UInt256::zero(),
@@ -264,7 +273,9 @@ impl AsyncStateRootService {
             .insert(block_height, callback_tx);
 
         // Store snapshot for worker to use
-        self.snapshots.write().insert(block_height, snapshot as Arc<dyn StoreSnapshot>);
+        self.snapshots
+            .write()
+            .insert(block_height, snapshot as Arc<dyn StoreSnapshot>);
 
         // Send trigger to worker pool
         let trigger = BlockCommitTrigger {
@@ -350,12 +361,7 @@ impl AsyncStateRootService {
     /// # Returns
     ///
     /// `true` if hashes match and verification succeeds
-    pub fn verify_root_match(
-        &self,
-        height: u64,
-        actual: UInt256,
-        expected: UInt256,
-    ) -> bool {
+    pub fn verify_root_match(&self, height: u64, actual: UInt256, expected: UInt256) -> bool {
         if actual == expected {
             info!(
                 target: "neo::async_state",
@@ -414,17 +420,20 @@ mod metrics_ops {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_storage::StorageResult;
+    use neo_storage::persistence::seek_direction::SeekDirection;
+    use neo_storage::persistence::store_snapshot::SnapshotCommitResult;
+    use neo_storage::persistence::{ReadOnlyStoreGeneric, Store, WriteStore};
     use std::thread;
     use std::time::Duration;
-    use neo_storage::persistence::{Store, ReadOnlyStoreGeneric, WriteStore};
-    use neo_storage::StorageResult;
-    use neo_storage::persistence::store_snapshot::SnapshotCommitResult;
-    use neo_storage::persistence::seek_direction::SeekDirection;
 
     #[test]
     fn test_async_state_root_creation() {
         let service = AsyncStateRootService::new();
-        assert_eq!(service.worker_count, AsyncStateRootService::DEFAULT_WORKER_COUNT);
+        assert_eq!(
+            service.worker_count,
+            AsyncStateRootService::DEFAULT_WORKER_COUNT
+        );
         assert_eq!(service.pending_count(), 0);
     }
 

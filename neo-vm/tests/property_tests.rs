@@ -73,26 +73,26 @@ name in prop::sample::select(&[
 fn syscall_gas_prices_match_coq_refinement_model() {
     init();
     let cases: &[(&str, i64)] = &[
-        ("System.Storage.GetContext", 16),           // 1 << 4
-        ("System.Storage.GetReadOnlyContext", 16),   // 1 << 4
-        ("System.Storage.AsReadOnly", 16),           // 1 << 4
-        ("System.Storage.Get", 32768),               // 1 << 15
-        ("System.Storage.Put", 32768),               // 1 << 15
-        ("System.Storage.Find", 32768),              // 1 << 15
-        ("System.Runtime.Platform", 8),              // 1 << 3
-        ("System.Runtime.GetTime", 8),               // 1 << 3
-        ("System.Runtime.CurrentSigners", 8),        // 1 << 3
-        ("System.Runtime.CheckWitness", 1024),       // 1 << 10
-        ("System.Runtime.BurnGas", 16),              // 1 << 4
-        ("System.Runtime.GetRandom", 16),            // 1 << 4
-        ("System.Runtime.Log", 32768),               // 1 << 15
-        ("System.Contract.Call", 32768),             // 1 << 15
-        ("System.Contract.GetCallFlags", 16),        // 1 << 4
+        ("System.Storage.GetContext", 16),              // 1 << 4
+        ("System.Storage.GetReadOnlyContext", 16),      // 1 << 4
+        ("System.Storage.AsReadOnly", 16),              // 1 << 4
+        ("System.Storage.Get", 32768),                  // 1 << 15
+        ("System.Storage.Put", 32768),                  // 1 << 15
+        ("System.Storage.Find", 32768),                 // 1 << 15
+        ("System.Runtime.Platform", 8),                 // 1 << 3
+        ("System.Runtime.GetTime", 8),                  // 1 << 3
+        ("System.Runtime.CurrentSigners", 8),           // 1 << 3
+        ("System.Runtime.CheckWitness", 1024),          // 1 << 10
+        ("System.Runtime.BurnGas", 16),                 // 1 << 4
+        ("System.Runtime.GetRandom", 16),               // 1 << 4
+        ("System.Runtime.Log", 32768),                  // 1 << 15
+        ("System.Contract.Call", 32768),                // 1 << 15
+        ("System.Contract.GetCallFlags", 16),           // 1 << 4
         ("System.Contract.CreateStandardAccount", 256), // 1 << 8
         ("System.Contract.CreateMultisigAccount", 512), // 1 << 9
-        ("System.Contract.NativePostPersist", 1024), // 1 << 10
-        ("System.Crypto.CheckSig", 32768),           // 1 << 15
-        ("System.Iterator.Next", 32768),             // 1 << 15
+        ("System.Contract.NativePostPersist", 1024),    // 1 << 10
+        ("System.Crypto.CheckSig", 32768),              // 1 << 15
+        ("System.Iterator.Next", 32768),                // 1 << 15
     ];
     for (name, expected) in cases {
         let hash = Sha256::digest(name.as_bytes());

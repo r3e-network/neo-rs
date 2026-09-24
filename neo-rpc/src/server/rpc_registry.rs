@@ -18,10 +18,7 @@ pub fn register_server(network: u32, server: Arc<RwLock<RpcServer>>) {
     let mut guard = SERVERS.write();
     if let Some(previous) = guard.insert(network, Arc::clone(&server)) {
         if cfg!(debug_assertions) {
-            panic!(
-                "double-registration of RPC server for network {}",
-                network
-            );
+            panic!("double-registration of RPC server for network {}", network);
         } else {
             tracing::error!(
                 "Double-registration of RPC server for network {} — previous instance replaced",

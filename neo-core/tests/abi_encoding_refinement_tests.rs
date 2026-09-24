@@ -18,13 +18,12 @@
 extern crate neo_vm;
 
 use neo_vm::{
-    abi::fast_codec::{decode_stack, encode_stack},
-    STACK_VALUE_CODEC_TAG_ARRAY, STACK_VALUE_CODEC_TAG_BIG_INTEGER,
-    STACK_VALUE_CODEC_TAG_BOOLEAN, STACK_VALUE_CODEC_TAG_BUFFER,
-    STACK_VALUE_CODEC_TAG_BYTESTRING, STACK_VALUE_CODEC_TAG_INTEROP,
-    STACK_VALUE_CODEC_TAG_ITERATOR, STACK_VALUE_CODEC_TAG_MAP, STACK_VALUE_CODEC_TAG_NULL,
-    STACK_VALUE_CODEC_TAG_POINTER, STACK_VALUE_CODEC_TAG_STRUCT, STACK_VALUE_CODEC_TAG_INTEGER,
+    STACK_VALUE_CODEC_TAG_ARRAY, STACK_VALUE_CODEC_TAG_BIG_INTEGER, STACK_VALUE_CODEC_TAG_BOOLEAN,
+    STACK_VALUE_CODEC_TAG_BUFFER, STACK_VALUE_CODEC_TAG_BYTESTRING, STACK_VALUE_CODEC_TAG_INTEGER,
+    STACK_VALUE_CODEC_TAG_INTEROP, STACK_VALUE_CODEC_TAG_ITERATOR, STACK_VALUE_CODEC_TAG_MAP,
+    STACK_VALUE_CODEC_TAG_NULL, STACK_VALUE_CODEC_TAG_POINTER, STACK_VALUE_CODEC_TAG_STRUCT,
     StackValue,
+    abi::fast_codec::{decode_stack, encode_stack},
 };
 use std::vec::Vec;
 
@@ -91,7 +90,7 @@ fn test_boolean_encoding_roundtrip() {
     // Verify boolean uses exactly 6 bytes total (4 byte length prefix + 2 bytes for value)
     assert_eq!(encoded_true.len(), 6, "true boolean should be 6 bytes");
     assert_eq!(encoded_false.len(), 6, "false boolean should be 6 bytes");
-    
+
     // Verify type tag
     assert_eq!(get_type_tag(&encoded_true), STACK_VALUE_CODEC_TAG_BOOLEAN);
     assert_eq!(get_type_tag(&encoded_false), STACK_VALUE_CODEC_TAG_BOOLEAN);
@@ -138,7 +137,11 @@ fn test_buffer_encoding_roundtrip() {
     let buf = StackValue::Buffer(vec![1, 2, 3]);
     let encoded_bs = encode_stack(&[bs]);
     let encoded_buf = encode_stack(&[buf]);
-    assert_ne!(get_type_tag(&encoded_bs), get_type_tag(&encoded_buf), "Buffer and ByteString have different tags");
+    assert_ne!(
+        get_type_tag(&encoded_bs),
+        get_type_tag(&encoded_buf),
+        "Buffer and ByteString have different tags"
+    );
 }
 
 #[test]
@@ -162,7 +165,10 @@ fn test_biginteger_encoding_roundtrip() {
     assert_eq!(decoded_large[0], original_large);
 
     // Verify type tag
-    assert_eq!(get_type_tag(&encoded_large), STACK_VALUE_CODEC_TAG_BIG_INTEGER);
+    assert_eq!(
+        get_type_tag(&encoded_large),
+        STACK_VALUE_CODEC_TAG_BIG_INTEGER
+    );
 }
 
 #[test]
@@ -258,7 +264,7 @@ fn test_struct_encoding_roundtrip() {
     assert_eq!(decoded_fields[0], original_fields);
 
     println!("Array-only encoding: {:?}", encoded_fields);
-    
+
     // Verify type tag
     if let StackValue::Struct(decoded_items) = &decoded_fields[0] {
         assert_eq!(decoded_items.len(), 3, "struct field count preserved");
@@ -277,9 +283,18 @@ fn test_map_encoding_roundtrip() {
 
     // Test simple key-value pairs
     let original_pairs = StackValue::Map(vec![
-        (StackValue::Integer(1), StackValue::ByteString(b"one".to_vec())),
-        (StackValue::Integer(2), StackValue::ByteString(b"two".to_vec())),
-        (StackValue::Integer(3), StackValue::ByteString(b"three".to_vec())),
+        (
+            StackValue::Integer(1),
+            StackValue::ByteString(b"one".to_vec()),
+        ),
+        (
+            StackValue::Integer(2),
+            StackValue::ByteString(b"two".to_vec()),
+        ),
+        (
+            StackValue::Integer(3),
+            StackValue::ByteString(b"three".to_vec()),
+        ),
     ]);
     let encoded_pairs = encode_stack(&[original_pairs.clone()]);
     let decoded_pairs = decode_stack(&encoded_pairs).expect("map should decode");
@@ -373,8 +388,12 @@ fn test_null_encoding_exact() {
     let encoded = encode_stack(&[original.clone()]);
 
     // Encoding format: [len_u32:4][tag:1] = 5 bytes total for single null item
-    assert_eq!(encoded.len(), 5, "single null should be 5 bytes (4-byte len prefix + 1 byte tag)");
-    
+    assert_eq!(
+        encoded.len(),
+        5,
+        "single null should be 5 bytes (4-byte len prefix + 1 byte tag)"
+    );
+
     // Verify type tag at position 4 (after 4-byte length prefix)
     assert_eq!(get_type_tag(&encoded), STACK_VALUE_CODEC_TAG_NULL);
 
@@ -396,18 +415,13 @@ fn test_null_in_collections() {
     let decoded_struct = decode_stack(&encoded_struct).expect("struct with null should decode");
     assert_eq!(decoded_struct[0], in_struct);
 
-    let in_map_value = StackValue::Map(vec![(
-        StackValue::Integer(1),
-        StackValue::Null,
-    )]);
+    let in_map_value = StackValue::Map(vec![(StackValue::Integer(1), StackValue::Null)]);
     let encoded_map_value = encode_stack(&[in_map_value.clone()]);
-    let decoded_map_value = decode_stack(&encoded_map_value).expect("map with null value should decode");
+    let decoded_map_value =
+        decode_stack(&encoded_map_value).expect("map with null value should decode");
     assert_eq!(decoded_map_value[0], in_map_value);
 
-    let in_map_key = StackValue::Map(vec![(
-        StackValue::Null,
-        StackValue::Integer(1),
-    )]);
+    let in_map_key = StackValue::Map(vec![(StackValue::Null, StackValue::Integer(1))]);
     let encoded_map_key = encode_stack(&[in_map_key.clone()]);
     let decoded_map_key = decode_stack(&encoded_map_key).expect("map with null key should decode");
     assert_eq!(decoded_map_key[0], in_map_key);
@@ -426,10 +440,14 @@ fn test_tag_separation_all_variants() {
     tags.push(get_type_tag(&encode_stack(&[StackValue::Integer(0)])));
 
     // BigInteger
-    tags.push(get_type_tag(&encode_stack(&[StackValue::BigInteger(vec![])])));
+    tags.push(get_type_tag(&encode_stack(&[StackValue::BigInteger(
+        vec![],
+    )])));
 
     // ByteString
-    tags.push(get_type_tag(&encode_stack(&[StackValue::ByteString(vec![])])));
+    tags.push(get_type_tag(&encode_stack(&[StackValue::ByteString(
+        vec![],
+    )])));
 
     // Buffer
     tags.push(get_type_tag(&encode_stack(&[StackValue::Buffer(vec![])])));
@@ -473,18 +491,54 @@ fn test_tag_separation_all_variants() {
 #[test]
 fn test_expected_type_tags_match_constants() {
     // Verify actual encoding matches defined constants
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::Integer(0)])), STACK_VALUE_CODEC_TAG_INTEGER);
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::BigInteger(vec![])])), STACK_VALUE_CODEC_TAG_BIG_INTEGER);
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::ByteString(vec![])])), STACK_VALUE_CODEC_TAG_BYTESTRING);
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::Boolean(false)])), STACK_VALUE_CODEC_TAG_BOOLEAN);
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::Array(vec![])])), STACK_VALUE_CODEC_TAG_ARRAY);
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::Struct(vec![])])), STACK_VALUE_CODEC_TAG_STRUCT);
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::Map(vec![])])), STACK_VALUE_CODEC_TAG_MAP);
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::Interop(0)])), STACK_VALUE_CODEC_TAG_INTEROP);
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::Iterator(0)])), STACK_VALUE_CODEC_TAG_ITERATOR);
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::Null])), STACK_VALUE_CODEC_TAG_NULL);
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::Pointer(0)])), STACK_VALUE_CODEC_TAG_POINTER);
-    assert_eq!(get_type_tag(&encode_stack(&[StackValue::Buffer(vec![])])), STACK_VALUE_CODEC_TAG_BUFFER);
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::Integer(0)])),
+        STACK_VALUE_CODEC_TAG_INTEGER
+    );
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::BigInteger(vec![])])),
+        STACK_VALUE_CODEC_TAG_BIG_INTEGER
+    );
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::ByteString(vec![])])),
+        STACK_VALUE_CODEC_TAG_BYTESTRING
+    );
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::Boolean(false)])),
+        STACK_VALUE_CODEC_TAG_BOOLEAN
+    );
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::Array(vec![])])),
+        STACK_VALUE_CODEC_TAG_ARRAY
+    );
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::Struct(vec![])])),
+        STACK_VALUE_CODEC_TAG_STRUCT
+    );
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::Map(vec![])])),
+        STACK_VALUE_CODEC_TAG_MAP
+    );
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::Interop(0)])),
+        STACK_VALUE_CODEC_TAG_INTEROP
+    );
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::Iterator(0)])),
+        STACK_VALUE_CODEC_TAG_ITERATOR
+    );
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::Null])),
+        STACK_VALUE_CODEC_TAG_NULL
+    );
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::Pointer(0)])),
+        STACK_VALUE_CODEC_TAG_POINTER
+    );
+    assert_eq!(
+        get_type_tag(&encode_stack(&[StackValue::Buffer(vec![])])),
+        STACK_VALUE_CODEC_TAG_BUFFER
+    );
 }
 
 // ============================================================================
@@ -496,12 +550,14 @@ fn test_empty_collections() {
     // Empty collections should encode/decode correctly
     let empty_array = StackValue::Array(Vec::new());
     let encoded_empty_array = encode_stack(&[empty_array.clone()]);
-    let decoded_empty_array = decode_stack(&encoded_empty_array).expect("empty array should decode");
+    let decoded_empty_array =
+        decode_stack(&encoded_empty_array).expect("empty array should decode");
     assert_eq!(decoded_empty_array[0], empty_array);
 
     let empty_struct = StackValue::Struct(Vec::new());
     let encoded_empty_struct = encode_stack(&[empty_struct.clone()]);
-    let decoded_empty_struct = decode_stack(&encoded_empty_struct).expect("empty struct should decode");
+    let decoded_empty_struct =
+        decode_stack(&encoded_empty_struct).expect("empty struct should decode");
     assert_eq!(decoded_empty_struct[0], empty_struct);
 
     let empty_map = StackValue::Map(Vec::new());
@@ -511,7 +567,8 @@ fn test_empty_collections() {
 
     let empty_bytes = StackValue::ByteString(Vec::new());
     let encoded_empty_bytes = encode_stack(&[empty_bytes.clone()]);
-    let decoded_empty_bytes = decode_stack(&encoded_empty_bytes).expect("empty bytestring should decode");
+    let decoded_empty_bytes =
+        decode_stack(&encoded_empty_bytes).expect("empty bytestring should decode");
     assert_eq!(decoded_empty_bytes[0], empty_bytes);
 }
 
@@ -539,7 +596,12 @@ fn test_large_collections() {
 
     // Test large map (500 entries)
     let large_map: Vec<(StackValue, StackValue)> = (0..500)
-        .map(|i| (StackValue::Integer(i as i64), StackValue::Integer((i * 2) as i64)))
+        .map(|i| {
+            (
+                StackValue::Integer(i as i64),
+                StackValue::Integer((i * 2) as i64),
+            )
+        })
         .collect();
     let large_map_sv = StackValue::Map(large_map.clone());
     let encoded_map = encode_stack(&[large_map_sv.clone()]);
@@ -577,12 +639,12 @@ fn test_byte_content_preservation_string() {
     // Coq theorem: byte_content_preservation
     // Byte-based types should preserve exact content through round-trip
     let test_cases = vec![
-        Vec::<u8>::new(),                          // empty
+        Vec::<u8>::new(),                           // empty
         vec![0],                                    // single zero
         vec![1],                                    // single one
         vec![0xFF],                                 // single max
-        vec![0x01, 0x02, 0x03],                    // small sequence
-        vec![0xFF, 0xFE, 0xFD, 0xFC],              // descending sequence
+        vec![0x01, 0x02, 0x03],                     // small sequence
+        vec![0xFF, 0xFE, 0xFD, 0xFC],               // descending sequence
         (0..64).map(|i| (i % 256) as u8).collect(), // pattern
     ];
 
@@ -590,7 +652,7 @@ fn test_byte_content_preservation_string() {
         let original = StackValue::ByteString(bytes.clone());
         let encoded = encode_stack(&[original.clone()]);
         let decoded = decode_stack(&encoded).expect("byte string should decode");
-        
+
         if let StackValue::ByteString(decoded_bytes) = &decoded[0] {
             assert_eq!(
                 &decoded_bytes[..],
@@ -607,13 +669,13 @@ fn test_byte_content_preservation_string() {
 fn test_integer_length_conservation() {
     // Length conservation property: encoding produces expected byte sizes
     let test_cases: Vec<(i64, usize)> = vec![
-        (0, 13),     // 4-byte len prefix + 8 bytes data + 1 tag = 13
-        (1, 13),     // minimal positive
-        (-1, 13),    // minimal negative
-        (127, 13),   // fits in i8 range
-        (-128, 13),  // fits in i8 negative range
-        (32767, 13), // fits in i16 range
-        (-32768, 13),// fits in i16 negative range
+        (0, 13),          // 4-byte len prefix + 8 bytes data + 1 tag = 13
+        (1, 13),          // minimal positive
+        (-1, 13),         // minimal negative
+        (127, 13),        // fits in i8 range
+        (-128, 13),       // fits in i8 negative range
+        (32767, 13),      // fits in i16 range
+        (-32768, 13),     // fits in i16 negative range
         (1_000_000, 13),  // typical int
         (-1_000_000, 13), // typical negative int
     ];
@@ -623,9 +685,12 @@ fn test_integer_length_conservation() {
         let encoded = encode_stack(&[sv]);
         // Each integer encodes to exactly 13 bytes (4-byte len prefix + 8 bytes data + 1 tag)
         assert_eq!(
-            encoded.len(), expected_size,
+            encoded.len(),
+            expected_size,
             "integer {} should encode to {} bytes, got {}",
-            value, expected_size, encoded.len()
+            value,
+            expected_size,
+            encoded.len()
         );
     }
 }
@@ -638,13 +703,15 @@ fn test_boolean_exact_encoding_format() {
     for (bool_val, byte_val) in test_cases {
         let sv = StackValue::Boolean(bool_val);
         let encoded = encode_stack(&[sv]);
-        
+
         assert_eq!(
-            encoded.len(), 6,
+            encoded.len(),
+            6,
             "boolean should always be exactly 6 bytes (4-byte len prefix + tag(1) + value(1))"
         );
         assert_eq!(
-            get_type_tag(&encoded), STACK_VALUE_CODEC_TAG_BOOLEAN,
+            get_type_tag(&encoded),
+            STACK_VALUE_CODEC_TAG_BOOLEAN,
             "tag after length prefix must be type tag"
         );
         // The boolean value byte is at position 5
@@ -686,10 +753,7 @@ fn test_comprehensive_roundtrip_coverage() {
     let collections = vec![
         StackValue::Array(primitives.clone()),
         StackValue::Struct(primitives.clone()),
-        StackValue::Map(vec![(
-            StackValue::Integer(1),
-            StackValue::Integer(2),
-        )]),
+        StackValue::Map(vec![(StackValue::Integer(1), StackValue::Integer(2))]),
     ];
 
     for sv in collections {
@@ -739,13 +803,17 @@ fn test_type_preservation_through_multiple_roundtrips() {
 fn test_serialization_determinism() {
     // Same value should always produce identical encoding
     let sv = StackValue::Map(vec![
-        (StackValue::Integer(1), StackValue::ByteString(b"a".to_vec())),
-        (StackValue::Integer(2), StackValue::ByteString(b"b".to_vec())),
+        (
+            StackValue::Integer(1),
+            StackValue::ByteString(b"a".to_vec()),
+        ),
+        (
+            StackValue::Integer(2),
+            StackValue::ByteString(b"b".to_vec()),
+        ),
     ]);
 
-    let encodings: Vec<Vec<u8>> = (0..10)
-        .map(|_| encode_stack(&[sv.clone()]))
-        .collect();
+    let encodings: Vec<Vec<u8>> = (0..10).map(|_| encode_stack(&[sv.clone()])).collect();
 
     for encoding in &encodings {
         assert_eq!(encoding, &encodings[0], "all encodings should be identical");

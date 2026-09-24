@@ -1,8 +1,8 @@
 //! Shared NeoVM execution context used by host-specific runtimes.
 
 mod pending_exception;
-mod try_frame;
 pub mod rw_set_tracker;
+mod try_frame;
 
 use alloc::{format, string::String, string::ToString, vec, vec::Vec};
 pub(crate) use pending_exception::{PendingException, PendingExceptionValue};

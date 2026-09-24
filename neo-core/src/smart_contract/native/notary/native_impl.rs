@@ -88,7 +88,8 @@ impl NativeContract for Notary {
                     let key = Self::deposit_key(&payer);
                     if let Some(item) = snapshot_ref.try_get(&key) {
                         let mut deposit = deserialize_deposit(&item.value_bytes())?;
-                        let total_fee = tx.system_fee()
+                        let total_fee = tx
+                            .system_fee()
                             .checked_add(tx.network_fee())
                             .ok_or_else(|| Error::native_contract("Transaction fee overflow"))?;
                         deposit.amount -= BigInt::from(total_fee);

@@ -2328,7 +2328,7 @@ dependencies = [
 
 [[package]]
 name = "neo-benches"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "criterion",
  "hex",
@@ -2341,7 +2341,7 @@ dependencies = [
 
 [[package]]
 name = "neo-config"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "dirs",
  "serde",
@@ -2352,7 +2352,7 @@ dependencies = [
 
 [[package]]
 name = "neo-consensus"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "async-trait",
  "bincode",
@@ -2372,7 +2372,7 @@ dependencies = [
 
 [[package]]
 name = "neo-core"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "aes",
  "anyhow",
@@ -2454,7 +2454,7 @@ dependencies = [
 
 [[package]]
 name = "neo-crypto"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "base64 0.22.1",
  "bitvec",
@@ -2478,6 +2478,7 @@ dependencies = [
  "parking_lot",
  "proptest",
  "rand 0.8.8",
+ "rayon",
  "ripemd",
  "secp256k1",
  "serde",
@@ -2493,7 +2494,7 @@ dependencies = [
 
 [[package]]
 name = "neo-hsm"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2516,7 +2517,7 @@ dependencies = [
 
 [[package]]
 name = "neo-io"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2539,7 +2540,7 @@ dependencies = [
 
 [[package]]
 name = "neo-json"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "hashbrown 0.14.5",
  "indexmap",
@@ -2551,7 +2552,7 @@ dependencies = [
 
 [[package]]
 name = "neo-node"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2592,7 +2593,7 @@ dependencies = [
 
 [[package]]
 name = "neo-p2p"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -2609,7 +2610,7 @@ dependencies = [
 
 [[package]]
 name = "neo-primitives"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "bitflags 2.13.2",
  "bs58",
@@ -2628,7 +2629,7 @@ dependencies = [
 
 [[package]]
 name = "neo-rpc"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2676,7 +2677,7 @@ dependencies = [
 
 [[package]]
 name = "neo-storage"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "fastbloom",
  "hashbrown 0.14.5",
@@ -2695,7 +2696,7 @@ dependencies = [
 
 [[package]]
 name = "neo-tee"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2721,7 +2722,7 @@ dependencies = [
 
 [[package]]
 name = "neo-telemetry"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2740,7 +2741,7 @@ dependencies = [
 
 [[package]]
 name = "neo-tests"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "criterion",
  "hex",
@@ -2756,6 +2757,7 @@ dependencies = [
  "neo-telemetry",
  "neo-vm",
  "num-bigint",
+ "parking_lot",
  "serde_json",
  "tempfile",
  "tokio",
@@ -2765,7 +2767,7 @@ dependencies = [
 
 [[package]]
 name = "neo-vm"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "base64 0.22.1",
  "bitflags 2.13.2",
@@ -4099,6 +4101,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+dependencies = [
+ "errno",
+ "libc",
+]
+
+[[package]]
 name = "signature"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4460,6 +4472,7 @@ dependencies = [
  "mio",
  "parking_lot",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2 0.6.5",
  "tokio-macros",
  "windows-sys 0.61.2",

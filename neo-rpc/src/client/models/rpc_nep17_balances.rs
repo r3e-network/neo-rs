@@ -44,6 +44,7 @@ impl RpcNep17Balances {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let (balances, user_script_hash) = parse_balance_list(json, protocol_settings, |obj| {
             RpcNep17Balance::from_json(obj, protocol_settings)

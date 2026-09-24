@@ -62,8 +62,8 @@ impl Helper {
         fee = fee.saturating_add(ApplicationEngine::get_opcode_price(n_opcode));
 
         fee = fee.saturating_add(ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte()));
-        let check_sig_cost = crate::smart_contract::application_engine::CHECK_SIG_PRICE
-            .saturating_mul(n as i64);
+        let check_sig_cost =
+            crate::smart_contract::application_engine::CHECK_SIG_PRICE.saturating_mul(n as i64);
         fee = fee.saturating_add(check_sig_cost);
         fee
     }

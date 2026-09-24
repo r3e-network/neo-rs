@@ -76,8 +76,12 @@ mod tests {
         let message = salt_message_wallet_connect(b64.as_bytes(), &salt);
 
         assert!(
-            Secp256r1Crypto::verify_prehash(&Crypto::sha256(&message), &signature, &key.compressed_public_key())
-                .expect("wallet connect signature verification")
+            Secp256r1Crypto::verify_prehash(
+                &Crypto::sha256(&message),
+                &signature,
+                &key.compressed_public_key()
+            )
+            .expect("wallet connect signature verification")
         );
     }
 }

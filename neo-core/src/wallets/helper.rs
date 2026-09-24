@@ -604,7 +604,8 @@ fn calculate_network_fee_impl(
                 ));
             }
 
-            remaining_execution_cost = remaining_execution_cost.saturating_sub(engine.fee_consumed());
+            remaining_execution_cost =
+                remaining_execution_cost.saturating_sub(engine.fee_consumed());
             if remaining_execution_cost <= 0 {
                 return Err("Insufficient GAS.".to_string());
             }
@@ -613,19 +614,25 @@ fn calculate_network_fee_impl(
         }
 
         if ContractHelper::is_signature_contract(&witness_script) {
-            size = size.saturating_add((get_var_size(SIGNATURE_INVOCATION_SCRIPT_LENGTH as u64)
-                + SIGNATURE_INVOCATION_SCRIPT_LENGTH
-                + get_var_size_bytes(&witness_script)) as i64);
-            let sig_cost = exec_fee_factor.saturating_mul(ContractHelper::signature_contract_cost());
+            size = size.saturating_add(
+                (get_var_size(SIGNATURE_INVOCATION_SCRIPT_LENGTH as u64)
+                    + SIGNATURE_INVOCATION_SCRIPT_LENGTH
+                    + get_var_size_bytes(&witness_script)) as i64,
+            );
+            let sig_cost =
+                exec_fee_factor.saturating_mul(ContractHelper::signature_contract_cost());
             network_fee = network_fee.saturating_add(sig_cost);
         } else if let Some((m, keys)) = ContractHelper::parse_multi_sig_contract(&witness_script) {
             let n = keys.len();
             let invocation_len = SIGNATURE_INVOCATION_SCRIPT_LENGTH.saturating_mul(m);
-            size = size.saturating_add((get_var_size(invocation_len as u64)
-                + invocation_len
-                + get_var_size_bytes(&witness_script)) as i64);
-            let multisig_cost = exec_fee_factor
-                .saturating_mul(ContractHelper::multi_signature_contract_cost(m as i32, n as i32));
+            size = size.saturating_add(
+                (get_var_size(invocation_len as u64)
+                    + invocation_len
+                    + get_var_size_bytes(&witness_script)) as i64,
+            );
+            let multisig_cost = exec_fee_factor.saturating_mul(
+                ContractHelper::multi_signature_contract_cost(m as i32, n as i32),
+            );
             network_fee = network_fee.saturating_add(multisig_cost);
         } else {
             return Err(format!(

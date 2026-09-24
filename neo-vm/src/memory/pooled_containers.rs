@@ -89,7 +89,7 @@ use std::ops::{Deref, DerefMut};
 fn fnv1a_hash_u64(value: u64) -> u64 {
     const FNV_OFFSET_BASIS: u64 = 14695981039346656037;
     const FNV_PRIME: u64 = 1099511628211;
-    
+
     let hash = FNV_OFFSET_BASIS ^ value;
     hash.wrapping_mul(FNV_PRIME)
 }
@@ -342,6 +342,7 @@ impl<T> PooledVec<T> {
     /// assert_eq!(vec.try_push(3), Err(3)); // Capacity exceeded
     /// ```
     #[inline]
+    #[must_use]
     pub fn try_push(&mut self, item: T) -> Result<(), T> {
         if self.inner.len() >= self.max_capacity && self.max_capacity > 0 {
             Err(item)
@@ -361,12 +362,12 @@ impl<T> PooledVec<T> {
     /// * `additional` - Minimum number of elements to reserve space for
     pub fn reserve(&mut self, additional: usize) {
         let required = self.inner.len().saturating_add(additional);
-        
+
         if self.max_capacity > 0 && required > self.max_capacity {
             // Adjust max_capacity if needed (shouldn't happen in normal usage)
             self.max_capacity = required;
         }
-        
+
         self.inner.reserve(additional);
     }
 }
@@ -454,7 +455,7 @@ impl<T: Clone> Clone for PooledVec<T> {
 /// cache.clear_no_dealloc();
 /// assert_eq!(cache.len(), 0);
 /// ```
-pub struct PooledHashMap<K, V> 
+pub struct PooledHashMap<K, V>
 where
     K: Eq + Hash,
 {
@@ -463,7 +464,7 @@ where
     filled_count: usize,
 }
 
-impl<K, V> PooledHashMap<K, V> 
+impl<K, V> PooledHashMap<K, V>
 where
     K: Eq + Hash,
 {
@@ -496,7 +497,7 @@ where
     pub fn new(capacity: usize) -> Self {
         // Round capacity up to nearest power of 2 for efficient masking
         let rounded_capacity = capacity.next_power_of_two();
-        
+
         Self {
             buckets: (0..rounded_capacity).map(|_| None).collect(),
             capacity: rounded_capacity,
@@ -719,7 +720,7 @@ where
     }
 }
 
-impl<K, V> Default for PooledHashMap<K, V> 
+impl<K, V> Default for PooledHashMap<K, V>
 where
     K: Eq + Hash,
 {
@@ -729,7 +730,7 @@ where
     }
 }
 
-impl<K, V> Clone for PooledHashMap<K, V> 
+impl<K, V> Clone for PooledHashMap<K, V>
 where
     K: Eq + Hash + Clone,
     V: Clone,
@@ -750,16 +751,16 @@ mod tests {
     #[test]
     fn test_pooled_vec_basic() {
         let mut vec = PooledVec::<i32>::with_capacity(10);
-        
+
         assert!(vec.is_empty());
         assert_eq!(vec.len(), 0);
-        
+
         for i in 0..10 {
             vec.push(i);
         }
-        
+
         assert_eq!(vec.len(), 10);
-        
+
         // Verify we can access elements
         for (i, &val) in vec.iter().enumerate() {
             assert_eq!(val, i as i32);
@@ -770,7 +771,7 @@ mod tests {
     #[should_panic(expected = "capacity exceeded")]
     fn test_pooled_vec_capacity_exceeded() {
         let mut vec = PooledVec::<i32>::with_capacity(5);
-        
+
         for i in 0..6 {
             vec.push(i);
         }
@@ -779,14 +780,14 @@ mod tests {
     #[test]
     fn test_pooled_vec_clear_preserves_capacity() {
         let mut vec = PooledVec::<i32>::with_capacity(100);
-        
+
         for i in 0..50 {
             vec.push(i);
         }
-        
+
         let len_before = vec.len();
         vec.clear_keep_capacity();
-        
+
         assert_eq!(vec.len(), 0);
         // Capacity should remain allocated internally
         assert!(vec.inner.capacity() >= len_before);
@@ -795,12 +796,12 @@ mod tests {
     #[test]
     fn test_pooled_map_basic() {
         let mut map = PooledHashMap::<u64, String>::new(64);
-        
+
         assert!(map.is_empty());
-        
+
         map.insert_no_alloc(1, "one".to_string());
         map.insert_no_alloc(2, "two".to_string());
-        
+
         assert_eq!(map.len(), 2);
         assert_eq!(map.get_no_alloc(&1), Some(&"one".to_string()));
         assert_eq!(map.get_no_alloc(&2), Some(&"two".to_string()));
@@ -811,11 +812,11 @@ mod tests {
     fn test_pooled_map_collision_handling() {
         // Create a map where hashes collide (same bucket slot)
         let mut map = PooledHashMap::<u64, i32>::new(4);
-        
+
         // Use keys that hash to same bucket
         map.insert_no_alloc(0x0000_0000_0000_0000, 1);
         map.insert_no_alloc(0x0000_0000_0000_8000, 2); // Likely collides
-        
+
         assert_eq!(map.len(), 2);
         assert_eq!(map.get_no_alloc(&0x0000_0000_0000_0000), Some(&1));
         assert_eq!(map.get_no_alloc(&0x0000_0000_0000_8000), Some(&2));
@@ -824,15 +825,15 @@ mod tests {
     #[test]
     fn test_pooled_map_clear_preserves_buckets() {
         let mut map = PooledHashMap::<u64, u64>::new(256);
-        
+
         for i in 0..100 {
             map.insert_no_alloc(i, i * 2);
         }
-        
+
         assert_eq!(map.len(), 100);
-        
+
         map.clear_no_dealloc();
-        
+
         assert_eq!(map.len(), 0);
         assert_eq!(map.capacity(), 256);
     }
@@ -841,10 +842,10 @@ mod tests {
     fn test_fnv1a_hash_consistency() {
         let hash1 = fnv1a_hash_u64(42);
         let hash2 = fnv1a_hash_u64(42);
-        
+
         // Same input should always produce same output
         assert_eq!(hash1, hash2);
-        
+
         // Different inputs should likely produce different outputs
         let hash_different = fnv1a_hash_u64(43);
         assert_ne!(hash1, hash_different);

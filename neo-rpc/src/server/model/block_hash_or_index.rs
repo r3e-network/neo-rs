@@ -40,6 +40,7 @@ impl BlockHashOrIndex {
         None
     }
 
+    #[must_use]
     pub fn as_index(&self) -> Result<u32, RpcError> {
         match self {
             Self::Index(index) => Ok(*index),
@@ -48,6 +49,7 @@ impl BlockHashOrIndex {
         }
     }
 
+    #[must_use]
     pub fn as_hash(&self) -> Result<UInt256, RpcError> {
         match self {
             Self::Hash(hash) => Ok(*hash),

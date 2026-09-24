@@ -3,9 +3,9 @@
 use super::*;
 use crate::persistence::TrackState;
 use crate::smart_contract::native::LedgerContract;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use parking_lot::Mutex;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Mock backend that counts individual write operations
 #[derive(Clone)]
@@ -99,21 +99,21 @@ fn test_staged_backend_reads_pending_writes() {
     let staged = StagedStateStoreBackend::new(base.clone());
 
     // Write to base first
-    base.put(vec![1, 2, 3], vec![100, 200, 300]);
+    base.put(vec![1, 2, 3], vec![100, 200, 44]);
     base.commit().unwrap();
     base.reset_counters();
 
     // Stage an overwrite
-    staged.put(vec![1, 2, 3], vec![111, 222, 333]);
+    staged.put(vec![1, 2, 3], vec![111, 222, 77]);
 
     // Read should get staged value, not base value
     let value = staged.try_get(&[1, 2, 3]);
-    assert_eq!(value, Some(vec![111, 222, 333]));
+    assert_eq!(value, Some(vec![111, 222, 77]));
 
     // Commit and verify
     staged.commit().unwrap();
     let value = base.try_get(&[1, 2, 3]);
-    assert_eq!(value, Some(vec![111, 222, 333]));
+    assert_eq!(value, Some(vec![111, 222, 77]));
 }
 
 #[test]

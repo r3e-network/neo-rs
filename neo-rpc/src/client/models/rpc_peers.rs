@@ -52,6 +52,7 @@ impl RpcPeers {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let unconnected = parse_peer_list(json, "unconnected")?;
         let bad = parse_peer_list(json, "bad")?;
@@ -88,6 +89,7 @@ impl RpcPeer {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
+    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let address = json
             .get("address")

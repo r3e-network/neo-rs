@@ -30,7 +30,9 @@ mod tests {
 
         let mut sig_bytes = [0u8; 64];
         sig_bytes.copy_from_slice(&signature);
-        let verified = Secp256r1Crypto::verify_prehash(&Crypto::sha256(message), &sig_bytes, &pubkey_bytes).unwrap();
+        let verified =
+            Secp256r1Crypto::verify_prehash(&Crypto::sha256(message), &sig_bytes, &pubkey_bytes)
+                .unwrap();
         assert!(verified, "Signature verification should succeed");
     }
 }

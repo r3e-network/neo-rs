@@ -2,9 +2,9 @@
 //! Eliminates per-transaction heap allocations through RAII-managed pooling
 
 use std::cell::Cell;
-use std::sync::{Arc, Mutex};
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
+use std::sync::{Arc, Mutex};
 
 /// Statistics counter for allocation metrics
 struct AtomicCounter {
@@ -17,11 +17,12 @@ impl AtomicCounter {
             count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
     }
-    
+
     fn increment(&self) {
-        self.count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
-    
+
     fn value(&self) -> usize {
         self.count.load(std::sync::atomic::Ordering::Relaxed)
     }
@@ -41,7 +42,7 @@ impl<T> ObjectPool<T> {
             total_allocated: AtomicCounter::new(),
         }
     }
-    
+
     /// Borrow an object from pool (create new if none available)
     pub fn borrow(&self) -> PooledRef<'_, T>
     where
@@ -54,14 +55,14 @@ impl<T> ObjectPool<T> {
                 T::default()
             }
         };
-        
+
         PooledRef {
             inner: ManuallyDrop::new(item),
             pool: self,
             returned: Cell::new(false),
         }
     }
-    
+
     /// Get total number ever allocated (for metrics)
     pub fn total_allocated(&self) -> usize {
         self.total_allocated.value()
@@ -84,7 +85,7 @@ impl<'a, T> PooledRef<'a, T> {
 
 impl<'a, T> Deref for PooledRef<'a, T> {
     type Target = T;
-    
+
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
@@ -112,58 +113,58 @@ impl<'a, T> Drop for PooledRef<'a, T> {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_pool_borrow_and_return() {
         let pool: ObjectPool<u64> = ObjectPool::new(5);
-        
+
         {
             let ref1 = pool.borrow();
             assert_eq!(*ref1, 0);
         }
         // Auto-recycles here
-        
+
         {
             let _ref2 = pool.borrow();
             // Should get recycled instance, not allocate new
         }
     }
-    
+
     #[test]
     fn test_pool_reuse() {
         let pool: ObjectPool<String> = ObjectPool::new(3);
-        
+
         let initial_count = pool.total_allocated();
-        
+
         {
             let _ref1 = pool.borrow();
             let _ref2 = pool.borrow();
             let _ref3 = pool.borrow();
         }
-        
+
         let after_count = pool.total_allocated();
         assert_eq!(after_count, initial_count + 3); // Only 3 allocated, rest recycled
-        
+
         // Now reuse
         {
             let _ref4 = pool.borrow();
             let _ref5 = pool.borrow();
         }
-        
+
         let final_count = pool.total_allocated();
         assert_eq!(final_count, after_count); // No new allocations
     }
-    
+
     #[test]
     fn test_explicit_return() {
         let pool: ObjectPool<u64> = ObjectPool::new(2);
-        
+
         let ref1 = pool.borrow();
         ref1.returned.set(true); // Don't recycle
-        
+
         let _ref2 = pool.borrow();
         // This should allocate new since ref1 wasn't recycled
-        
+
         assert_eq!(pool.total_allocated(), 2);
     }
 }
