@@ -1028,4 +1028,178 @@ mod tests {
         let text = String::from_utf8(output).expect("valid UTF-8");
         assert!(text.contains("neo_block_height"));
     }
+
+    #[test]
+    fn test_vm_metrics() {
+        // Test VM metrics
+        VM_EXECUTION_COUNT.inc();
+        VM_INSTRUCTION_COUNT.inc_by(1000.0);
+        VM_GAS_CONSUMED.inc_by(50.0);
+        VM_FAULTS.inc();
+        VM_EXECUTION_TIME.observe(0.5);
+
+        assert!(VM_EXECUTION_COUNT.get() > 0.0);
+        assert!(VM_INSTRUCTION_COUNT.get() >= 1000.0);
+        assert!(VM_GAS_CONSUMED.get() >= 50.0);
+        assert!(VM_FAULTS.get() > 0.0);
+    }
+
+    #[test]
+    fn test_storage_metrics() {
+        STORAGE_READ_COUNT.inc();
+        STORAGE_WRITE_COUNT.inc();
+        STORAGE_DELETE_COUNT.inc();
+        STORAGE_READ_BYTES.inc_by(1024.0);
+        STORAGE_WRITE_BYTES.inc_by(2048.0);
+        STORAGE_CACHE_HIT.inc();
+        STORAGE_CACHE_MISS.inc();
+
+        assert!(STORAGE_READ_COUNT.get() > 0.0);
+        assert!(STORAGE_WRITE_COUNT.get() > 0.0);
+        assert!(STORAGE_CACHE_HIT.get() > 0.0);
+    }
+
+    #[test]
+    fn test_consensus_metrics() {
+        CONSENSUS_PREPARE_REQUEST.inc();
+        CONSENSUS_PREPARE_RESPONSE.inc();
+        CONSENSUS_COMMIT.inc();
+        CONSENSUS_CHANGE_VIEW.inc();
+        CONSENSUS_RECOVERY_REQUEST.inc();
+        CONSENSUS_RECOVERY_MESSAGE.inc();
+        CONSENSUS_BLOCK_FINALIZED.inc();
+
+        assert!(CONSENSUS_PREPARE_REQUEST.get() > 0.0);
+        assert!(CONSENSUS_COMMIT.get() > 0.0);
+        assert!(CONSENSUS_BLOCK_FINALIZED.get() > 0.0);
+    }
+
+    #[test]
+    fn test_p2p_metrics() {
+        P2P_CONNECTIONS_INBOUND.set(5.0);
+        P2P_CONNECTIONS_OUTBOUND.set(10.0);
+        P2P_MESSAGES_RECEIVED_BYTES.inc_by(1024.0);
+        P2P_MESSAGES_SENT_BYTES.inc_by(2048.0);
+        P2P_HANDSHAKE_SUCCESS.inc();
+        P2P_HANDSHAKE_FAILURE.inc();
+
+        assert_eq!(P2P_CONNECTIONS_INBOUND.get(), 5.0);
+        assert_eq!(P2P_CONNECTIONS_OUTBOUND.get(), 10.0);
+        assert!(P2P_HANDSHAKE_SUCCESS.get() > 0.0);
+    }
+
+    #[test]
+    fn test_crypto_metrics() {
+        CRYPTO_SIGNATURE_VERIFICATIONS.inc_by(10.0);
+        CRYPTO_SIGNATURE_VERIFICATION_FAILURES.inc();
+        CRYPTO_HASH_OPERATIONS.inc_by(100.0);
+
+        assert!(CRYPTO_SIGNATURE_VERIFICATIONS.get() >= 10.0);
+        assert!(CRYPTO_HASH_OPERATIONS.get() >= 100.0);
+    }
+
+    #[test]
+    fn test_smart_contract_metrics() {
+        SMART_CONTRACT_INVOCATIONS.inc();
+        SMART_CONTRACT_DEPLOY.inc();
+        SMART_CONTRACT_UPDATE.inc();
+        SMART_CONTRACT_DESTROY.inc();
+
+        assert!(SMART_CONTRACT_INVOCATIONS.get() > 0.0);
+        assert!(SMART_CONTRACT_DEPLOY.get() > 0.0);
+    }
+
+    #[test]
+    fn test_native_contract_metrics() {
+        NATIVE_CONTRACT_NEO_TRANSFER.inc();
+        NATIVE_CONTRACT_GAS_TRANSFER.inc();
+        NATIVE_CONTRACT_VOTE_CAST.inc();
+        NATIVE_CONTRACT_CANDIDATE_REGISTERED.inc();
+        NATIVE_CONTRACT_ORACLE_REQUEST.inc();
+        NATIVE_CONTRACT_ORACLE_RESPONSE.inc();
+
+        assert!(NATIVE_CONTRACT_NEO_TRANSFER.get() > 0.0);
+        assert!(NATIVE_CONTRACT_GAS_TRANSFER.get() > 0.0);
+    }
+
+    #[test]
+    fn test_rpc_metrics() {
+        RPC_ACTIVE_CONNECTIONS.set(15.0);
+        RPC_RATE_LIMITED.inc();
+        RPC_WEBSOCKET_SUBSCRIPTIONS.set(5.0);
+
+        assert_eq!(RPC_ACTIVE_CONNECTIONS.get(), 15.0);
+        assert_eq!(RPC_WEBSOCKET_SUBSCRIPTIONS.get(), 5.0);
+    }
+
+    #[test]
+    fn test_mempool_metrics() {
+        MEMPOOL_VERIFIED_TX.set(20.0);
+        MEMPOOL_UNVERIFIED_TX.set(5.0);
+        MEMPOOL_TX_ADDED.inc();
+        MEMPOOL_TX_REMOVED.inc();
+        MEMPOOL_TX_REJECTED.inc();
+
+        assert_eq!(MEMPOOL_VERIFIED_TX.get(), 20.0);
+        assert_eq!(MEMPOOL_UNVERIFIED_TX.get(), 5.0);
+    }
+
+    #[test]
+    fn test_ledger_metrics() {
+        LEDGER_BLOCK_PERSIST_TIME.observe(0.1);
+        LEDGER_TX_VERIFICATION_TIME.observe(0.001);
+
+        // Histograms don't have simple get() - just verify they work
+        let output = gather_prometheus();
+        let text = String::from_utf8(output).expect("valid UTF-8");
+        assert!(text.contains("neo_ledger_block_persist_seconds"));
+        assert!(text.contains("neo_ledger_tx_verification_seconds"));
+    }
+
+    #[test]
+    fn test_oracle_metrics() {
+        ORACLE_REQUESTS_PENDING.set(3.0);
+        ORACLE_REQUESTS_COMPLETED.inc();
+        ORACLE_REQUESTS_FAILED.inc();
+
+        assert_eq!(ORACLE_REQUESTS_PENDING.get(), 3.0);
+        assert!(ORACLE_REQUESTS_COMPLETED.get() > 0.0);
+    }
+
+    #[test]
+    fn test_tee_hsm_metrics() {
+        TEE_ENCLAVE_ACTIVE.set(1.0);
+        TEE_ATTESTATION_COUNT.inc();
+        HSM_CONNECTED.set(1.0);
+        HSM_SIGN_OPERATIONS.inc();
+
+        assert_eq!(TEE_ENCLAVE_ACTIVE.get(), 1.0);
+        assert_eq!(HSM_CONNECTED.get(), 1.0);
+    }
+
+    #[test]
+    fn test_all_metrics_in_output() {
+        // Set values for various metrics
+        BLOCK_HEIGHT.set(1000.0);
+        VM_EXECUTION_COUNT.inc();
+        STORAGE_READ_COUNT.inc();
+        CONSENSUS_COMMIT.inc();
+        P2P_CONNECTIONS_INBOUND.set(5.0);
+        CRYPTO_SIGNATURE_VERIFICATIONS.inc();
+        SMART_CONTRACT_INVOCATIONS.inc();
+        RPC_ACTIVE_CONNECTIONS.set(10.0);
+
+        let output = gather_prometheus();
+        let text = String::from_utf8(output).expect("valid UTF-8");
+
+        // Verify key metrics are present
+        assert!(text.contains("neo_block_height"));
+        assert!(text.contains("neo_vm_executions_total"));
+        assert!(text.contains("neo_storage_reads_total"));
+        assert!(text.contains("neo_consensus_commit_total"));
+        assert!(text.contains("neo_p2p_connections_inbound"));
+        assert!(text.contains("neo_crypto_signature_verifications_total"));
+        assert!(text.contains("neo_smart_contract_invocations_total"));
+        assert!(text.contains("neo_rpc_active_connections"));
+    }
 }

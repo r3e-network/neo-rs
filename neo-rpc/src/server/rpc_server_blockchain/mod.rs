@@ -106,6 +106,7 @@ impl RpcServerBlockchain {
     }
 
     fn get_block(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        let _span = tracing::info_span!("rpc_get_block").entered();
         let identifier = Self::parse_block_identifier(params, "getblock")?;
         let verbose = Self::parse_verbose(params.get(1))?;
         let store = server.system().store_cache();
@@ -226,6 +227,7 @@ impl RpcServerBlockchain {
     }
 
     fn get_raw_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        let _span = tracing::info_span!("rpc_get_raw_transaction").entered();
         let hash = Self::expect_hash_param(params, 0, "getrawtransaction")?;
         let verbose = Self::parse_verbose(params.get(1))?;
         let system = server.system();

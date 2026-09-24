@@ -7,6 +7,7 @@ use tracing::{debug, info, warn};
 
 impl ConsensusService {
     /// Handles `ChangeView` message
+    #[tracing::instrument(name = "consensus_change_view", skip(self, payload), fields(block_index = self.context.block_index, view = payload.view_number, validator = payload.validator_index))]
     pub(in crate::service) fn on_change_view(
         &mut self,
         payload: &ConsensusPayload,

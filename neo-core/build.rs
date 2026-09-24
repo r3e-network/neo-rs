@@ -15,7 +15,7 @@ fn main() {
     let proto_root = PathBuf::from("proto/neofs");
     let object_proto = proto_root.join("object/service.proto");
 
-    tonic_build::Builder::new()
+    tonic_build::configure()
         .build_server(false)
         .compile(&[object_proto], &[proto_root])
         .expect("failed to compile neofs protos");

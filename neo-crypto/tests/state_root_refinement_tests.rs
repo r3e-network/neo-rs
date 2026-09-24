@@ -96,7 +96,7 @@ fn test_mpt_single_insert_root_computation() {
     
     assert_eq!(root_after_delete, None, "After deleting all entries, root should be None");
     println!("✓ Single insertion creates valid root, deletion restores empty state");
-    println!("  Root hash: {}...", root_before_delete.to_string()[..16].to_string());
+    println!("  Root hash: {}...", &root_before_delete.to_string()[..16]);
 }
 
 /// Test 3: Root is deterministic given same leaf set

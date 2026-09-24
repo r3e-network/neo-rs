@@ -188,8 +188,8 @@ fn test_ct_hash_eq_matches_equal_operator() {
     println!("✓ CT eq matches std eq for [1u8; 32] vs [2u8; 32]");
     
     // Test last byte difference (critical for constant-time verification)
-    let arr_a: [u8; 32] = std::iter::repeat(0u8).take(31).chain(std::iter::once(1)).collect::<Vec<_>>().try_into().unwrap();
-    let arr_b: [u8; 32] = std::iter::repeat(0u8).take(31).chain(std::iter::once(2)).collect::<Vec<_>>().try_into().unwrap();
+    let arr_a: [u8; 32] = std::iter::repeat_n(0u8, 31).chain(std::iter::once(1)).collect::<Vec<_>>().try_into().unwrap();
+    let arr_b: [u8; 32] = std::iter::repeat_n(0u8, 31).chain(std::iter::once(2)).collect::<Vec<_>>().try_into().unwrap();
     assert!(!ct_hash_eq(&arr_a, &arr_b), "Arrays differing only at last position must not match");
     println!("✓ CT eq detects single-byte difference at last position");
     

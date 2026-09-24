@@ -195,9 +195,9 @@ fn test_compute_root_matches_reference_algorithm() {
     
     // Compare against known structural properties from Rust implementation
     
-    let test_cases = vec![
+    let test_cases = [
         vec![],                                    // Line 92-94
-        vec![random_hash()],                       // Line 96-98  
+        vec![random_hash()],                       // Line 96-98
         vec![random_hash(), random_hash()],        // Line 103-113 even case
         vec![random_hash(), random_hash(), random_hash()], // Line 108-109 odd case
     ];

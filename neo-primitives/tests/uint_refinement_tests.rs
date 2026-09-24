@@ -117,7 +117,7 @@ fn uint160_is_not_uint256() {
 /// Additional proof: Rust const evaluation shows size difference
 #[test]
 fn uint256_longer_than_uint160() {
-    assert!(UINT256_SIZE > UINT160_SIZE, "UInt256 must be larger than UInt160");
+    const { assert!(UINT256_SIZE > UINT160_SIZE, "UInt256 must be larger than UInt160"); }
     // Provable at compile time, just like Coq's `uint256_longer_than_uint160` lemma
 }
 
@@ -242,7 +242,7 @@ fn proptest_uint256_any_32_bytes_valid() {
 #[test]
 fn uint160_from_bytes_errors_are_informative() {
     let err = UInt160::from_bytes(&[0u8; 19]).unwrap_err().to_string();
-    assert!(err.len() > 0, "Error message should not be empty");
+    assert!(!err.is_empty(), "Error message should not be empty");
     // Note: Implementation may vary, but error must be present
 }
 
@@ -250,7 +250,7 @@ fn uint160_from_bytes_errors_are_informative() {
 #[test]
 fn uint256_from_bytes_errors_are_informative() {
     let err = UInt256::from_bytes(&[0u8; 31]).unwrap_err().to_string();
-    assert!(err.len() > 0, "Error message should not be empty");
+    assert!(!err.is_empty(), "Error message should not be empty");
 }
 
 // ============================================================================

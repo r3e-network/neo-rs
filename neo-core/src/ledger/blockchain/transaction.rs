@@ -5,6 +5,7 @@
 use super::*;
 
 impl Blockchain {
+    #[tracing::instrument(name = "blockchain_tx_exists", skip(self, tx, snapshot), fields(tx_hash = %tx.hash().unwrap_or_default()))]
     pub(super) fn transaction_exists_on_chain(
         &self,
         tx: &Transaction,
@@ -69,6 +70,7 @@ impl Blockchain {
             })
     }
 
+    #[tracing::instrument(name = "blockchain_new_tx", skip(self, transaction), fields(tx_hash = %transaction.hash().unwrap_or_default()))]
     pub(super) fn on_new_transaction(&self, transaction: &Transaction) -> VerifyResult {
         let Some(context) = &self.system_context else {
             return VerifyResult::Invalid;

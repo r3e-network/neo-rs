@@ -243,6 +243,7 @@ impl PeerConnection {
     /// - Uses write buffering for small messages
     /// - Minimizes allocations in serialization path
     /// - Efficient timeout handling
+    #[tracing::instrument(name = "p2p_send_message", skip(self, message), fields(remote = %self.remote_addr, command = ?message.command()))]
     pub async fn send_message(&mut self, message: &NetworkMessage) -> NetworkResult<()> {
         if !self.state.is_active() {
             return Err(NetworkError::ConnectionError(
@@ -335,6 +336,7 @@ impl PeerConnection {
     /// Optimizations:
     /// - Pre-allocated buffer with exact capacity
     /// - Minimal allocations during parsing
+    #[tracing::instrument(name = "p2p_receive_message", skip(self), fields(remote = %self.remote_addr))]
     pub async fn receive_message(
         &mut self,
         handshake_complete: bool,
