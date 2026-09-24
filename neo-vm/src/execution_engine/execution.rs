@@ -4,7 +4,7 @@
 
 use super::{ExecutionEngine, StackItem, VMState, VmError, VmResult};
 use crate::Instruction;
-use tracing::{instrument, trace};
+use tracing::instrument;
 
 impl ExecutionEngine {
     /// Starts execution of the VM.
@@ -21,7 +21,7 @@ impl ExecutionEngine {
             }
         }
 
-        trace!(
+        tracing::debug!(
             final_state = ?self.state,
             instructions_executed = self.instructions_executed,
             gas_consumed = self.gas_consumed,

@@ -124,8 +124,8 @@ fn test_mpt_root_always_deterministic() {
     assert_eq!(root1, root2, "Same content must produce identical root hash");
     
     println!("✓ Determinism verified: same leaves → same root");
-    println!("  Root1: {}...", root1.to_string()[..16].to_string());
-    println!("  Root2: {}... (identical)", root2.to_string()[..16].to_string());
+    println!("  Root1: {}...", &root1.to_string()[..16]);
+    println!("  Root2: {}... (identical)", &root2.to_string()[..16]);
 }
 
 /// Test 4a: Incremental update changes root appropriately  
@@ -154,8 +154,8 @@ fn test_mpt_incremental_updates_root_changes() {
     assert_ne!(root1, root2, "Adding new leaf must change root hash");
     
     println!("✓ Root changed when adding new entry");
-    println!("  Before: {}...", root1.to_string()[..16].to_string());
-    println!("  After:  {}... (different)", root2.to_string()[..16].to_string());
+    println!("  Before: {}...", &root1.to_string()[..16]);
+    println!("  After:  {}... (different)", &root2.to_string()[..16]);
 }
 
 /// Test 4b: Deletion reduces count correctly
@@ -167,8 +167,8 @@ fn test_mpt_deletion_reduces_leaf_count() {
     let store = create_memory_store();
     let mut trie = neo_crypto::Trie::new(Arc::clone(&store), None, false);
     
-    let keys = vec![vec![0x01], vec![0x02], vec![0x03]];
-    let values = vec![b"v1", b"v2", b"v3"];
+    let keys = [vec![0x01], vec![0x02], vec![0x03]];
+    let values = [b"v1", b"v2", b"v3"];
     
     // Insert three entries
     for (i, key) in keys.iter().enumerate() {
@@ -188,8 +188,8 @@ fn test_mpt_deletion_reduces_leaf_count() {
     assert_eq!(retrieved, None, "Deleted key should not exist");
     
     println!("✓ Deletion removes entry and modifies root structure");
-    println!("  Before: {}...", root_before.to_string()[..16].to_string());
-    println!("  After:  {}... (modified)", root_after.to_string()[..16].to_string());
+    println!("  Before: {}...", &root_before.to_string()[..16]);
+    println!("  After:  {}... (modified)", &root_after.to_string()[..16]);
 }
 
 /// Test 5: Proof verification succeeds
@@ -261,7 +261,7 @@ fn test_mpt_multi_key_order_independence() {
     assert_eq!(root_a, root_c, "All orders yield identical roots");
     
     println!("✓ Same leaf set → Same root regardless of insertion order");
-    println!("  Root: {}...", root_a.to_string()[..16].to_string());
+    println!("  Root: {}...", &root_a.to_string()[..16]);
 }
 
 /// Test 6b: Collision resistance through hash chaining
@@ -288,8 +288,8 @@ fn test_mpt_collision_resistance() {
     assert_ne!(root1, root2, "Different values must produce different roots");
     
     println!("✓ Value modification changes root (collision resistance)");
-    println!("  Original: {}...", root1.to_string()[..16].to_string());
-    println!("  Modified: {}... (changed)", root2.to_string()[..16].to_string());
+    println!("  Original: {}...", &root1.to_string()[..16]);
+    println!("  Modified: {}... (changed)", &root2.to_string()[..16]);
 }
 
 /// Test 7: Multiple sequential operations maintain consistency
@@ -357,8 +357,8 @@ fn test_mpt_path_structure_root_impact() {
                "Path structure affects root computation");
     
     println!("✓ Path compression creates distinct tree structure");
-    println!("  Compressed prefix: {}...", root_prefix_compressed.to_string()[..16].to_string());
-    println!("  No compression:    {}... (different structure)", root_no_common_prefix.to_string()[..16].to_string());
+    println!("  Compressed prefix: {}...", &root_prefix_compressed.to_string()[..16]);
+    println!("  No compression:    {}... (different structure)", &root_no_common_prefix.to_string()[..16]);
 }
 
 /// Test 9: Large scale insertion performance check
@@ -387,7 +387,7 @@ fn test_mpt_large_scale_roots_stable() {
     }
     
     println!("✓ Large-scale trie maintains stable root");
-    println!("  Entries: {}, Root: {}...", COUNT, root.to_string()[..16].to_string());
+    println!("  Entries: {}, Root: {}...", COUNT, &root.to_string()[..16]);
 }
 
 /// Test 10: Edge case - zero-length key handling
