@@ -79,14 +79,19 @@ impl NativeContract for Notary {
                     notaries = Some(self.get_notary_nodes(snapshot_ref)?);
                 }
 
-                total_fees += i64::from(attr.nkeys) + 1;
+                total_fees = total_fees
+                    .saturating_add(i64::from(attr.nkeys))
+                    .saturating_add(1);
 
                 if tx.sender() == Some(self.hash()) && tx.signers().len() >= 2 {
                     let payer = tx.signers()[1].account;
                     let key = Self::deposit_key(&payer);
                     if let Some(item) = snapshot_ref.try_get(&key) {
                         let mut deposit = deserialize_deposit(&item.value_bytes())?;
-                        deposit.amount -= BigInt::from(tx.system_fee() + tx.network_fee());
+                        let total_fee = tx.system_fee()
+                            .checked_add(tx.network_fee())
+                            .ok_or_else(|| Error::native_contract("Transaction fee overflow"))?;
+                        deposit.amount -= BigInt::from(total_fee);
                         if deposit.amount.is_zero() {
                             snapshot.delete(&key);
                         } else {

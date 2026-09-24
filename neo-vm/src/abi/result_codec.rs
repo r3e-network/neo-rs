@@ -7,7 +7,8 @@ use alloc::{
 };
 
 use super::cursor::Cursor;
-use crate::{ExecutionResult, VmState, fast_codec};
+use crate::{ExecutionResult, VmState};
+use crate::abi::fast_codec;
 
 /// Encodes an execution result into its binary wire form.
 #[inline]

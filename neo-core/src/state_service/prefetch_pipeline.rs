@@ -1,3 +1,4 @@
+#![allow(missing_docs, dead_code)] // WIP pipeline; docs/placeholder consts pending cleanup
 //! Parallel producer-consumer prefetch pipeline for Neo-RS block processing.
 //!
 //! This module implements a multi-stage parallel pipeline using channels and thread pools
@@ -109,18 +110,17 @@
 //! ```
 
 use crossbeam_channel::{bounded, Sender, Receiver, TryRecvError};
-use rayon::prelude::*;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tracing::{debug, info, trace, warn, instrument};
 
-use crate::ledger::blockchain::block_processing::DRAIN_BATCH_SIZE;
 use crate::network::p2p::payloads::transaction::Transaction;
 use crate::network::p2p::payloads::block::Block;
-use crate::cryptography::Crypto;
-use crate::core_error::CoreError;
-use crate::CoreResult;
+pub use crate::{CoreError, CoreResult};
+
+/// Blocks persisted per drain pass (mirrors blockchain block_processing constant).
+const DRAIN_BATCH_SIZE: usize = 50;
 
 /// Default channel buffer size for all pipeline stages
 const DEFAULT_CHANNEL_CAPACITY: usize = 128;
@@ -282,17 +282,19 @@ impl PrefetchPipeline {
             "initializing prefetch pipeline"
         );
 
-        // Create channel between Stage 1 (I/O) and Stage 2 (Verification)
+        // I/O prefetcher output channel (DeserializedBlock -> verification workers)
         let (io_tx, io_rx) = bounded::<DeserializedBlock>(DEFAULT_CHANNEL_CAPACITY);
+        // Request channel (controller -> I/O prefetcher): which blocks to prefetch
+        let (req_tx, req_rx) = bounded::<BlockRequest>(DEFAULT_CHANNEL_CAPACITY);
         
         // Create channel between Stage 2 (Verification) and Stage 3 (Execution)
-        let (vm_tx, vm_rx) = bounded::<VerifiedTxPool>(DEFAULT_CHANNEL_CAPACITY);
+        let (vm_tx, _vm_rx) = bounded::<VerifiedTxPool>(DEFAULT_CHANNEL_CAPACITY);
         
         // Create execution channel
         let (exec_tx, exec_rx) = bounded::<ExecutedTransaction>(DEFAULT_CHANNEL_CAPACITY);
 
         // Spawn I/O prefetcher worker
-        let io_handle = spawn_io_prefetcher(io_tx.clone(), io_rx.clone());
+        let io_handle = spawn_io_prefetcher(io_tx.clone(), req_rx);
         
         // Spawn verification worker pool using Rayon
         let mut verification_handles = Vec::with_capacity(num_workers);
@@ -302,17 +304,18 @@ impl PrefetchPipeline {
         }
         
         // Spawn execution worker
-        let exec_handle = spawn_execution_worker(exec_rx);
-        
+        let state = Arc::new(std::sync::Mutex::new(PipelineState::Running));
+        let exec_handle = spawn_execution_worker(exec_tx, Arc::clone(&state));
+
         Self {
-            io_sender: io_tx,
+            io_sender: req_tx,
             _io_receiver: io_rx,
             verification_senders: vec![vm_tx],
             execution_receiver: exec_rx,
             _io_handle: Some(io_handle),
-            _verification_handles: verification_handles,
+            _verification_handles: verification_handles.into_iter().map(Some).collect(),
             _controller_handle: Some(exec_handle),
-            state: Arc::new(std::sync::Mutex::new(PipelineState::Running)),
+            state: state,
             metrics_handle: None,
         }
     }
@@ -328,7 +331,7 @@ impl PrefetchPipeline {
             let mut last_counted = 0u64;
             let mut total_io_time: f64 = 0.0;
             let mut total_verify_time: f64 = 0.0;
-            let mut sample_count = 0u64;
+            let sample_count = 0u64;
 
             loop {
                 thread::sleep(interval);
@@ -445,8 +448,12 @@ impl PrefetchPipeline {
             *state = PipelineState::ShuttingDown;
         }
 
-        // Drop senders to close channels
-        drop(self.io_sender);
+        // Close the request channel first: the I/O prefetcher blocks in
+        // `rx.recv()` and only exits once every request-sender is dropped.
+        // The pipeline implements Drop, so the field cannot be moved out;
+        // replace it with a detached channel's sender and drop the original.
+        let sender = std::mem::replace(&mut self.io_sender, crossbeam_channel::unbounded().0);
+        drop(sender);
         for _sender in &self.verification_senders {
             // Note: These are owned by workers, so we can't drop them here
             // The channel closure will propagate through sender drop
@@ -479,10 +486,7 @@ impl PrefetchPipeline {
 
     /// Checks if pipeline is running
     pub fn is_running(&self) -> bool {
-        matches!(
-            self.state.lock().expect("pipeline state poisoned"),
-            PipelineState::Running
-        )
+        *self.state.lock().expect("pipeline state poisoned") == PipelineState::Running
     }
 
     /// Pauses the pipeline
@@ -514,10 +518,15 @@ impl Drop for PrefetchPipeline {
     }
 }
 
+/// Verifies transaction signatures (placeholder — production uses neo-crypto).
+fn verify_transaction_batch(transactions: &[Transaction]) -> Vec<Arc<Transaction>> {
+    transactions.iter().map(|tx| Arc::new(tx.clone())).collect()
+}
+
 /// Worker A: Parallel I/O Prefetcher
 /// Reads blocks from disk and deserializes them asynchronously
 fn spawn_io_prefetcher(
-    tx: Sender<DeserializedBlock>,
+    _tx: Sender<DeserializedBlock>,
     rx: Receiver<BlockRequest>,
 ) -> JoinHandle<()> {
     thread::Builder::new()
@@ -527,7 +536,7 @@ fn spawn_io_prefetcher(
             
             while let Ok(req) = rx.recv() {
                 let height = req.height;
-                let start_time = Instant::now();
+                let _start_time = Instant::now();
 
                 // Check if we have pre-fetched bytes (from network)
                 // Placeholder: full implementation requires neo-storage integration
@@ -539,6 +548,7 @@ fn spawn_io_prefetcher(
 
 
             debug!(target: "pipeline", "I/O prefetcher stopped");
+            }
         })
         .expect("failed to spawn I/O prefetcher")
 }
@@ -571,7 +581,7 @@ fn spawn_verification_worker(
                 );
                 
                 // Use Rayon for parallel ECDSA verification
-                let verified_transactions: Vec<Arc<Transaction>> = rayon::join!(
+                let verified_transactions: Vec<Arc<Transaction>> = rayon::join(
                     || verify_transaction_batch(&transactions[0..transactions.len()/2]),
                     || verify_transaction_batch(&transactions[transactions.len()/2..])
                 ).0.to_vec();
@@ -581,6 +591,7 @@ fn spawn_verification_worker(
                     hash,
                     transactions: verified_transactions,
                 };
+                let tx_count = verified_pool.transactions.len();
                 
                 if sender.send(verified_pool).is_err() {
                     warn!(
@@ -596,7 +607,7 @@ fn spawn_verification_worker(
                     target: "pipeline",
                     worker_id,
                     height,
-                    tx_count = verified_pool.transactions.len(),
+                    tx_count,
                     "completed block verification"
                 );
             }
@@ -607,34 +618,25 @@ fn spawn_verification_worker(
 }
 
 /// Executes transactions after verification
-fn spawn_execution_worker(receiver: Sender<ExecutedTransaction>) -> JoinHandle<()> {
+fn spawn_execution_worker(
+    _receiver: Sender<ExecutedTransaction>,
+    state: Arc<std::sync::Mutex<PipelineState>>,
+) -> JoinHandle<()> {
     thread::Builder::new()
         .name("execution-worker".to_string())
         .spawn(move || {
             debug!(target: "pipeline", "execution worker started");
-            
-            loop {
-                thread::sleep(Duration::from_millis(10));
+
+            while matches!(
+                state.lock().map(|s| *s),
+                Ok(PipelineState::Running) | Ok(PipelineState::Paused)
+            ) {
                 // Execution worker not yet implemented - requires ApplicationEngine integration
                 // In production, this would consume VerifiedTxPool and execute VM transactions
+                thread::sleep(Duration::from_millis(10));
             }
         })
         .expect("failed to spawn execution worker")
-}
-
-// This function is not yet implemented - prefetched pipeline requires full storage integration
-// In production, this would integrate with neo-storage to read blocks from disk
-    use std::sync::atomic::{AtomicBool, Ordering};
-    
-    let mut verified = Vec::with_capacity(transactions.len());
-    let should_verify = AtomicBool::new(true);
-    
-    transactions.iter().filter(|_| should_verify.load(Ordering::Relaxed)).for_each(|tx| {
-        // Placeholder for actual cryptographic verification
-        // In production, this would call neo-crypto signature verification:
-    });
-    
-    verified
 }
 
 
@@ -665,8 +667,9 @@ mod tests {
     #[test]
     fn test_shutdown_graceful() {
         let pipeline = PrefetchPipeline::new(None);
+        let state = Arc::clone(&pipeline.state);
         pipeline.shutdown();
-        assert!(!pipeline.is_running());
+        assert_eq!(*state.lock().unwrap(), PipelineState::ShuttingDown);
     }
 
     #[test]

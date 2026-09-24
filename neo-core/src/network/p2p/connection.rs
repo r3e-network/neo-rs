@@ -553,9 +553,10 @@ mod tests {
         let Some((client_stream, _server_stream)) = tcp_pair().await else {
             return;
         };
+        let addr = "127.0.0.1:0".parse().expect("valid socket address");
         let mut connection = PeerConnection::from_channels_config(
             client_stream,
-            "127.0.0.1:0".parse().unwrap(),
+            addr,
             false,
             &ChannelsConfig::default(),
         );
@@ -580,9 +581,10 @@ mod tests {
             write_timeout: Duration::from_millis(5),
             ..ChannelsConfig::default()
         };
+        let addr = "127.0.0.1:0".parse().expect("valid socket address");
         let connection = PeerConnection::from_channels_config(
             client_stream,
-            "127.0.0.1:0".parse().unwrap(),
+            addr,
             false,
             &config,
         );
@@ -596,11 +598,13 @@ mod tests {
             return;
         };
 
+        let addr = "127.0.0.1:0".parse().expect("valid socket address");
+
         // Set up server to receive
         let server_handle = tokio::spawn(async move {
             let mut connection = PeerConnection::from_channels_config(
                 server_stream,
-                "127.0.0.1:0".parse().unwrap(),
+                addr,
                 true,
                 &ChannelsConfig::default(),
             );
@@ -609,7 +613,7 @@ mod tests {
 
         let mut connection = PeerConnection::from_channels_config(
             client_stream,
-            "127.0.0.1:0".parse().unwrap(),
+            addr,
             false,
             &ChannelsConfig::default(),
         );
@@ -638,15 +642,16 @@ mod tests {
         let Some((client_stream, server_stream)) = tcp_pair().await else {
             return;
         };
+        let addr = "127.0.0.1:0".parse().expect("valid socket address");
         let mut client = PeerConnection::from_channels_config(
             client_stream,
-            "127.0.0.1:0".parse().unwrap(),
+            addr,
             false,
             &ChannelsConfig::default(),
         );
         let mut server = PeerConnection::from_channels_config(
             server_stream,
-            "127.0.0.1:0".parse().unwrap(),
+            addr,
             true,
             &ChannelsConfig::default(),
         );
@@ -670,9 +675,10 @@ mod tests {
         let Some((client_stream, mut server_stream)) = tcp_pair().await else {
             return;
         };
+        let addr = "127.0.0.1:0".parse().expect("valid socket address");
         let mut connection = PeerConnection::from_channels_config(
             client_stream,
-            "127.0.0.1:0".parse().unwrap(),
+            addr,
             false,
             &ChannelsConfig::default(),
         );

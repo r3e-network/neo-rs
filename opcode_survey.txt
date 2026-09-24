@@ -1,0 +1,982 @@
+﻿[
+    {
+        "Name":  "PUSHINT8",
+        "ByteHex":  "0x00",
+        "ByteDec":  0
+    },
+    {
+        "Name":  "PUSHINT16",
+        "ByteHex":  "0x01",
+        "ByteDec":  1
+    },
+    {
+        "Name":  "PUSHINT32",
+        "ByteHex":  "0x02",
+        "ByteDec":  2
+    },
+    {
+        "Name":  "PUSHINT64",
+        "ByteHex":  "0x03",
+        "ByteDec":  3
+    },
+    {
+        "Name":  "PUSHINT128",
+        "ByteHex":  "0x04",
+        "ByteDec":  4
+    },
+    {
+        "Name":  "PUSHINT256",
+        "ByteHex":  "0x05",
+        "ByteDec":  5
+    },
+    {
+        "Name":  "PUSHT",
+        "ByteHex":  "0x08",
+        "ByteDec":  8
+    },
+    {
+        "Name":  "PUSHF",
+        "ByteHex":  "0x09",
+        "ByteDec":  9
+    },
+    {
+        "Name":  "PUSHA",
+        "ByteHex":  "0x0A",
+        "ByteDec":  10
+    },
+    {
+        "Name":  "PUSHNULL",
+        "ByteHex":  "0x0B",
+        "ByteDec":  11
+    },
+    {
+        "Name":  "PUSHDATA1",
+        "ByteHex":  "0x0C",
+        "ByteDec":  12
+    },
+    {
+        "Name":  "PUSHDATA2",
+        "ByteHex":  "0x0D",
+        "ByteDec":  13
+    },
+    {
+        "Name":  "PUSHDATA4",
+        "ByteHex":  "0x0E",
+        "ByteDec":  14
+    },
+    {
+        "Name":  "PUSHM1",
+        "ByteHex":  "0x0F",
+        "ByteDec":  15
+    },
+    {
+        "Name":  "PUSH0",
+        "ByteHex":  "0x10",
+        "ByteDec":  16
+    },
+    {
+        "Name":  "PUSH1",
+        "ByteHex":  "0x11",
+        "ByteDec":  17
+    },
+    {
+        "Name":  "PUSH2",
+        "ByteHex":  "0x12",
+        "ByteDec":  18
+    },
+    {
+        "Name":  "PUSH3",
+        "ByteHex":  "0x13",
+        "ByteDec":  19
+    },
+    {
+        "Name":  "PUSH4",
+        "ByteHex":  "0x14",
+        "ByteDec":  20
+    },
+    {
+        "Name":  "PUSH5",
+        "ByteHex":  "0x15",
+        "ByteDec":  21
+    },
+    {
+        "Name":  "PUSH6",
+        "ByteHex":  "0x16",
+        "ByteDec":  22
+    },
+    {
+        "Name":  "PUSH7",
+        "ByteHex":  "0x17",
+        "ByteDec":  23
+    },
+    {
+        "Name":  "PUSH8",
+        "ByteHex":  "0x18",
+        "ByteDec":  24
+    },
+    {
+        "Name":  "PUSH9",
+        "ByteHex":  "0x19",
+        "ByteDec":  25
+    },
+    {
+        "Name":  "PUSH10",
+        "ByteHex":  "0x1A",
+        "ByteDec":  26
+    },
+    {
+        "Name":  "PUSH11",
+        "ByteHex":  "0x1B",
+        "ByteDec":  27
+    },
+    {
+        "Name":  "PUSH12",
+        "ByteHex":  "0x1C",
+        "ByteDec":  28
+    },
+    {
+        "Name":  "PUSH13",
+        "ByteHex":  "0x1D",
+        "ByteDec":  29
+    },
+    {
+        "Name":  "PUSH14",
+        "ByteHex":  "0x1E",
+        "ByteDec":  30
+    },
+    {
+        "Name":  "PUSH15",
+        "ByteHex":  "0x1F",
+        "ByteDec":  31
+    },
+    {
+        "Name":  "PUSH16",
+        "ByteHex":  "0x20",
+        "ByteDec":  32
+    },
+    {
+        "Name":  "NOP",
+        "ByteHex":  "0x21",
+        "ByteDec":  33
+    },
+    {
+        "Name":  "JMP",
+        "ByteHex":  "0x22",
+        "ByteDec":  34
+    },
+    {
+        "Name":  "JMP_L",
+        "ByteHex":  "0x23",
+        "ByteDec":  35
+    },
+    {
+        "Name":  "JMPIF",
+        "ByteHex":  "0x24",
+        "ByteDec":  36
+    },
+    {
+        "Name":  "JMPIF_L",
+        "ByteHex":  "0x25",
+        "ByteDec":  37
+    },
+    {
+        "Name":  "JMPIFNOT",
+        "ByteHex":  "0x26",
+        "ByteDec":  38
+    },
+    {
+        "Name":  "JMPIFNOT_L",
+        "ByteHex":  "0x27",
+        "ByteDec":  39
+    },
+    {
+        "Name":  "JMPEQ",
+        "ByteHex":  "0x28",
+        "ByteDec":  40
+    },
+    {
+        "Name":  "JMPEQ_L",
+        "ByteHex":  "0x29",
+        "ByteDec":  41
+    },
+    {
+        "Name":  "JMPNE",
+        "ByteHex":  "0x2A",
+        "ByteDec":  42
+    },
+    {
+        "Name":  "JMPNE_L",
+        "ByteHex":  "0x2B",
+        "ByteDec":  43
+    },
+    {
+        "Name":  "JMPGT",
+        "ByteHex":  "0x2C",
+        "ByteDec":  44
+    },
+    {
+        "Name":  "JMPGT_L",
+        "ByteHex":  "0x2D",
+        "ByteDec":  45
+    },
+    {
+        "Name":  "JMPGE",
+        "ByteHex":  "0x2E",
+        "ByteDec":  46
+    },
+    {
+        "Name":  "JMPGE_L",
+        "ByteHex":  "0x2F",
+        "ByteDec":  47
+    },
+    {
+        "Name":  "JMPLT",
+        "ByteHex":  "0x30",
+        "ByteDec":  48
+    },
+    {
+        "Name":  "JMPLT_L",
+        "ByteHex":  "0x31",
+        "ByteDec":  49
+    },
+    {
+        "Name":  "JMPLE",
+        "ByteHex":  "0x32",
+        "ByteDec":  50
+    },
+    {
+        "Name":  "JMPLE_L",
+        "ByteHex":  "0x33",
+        "ByteDec":  51
+    },
+    {
+        "Name":  "CALL",
+        "ByteHex":  "0x34",
+        "ByteDec":  52
+    },
+    {
+        "Name":  "CALL_L",
+        "ByteHex":  "0x35",
+        "ByteDec":  53
+    },
+    {
+        "Name":  "CALLA",
+        "ByteHex":  "0x36",
+        "ByteDec":  54
+    },
+    {
+        "Name":  "CALLT",
+        "ByteHex":  "0x37",
+        "ByteDec":  55
+    },
+    {
+        "Name":  "ABORT",
+        "ByteHex":  "0x38",
+        "ByteDec":  56
+    },
+    {
+        "Name":  "ASSERT",
+        "ByteHex":  "0x39",
+        "ByteDec":  57
+    },
+    {
+        "Name":  "THROW",
+        "ByteHex":  "0x3A",
+        "ByteDec":  58
+    },
+    {
+        "Name":  "TRY",
+        "ByteHex":  "0x3B",
+        "ByteDec":  59
+    },
+    {
+        "Name":  "TRY_L",
+        "ByteHex":  "0x3C",
+        "ByteDec":  60
+    },
+    {
+        "Name":  "ENDTRY",
+        "ByteHex":  "0x3D",
+        "ByteDec":  61
+    },
+    {
+        "Name":  "ENDTRY_L",
+        "ByteHex":  "0x3E",
+        "ByteDec":  62
+    },
+    {
+        "Name":  "ENDFINALLY",
+        "ByteHex":  "0x3F",
+        "ByteDec":  63
+    },
+    {
+        "Name":  "RET",
+        "ByteHex":  "0x40",
+        "ByteDec":  64
+    },
+    {
+        "Name":  "SYSCALL",
+        "ByteHex":  "0x41",
+        "ByteDec":  65
+    },
+    {
+        "Name":  "DEPTH",
+        "ByteHex":  "0x43",
+        "ByteDec":  67
+    },
+    {
+        "Name":  "DROP",
+        "ByteHex":  "0x45",
+        "ByteDec":  69
+    },
+    {
+        "Name":  "NIP",
+        "ByteHex":  "0x46",
+        "ByteDec":  70
+    },
+    {
+        "Name":  "XDROP",
+        "ByteHex":  "0x48",
+        "ByteDec":  72
+    },
+    {
+        "Name":  "CLEAR",
+        "ByteHex":  "0x49",
+        "ByteDec":  73
+    },
+    {
+        "Name":  "DUP",
+        "ByteHex":  "0x4A",
+        "ByteDec":  74
+    },
+    {
+        "Name":  "OVER",
+        "ByteHex":  "0x4B",
+        "ByteDec":  75
+    },
+    {
+        "Name":  "PICK",
+        "ByteHex":  "0x4D",
+        "ByteDec":  77
+    },
+    {
+        "Name":  "TUCK",
+        "ByteHex":  "0x4E",
+        "ByteDec":  78
+    },
+    {
+        "Name":  "SWAP",
+        "ByteHex":  "0x50",
+        "ByteDec":  80
+    },
+    {
+        "Name":  "ROT",
+        "ByteHex":  "0x51",
+        "ByteDec":  81
+    },
+    {
+        "Name":  "ROLL",
+        "ByteHex":  "0x52",
+        "ByteDec":  82
+    },
+    {
+        "Name":  "REVERSE3",
+        "ByteHex":  "0x53",
+        "ByteDec":  83
+    },
+    {
+        "Name":  "REVERSE4",
+        "ByteHex":  "0x54",
+        "ByteDec":  84
+    },
+    {
+        "Name":  "REVERSEN",
+        "ByteHex":  "0x55",
+        "ByteDec":  85
+    },
+    {
+        "Name":  "INITSSLOT",
+        "ByteHex":  "0x56",
+        "ByteDec":  86
+    },
+    {
+        "Name":  "INITSLOT",
+        "ByteHex":  "0x57",
+        "ByteDec":  87
+    },
+    {
+        "Name":  "LDSFLD0",
+        "ByteHex":  "0x58",
+        "ByteDec":  88
+    },
+    {
+        "Name":  "LDSFLD1",
+        "ByteHex":  "0x59",
+        "ByteDec":  89
+    },
+    {
+        "Name":  "LDSFLD2",
+        "ByteHex":  "0x5A",
+        "ByteDec":  90
+    },
+    {
+        "Name":  "LDSFLD3",
+        "ByteHex":  "0x5B",
+        "ByteDec":  91
+    },
+    {
+        "Name":  "LDSFLD4",
+        "ByteHex":  "0x5C",
+        "ByteDec":  92
+    },
+    {
+        "Name":  "LDSFLD5",
+        "ByteHex":  "0x5D",
+        "ByteDec":  93
+    },
+    {
+        "Name":  "LDSFLD6",
+        "ByteHex":  "0x5E",
+        "ByteDec":  94
+    },
+    {
+        "Name":  "LDSFLD",
+        "ByteHex":  "0x5F",
+        "ByteDec":  95
+    },
+    {
+        "Name":  "STSFLD0",
+        "ByteHex":  "0x60",
+        "ByteDec":  96
+    },
+    {
+        "Name":  "STSFLD1",
+        "ByteHex":  "0x61",
+        "ByteDec":  97
+    },
+    {
+        "Name":  "STSFLD2",
+        "ByteHex":  "0x62",
+        "ByteDec":  98
+    },
+    {
+        "Name":  "STSFLD3",
+        "ByteHex":  "0x63",
+        "ByteDec":  99
+    },
+    {
+        "Name":  "STSFLD4",
+        "ByteHex":  "0x64",
+        "ByteDec":  100
+    },
+    {
+        "Name":  "STSFLD5",
+        "ByteHex":  "0x65",
+        "ByteDec":  101
+    },
+    {
+        "Name":  "STSFLD6",
+        "ByteHex":  "0x66",
+        "ByteDec":  102
+    },
+    {
+        "Name":  "STSFLD",
+        "ByteHex":  "0x67",
+        "ByteDec":  103
+    },
+    {
+        "Name":  "LDLOC0",
+        "ByteHex":  "0x68",
+        "ByteDec":  104
+    },
+    {
+        "Name":  "LDLOC1",
+        "ByteHex":  "0x69",
+        "ByteDec":  105
+    },
+    {
+        "Name":  "LDLOC2",
+        "ByteHex":  "0x6A",
+        "ByteDec":  106
+    },
+    {
+        "Name":  "LDLOC3",
+        "ByteHex":  "0x6B",
+        "ByteDec":  107
+    },
+    {
+        "Name":  "LDLOC4",
+        "ByteHex":  "0x6C",
+        "ByteDec":  108
+    },
+    {
+        "Name":  "LDLOC5",
+        "ByteHex":  "0x6D",
+        "ByteDec":  109
+    },
+    {
+        "Name":  "LDLOC6",
+        "ByteHex":  "0x6E",
+        "ByteDec":  110
+    },
+    {
+        "Name":  "LDLOC",
+        "ByteHex":  "0x6F",
+        "ByteDec":  111
+    },
+    {
+        "Name":  "STLOC0",
+        "ByteHex":  "0x70",
+        "ByteDec":  112
+    },
+    {
+        "Name":  "STLOC1",
+        "ByteHex":  "0x71",
+        "ByteDec":  113
+    },
+    {
+        "Name":  "STLOC2",
+        "ByteHex":  "0x72",
+        "ByteDec":  114
+    },
+    {
+        "Name":  "STLOC3",
+        "ByteHex":  "0x73",
+        "ByteDec":  115
+    },
+    {
+        "Name":  "STLOC4",
+        "ByteHex":  "0x74",
+        "ByteDec":  116
+    },
+    {
+        "Name":  "STLOC5",
+        "ByteHex":  "0x75",
+        "ByteDec":  117
+    },
+    {
+        "Name":  "STLOC6",
+        "ByteHex":  "0x76",
+        "ByteDec":  118
+    },
+    {
+        "Name":  "STLOC",
+        "ByteHex":  "0x77",
+        "ByteDec":  119
+    },
+    {
+        "Name":  "LDARG0",
+        "ByteHex":  "0x78",
+        "ByteDec":  120
+    },
+    {
+        "Name":  "LDARG1",
+        "ByteHex":  "0x79",
+        "ByteDec":  121
+    },
+    {
+        "Name":  "LDARG2",
+        "ByteHex":  "0x7A",
+        "ByteDec":  122
+    },
+    {
+        "Name":  "LDARG3",
+        "ByteHex":  "0x7B",
+        "ByteDec":  123
+    },
+    {
+        "Name":  "LDARG4",
+        "ByteHex":  "0x7C",
+        "ByteDec":  124
+    },
+    {
+        "Name":  "LDARG5",
+        "ByteHex":  "0x7D",
+        "ByteDec":  125
+    },
+    {
+        "Name":  "LDARG6",
+        "ByteHex":  "0x7E",
+        "ByteDec":  126
+    },
+    {
+        "Name":  "LDARG",
+        "ByteHex":  "0x7F",
+        "ByteDec":  127
+    },
+    {
+        "Name":  "STARG0",
+        "ByteHex":  "0x80",
+        "ByteDec":  128
+    },
+    {
+        "Name":  "STARG1",
+        "ByteHex":  "0x81",
+        "ByteDec":  129
+    },
+    {
+        "Name":  "STARG2",
+        "ByteHex":  "0x82",
+        "ByteDec":  130
+    },
+    {
+        "Name":  "STARG3",
+        "ByteHex":  "0x83",
+        "ByteDec":  131
+    },
+    {
+        "Name":  "STARG4",
+        "ByteHex":  "0x84",
+        "ByteDec":  132
+    },
+    {
+        "Name":  "STARG5",
+        "ByteHex":  "0x85",
+        "ByteDec":  133
+    },
+    {
+        "Name":  "STARG6",
+        "ByteHex":  "0x86",
+        "ByteDec":  134
+    },
+    {
+        "Name":  "STARG",
+        "ByteHex":  "0x87",
+        "ByteDec":  135
+    },
+    {
+        "Name":  "NEWBUFFER",
+        "ByteHex":  "0x88",
+        "ByteDec":  136
+    },
+    {
+        "Name":  "MEMCPY",
+        "ByteHex":  "0x89",
+        "ByteDec":  137
+    },
+    {
+        "Name":  "CAT",
+        "ByteHex":  "0x8B",
+        "ByteDec":  139
+    },
+    {
+        "Name":  "SUBSTR",
+        "ByteHex":  "0x8C",
+        "ByteDec":  140
+    },
+    {
+        "Name":  "LEFT",
+        "ByteHex":  "0x8D",
+        "ByteDec":  141
+    },
+    {
+        "Name":  "RIGHT",
+        "ByteHex":  "0x8E",
+        "ByteDec":  142
+    },
+    {
+        "Name":  "INVERT",
+        "ByteHex":  "0x90",
+        "ByteDec":  144
+    },
+    {
+        "Name":  "AND",
+        "ByteHex":  "0x91",
+        "ByteDec":  145
+    },
+    {
+        "Name":  "OR",
+        "ByteHex":  "0x92",
+        "ByteDec":  146
+    },
+    {
+        "Name":  "XOR",
+        "ByteHex":  "0x93",
+        "ByteDec":  147
+    },
+    {
+        "Name":  "EQUAL",
+        "ByteHex":  "0x97",
+        "ByteDec":  151
+    },
+    {
+        "Name":  "NOTEQUAL",
+        "ByteHex":  "0x98",
+        "ByteDec":  152
+    },
+    {
+        "Name":  "SIGN",
+        "ByteHex":  "0x99",
+        "ByteDec":  153
+    },
+    {
+        "Name":  "ABS",
+        "ByteHex":  "0x9A",
+        "ByteDec":  154
+    },
+    {
+        "Name":  "NEGATE",
+        "ByteHex":  "0x9B",
+        "ByteDec":  155
+    },
+    {
+        "Name":  "INC",
+        "ByteHex":  "0x9C",
+        "ByteDec":  156
+    },
+    {
+        "Name":  "DEC",
+        "ByteHex":  "0x9D",
+        "ByteDec":  157
+    },
+    {
+        "Name":  "ADD",
+        "ByteHex":  "0x9E",
+        "ByteDec":  158
+    },
+    {
+        "Name":  "SUB",
+        "ByteHex":  "0x9F",
+        "ByteDec":  159
+    },
+    {
+        "Name":  "MUL",
+        "ByteHex":  "0xA0",
+        "ByteDec":  160
+    },
+    {
+        "Name":  "DIV",
+        "ByteHex":  "0xA1",
+        "ByteDec":  161
+    },
+    {
+        "Name":  "MOD",
+        "ByteHex":  "0xA2",
+        "ByteDec":  162
+    },
+    {
+        "Name":  "POW",
+        "ByteHex":  "0xA3",
+        "ByteDec":  163
+    },
+    {
+        "Name":  "SQRT",
+        "ByteHex":  "0xA4",
+        "ByteDec":  164
+    },
+    {
+        "Name":  "MODMUL",
+        "ByteHex":  "0xA5",
+        "ByteDec":  165
+    },
+    {
+        "Name":  "MODPOW",
+        "ByteHex":  "0xA6",
+        "ByteDec":  166
+    },
+    {
+        "Name":  "SHL",
+        "ByteHex":  "0xA8",
+        "ByteDec":  168
+    },
+    {
+        "Name":  "SHR",
+        "ByteHex":  "0xA9",
+        "ByteDec":  169
+    },
+    {
+        "Name":  "NOT",
+        "ByteHex":  "0xAA",
+        "ByteDec":  170
+    },
+    {
+        "Name":  "BOOLAND",
+        "ByteHex":  "0xAB",
+        "ByteDec":  171
+    },
+    {
+        "Name":  "BOOLOR",
+        "ByteHex":  "0xAC",
+        "ByteDec":  172
+    },
+    {
+        "Name":  "NZ",
+        "ByteHex":  "0xB1",
+        "ByteDec":  177
+    },
+    {
+        "Name":  "NUMEQUAL",
+        "ByteHex":  "0xB3",
+        "ByteDec":  179
+    },
+    {
+        "Name":  "NUMNOTEQUAL",
+        "ByteHex":  "0xB4",
+        "ByteDec":  180
+    },
+    {
+        "Name":  "LT",
+        "ByteHex":  "0xB5",
+        "ByteDec":  181
+    },
+    {
+        "Name":  "LE",
+        "ByteHex":  "0xB6",
+        "ByteDec":  182
+    },
+    {
+        "Name":  "GT",
+        "ByteHex":  "0xB7",
+        "ByteDec":  183
+    },
+    {
+        "Name":  "GE",
+        "ByteHex":  "0xB8",
+        "ByteDec":  184
+    },
+    {
+        "Name":  "MIN",
+        "ByteHex":  "0xB9",
+        "ByteDec":  185
+    },
+    {
+        "Name":  "MAX",
+        "ByteHex":  "0xBA",
+        "ByteDec":  186
+    },
+    {
+        "Name":  "WITHIN",
+        "ByteHex":  "0xBB",
+        "ByteDec":  187
+    },
+    {
+        "Name":  "PACKMAP",
+        "ByteHex":  "0xBE",
+        "ByteDec":  190
+    },
+    {
+        "Name":  "PACKSTRUCT",
+        "ByteHex":  "0xBF",
+        "ByteDec":  191
+    },
+    {
+        "Name":  "PACK",
+        "ByteHex":  "0xC0",
+        "ByteDec":  192
+    },
+    {
+        "Name":  "UNPACK",
+        "ByteHex":  "0xC1",
+        "ByteDec":  193
+    },
+    {
+        "Name":  "NEWARRAY0",
+        "ByteHex":  "0xC2",
+        "ByteDec":  194
+    },
+    {
+        "Name":  "NEWARRAY",
+        "ByteHex":  "0xC3",
+        "ByteDec":  195
+    },
+    {
+        "Name":  "NEWARRAY_T",
+        "ByteHex":  "0xC4",
+        "ByteDec":  196
+    },
+    {
+        "Name":  "NEWSTRUCT0",
+        "ByteHex":  "0xC5",
+        "ByteDec":  197
+    },
+    {
+        "Name":  "NEWSTRUCT",
+        "ByteHex":  "0xC6",
+        "ByteDec":  198
+    },
+    {
+        "Name":  "NEWMAP",
+        "ByteHex":  "0xC8",
+        "ByteDec":  200
+    },
+    {
+        "Name":  "SIZE",
+        "ByteHex":  "0xCA",
+        "ByteDec":  202
+    },
+    {
+        "Name":  "HASKEY",
+        "ByteHex":  "0xCB",
+        "ByteDec":  203
+    },
+    {
+        "Name":  "KEYS",
+        "ByteHex":  "0xCC",
+        "ByteDec":  204
+    },
+    {
+        "Name":  "VALUES",
+        "ByteHex":  "0xCD",
+        "ByteDec":  205
+    },
+    {
+        "Name":  "PICKITEM",
+        "ByteHex":  "0xCE",
+        "ByteDec":  206
+    },
+    {
+        "Name":  "APPEND",
+        "ByteHex":  "0xCF",
+        "ByteDec":  207
+    },
+    {
+        "Name":  "SETITEM",
+        "ByteHex":  "0xD0",
+        "ByteDec":  208
+    },
+    {
+        "Name":  "REVERSEITEMS",
+        "ByteHex":  "0xD1",
+        "ByteDec":  209
+    },
+    {
+        "Name":  "REMOVE",
+        "ByteHex":  "0xD2",
+        "ByteDec":  210
+    },
+    {
+        "Name":  "CLEARITEMS",
+        "ByteHex":  "0xD3",
+        "ByteDec":  211
+    },
+    {
+        "Name":  "POPITEM",
+        "ByteHex":  "0xD4",
+        "ByteDec":  212
+    },
+    {
+        "Name":  "ISNULL",
+        "ByteHex":  "0xD8",
+        "ByteDec":  216
+    },
+    {
+        "Name":  "ISTYPE",
+        "ByteHex":  "0xD9",
+        "ByteDec":  217
+    },
+    {
+        "Name":  "CONVERT",
+        "ByteHex":  "0xDB",
+        "ByteDec":  219
+    },
+    {
+        "Name":  "ABORTMSG",
+        "ByteHex":  "0xE0",
+        "ByteDec":  224
+    },
+    {
+        "Name":  "ASSERTMSG",
+        "ByteHex":  "0xE1",
+        "ByteDec":  225
+    }
+]

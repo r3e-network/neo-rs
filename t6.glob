@@ -1,0 +1,78 @@
+DIGEST f4982301bb789b0bc619d7b7b8aeb2c9
+Ft6
+R24:28 Coq.Arith.Arith <> <> lib
+R30:32 Coq.micromega.Lia <> <> lib
+R41:54 Coq.Arith.PeanoNat Nat mul_div_le abbrev
+def 68:76 <> compute_f
+R83:85 Coq.Init.Datatypes <> nat ind
+binder 79:79 <> n:1
+R90:92 Coq.Init.Datatypes <> nat ind
+R97:103 Coq.Arith.PeanoNat Nat div def
+R106:112 Coq.Arith.PeanoNat Nat sub def
+R114:114 t6 <> n:1 var
+def 133:138 <> quorum
+R147:149 Coq.Init.Datatypes <> nat ind
+binder 141:141 <> n:2
+binder 143:143 <> f:3
+R154:156 Coq.Init.Datatypes <> nat ind
+R162:164 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R161:161 t6 <> n:2 var
+R165:165 t6 <> f:3 var
+prf 176:190 <> honest_majority
+binder 201:201 <> n:4
+binder 203:203 <> f:5
+R215:218 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R211:213 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R207:209 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R206:206 t6 <> f:5 var
+R214:214 t6 <> n:4 var
+R229:231 Coq.Init.Peano <> ::nat_scope:x_'>'_x not
+R219:224 t6 <> quorum def
+R226:226 t6 <> n:4 var
+R228:228 t6 <> f:5 var
+R232:232 t6 <> f:5 var
+R263:268 t6 <> quorum def
+prf 287:293 <> f_bound
+binder 304:304 <> n:6
+R312:315 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R308:310 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R311:311 t6 <> n:6 var
+R333:335 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R316:316 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R328:331 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R317:325 t6 <> compute_f def
+R327:327 t6 <> n:6 var
+R336:336 t6 <> n:6 var
+R368:376 t6 <> compute_f def
+R412:415 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R396:399 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R411:411 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R400:400 Coq.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R406:409 Coq.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R402:404 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R417:419 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R412:415 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R396:399 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R411:411 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R400:400 Coq.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R406:409 Coq.Arith.PeanoNat <> ::nat_scope:x_'/'_x not
+R402:404 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R417:419 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R434:447 Coq.Arith.PeanoNat Nat mul_div_le abbrev
+R434:447 Coq.Arith.PeanoNat Nat mul_div_le abbrev
+prf 477:496 <> neo3_honest_majority
+binder 507:507 <> n:7
+R515:518 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R511:513 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R514:514 t6 <> n:7 var
+R541:543 Coq.Init.Peano <> ::nat_scope:x_'>'_x not
+R519:524 t6 <> quorum def
+R526:526 t6 <> n:7 var
+R529:537 t6 <> compute_f def
+R539:539 t6 <> n:7 var
+R544:552 t6 <> compute_f def
+R554:554 t6 <> n:7 var
+R585:599 t6 <> honest_majority thm
+R585:599 t6 <> honest_majority thm
+R608:614 t6 <> f_bound thm
+R608:614 t6 <> f_bound thm

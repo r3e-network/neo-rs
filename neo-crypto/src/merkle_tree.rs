@@ -60,7 +60,7 @@ impl MerkleTree {
                     left.clone()
                 };
 
-                let hash = hash_pair(&left.hash, &right.hash);
+                let hash = hash_pair_internal(&left.hash, &right.hash);
                 parents.push(MerkleTreeNode {
                     hash,
                     left: Some(Box::new(left)),
@@ -107,7 +107,7 @@ impl MerkleTree {
                 let left = &current[i];
                 // If odd number of elements, duplicate the last one
                 let right = current.get(i + 1).unwrap_or(left);
-                next.push(hash_pair(left, right));
+                next.push(hash_pair_internal(left, right));
                 i += 2;
             }
             current = next;
@@ -126,6 +126,12 @@ impl MerkleTree {
     /// Returns the root hash when available.
     pub fn root(&self) -> Option<&UInt256> {
         self.root.as_ref().map(|node| &node.hash)
+    }
+
+    /// Hashes two 256-bit values together using double SHA256.
+    /// This is the fundamental pairing operation used throughout merkle tree computation.
+    pub fn hash_pair(left: &UInt256, right: &UInt256) -> UInt256 {
+        hash_pair_internal(left, right)
     }
 
     /// Trims the tree according to the provided bloom-filter flags.
@@ -173,6 +179,14 @@ fn depth_first_collect(node: &MerkleTreeNode, hashes: &mut Vec<UInt256>) {
     }
 }
 
+/// Internal helper for hashing two UInt256 values together
+fn hash_pair_internal(left: &UInt256, right: &UInt256) -> UInt256 {
+    let mut bytes = [0u8; 64];
+    bytes[..32].copy_from_slice(&left.to_array());
+    bytes[32..].copy_from_slice(&right.to_array());
+    UInt256::from(Crypto::hash256(&bytes))
+}
+
 fn trim_node(node: &mut MerkleTreeNode, index: usize, depth: usize, flags: &[bool]) {
     if depth <= 1 || node.left.is_none() {
         return;
@@ -213,9 +227,3 @@ fn trim_node(node: &mut MerkleTreeNode, index: usize, depth: usize, flags: &[boo
     }
 }
 
-fn hash_pair(left: &UInt256, right: &UInt256) -> UInt256 {
-    let mut bytes = [0u8; 64];
-    bytes[..32].copy_from_slice(&left.to_array());
-    bytes[32..].copy_from_slice(&right.to_array());
-    UInt256::from(Crypto::hash256(&bytes))
-}

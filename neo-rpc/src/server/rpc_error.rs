@@ -6,10 +6,12 @@
 
 use neo_json::{JObject, JToken};
 use std::fmt::{self, Display};
+use thiserror::Error;
 
 /// Represents a JSON-RPC error returned by the RPC server (matches the C#
 /// `RpcError` class semantics).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Error, Clone, Debug, PartialEq, Eq)]
+#[error("{message} ({code}){}", .data.as_ref().map(|d| format!(" - {}", d)).unwrap_or_default())]
 pub struct RpcError {
     code: i32,
     message: String,
@@ -218,17 +220,6 @@ impl RpcError {
         session_capacity_exceeded => (-609, "Session capacity exceeded");
     }
 }
-
-impl Display for RpcError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.data {
-            Some(data) => write!(f, "{} ({}) - {}", self.message, self.code, data),
-            None => write!(f, "{} ({})", self.message, self.code),
-        }
-    }
-}
-
-impl std::error::Error for RpcError {}
 
 impl From<RpcError> for JToken {
     fn from(error: RpcError) -> Self {

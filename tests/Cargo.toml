@@ -32,7 +32,7 @@ neo-vm = { workspace = true }
 # Utilities
 num-bigint = { workspace = true }
 hex = { workspace = true }
-tokio = { workspace = true, features = ["full", "test-util"] }
+tokio = { workspace = true, features = ["test-util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 serde_json = { workspace = true }
@@ -80,6 +80,22 @@ path = "tests/no_local_neo_vm_dependency.rs"
 [[test]]
 name = "fast_sync_p2p_e2e_tests"
 path = "tests/fast_sync_p2p_e2e_tests.rs"
+
+[[test]]
+name = "error_path_tests"
+path = "tests/error_path_tests.rs"
+
+[[test]]
+name = "vm_error_tests"
+path = "tests/vm_error_tests.rs"
+
+[[test]]
+name = "storage_error_tests"
+path = "tests/storage_error_tests.rs"
+
+[[test]]
+name = "network_error_tests"
+path = "tests/network_error_tests.rs"
 
 [[bench]]
 name = "performance_benchmarks"

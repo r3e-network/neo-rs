@@ -211,6 +211,8 @@ pub mod slot;
 /// StorageContext for smart contract storage operations.
 pub mod storage_context;
 
+/// Read/Write Set Tracker for parallel execution conflict detection.
+/// The implementation is exposed through the runtime module.
 /// Syscall registry - static dispatch table with zero allocations.
 pub mod syscalls;
 
@@ -233,9 +235,12 @@ pub mod stack_item;
 /// Memory pool with arena-based allocation for high-performance VM execution.
 pub mod memory;
 
-mod abi;
+/// ABI encoding and stack value types.
+pub mod abi;
 mod host;
 mod interpreter;
+#[cfg(feature = "pooled-engine")]
+pub mod application_engine_pooled; // Feature-gated for production use
 mod runtime;
 pub mod semantics;
 mod vm;
@@ -260,7 +265,7 @@ pub use abi::{
     stack_value_as_bytes, stack_value_as_fixed_bytes, stack_value_as_i64, stack_value_as_string,
     stack_value_as_u8, stack_value_as_u32, stack_value_into_items, stack_value_span_bytes,
 };
-pub use abi::{callback_codec, fast_codec, result_codec};
+pub use abi::fast_codec::{decode_stack, encode_stack};
 pub use host::{interop_hash, syscall_arg_count};
 pub use interpreter::{
     CALLT_MARKER, CALLT_MARKER_HI, INITIALIZER_COMPLETE_MARKER, SyscallProvider, interpret,
@@ -271,6 +276,7 @@ pub use interpreter::{
     last_interpreter_ip, last_result_limit, last_result_stack_len, last_result_stage,
 };
 pub use runtime::{RuntimeStack, VmContext};
+pub use runtime::rw_set_tracker::RwSetTracker;
 pub use vm::{
     DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, ExceptionHandlingContext,
     ExceptionHandlingState, ExecutionEngineLimits, FromOperand, Instruction, InstructionError,
@@ -311,6 +317,7 @@ pub use script_builder::ScriptBuilder;
 pub use slot::Slot;
 pub use stack_item::{StackItem, StackItemExt};
 pub use storage_context::StorageContext;
+// pub use rw_set_tracker::RwSetTracker;  // REMOVED - use crate::runtime::rw_set_tracker::RwSetTracker instead
 
 // ============================================================================
 // Memory Pool API

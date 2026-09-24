@@ -1,14 +1,26 @@
 //! Shared NeoVM instruction parsing and operand decoding.
 
 use alloc::{format, string::String, vec::Vec};
+use thiserror::Error;
 
 use super::OpCode;
 
 /// Error returned while parsing an instruction or decoding its operand.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InstructionError {
-    kind: InstructionErrorKind,
-    message: String,
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum InstructionError {
+    /// Instruction byte parsing failed.
+    #[error("Parse error: {message}")]
+    Parse {
+        /// Error message describing the parse failure.
+        message: String,
+    },
+
+    /// Operand decoding failed.
+    #[error("Operand error: {message}")]
+    Operand {
+        /// Error message describing the operand failure.
+        message: String,
+    },
 }
 
 /// Category of an instruction error.
@@ -23,38 +35,33 @@ pub enum InstructionErrorKind {
 impl InstructionError {
     /// Creates a new instruction parse error.
     pub fn parse(message: impl Into<String>) -> Self {
-        Self {
-            kind: InstructionErrorKind::Parse,
+        Self::Parse {
             message: message.into(),
         }
     }
 
     /// Creates a new operand decoding error.
     pub fn operand(message: impl Into<String>) -> Self {
-        Self {
-            kind: InstructionErrorKind::Operand,
+        Self::Operand {
             message: message.into(),
         }
     }
 
     /// Returns the error category.
     pub const fn kind(&self) -> InstructionErrorKind {
-        self.kind
+        match self {
+            Self::Parse { .. } => InstructionErrorKind::Parse,
+            Self::Operand { .. } => InstructionErrorKind::Operand,
+        }
     }
 
     /// Returns the human-readable error message.
     pub fn message(&self) -> &str {
-        &self.message
+        match self {
+            Self::Parse { message } | Self::Operand { message } => message,
+        }
     }
 }
-
-impl core::fmt::Display for InstructionError {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for InstructionError {}
 
 /// Result type for shared NeoVM instruction operations.
 pub type InstructionResult<T> = Result<T, InstructionError>;

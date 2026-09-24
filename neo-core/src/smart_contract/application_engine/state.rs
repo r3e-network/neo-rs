@@ -461,12 +461,16 @@ impl ApplicationEngine {
 
     /// Returns the total GAS consumed during execution.
     pub fn gas_consumed(&self) -> i64 {
-        (self.gas_consumed + FEE_FACTOR - 1) / FEE_FACTOR
+        self.gas_consumed
+            .saturating_add(FEE_FACTOR - 1)
+            .saturating_div(FEE_FACTOR)
     }
 
     /// Returns the total fee consumed during execution.
     pub fn fee_consumed(&self) -> i64 {
-        (self.fee_consumed + FEE_FACTOR - 1) / FEE_FACTOR
+        self.fee_consumed
+            .saturating_add(FEE_FACTOR - 1)
+            .saturating_div(FEE_FACTOR)
     }
 
     /// Returns the raw execution fee factor (scaled into picoGAS units)

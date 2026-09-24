@@ -49,6 +49,27 @@ OUT = REPO / "vectors" / "vm" / "syscall-vectors.json"
 VALID_PUBKEY = bytes.fromhex("024b817ef37f2fc3d4a33fe36687e592d9f30fe24b3e28187dc8f12b3b3b2b839e")
 ZERO_SIG = bytes(64)
 
+# Canonical mainnet native-contract hashes, shared verbatim by the C# reference
+# (Neo 3.10.1) and the neo-rs native registry. Verified in
+# `neo-core/tests/native_contract_tests.rs` (NeoToken id=-5) and the repo's
+# offline comparison scripts. Both engines route System.Contract.Call to the
+# same native contract when handed these bytes, so we embed the same bytes in
+# every vector consumed by both runners.
+NEO_HASH = bytes.fromhex("ef4073a0f2b305a38ec4050e4d3d28bc40ea63f5")
+GAS_HASH = bytes.fromhex("d2a4cff31913016155e38e474a2c06d08be276cf")
+
+# CallFlags.All = READ_STATES(0x01) | WRITE_STATES(0x02) | ALLOW_CALL(0x04)
+# | ALLOW_NOTIFY(0x08) = 0x0F, matching neo-primitives CallFlags and C#.
+CALL_FLAGS_ALL = 0x0F
+
+# Signer account bytes used by the signer-scoped vectors. Both runners build the
+# transaction container with a Signer whose account == these bytes, and the
+# CheckWitness vectors pass the SAME bytes, so CheckWitness -> true. This is the
+# standard account hash of VALID_PUBKEY (SignatureContract script hash), a
+# recognizable value, but any 20 fixed bytes would do. Bytes are the internal
+# (little-endian) form that both UInt160::from_bytes / UInt160.ToUInt160 use.
+SIGNER_ACCOUNT = bytes.fromhex("c44ea575c5f79638f0e73f39d7bd4b3337c81691")
+
 
 def load_opcodes() -> dict[str, int]:
     src = OPCODE_RS.read_text(encoding="utf-8")
@@ -115,9 +136,31 @@ class Builder:
         self.op("PACK")
         return self
 
+    def push_str(self, text: str) -> "Builder":
+        """Push a UTF-8 string as a byte array (matches ScriptBuilder.EmitPush(string))."""
+        return self.push_bytes(text.encode("utf-8"))
+
     def syscall(self, name: str) -> "Builder":
         self.buf.append(self.ops["SYSCALL"])
         self.buf += syscall_bytes(name)
+        return self
+
+    def contract_call(self, hash_bytes: bytes, method: str, flags: int = CALL_FLAGS_ALL) -> "Builder":
+        """Emit System.Contract.Call(hash, method, flags, args=[]).
+
+        C#/Rust pop in declaration order (hash -> method -> flags -> args), so
+        the push order is: args, flags, method, hash (hash on top).
+
+        `hash_bytes` is the *canonical display* hex (e.g. "ef4073..."). The VM
+        interop reconstructs a UInt160 from raw little-endian internal bytes, so
+        we push the reversed (internal) byte order — the same bytes both engines
+        (neo-rs `UInt160::from_bytes` and C# `UInt160.ToUInt160`) interpret.
+        """
+        self.pack_array([])
+        self.push_int(flags)
+        self.push_bytes(method.encode("utf-8"))
+        self.push_bytes(hash_bytes[::-1])  # internal byte order
+        self.syscall("System.Contract.Call")
         return self
 
     def hex(self) -> str:
@@ -127,9 +170,9 @@ class Builder:
 def build_vectors(ops: dict[str, int]) -> list[dict]:
     vectors: list[dict] = []
 
-    def add(name: str, group: str, b: Builder, note: str = "") -> None:
+    def add(name: str, group: str, b: Builder, note: str = "", **extra) -> None:
         vectors.append(
-            {"name": name, "group": group, "note": note, "script": b.hex()}
+            {"name": name, "group": group, "note": note, "script": b.hex(), **extra}
         )
 
     # ---- Runtime metadata (pure, no storage) ----------------------------
@@ -185,6 +228,81 @@ def build_vectors(ops: dict[str, int]) -> list[dict]:
         Builder(ops).push_bytes(bytes(20))
         .syscall("System.Runtime.CheckWitness").op("RET"),
         "non-signer 20-byte hash -> false")
+
+    # ---- CheckWitness positive path (container has SIGNS with the account) ----
+    add("cw.positive_hash", "witness",
+        Builder(ops).push_bytes(SIGNER_ACCOUNT)
+        .syscall("System.Runtime.CheckWitness").op("RET"),
+        "signer-derived 20-byte hash -> true (signer present in tx)",
+        signer=SIGNER_ACCOUNT.hex())
+    add("cw.positive_pubkey", "witness",
+        Builder(ops).push_bytes(VALID_PUBKEY)
+        .syscall("System.Runtime.CheckWitness").op("RET"),
+        "CheckWitness(33-byte VALID_PUBKEY) -> true (converts to signer account)",
+        signer=SIGNER_ACCOUNT.hex())
+    add("runtime.current_signers_signed", "runtime",
+        Builder(ops).syscall("System.Runtime.CurrentSigners").op("RET"),
+        "CurrentSigners with one signer -> [{account, scopes}]",
+        signer=SIGNER_ACCOUNT.hex())
+
+    # ---- Runtime: gas / random / container / signers / log / notify ------
+    add("runtime.get_random", "runtime",
+        Builder(ops).syscall("System.Runtime.GetRandom").op("RET"),
+        "GetRandom -> Integer (network=0, tx/block nonce-derived)")
+    add("runtime.get_script_container", "runtime",
+        Builder(ops).syscall("System.Runtime.GetScriptContainer").op("RET"),
+        "GetScriptContainer -> transaction stack map")
+    add("runtime.current_signers", "runtime",
+        Builder(ops).syscall("System.Runtime.CurrentSigners").op("RET"),
+        "CurrentSigners -> [] (minimal tx has no signers)")
+    add("runtime.gas_left", "runtime",
+        Builder(ops).syscall("System.Runtime.GasLeft").op("RET"),
+        "GasLeft -> remaining datoshi after minimal script")
+    add("runtime.gas_left_after_arith", "runtime",
+        Builder(ops).push_int(1).push_int(2).op("ADD")
+        .syscall("System.Runtime.GasLeft").op("RET"),
+        "GasLeft after PUSH1 PUSH2 ADD -> exact datoshi consumed by arithmetic")
+    add("runtime.log", "runtime",
+        Builder(ops).push_bytes(b"hello")
+        .syscall("System.Runtime.Log").op("PUSH1").op("RET"),
+        "Log('hello') in dynamic script -> HALT [Integer 1]")
+    add("runtime.notify", "runtime",
+        Builder(ops).push_int(1).push_int(1).op("PACK")
+        .push_str("Evt")
+        .syscall("System.Runtime.Notify").op("RET"),
+        "Notify in dynamic script -> FAULT (notifications disallowed in dynamic scripts)")
+
+    # ---- System.Contract.Call to NEO/GAS native read-only constants ------
+    add("native.neo_symbol", "native",
+        Builder(ops).contract_call(NEO_HASH, "symbol").op("RET"),
+        "NEO.symbol() -> 'NEO' ByteString")
+    add("native.neo_decimals", "native",
+        Builder(ops).contract_call(NEO_HASH, "decimals").op("RET"),
+        "NEO.decimals() -> Integer 0")
+    add("native.gas_symbol", "native",
+        Builder(ops).contract_call(GAS_HASH, "symbol").op("RET"),
+        "GAS.symbol() -> 'GAS' ByteString")
+    add("native.gas_decimals", "native",
+        Builder(ops).contract_call(GAS_HASH, "decimals").op("RET"),
+        "GAS.decimals() -> Integer 8")
+
+    # ---- System.Contract: account-hash helpers & call flags ---------------
+    add("contract.create_standard_account", "contract",
+        Builder(ops).push_bytes(VALID_PUBKEY)
+        .syscall("System.Contract.CreateStandardAccount").op("RET"),
+        "CreateStandardAccount(VALID_PUBKEY) -> 20-byte account hash")
+    add("contract.create_multisig_account", "contract",
+        Builder(ops).pack_array([VALID_PUBKEY, VALID_PUBKEY]).push_int(2)
+        .syscall("System.Contract.CreateMultisigAccount").op("RET"),
+        "CreateMultisigAccount(2, [pk,pk]) -> 20-byte multisig hash")
+    add("contract.get_call_flags", "contract",
+        Builder(ops).syscall("System.Contract.GetCallFlags").op("RET"),
+        "GetCallFlags -> Integer 15 (entry context LoadScript CallFlags.All on both sides)")
+
+    # ---- System.Storage: negative path (no deployed contract context) -----
+    add("storage.get_context", "storage",
+        Builder(ops).syscall("System.Storage.GetContext").op("RET"),
+        "GetContext in bare dynamic script -> returns null (no contract context)")
 
     return vectors
 

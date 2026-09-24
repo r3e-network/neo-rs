@@ -52,13 +52,17 @@ impl LedgerContext {
     }
 
     /// Records a block and its header for quick access by hash or index.
+    ///
+    /// # Lock Ordering
+    ///
+    /// This method acquires locks in the correct order: hashes_by_index,
+    /// headers_by_index, then blocks_by_hash.
     pub fn insert_block(&self, mut block: Block) -> CoreResult<UInt256> {
         let header = block.header.clone();
         let index = header.index() as usize;
         let hash = block.try_hash()?;
 
-        self.blocks_by_hash.write().insert(hash, block);
-
+        // Lock order: 1. hashes_by_index, 2. headers_by_index, 3. blocks_by_hash
         {
             let mut hashes = self.hashes_by_index.write();
             if hashes.len() <= index {
@@ -73,6 +77,10 @@ impl LedgerContext {
                 headers.resize(index + 1, None);
             }
             headers[index] = Some(header);
+        }
+
+        {
+            self.blocks_by_hash.write().insert(hash, block);
         }
 
         self.best_height.fetch_max(index as u32, Ordering::Relaxed);

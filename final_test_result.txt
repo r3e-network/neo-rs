@@ -1,0 +1,420 @@
+﻿cargo : warning: missing documentation for a constant
+At line:1 char:1
++ cargo test --test witness_validation_refinement_tests --manifest-path ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: missin... for a constant:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ --> neo-io\src\var_int.rs:7:1
+  |
+7 | pub const VAR_INT_U16_MARKER: u8 = 0xFD;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+note: the lint level is defined here
+ --> neo-io\src\lib.rs:1:9
+  |
+1 | #![warn(missing_docs)]
+  |         ^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+ --> neo-io\src\var_int.rs:8:1
+  |
+8 | pub const VAR_INT_U32_MARKER: u8 = 0xFE;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a constant
+ --> neo-io\src\var_int.rs:9:1
+  |
+9 | pub const VAR_INT_U64_MARKER: u8 = 0xFF;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `neo-io` (lib) generated 3 warnings
+warning: variable does not need to be mutable
+   --> neo-storage\src\storage\tiered_storage.rs:248:21
+    |
+248 |                 let mut cache = self.tier2_prefix_cache.write();
+    |                     ----^^^^^
+    |                     |
+    |                     help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `path_prefix`
+   --> neo-storage\src\storage\tiered_storage.rs:297:39
+    |
+297 |     fn load_from_backing_store(&self, path_prefix: &[u8]) -> Option<Arc<Node>> {
+    |                                       ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: 
+`_path_prefix`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> neo-storage\src\storage\tiered_storage.rs:314:17
+    |
+314 |             let mut cache = self.tier2_prefix_cache.write();
+    |                 ----^^^^^
+    |                 |
+    |                 help: remove this `mut`
+
+warning: field `capacity_per_group` is never read
+  --> neo-storage\src\storage\tiered_storage.rs:68:5
+   |
+65 | pub struct ContractPrefixCache {
+   |            ------------------- field in this struct
+...
+68 |     capacity_per_group: usize,
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `backing_store` is never read
+   --> neo-storage\src\storage\tiered_storage.rs:182:5
+    |
+165 | pub struct TieredStorage<S> 
+    |            ------------- field in this struct
+...
+182 |     backing_store: Arc<S>,
+    |     ^^^^^^^^^^^^^
+
+warning: `neo-storage` (lib) generated 5 warnings (run `cargo fix --lib -p neo-storage` to apply 3 suggestions)
+   Compiling neo-core v0.17.0 (D:\Git\neo-rs\neo-core)
+warning: unused doc comment
+  --> neo-core\tests\witness_validation_refinement_tests.rs:33:5
+   |
+33 | /     /**
+34 | |      * Validates script_hash_size_correct theorem from Coq refinement
+35 | |      * Property: Script hash always produces exactly 20 bytes (UInt160)
+36 | |      */
+   | |_______^
+...
+39 | /     let test_scripts = vec![
+40 | |         vec![],                          // Empty script
+41 | |         vec![0x00],                      // Single byte
+42 | |         vec![0xAA; 35],                  // Single-sig pattern length
+...  |
+45 | |         vec![0xDD; 1024],                // Maximum size per MAX_VERIFICATION_SCRIPT constant
+46 | |     ];
+   | |______- rustdoc does not generate documentation for statements
+   |
+   = help: use `/* */` for a plain comment
+   = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused doc comment
+  --> neo-core\tests\witness_validation_refinement_tests.rs:66:5
+   |
+66 | /     /**
+67 | |      * Validates script_hash_deterministic theorem from Coq refinement
+68 | |      * Property: Same input script always produces identical hash (pure function)
+69 | |      */
+   | |_______^
+70 |       
+71 | /     let test_cases = vec![
+72 | |         vec![1; 10],
+73 | |         vec![255; 100],
+74 | |         vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+75 | |         vec![0xFE; 200],
+76 | |     ];
+   | |______- rustdoc does not generate documentation for statements
+   |
+   = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:100:5
+    |
+100 | /     /**
+101 | |      * Validates canonical single-sig redeem script format compliance
+102 | |      * Matches C# Contract.CreateSignatureContract implementation
+103 | |      * Pattern: PUSHDATA1 (0x21) + 33-byte PK + CHECKSIG (0xAC)
+104 | |      */
+    | |_______^
+105 |       
+106 |       let verification_script = Helper::signature_redeem_script(TEST_PUBLIC_KEY_1);
+    |       ----------------------------------------------------------------------------- rustdoc does not generate 
+documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:135:5
+    |
+135 | /     /**
+136 | |      * Validates extraction logic matching extract_signature_from_invocation_script()
+137 | |      * Expected format: PUSHDATA1 (0x21) + 66-byte invocation [1 + 64 sig bytes]
+138 | |      */
+    | |_______^
+139 |       
+140 | /     let valid_invocation = vec![
+141 | |         0x21,              // PUSHDATA1 opcode
+142 | |         0x40,              // Length byte (64 decimal)
+...   |
+145 | |     .chain((0..64).map(|_| 0x01))  // 64-byte signature placeholder
+146 | |     .collect::<Vec<u8>>();
+    | |__________________________- rustdoc does not generate documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:172:5
+    |
+172 | /     /**
+173 | |      * Validates extract_public_key_from_verification_script() implementation
+174 | |      * Extracts public key from position [2..35] in canonical single-sig script
+175 | |      */
+    | |_______^
+176 |       
+177 |       let verification_script = Helper::signature_redeem_script(TEST_PUBLIC_KEY_1);
+    |       ----------------------------------------------------------------------------- rustdoc does not generate 
+documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:204:5
+    |
+204 | /     /**
+205 | |      * Validates unified_witness_clone_deterministic theorem
+206 | |      * Cloned witnesses must have identical script hashes
+207 | |      */
+    | |_______^
+208 |       
+209 |       let invocation = vec![0x01; 50];
+    |       -------------------------------- rustdoc does not generate documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:238:5
+    |
+238 | /     /**
+239 | |      * Validates multisig_threshold_valid invariant
+240 | |      * required_signatures cannot exceed registered public keys count
+241 | |      */
+    | |_______^
+...
+244 | /     let priv_keys = vec![
+245 | |         Secp256r1Crypto::generate_private_key(),
+246 | |         Secp256r1Crypto::generate_private_key(),
+247 | |         Secp256r1Crypto::generate_private_key(),
+248 | |     ];
+    | |______- rustdoc does not generate documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:270:5
+    |
+270 | /     /**
+271 | |      * Validates multisig_impossible_threshold_check lemma
+272 | |      * Should reject scenarios where required > available keys
+273 | |      */
+    | |_______^
+274 |       
+275 | /     let priv_keys = vec![
+276 | |         Secp256r1Crypto::generate_private_key(),
+277 | |         Secp256r1Crypto::generate_private_key(),
+278 | |     ];
+    | |______- rustdoc does not generate documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:305:5
+    |
+305 | /     /**
+306 | |      * Validates multisig_provided_sufficient invariant
+307 | |      * Verification fails when provided signatures < required threshold
+308 | |      */
+    | |_______^
+309 |       
+310 |       let priv1 = Secp256r1Crypto::generate_private_key();
+    |       ---------------------------------------------------- rustdoc does not generate documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:351:5
+    |
+351 | /     /**
+352 | |      * Edge case validation for empty verification script
+353 | |      * Tests script_hash_size_correct with minimum-length input
+354 | |      */
+    | |_______^
+355 |       
+356 |       let empty_script: Vec<u8> = vec![];
+    |       ----------------------------------- rustdoc does not generate documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:371:5
+    |
+371 | /     /**
+372 | |      * Validates 64-byte ECDSA signature structure requirements
+373 | |      * Ensures r||s components are properly encoded
+374 | |      */
+    | |_______^
+375 |       
+376 |       let priv_key = Secp256r1Crypto::generate_private_key();
+    |       ------------------------------------------------------- rustdoc does not generate documentation for 
+statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:440:5
+    |
+440 | /     /**
+441 | |      * Validates compressed ECDSA public key prefix constraints
+442 | |      * Prefix must be 0x02 (even y-coordinate) or 0x03 (odd y-coordinate)
+443 | |      */
+    | |_______^
+444 |       
+445 | /     let valid_even_prefix = vec![0x02]
+446 | |         .into_iter()
+447 | |         .chain((1..33).map(|_| rand::random()))
+448 | |         .collect::<Vec<u8>>();
+    | |______________________________- rustdoc does not generate documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:500:5
+    |
+500 | /     /**
+501 | |      * Validates invocation script follows PUSHDATA1 encoding scheme
+502 | |      * Format: opcode (1) + length (1) + signature/args (variable)
+503 | |      */
+    | |_______^
+...
+506 | /     let valid_format = vec![0x21, 0x40, 0x01]
+507 | |         .into_iter()
+508 | |         .cycle()
+509 | |         .take(66)
+510 | |         .collect::<Vec<u8>>(); // Not actual signature but valid format
+    | |______________________________- rustdoc does not generate documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:531:5
+    |
+531 | /     /**
+532 | |      * Validates ECDSA signature correctness against proper public key
+533 | |      * Tests signature_verification_valid lemma concretely
+534 | |      */
+    | |_______^
+535 |       
+536 |       let private_key = Secp256r1Crypto::generate_private_key();
+    |       ---------------------------------------------------------- rustdoc does not generate documentation for 
+statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:559:5
+    |
+559 | /     /**
+560 | |      * Complete end-to-end validation of multi-sig verification flow
+561 | |      * Tests full witness.verify_multi_signature() implementation
+562 | |      */
+    | |_______^
+563 |       
+564 |       let priv1 = Secp256r1Crypto::generate_private_key();
+    |       ---------------------------------------------------- rustdoc does not generate documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:606:5
+    |
+606 | /     /**
+607 | |      * Validates that script hash depends only on verification script
+608 | |      * Changing invocation script should NOT affect script hash
+609 | |      */
+    | |_______^
+610 |       
+611 |       let verification = vec![0x05; 50];
+    |       ---------------------------------- rustdoc does not generate documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused doc comment
+   --> neo-core\tests\witness_validation_refinement_tests.rs:632:5
+    |
+632 | /     /**
+633 | |      * Validates all empty witness constructors produce equivalent instances
+634 | |      * new(), empty(), new_with_scripts(vec![], vec![])
+635 | |      */
+    | |_______^
+636 |       
+637 |       let w1 = Witness::new();
+    |       ------------------------ rustdoc does not generate documentation for statements
+    |
+    = help: use `/* */` for a plain comment
+
+warning: unused variable: `witness`
+   --> neo-core\tests\witness_validation_refinement_tests.rs:178:9
+    |
+178 |     let witness = Witness::new_with_scripts(vec![], verification_script.clone());
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_witness`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `verification_script`
+   --> neo-core\tests\witness_validation_refinement_tests.rs:257:9
+    |
+257 |     let verification_script = Helper::multi_sig_redeem_script(m, &pub_keys);
+    |         ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_verification_script`
+
+warning: `neo-core` (test "witness_validation_refinement_tests") generated 19 warnings (run `cargo fix --test 
+"witness_validation_refinement_tests" -p neo-core` to apply 2 suggestions)
+    Finished `test` profile [optimized + debuginfo] target(s) in 3.31s
+     Running tests\witness_validation_refinement_tests.rs 
+(target\debug\deps\witness_validation_refinement_tests-d988d19ecb4e49b7.exe)
+
+running 19 tests
+test test_script_hash_edge_case_empty_script ... ok
+test test_script_hash_always_uint160_size ... ok
+test test_public_key_extraction_from_verification_script ... ok
+test test_invocation_script_format_consistency ... ok
+test test_script_hash_independence_from_invocation_script ... ok
+test test_public_key_compression_prefix_validity ... FAILED
+test test_signature_extraction_from_invocation_script ... ok
+test test_script_hash_single_sig_pattern_compliance ... FAILED
+test test_verification_script_max_size_compliance ... ok
+test test_witness_clone_preserves_hash ... ok
+test test_ecdsa_signature_format_validation ... ok
+test test_witness_empty_constructors_equivalence ... ok
+test test_witness_serialization_preserves_properties ... ok
+test test_multisig_impossible_threshold_rejected ... ok
+test test_script_hash_determinism_property ... ok
+test test_multisig_required_signatures_validity ... ok
+test test_multisig_insufficient_signatures_rejected ... ok
+test test_signature_verify_with_correct_public_key ... ok
+test test_multi_signature_verification_success ... ok
+
+failures:
+
+---- test_public_key_compression_prefix_validity stdout ----
+
+thread 'test_public_key_compression_prefix_validity' (95912) panicked at neo-core\tests\witness_validation_refinement_tests.rs:464:5:
+assertion `left == right` failed: Even prefix key must produce valid 35-byte script
+  left: 40
+ right: 35
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- test_script_hash_single_sig_pattern_compliance stdout ----
+
+thread 'test_script_hash_single_sig_pattern_compliance' (97812) panicked at neo-core\tests\witness_validation_refinement_tests.rs:109:5:
+assertion `left == right` failed: Single-sig script must be exactly 35 bytes
+  left: 40
+ right: 35
+
+
+failures:
+    test_public_key_compression_prefix_validity
+    test_script_hash_single_sig_pattern_compliance
+
+test result: FAILED. 17 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test witness_validation_refinement_tests`

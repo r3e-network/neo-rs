@@ -40,8 +40,8 @@ tracing = { workspace = true }
 prometheus = { workspace = true, optional = true }
 sysinfo = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
-tonic = { version = "0.11", features = ["transport", "tls", "tls-roots"], optional = true }
-prost = { version = "0.12", optional = true }
+tonic = { version = "0.14", features = ["transport", "tls-ring", "tls-webpki-roots"], optional = true }
+prost = { version = "0.13", optional = true }
 quick-xml = { version = "0.31", features = ["serialize"], optional = true }
 uuid = { workspace = true }
 base64 = { workspace = true }
@@ -83,10 +83,13 @@ num_cpus = "1.15"
 # Internal dependencies
 chrono.workspace = true
 futures.workspace = true
+futures-util = "0.3"
+anyhow.workspace = true
 neo-vm = { workspace = true }
 neo_io_crate = { path = "../neo-io", package = "neo-io" }
 inventory = "0.3"
 neo-json = { path = "../neo-json" }
+log = "0.4"
 
 # New foundation crates (re-exported for backward compatibility)
 # Foundation layer dependencies only (Layer 0)
@@ -119,7 +122,7 @@ harness = false
 # CARGO_FEATURE_NEOFS_GRPC). Cargo does not support feature-gating build-deps,
 # so they are always compiled. Consider moving proto generation to a build script
 # crate or xtask to avoid compiling these unconditionally.
-tonic-build = "0.11"
+tonic-build = "0.14"
 protoc-bin-vendored = "3.0"
 
 [features]
@@ -142,6 +145,8 @@ prefetch = ["runtime"]
 full = ["rocksdb", "upnp", "monitoring", "oracle", "neofs-grpc", "parallel"]
 runtime = []
 performance-tests = []
+# VM object pooling for high-throughput transaction processing
+pooled-engine = []
 
 [[example]]
 name = "check_unclaimed_gas"

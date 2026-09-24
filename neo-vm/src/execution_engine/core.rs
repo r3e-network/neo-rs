@@ -26,6 +26,9 @@ impl ExecutionEngine {
         reference_counter: ReferenceCounter,
         limits: ExecutionEngineLimits,
     ) -> Self {
+        // ReferenceCounter is Arc-based, so cloning is cheap (just bumps ref count)
+        // but we only need one clone here for the result_stack
+        let result_stack = EvaluationStack::new(reference_counter.clone());
         Self {
             state: VMState::BREAK,
             is_jumping: false,
@@ -35,7 +38,7 @@ impl ExecutionEngine {
             interop_host: None,
             call_flags: CallFlags::ALL,
             invocation_stack: Vec::new(),
-            result_stack: EvaluationStack::new(reference_counter.clone()),
+            result_stack,
             reference_counter,
             uncaught_exception: None,
             instructions_executed: 0,
@@ -69,8 +72,8 @@ impl ExecutionEngine {
         #[cfg(debug_assertions)]
         println!("ExecutionEngine fault: {err:?}");
         if self.uncaught_exception.is_none() {
-            let message = match &err {
-                VmError::CatchableException { message } => message.clone(),
+            let message = match err {
+                VmError::CatchableException { message } => message,
                 _ => {
                     let mut fault_text = err.to_string();
                     if let Some(context) = self.current_context() {

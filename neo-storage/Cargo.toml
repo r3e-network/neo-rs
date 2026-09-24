@@ -39,6 +39,7 @@ hashbrown = { workspace = true }
 # Caching
 lru = { workspace = true }
 fastbloom = { workspace = true }
+smallvec = { workspace = true }
 
 # Logging
 tracing = { workspace = true }

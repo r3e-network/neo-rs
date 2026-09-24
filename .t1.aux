@@ -1,0 +1,75 @@
+// Test to demonstrate memory safety issues in ArenaMemoryPool
+
+#[test]
+fn test_memory_leak_demonstration() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // This demonstrates that ArenaMemoryPool leaks memory
+    // because Box::into_raw is called but Box::from_raw is never called
+
+    for _ in 0..1000 {
+        let arena = ArenaMemoryPool::new();
+        // When arena goes out of scope, the Box<UnsafeArena> is leaked
+        // because there's no Drop implementation to call Box::from_raw
+        drop(arena);
+    }
+
+    // In a real scenario, this would leak ~80KB (1000 * ~80 bytes per UnsafeArena)
+}
+
+#[test]
+fn test_clone_aliasing_issue() {
+    let arena1 = ArenaMemoryPool::new();
+
+    // Allocate some data
+    unsafe {
+        let _ref1 = arena1.allocate(42u64);
+        let _ref2 = arena1.allocate(99u64);
+    }
+
+    assert_eq!(arena1.used_bytes(), 16); // 2 * 8 bytes
+
+    // Clone creates a shallow copy of the raw pointer
+    let arena2 = arena1.clone();
+
+    // Both arena1 and arena2 now point to the SAME UnsafeArena
+    // Proof: they share state
+    assert_eq!(arena2.used_bytes(), 16); // Same state!
+
+    // Now if we reset one...
+    arena1.reset();
+
+    // The other sees the reset too!
+    assert_eq!(arena2.used_bytes(), 0); // SHARED STATE
+
+    // This is dangerous: if arena2 held references from before reset,
+    // they would now point to recycled memory (use-after-free)
+}
+
+#[test]
+fn test_use_after_free_potential() {
+    let arena1 = ArenaMemoryPool::new();
+
+    // Allocate and keep a reference
+    let ref1 = unsafe { arena1.allocate(42u64) };
+    assert_eq!(*ref1, 42);
+
+    // Clone the arena (both point to same underlying storage)
+    let arena2 = arena1.clone();
+
+    // Reset via the clone
+    arena2.reset();
+
+    // Now ref1 points into recycled memory!
+    // The bump pointer has been reset, so the next allocation
+    // will overwrite the memory that ref1 points to
+
+    unsafe {
+        let _new_ref = arena2.allocate(999u64);
+    }
+
+    // ref1 is now potentially corrupted (undefined behavior)
+    // This test doesn't crash in practice because the memory is still mapped,
+    // but this is textbook use-after-free
+}

@@ -1,0 +1,26 @@
+DIGEST 3c2cef0c6304b0276894813bfe8afe02
+Ft2
+R24:28 Coq.Arith.Arith <> <> lib
+R30:32 Coq.micromega.Lia <> <> lib
+rec 42:42 <> R
+proj 52:52 <> f
+proj 61:61 <> g
+R56:58 Coq.Init.Datatypes <> nat ind
+R65:67 Coq.Init.Datatypes <> nat ind
+prf 78:78 <> t
+R85:85 t2 <> R rec
+binder 81:81 <> r:4
+R95:98 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R93:93 t2 <> f proj
+R90:90 t2 <> r:4 var
+R104:106 Coq.Init.Peano <> ::nat_scope:x_'+'_x not
+R102:102 t2 <> f proj
+R99:99 t2 <> r:4 var
+R110:110 t2 <> g proj
+R107:107 t2 <> r:4 var
+R126:126 t2 <> f proj
+prf 146:147 <> t2
+R163:165 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R161:161 t2 <> g proj
+R152:153 t2 <> mk constr
+R181:181 t2 <> g proj

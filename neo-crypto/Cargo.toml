@@ -56,6 +56,7 @@ zeroize = { workspace = true }
 parking_lot = { workspace = true }
 tracing = { workspace = true }
 lru = { workspace = true }
+smallvec = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

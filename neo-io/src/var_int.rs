@@ -4,9 +4,14 @@
 //! Neo wire formats and binary serialization. They are intentionally not SCALE,
 //! RLP, or any other external protocol codec.
 
-const VAR_INT_U16_MARKER: u8 = 0xFD;
-const VAR_INT_U32_MARKER: u8 = 0xFE;
-const VAR_INT_U64_MARKER: u8 = 0xFF;
+/// Marker byte indicating the following 2 bytes encode a u16 in little-endian format.
+pub const VAR_INT_U16_MARKER: u8 = 0xFD;
+
+/// Marker byte indicating the following 4 bytes encode a u32 in little-endian format.
+pub const VAR_INT_U32_MARKER: u8 = 0xFE;
+
+/// Marker byte indicating the following 8 bytes encode a u64 in little-endian format.
+pub const VAR_INT_U64_MARKER: u8 = 0xFF;
 
 /// Attempts to read a compact integer from the beginning of `src`.
 ///

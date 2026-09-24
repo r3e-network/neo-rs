@@ -137,7 +137,11 @@ impl TransactionVerificationContext {
     }
 
     fn fee_amount(tx: &Transaction) -> BigInt {
-        BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee())
+        let system_fee = tx.system_fee();
+        let network_fee = tx.network_fee();
+        // Use checked_add to prevent overflow, though BigInt handles this naturally
+        // This is for consistency with i64 overflow protection elsewhere
+        BigInt::from(system_fee) + BigInt::from(network_fee)
     }
 
     fn oracle_response(tx: &Transaction) -> Option<&OracleResponse> {

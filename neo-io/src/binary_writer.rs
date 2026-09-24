@@ -1,10 +1,18 @@
 use crate::{IoResult, serializable::Serializable, var_int};
-use bytes::BufMut;
+use bytes::{BufMut, Bytes, BytesMut};
 
 /// A sequential binary writer for serializing Neo protocol data in little-endian format.
 ///
 /// Wraps an internal `Vec<u8>` buffer and provides typed write methods
 /// matching the Neo C# `BinaryWriter` interface.
+///
+/// # Zero-Copy Optimization
+///
+/// For performance-critical paths, use [`with_capacity`](Self::with_capacity) when the
+/// output size is known to avoid reallocations. The writer supports zero-copy reads
+/// via [`as_bytes`](Self::as_bytes) and can be converted to reference-counted
+/// [`Bytes`] via [`freeze`](Self::freeze) for efficient sharing across threads or
+/// network layers without cloning the underlying buffer.
 #[derive(Debug, Clone, Default)]
 pub struct BinaryWriter {
     buffer: Vec<u8>,
@@ -152,6 +160,41 @@ impl BinaryWriter {
         self.buffer
     }
 
+    /// Consumes the writer and returns a reference-counted [`Bytes`] buffer.
+    ///
+    /// # Zero-Copy Optimization
+    ///
+    /// This method provides efficient zero-copy sharing of the serialized data.
+    /// The returned `Bytes` can be cloned cheaply (only increments a reference count)
+    /// making it ideal for:
+    /// - Sharing serialized data across multiple threads
+    /// - Sending the same data over multiple network connections
+    /// - Caching serialized payloads without duplication
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let writer = BinaryWriter::new();
+    /// // ... serialize data ...
+    /// let bytes = writer.freeze();
+    /// let clone1 = bytes.clone(); // Zero-copy clone
+    /// let clone2 = bytes.clone(); // Another zero-copy clone
+    /// ```
+    #[must_use]
+    pub fn freeze(self) -> Bytes {
+        Bytes::from(self.buffer)
+    }
+
+    /// Reserves capacity for at least `additional` more bytes in the buffer.
+    ///
+    /// # Zero-Copy Optimization
+    ///
+    /// Use this when you know approximately how much more data will be written
+    /// to avoid multiple reallocations during serialization.
+    pub fn reserve(&mut self, additional: usize) {
+        self.buffer.reserve(additional);
+    }
+
     /// Serializes a single [`Serializable`] value into the buffer.
     pub fn write_serializable<T: Serializable>(&mut self, value: &T) -> IoResult<()> {
         value.serialize(self)
@@ -159,6 +202,30 @@ impl BinaryWriter {
 
     /// Writes a length-prefixed vector of [`Serializable`] values.
     pub fn write_serializable_vec<T: Serializable>(&mut self, values: &[T]) -> IoResult<()> {
+        self.write_var_uint(values.len() as u64)?;
+        for value in values {
+            value.serialize(self)?;
+        }
+        Ok(())
+    }
+
+    /// Writes a length-prefixed vector of [`Serializable`] values with capacity pre-allocation.
+    ///
+    /// # Zero-Copy Optimization
+    ///
+    /// This variant pre-calculates the total size needed and reserves capacity upfront,
+    /// avoiding reallocations during serialization. Use this for performance-critical
+    /// paths where the collection size is non-trivial.
+    pub fn write_serializable_vec_with_size<T: Serializable>(
+        &mut self,
+        values: &[T],
+    ) -> IoResult<()> {
+        // Pre-calculate total size to avoid reallocations
+        let prefix_size = var_int::encoded_len(values.len() as u64);
+        let items_size: usize = values.iter().map(|v| v.size()).sum();
+        self.reserve(prefix_size + items_size);
+
+        // Write the data
         self.write_var_uint(values.len() as u64)?;
         for value in values {
             value.serialize(self)?;

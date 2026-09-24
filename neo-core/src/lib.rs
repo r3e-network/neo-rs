@@ -159,6 +159,12 @@ pub mod witness;
 /// Witness rule evaluation for conditional verification.
 pub mod witness_rule;
 
+/// Common utility functions shared across modules.
+///
+/// Provides reusable helpers for string conversion, validation, and error handling
+/// to reduce code duplication.
+pub mod utils;
+
 // ============================================================================
 // Optional Features
 // ============================================================================

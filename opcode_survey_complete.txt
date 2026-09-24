@@ -1,0 +1,116 @@
+# Opcode Byte Mapping Survey - COMPLETE ANALYSIS
+
+## Source Truth Files Analyzed:
+1. neo-vm/src/vm/opcode.rs (opcode definitions)
+2. neo-core/src/smart_contract/application_engine/op_code_prices.rs (gas prices)
+
+## Key Findings:
+
+### CORRECT BYTE MAPPINGS (from opcode.rs):
+
+| Byte | Decimal | Opcode Name      | Gas Price (from table) |
+|------|---------|------------------|------------------------|
+| 0x00 | 0       | PUSHINT8         | 1                      |
+| 0x01 | 1       | PUSHINT16        | 1                      |
+| 0x02 | 2       | PUSHINT32        | 1                      |
+| 0x03 | 3       | PUSHINT64        | 1                      |
+| 0x04 | 4       | PUSHINT128       | 4                      |
+| 0x05 | 5       | PUSHINT256       | 4                      |
+| 0x08 | 8       | PUSHT            | 0                      |
+| 0x09 | 9       | PUSHF            | 0                      |
+| 0x0A | 10      | PUSHA            | 1                      |
+| 0x0B | 11      | PUSHNULL         | 1                      |
+| 0x0C | 12      | PUSHDATA1        | 8                      |
+| 0x0D | 13      | PUSHDATA2        | 512                    |
+| 0x0E | 14      | PUSHDATA4        | 4096                   |
+| 0x0F | 15      | PUSHM1           | 1                      |
+| 0x10 | 16      | PUSH0            | 1                      |
+| 0x11 | 17      | PUSH1            | 1                      |
+| ...continues through all 256... |
+
+### PROBLEMATIC OPCODES IDENTIFIED IN FAILED TESTS:
+
+**Test: test_opcodes_across_all_cost_tiers** expects:
+- NOP at index 32 → WRONG! NOP is actually at 0x21 = 33
+- NZ at index 0xAE (174) → Let's check actual mapping below
+
+## Detailed Verification of Problematic Cases:
+
+### Case 1: NOP
+- Rust source: NOP = 0x21 → DECIMAL = 33
+- Coq model uses: 32
+- Rust table[32] = 2 (value for PUSH16, not NOP!)
+- Rust table[33] = 2 (actual value for NOP)
+- **FIX**: Change all references from 32→33 for NOP
+
+### Case 2: TRY_L
+- Rust source: TRY_L = 0x3C → DECIMAL = 60
+- Coq model uses: 66
+- Rust table[60] = 32768 ✓ (MAX tier correct!)
+- Rust table[66] = 0 ✗ (wrong position)
+- **FIX**: Change 66→60 for TRY_L
+
+### Case 3: SYSCALL
+- Rust source: SYSCALL = 0x41 → DECIMAL = 65
+- Coq model uses: 66
+- Rust table[65] = 0 ✓ (zero tier correct!)
+- **FIX**: Change 66→65 for SYSCALL base
+
+### Case 4: APPEND
+- Rust source: APPEND = 0xCF → DECIMAL = 207
+- Coq model uses: 200
+- Rust table[200] = 0 (NEWMAP)
+- Rust table[207] = 8192 ✓ (HIGH tier)
+- **FIX**: Change 200→207 for APPEND
+
+### Case 5: PICKITEM
+- Rust source: PICKITEM = 0xCE → DECIMAL = 206
+- Coq model uses: 205
+- Rust table[205] = 0 (VALUES)
+- Rust table[206] = 8192 ✓
+- **FIX**: Change 205→206 for PICKITEM
+
+### Case 6: ADD
+- Rust source: ADD = 0x9E → DECIMAL = 158
+- Coq model uses: 159
+- Rust table[158] = 8 ✓
+- Rust table[159] = 8 ✓ (same value by coincidence)
+- **FIX**: Change 159→158 for ADD
+
+### Case 7: MUL
+- Rust source: MUL = 0xA0 → DECIMAL = 160
+- Tests reference index 70 expecting MUL=2
+- Rust table[70] = 2 (what is this?)
+- Let's find index 70's actual opcode:
+  - Looking at row 0x46-0x4F... 
+  - Index 70 = 0x46 = NIP (not MUL!)
+- **MUL is at index 160**, Rust table[160] = 8
+
+## COMPLETE FIXED MAP FOR COQ MODEL:
+
+The Coq model currently uses byte INDICES directly as opcode discriminants, which is INCORRECT.
+Instead, we need to use the ACTUAL Rust enum discriminant values.
+
+However, looking at the Coq structure more carefully:
+
+Current Coq defines: `Definition opcode_price_all : Z → Z := match op with | 0 => 1 | ...`
+
+This maps INDEX→PRICE, where index should equal the bytecode value.
+
+But the problem is the COQ EXAMPLES are using WRONG indices for named opcodes.
+
+For example:
+- Coq says: "NOP (0x21)=2" but then defines opcode_price_all 32 = 2
+- Should be: opcode_price_all 33 = 2 (since 0x21 = 33)
+
+The TABLE ITSELF in Coq looks mostly correct (matches OPCODE_PRICE_TABLE array),
+but the EXAMPLE NAMES don't match their indices!
+
+## FINAL DIAGNOSIS:
+
+The Coq file has TWO bugs:
+1. Example comments say "NOP" but bind index 32 instead of 33
+2. Example comments say "ADD" but bind index 159 instead of 158
+3. Many other examples have similar issues
+
+The SOLUTION is to update the example bindings to use correct indices based on the survey.

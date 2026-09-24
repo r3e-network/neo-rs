@@ -1,0 +1,85 @@
+DIGEST 40de8ddd94614654800f9f6d135d8e5a
+Ft3
+R24:28 Coq.Arith.Arith <> <> lib
+R30:32 Coq.micromega.Lia <> <> lib
+R34:37 Coq.Lists.List <> <> lib
+R47:59 Coq.Lists.List ListNotations <> mod
+rec 91:107 <> ChangeViewMessage
+proj 133:143 <> block_index
+proj 156:166 <> view_number
+proj 179:191 <> validator_idx
+proj 202:210 <> timestamp
+proj 225:230 <> reason
+R149:151 Coq.Init.Datatypes <> nat ind
+R172:174 Coq.Init.Datatypes <> nat ind
+R195:197 Coq.Init.Datatypes <> nat ind
+R218:220 Coq.Init.Datatypes <> nat ind
+R241:243 Coq.Init.Datatypes <> nat ind
+def 259:273 <> MAX_VIEW_NUMBER
+R277:279 Coq.Init.Datatypes <> nat ind
+R284:284 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R300:303 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R298:298 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R296:296 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R294:294 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R292:292 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R290:290 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R288:288 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R286:286 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+def 318:341 <> ChangeViewReason_Timeout
+R345:347 Coq.Init.Datatypes <> nat ind
+def 366:380 <> is_valid_reason
+R387:389 Coq.Init.Datatypes <> nat ind
+binder 383:383 <> r:7
+R409:412 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R405:407 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R404:404 t3 <> r:7 var
+R418:421 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R414:416 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R413:413 t3 <> r:7 var
+R427:430 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R423:425 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R422:422 t3 <> r:7 var
+R436:439 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R432:434 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R431:431 t3 <> r:7 var
+R445:448 Coq.Init.Logic <> ::type_scope:x_'\/'_x not
+R441:443 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R440:440 t3 <> r:7 var
+R450:452 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R449:449 t3 <> r:7 var
+def 467:486 <> validate_change_view
+R495:511 t3 <> ChangeViewMessage rec
+binder 489:491 <> msg:8
+R562:567 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R543:546 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R531:541 t3 <> view_number proj
+R526:528 t3 <> msg:8 var
+R547:561 t3 <> MAX_VIEW_NUMBER def
+R606:611 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R587:590 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R573:585 t3 <> validator_idx proj
+R568:570 t3 <> msg:8 var
+R591:605 t3 <> MAX_VIEW_NUMBER def
+R647:652 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R629:631 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R617:627 t3 <> view_number proj
+R612:614 t3 <> msg:8 var
+R632:646 t3 <> MAX_VIEW_NUMBER def
+R653:667 t3 <> is_valid_reason def
+R674:679 t3 <> reason proj
+R669:671 t3 <> msg:8 var
+def 694:712 <> example_valid_view0
+R719:734 t3 <> make_change_view constr
+R746:769 t3 <> ChangeViewReason_Timeout def
+prf 780:781 <> ex
+R785:804 t3 <> validate_change_view def
+R806:824 t3 <> example_valid_view0 def
+R843:861 t3 <> example_valid_view0 def
+R864:883 t3 <> validate_change_view def
+R886:900 t3 <> is_valid_reason def
+R903:926 t3 <> ChangeViewReason_Timeout def
+R936:946 t3 <> view_number proj
+R948:960 t3 <> validator_idx proj
+R962:967 t3 <> reason proj
+R980:994 t3 <> MAX_VIEW_NUMBER def

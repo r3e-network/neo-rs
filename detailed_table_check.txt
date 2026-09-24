@@ -1,0 +1,85 @@
+# Detailed Rust Price Table Analysis
+
+## Current Table (from op_code_prices.rs):
+
+Row 0 (indices 0-15): [1,1,1,1,4,4,0,0,1,1,4,1,8,512,4096,1]
+Row 1 (16-31):    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2]
+Row 2 (32-47):    [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]
+Row 3 (48-63):    [2,2,2,512,512,512,32768,0,1,512,4,4,4,4,4,0]
+Row 4 (64-79):    [4,4,0,0,0,2,0,2,2,0,16,16,2,2,0,2]
+...
+
+## Wait! Row 3 shows: index 62 = 32768!
+
+Let me recalculate:
+- Row 3 starts at index 48
+- Entries: 48→2, 49→2, 50→2, 51→512, 52→512, 53→512, 54→32768, 55→0, ...
+
+So:
+- Index 48: 2
+- Index 49: 2
+- Index 50: 2
+- Index 51: 512 (TRY)
+- Index 52: 512 
+- Index 53: 512
+- **Index 54: 32768** ← This should be TRY_L!
+- Index 55: 0
+
+But my survey said TRY_L = 0x3C = 60!
+
+CONFLICT! Either:
+1. My opcode byte survey was wrong, OR
+2. The OPCODE_PRICE_TABLE is wrong
+
+Let me re-examine the opcode.rs file...
+
+From earlier parsing:
+TRY_L = 0x3C → decimal = 60
+
+But if the price table says index 54 has 32768, then there's a MISMATCH.
+
+## THE REAL ISSUE:
+
+Looking back at the Coq model comments:
+```coq
+Row 3 (0x30-0x3F):  [2,2,2,512,512,512,32768,0,1,512,4,4,4,4,4,0]
+```
+
+This maps:
+- 0x30 (48): 2
+- 0x31 (49): 2
+- 0x32 (50): 2
+- 0x33 (51): 512
+- 0x34 (52): 512
+- 0x35 (53): 512
+- 0x36 (54): 32768  ← Coq thinks this is where MAX tier is!
+- 0x37 (55): 0
+
+BUT from opcode.rs:
+- 0x3B (59): TRY
+- 0x3C (60): TRY_L
+
+So Rust says TRY_L is at byte 60, but the PRICE TABLE has 32768 at index 54!
+
+## HYPOTHESIS:
+
+The OPCODE_PRICE_TABLE in Rust is WRONG/misaligned! It doesn't match the actual bytecode positions.
+
+OR - maybe the C# reference implementation uses different byte values?
+
+## CONCLUSION:
+
+We need to either:
+1. Fix the OPCODE_PRICE_TABLE to place 32768 at index 60 (not 54)
+2. Fix the opcode names in comments/Coq to match the CURRENT (incorrect) table
+
+Given the task says "fix all index mappings", option #1 is likely correct.
+
+The COQ model should reflect the CORRECT behavior where:
+- Byte 0x3C (index 60) = TRY_L = 32768
+- Not byte 0x36 (index 54) = something else
+
+## ACTION REQUIRED:
+
+Update neo-core/src/smart_contract/application_engine/op_code_prices.rs to fix the table!
+The current array has 32768 at position 54 instead of position 60.

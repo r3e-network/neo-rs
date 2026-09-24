@@ -31,13 +31,17 @@ impl Helper {
     pub fn signature_contract_cost() -> i64 {
         let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
         let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
-        push_cost * 2 + syscall_cost + crate::smart_contract::application_engine::CHECK_SIG_PRICE
+        push_cost
+            .saturating_mul(2)
+            .saturating_add(syscall_cost)
+            .saturating_add(crate::smart_contract::application_engine::CHECK_SIG_PRICE)
     }
 
     /// Calculates the verification cost for a multi-signature contract (in datoshi).
     pub fn multi_signature_contract_cost(m: i32, n: i32) -> i64 {
         let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
-        let mut fee = push_cost * (m as i64 + n as i64);
+        let m_plus_n = (m as i64).saturating_add(n as i64);
+        let mut fee = push_cost.saturating_mul(m_plus_n);
 
         let mut builder = ScriptBuilder::new();
         builder.emit_push_int(m as i64);
@@ -46,7 +50,7 @@ impl Helper {
             .first()
             .copied()
             .unwrap_or(OpCode::PUSH0.byte());
-        fee += ApplicationEngine::get_opcode_price(m_opcode);
+        fee = fee.saturating_add(ApplicationEngine::get_opcode_price(m_opcode));
 
         let mut builder_n = ScriptBuilder::new();
         builder_n.emit_push_int(n as i64);
@@ -55,10 +59,12 @@ impl Helper {
             .first()
             .copied()
             .unwrap_or(OpCode::PUSH0.byte());
-        fee += ApplicationEngine::get_opcode_price(n_opcode);
+        fee = fee.saturating_add(ApplicationEngine::get_opcode_price(n_opcode));
 
-        fee += ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
-        fee += crate::smart_contract::application_engine::CHECK_SIG_PRICE * n as i64;
+        fee = fee.saturating_add(ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte()));
+        let check_sig_cost = crate::smart_contract::application_engine::CHECK_SIG_PRICE
+            .saturating_mul(n as i64);
+        fee = fee.saturating_add(check_sig_cost);
         fee
     }
 

@@ -109,6 +109,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)] // policy-documentation assertion on a const default
     fn default_limits_use_gorgon_shift_semantics() {
         // R06: the shipped default targets Neo N3 v3.10.1 where Gorgon is
         // active; pre-Gorgon replay opts out via ApplicationEngine.

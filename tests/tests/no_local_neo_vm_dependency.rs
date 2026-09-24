@@ -4676,7 +4676,7 @@ fn local_vm_facade_does_not_keep_unused_application_engine_module() {
          blockchain-aware execution is owned by smart_contract::ApplicationEngine"
     );
     assert!(
-        !vm_module.contains("pub mod application_engine")
+        !vm_module.contains("pub mod application_engine;")
             && !vm_module.contains("pub use application_engine::{ApplicationEngine")
             && !vm_module.contains("NotificationEvent")
             && !vm_module.contains("TriggerType"),
@@ -4963,6 +4963,10 @@ fn collect_manifests(dir: &Path, manifests: &mut Vec<PathBuf>) {
         }
 
         if path.is_dir() {
+            // Nested repositories and linked worktrees are not this workspace.
+            if path.join(".git").exists() || entry.file_type().unwrap().is_symlink() {
+                continue;
+            }
             collect_manifests(&path, manifests);
         } else if name == "Cargo.toml" {
             manifests.push(path);

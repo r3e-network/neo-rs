@@ -174,9 +174,9 @@ impl ExecutionEngine {
             Ok(()) => {}
             Err(err) => {
                 if self.limits.catch_engine_exceptions
-                    && let VmError::CatchableException { message } = &err
+                    && let VmError::CatchableException { message } = err
                 {
-                    let exception = StackItem::from_byte_string(message.clone().into_bytes());
+                    let exception = StackItem::from_byte_string(message.into_bytes());
                     self.execute_throw(Some(exception))?;
                     return Ok(());
                 }

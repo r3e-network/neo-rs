@@ -1,10 +1,11 @@
 //! RPC error types
 
-use std::fmt::{self, Display, Formatter};
+use thiserror::Error;
 
 /// Shared JSON-RPC exception representation containing the error code,
 /// message, and optional data payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[error("{message}{}", .data.as_ref().map(|d| format!(" - {}", d)).unwrap_or_default())]
 pub struct ClientRpcError {
     code: i32,
     message: String,
@@ -60,17 +61,6 @@ impl ClientRpcError {
         self.data.as_deref()
     }
 }
-
-impl Display for ClientRpcError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.data {
-            Some(data) => write!(f, "{} - {}", self.message, data),
-            None => write!(f, "{}", self.message),
-        }
-    }
-}
-
-impl std::error::Error for ClientRpcError {}
 
 /// Backwards-compatible alias for the historical client error type name.
 pub type RpcException = ClientRpcError;

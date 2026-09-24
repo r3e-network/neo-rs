@@ -141,7 +141,8 @@ impl ExecutionEngine {
         };
 
         if self.uncaught_exception.is_some() {
-            self.execute_throw(self.uncaught_exception.clone())?;
+            let exception = self.uncaught_exception.take();
+            self.execute_throw(exception)?;
         } else {
             let end_position =
                 usize::try_from(end_pointer).map_err(|_| VmError::InvalidJump(end_pointer))?;
@@ -222,14 +223,13 @@ impl ExecutionEngine {
                             .try_stack_last_mut()
                             .expect("try context should exist");
                         try_context.set_state(ExceptionHandlingState::Catch);
-                        if let Some(exception) = self.uncaught_exception.clone() {
+                        if let Some(exception) = self.uncaught_exception.take() {
                             context.push(exception)?;
                         }
                         let catch_position = usize::try_from(catch_pointer)
                             .map_err(|_| VmError::InvalidJump(catch_pointer))?;
                         context.set_instruction_pointer(catch_position);
                     }
-                    self.uncaught_exception = None;
                     self.is_jumping = true;
                     return Ok(());
                 }
@@ -256,7 +256,7 @@ impl ExecutionEngine {
             }
         }
 
-        if let Some(exception) = self.uncaught_exception.clone() {
+        if let Some(exception) = self.uncaught_exception.take() {
             self.set_state(VMState::FAULT);
             Err(VmError::UnhandledException(exception))
         } else {

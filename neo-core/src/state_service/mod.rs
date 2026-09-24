@@ -5,13 +5,33 @@
 
 #[cfg(feature = "runtime")]
 pub(crate) mod commit_handlers;
+#[cfg(feature = "runtime")]
+pub mod conflict_detector;
+#[cfg(feature = "runtime")]
+pub mod optimistic_executor;
+#[cfg(feature = "runtime")]
+pub mod parallel_execution_integration;
+#[cfg(feature = "runtime")]
+pub mod prefetch_pipeline;
+pub mod async_state_root;
 pub mod keys;
 pub mod message_type;
 /// Metrics counters for state root ingestion from the network.
 pub mod metrics;
+// WIP: the prefetch subsystem (background worker, BlockPrefetchService, pipeline
+// demo) is not yet implemented; gate it behind the `prefetch` feature (not in
+// default) so the default lib still builds without inventing the missing subsystem.
+#[cfg(feature = "prefetch")]
+pub mod prefetch_background;
+#[cfg(feature = "prefetch")]
+pub mod prefetch_worker;
+#[cfg(feature = "prefetch")]
+pub mod pipeline_integration_example;
+pub mod read_only_store;
 pub mod root_cache;
 pub mod state_root;
 pub mod state_store;
+pub mod tiered_storage;
 #[cfg(feature = "runtime")]
 pub mod verification;
 pub mod vote;

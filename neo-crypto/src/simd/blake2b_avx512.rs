@@ -32,15 +32,13 @@
 //!
 //! ### Runtime Detection
 //!
-//! At startup, we detect available CPU features and select optimal implementation:
+//! The hashing dependency selects its implementation internally. The local
+//! feature helper reports a baseline and does not control that dispatch.
 //! ```rust
-//! let impl = detect_cpu_features(); // Returns CpuFeatures enum
-//! match impl {
-//!     CpuFeatures::AVX512 => use_simd_blake2b_avx512(),
-//!     CpuFeatures::AVX2 => use_simd_blake2b_avx2(),
-//!     CpuFeatures::SSE2 => use_simd_blake2b_sse2(),
-//!     CpuFeatures::ScalarOnly => use_scalar_blake2b(),
-//! }
+//! use neo_crypto::simd::blake2b_simd;
+//!
+//! let digest = blake2b_simd(b"node data");
+//! assert_eq!(digest.len(), 64);
 //! ```
 //!
 //! ## Performance Metrics
@@ -93,17 +91,20 @@ pub fn detect_cpu_features() -> CpuFeatures {
     #[cfg(target_arch = "x86_64")]
     {
         // SSE2 is always available on x86_64
-        return CpuFeatures::SSE2;
+        CpuFeatures::SSE2
     }
-    
-    #[cfg(target_arch = "x86")]
+
+    #[cfg(not(target_arch = "x86_64"))]
     {
-        if is_x86_feature_detected!("sse2") {
-            return CpuFeatures::SSE2;
+        #[cfg(target_arch = "x86")]
+        {
+            if is_x86_feature_detected!("sse2") {
+                return CpuFeatures::SSE2;
+            }
         }
+
+        CpuFeatures::ScalarOnly
     }
-    
-    CpuFeatures::ScalarOnly
 }
 
 /// Static cached CPU feature detection (computed once at first call)

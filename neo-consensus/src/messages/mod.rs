@@ -1,7 +1,7 @@
 //! Consensus message definitions for dBFT protocol.
 
 mod change_view;
-mod commit;
+pub mod commit;
 mod prepare_request;
 mod prepare_response;
 mod recovery;

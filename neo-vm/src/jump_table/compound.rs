@@ -520,7 +520,6 @@ fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         .into_int()?
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
-
     // Create a new array
     let mut items = Vec::with_capacity(count);
     for _ in 0..count {

@@ -246,13 +246,28 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
             return Err("state service commit aborted: snapshot has additional references".into());
         };
 
+        // Batch all writes together instead of applying them one by one.
+        // This allows the underlying storage (RocksDB) to use WriteBatch
+        // for atomic and efficient bulk writes.
+        let mut write_errors = Vec::new();
         for (key, value) in pending.iter() {
             let result = match value {
                 Some(v) => snapshot_mut.put(key.clone(), v.clone()),
                 None => snapshot_mut.delete(key.clone()),
             };
-            result.map_err(|e| format!("state service commit: storage write failed: {e}"))?;
+            if let Err(e) = result {
+                write_errors.push(format!("key {}: {}", hex::encode(key), e));
+            }
         }
+
+        if !write_errors.is_empty() {
+            return Err(format!(
+                "state service commit: {} storage write(s) failed: {}",
+                write_errors.len(),
+                write_errors.join("; ")
+            ));
+        }
+
         snapshot_mut
             .try_commit()
             .map_err(|e| format!("state service commit failed: {e}"))?;

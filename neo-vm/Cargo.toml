@@ -30,3 +30,8 @@ bitflags = { workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true }
+proptest = "1"
+
+[features]
+default = []
+pooled-engine = []

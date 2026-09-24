@@ -2,6 +2,7 @@
 
 mod pending_exception;
 mod try_frame;
+pub mod rw_set_tracker;
 
 use alloc::{format, string::String, string::ToString, vec, vec::Vec};
 pub(crate) use pending_exception::{PendingException, PendingExceptionValue};

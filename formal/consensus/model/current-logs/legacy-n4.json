@@ -1,0 +1,14 @@
+{
+  "command": [
+    "java",
+    "-jar",
+    "D:/Git/neo-rs/.tools/tla2tools.jar",
+    "-config",
+    "D:/Git/neo-rs/formal/consensus/model/neo_dbft_safe_n4.cfg",
+    "D:/Git/neo-rs/formal/consensus/model/neo_dbft.tla",
+    "-metadir",
+    "D:\\Git\\neo-rs\\formal\\consensus\\model\\current-logs\\legacy-states"
+  ],
+  "exit_code": 255,
+  "seconds": 0.19140291213989258
+}

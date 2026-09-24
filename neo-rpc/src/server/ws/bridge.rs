@@ -106,7 +106,7 @@ mod tests {
         let hash = UInt256::from([0xABu8; 32]);
         bridge.notify_block_added(&hash, 12345);
 
-        let event = rx.recv().await.unwrap();
+        let event = rx.recv().await.expect("should receive block notification");
         match event {
             WsEvent::BlockAdded { height, .. } => {
                 assert_eq!(height, 12345);
@@ -123,7 +123,7 @@ mod tests {
         let hash = UInt256::from([0xCDu8; 32]);
         bridge.notify_transaction_added(&hash);
 
-        let event = rx.recv().await.unwrap();
+        let event = rx.recv().await.expect("should receive transaction notification");
         assert!(matches!(event, WsEvent::TransactionAdded { .. }));
     }
 

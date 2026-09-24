@@ -110,6 +110,24 @@ readme = "README.md"
 # Minimum supported Rust version policy
 msrv = "1.85"
 
+[workspace.lints.clippy]
+# Enable pedantic lint group for improved code quality
+pedantic = { level = "warn", priority = -1 }
+
+# Allow certain pedantic lints that are too noisy or not applicable
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+doc_markdown = "allow"
+# Allow for complex types in public APIs (common in blockchain code)
+type_complexity = "allow"
+# Allow similar names (hash/Hash, block/Block) which are idiomatic
+similar_names = "allow"
+# Allow for builder pattern and fluent APIs
+missing_const_for_fn = "allow"
+
 [workspace.dependencies]
 # === Internal crates ===
 # Foundation layer
@@ -140,8 +158,15 @@ neo-node = { path = "neo-node", version = "0.17.0" }
 
 # === Core dependencies ===
 # Async runtime
-# TODO: Reduce tokio features per-crate for faster compilation
-tokio = { version = "1.35", features = ["full"] }
+tokio = { version = "1.35", features = [
+    "sync",           # mpsc, oneshot, RwLock, Mutex - heavily used across crates
+    "time",           # sleep, timeout, Duration - used in schedulers and tests
+    "io-util",        # AsyncReadExt, AsyncWriteExt - P2P networking
+    "net",            # TcpStream, TcpListener - P2P connections
+    "rt-multi-thread", # Multi-threaded runtime, spawn, Handle
+    "macros",         # #[tokio::test], #[tokio::main]
+    "fs",             # Async filesystem operations
+] }
 tokio-util = "0.7"
 async-trait = "0.1"
 futures = "0.3"

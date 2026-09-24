@@ -89,9 +89,12 @@ internal static class Program
         }
 
         ApplicationEngine? engine;
+        byte[]? signerBytes = null;
         try
         {
-            engine = BuildEngine();
+            if (vector.TryGetProperty("signer", out var signerEl))
+                signerBytes = Convert.FromHexString(signerEl.GetString() ?? "");
+            engine = BuildEngine(signerBytes);
         }
         catch (Exception ex)
         {
@@ -108,6 +111,10 @@ internal static class Program
         string? fault = null;
         try
         {
+            // LoadScript(Script, rvcount, initialPosition, configureState). The
+            // third arg is *initialPosition*, not call flags. ExecutionContextState
+            // defaults its CallFlags to All (matching the Rust runner's
+            // CallFlags::ALL), so we pass initialPosition=0 and no state callback.
             engine.LoadScript(new Script(code), -1, 0);
             engine.Execute();
             if (engine.State == VMState.FAULT)
@@ -163,7 +170,7 @@ internal static class Program
         return "other";
     }
 
-    private static ApplicationEngine BuildEngine()
+    private static ApplicationEngine BuildEngine(byte[]? signerBytes = null)
     {
         var store = new MemoryStore();
         var snapshot = new StoreCache(store, false);
@@ -177,15 +184,23 @@ internal static class Program
         });
         snapshot.Add(ledgerKey, new StorageItem(BinarySerializer.Serialize(hashIndexState, ExecutionEngineLimits.Default)));
 
-        // Seed Policy values (exec-fee factor 30, storage price 100000).
+        // Seed Policy values.
+        //   exec fee factor: Faun stores the value PRE-MULTIPLIED by
+        //   ApplicationEngine.FeeFactor (10000), i.e. 30 * 10000 = 300000
+        //   (GetExecPicoFeeFactor returns it raw in picoGAS). Seeding 30 made
+        //   the C# engine charge ~1/10000th of the correct exec fee, which
+        //   diverged from neo-rs for System.Runtime.GasLeft. Use 300000.
+        //   storage price: 100000 datoshi/byte (not pre-scaled).
         const int policyId = -7;
-        snapshot.Add(StorageKey.Create(policyId, (byte)18), new StorageItem(new BigInteger(30)));
+        snapshot.Add(StorageKey.Create(policyId, (byte)18), new StorageItem(new BigInteger(300000)));
         snapshot.Add(StorageKey.Create(policyId, (byte)19), new StorageItem(new BigInteger(100000)));
 
         var tx = new Transaction
         {
             Script = new byte[] { 0x01 },
-            Signers = System.Array.Empty<Signer>(),
+            Signers = signerBytes is { Length: 20 }
+                ? new[] { new Signer { Account = new UInt160(signerBytes), Scopes = WitnessScope.CalledByEntry } }
+                : System.Array.Empty<Signer>(),
             Witnesses = System.Array.Empty<Witness>(),
             Attributes = System.Array.Empty<TransactionAttribute>(),
         };
@@ -261,6 +276,7 @@ internal static class Program
             || m.Contains("insufficient") || m.Contains("pop")) return "underflow";
         if (m.Contains("divide") || m.Contains("division") || m.Contains("modulo by zero")) return "divzero";
         if (m.Contains("index") || m.Contains("out of bounds") || m.Contains("range")) return "range";
+        if (m.Contains("sender not specified") || m.Contains("sender is not specified")) return "invalid";
         if (m.Contains("public key") || m.Contains("ecpoint") || m.Contains("pubkey")) return "invalid";
         if (m.Contains("type") || m.Contains("cast") || m.Contains("expected") || m.Contains("not a")) return "type";
         if (m.Contains("unexpected") || m.Contains("invalid") || m.Contains("bad")) return "invalid";

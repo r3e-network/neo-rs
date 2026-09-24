@@ -48,6 +48,8 @@ struct VectorFile {
 struct Vector {
     name: String,
     script: String,
+    #[serde(default)]
+    signer: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -100,7 +102,34 @@ fn run_one(vector: &Vector) -> VectorResult {
         }
     };
 
-    let mut engine = match build_engine() {
+    let signer = match vector.signer.as_deref() {
+        None => None,
+        Some(hex) => match decode_hex(hex) {
+            Ok(bytes) if bytes.len() == 20 => {
+                Some(<[u8; 20]>::try_from(bytes).unwrap())
+            }
+            Ok(_) => {
+                return VectorResult {
+                    name: vector.name.clone(),
+                    state: "HARNESS_ERROR".into(),
+                    stack: Vec::new(),
+                    fault: None,
+                    harness_error: Some("signer must be 20 bytes".into()),
+                };
+            }
+            Err(err) => {
+                return VectorResult {
+                    name: vector.name.clone(),
+                    state: "HARNESS_ERROR".into(),
+                    stack: Vec::new(),
+                    fault: None,
+                    harness_error: Some(format!("bad signer hex: {err}")),
+                };
+            }
+        },
+    };
+
+    let mut engine = match build_engine(signer) {
         Ok(e) => e,
         Err(err) => {
             return VectorResult {
@@ -159,7 +188,7 @@ fn stringify(s: &str) -> String {
 }
 
 /// Builds the pinned hosted engine used by every vector.
-fn build_engine() -> Result<ApplicationEngine, String> {
+fn build_engine(signer: Option<[u8; 20]>) -> Result<ApplicationEngine, String> {
     let snapshot = Arc::new(DataCache::new(false));
 
     let header = BlockHeader::new(
@@ -175,7 +204,14 @@ fn build_engine() -> Result<ApplicationEngine, String> {
     );
     let block = Block::new(header, Vec::new());
 
-    let tx = Transaction::new();
+    let mut tx = Transaction::new();
+    if let Some(account_bytes) = signer {
+        let account = neo_core::UInt160::from_bytes(&account_bytes).unwrap();
+        tx.set_signers(vec![neo_core::network::p2p::payloads::Signer::new(
+            account,
+            neo_core::network::p2p::payloads::WitnessScope::CALLED_BY_ENTRY,
+        )]);
+    }
     let container: Arc<dyn neo_core::Verifiable> = Arc::new(tx);
 
     ApplicationEngine::new(
@@ -227,6 +263,8 @@ fn classify(message: &str) -> String {
         "divzero".into()
     } else if m.contains("index") || m.contains("out of bounds") || m.contains("range") {
         "range".into()
+    } else if m.contains("sender not specified") || m.contains("sender is not specified") {
+        "invalid".into()
     } else if m.contains("public key") || m.contains("ecpoint") || m.contains("pubkey") {
         "invalid".into()
     } else if m.contains("type")

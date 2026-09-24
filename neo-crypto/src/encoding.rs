@@ -16,9 +16,10 @@ impl Base58 {
 
     /// Decodes a Base58 string to bytes.
     pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
+        use crate::encoding_utils::map_base58_error;
         bs58::decode(s)
             .into_vec()
-            .map_err(|e| CryptoError::encoding_error(format!("Base58 decode error: {e}")))
+            .map_err(map_base58_error)
     }
 
     /// Encodes data to `Base58Check` with a 4-byte Neo/Bitcoin-style checksum.
@@ -58,20 +59,39 @@ impl Base64 {
     }
 
     /// Decodes standard padded Base64 strictly: rejects whitespace, non-base64
-    /// characters, and incorrect padding.  Matches C# `Convert.FromBase64String`
-    /// which is what the Neo StdLib `base64Decode` syscall uses.
+    /// characters, and incorrect padding.
     pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
+        use crate::encoding_utils::map_base64_error;
         general_purpose::STANDARD
             .decode(s.as_bytes())
-            .map_err(|e| CryptoError::encoding_error(format!("Base64 decode error: {e}")))
+            .map_err(map_base64_error)
+    }
+
+    /// Decodes standard padded Base64 the way C# `Convert.FromBase64String`
+    /// does, which is what the Neo StdLib `base64Decode` syscall uses:
+    /// whitespace characters (space, tab, CR, LF) are ignored and unused trailing
+    /// bits are accepted. Other non-base64 characters or bad padding are rejected.
+    pub fn decode_dotnet_semantics(s: &str) -> CryptoResult<Vec<u8>> {
+        use crate::encoding_utils::map_base64_error;
+        let normalized: String = s
+            .chars()
+            .filter(|c| !matches!(c, ' ' | '\t' | '\r' | '\n'))
+            .collect();
+        let decoder = general_purpose::GeneralPurpose::new(
+            &base64::alphabet::STANDARD,
+            general_purpose::GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+        );
+        decoder.decode(normalized.as_bytes())
+            .map_err(map_base64_error)
     }
 
     /// Decodes standard padded Base64, ignoring ASCII/Unicode whitespace.
     pub fn decode_lenient(s: &str) -> CryptoResult<Vec<u8>> {
+        use crate::encoding_utils::map_base64_error;
         let normalized = strip_whitespace(s);
         general_purpose::STANDARD
             .decode(normalized.as_bytes())
-            .map_err(|e| CryptoError::encoding_error(format!("Base64 decode error: {e}")))
+            .map_err(map_base64_error)
     }
 
     /// Encodes data to URL-safe Base64 without padding.
@@ -82,10 +102,11 @@ impl Base64 {
 
     /// Decodes URL-safe Base64 without padding, ignoring ASCII/Unicode whitespace.
     pub fn url_decode_no_pad_lenient(s: &str) -> CryptoResult<Vec<u8>> {
+        use crate::encoding_utils::map_encoding_error;
         let normalized = strip_whitespace(s);
         general_purpose::URL_SAFE_NO_PAD
             .decode(normalized.as_bytes())
-            .map_err(|e| CryptoError::encoding_error(format!("Base64Url decode error: {e}")))
+            .map_err(|e| map_encoding_error(e, "Base64Url decode error"))
     }
 }
 
@@ -105,7 +126,8 @@ impl Hex {
 
     /// Decodes a hex string to bytes.
     pub fn decode(s: &str) -> CryptoResult<Vec<u8>> {
-        hex::decode(s).map_err(|e| CryptoError::encoding_error(format!("Hex decode error: {e}")))
+        use crate::encoding_utils::map_hex_error;
+        hex::decode(s).map_err(map_hex_error)
     }
 }
 

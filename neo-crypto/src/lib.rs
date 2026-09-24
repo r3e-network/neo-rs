@@ -47,6 +47,8 @@ pub mod crypto_utils;
 pub mod ecc;
 /// Encoding helpers used by Neo cryptographic APIs.
 pub mod encoding;
+/// Common error handling utilities for encoding operations.
+pub mod encoding_utils;
 pub mod error;
 pub mod hash;
 /// Merkle tree implementation for computing transaction and block payload roots.

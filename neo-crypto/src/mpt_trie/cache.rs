@@ -37,10 +37,14 @@ impl GlobalNodeCache {
     /// Creates a new empty global node cache with default capacity.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_capacity(NonZero::new(DEFAULT_NODE_CACHE_CAPACITY).unwrap())
+    }
+
+    /// Creates an empty cache with the specified nonzero node capacity.
+    #[must_use]
+    pub fn with_capacity(capacity: NonZero<usize>) -> Self {
         Self {
-            inner: RwLock::new(LruCache::new(
-                NonZero::new(DEFAULT_NODE_CACHE_CAPACITY).unwrap(),
-            )),
+            inner: RwLock::new(LruCache::new(capacity)),
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
         }
@@ -87,8 +91,21 @@ impl GlobalNodeCache {
     }
 
     /// Clears all entries from the cache.
+    #[allow(dead_code)] // WIP: cache integration not yet wired
     pub fn clear(&self) {
         self.inner.write().clear();
+    }
+
+    /// Returns the current number of cached nodes.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.inner.read().len()
+    }
+
+    /// Returns `true` when the cache holds no nodes.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -480,20 +497,20 @@ mod tests {
         /// Test realistic scenario: Multiple concurrent readers.
         #[test]
         fn test_concurrent_access_safety() {
-            // Use GLOBAL_NODE_CACHE directly for proper concurrent testing
+            let cache = Arc::new(GlobalNodeCache::test_new());
             
             // Populate cache
             for i in 0..1000 {
                 let hash = UInt256::from([i as u8; 32]);
                 let node = Arc::new(Node::new());
-                GLOBAL_NODE_CACHE.put(hash, node);
+                cache.put(hash, node);
             }
 
             // Spawn multiple threads reading concurrently
             let handles: Vec<_> = (0..10)
                 .map(|_| {
                     thread::spawn({
-                        let global_cache = &*GLOBAL_NODE_CACHE;
+                        let global_cache = Arc::clone(&cache);
                         move || {
                             let mut hits = 0u64;
                             for i in 0..1000 {
@@ -513,7 +530,7 @@ mod tests {
             // All reads should succeed (at least 10,000, may be slightly more from other tests)
             assert!(total_hits >= 10_000, "Expected at least 10000 hits, got {}", total_hits);
             
-            let (hits, _, _) = GLOBAL_NODE_CACHE.stats();
+            let (hits, _, _) = cache.stats();
             assert!(hits >= 10_000, "Expected at least 10000 stats hits, got {}", hits);
         }
     }

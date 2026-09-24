@@ -1,0 +1,75 @@
+DIGEST 16138dee7452604ce084afec5dfbc1ea
+Ft5
+R24:28 Coq.Arith.Arith <> <> lib
+R30:32 Coq.micromega.Lia <> <> lib
+R34:37 Coq.Lists.List <> <> lib
+R47:59 Coq.Lists.List ListNotations <> mod
+sec 92:111 <> PrepareResponseModel
+rec 121:142 <> PrepareResponseMessage
+proj 173:183 <> block_index
+proj 199:209 <> view_number
+proj 225:239 <> validator_index
+proj 251:266 <> preparation_hash
+R192:194 Coq.Init.Datatypes <> nat ind
+R218:220 Coq.Init.Datatypes <> nat ind
+R244:246 Coq.Init.Datatypes <> nat ind
+R270:272 Coq.Init.Datatypes <> nat ind
+def 288:293 <> MAX_U8
+R297:299 Coq.Init.Datatypes <> nat ind
+R304:304 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R320:323 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R318:318 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R316:316 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R314:314 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R312:312 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R310:310 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R308:308 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R306:306 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+def 338:344 <> MAX_U32
+R348:350 Coq.Init.Datatypes <> nat ind
+R370:372 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R366:366 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R362:362 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R358:358 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+def 387:397 <> HASH_LENGTH
+R401:403 Coq.Init.Datatypes <> nat ind
+def 423:447 <> validate_prepare_response
+R456:477 t5 <> PrepareResponseMessage rec
+binder 450:452 <> msg:6
+R520:525 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R509:512 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R497:507 t5 <> block_index proj
+R492:494 t5 <> msg:6 var
+R513:519 t5 <> MAX_U32 def
+R553:558 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R543:546 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R531:541 t5 <> view_number proj
+R526:528 t5 <> msg:6 var
+R547:552 t5 <> MAX_U8 def
+R590:595 Coq.Init.Logic <> ::type_scope:x_'/\'_x not
+R580:583 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R564:578 t5 <> validator_index proj
+R559:561 t5 <> msg:6 var
+R584:589 t5 <> MAX_U8 def
+R618:620 Coq.Init.Logic <> ::type_scope:x_'='_x not
+R601:616 t5 <> preparation_hash proj
+R596:598 t5 <> msg:6 var
+R621:631 t5 <> HASH_LENGTH def
+R638:657 t5 PrepareResponseModel <> sec
+sec 668:675 <> Examples
+def 689:704 <> example_response
+R709:729 t5 <> make_prepare_response constr
+R739:749 t5 <> HASH_LENGTH def
+prf 760:761 <> ex
+R765:789 t5 <> validate_prepare_response def
+R791:806 t5 <> example_response def
+R825:840 t5 <> example_response def
+R843:867 t5 <> validate_prepare_response def
+R877:887 t5 <> block_index proj
+R889:899 t5 <> view_number proj
+R901:915 t5 <> validator_index proj
+R917:932 t5 <> preparation_hash proj
+R945:951 t5 <> MAX_U32 def
+R954:959 t5 <> MAX_U8 def
+R962:972 t5 <> HASH_LENGTH def
+R1011:1018 t5 Examples <> sec

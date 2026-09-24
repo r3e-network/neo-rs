@@ -86,6 +86,117 @@
    "group": "witness",
    "note": "non-signer 20-byte hash -> false",
    "script": "0c14000000000000000000000000000000000000000041f827ec8c40"
+  },
+  {
+   "name": "cw.positive_hash",
+   "group": "witness",
+   "note": "signer-derived 20-byte hash -> true (signer present in tx)",
+   "script": "0c14c44ea575c5f79638f0e73f39d7bd4b3337c8169141f827ec8c40",
+   "signer": "c44ea575c5f79638f0e73f39d7bd4b3337c81691"
+  },
+  {
+   "name": "cw.positive_pubkey",
+   "group": "witness",
+   "note": "CheckWitness(33-byte VALID_PUBKEY) -> true (converts to signer account)",
+   "script": "0c21024b817ef37f2fc3d4a33fe36687e592d9f30fe24b3e28187dc8f12b3b3b2b839e41f827ec8c40",
+   "signer": "c44ea575c5f79638f0e73f39d7bd4b3337c81691"
+  },
+  {
+   "name": "runtime.current_signers_signed",
+   "group": "runtime",
+   "note": "CurrentSigners with one signer -> [{account, scopes}]",
+   "script": "41acf1188b40",
+   "signer": "c44ea575c5f79638f0e73f39d7bd4b3337c81691"
+  },
+  {
+   "name": "runtime.get_random",
+   "group": "runtime",
+   "note": "GetRandom -> Integer (network=0, tx/block nonce-derived)",
+   "script": "416bdea92840"
+  },
+  {
+   "name": "runtime.get_script_container",
+   "group": "runtime",
+   "note": "GetScriptContainer -> transaction stack map",
+   "script": "412d51083040"
+  },
+  {
+   "name": "runtime.current_signers",
+   "group": "runtime",
+   "note": "CurrentSigners -> [] (minimal tx has no signers)",
+   "script": "41acf1188b40"
+  },
+  {
+   "name": "runtime.gas_left",
+   "group": "runtime",
+   "note": "GasLeft -> remaining datoshi after minimal script",
+   "script": "411488d8ce40"
+  },
+  {
+   "name": "runtime.gas_left_after_arith",
+   "group": "runtime",
+   "note": "GasLeft after PUSH1 PUSH2 ADD -> exact datoshi consumed by arithmetic",
+   "script": "11129e411488d8ce40"
+  },
+  {
+   "name": "runtime.log",
+   "group": "runtime",
+   "note": "Log('hello') in dynamic script -> HALT [Integer 1]",
+   "script": "0c0568656c6c6f41cfe747961140"
+  },
+  {
+   "name": "runtime.notify",
+   "group": "runtime",
+   "note": "Notify in dynamic script -> FAULT (notifications disallowed in dynamic scripts)",
+   "script": "1111c00c034576744195016f6140"
+  },
+  {
+   "name": "native.neo_symbol",
+   "group": "native",
+   "note": "NEO.symbol() -> 'NEO' ByteString",
+   "script": "10c01f0c0673796d626f6c0c14f563ea40bc283d4d0e05c48ea305b3f2a07340ef41627d5b5240"
+  },
+  {
+   "name": "native.neo_decimals",
+   "group": "native",
+   "note": "NEO.decimals() -> Integer 0",
+   "script": "10c01f0c08646563696d616c730c14f563ea40bc283d4d0e05c48ea305b3f2a07340ef41627d5b5240"
+  },
+  {
+   "name": "native.gas_symbol",
+   "group": "native",
+   "note": "GAS.symbol() -> 'GAS' ByteString",
+   "script": "10c01f0c0673796d626f6c0c14cf76e28bd0062c4a478ee35561011319f3cfa4d241627d5b5240"
+  },
+  {
+   "name": "native.gas_decimals",
+   "group": "native",
+   "note": "GAS.decimals() -> Integer 8",
+   "script": "10c01f0c08646563696d616c730c14cf76e28bd0062c4a478ee35561011319f3cfa4d241627d5b5240"
+  },
+  {
+   "name": "contract.create_standard_account",
+   "group": "contract",
+   "note": "CreateStandardAccount(VALID_PUBKEY) -> 20-byte account hash",
+   "script": "0c21024b817ef37f2fc3d4a33fe36687e592d9f30fe24b3e28187dc8f12b3b3b2b839e41cf99870240"
+  },
+  {
+   "name": "contract.create_multisig_account",
+   "group": "contract",
+   "note": "CreateMultisigAccount(2, [pk,pk]) -> 20-byte multisig hash",
+   "script": "0c21024b817ef37f2fc3d4a33fe36687e592d9f30fe24b3e28187dc8f12b3b3b2b839e0c21024b817ef37f2fc3d4a33fe36687e592d9f30fe24b3e28187dc8f12b3b3b2b839e12c012416a33e90940"
+  },
+  {
+   "name": "contract.get_call_flags",
+   "group": "contract",
+   "note": "GetCallFlags -> Integer 15 (entry context LoadScript CallFlags.All on both sides)",
+   "script": "4195da3a8140"
+  },
+  {
+   "name": "storage.get_context",
+   "group": "storage",
+   "note": "GetContext in bare dynamic script -> returns null (no contract context)",
+   "script": "419bf667ce40"
   }
  ]
 }

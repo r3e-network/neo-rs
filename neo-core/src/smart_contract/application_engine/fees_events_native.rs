@@ -181,7 +181,11 @@ impl ApplicationEngine {
             .checked_mul(FEE_FACTOR)
             .ok_or_else(|| Error::invalid_operation("Gas multiplication overflow"))?;
 
-        if self.gas_consumed + required_pico > self.gas_limit {
+        let total_gas = self.gas_consumed
+            .checked_add(required_pico)
+            .ok_or_else(|| Error::invalid_operation("Gas consumption overflow"))?;
+
+        if total_gas > self.gas_limit {
             return Err(Error::invalid_operation("Out of gas"));
         }
         Ok(())

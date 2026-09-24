@@ -7,6 +7,6 @@ pub mod static_registry;
 pub mod cuckoo_hash;
 
 pub use static_registry::{
-    get_gas_cost, get_syscall_entry, init, verify_registry_completeness,
+    get_gas_cost, get_syscall_entry, get_syscall_entry_by_u32, init, verify_registry_completeness,
     find_by_method_name, get_method_name, NUM_BUILTINS, GasCost, SyscallEntry, SyscallHash,
 };

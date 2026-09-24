@@ -1,0 +1,26 @@
+DIGEST 80d66979ae47c89abddd9e0dd40f1819
+Ft4
+R24:28 Coq.Arith.Arith <> <> lib
+R30:32 Coq.micromega.Lia <> <> lib
+def 46:52 <> MAX_U32
+R72:74 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R68:68 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R64:64 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R60:60 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+prf 84:84 <> a
+binder 95:95 <> n:1
+R110:113 Coq.Init.Logic <> ::type_scope:x_'->'_x not
+R99:102 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R98:98 t4 <> n:1 var
+R103:109 t4 <> MAX_U32 def
+R115:118 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R114:114 t4 <> n:1 var
+R134:136 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R130:130 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R126:126 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R122:122 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R162:168 t4 <> MAX_U32 def
+prf 192:192 <> b
+R199:202 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R203:209 t4 <> MAX_U32 def
+R226:232 t4 <> MAX_U32 def

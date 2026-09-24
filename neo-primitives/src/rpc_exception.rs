@@ -1,8 +1,9 @@
-use std::fmt::{self, Display, Formatter};
+use thiserror::Error;
 
 /// Shared JSON-RPC exception representation containing the error code,
 /// message, and optional data payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[error("{message}{}", .data.as_ref().map(|d| format!(" - {}", d)).unwrap_or_default())]
 pub struct RpcException {
     code: i32,
     message: String,
@@ -55,14 +56,3 @@ impl RpcException {
         self.data.as_deref()
     }
 }
-
-impl Display for RpcException {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.data {
-            Some(data) => write!(f, "{} - {}", self.message, data),
-            None => write!(f, "{}", self.message),
-        }
-    }
-}
-
-impl std::error::Error for RpcException {}

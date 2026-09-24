@@ -1,0 +1,33 @@
+DIGEST dd479d1f3852f3beaec9f690dc6c37a9
+Ft1
+R24:28 Coq.Arith.Arith <> <> lib
+R30:32 Coq.micromega.Lia <> <> lib
+def 46:46 <> M
+R51:51 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R67:70 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R65:65 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R63:63 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R61:61 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R59:59 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R57:57 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R55:55 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R53:53 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+prf 80:80 <> t
+R85:88 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R89:89 t1 <> M def
+R106:106 t1 <> M def
+prf 125:126 <> t2
+R131:134 Coq.Init.Peano <> ::nat_scope:x_'<='_x not
+R135:135 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R151:154 Coq.Init.Peano <> ::nat_scope:x_'-'_x not
+R149:149 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R147:147 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R145:145 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R143:143 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R141:141 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R139:139 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+R137:137 Coq.Init.Peano <> ::nat_scope:x_'*'_x not
+prf 181:182 <> t3
+R187:189 Coq.Init.Peano <> ::nat_scope:x_'<'_x not
+R190:190 t1 <> M def
+R207:207 t1 <> M def

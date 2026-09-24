@@ -4,40 +4,34 @@ use crate::error::CoreResult as Result;
 use crate::neo_vm::StackItem;
 use crate::smart_contract::BinarySerializer;
 use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::utils::{extract_first_arg, extract_first_arg_as_string, validate_max_input_length};
 use num_bigint::{BigInt, Sign};
 use num_traits::{Num, ToPrimitive, Zero};
 
 impl StdLib {
     /// Validate that `args` has at least one element and its length is within limits.
+    ///
+    /// This method now delegates to the shared utility function to reduce duplication.
     pub(super) fn validate_single_arg<'a>(
         &self,
         args: &'a [Vec<u8>],
         method: &str,
     ) -> Result<&'a [u8]> {
-        if args.is_empty() {
-            return Err(Error::native_contract(format!(
-                "{method} requires an argument"
-            )));
-        }
-        self.ensure_max_input_len(&args[0], method)?;
-        Ok(&args[0])
+        extract_first_arg(args, method)
     }
 
     /// Validate a single arg and convert it to a UTF-8 string.
+    ///
+    /// This method now delegates to the shared utility function to reduce duplication.
     pub(super) fn validate_string_arg(&self, args: &[Vec<u8>], method: &str) -> Result<String> {
-        let data = self.validate_single_arg(args, method)?;
-        String::from_utf8(data.to_vec()).map_err(|_| Error::native_contract("Invalid UTF-8 string"))
+        extract_first_arg_as_string(args, method)
     }
 
+    /// Ensure data does not exceed maximum input length.
+    ///
+    /// This method now delegates to the shared utility function to reduce duplication.
     pub(super) fn ensure_max_input_len(&self, data: &[u8], method: &str) -> Result<()> {
-        if data.len() > Self::MAX_INPUT_LENGTH {
-            return Err(Error::native_contract(format!(
-                "{} input exceeds max length {}",
-                method,
-                Self::MAX_INPUT_LENGTH
-            )));
-        }
-        Ok(())
+        validate_max_input_length(data, method)
     }
 
     pub(super) fn parse_optional_base(
