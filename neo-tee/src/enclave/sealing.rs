@@ -223,10 +223,12 @@ pub struct SecureKey {
 
 #[allow(dead_code)]
 impl SecureKey {
+    /// Create a new secure key container
     pub fn new(key: [u8; 32]) -> Self {
         Self { key }
     }
 
+    /// Get a reference to the underlying key bytes
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.key
     }

@@ -34,12 +34,15 @@ pub enum EnclaveInitError {
 /// TEE-specific errors
 #[derive(Error, Debug)]
 pub enum TeeError {
+    /// Enclave has not been initialized before use
     #[error("Enclave not initialized")]
     EnclaveNotInitialized,
 
+    /// Enclave initialization failed with the given error message
     #[error("Enclave initialization failed: {0}")]
     EnclaveInitFailed(String),
 
+    /// Enclave initialization error with detailed context
     #[error("Enclave initialization error: {error}. context: {context}")]
     EnclaveInitError {
         /// The specific initialization error
@@ -48,57 +51,85 @@ pub enum TeeError {
         context: String,
     },
 
+    /// Failed to seal data into the enclave
     #[error("Sealing failed: {0}")]
     SealingFailed(String),
 
+    /// Failed to unseal data from the enclave
     #[error("Unsealing failed: {0}")]
     UnsealingFailed(String),
 
+    /// Remote attestation process failed
     #[error("Attestation failed: {0}")]
     AttestationFailed(String),
 
+    /// Attestation report format or content is invalid
     #[error("Invalid attestation report: {0}")]
     InvalidAttestationReport(String),
 
+    /// Quote validation failed during attestation
     #[error("Quote validation failed: {0}")]
     QuoteValidationFailed(String),
 
+    /// MRENCLAVE measurement does not match expected value
     #[error("MRENCLAVE verification failed: expected {expected}, got {actual}")]
-    MrEnclaveMismatch { expected: String, actual: String },
+    MrEnclaveMismatch {
+        /// Expected MRENCLAVE value
+        expected: String,
+        /// Actual MRENCLAVE value
+        actual: String,
+    },
 
+    /// MRSIGNER measurement does not match expected value
     #[error("MRSIGNER verification failed: expected {expected}, got {actual}")]
-    MrSignerMismatch { expected: String, actual: String },
+    MrSignerMismatch {
+        /// Expected MRSIGNER value
+        expected: String,
+        /// Actual MRSIGNER value
+        actual: String,
+    },
 
+    /// A cryptographic operation failed
     #[error("Cryptographic error: {0}")]
     CryptoError(String),
 
+    /// Failed to derive a cryptographic key
     #[error("Key derivation failed: {0}")]
     KeyDerivationFailed(String),
 
+    /// Requested key was not found in storage
     #[error("Key not found: {0}")]
     KeyNotFound(String),
 
+    /// Key data is in an invalid or unrecognized format
     #[error("Invalid key format")]
     InvalidKeyFormat,
 
+    /// Transaction ordering constraint was violated
     #[error("Transaction ordering error: {0}")]
     OrderingError(String),
 
+    /// Mempool has reached its capacity limit
     #[error("Mempool capacity exceeded")]
     MempoolFull,
 
+    /// SGX hardware is not available on this system
     #[error("SGX hardware not available")]
     SgxNotAvailable,
 
+    /// A required feature is not enabled
     #[error("Feature not enabled: {0}")]
     FeatureNotEnabled(String),
 
+    /// Failed to serialize or deserialize data
     #[error("Serialization error: {0}")]
     SerializationError(String),
 
+    /// An I/O operation failed
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 
+    /// An unspecified error occurred
     #[error("Other error: {0}")]
     Other(String),
 }

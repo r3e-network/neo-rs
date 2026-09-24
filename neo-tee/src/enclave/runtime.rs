@@ -123,9 +123,13 @@ pub enum EnclaveState {
 /// Detailed initialization result
 #[derive(Debug, Clone)]
 pub struct InitResult {
+    /// Final enclave state after initialization
     pub state: EnclaveState,
+    /// Whether the sealing key was successfully derived
     pub sealing_key_derived: bool,
+    /// Whether the monotonic counter was successfully loaded
     pub counter_loaded: bool,
+    /// Whether hardware attestation is available on this system
     pub hardware_attestation_available: bool,
 }
 
