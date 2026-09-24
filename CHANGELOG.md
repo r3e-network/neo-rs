@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Documentation
+- **Comprehensive contributor guidelines**: Expanded CONTRIBUTING.md from 30 to 537 lines with detailed workflow documentation including development setup, branch management, commit message conventions, testing strategies, PR process, architecture guidelines, and security best practices.
+
 ## [0.17.0] - 2026-09-05
 
 ### Consensus (dBFT)
