@@ -33,6 +33,17 @@ max_gas_invoke = 50000000
 max_iterator_results = 100
 disabled_methods = ["openwallet"]
 
+# Rate Limiting (DoS Protection)
+# Prevents request flooding by limiting requests per IP address
+# Set max_requests_per_second = 0 to disable (not recommended for public nodes)
+max_requests_per_second = 100  # Maximum sustained requests per second per IP
+rate_limit_burst = 200          # Burst capacity for short spikes
+# Note: Different RPC methods have different tier limits:
+#   - Cheap (getblockcount, getversion): 2x standard rate
+#   - Standard (getblock, gettransaction): standard rate
+#   - Expensive (invokefunction, invokescript): 1/5 standard rate
+#   - Write (sendrawtransaction): 1/10 standard rate
+
 [consensus]
 enabled = false
 auto_start = false
@@ -65,3 +76,17 @@ max_transactions = 50000
 enabled = true
 full_state = true
 path = "../mainnet/StateRoot"
+
+# Wave 4-5: Predictive Storage Prefetch + Tiered MPT Cache [PERFORMANCE]
+[performance.predictive_prefetch]
+enabled = true
+prediction_window_blocks = 10
+hot_keys_per_block = 800  # Higher for mainnet workload
+prefetch_batch_size = 200
+prefetch_worker_threads = 4  # More threads for production
+
+[performance.tiered_cache]
+tier0_capacity = 512              # Larger root branch buffer for mainnet
+tier1_capacity = 100000           # Hot native leaves (NEO/GAS/Policy)
+tier2_max_prefixes = 5000000      # Contract prefixes
+tier3_lru_size_mb = 512           # General fallback (larger memory budget)

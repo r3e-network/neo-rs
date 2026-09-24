@@ -37,6 +37,11 @@ max_gas_invoke = 100000000
 max_iterator_result_items = 200
 disabled_methods = []
 
+# Rate Limiting (DoS Protection)
+# Prevents request flooding by limiting requests per IP address
+max_requests_per_second = 100  # Maximum sustained requests per second per IP
+rate_limit_burst = 200          # Burst capacity for short spikes
+
 [dbft]
 enabled = false  # Full node mode (not validator)
 auto_start = false
@@ -55,6 +60,16 @@ bind_address = "127.0.0.1"
 
 [blockchain]
 block_time = 15000
+
+# Wave 3: VM Object Pool & Memory Optimization
+# Reduces allocator pressure by reusing expensive-to-allocate structures across transactions
+[performance.object_pool]
+enabled = true                        # Enable pooled ApplicationEngine instances
+application_engine_pool_size = 64     # Maximum concurrent pooled engines (tune based on TPS)
+datacache_bucket_size = 1024          # Pre-allocate storage cache buckets
+pooled_vector_max_capacity = 64       # Max notifications/logs per tx
+interop_handler_cache_size = 256      # Native syscall handlers pre-cache
+adaptive_sizing_enabled = true        # Auto-adjust pool sizes based on utilization metrics
 
 [logging]
 level = "info"

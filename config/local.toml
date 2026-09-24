@@ -26,6 +26,8 @@ auth_enabled = false
 max_gas_invoke = 50000000
 max_iterator_results = 100
 disabled_methods = []
+# Rate limiting enabled by default (100 req/s, burst 200)
+# For local development, you can disable with: max_requests_per_second = 0
 
 [consensus]
 enabled = false
@@ -50,3 +52,17 @@ max_transactions_per_block = 100
 
 [mempool]
 max_transactions = 1000
+
+# Wave 4-5: Predictive Storage Prefetch + Tiered MPT Cache [PERFORMANCE]
+[performance.predictive_prefetch]
+enabled = true
+prediction_window_blocks = 10
+hot_keys_per_block = 500
+prefetch_batch_size = 100
+prefetch_worker_threads = 2
+
+[performance.tiered_cache]
+tier0_capacity = 256              # Root branch buffer size
+tier1_capacity = 50000            # Hot native leaves
+tier2_max_prefixes = 1000000      # Contract prefixes
+tier3_lru_size_mb = 256           # General fallback
