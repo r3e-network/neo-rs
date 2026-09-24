@@ -1,5 +1,5 @@
 use crate::{IoResult, serializable::Serializable, var_int};
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{BufMut, Bytes};
 
 /// A sequential binary writer for serializing Neo protocol data in little-endian format.
 ///

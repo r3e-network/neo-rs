@@ -47,7 +47,18 @@ where
 }
 
 /// Serializes an array of `Serializable` items with a Neo length prefix.
+///
+/// # Zero-Copy Optimization
+///
+/// This function pre-calculates the total size needed and reserves buffer capacity
+/// upfront to avoid multiple reallocations during serialization, improving performance
+/// for large collections.
 pub fn serialize_array<T: Serializable>(values: &[T], writer: &mut BinaryWriter) -> IoResult<()> {
+    // Pre-calculate total size to avoid reallocations
+    let total_size = get_var_size_serializable_slice(values);
+    writer.reserve(total_size);
+
+    // Write the data
     writer.write_var_int(values.len() as u64)?;
     for value in values {
         value.serialize(writer)?;

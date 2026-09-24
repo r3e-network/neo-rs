@@ -7,6 +7,7 @@ use tracing::{debug, info, warn};
 
 impl ConsensusService {
     /// Handles Commit message
+    #[tracing::instrument(name = "consensus_commit", skip(self, payload), fields(block_index = self.context.block_index, view = payload.view_number, validator = payload.validator_index))]
     pub(in crate::service) fn on_commit(
         &mut self,
         payload: &ConsensusPayload,

@@ -53,16 +53,27 @@ pub fn read_var_int_prefix(src: &[u8]) -> Option<(u64, usize)> {
 }
 
 /// Appends `value` using Neo compact integer encoding.
+///
+/// # Zero-Copy Optimization
+///
+/// This function writes directly to the destination buffer using minimal
+/// intermediate allocations. The byte arrays from `to_le_bytes()` are
+/// stack-allocated and copied via `extend_from_slice`, which is optimized
+/// by LLVM for small fixed-size arrays.
+#[inline]
 pub fn write_var_int(value: u64, dst: &mut Vec<u8>) {
     if value < VAR_INT_U16_MARKER as u64 {
         dst.push(value as u8);
     } else if value <= 0xFFFF {
+        dst.reserve(3);
         dst.push(VAR_INT_U16_MARKER);
         dst.extend_from_slice(&(value as u16).to_le_bytes());
     } else if value <= 0xFFFF_FFFF {
+        dst.reserve(5);
         dst.push(VAR_INT_U32_MARKER);
         dst.extend_from_slice(&(value as u32).to_le_bytes());
     } else {
+        dst.reserve(9);
         dst.push(VAR_INT_U64_MARKER);
         dst.extend_from_slice(&value.to_le_bytes());
     }
@@ -84,7 +95,16 @@ pub const fn encoded_len(value: u64) -> usize {
 }
 
 /// Appends a Neo var-bytes payload to `dst`.
+///
+/// # Zero-Copy Optimization
+///
+/// The input `bytes` slice is written directly without intermediate copies.
+/// The function pre-reserves capacity to avoid reallocation when the total
+/// size (prefix + payload) is known upfront.
+#[inline]
 pub fn write_var_bytes(bytes: &[u8], dst: &mut Vec<u8>) {
+    let prefix_len = encoded_len(bytes.len() as u64);
+    dst.reserve(prefix_len + bytes.len());
     write_var_int(bytes.len() as u64, dst);
     dst.extend_from_slice(bytes);
 }

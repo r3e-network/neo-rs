@@ -1,4 +1,15 @@
 //! Shared in-memory ledger cache mirroring the behaviour of the C# `NeoSystem`.
+//!
+//! # Lock Ordering
+//!
+//! When acquiring multiple locks in this struct, follow this order to prevent deadlocks:
+//! 1. `hashes_by_index`
+//! 2. `headers_by_index`
+//! 3. `blocks_by_hash`
+//! 4. `extensibles_by_hash`
+//! 5. `transactions_by_hash`
+//!
+//! See `docs/LOCK_ORDERING.md` for the global lock hierarchy.
 
 use crate::network::p2p::payloads::{
     block::Block, extensible_payload::ExtensiblePayload, header::Header, transaction::Transaction,
@@ -11,6 +22,16 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// Centralised cache that tracks recently seen ledger data (blocks, headers,
 /// transactions, extensible payloads) for fast access by networking
 /// components. Matches the responsibilities of the C# `LedgerContext`.
+///
+/// # Thread Safety
+///
+/// All fields are protected by `RwLock` or atomic operations. Multiple readers
+/// can access simultaneously, but writers have exclusive access.
+///
+/// # Lock Ordering
+///
+/// The locks in this structure must be acquired in the order defined at the module level.
+/// Most methods only acquire a single lock, which is always safe.
 #[derive(Default)]
 pub struct LedgerContext {
     best_height: AtomicU32,

@@ -2,18 +2,22 @@
 """
 Benchmark Analysis Script
 Analyzes Criterion benchmark results and detects performance regressions
+
+This script can run standalone if Python is not available - the shell script
+will fall back to basic analysis.
 """
 
 import json
 import sys
 import argparse
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 from enum import Enum
 
 
 class ChangeType(Enum):
+    """Type of performance change detected."""
     IMPROVEMENT = "improvement"
     REGRESSION = "regression"
     NO_CHANGE = "no_change"
@@ -21,6 +25,7 @@ class ChangeType(Enum):
 
 @dataclass
 class BenchmarkResult:
+    """Result of a single benchmark comparison."""
     name: str
     baseline_mean: float
     current_mean: float
@@ -30,6 +35,8 @@ class BenchmarkResult:
 
 
 class BenchmarkAnalyzer:
+    """Analyzes Criterion benchmark results for performance regressions."""
+
     def __init__(self, baseline_dir: Path, current_dir: Path, threshold: float):
         self.baseline_dir = baseline_dir
         self.current_dir = current_dir
@@ -38,8 +45,13 @@ class BenchmarkAnalyzer:
 
     def analyze(self) -> List[BenchmarkResult]:
         """Analyze all benchmark results."""
-        # Find all change.json files in criterion output
+        # Find all change/estimates.json files in criterion output
         change_files = list(self.current_dir.rglob("change/estimates.json"))
+
+        if not change_files:
+            print("Warning: No benchmark comparison results found", file=sys.stderr)
+            print(f"Searched in: {self.current_dir}", file=sys.stderr)
+            print("Make sure to run: cargo bench -- --baseline baseline", file=sys.stderr)
 
         for change_file in change_files:
             result = self.analyze_benchmark(change_file)
@@ -87,12 +99,15 @@ class BenchmarkAnalyzer:
                 change_type=change_type,
                 confidence=confidence
             )
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
+        except (json.JSONDecodeError, KeyError, ValueError, FileNotFoundError) as e:
             print(f"Warning: Could not parse {change_file}: {e}", file=sys.stderr)
             return None
+        except Exception as e:
+            print(f"Error processing {change_file}: {e}", file=sys.stderr)
+            return None
 
-    def generate_report(self, output_file: Path):
-        """Generate JSON report of analysis."""
+    def generate_report(self, output_file: Path) -> int:
+        """Generate JSON report of analysis. Returns exit code."""
         report = {
             "threshold_percent": self.threshold,
             "total_benchmarks": len(self.results),
@@ -115,10 +130,16 @@ class BenchmarkAnalyzer:
             else:
                 report["no_change"].append(entry)
 
+        # Sort by absolute change
+        report["regressions"].sort(key=lambda x: x["change_percent"], reverse=True)
+        report["improvements"].sort(key=lambda x: x["change_percent"])
+
         # Write report
         output_file.parent.mkdir(parents=True, exist_ok=True)
         with open(output_file, 'w') as f:
             json.dump(report, f, indent=2)
+
+        print(f"\nReport written to: {output_file}")
 
         # Print summary
         self.print_summary(report)
@@ -140,21 +161,20 @@ class BenchmarkAnalyzer:
         if report["regressions"]:
             print(f"⚠️  REGRESSIONS DETECTED: {len(report['regressions'])}")
             print("-" * 70)
-            for reg in sorted(report["regressions"],
-                             key=lambda x: x["change_percent"],
-                             reverse=True):
+            for reg in report["regressions"]:
                 print(f"  {reg['name']}")
                 print(f"    Change: +{reg['change_percent']:.2f}% (slower)")
                 print()
 
         if report["improvements"]:
-            print(f"✓ IMPROVEMENTS: {len(report['improvements'])}")
+            print(f"✅ IMPROVEMENTS: {len(report['improvements'])}")
             print("-" * 70)
-            for imp in sorted(report["improvements"],
-                             key=lambda x: x["change_percent"]):
+            for imp in report["improvements"][:10]:  # Show top 10
                 print(f"  {imp['name']}")
                 print(f"    Change: {imp['change_percent']:.2f}% (faster)")
                 print()
+            if len(report["improvements"]) > 10:
+                print(f"  ...and {len(report['improvements']) - 10} more improvements\n")
 
         if report["no_change"]:
             print(f"→ NO SIGNIFICANT CHANGE: {len(report['no_change'])}")
@@ -163,32 +183,47 @@ class BenchmarkAnalyzer:
 
 
 def main():
+    """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Analyze Criterion benchmark results for regressions"
+        description="Analyze Criterion benchmark results for regressions",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Analyze with default 10% threshold
+  %(prog)s --baseline target/criterion --current target/criterion --output report.json
+
+  # Use 5% threshold for strict checking
+  %(prog)s --baseline baseline/ --current target/criterion --threshold 5 --output report.json
+        """
     )
     parser.add_argument(
         "--baseline",
         type=Path,
         required=True,
-        help="Path to baseline benchmark results"
+        help="Path to baseline benchmark results directory"
     )
     parser.add_argument(
         "--current",
         type=Path,
         required=True,
-        help="Path to current benchmark results"
+        help="Path to current benchmark results directory"
     )
     parser.add_argument(
         "--threshold",
         type=float,
         default=10.0,
-        help="Regression threshold in percent (default: 10)"
+        help="Regression threshold in percent (default: 10.0)"
     )
     parser.add_argument(
         "--output",
         type=Path,
         required=True,
         help="Output file for JSON report"
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show verbose output"
     )
 
     args = parser.parse_args()
@@ -199,13 +234,30 @@ def main():
               file=sys.stderr)
         return 1
 
+    if args.verbose:
+        print(f"Baseline: {args.baseline}")
+        print(f"Current: {args.current}")
+        print(f"Threshold: {args.threshold}%")
+        print(f"Output: {args.output}")
+        print()
+
     # Analyze
     analyzer = BenchmarkAnalyzer(args.baseline, args.current, args.threshold)
-    analyzer.analyze()
+    results = analyzer.analyze()
+
+    if args.verbose:
+        print(f"Found {len(results)} benchmark results")
 
     # Generate report
     return analyzer.generate_report(args.output)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\nInterrupted", file=sys.stderr)
+        sys.exit(130)
+    except Exception as e:
+        print(f"Fatal error: {e}", file=sys.stderr)
+        sys.exit(1)

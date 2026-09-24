@@ -4,9 +4,11 @@
 
 use super::{ExecutionEngine, StackItem, VMState, VmError, VmResult};
 use crate::Instruction;
+use tracing::{instrument, trace};
 
 impl ExecutionEngine {
     /// Starts execution of the VM.
+    #[instrument(name = "vm_execute", skip(self), fields(initial_state = ?self.state))]
     pub fn execute(&mut self) -> VMState {
         if self.state == VMState::BREAK {
             self.set_state(VMState::NONE);
@@ -18,6 +20,13 @@ impl ExecutionEngine {
                 self.on_fault(err);
             }
         }
+
+        trace!(
+            final_state = ?self.state,
+            instructions_executed = self.instructions_executed,
+            gas_consumed = self.gas_consumed,
+            "VM execution completed"
+        );
 
         self.state
     }

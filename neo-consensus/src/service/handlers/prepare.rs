@@ -12,6 +12,7 @@ use tracing::{debug, info, warn};
 
 impl ConsensusService {
     /// Handles `PrepareRequest` message
+    #[tracing::instrument(name = "consensus_prepare_request", skip(self, payload), fields(block_index = self.context.block_index, view = payload.view_number, validator = payload.validator_index))]
     pub(in crate::service) fn on_prepare_request(
         &mut self,
         payload: &ConsensusPayload,

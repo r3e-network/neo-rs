@@ -45,11 +45,20 @@ struct PendingSignatureItem {
 }
 
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+    let _span = tracing::info_span!("rpc_invoke_function").entered();
+
     let script_hash = expect_string_param(params, 0, "invokefunction")?;
     let script_hash = UInt160::from_str(&script_hash)
         .map_err(|err| invalid_params(format!("invalid script hash: {err}")))?;
 
     let operation = expect_string_param(params, 1, "invokefunction")?;
+
+    tracing::debug!(
+        contract = %script_hash,
+        operation = %operation,
+        "Invoking contract function"
+    );
+
     let parameters = parse_contract_parameters(params.get(2))?;
     let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(3))?;
     let use_diagnostic = params
@@ -62,12 +71,20 @@ pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Va
 }
 
 pub(super) fn invoke_script(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+    let _span = tracing::info_span!("rpc_invoke_script").entered();
+
     let script = expect_base64_param_with_decode_message(
         params,
         0,
         "invokescript",
         "invalid script payload",
     )?;
+
+    tracing::debug!(
+        script_length = script.len(),
+        "Invoking script"
+    );
+
     let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(1))?;
     let use_diagnostic = params
         .get(2)
@@ -77,6 +94,7 @@ pub(super) fn invoke_script(server: &RpcServer, params: &[Value]) -> Result<Valu
     execute_script(server, script, signers, witnesses, use_diagnostic)
 }
 
+#[tracing::instrument(name = "rpc_execute_script", skip(server, script, signers, witnesses), fields(script_len = script.len(), diagnostic = use_diagnostic))]
 fn execute_script(
     server: &RpcServer,
     script: Vec<u8>,

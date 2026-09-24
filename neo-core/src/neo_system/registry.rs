@@ -71,11 +71,16 @@ impl ServiceRegistry {
     ///
     /// The service is always registered by type. If a name is provided,
     /// it's also registered by name for string-based lookup.
+    ///
+    /// # Lock Ordering
+    ///
+    /// Acquires locks in the correct order: typed_services, services, services_by_name.
     pub fn register(
         &self,
         service: Arc<dyn Any + Send + Sync>,
         name: Option<String>,
     ) -> CoreResult<()> {
+        // Lock order: 1. typed_services, 2. services, 3. services_by_name
         {
             let mut typed = self.typed_services.write();
             typed.insert((*service).type_id(), service.clone());

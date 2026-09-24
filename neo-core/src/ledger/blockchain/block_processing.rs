@@ -4,6 +4,7 @@
 
 use super::*;
 use dashmap::mapref::entry::Entry;
+use tracing::instrument;
 
 /// Maximum blocks to persist in a single drain pass.
 /// After this many, the actor yields to process queued messages and
@@ -11,6 +12,7 @@ use dashmap::mapref::entry::Entry;
 const DRAIN_BATCH_SIZE: usize = 50;
 
 impl Blockchain {
+    #[instrument(name = "blockchain_process_block", skip(self, block), fields(height = block.index(), hash = %block.hash().unwrap_or_default()))]
     pub(super) async fn on_new_block(&self, block: Arc<Block>, verify: bool) -> VerifyResult {
         let Some(context) = &self.system_context else {
             return VerifyResult::Invalid;
