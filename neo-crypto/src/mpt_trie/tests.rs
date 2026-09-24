@@ -298,6 +298,7 @@ mod mpt_tests {
 
     #[test]
     fn test_put_cant_resolve() {
+        crate::mpt_trie::cache::GLOBAL_NODE_CACHE.clear();
         let store = Arc::new(MockStore::new());
         let fake_hash = UInt256::from_bytes(&[1u8; 32]).unwrap();
         let mut trie = Trie::new(store, Some(fake_hash), false);
@@ -342,6 +343,7 @@ mod mpt_tests {
 
     #[test]
     fn test_delete_remain_cant_resolve() {
+        crate::mpt_trie::cache::GLOBAL_NODE_CACHE.clear();
         let store = Arc::new(MockStore::new());
         let fake_hash = UInt256::from_bytes(&[1u8; 32]).unwrap();
         let mut trie = Trie::new(store, Some(fake_hash), false);
@@ -1181,6 +1183,355 @@ mod mpt_tests {
                 );
             } else {
                 eprintln!("after entry {}: key={} root=None", i, k);
+            }
+        }
+    }
+
+    // ============================================================================
+    // Property-based tests using proptest
+    // ============================================================================
+
+    use proptest::prelude::*;
+
+    /// Generate valid MPT keys (non-empty byte vectors)
+    fn valid_key() -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(any::<u8>(), 1..=32)
+    }
+
+    /// Generate valid MPT values (non-empty, under MAX_VALUE_LENGTH)
+    fn valid_value() -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(any::<u8>(), 0..=1024)
+    }
+
+    /// Generate a collection of key-value pairs
+    fn key_value_pairs() -> impl Strategy<Value = Vec<(Vec<u8>, Vec<u8>)>> {
+        prop::collection::vec((valid_key(), valid_value()), 1..=20)
+    }
+
+    proptest! {
+        #[test]
+        fn prop_get_put_consistency(key in valid_key(), value in valid_value()) {
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store, None, false);
+
+            trie.put(&key, &value).unwrap();
+            let result = trie.get(&key).unwrap();
+
+            prop_assert_eq!(result, Some(value));
+        }
+
+        #[test]
+        fn prop_delete_get_consistency(key in valid_key(), value in valid_value()) {
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store, None, false);
+
+            trie.put(&key, &value).unwrap();
+            let deleted = trie.delete(&key).unwrap();
+            let result = trie.get(&key).unwrap();
+
+            prop_assert!(deleted);
+            prop_assert_eq!(result, None);
+        }
+
+        #[test]
+        fn prop_update_idempotence(key in valid_key(), value in valid_value()) {
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store, None, false);
+
+            trie.put(&key, &value).unwrap();
+            let hash1 = trie.root_hash();
+
+            trie.put(&key, &value).unwrap();
+            let hash2 = trie.root_hash();
+
+            prop_assert_eq!(hash1, hash2);
+        }
+
+        #[test]
+        fn prop_insertion_order_independence(pairs in key_value_pairs()) {
+            // Ensure all keys are unique
+            let mut unique_pairs: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+            let mut seen_keys = std::collections::HashSet::new();
+            for (k, v) in pairs {
+                if seen_keys.insert(k.clone()) {
+                    unique_pairs.push((k, v));
+                }
+            }
+
+            if unique_pairs.len() < 2 {
+                return Ok(());
+            }
+
+            // Insert in original order
+            let store1 = Arc::new(MockStore::new());
+            let mut trie1 = Trie::new(store1, None, false);
+            for (k, v) in &unique_pairs {
+                trie1.put(k, v).unwrap();
+            }
+            let hash1 = trie1.root_hash();
+
+            // Insert in reverse order
+            let store2 = Arc::new(MockStore::new());
+            let mut trie2 = Trie::new(store2, None, false);
+            for (k, v) in unique_pairs.iter().rev() {
+                trie2.put(k, v).unwrap();
+            }
+            let hash2 = trie2.root_hash();
+
+            prop_assert_eq!(hash1, hash2);
+        }
+
+        #[test]
+        fn prop_persistence_after_commit(pairs in key_value_pairs()) {
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store.clone(), None, false);
+
+            for (k, v) in &pairs {
+                trie.put(k, v).unwrap();
+            }
+
+            trie.commit().unwrap();
+            let root_hash = trie.root_hash();
+
+            // Create new trie from same root
+            let mut trie2 = Trie::new(store, root_hash, false);
+
+            // Verify all values are retrievable
+            for (k, v) in &pairs {
+                let result = trie2.get(k).unwrap();
+                prop_assert_eq!(result, Some(v.clone()));
+            }
+        }
+
+        #[test]
+        fn prop_empty_trie_no_root(key in valid_key()) {
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store, None, false);
+
+            prop_assert_eq!(trie.root_hash(), None);
+
+            // After delete of non-existent key, still empty
+            let _ = trie.delete(&key);
+            prop_assert_eq!(trie.root_hash(), None);
+        }
+
+        #[test]
+        fn prop_delete_all_returns_empty(pairs in key_value_pairs()) {
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store, None, false);
+
+            // Insert all pairs
+            for (k, v) in &pairs {
+                trie.put(k, v).unwrap();
+            }
+
+            prop_assert!(trie.root_hash().is_some());
+
+            // Delete all keys
+            for (k, _) in &pairs {
+                trie.delete(k).unwrap();
+            }
+
+            // Trie should be empty
+            prop_assert_eq!(trie.root_hash(), None);
+        }
+
+        #[test]
+        fn prop_overwrite_preserves_other_keys(
+            key1 in valid_key(),
+            key2 in valid_key(),
+            value1 in valid_value(),
+            value2 in valid_value(),
+            value3 in valid_value()
+        ) {
+            if key1 == key2 {
+                return Ok(());
+            }
+
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store, None, false);
+
+            trie.put(&key1, &value1).unwrap();
+            trie.put(&key2, &value2).unwrap();
+
+            // Overwrite key1
+            trie.put(&key1, &value3).unwrap();
+
+            // key2 should still have original value
+            let result = trie.get(&key2).unwrap();
+            prop_assert_eq!(result, Some(value2));
+
+            // key1 should have new value
+            let result = trie.get(&key1).unwrap();
+            prop_assert_eq!(result, Some(value3));
+        }
+
+        #[test]
+        fn prop_partial_delete_preserves_others(pairs in key_value_pairs()) {
+            if pairs.len() < 2 {
+                return Ok(());
+            }
+
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store, None, false);
+
+            // Insert all pairs
+            for (k, v) in &pairs {
+                trie.put(k, v).unwrap();
+            }
+
+            // Delete first key
+            let (delete_key, _) = &pairs[0];
+            trie.delete(delete_key).unwrap();
+
+            // Verify remaining keys are intact
+            for (k, v) in pairs.iter().skip(1) {
+                let result = trie.get(k).unwrap();
+                prop_assert_eq!(result, Some(v.clone()));
+            }
+
+            // Deleted key should not be found
+            let result = trie.get(delete_key).unwrap();
+            prop_assert_eq!(result, None);
+        }
+
+        #[test]
+        fn prop_root_hash_changes_on_modification(
+            key in valid_key(),
+            value1 in valid_value(),
+            value2 in valid_value()
+        ) {
+            if value1 == value2 {
+                return Ok(());
+            }
+
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store, None, false);
+
+            trie.put(&key, &value1).unwrap();
+            let hash1 = trie.root_hash();
+
+            trie.put(&key, &value2).unwrap();
+            let hash2 = trie.root_hash();
+
+            prop_assert_ne!(hash1, hash2);
+        }
+
+        #[test]
+        fn prop_delete_nonexistent_is_noop(key in valid_key()) {
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store, None, false);
+
+            let deleted = trie.delete(&key).unwrap();
+            prop_assert!(!deleted);
+            prop_assert_eq!(trie.root_hash(), None);
+        }
+
+        #[test]
+        fn prop_node_hash_determinism(value in valid_value()) {
+            let node1 = Node::new_leaf(value.clone());
+            let node2 = Node::new_leaf(value);
+
+            prop_assert_eq!(node1.hash(), node2.hash());
+        }
+
+        #[test]
+        fn prop_extension_requires_nonempty_key(value in valid_value()) {
+            let leaf = Node::new_leaf(value);
+            let result = Node::new_extension(vec![], leaf);
+
+            prop_assert!(result.is_err());
+        }
+
+        #[test]
+        fn prop_serialization_roundtrip_leaf(value in valid_value()) {
+            let node = Node::new_leaf(value.clone());
+            let node_hash = node.hash();
+            let serialized = node.to_array().unwrap();
+            let deserialized = deserialize_node(&serialized);
+
+            prop_assert_eq!(node.node_type, deserialized.node_type);
+            prop_assert_eq!(&node.value, &deserialized.value);
+            prop_assert_eq!(node_hash, deserialized.hash());
+        }
+
+        #[test]
+        fn prop_cache_resolve_consistency(value in valid_value()) {
+            let store = Arc::new(MockStore::new());
+            let mut cache = MptCache::new(store, 0xf0);
+
+            let leaf = Node::new_leaf(value.clone());
+            let hash = leaf.hash();
+            cache.put_node(leaf.clone()).unwrap();
+
+            let resolved = cache.resolve(&hash).unwrap();
+            prop_assert!(resolved.is_some());
+            prop_assert_eq!(resolved.unwrap().value, value);
+        }
+
+        #[test]
+        fn prop_trie_deterministic_hash(pairs in key_value_pairs()) {
+            let store1 = Arc::new(MockStore::new());
+            let mut trie1 = Trie::new(store1, None, false);
+
+            let store2 = Arc::new(MockStore::new());
+            let mut trie2 = Trie::new(store2, None, false);
+
+            for (k, v) in &pairs {
+                trie1.put(k, v).unwrap();
+                trie2.put(k, v).unwrap();
+            }
+
+            prop_assert_eq!(trie1.root_hash(), trie2.root_hash());
+        }
+
+        #[test]
+        fn prop_key_prefix_independence(
+            prefix in prop::collection::vec(any::<u8>(), 1..=10),
+            suffix1 in prop::collection::vec(any::<u8>(), 1..=10),
+            suffix2 in prop::collection::vec(any::<u8>(), 1..=10),
+            value1 in valid_value(),
+            value2 in valid_value()
+        ) {
+            if suffix1 == suffix2 {
+                return Ok(());
+            }
+
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store, None, false);
+
+            let mut key1 = prefix.clone();
+            key1.extend_from_slice(&suffix1);
+
+            let mut key2 = prefix;
+            key2.extend_from_slice(&suffix2);
+
+            trie.put(&key1, &value1).unwrap();
+            trie.put(&key2, &value2).unwrap();
+
+            prop_assert_eq!(trie.get(&key1).unwrap(), Some(value1));
+            prop_assert_eq!(trie.get(&key2).unwrap(), Some(value2));
+        }
+
+        #[test]
+        fn prop_commit_preserves_data(pairs in key_value_pairs()) {
+            let store = Arc::new(MockStore::new());
+            let mut trie = Trie::new(store.clone(), None, false);
+
+            for (k, v) in &pairs {
+                trie.put(k, v).unwrap();
+            }
+
+            let hash_before = trie.root_hash();
+            trie.commit().unwrap();
+            let hash_after = trie.root_hash();
+
+            prop_assert_eq!(hash_before, hash_after);
+
+            // Verify all values still retrievable
+            for (k, v) in &pairs {
+                let result = trie.get(k).unwrap();
+                prop_assert_eq!(result, Some(v.clone()));
             }
         }
     }

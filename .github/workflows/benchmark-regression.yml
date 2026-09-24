@@ -1,0 +1,198 @@
+name: Benchmark Regression Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  REGRESSION_THRESHOLD: 10
+
+jobs:
+  benchmark-regression:
+    name: Benchmark Regression Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reclaim runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+          sudo docker image prune -af || true
+
+      - name: Cache APT packages
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
+          version: 1.0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+        continue-on-error: true
+
+      - name: Enable sccache (best-effort)
+        run: |
+          if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+            echo "::notice::sccache enabled"
+          else
+            echo "::warning::sccache unavailable — falling back to direct compilation"
+          fi
+
+      - name: Cache cargo registry & git
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-bench
+          cache-on-failure: true
+
+      - name: Cache baseline benchmarks
+        id: cache-baseline
+        uses: actions/cache@v4
+        with:
+          path: benchmark-results/baseline
+          key: benchmark-baseline-${{ github.base_ref || 'main' }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            benchmark-baseline-${{ github.base_ref || 'main' }}-
+            benchmark-baseline-
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+
+      - name: Generate baseline (if not cached)
+        if: steps.cache-baseline.outputs.cache-hit != 'true'
+        run: |
+          echo "No cached baseline found, generating new baseline..."
+          chmod +x scripts/bench-regression.sh
+          ./scripts/bench-regression.sh --save-baseline
+
+      - name: Run benchmarks with comparison
+        run: |
+          chmod +x scripts/bench-regression.sh
+          ./scripts/bench-regression.sh --compare --threshold ${{ env.REGRESSION_THRESHOLD }}
+        continue-on-error: true
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: |
+            benchmark-results/
+            target/criterion/
+          retention-days: 30
+
+      - name: Check for regressions
+        run: |
+          if [ -f benchmark-results/regression-report.json ]; then
+            REGRESSIONS=$(jq '.regressions | length' benchmark-results/regression-report.json)
+            if [ "$REGRESSIONS" -gt 0 ]; then
+              echo "::error::Performance regressions detected: $REGRESSIONS benchmarks regressed"
+              exit 1
+            else
+              echo "::notice::No performance regressions detected"
+            fi
+          else
+            echo "::warning::No regression report generated"
+          fi
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = 'benchmark-results/regression-report.json';
+
+            if (!fs.existsSync(reportPath)) {
+              console.log('No report file found');
+              return;
+            }
+
+            const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+
+            let comment = '## 📊 Benchmark Regression Report\n\n';
+            comment += `**Threshold:** ${report.threshold_percent}%\n`;
+            comment += `**Total Benchmarks:** ${report.total_benchmarks}\n\n`;
+
+            if (report.regressions.length > 0) {
+              comment += `### ⚠️ Regressions Detected (${report.regressions.length})\n\n`;
+              comment += '| Benchmark | Change |\n';
+              comment += '|-----------|--------|\n';
+              report.regressions.forEach(r => {
+                comment += `| ${r.name} | +${r.change_percent.toFixed(2)}% (slower) |\n`;
+              });
+              comment += '\n';
+            }
+
+            if (report.improvements.length > 0) {
+              comment += `### ✅ Improvements (${report.improvements.length})\n\n`;
+              comment += '| Benchmark | Change |\n';
+              comment += '|-----------|--------|\n';
+              report.improvements.slice(0, 10).forEach(i => {
+                comment += `| ${i.name} | ${i.change_percent.toFixed(2)}% (faster) |\n`;
+              });
+              if (report.improvements.length > 10) {
+                comment += `\n*...and ${report.improvements.length - 10} more improvements*\n`;
+              }
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+
+  # Save baseline on main branch for future comparisons
+  update-baseline:
+    name: Update Baseline
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reclaim runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+          sudo docker image prune -af || true
+
+      - name: Cache APT packages
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
+          version: 1.0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & git
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-bench
+
+      - name: Generate new baseline
+        run: |
+          chmod +x scripts/bench-regression.sh
+          ./scripts/bench-regression.sh --save-baseline
+
+      - name: Cache baseline for future runs
+        uses: actions/cache/save@v4
+        with:
+          path: benchmark-results/baseline
+          key: benchmark-baseline-main-${{ hashFiles('**/Cargo.lock') }}
