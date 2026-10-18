@@ -307,6 +307,11 @@ The replay harness also enables DataCache read caching only for blocks with
 more than two transactions, avoiding the per-block cache overhead on empty and
 light blocks.
 
+Further experiments that did **not** help this range (kept out of the tree):
+raising the node cache to 2,097,152 entries (121.0 s vs 122.4 s, within noise),
+and a replay-level flat storage-value cache (121.5 s). The remaining time is
+cold MPT reads with low locality plus custom-contract VM execution.
+
 ## Real MainNet block replay
 
 All 14 checked-in `mainnet_block_*_repro` tests pass against the local
