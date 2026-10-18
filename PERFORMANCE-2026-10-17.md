@@ -276,8 +276,9 @@ read from the chain store.
 
 ```text
 blocks 1..=99877: 0 state-root mismatches
-blocks 200000..=250000: 50,001 roots checked, 0 gaps, 0 mismatches
-blocks 238711..=250000 in release: 25.5 s
+blocks 200000..=885962: 685,963 roots checked, 0 gaps, 0 mismatches
+chunked release replay: 10,000 blocks per ~20 s
+first divergence: block 885963 (IdoContract public-key field)
 ```
 
 The block 238,711 mismatch reported earlier was caused by the replay harness

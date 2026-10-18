@@ -35,6 +35,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 fn load_reference_roots(path: &Path, start: u32, end: u32) -> HashMap<u32, neo_core::UInt256> {
     let file = File::open(path).expect("open reference roots");
@@ -143,6 +144,8 @@ fn execute_empty_block(
         },
     ));
 
+    let profile = std::env::var_os("NEO_REPLAY_PROFILE").is_some();
+    let phase_started = Instant::now();
     let mut on_persist = ApplicationEngine::new_with_shared_block(
         TriggerType::OnPersist,
         None,
@@ -154,6 +157,9 @@ fn execute_empty_block(
     )
     .expect("on persist engine");
     on_persist.native_on_persist().expect("native on persist");
+    if profile {
+        eprintln!("profile block={} on_persist={:?}", block.index(), phase_started.elapsed());
+    }
     let seeded_contracts = on_persist.contracts_snapshot();
     let seeded_native_cache = on_persist.native_contract_cache_handle();
     let mut tx_states = on_persist
@@ -169,6 +175,7 @@ fn execute_empty_block(
         });
     drop(on_persist);
 
+    let tx_started = Instant::now();
     for tx in &block.transactions {
         let tx_store_get = {
             let base = Arc::clone(&base_cache);
@@ -222,6 +229,10 @@ fn execute_empty_block(
         base_cache.merge_tracked_items(&tracked);
     }
 
+    if profile {
+        eprintln!("profile block={} txs={:?}", block.index(), tx_started.elapsed());
+    }
+    let post_started = Instant::now();
     let mut post_persist = ApplicationEngine::new_with_preloaded_native(
         TriggerType::PostPersist,
         None,
@@ -239,10 +250,14 @@ fn execute_empty_block(
         .native_post_persist()
         .expect("native post persist");
     drop(post_persist);
+    if profile {
+        eprintln!("profile block={} post_persist={:?}", block.index(), post_started.elapsed());
+    }
 
     let mut tracked: Vec<_> = base_cache.tracked_items().into_iter().collect();
     tracked.sort_by(|a, b| (a.0.id, a.0.key()).cmp(&(b.0.id, b.0.key())));
     drop(base_cache);
+    let apply_started = Instant::now();
     let mut trie_guard = trie.lock();
     let mut touched = Vec::new();
     for (key, trackable) in &tracked {
@@ -265,6 +280,9 @@ fn execute_empty_block(
         }
     }
     let root = trie_guard.root_hash()?;
+    if profile {
+        eprintln!("profile block={} apply={:?}", block.index(), apply_started.elapsed());
+    }
     Some((root, touched))
 }
 
