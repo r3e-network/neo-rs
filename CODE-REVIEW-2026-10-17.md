@@ -142,7 +142,7 @@ All in `neo-vm`, all against Neo.VM 3.10.1:
 | C29 | Contiguous full stored-chain integrity check: every block **0–1,352,010** (1,352,011 blocks, 609,487 transactions) was loaded from the MainNet RocksDB, re-hashed, checked against its previous hash, and Merkle-root validated. All passed in **27.3 s** | `neo-core/tests/mainnet_chain_integrity.rs`, `data/mainnet-protocol-consistency` |
 | C30 | Added a self-hosted MainNet validation workflow that runs the contiguous chain check, all 14 replay fixtures, and the bulk C# state-root differential against local multi-GB backups | `.github/workflows/mainnet-validation.yml` |
 | C31 | Extended the 4-validator dBFT harness with an offline-validator mode; with n=4, f=1, the three online validators still commit a block | `neo-consensus/src/service/tests/{helpers,persist}.rs` |
-| C32 | Locked C# `NEWARRAY` reference-count parity: 1,000 null children + the array = **1,001**, matching the C# reference. The full transaction still over-counts, so exact `MaxStackSize` enforcement remains open | `neo-vm/tests/csharp_vm_vectors.rs` |
+| C32 | Locked C# `NEWARRAY` reference-count parity: 1,000 null children + the array = **1,001**, matching the C# reference. C# `Array.Add` does not touch the counter, so a C#-exact model can underflow when children are appended after the first push; reproducing that underflow is not a safe target. The full transaction still over-counts conservatively, so live-slot `MaxStackSize` enforcement remains | `neo-vm/tests/csharp_vm_vectors.rs` |
 ---
 
 ## 4. Residual validation work and known replay issue
