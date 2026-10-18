@@ -82,6 +82,15 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: From-genesis execution replay
+        env:
+          NEO_CHAIN_DB_PATH: ${{ inputs.chain_db }}
+          NEO_STATE_ROOT_DB_PATH: ${{ format('{0}/StateRoot', inputs.chain_db) }}
+          NEO_EMPTY_REPLAY_COUNT: "1000"
+        run: |
+          cargo test -p neo-core --features rocksdb \
+            --test mainnet_contiguous_replay -- --ignored --nocapture
+
       - name: Bulk C# state-root differential
         env:
           NEO_BULK_ROOT_DB_PATH: ${{ inputs.state_root_db }}
