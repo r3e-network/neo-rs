@@ -49,15 +49,6 @@ impl EvaluationStack {
         self.stack.is_empty()
     }
 
-    /// Appends an item without changing the reference counter.
-    ///
-    /// C# `EvaluationStack.CopyTo` appends raw items; RET uses it to transfer
-    /// return values. The source stack keeps its counted reference, so the
-    /// copied slot must not be counted again.
-    pub(crate) fn push_raw(&mut self, item: StackItem) {
-        self.stack.push(item);
-    }
-
     /// Pushes an item onto the top of the stack.
     #[inline(always)]
     pub fn push(&mut self, mut item: StackItem) -> VmResult<()> {

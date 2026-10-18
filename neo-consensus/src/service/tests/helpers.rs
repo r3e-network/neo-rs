@@ -68,6 +68,7 @@ pub(super) struct PersistCompletedHarness {
     services: Vec<ConsensusService>,
     receivers: Vec<mpsc::Receiver<ConsensusEvent>>,
     events: Vec<ConsensusEvent>,
+    offline: Option<usize>,
 }
 
 impl PersistCompletedHarness {
@@ -88,7 +89,12 @@ impl PersistCompletedHarness {
             services,
             receivers,
             events: Vec::new(),
+            offline: None,
         }
+    }
+
+    pub(super) fn set_offline(&mut self, index: usize) {
+        self.offline = Some(index);
     }
 
     pub(super) fn persist_completed_all(
@@ -130,6 +136,12 @@ impl PersistCompletedHarness {
     pub(super) fn drive_once(&mut self) -> ConsensusResult<bool> {
         let mut progressed = false;
         for idx in 0..self.services.len() {
+            if self.offline == Some(idx) {
+                while self.receivers[idx].try_recv().is_ok() {
+                    progressed = true;
+                }
+                continue;
+            }
             while let Ok(event) = self.receivers[idx].try_recv() {
                 progressed = true;
                 self.handle_event(idx, event)?;
@@ -161,7 +173,7 @@ impl PersistCompletedHarness {
                 };
 
                 for (idx, service) in self.services.iter_mut().enumerate() {
-                    if idx == sender_index {
+                    if idx == sender_index || self.offline == Some(idx) {
                         continue;
                     }
                     if let Err(err) = service.process_message(payload.clone())

@@ -15,7 +15,7 @@ This is a large, real implementation (≈300k lines of Rust across 16 crates) wi
 The review found and fixed **more than 20 critical/high-severity defects**, including remote crash/DoS paths, a block-persistence path that could commit unverified blocks, a VM stack-limit bypass, consensus wire-format divergence, and dBFT safety gaps. After the fixes:
 
 - `cargo check --workspace` (library targets) succeeds **warning-free**; a few legacy test files still emit style warnings (unused imports/variables, naming), which do not affect runtime.
-- `cargo test --workspace --no-fail-fast`: **4,513 passed, 0 failed** across 219 suites (1 ignored; including all 121 architecture-conformance tests).
+- `cargo test --workspace --no-fail-fast`: **4,514 passed, 0 failed** across 219 suites (1 ignored; including all 121 architecture-conformance tests).
 - Before the review the same suite had **4,475 passed / 16 failed** (10 failures were real or stale tests fixed during this review; see §6).
 - The remaining work is **validation** (C# differential replay/state roots, multi-node dBFT cluster, native-contract execution vectors), not known code defects. See §4.
 
@@ -117,7 +117,7 @@ All in `neo-vm`, all against Neo.VM 3.10.1:
 - **Message-copy path:** inbound messages are serialized/decompressed only when a plugin handler is registered; previously every frame paid for a second LZ4 decode and large transient copies (`remote_node.rs:104`).
 - **Test-suite correctness:** fixed stale/wrong expectations in `native_token_tests`, `opcode_price_refinement_tests`, `opcode_full_256_refinement_tests`, `financial_overflow_checks`, `change_view_refinement_tests`, `neo-tee` timestamp test, and MPT proptests that generated duplicate keys; gated two runtime-only `neo-core` test targets.
 
-### C11-C30. Production-readiness fixes (second pass)
+### C11-C31. Production-readiness fixes (second pass)
 
 | # | Fix | Location |
 |---|---|---|
@@ -141,6 +141,7 @@ All in `neo-vm`, all against Neo.VM 3.10.1:
 | C28 | `RET` now mirrors C# `CopyTo` for the value transfer and then releases the callee source-stack references **after** context unload, so returned values are counted once. Native iterator test and all 14 MainNet replay fixtures pass | `neo-vm/src/jump_table/control.rs`, `neo-vm/src/evaluation_stack.rs` |
 | C29 | Contiguous full stored-chain integrity check: every block **0–1,352,010** (1,352,011 blocks, 609,487 transactions) was loaded from the MainNet RocksDB, re-hashed, checked against its previous hash, and Merkle-root validated. All passed in **27.3 s** | `neo-core/tests/mainnet_chain_integrity.rs`, `data/mainnet-protocol-consistency` |
 | C30 | Added a self-hosted MainNet validation workflow that runs the contiguous chain check, all 14 replay fixtures, and the bulk C# state-root differential against local multi-GB backups | `.github/workflows/mainnet-validation.yml` |
+| C31 | Extended the 4-validator dBFT harness with an offline-validator mode; with n=4, f=1, the three online validators still commit a block | `neo-consensus/src/service/tests/{helpers,persist}.rs` |
 
 ---
 
@@ -208,7 +209,7 @@ These items cannot be closed by unit tests in this repository; they are the rema
 - Unsafe code: 85 blocks in `neo-core`, 76 in `neo-vm`; the hot ones are arena/pool and evaluation-stack fast paths. They were not line-by-line audited in this review.
 
 ### Test hygiene
-- The suite is large (**4,513 passing**) and includes useful C# parity vectors. Several stale expectations were fixed during this review (opcode prices, `ChangeView` length, empty-value MPT proptests, TEE timing).
+- The suite is large (**4,514 passing**) and includes useful C# parity vectors. Several stale expectations were fixed during this review (opcode prices, `ChangeView` length, empty-value MPT proptests, TEE timing).
 - `cargo check --workspace` is now **warning-free for library targets**; a few test files still have unused-import/naming warnings. The unwired tiered-cache prototype is explicitly marked and documented rather than emitting missing-doc/dead-code noise.
 - A real CI gate should include: `cargo fmt --check`, `cargo clippy -- -D warnings` (or a ratcheted allowlist), `cargo test --workspace`, and a C# differential job.
 
@@ -242,7 +243,7 @@ These items cannot be closed by unit tests in this repository; they are the rema
 | `cargo check --workspace` | Pass, **0 library warnings** (some legacy test-file style warnings remain) |
 | `cargo check -p neo-core --features rocksdb` | **Pass** (Windows/MinGW production storage) |
 | `cargo check -p neo-node --features full` | **Pass** (RocksDB + gRPC + monitoring + UPnP) |
-| `cargo test --workspace --no-fail-fast` | **4,513 passed, 0 failed** (219 suites) |
+| `cargo test --workspace --no-fail-fast` | **4,514 passed, 0 failed** (219 suites) |
 | `neo-tests --test no_local_neo_vm_dependency` | **121 passed, 0 failed** |
 | `cargo test -p neo-core --lib` | 633 passed |
 | `cargo test -p neo-consensus` | 116 unit + all integration tests passed |
@@ -259,9 +260,9 @@ These items cannot be closed by unit tests in this repository; they are the rema
 | MainNet block replay | **14/14 pass** against the local state-root DB, including C# state-root assertions |
 | Stored MainNet chain | **1,352,011 blocks / 609,487 txs**, contiguous hashes + Merkle roots, 0 failures |
 | Bulk C# state-root diff | **1,460,685 roots compared, 0 mismatches** (heights 0–1,465,790) |
-| dBFT 4-validator harness | **3/3 pass**: starts round, commits block, multiple rounds |
+| dBFT 4-validator harness | **4/4 pass**: round start, block commit, multiple rounds, one validator offline |
 | `RET` C# `CopyTo` semantics | native iterator test + 14/14 MainNet replays pass |
 | End-to-end empty-block persistence | 1.87 ms per block; 1 RET-tx 2.61 ms; 10 RET-tx 2.61 ms (native OnPersist + ledger + commit) |
 | RocksDB production persistence | Empty block **1.55 ms** (WAL + write batch) |
 
-**Bottom line:** the code-level blockers found in the review are fixed: unverified-block persistence, VM stack/allocation limits, syscall flags, opcode gas, dBFT wire format/timestamp, dBFT transaction availability and pending commits, invalid-transaction tracking, pre-Gorgon `HASKEY`, `TRY`/`ENDTRY` state, bounded interpreter equality, 33-byte `CheckWitness` validation, P2P memory bounds, architecture-conformance tests, and the production `full` feature build (RocksDB + gRPC). C# and chain evidence is now substantial: 26 Neo.VM vectors pass, all 14 checked-in MainNet block replay fixtures pass, **1,460,685 MainNet state roots through height 1,465,790 match the C# reference with 0 mismatches**, and the stored chain’s **1,352,011 contiguous blocks / 609,487 transactions** pass hash, previous-hash, and Merkle-root validation. `RET` now mirrors C# `CopyTo` raw-append semantics, and the 4-validator in-process dBFT harness commits blocks across multiple rounds. Native-contract seeding, native-registry construction, memory-store snapshots, and per-transaction ledger-state lookup are measured and substantially faster. Library targets build warning-free and all 4,513 default tests pass. The reference counter still over-counts the source stack, so `MaxStackSize` is enforced on actual live stack slots; the remaining gates are a from-genesis execution replay, a fully accurate reference counter, and a real multi-node network cluster. Until those are published, the honest label is **testnet/private-network ready**, not “mainnet-certified.”
+**Bottom line:** the code-level blockers found in the review are fixed: unverified-block persistence, VM stack/allocation limits, syscall flags, opcode gas, dBFT wire format/timestamp, dBFT transaction availability and pending commits, invalid-transaction tracking, pre-Gorgon `HASKEY`, `TRY`/`ENDTRY` state, bounded interpreter equality, 33-byte `CheckWitness` validation, P2P memory bounds, architecture-conformance tests, and the production `full` feature build (RocksDB + gRPC). C# and chain evidence is now substantial: 26 Neo.VM vectors pass, all 14 checked-in MainNet block replay fixtures pass, **1,460,685 MainNet state roots through height 1,465,790 match the C# reference with 0 mismatches**, and the stored chain’s **1,352,011 contiguous blocks / 609,487 transactions** pass hash, previous-hash, and Merkle-root validation. `RET` now mirrors C# `CopyTo` raw-append semantics, and the 4-validator in-process dBFT harness commits blocks across multiple rounds and with one validator offline. Native-contract seeding, native-registry construction, memory-store snapshots, and per-transaction ledger-state lookup are measured and substantially faster. Library targets build warning-free and all 4,514 default tests pass. The reference counter still over-counts the source stack, so `MaxStackSize` is enforced on actual live stack slots; the remaining gates are a from-genesis execution replay, a fully accurate reference counter, and a real multi-node network cluster. Until those are published, the honest label is **testnet/private-network ready**, not “mainnet-certified.”
