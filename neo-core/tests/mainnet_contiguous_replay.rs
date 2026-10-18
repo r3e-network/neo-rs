@@ -4,7 +4,9 @@
 //!
 //! Each block's transactions plus OnPersist/PostPersist are executed against
 //! the state trie at the previous state root, then compared with the C#
-//! reference root. Default range: blocks 1..=1000; override with
+//! reference root. Ledger-contract storage (id `-4`) is excluded from the
+//! StateService trie, so those keys are read from the chain store.
+//! Default range: blocks 1..=1000; override with
 //! `NEO_EMPTY_REPLAY_START` / `NEO_EMPTY_REPLAY_COUNT`.
 //!
 //! NEO_CHAIN_DB_PATH=data/mainnet-protocol-consistency
@@ -21,7 +23,7 @@ use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use neo_core::smart_contract::native::LedgerTransactionStates;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
-use neo_core::smart_contract::native::{LedgerContract, NeoToken};
+use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::native::ledger_contract::PersistedTransactionState;
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
@@ -88,13 +90,18 @@ fn open_state_store(path: &Path) -> StateStore {
 
 fn execute_empty_block(
     state_store: &StateStore,
+    chain_cache: Arc<StoreCache>,
     block: Arc<Block>,
     root_prev: neo_core::UInt256,
 ) -> Option<(neo_core::UInt256, Vec<(Vec<u8>, Option<Vec<u8>>)>)> {
     let trie = Arc::new(Mutex::new(state_store.trie_for_root(root_prev)));
     let store_get = {
         let trie = Arc::clone(&trie);
+        let chain = Arc::clone(&chain_cache);
         Arc::new(move |key: &StorageKey| {
+            if key.id == -4 {
+                return chain.get(key);
+            }
             let mut trie = trie.lock();
             trie.get(&key.to_array())
                 .ok()?
@@ -103,8 +110,14 @@ fn execute_empty_block(
     };
     let store_find = {
         let trie = Arc::clone(&trie);
+        let chain = Arc::clone(&chain_cache);
         Arc::new(
             move |prefix: Option<&StorageKey>, _dir: SeekDirection| {
+                if let Some(key) = prefix
+                    && key.id == -4
+                {
+                    return chain.find(Some(key), SeekDirection::Forward).collect();
+                }
                 let prefix = prefix.map(|key| key.to_array()).unwrap_or_default();
                 let mut trie = trie.lock();
                 trie.find(&prefix, None)
@@ -272,7 +285,7 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
         ..StorageConfig::default()
     });
     let store = provider.get_store("").expect("open chain store");
-    let chain_cache = StoreCache::new_from_snapshot(store.snapshot());
+    let chain_cache = Arc::new(StoreCache::new_from_snapshot(store.snapshot()));
     let ledger = LedgerContract::new();
     let state_store = open_state_store(&state_path);
 
@@ -297,7 +310,7 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
 
     for index in start..=end {
         let block = ledger
-            .get_block(&chain_cache, HashOrIndex::Index(index))
+            .get_block(chain_cache.as_ref(), HashOrIndex::Index(index))
             .expect("read block")
             .unwrap_or_else(|| panic!("missing block {index}"));
         let tx_debug: Vec<String> = block
@@ -305,8 +318,12 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
             .iter()
             .map(|tx| format!("script={} attrs={:?}", hex::encode(tx.script()), tx.attributes()))
             .collect();
-        let (actual, actual_entries) =
-            execute_empty_block(&state_store, Arc::new(block), current_root)
+        let (actual, actual_entries) = execute_empty_block(
+            &state_store,
+            Arc::clone(&chain_cache),
+            Arc::new(block),
+            current_root,
+        )
                 .unwrap_or_else(|| panic!("block {index}: root computation failed"));
         if let Some(expected) = roots.get(&index) {
             if actual != *expected {
@@ -332,10 +349,29 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
                     }
                 }
                 let mut prev_trie = state_store.trie_for_root(current_root);
+                let mut expected_trie = state_store.trie_for_root(*expected);
+                let account_prefix = neo_core::smart_contract::StorageKey::create(-6, 20).to_array();
+                if let Ok(accounts) = expected_trie.find(&account_prefix, None) {
+                    for entry in accounts {
+                        let previous = prev_trie.get(&entry.key).ok().flatten();
+                        if previous.as_deref() != Some(entry.value.as_slice()) {
+                            eprintln!(
+                                "  expected account change key={} prev={:?} new={}",
+                                hex::encode(&entry.key),
+                                previous.map(hex::encode),
+                                hex::encode(&entry.value)
+                            );
+                        }
+                    }
+                }
+                for (key, value) in &actual_entries {
+                    if key.starts_with(&account_prefix) {
+                        eprintln!("  actual account change key={} new={:?}", hex::encode(key), value.as_ref().map(hex::encode));
+                    }
+                }
                 if let Ok(Some(prev_value)) = prev_trie.get(&hex::decode("faffffff0b").unwrap()) {
                     eprintln!("  previous GAS total supply={}", hex::encode(prev_value));
                 }
-                let mut expected_trie = state_store.trie_for_root(*expected);
                 for (key, actual_value) in &actual_entries {
                     let expected_value = expected_trie.get(key).ok().flatten();
                     if expected_value.as_deref() != actual_value.as_deref() {

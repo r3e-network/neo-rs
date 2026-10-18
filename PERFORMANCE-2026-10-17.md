@@ -268,17 +268,20 @@ re-executing every block.
 
 ## From-genesis execution replay
 
-`mainnet_contiguous_replay` now executes every transaction plus
+`mainnet_contiguous_replay` executes every transaction plus
 OnPersist/PostPersist for a contiguous genesis range against the previous
-state trie and compares the resulting root with the C# reference:
+state trie and compares the resulting root with the C# reference. Ledger
+contract storage is excluded from the StateService trie, so Ledger keys are
+read from the chain store.
 
 ```text
 blocks 1..=99877: 0 state-root mismatches
-stopped at block 99878: missing reference root in the JSONL
-elapsed: 263.7 s
+blocks 200000..=238711: 38,712 roots checked, 0 gaps, 0 mismatches
 ```
 
-Blocks 1..=1000 replay in ~5.3 s; 1..=10,000 in ~26.4 s.
+The block 238,711 mismatch reported earlier was caused by the replay harness
+returning Null for `Ledger.getBlock`; routing Ledger storage to the chain store
+fixed it. Blocks 1..=1000 replay in ~5 s; 1..=10,000 in ~26 s.
 
 ## Real MainNet block replay
 
