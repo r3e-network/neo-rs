@@ -21,7 +21,7 @@ use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use neo_core::smart_contract::native::LedgerTransactionStates;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
-use neo_core::smart_contract::native::LedgerContract;
+use neo_core::smart_contract::native::{LedgerContract, NeoToken};
 use neo_core::smart_contract::native::ledger_contract::PersistedTransactionState;
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
@@ -303,7 +303,7 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
         let tx_debug: Vec<String> = block
             .transactions
             .iter()
-            .map(|tx| hex::encode(tx.script()))
+            .map(|tx| format!("script={} attrs={:?}", hex::encode(tx.script()), tx.attributes()))
             .collect();
         let (actual, actual_entries) =
             execute_empty_block(&state_store, Arc::new(block), current_root)
@@ -316,6 +316,21 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
                     .unwrap_or_else(|| "missing".to_string());
                 eprintln!("mismatch block {index}: actual={actual} expected={expected} stored={stored}");
                 eprintln!("tx_scripts={tx_debug:?}");
+                for height in index.saturating_sub(2)..=index.saturating_add(2) {
+                    if let Some(root) = state_store.get_state_root(height) {
+                        let mut trie = state_store.trie_for_root(root.root_hash);
+                        if let Ok(Some(value)) = trie.get(&hex::decode("faffffff0b").unwrap()) {
+                            eprintln!("  height {height} GAS supply={}", hex::encode(value));
+                        }
+                    }
+                }
+                let mut gas_trie = state_store.trie_for_root(current_root);
+                let gas_prefix = neo_core::smart_contract::StorageKey::create(-5, 29).to_array();
+                if let Ok(records) = gas_trie.find(&gas_prefix, None) {
+                    for entry in records {
+                        eprintln!("  gas record key={} value={}", hex::encode(entry.key), hex::encode(entry.value));
+                    }
+                }
                 let mut prev_trie = state_store.trie_for_root(current_root);
                 if let Ok(Some(prev_value)) = prev_trie.get(&hex::decode("faffffff0b").unwrap()) {
                     eprintln!("  previous GAS total supply={}", hex::encode(prev_value));
