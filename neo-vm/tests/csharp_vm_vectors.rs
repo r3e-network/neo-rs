@@ -5,7 +5,7 @@
 //! Rust interpreter. This is a small, dependency-free C# parity check that
 //! does not require the C# toolchain at test time.
 
-use neo_vm::{StackValue, VmState, interpret};
+use neo_vm::{ExecutionEngine, Script, StackValue, VmState, interpret};
 
 fn format_value(value: &StackValue) -> String {
     match value {
@@ -96,4 +96,21 @@ fn csharp_vm_arithmetic_and_comparison_vectors_match() {
         assert_eq!(state, expected_state, "{hex}: state");
         assert_eq!(stack, expected_stack, "{hex}: stack");
     }
+}
+
+#[test]
+fn csharp_newarray_reference_count_matches() {
+    // C# 3.10.1: after PUSHINT16 1000; NEWARRAY the reference counter is
+    // 1001 (the array plus its 1000 null children).
+    let mut engine = ExecutionEngine::new(None);
+    engine
+        .load_script(
+            Script::new_relaxed(hex::decode("01e803c3").unwrap()),
+            -1,
+            0,
+        )
+        .expect("load script");
+    engine.execute_next().expect("push count");
+    engine.execute_next().expect("newarray");
+    assert_eq!(engine.reference_counter().count(), 1001);
 }
