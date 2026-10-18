@@ -1,7 +1,11 @@
+#[cfg(feature = "rocksdb")]
 use neo_core::persistence::{StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider};
+#[cfg(feature = "rocksdb")]
 use neo_core::smart_contract::native::ContractManagement;
+#[cfg(feature = "rocksdb")]
 use std::path::PathBuf;
 
+#[cfg(feature = "rocksdb")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let path = args.next().ok_or("usage: inspect_contract_by_id <db_path> <id>")?;
@@ -24,3 +28,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+
+#[cfg(not(feature = "rocksdb"))]
+fn main() {}
