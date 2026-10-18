@@ -276,9 +276,9 @@ read from the chain store.
 
 ```text
 blocks 1..=99877: 0 state-root mismatches
-blocks 200000..=885962: 685,963 roots checked, 0 gaps, 0 mismatches
-chunked release replay: 10,000 blocks per ~20 s
-first divergence: block 885963 (IdoContract public-key field)
+blocks 200000..=1352000: 1,152,001 roots checked, 0 gaps, 0 mismatches
+chunked release replay: 10,000 blocks per ~20 s (heavy ranges up to 286 s)
+harness overrides: Ledger storage from chain store; historical Ledger.currentIndex
 ```
 
 The block 238,711 mismatch reported earlier was caused by the replay harness

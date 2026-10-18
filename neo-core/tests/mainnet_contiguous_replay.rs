@@ -5,7 +5,9 @@
 //! Each block's transactions plus OnPersist/PostPersist are executed against
 //! the state trie at the previous state root, then compared with the C#
 //! reference root. Ledger-contract storage (id `-4`) is excluded from the
-//! StateService trie, so those keys are read from the chain store.
+//! StateService trie, so those keys are read from the chain store and
+//! `Ledger.currentIndex` is overridden with the historical height
+//! (`block.index - 1`) rather than the live chain tip.
 //! Default range: blocks 1..=1000; override with
 //! `NEO_EMPTY_REPLAY_START` / `NEO_EMPTY_REPLAY_COUNT`.
 //!
@@ -96,11 +98,18 @@ fn execute_empty_block(
     root_prev: neo_core::UInt256,
 ) -> Option<(neo_core::UInt256, Vec<(Vec<u8>, Option<Vec<u8>>)>)> {
     let trie = Arc::new(Mutex::new(state_store.trie_for_root(root_prev)));
+    let ledger_index = block.index().saturating_sub(1);
+    let ledger_current_key = StorageKey::new(-4, vec![12]).to_array();
     let store_get = {
         let trie = Arc::clone(&trie);
         let chain = Arc::clone(&chain_cache);
         Arc::new(move |key: &StorageKey| {
             if key.id == -4 {
+                if key.to_array() == ledger_current_key {
+                    let mut bytes = vec![0u8; 32];
+                    bytes.extend_from_slice(&ledger_index.to_le_bytes());
+                    return Some(neo_core::smart_contract::StorageItem::from_bytes(bytes));
+                }
                 return chain.get(key);
             }
             let mut trie = trie.lock();
