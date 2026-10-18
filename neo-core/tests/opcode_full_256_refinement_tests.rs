@@ -60,8 +60,8 @@ fn specific_opcode_prices_match_coq_examples() {
         (158, 8i64, "ADD"),     // ADD at 0x9E = 158 decimal
         (171, 8i64, "BOOLAND"), // BOOLAND at 0xAB costs 8
         // MEDIUM tier
-        (197, 512i64, "NEWSTRUCT0"), // NEWSTRUCT at index from table
-        (195, 512i64, "NEWARRAY"),   // NEWARRAY at 0xC3 = 195 decimal
+        (197, 16i64, "NEWSTRUCT0"), // NEWSTRUCT0 at 0xC5 costs 16
+        (195, 512i64, "NEWARRAY"),  // NEWARRAY at 0xC3 = 195 decimal
         // HIGH tier
         (207, 8192i64, "APPEND"), // APPEND at 0xCF = 207 decimal
         (206, 64i64, "PICKITEM"), // PICKITEM at 0xCE = 206, costs 64
@@ -236,7 +236,7 @@ fn formal_verification_tie_in() {
         (171, 8),    // BOOLAND at 0xAB: table[171] = 8
         (174, 0),    // NZ: table[174] = 0
         (195, 512),  // NEWARRAY: table[195] = 512
-        (197, 512),  // NEWSTRUCT0: table[197] = 512
+        (197, 16),   // NEWSTRUCT0: table[197] = 16
         (206, 64),   // PICKITEM: table[206] = 64
         (207, 8192), // APPEND: table[207] = 8192
     ];
@@ -432,15 +432,15 @@ fn individual_opcode_price_checks() {
     // MEDIUM tier examples (256-2048 units)
     assert_eq!(
         ApplicationEngine::get_opcode_price(197),
-        512,
-        "NEWSTRUCT0 should be 512"
+        16,
+        "NEWSTRUCT0 should be 16"
     );
     assert_eq!(
         ApplicationEngine::get_opcode_price(195),
         512,
         "NEWARRAY should be 512"
     );
-    println!("✅ MEDIUM tier: NEWSTRUCT0=512, NEWARRAY=512");
+    println!("✅ MEDIUM tier: NEWSTRUCT0=16, NEWARRAY=512");
 
     // HIGH tier examples (512-8192 units)
     assert_eq!(

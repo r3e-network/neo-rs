@@ -9,8 +9,8 @@ use super::*;
 mod tests {
     use super::{
         Blockchain, ImportDisposition, InventoryCacheKey, InventoryPayload,
-        MAX_REVERIFY_INVENTORY_CACHE, STATE_SERVICE_CATEGORY, StateRoot, VerifyResult,
-        classify_import_block, should_schedule_reverify_idle,
+        MAX_REVERIFY_INVENTORY_CACHE, MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT, STATE_SERVICE_CATEGORY,
+        StateRoot, VerifyResult, classify_import_block, should_schedule_reverify_idle,
     };
     use crate::WitnessScope;
     use crate::error::{CoreError, CoreResult};
@@ -855,5 +855,98 @@ mod tests {
         sleep(Duration::from_millis(200)).await;
 
         assert_eq!(memory_pool.lock().unverified_count(), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn pre_persist_verification_rejects_block_with_mismatched_cached_header() {
+        let settings = ProtocolSettings::mainnet();
+        let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new");
+        let context = system.context();
+        let blockchain = Blockchain::new(system.ledger_context());
+        let index = context.ledger().current_height().saturating_add(1);
+
+        let mut header = Header::new();
+        header.set_index(index);
+        header.set_nonce(1);
+        assert!(context.header_cache().add(header));
+
+        // Same height, different header hash: must not be persisted just
+        // because a header for this height happens to be cached.
+        let mut block = PayloadBlock::new();
+        block.header.set_index(index);
+        block.header.set_nonce(2);
+        assert!(!blockchain.verify_block_for_persistence(&block, &context));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn pre_persist_verification_accepts_block_matching_cached_header() {
+        let settings = ProtocolSettings::mainnet();
+        let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new");
+        let context = system.context();
+        let blockchain = Blockchain::new(system.ledger_context());
+        let index = context.ledger().current_height().saturating_add(1);
+
+        let mut header = Header::new();
+        header.set_index(index);
+        header.set_nonce(7);
+        assert!(context.header_cache().add(header.clone()));
+
+        let mut block = PayloadBlock::new();
+        block.header = header;
+        assert!(blockchain.verify_block_for_persistence(&block, &context));
+    }
+
+    #[tokio::test]
+    async fn unverified_cache_dedupes_and_caps_candidates_per_height() {
+        let settings = ProtocolSettings::mainnet();
+        let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new");
+        let blockchain = Blockchain::new(system.ledger_context());
+
+        let mut first = PayloadBlock::new();
+        first.header.set_index(10);
+        first.header.set_nonce(0);
+        blockchain.add_unverified_block(Arc::new(first)).await;
+
+        // Re-adding an existing hash must not consume a second slot.
+        let mut duplicate = PayloadBlock::new();
+        duplicate.header.set_index(10);
+        duplicate.header.set_nonce(0);
+        blockchain.add_unverified_block(Arc::new(duplicate)).await;
+
+        for nonce in 1..5u64 {
+            let mut block = PayloadBlock::new();
+            block.header.set_index(10);
+            block.header.set_nonce(nonce);
+            blockchain.add_unverified_block(Arc::new(block)).await;
+        }
+
+        {
+            let entry = blockchain
+                ._block_cache_unverified
+                .get(&10)
+                .expect("height cached");
+            assert_eq!(entry.blocks.len(), MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT);
+        }
+        assert_eq!(
+            blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
+            MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT
+        );
+        assert!(
+            blockchain._unverified_cache_bytes.load(Ordering::Relaxed) > 0,
+            "byte accounting must observe cached blocks"
+        );
+
+        let removed = blockchain
+            .remove_unverified_index(10)
+            .expect("cached height removed");
+        assert_eq!(removed.blocks.len(), MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT);
+        assert_eq!(
+            blockchain._unverified_cache_blocks.load(Ordering::Relaxed),
+            0
+        );
+        assert_eq!(
+            blockchain._unverified_cache_bytes.load(Ordering::Relaxed),
+            0
+        );
     }
 }

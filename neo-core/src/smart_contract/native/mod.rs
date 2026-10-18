@@ -86,7 +86,7 @@ pub use treasury::TreasuryContract;
 
 use crate::UInt160;
 use indexmap::IndexMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// Registry for native contracts.
 pub struct NativeRegistry {
@@ -156,45 +156,40 @@ impl NativeRegistry {
         self.contracts.values().cloned()
     }
 
-    /// Registers standard Neo native contracts.
+    /// Registers the standard native contracts.
+    ///
+    /// All standard contracts except `ContractManagement` are immutable and
+    /// stateless after construction (`methods`, `id`, `hash` only). Brokering
+    /// their `Arc`s from a process-wide template avoids rebuilding manifests
+    /// and method tables for every transaction engine. `ContractManagement`
+    /// keeps a per-engine `Arc<RwLock<ContractStorage>>` and is therefore
+    /// constructed fresh for every registry.
     fn register_standard_contracts(&mut self) {
-        // Register ContractManagement contract
         self.register(Arc::new(ContractManagement::new()));
-
-        // Register StdLib contract
-        self.register(Arc::new(StdLib::new()));
-
-        // Register CryptoLib contract
-        self.register(Arc::new(CryptoLib::new()));
-
-        // Register LedgerContract
-        self.register(Arc::new(LedgerContract::new()));
-
-        // Register NEO token contract
-        self.register(Arc::new(NeoToken::new()));
-
-        // Register GAS token contract
-        self.register(Arc::new(GasToken::new()));
-
-        // Register Policy contract
-        self.register(Arc::new(PolicyContract::new()));
-
-        // Register RoleManagement contract
-        self.register(Arc::new(RoleManagement::new()));
-
-        // Register Oracle contract
-        self.register(Arc::new(OracleContract::new()));
-
-        // Register Notary contract (active after HF_Echidna)
-        self.register(Arc::new(Notary::new()));
-
-        // Register Treasury contract (active after HF_Faun)
-        self.register(Arc::new(TreasuryContract::new()));
-
-        // NOTE: C# neo v3.10.1 registers exactly these 11 native contracts.
-        // Do NOT register additional native contracts (e.g. TokenManagement):
-        // is_native() would accept non-protocol hashes.
+        for contract in shared_stateless_native_contracts() {
+            self.register(Arc::clone(contract));
+        }
     }
+}
+
+/// Process-wide immutable native contracts, in C# `NativeContract.Contracts`
+/// order (excluding the stateful `ContractManagement`).
+fn shared_stateless_native_contracts() -> &'static [Arc<dyn NativeContract>] {
+    static CONTRACTS: OnceLock<Vec<Arc<dyn NativeContract>>> = OnceLock::new();
+    CONTRACTS.get_or_init(|| {
+        vec![
+            Arc::new(StdLib::new()),
+            Arc::new(CryptoLib::new()),
+            Arc::new(LedgerContract::new()),
+            Arc::new(NeoToken::new()),
+            Arc::new(GasToken::new()),
+            Arc::new(PolicyContract::new()),
+            Arc::new(RoleManagement::new()),
+            Arc::new(OracleContract::new()),
+            Arc::new(Notary::new()),
+            Arc::new(TreasuryContract::new()),
+        ]
+    })
 }
 
 crate::impl_default_via_new!(NativeRegistry);
@@ -202,8 +197,9 @@ crate::impl_default_via_new!(NativeRegistry);
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use super::{GasToken, NativeContract, NativeRegistry, NeoToken};
+    use super::{ContractManagement, GasToken, NativeContract, NativeRegistry, NeoToken};
     use crate::UInt160;
+    use std::sync::Arc;
 
     #[test]
     fn test_native_registry_creation() {
@@ -217,6 +213,24 @@ mod tests {
         assert!(registry.is_native(&gas_hash));
         assert!(registry.get(&neo_hash).is_some());
         assert!(registry.get(&gas_hash).is_some());
+    }
+
+    #[test]
+    fn stateless_native_contracts_are_shared_but_contract_management_is_per_engine() {
+        let first = NativeRegistry::new();
+        let second = NativeRegistry::new();
+
+        let neo_hash = NeoToken::new().hash();
+        assert!(Arc::ptr_eq(
+            &first.get(&neo_hash).expect("neo"),
+            &second.get(&neo_hash).expect("neo")
+        ));
+
+        let management_hash = ContractManagement::new().hash();
+        assert!(!Arc::ptr_eq(
+            &first.get(&management_hash).expect("management"),
+            &second.get(&management_hash).expect("management")
+        ));
     }
 
     #[test]

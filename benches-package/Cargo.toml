@@ -4,13 +4,18 @@ version = "0.18.0"
 edition = "2024"
 license = "MIT"
 
+[features]
+rocksdb = ["neo-core/rocksdb"]
+
 [dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
-neo-core = { workspace = true }
+neo-core = { workspace = true, features = ["runtime"] }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-primitives = { workspace = true }
 neo-vm = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+tempfile.workspace = true
 hex = { workspace = true }
 
 # Bench names match what is actually measured (review §4.3.5); the file
@@ -28,3 +33,29 @@ harness = false
 [[bench]]
 name = "vm_execution"
 harness = false
+
+[[bench]]
+name = "native_contracts"
+path = "benches/native_contracts.rs"
+harness = false
+
+[[bench]]
+name = "mpt_state_root"
+path = "benches/mpt_state_root.rs"
+harness = false
+
+[[bench]]
+name = "p2p_frames"
+path = "benches/p2p_frames.rs"
+harness = false
+
+[[bench]]
+name = "block_persistence"
+path = "benches/block_persistence.rs"
+harness = false
+
+[[bench]]
+name = "rocksdb_persistence"
+path = "benches/rocksdb_persistence.rs"
+harness = false
+required-features = ["rocksdb"]

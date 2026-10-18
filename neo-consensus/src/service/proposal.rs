@@ -44,12 +44,17 @@ impl ConsensusService {
         }
 
         if self.context.is_primary() {
-            let timestamp = current_timestamp();
+            // C# `MakePrepareRequest`: max(now, PrevHeader.Timestamp + 1).
+            // Using the local clock alone lets a slightly-behind primary emit
+            // a timestamp that every validator rejects as non-increasing.
+            let timestamp = current_timestamp().max(self.context.prev_timestamp.saturating_add(1));
             let nonce = generate_nonce();
 
             // Store proposal data
             self.context.proposed_timestamp = timestamp;
             self.context.proposed_tx_hashes = tx_hashes.clone();
+            // The primary selected these hashes from its own validated mempool.
+            self.context.mark_transactions_available();
             self.context.nonce = nonce;
 
             // Create and broadcast PrepareRequest
@@ -109,7 +114,9 @@ impl ConsensusService {
         }
 
         if self.context.proposed_tx_hashes.is_empty() {
+            self.context.mark_transactions_available();
             self.send_prepare_response()?;
+            self.check_commits()?;
             return Ok(());
         }
 
@@ -120,7 +127,9 @@ impl ConsensusService {
             .iter()
             .all(|hash| available.contains(hash));
         if all_present {
+            self.context.mark_transactions_available();
             self.send_prepare_response()?;
+            self.check_commits()?;
         }
 
         Ok(())

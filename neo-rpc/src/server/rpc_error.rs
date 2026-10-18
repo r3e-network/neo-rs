@@ -5,7 +5,6 @@
 // that can be serialised to JSON responses for the RPC subsystem.
 
 use neo_json::{JObject, JToken};
-use std::fmt::{self, Display};
 use thiserror::Error;
 
 /// Represents a JSON-RPC error returned by the RPC server (matches the C#

@@ -113,7 +113,9 @@ fn test_serialization_reason_byte_position() {
     let serialized = msg.serialize();
 
     assert_eq!(serialized[8], ChangeViewReason::TxInvalid.to_byte());
-    assert_eq!(serialized.len(), 9);
+    // TxInvalid carries a varint-prefixed rejected-hash array; empty here.
+    assert_eq!(serialized.len(), 10);
+    assert_eq!(serialized[9], 0x00);
 }
 
 /// Test 9: view progression - view always increments by exactly 1

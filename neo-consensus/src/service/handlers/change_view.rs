@@ -45,6 +45,11 @@ impl ConsensusService {
         // Validate the parsed message
         change_view_msg.validate()?;
 
+        // Track transactions rejected by >F validators so a later primary can
+        // avoid re-proposing them (C# InvalidTransactions).
+        self.context
+            .record_rejected_hashes(payload.validator_index, &change_view_msg.rejected_hashes);
+
         let new_view = change_view_msg.new_view_number()?;
         let timestamp = change_view_msg.timestamp;
         let reason = change_view_msg.reason;
@@ -143,18 +148,60 @@ impl ConsensusService {
             "Requesting view change"
         );
 
-        // Add our own change view
+        // Add our own change view and broadcast it.
+        self.make_and_broadcast_change_view(reason, timestamp)?;
+
+        // Check if we already have enough
+        if self.context.has_enough_change_views(new_view) {
+            self.change_view(new_view)?;
+        }
+
+        Ok(())
+    }
+
+    /// Builds, records and broadcasts a `ChangeView` for the current view.
+    ///
+    /// Does not run the recovery/timer preconditions; callers that adopt an
+    /// already-agreed view use this directly to emit `ChangeAgreement`.
+    fn make_and_broadcast_change_view(
+        &mut self,
+        reason: ChangeViewReason,
+        timestamp: u64,
+    ) -> ConsensusResult<()> {
+        let new_view = self
+            .context
+            .view_number
+            .checked_add(1)
+            .ok_or_else(|| crate::ConsensusError::invalid_proposal("View number overflow"))?;
+
+        let mut rejected = self.context.rejected_hashes_above_f();
+        if matches!(
+            reason,
+            ChangeViewReason::TxInvalid | ChangeViewReason::TxRejectedByPolicy
+        ) && let Some(my_index) = self.context.my_index
+        {
+            // C# includes the sender's own rejected hashes even when fewer
+            // than F+1 validators have reported them yet.
+            for (hash, validators) in &self.context.rejected_tx_validators {
+                if validators.contains(&my_index) {
+                    rejected.push(*hash);
+                }
+            }
+        }
+        rejected.sort_unstable();
+        rejected.dedup();
+
         self.context
             .add_change_view(self.my_index()?, new_view, reason, timestamp)?;
 
-        // Broadcast ChangeView message
         let msg = ChangeViewMessage::new(
             self.context.block_index,
             self.context.view_number,
             self.my_index()?,
             timestamp,
             reason,
-        );
+        )
+        .with_rejected_hashes(rejected);
 
         let payload = self.create_payload(ConsensusMessageType::ChangeView, msg.serialize())?;
         if !payload.witness.is_empty() {
@@ -164,12 +211,6 @@ impl ConsensusService {
             );
         }
         self.broadcast(payload)?;
-
-        // Check if we already have enough
-        if self.context.has_enough_change_views(new_view) {
-            self.change_view(new_view)?;
-        }
-
         Ok(())
     }
 
@@ -222,7 +263,22 @@ impl ConsensusService {
             old_view, new_view, "Changing view"
         );
 
+        // C# `CheckExpectedView` re-broadcasts its own ChangeView with
+        // `ChangeAgreement` when its stored CV is behind the view being
+        // adopted. Without this a node that advances on M received CVs (or via
+        // recovery) never advertises agreement, slowing convergence.
+        let needs_agreement = self.context.my_index.is_some_and(|index| {
+            self.context
+                .change_views
+                .get(&index)
+                .is_none_or(|(stored_view, _)| *stored_view < new_view)
+        });
+        if needs_agreement {
+            self.make_and_broadcast_change_view(ChangeViewReason::ChangeAgreement, timestamp)?;
+        }
+
         self.context.reset_for_new_view(new_view, timestamp);
+        self.pending_commits.clear();
         // Recovery replay uses the C# recovery-primary branch: the new primary
         // gets the full backoff interval instead of the initial proposal delay.
         if self.is_recovering && self.context.is_primary() {

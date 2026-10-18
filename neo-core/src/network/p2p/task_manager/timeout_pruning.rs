@@ -27,10 +27,7 @@ impl TaskManager {
                 }
 
                 let persisted = this.last_seen_persisted_index;
-                entry
-                    .session
-                    .received_block
-                    .retain(|&idx, _| idx > persisted);
+                entry.session.retain_received_blocks_after(persisted);
             });
         }
         self.request_tasks_all();

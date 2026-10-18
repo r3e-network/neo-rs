@@ -1203,9 +1203,24 @@ mod mpt_tests {
         prop::collection::vec(any::<u8>(), 0..=1024)
     }
 
-    /// Generate a collection of key-value pairs
+    /// Generate a collection of key-value pairs with unique keys.
+    ///
+    /// The tested operations are defined over a map. Generating duplicate keys
+    /// made the properties compare a deleted/overwritten key with a stale
+    /// expected value, producing false positives (proptest shrank to two
+    /// identical entries).
     fn key_value_pairs() -> impl Strategy<Value = Vec<(Vec<u8>, Vec<u8>)>> {
-        prop::collection::vec((valid_key(), valid_value()), 1..=20)
+        prop::collection::vec((valid_key(), valid_value()), 1..=20).prop_map(|pairs| {
+            let mut unique: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+            for (key, value) in pairs {
+                if let Some(existing) = unique.iter_mut().find(|(candidate, _)| *candidate == key) {
+                    existing.1 = value;
+                } else {
+                    unique.push((key, value));
+                }
+            }
+            unique
+        })
     }
 
     proptest! {
@@ -1534,5 +1549,40 @@ mod mpt_tests {
                 prop_assert_eq!(result, Some(v.clone()));
             }
         }
+    }
+
+    /// Cross-implementation vector from the C# reference
+    /// `UT_Trie.TestTryDelete` (Neo.Cryptography.MPTTrie.Tests).
+    ///
+    /// It exercises branch/extension collapse after deleting a branch value
+    /// and a leaf, which is exactly where self-consistency tests are weakest.
+    #[test]
+    fn csharp_try_delete_root_matches_reference_vector() {
+        use neo_primitives::UInt256;
+
+        let store = Arc::new(MockStore::new());
+        let mut trie = Trie::new(store, None, false);
+
+        for (key, value) in [
+            ("ac01", "abcd"),
+            ("ac", "2222"),
+            ("acae", "6578697374696e67"), // "existing"
+            ("acf1", "6d697373696e67"),   // "missing"
+        ] {
+            trie.put(&hex::decode(key).unwrap(), &hex::decode(value).unwrap())
+                .unwrap();
+        }
+
+        assert!(trie.delete(&hex::decode("ac").unwrap()).unwrap());
+        assert!(trie.delete(&hex::decode("acae").unwrap()).unwrap());
+
+        let expected =
+            UInt256::parse("0xcb06925428b7c727375c7fdd943a302fe2c818cf2e2eaf63a7932e3fd6cb3408")
+                .expect("reference root hash");
+        assert_eq!(
+            trie.root_hash(),
+            Some(expected),
+            "MPT root must match the C# reference after branch collapse"
+        );
     }
 }

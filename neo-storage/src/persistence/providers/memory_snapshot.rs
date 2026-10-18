@@ -1,10 +1,10 @@
-use super::memory_store::MemoryStore;
+use super::memory_store::{MemoryStore, prefix_bounds};
 use crate::persistence::{
     read_only_store::ReadOnlyStoreGeneric, seek_direction::SeekDirection, store::Store,
     store_snapshot::StoreSnapshot, write_store::WriteStore,
 };
 use parking_lot::RwLock;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// On-chain write operations on a snapshot cannot be concurrent.
@@ -12,17 +12,19 @@ type WriteBatch = Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>;
 
 pub struct MemorySnapshot {
     store: Arc<dyn Store>,
-    immutable_data: BTreeMap<Vec<u8>, Vec<u8>>,
+    immutable_data: Arc<BTreeMap<Vec<u8>, Vec<u8>>>,
     write_batch: WriteBatch,
 }
 
 impl MemorySnapshot {
-    /// Creates a new MemorySnapshot.
-    pub fn new(store: Arc<dyn Store>, inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>) -> Self {
-        let immutable_data = inner_data.read().clone();
+    /// Creates a new MemorySnapshot from a shared immutable map.
+    pub fn new(
+        store: Arc<dyn Store>,
+        inner_data: Arc<BTreeMap<Vec<u8>, Vec<u8>>>,
+    ) -> Self {
         Self {
             store,
-            immutable_data,
+            immutable_data: inner_data,
             write_batch: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
@@ -48,32 +50,38 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
-        // Merge immutable data with write batch
-        let mut merged = self.immutable_data.clone();
+        let batch = self.write_batch.read();
 
-        // Apply write batch changes
-        for (key, value) in self.write_batch.read().iter() {
-            if let Some(v) = value {
-                merged.insert(key.clone(), v.clone());
-            } else {
-                merged.remove(key);
+        // Collect keys from the immutable prefix range and overlay only the
+        // matching write-batch keys. This avoids cloning the entire store for
+        // every prefix scan.
+        let mut keys = BTreeSet::new();
+        match key_prefix {
+            Some(prefix) => {
+                let (start, end) = prefix_bounds(prefix);
+                for (key, _) in self.immutable_data.range((start, end)) {
+                    keys.insert(key.clone());
+                }
+            }
+            None => keys.extend(self.immutable_data.keys().cloned()),
+        }
+        for key in batch.keys() {
+            if key_prefix.is_none_or(|prefix| key.starts_with(prefix)) {
+                keys.insert(key.clone());
             }
         }
 
-        // Filter by prefix, then order. The previous range-based seek was
-        // incorrect for prefixes: keys that start with `prefix` are strictly
-        // GREATER than `prefix` itself in byte order, so `range(..=prefix)`
-        // (Backward) never returned any prefix match, and `range(prefix..)`
-        // (Forward) returned an unfiltered superset. This mirrors the RocksDB
-        // provider, which uses a dedicated reverse prefix iterator.
-        let mut entries: Vec<_> = merged
-            .iter()
-            .filter(|(key, _)| match key_prefix {
-                Some(prefix) => key.starts_with(prefix),
-                None => true,
-            })
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let mut entries = Vec::with_capacity(keys.len());
+        for key in keys {
+            let value = match batch.get(&key) {
+                Some(Some(value)) => Some(value.clone()),
+                Some(None) => None,
+                None => self.immutable_data.get(&key).cloned(),
+            };
+            if let Some(value) = value {
+                entries.push((key, value));
+            }
+        }
 
         if direction == SeekDirection::Backward {
             entries.reverse();

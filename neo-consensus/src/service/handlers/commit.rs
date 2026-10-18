@@ -96,13 +96,22 @@ impl ConsensusService {
         let block_hash = match self.context.proposed_block_hash {
             Some(hash) => hash,
             None => {
-                warn!(
-                    validator = payload.validator_index,
-                    "Commit rejected: no proposed block hash available for signature verification"
+                // C# stores the payload and re-verifies it once the header is
+                // known. Keep the witness-verified commit (the 64-byte block
+                // signature is checked when the proposal arrives).
+                self.pending_commits.insert(
+                    payload.validator_index,
+                    (
+                        payload.view_number,
+                        payload.data.clone(),
+                        invocation_script_from_signature(&payload.witness),
+                    ),
                 );
-                return Err(ConsensusError::signature_failed(
-                    "Commit rejected: no proposed block hash to verify against",
-                ));
+                debug!(
+                    validator = payload.validator_index,
+                    "Commit buffered until the proposal block hash is available"
+                );
+                return Ok(());
             }
         };
 
@@ -139,6 +148,55 @@ impl ConsensusService {
         Ok(())
     }
 
+    /// Re-verifies commits that arrived before the proposal hash was known.
+    ///
+    /// Called after a `PrepareRequest` installs `proposed_block_hash`. This is
+    /// the Rust equivalent of C#'s deferred commit verification; it lets a
+    /// restarted or late-joining validator finalize the current round instead
+    /// of discarding the commits it already received.
+    pub(in crate::service) fn promote_pending_commits(&mut self) -> ConsensusResult<()> {
+        let Some(block_hash) = self.context.proposed_block_hash else {
+            return Ok(());
+        };
+        let pending = std::mem::take(&mut self.pending_commits);
+        if pending.is_empty() {
+            return Ok(());
+        }
+
+        let mut block_sign_data = Vec::with_capacity(4 + 32);
+        block_sign_data.extend_from_slice(&self.network.to_le_bytes());
+        block_sign_data.extend_from_slice(&block_hash.as_bytes());
+
+        for (validator_index, (view_number, signature, invocation)) in pending {
+            if view_number != self.context.view_number {
+                continue;
+            }
+            if !self.verify_signature(&block_sign_data, &signature, validator_index) {
+                warn!(
+                    validator = validator_index,
+                    "Buffered commit failed block-hash signature verification"
+                );
+                continue;
+            }
+            match self
+                .context
+                .add_commit(validator_index, view_number, signature)
+            {
+                Ok(()) => {
+                    self.context
+                        .commit_invocations
+                        .insert(validator_index, invocation);
+                }
+                Err(ConsensusError::AlreadyReceived(_)) => {}
+                Err(error) => {
+                    warn!(validator = validator_index, %error, "Failed to promote buffered commit");
+                }
+            }
+        }
+
+        self.check_commits()
+    }
+
     /// Checks if we have enough commits to finalize the block
     pub(in crate::service) fn check_commits(&mut self) -> ConsensusResult<()> {
         if !self.context.has_enough_commits() {
@@ -157,6 +215,62 @@ impl ConsensusService {
             );
             return Ok(());
         };
+
+        // SECURITY: Re-verify all commit signatures against the proposed block hash.
+        // This catches off-view commits that were accepted with only witness verification
+        // but whose block-hash signatures were deferred until the block hash became known.
+        // Without this check, a malicious validator could send a forged off-view commit
+        // signature that would count toward the M-of-N threshold.
+        let mut block_sign_data = Vec::with_capacity(4 + 32);
+        block_sign_data.extend_from_slice(&self.network.to_le_bytes());
+        block_sign_data.extend_from_slice(&block_hash.as_bytes());
+
+        let mut purged_count = 0;
+        let invalid_commits: Vec<u8> = self
+            .context
+            .commits
+            .iter()
+            .filter(|&(&validator_index, signature)| {
+                !self.verify_signature(&block_sign_data, signature, validator_index)
+            })
+            .map(|(&validator_index, _)| validator_index)
+            .collect();
+
+        for validator_index in invalid_commits {
+            warn!(
+                block_index = self.context.block_index,
+                validator = validator_index,
+                "Purged commit with invalid block-hash signature (likely off-view with forged signature)"
+            );
+            self.context.commits.remove(&validator_index);
+            purged_count += 1;
+        }
+
+        if purged_count > 0 {
+            warn!(
+                block_index = self.context.block_index,
+                purged = purged_count,
+                remaining = self.context.commits.len(),
+                "Purged commits with invalid block-hash signatures"
+            );
+            // After purging, check if we still have enough commits
+            if !self.context.has_enough_commits() {
+                return Ok(());
+            }
+        }
+
+        // C# refuses to assemble a block before every proposed transaction is
+        // locally present (`TransactionHashes.All(p => Transactions.ContainsKey(p))`).
+        // Without this gate a node that received M commits but not the payloads
+        // would emit BlockCommitted for a block it cannot construct.
+        if !self.context.proposed_tx_hashes.is_empty() && !self.context.transactions_available {
+            warn!(
+                block_index = self.context.block_index,
+                commits = self.context.commits.len(),
+                "Enough commits but proposed transactions are not available; withholding BlockCommitted"
+            );
+            return Ok(());
+        }
 
         // We have enough commits - block is finalized!
         info!(

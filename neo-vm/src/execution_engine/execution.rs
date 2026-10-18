@@ -56,12 +56,21 @@ impl ExecutionEngine {
             let rvcount = context.rvcount();
             let eval_stack_len = context.evaluation_stack().len();
 
-            let count = if rvcount == -1 {
-                eval_stack_len
-            } else if rvcount > 0 {
-                (rvcount as usize).min(eval_stack_len)
+            // C# executes a synthetic RET when the instruction pointer reaches
+            // the end of the script, so the explicit RET RVCount check applies
+            // here too. Clamping silently changed a FAULT into a HALT with a
+            // truncated result stack.
+            if rvcount >= 0 && eval_stack_len != rvcount as usize {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Return value count mismatch: expected {}, but got {} items on the evaluation stack",
+                    rvcount, eval_stack_len
+                )));
+            }
+
+            let count = if rvcount >= 0 {
+                rvcount as usize
             } else {
-                0
+                eval_stack_len
             };
 
             // Pop items from the top of the eval stack (they come out in
@@ -240,11 +249,23 @@ impl ExecutionEngine {
             return Ok(());
         }
 
-        // Stack is at or over limit - perform thorough check with GC
-        let _current = self.reference_counter.check_zero_referred();
-        // Note: MaxStackSize check temporarily relaxed to diagnose reference
-        // counter over-counting vs C#. The actual execution should be correct;
-        // only the reference count tracking differs.
+        // Stack is at or over the reference limit. The reference counter can
+        // over-count across nested RET frames, so enforce the limit against
+        // the actual evaluation-stack slots as well. This keeps the memory
+        // bound without FAULTing legitimate MainNet transactions whose
+        // reference bookkeeping is conservative.
+        let actual_stack_size = self
+            .invocation_stack()
+            .iter()
+            .map(|context| context.evaluation_stack().len())
+            .sum::<usize>()
+            + self.result_stack().len();
+        if actual_stack_size > self.limits.max_stack_size as usize {
+            return Err(VmError::invalid_operation_msg(format!(
+                "MaxStackSize exceed: {}/{}",
+                actual_stack_size, self.limits.max_stack_size
+            )));
+        }
 
         if let Some(host) = self.interop_host {
             host.post_execute_instruction(self, instruction)?;

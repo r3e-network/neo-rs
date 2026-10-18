@@ -65,6 +65,10 @@ members = [
 
     # === Benchmarks ===
     "benches-package",
+    
+    # === Tools ===
+    "tools/validation-diff",
+    "tools/state-root-diff",
 ]
 default-members = [
     "neo-primitives",
@@ -108,7 +112,7 @@ readme = "README.md"
 
 [workspace.metadata]
 # Minimum supported Rust version policy
-msrv = "1.85"
+msrv = "1.88"
 
 [workspace.lints.clippy]
 # Enable pedantic lint group for improved code quality

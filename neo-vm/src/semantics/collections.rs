@@ -10,6 +10,13 @@ use crate::{
     MAX_ITEM_SIZE, StackValue, new_array_default_value_for_neovm_type_tag, semantics::numeric,
 };
 
+/// Default NeoVM `ExecutionEngineLimits.MaxStackSize`.
+///
+/// Collection constructors in C# reject counts larger than this before
+/// allocating; without the check a script can request an arbitrary allocation
+/// (e.g. `NEWARRAY` with `i32::MAX`) and abort the node.
+const MAX_COLLECTION_ITEMS: usize = 2 * 1024;
+
 /// Convert a primitive NeoVM value into an index used by collection opcodes.
 #[must_use]
 pub fn collection_index_value(value: &StackValue) -> Result<i64, String> {
@@ -76,14 +83,14 @@ pub fn map_entry_index_by<T>(
 /// Create a null-filled array.
 #[must_use]
 pub fn new_array(count: i64) -> Result<StackValue, String> {
-    let count = non_negative_count(count, "NEWARRAY: negative count")?;
+    let count = bounded_collection_count(count, "NEWARRAY: negative count")?;
     Ok(StackValue::Array(vec![StackValue::Null; count]))
 }
 
 /// Create a type-filled array using NeoVM `NEWARRAY_T` defaults.
 #[must_use]
 pub fn new_array_t(count: i64, type_tag: u8) -> Result<StackValue, String> {
-    let count = non_negative_count(count, "NEWARRAY_T: negative count")?;
+    let count = bounded_collection_count(count, "NEWARRAY_T: negative count")?;
     Ok(StackValue::Array(vec![
         new_array_default_value_for_neovm_type_tag(type_tag);
         count
@@ -93,8 +100,18 @@ pub fn new_array_t(count: i64, type_tag: u8) -> Result<StackValue, String> {
 /// Create a null-filled struct.
 #[must_use]
 pub fn new_struct(count: i64) -> Result<StackValue, String> {
-    let count = non_negative_count(count, "NEWSTRUCT: negative count")?;
+    let count = bounded_collection_count(count, "NEWSTRUCT: negative count")?;
     Ok(StackValue::Struct(vec![StackValue::Null; count]))
+}
+
+fn bounded_collection_count(count: i64, negative_message: &'static str) -> Result<usize, String> {
+    let count = non_negative_count(count, negative_message)?;
+    if count > MAX_COLLECTION_ITEMS {
+        return Err(format!(
+            "collection size {count} exceeds MaxStackSize {MAX_COLLECTION_ITEMS}"
+        ));
+    }
+    Ok(count)
 }
 
 /// Create a zero-filled buffer.
@@ -243,14 +260,28 @@ pub fn size(value: &StackValue) -> Result<i64, String> {
 /// Return whether a key exists in a collection-like value.
 #[must_use]
 pub fn has_key(collection: &StackValue, key: &StackValue) -> Result<bool, String> {
+    has_key_with_limit(collection, key, true)
+}
+
+/// Pre-Gorgon HASKEY: no `MaxItemSize` bound (Neo PR #543).
+#[must_use]
+pub fn has_key_pre_gorgon(collection: &StackValue, key: &StackValue) -> Result<bool, String> {
+    has_key_with_limit(collection, key, false)
+}
+
+fn has_key_with_limit(
+    collection: &StackValue,
+    key: &StackValue,
+    check_max_item_size: bool,
+) -> Result<bool, String> {
     match collection {
         StackValue::Array(items) | StackValue::Struct(items) => {
-            let index = has_key_index(key)?;
+            let index = has_key_index(key, check_max_item_size)?;
             Ok(index < items.len())
         }
         StackValue::Map(pairs) => Ok(map_entry_index(pairs, key)?.is_some()),
         StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
-            let index = has_key_index(key)?;
+            let index = has_key_index(key, check_max_item_size)?;
             Ok(index < bytes.len())
         }
         _ => Err("HASKEY: unsupported types".into()),
@@ -259,16 +290,15 @@ pub fn has_key(collection: &StackValue, key: &StackValue) -> Result<bool, String
 
 /// Normalized HASKEY array/string index.
 ///
-/// C# `JumpTable.HasKey` faults when the index is negative **or**
+/// Post-Gorgon C# `JumpTable.HasKey` faults when the index is negative **or**
 /// `index >= engine.Limits.MaxItemSize` — not merely when it is out of range
-/// of the collection — so an oversized index must FAULT instead of yielding
-/// `false` (audit F-NEW-1, 2026-09-08).
-fn has_key_index(key: &StackValue) -> Result<usize, String> {
+/// of the collection. Pre-Gorgon only rejects negative/out-of-range values.
+fn has_key_index(key: &StackValue, check_max_item_size: bool) -> Result<usize, String> {
     let index = collection_index_value(key)?;
     if index < 0 {
         return Err("HASKEY: negative index".into());
     }
-    if index >= MAX_ITEM_SIZE as i64 {
+    if check_max_item_size && index >= MAX_ITEM_SIZE as i64 {
         return Err("HASKEY: index exceeds MaxItemSize".into());
     }
     non_negative_index(index).ok_or_else(|| "HASKEY: index out of range".into())
@@ -466,5 +496,30 @@ mod tests {
             has_key(&array, &StackValue::Integer(MAX_ITEM_SIZE as i64 - 1)),
             Ok(false)
         );
+    }
+
+    #[test]
+    fn pre_gorgon_haskey_skips_max_item_size_bound() {
+        let bytes = StackValue::ByteString(vec![0xAA]);
+        assert!(has_key(&bytes, &StackValue::Integer(MAX_ITEM_SIZE as i64)).is_err());
+        assert_eq!(
+            has_key_pre_gorgon(&bytes, &StackValue::Integer(MAX_ITEM_SIZE as i64)),
+            Ok(false)
+        );
+        assert!(has_key_pre_gorgon(&bytes, &StackValue::Integer(-1)).is_err());
+    }
+
+    #[test]
+    fn collection_constructors_enforce_max_stack_size() {
+        // C# JumpTable.Compound rejects counts above Limits.MaxStackSize before
+        // allocating. Without this an attacker can request i32::MAX items and
+        // abort the process.
+        assert!(new_array(MAX_COLLECTION_ITEMS as i64 + 1).is_err());
+        assert!(new_array(i64::from(i32::MAX)).is_err());
+        assert!(new_array_t(MAX_COLLECTION_ITEMS as i64 + 1, 0x00).is_err());
+        assert!(new_struct(MAX_COLLECTION_ITEMS as i64 + 1).is_err());
+        assert!(new_array(MAX_COLLECTION_ITEMS as i64).is_ok());
+        assert!(new_array_t(MAX_COLLECTION_ITEMS as i64, 0x00).is_ok());
+        assert!(new_struct(MAX_COLLECTION_ITEMS as i64).is_ok());
     }
 }

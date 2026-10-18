@@ -431,20 +431,27 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
 
         items.reverse();
         if return_to_result_stack {
-            for item in items {
-                engine.result_stack_mut().push(item)?;
+            for item in &items {
+                engine.result_stack_mut().push(item.clone())?;
             }
         } else {
             let caller = engine
                 .current_context_mut()
                 .ok_or_else(|| VmError::invalid_operation_msg("No caller context"))?;
-            for item in items {
-                caller.push(item)?;
+            for item in &items {
+                caller.push(item.clone())?;
             }
         }
+        engine.unload_context(&mut context)?;
+        // Release the callee stack's reference now that the return values
+        // have counted references in the caller/result stack. The callee
+        // stack contents are left intact for native interop bookkeeping.
+        for item in &items {
+            context.reference_counter().remove_stack_reference(item);
+        }
+    } else {
+        engine.unload_context(&mut context)?;
     }
-
-    engine.unload_context(&mut context)?;
 
     if engine.invocation_stack().is_empty() {
         engine.set_state(VMState::HALT);

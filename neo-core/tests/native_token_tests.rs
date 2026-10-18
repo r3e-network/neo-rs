@@ -393,6 +393,12 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
     sb.emit_push_string("Payment");
     sb.emit_syscall("System.Runtime.Notify")
         .expect("notify syscall");
+    // The callback declares three parameters; a real onNEP17Payment script
+    // consumes them. Leaving them on the stack makes the implicit RET RVCount
+    // check fail (C# behaves the same way).
+    sb.emit_opcode(OpCode::DROP);
+    sb.emit_opcode(OpCode::DROP);
+    sb.emit_opcode(OpCode::DROP);
     let script = sb.to_array();
 
     let nef = NefFile::new("test".to_string(), script);

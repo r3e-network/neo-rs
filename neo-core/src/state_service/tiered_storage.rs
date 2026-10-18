@@ -9,6 +9,8 @@
 //! Expected benefits: Reduces disk misses from 70% → 15%,
 //! improves average latency from 500μs → 120μs, increases throughput to ~20 blk/s
 
+#![allow(missing_docs, dead_code)] // Prototype cache: not wired into the persist path yet.
+
 use lru::LruCache;
 use neo_crypto::mpt_trie::{Node, RootBranchBuffer};
 use neo_primitives::UInt256;
@@ -309,7 +311,7 @@ where
         self.tier0_root_branch.clear();
         self.tier1_hot_leaves.write().clear();
         {
-            let mut cache = self.tier2_prefix_cache.write();
+            let cache = self.tier2_prefix_cache.write();
             cache.clear();
         }
         self.tier3_general.clear();

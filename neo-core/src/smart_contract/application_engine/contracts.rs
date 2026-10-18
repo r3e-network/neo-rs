@@ -28,7 +28,7 @@ impl ApplicationEngine {
     }
     pub(super) fn fetch_contract(&mut self, hash: &UInt160) -> Result<ContractState> {
         if let Some(contract) = self.contracts.get(hash) {
-            return Ok(contract.clone());
+            return Ok((**contract).clone());
         }
         let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
         let diag = Self::should_trace_block(block_idx);
@@ -37,7 +37,7 @@ impl ApplicationEngine {
                 if diag {
                     tracing::warn!(target: "neo", block_index = block_idx, %hash, id = contract.id, "TRACE: fetch_contract found in snapshot");
                 }
-                self.contracts.insert(*hash, contract.clone());
+                self.contracts.insert(*hash, Arc::new(contract.clone()));
                 return Ok(contract);
             }
             Ok(None) => {
@@ -58,7 +58,7 @@ impl ApplicationEngine {
                 if diag {
                     tracing::warn!(target: "neo", block_index = block_idx, %hash, id = contract.id, "TRACE: fetch_contract found as native");
                 }
-                self.contracts.insert(*hash, contract.clone());
+                self.contracts.insert(*hash, Arc::new(contract.clone()));
                 return Ok(contract);
             }
         }
@@ -75,7 +75,7 @@ impl ApplicationEngine {
     /// would re-fetch the OLD cached `ContractState` and execute the previous
     /// NEF/manifest, producing different `_initialize` static fields than C#.
     pub fn put_contract_cache(&mut self, hash: UInt160, contract: ContractState) {
-        self.contracts.insert(hash, contract);
+        self.contracts.insert(hash, Arc::new(contract));
     }
     #[allow(clippy::too_many_arguments)]
     pub(super) fn load_contract_context(

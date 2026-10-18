@@ -1,3 +1,5 @@
+#![cfg(feature = "runtime")]
+
 //! Behavioral regression tests for RwSet tracking and conflict resolution.
 //!
 //! Access sets are constructed directly, without executing contracts or blocks.

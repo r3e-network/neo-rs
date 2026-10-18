@@ -1,0 +1,91 @@
+name: MainNet validation
+
+permissions:
+  contents: read
+
+# These checks need the local MainNet chain and state-root backups (multi-GB),
+# so they only run on a self-hosted runner labelled `neo-mainnet-data`.
+# GitHub-hosted runners do not have the data and will fail fast in the
+# "Check validation data" step.
+on:
+  workflow_dispatch:
+    inputs:
+      chain_db:
+        description: Path to the MainNet chain RocksDB directory
+        required: true
+        default: data/mainnet-protocol-consistency
+      state_root_db:
+        description: Path to the MainNet state-root RocksDB directory
+        required: true
+        default: data/Plugins/StateService/StateRoot
+      max_state_root_height:
+        description: Highest state-root height to compare
+        required: true
+        default: "1465790"
+
+concurrency:
+  group: mainnet-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  replay-and-roots:
+    name: MainNet replay, state roots, chain integrity
+    runs-on: [self-hosted, neo-mainnet-data]
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang cmake libbz2-dev libclang-dev liblz4-dev \
+            librocksdb-dev libsnappy-dev libssl-dev libzstd-dev pkg-config \
+            zlib1g-dev
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check validation data
+        env:
+          CHAIN_DB: ${{ inputs.chain_db }}
+          STATE_ROOT_DB: ${{ inputs.state_root_db }}
+        run: |
+          test -d "$CHAIN_DB" || { echo "missing chain DB: $CHAIN_DB"; exit 1; }
+          test -d "$STATE_ROOT_DB" || { echo "missing state-root DB: $STATE_ROOT_DB"; exit 1; }
+          test -f data/reference_stateroots.jsonl || {
+            echo "missing data/reference_stateroots.jsonl"; exit 1;
+          }
+
+      - name: Build validation tests
+        run: cargo test -p neo-core --features rocksdb --no-run
+
+      - name: Contiguous stored-chain integrity
+        env:
+          NEO_CHAIN_DB_PATH: ${{ inputs.chain_db }}
+        run: |
+          cargo test -p neo-core --features rocksdb \
+            --test mainnet_chain_integrity -- --ignored --nocapture
+
+      - name: MainNet block replay fixtures
+        env:
+          NEO_REPRO_DB_PATH: ${{ inputs.state_root_db }}
+        run: |
+          for test in $(ls neo-core/tests/mainnet_block_*_repro.rs | \
+              xargs -n1 basename | sed 's/\.rs$//'); do
+            echo "::group::$test"
+            cargo test -p neo-core --features rocksdb --test "$test" -- --ignored
+            echo "::endgroup::"
+          done
+
+      - name: Bulk C# state-root differential
+        env:
+          NEO_BULK_ROOT_DB_PATH: ${{ inputs.state_root_db }}
+          NEO_BULK_ROOT_MAX_HEIGHT: ${{ inputs.max_state_root_height }}
+        run: |
+          cargo test -p neo-core --features rocksdb \
+            --test mainnet_state_roots_vs_csharp -- --ignored --nocapture

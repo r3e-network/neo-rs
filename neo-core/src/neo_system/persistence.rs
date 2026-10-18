@@ -287,7 +287,7 @@ impl NeoSystem {
             .into_iter()
             .map(|contract| contract.hash())
             .collect();
-        let mut seeded_contracts = on_persist_engine.contracts_snapshot();
+        let mut seeded_contracts = on_persist_engine.contracts_shared_snapshot();
         seeded_contracts.retain(|hash, _| native_hashes.contains(hash));
         let seeded_native_cache = on_persist_engine.native_contract_cache_handle();
 
@@ -317,7 +317,7 @@ impl NeoSystem {
             };
             tx_snapshot.reset();
             let container: Arc<dyn crate::Verifiable> = Arc::new(tx.clone());
-            let mut tx_engine = ApplicationEngine::new_with_preloaded_native(
+            let mut tx_engine = ApplicationEngine::new_with_preloaded_native_shared(
                 TriggerType::Application,
                 Some(container),
                 Arc::clone(&tx_snapshot),
@@ -459,7 +459,7 @@ impl NeoSystem {
         } else {
             None
         };
-        let mut post_persist_engine = ApplicationEngine::new_with_preloaded_native(
+        let mut post_persist_engine = ApplicationEngine::new_with_preloaded_native_shared(
             TriggerType::PostPersist,
             None,
             Arc::clone(&base_snapshot),

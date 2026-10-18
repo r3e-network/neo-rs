@@ -1,6 +1,8 @@
 //! `ChangeView` message - request to change the current view.
 
 use crate::{ChangeViewReason, ConsensusMessageType, ConsensusResult};
+use neo_io::{BinaryWriter, MemoryReader};
+use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
 /// `ChangeView` message sent when a validator wants to change the view.
@@ -16,6 +18,13 @@ pub struct ChangeViewMessage {
     pub timestamp: u64,
     /// Reason for the view change
     pub reason: ChangeViewReason,
+    /// Transactions this validator rejected while forming the new view.
+    ///
+    /// Neo v3.10.1 serializes this array only for `TxInvalid` and
+    /// `TxRejectedByPolicy` (see DBFTPlugin `ChangeView.cs`). Omitting it made
+    /// those messages undecodable by the reference node.
+    #[serde(default)]
+    pub rejected_hashes: Vec<UInt256>,
 }
 
 impl ChangeViewMessage {
@@ -34,7 +43,15 @@ impl ChangeViewMessage {
             validator_index,
             timestamp,
             reason,
+            rejected_hashes: Vec::new(),
         }
+    }
+
+    /// Creates a `ChangeView` carrying the transactions this validator rejected.
+    #[must_use]
+    pub fn with_rejected_hashes(mut self, hashes: Vec<UInt256>) -> Self {
+        self.rejected_hashes = hashes;
+        self
     }
 
     /// `NewViewNumber` is always `ViewNumber + 1` (matches C# `DBFTPlugin`).
@@ -50,18 +67,31 @@ impl ChangeViewMessage {
         ConsensusMessageType::ChangeView
     }
 
-    /// Serializes the message to bytes
-    /// Neo N3 `DBFTPlugin` format: `timestamp (8) + reason (1)`.
+    /// Serializes the message to bytes.
+    ///
+    /// Neo N3 v3.10.1 format: `timestamp (8) + reason (1)`, followed by a
+    /// varint-prefixed `UInt256[]` for `TxInvalid` and `TxRejectedByPolicy`.
     #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
-        let mut data = Vec::new();
-        data.extend_from_slice(&self.timestamp.to_le_bytes());
-        data.push(self.reason.to_byte());
-        data
+        let mut writer = BinaryWriter::new();
+        writer
+            .write_u64(self.timestamp)
+            .expect("infallible: in-memory write");
+        writer
+            .write_u8(self.reason.to_byte())
+            .expect("infallible: in-memory write");
+        if matches!(
+            self.reason,
+            ChangeViewReason::TxInvalid | ChangeViewReason::TxRejectedByPolicy
+        ) {
+            writer
+                .write_serializable_vec(&self.rejected_hashes)
+                .expect("infallible: in-memory write");
+        }
+        writer.into_bytes()
     }
 
-    /// Deserializes a `ChangeView` message from bytes
-    /// Neo N3 `DBFTPlugin` format: `timestamp (8) + reason (1)`.
+    /// Deserializes a `ChangeView` message from bytes.
     pub fn deserialize(
         data: &[u8],
         block_index: u32,
@@ -77,12 +107,26 @@ impl ChangeViewMessage {
         let timestamp = u64::from_le_bytes(data[0..8].try_into().unwrap_or([0u8; 8]));
         let reason = ChangeViewReason::from_byte(data[8]).unwrap_or(ChangeViewReason::Timeout);
 
+        let rejected_hashes = if matches!(
+            reason,
+            ChangeViewReason::TxInvalid | ChangeViewReason::TxRejectedByPolicy
+        ) {
+            use neo_io::serializable::helper::deserialize_array;
+            let mut reader = MemoryReader::new(&data[9..]);
+            deserialize_array::<UInt256>(&mut reader, u16::MAX as usize).map_err(|_| {
+                crate::ConsensusError::invalid_proposal("ChangeView rejected hashes")
+            })?
+        } else {
+            Vec::new()
+        };
+
         Ok(Self {
             block_index,
             view_number,
             validator_index,
             timestamp,
             reason,
+            rejected_hashes,
         })
     }
 
@@ -121,6 +165,20 @@ mod tests {
 
         // 8 bytes timestamp + 1 byte reason
         assert_eq!(data.len(), 9);
+    }
+
+    #[test]
+    fn test_change_view_tx_invalid_carries_rejected_hashes() {
+        let rejected = UInt256::from([0x11u8; 32]);
+        let msg = ChangeViewMessage::new(100, 0, 1, 1000, ChangeViewReason::TxInvalid)
+            .with_rejected_hashes(vec![rejected]);
+
+        let data = msg.serialize();
+        assert_eq!(data.len(), 9 + 1 + 32);
+
+        let parsed = ChangeViewMessage::deserialize(&data, 100, 0, 1).expect("parse");
+        assert_eq!(parsed.reason, ChangeViewReason::TxInvalid);
+        assert_eq!(parsed.rejected_hashes, vec![rejected]);
     }
 
     #[test]

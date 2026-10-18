@@ -142,19 +142,27 @@ pub fn dec_value(value: StackValue) -> Result<StackValue, String> {
 }
 
 /// Raise `base` to `exponent`.
+///
+/// NeoVM borrows the shift limit for `POW`: the exponent must fit in an `int`
+/// and must be in `0..=MaxShift` (256). This mirrors C#
+/// `ExecutionEngineLimits.AssertShift` before `BigInteger.Pow`. The result is
+/// still checked against the 32-byte integer limit, exactly like the C#
+/// `Integer` constructor. Do not add a pre-flight size estimate here: it
+/// changes the accepted language (e.g. `1^1000` and `0^1000` must FAULT on the
+/// exponent check, not silently produce a result).
 #[must_use]
 pub fn pow_values(base: StackValue, exponent: StackValue) -> Result<StackValue, String> {
-    let exponent = numeric_bigint(exponent)?;
-    if exponent < BigInt::from(0) {
-        return Err("negative exponent for POW".into());
-    }
-    let exponent = exponent
-        .to_u32()
+    let base_big = numeric_bigint(base)?;
+    let exp_big = numeric_bigint(exponent)?;
+
+    let exponent = exp_big
+        .to_i32()
         .ok_or_else(|| "exponent too large for POW".to_string())?;
-    numeric_stack_value(
-        numeric_bigint(base)?.pow(exponent),
-        "integer overflow for POW",
-    )
+    if !(0..=256).contains(&exponent) {
+        return Err("shift count out of range for POW".to_string());
+    }
+
+    numeric_stack_value(base_big.pow(exponent as u32), "integer overflow for POW")
 }
 
 /// Integer square root.
@@ -384,5 +392,34 @@ mod tests {
     fn shift_count_out_of_range_faults() {
         assert!(shl_value(StackValue::Integer(1), 257).is_err());
         assert!(shl_value(StackValue::Integer(1), -1).is_err());
+    }
+
+    #[test]
+    fn pow_uses_the_shift_limit_not_a_bit_estimate() {
+        // Identity bases must still be rejected when the exponent exceeds
+        // MaxShift: C# calls AssertShift before BigInteger.Pow, so POW(1, 1000)
+        // and POW(0, 300) FAULT. An estimated-bits shortcut would accept them.
+        assert!(pow_values(StackValue::Integer(1), StackValue::Integer(1000)).is_err());
+        assert!(pow_values(StackValue::Integer(0), StackValue::Integer(300)).is_err());
+        assert!(pow_values(StackValue::Integer(2), StackValue::Integer(257)).is_err());
+        assert!(pow_values(StackValue::Integer(2), StackValue::Integer(-1)).is_err());
+    }
+
+    #[test]
+    fn pow_accepts_limit_and_enforces_32_byte_integer() {
+        assert_eq!(
+            pow_values(StackValue::Integer(1), StackValue::Integer(256)).unwrap(),
+            StackValue::Integer(1)
+        );
+        assert_eq!(
+            pow_values(StackValue::Integer(-1), StackValue::Integer(255)).unwrap(),
+            StackValue::Integer(-1)
+        );
+
+        // 2^254 is the largest power of two representable as a 32-byte signed
+        // BigInteger; 2^255 needs a leading zero byte (33 bytes) in C# and must
+        // therefore FAULT.
+        assert!(pow_values(StackValue::Integer(2), StackValue::Integer(254)).is_ok());
+        assert!(pow_values(StackValue::Integer(2), StackValue::Integer(255)).is_err());
     }
 }

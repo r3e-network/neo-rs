@@ -142,7 +142,10 @@ impl ExternalVmHost<'_> {
                             .map_err(|error| error.to_string())?
                     }
                     33 => {
-                        let hash = self.engine.pubkey_to_hash(&hash_or_pubkey);
+                        let hash = self
+                            .engine
+                            .pubkey_to_hash(&hash_or_pubkey)
+                            .map_err(|error| error.to_string())?;
                         self.engine
                             .check_witness_hash(&hash)
                             .map_err(|error| error.to_string())?

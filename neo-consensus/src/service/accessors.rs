@@ -19,6 +19,16 @@ impl ConsensusService {
         &self.context
     }
 
+    /// Records a transaction this validator rejected during proposal checking.
+    ///
+    /// The hash is included in this node's next `ChangeView(TxInvalid/
+    /// TxRejectedByPolicy)` so the network can converge on skipping it.
+    pub fn record_rejected_transaction(&mut self, hash: neo_primitives::UInt256) {
+        if let Some(index) = self.context.my_index {
+            self.context.record_rejected_hashes(index, &[hash]);
+        }
+    }
+
     /// Updates the validator set and local validator index.
     pub fn update_validators(&mut self, validators: Vec<ValidatorInfo>, my_index: Option<u8>) {
         self.context.validators = validators;

@@ -36,9 +36,19 @@ impl RemoteNode {
         self.enqueue_message(NetworkMessage::new(pong)).await
     }
 
-    pub(super) fn on_pong(&mut self, payload: &PingPayload) {
+    pub(super) fn on_pong(&mut self, payload: &PingPayload, ctx: &ActorContext) {
         if payload.last_block_index > self.last_block_index {
             self.last_block_index = payload.last_block_index;
+        }
+        // C# forwards Pong heights to TaskManager; without this a peer that
+        // never sends PING stays frozen at its VERSION height and the sync
+        // pipeline stops issuing requests.
+        if let Err(err) = self
+            .system
+            .task_manager
+            .update_peer(ctx.self_ref(), payload.last_block_index)
+        {
+            warn!(target: "neo", error = %err, "failed to forward peer height update from pong");
         }
     }
 
@@ -77,9 +87,18 @@ impl RemoteNode {
     }
 
     pub(super) async fn on_headers(&mut self, payload: HeadersPayload, ctx: &ActorContext) {
-        // The peer height comes from Version/Ping. Updating it from headers
-        // would cap the session at the header frontier.
+        // Forward the last delivered header index as a peer-height hint (C#
+        // updates TaskManager from OnHeaders). The session keeps the maximum
+        // of all reports, so this cannot lower a Version/Ping height.
         if !payload.headers.is_empty() {
+            if let Some(last) = payload.headers.last()
+                && let Err(err) = self
+                    .system
+                    .task_manager
+                    .update_peer(ctx.self_ref(), last.index())
+            {
+                warn!(target: "neo", error = %err, "failed to forward header height to task manager");
+            }
             if let Err(err) = self
                 .system
                 .blockchain

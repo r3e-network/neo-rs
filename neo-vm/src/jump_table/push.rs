@@ -121,7 +121,10 @@ fn push_a(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<(
     let context = require_context(engine)?;
     let offset = instruction.read_i32_operand()?;
     let current_ip = context.instruction_pointer();
-    let address = current_ip as i32 + offset;
+    let address = i32::try_from(current_ip)
+        .ok()
+        .and_then(|ip| ip.checked_add(offset))
+        .ok_or_else(|| VmError::invalid_operation_msg("PUSHA address overflow"))?;
     let script_len = context.script().len();
 
     if address < 0 || address > script_len as i32 {
@@ -144,6 +147,10 @@ fn push_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 /// The instruction already contains the parsed operand data.
 fn push_data(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let data = instruction.operand();
+    engine
+        .limits()
+        .assert_max_item_size(data.len())
+        .map_err(VmError::invalid_operand_msg)?;
     require_context(engine)?.push(StackItem::from_byte_string(data.to_vec()))
 }
 

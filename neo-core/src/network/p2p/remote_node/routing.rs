@@ -18,7 +18,7 @@ impl RemoteNode {
         match message.payload {
             ProtocolMessage::Ping(payload) => self.on_ping(&payload, ctx).await,
             ProtocolMessage::Pong(payload) => {
-                self.on_pong(&payload);
+                self.on_pong(&payload, ctx);
                 Ok(())
             }
             ProtocolMessage::Inv(payload) => {

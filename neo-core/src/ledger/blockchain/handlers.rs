@@ -156,9 +156,7 @@ impl Blockchain {
                 });
         }
 
-        {
-            self._block_cache_unverified.remove(&index);
-        }
+        self.remove_unverified_index(index);
 
         if let Some(context) = &self.system_context {
             context.header_cache().remove_up_to(index);

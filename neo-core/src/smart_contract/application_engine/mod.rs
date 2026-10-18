@@ -214,7 +214,10 @@ pub struct ApplicationEngine {
     logs: Vec<LogEventArgs>,
     native_registry: NativeRegistry,
     native_contract_cache: Arc<Mutex<NativeContractsCache>>,
-    contracts: HashMap<UInt160, ContractState>,
+    /// Contract states are shared via `Arc` so the per-transaction engines in a
+    /// block can clone the native-contract map without copying NEF scripts and
+    /// manifests. Mutations replace the `Arc` in that engine's map only.
+    contracts: HashMap<UInt160, Arc<ContractState>>,
     storage_iterators: HashMap<u32, StorageIterator>,
     next_iterator_id: u32,
     current_script_hash: Option<UInt160>,

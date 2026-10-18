@@ -15,7 +15,7 @@ use crate::stack_item::buffer::Buffer as BufferItem;
 use crate::stack_item::map::Map as MapItem;
 use crate::stack_item::pointer::Pointer as PointerItem;
 use crate::stack_item::struct_item::Struct as StructItem;
-use crate::VmOrderedDictionary;
+use crate::{StackValue, VmOrderedDictionary};
 use num_bigint::BigInt;
 use std::fmt;
 use std::sync::Arc;
@@ -215,8 +215,11 @@ impl StackItem {
             Self::Null => Ok(false),
             Self::Boolean(b) => Ok(*b),
             Self::Integer(i) => {
-                // PERF: Fast path for VmInteger::Small (no heap access)
-                Ok(!i.is_zero())
+                let value = match i.to_i64() {
+                    Some(value) => StackValue::Integer(value),
+                    None => StackValue::BigInteger(i.to_bigint().to_signed_bytes_le()),
+                };
+                Ok(crate::semantics::comparison::boolean_value(&value))
             }
             Self::ByteString(b) => {
                 if b.len() > VM_INTEGER_MAX_SIZE {
@@ -224,9 +227,9 @@ impl StackItem {
                         "Cannot convert ByteString to Boolean",
                     ));
                 }
-                // PERF: Zero-allocation truthiness check - inspect bytes directly
-                // instead of cloning into StackValue. Protocol: empty or all-zero = false.
-                Ok(!b.is_empty() && b.iter().any(|&byte| byte != 0))
+                Ok(crate::semantics::comparison::boolean_value(
+                    &StackValue::ByteString(b.clone()),
+                ))
             }
             Self::Buffer(_b) => Ok(true),
             Self::Array(_a) => Ok(true),
@@ -349,29 +352,20 @@ impl StackItem {
     /// prefer `into_bytes()` to move ByteString without cloning.
     #[inline]
     pub fn as_bytes(&self) -> VmResult<Vec<u8>> {
-        match self {
-            Self::Null => Ok(Vec::new()),
-            Self::Boolean(b) => Ok(vec![u8::from(*b)]),
-            Self::Integer(i) => {
-                // PERF: Fast path for small integers - avoid BigInt serialization
-                if let Some(val) = i.to_i64() {
-                    if val == 0 {
-                        return Ok(Vec::new());
-                    }
-                    if val > 0 && val <= 127 {
-                        return Ok(vec![val as u8]);
-                    }
-                    if val < 0 && val >= -128 {
-                        return Ok(vec![(val as i8) as u8]);
-                    }
-                }
-                // Fallback to full BigInt serialization
-                Ok(i.to_signed_bytes_le())
-            }
-            Self::ByteString(b) => Ok(b.clone()),
-            Self::Buffer(buf) => Ok(buf.data()),
-            _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
-        }
+        let value = match self {
+            Self::Null => return Ok(Vec::new()),
+            Self::Boolean(b) => StackValue::Boolean(*b),
+            Self::Integer(i) => match i.to_i64() {
+                Some(value) => StackValue::Integer(value),
+                None => StackValue::BigInteger(i.to_bigint().to_signed_bytes_le()),
+            },
+            Self::ByteString(b) => StackValue::ByteString(b.clone()),
+            Self::Buffer(buf) => StackValue::Buffer(buf.data()),
+            _ => return Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
+        };
+        value
+            .to_byte_string_bytes()
+            .ok_or_else(|| VmError::invalid_type_simple("Cannot convert to ByteArray"))
     }
 
     /// Consuming version of `as_bytes` — moves the Vec out of ByteString
@@ -379,29 +373,20 @@ impl StackItem {
     /// PERF: Zero-allocation for ByteString variant (moves Vec instead of cloning).
     #[inline]
     pub fn into_bytes(self) -> VmResult<Vec<u8>> {
-        match self {
-            Self::Null => Ok(Vec::new()),
-            Self::Boolean(b) => Ok(vec![u8::from(b)]),
-            Self::Integer(i) => {
-                // PERF: Fast path for small integers - avoid BigInt serialization
-                if let Some(val) = i.to_i64() {
-                    if val == 0 {
-                        return Ok(Vec::new());
-                    }
-                    if val > 0 && val <= 127 {
-                        return Ok(vec![val as u8]);
-                    }
-                    if val < 0 && val >= -128 {
-                        return Ok(vec![(val as i8) as u8]);
-                    }
-                }
-                // Fallback to full BigInt serialization
-                Ok(i.into_bigint().to_signed_bytes_le())
-            }
-            Self::ByteString(b) => Ok(b), // PERF: MOVE Vec without clone!
-            Self::Buffer(buf) => Ok(buf.data()),
-            _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
-        }
+        let value = match self {
+            Self::Null => return Ok(Vec::new()),
+            Self::Boolean(b) => StackValue::Boolean(b),
+            Self::Integer(i) => match i.to_i64() {
+                Some(value) => StackValue::Integer(value),
+                None => StackValue::BigInteger(i.into_bigint().to_signed_bytes_le()),
+            },
+            Self::ByteString(b) => StackValue::ByteString(b),
+            Self::Buffer(buf) => StackValue::Buffer(buf.data()),
+            _ => return Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
+        };
+        value
+            .to_byte_string_bytes()
+            .ok_or_else(|| VmError::invalid_type_simple("Cannot convert to ByteArray"))
     }
 
     /// Returns a borrowed byte slice for variants that own contiguous bytes
@@ -628,33 +613,33 @@ impl StackItem {
             (Self::Null, StackItemType::Boolean) => {
                 return Ok(Self::Null);
             }
-            (
-                Self::Integer(_) | Self::ByteString(_),
-                StackItemType::Boolean,
-            ) => {
-                if let Self::ByteString(bytes) = self
+            (item, target_type @ StackItemType::Boolean) => {
+                if let Self::ByteString(bytes) = item
                     && bytes.len() > VM_INTEGER_MAX_SIZE
                 {
                     return Err(VmError::invalid_type_simple(
                         "Cannot convert ByteString to Boolean",
                     ));
                 }
-                // PERF: Direct conversion without StackValue intermediate
-                return Ok(Self::Boolean(self.as_bool()?));
+                let _ = target_type;
+                return Ok(Self::Boolean(item.as_bool()?));
             }
             (
-                Self::Boolean(_) | Self::Integer(_) | Self::ByteString(_) | Self::Buffer(_),
-                StackItemType::ByteString,
+                item
+                @ (Self::Boolean(_) | Self::Integer(_) | Self::ByteString(_) | Self::Buffer(_)),
+                target_type @ (StackItemType::ByteString | StackItemType::Buffer),
             ) => {
-                // PERF: Direct byte conversion without StackValue intermediate
-                return Ok(Self::ByteString(self.as_bytes()?));
-            }
-            (
-                Self::Boolean(_) | Self::Integer(_) | Self::ByteString(_) | Self::Buffer(_),
-                StackItemType::Buffer,
-            ) => {
-                // PERF: Direct byte conversion without StackValue intermediate
-                return Ok(Self::Buffer(BufferItem::new(self.as_bytes()?)));
+                // Reuse the shared ABI conversion rules instead of a local
+                // byte-conversion table. `to_byte_string_bytes` handles
+                // integer sign encoding and Boolean/Null coercion.
+                let value = StackValue::try_from(item.clone()).map_err(|_| {
+                    VmError::invalid_type_simple(format!("Cannot convert to {target_type:?}"))
+                })?;
+                let converted =
+                    crate::semantics::conversion::convert_value(value, target_type.to_byte())
+                        .map_err(VmError::invalid_operation_msg)?;
+                return StackItem::try_from(converted)
+                    .map_err(|_| VmError::invalid_type_simple("Invalid converted stack item"));
             }
             (Self::Null, StackItemType::ByteString) => {
                 return Ok(Self::ByteString(Vec::new()));
@@ -680,12 +665,179 @@ impl StackItem {
     }
 
     /// Checks if two stack items are equal with execution limits (aligns with C# API).
+    ///
+    /// C# equality is deliberately asymmetric across item kinds:
+    /// - primitives compare by value (type-strict);
+    /// - `Buffer`, `Array` and `Map` compare by reference;
+    /// - `Struct` compares structurally, bounded by `MaxStackSize` and
+    ///   `MaxComparableSize`;
+    /// - `ByteString` comparisons consume `MaxComparableSize`.
+    ///
+    /// The previous implementation reused the un-bounded structural `equals`
+    /// here, which made `EQUAL` on arrays/maps consensus-incompatible and
+    /// allowed unbounded recursive comparisons.
     pub fn equals_with_limits(
         &self,
         other: &Self,
-        _limits: &ExecutionEngineLimits,
+        limits: &ExecutionEngineLimits,
     ) -> VmResult<bool> {
-        self.equals(other)
+        let mut remaining_stack = u64::from(limits.max_stack_size);
+        let mut remaining_comparable = i64::from(limits.max_comparable_size);
+        let mut visited = std::collections::HashSet::new();
+        self.equals_with_budget(
+            other,
+            limits,
+            &mut remaining_stack,
+            &mut remaining_comparable,
+            &mut visited,
+        )
+    }
+
+    fn equals_with_budget(
+        &self,
+        other: &Self,
+        limits: &ExecutionEngineLimits,
+        remaining_stack: &mut u64,
+        remaining_comparable: &mut i64,
+        visited: &mut std::collections::HashSet<(usize, usize)>,
+    ) -> VmResult<bool> {
+        match (self, other) {
+            (Self::Null, Self::Null) => Ok(true),
+            (Self::Null, _) | (_, Self::Null) => Ok(false),
+            (Self::Buffer(a), Self::Buffer(b)) => Ok(a.id() == b.id()),
+            (Self::Array(a), Self::Array(b)) => Ok(a.id() == b.id()),
+            (Self::Map(a), Self::Map(b)) => Ok(a.id() == b.id()),
+            (Self::Struct(a), Self::Struct(b)) => Self::struct_equals_with_budget(
+                a,
+                b,
+                limits,
+                remaining_stack,
+                remaining_comparable,
+                visited,
+            ),
+            (Self::Boolean(a), Self::Boolean(b)) => Ok(a == b),
+            (Self::Integer(a), Self::Integer(b)) => Ok(a.to_bigint() == b.to_bigint()),
+            (Self::ByteString(a), Self::ByteString(b)) => {
+                if *remaining_comparable == 0 {
+                    return Err(VmError::invalid_operation_msg(
+                        "The operand exceeds the maximum comparable size",
+                    ));
+                }
+                if a.len() as i64 > *remaining_comparable {
+                    return Err(VmError::invalid_operation_msg(format!(
+                        "The operand exceeds the maximum comparable size, {}/{}",
+                        a.len(),
+                        remaining_comparable
+                    )));
+                }
+                if b.len() as i64 > *remaining_comparable {
+                    return Err(VmError::invalid_operation_msg(format!(
+                        "The operand exceeds the maximum comparable size, {}/{}",
+                        b.len(),
+                        remaining_comparable
+                    )));
+                }
+                let compared = a.len().max(b.len()).max(1) as i64;
+                *remaining_comparable -= compared;
+                Ok(a == b)
+            }
+            (Self::Pointer(a), Self::Pointer(b)) => Ok(a == b),
+            (Self::InteropInterface(a), Self::InteropInterface(b)) => Ok(Arc::ptr_eq(a, b)),
+            _ => Ok(false),
+        }
+    }
+
+    fn struct_equals_with_budget(
+        a: &StructItem,
+        b: &StructItem,
+        limits: &ExecutionEngineLimits,
+        remaining_stack: &mut u64,
+        remaining_comparable: &mut i64,
+        visited: &mut std::collections::HashSet<(usize, usize)>,
+    ) -> VmResult<bool> {
+        if a.id() == b.id() {
+            return Ok(true);
+        }
+        let key = (a.id(), b.id());
+        if !visited.insert(key) {
+            // C# uses ReferenceEquals(a, b) to short-circuit cycles inside
+            // structs; if we re-enter the same pair treat it as equal.
+            return Ok(true);
+        }
+
+        let result = (|| {
+            let a_items = a.items();
+            let b_items = b.items();
+            if a_items.len() != b_items.len() {
+                return Ok(false);
+            }
+            for (left, right) in a_items.iter().zip(b_items.iter()) {
+                if *remaining_stack == 0 {
+                    return Err(VmError::invalid_operation_msg(
+                        "Too many struct items to compare in struct comparison",
+                    ));
+                }
+                *remaining_stack -= 1;
+
+                match left {
+                    Self::ByteString(_) => {
+                        if !left.equals_with_budget(
+                            right,
+                            limits,
+                            remaining_stack,
+                            remaining_comparable,
+                            visited,
+                        )? {
+                            return Ok(false);
+                        }
+                    }
+                    Self::Struct(_) => {
+                        if *remaining_comparable == 0 {
+                            return Err(VmError::invalid_operation_msg(
+                                "The operand exceeds the maximum comparable size in struct comparison",
+                            ));
+                        }
+                        *remaining_comparable -= 1;
+                        if !left.equals_with_budget(
+                            right,
+                            limits,
+                            remaining_stack,
+                            remaining_comparable,
+                            visited,
+                        )? {
+                            return Ok(false);
+                        }
+                    }
+                    _ => {
+                        if *remaining_comparable == 0 {
+                            return Err(VmError::invalid_operation_msg(
+                                "The operand exceeds the maximum comparable size in struct comparison",
+                            ));
+                        }
+                        *remaining_comparable -= 1;
+                        let equal = match (left, right) {
+                            (Self::Buffer(x), Self::Buffer(y)) => x.id() == y.id(),
+                            (Self::Array(x), Self::Array(y)) => x.id() == y.id(),
+                            (Self::Map(x), Self::Map(y)) => x.id() == y.id(),
+                            (Self::Boolean(x), Self::Boolean(y)) => x == y,
+                            (Self::Integer(x), Self::Integer(y)) => x.to_bigint() == y.to_bigint(),
+                            (Self::Pointer(x), Self::Pointer(y)) => x == y,
+                            (Self::InteropInterface(x), Self::InteropInterface(y)) => {
+                                Arc::ptr_eq(x, y)
+                            }
+                            _ => false,
+                        };
+                        if !equal {
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+            Ok(true)
+        })();
+
+        visited.remove(&key);
+        result
     }
 
     /// Checks if two stack items are equal with reference tracking to handle cycles.
@@ -1232,8 +1384,14 @@ mod zero_allocation_perf_tests {
         let bs_empty = StackItem::ByteString(vec![]);
 
         // Protocol correctness: truthiness logic matches C# Neo VM
-        assert!(bs_truthy.as_bool().unwrap(), "non-zero bytes should be true");
-        assert!(!bs_falsy.as_bool().unwrap(), "all-zero bytes should be false");
+        assert!(
+            bs_truthy.as_bool().unwrap(),
+            "non-zero bytes should be true"
+        );
+        assert!(
+            !bs_falsy.as_bool().unwrap(),
+            "all-zero bytes should be false"
+        );
         assert!(!bs_empty.as_bool().unwrap(), "empty bytes should be false");
 
         // Edge case: single non-zero byte
@@ -1271,33 +1429,36 @@ mod zero_allocation_perf_tests {
     fn as_bytes_small_integer_fast_path() {
         // PERF REGRESSION: Small integers convert without BigInt serialization
         let test_cases = vec![
-            (0i64, vec![]),           // zero = empty
-            (1i64, vec![0x01]),       // single byte positive
-            (127i64, vec![0x7F]),     // max single byte positive
-            (-1i64, vec![0xFF]),      // single byte negative
-            (-128i64, vec![0x80]),    // min single byte negative
+            (0i64, vec![]),        // zero = empty
+            (1i64, vec![0x01]),    // single byte positive
+            (127i64, vec![0x7F]),  // max single byte positive
+            (-1i64, vec![0xFF]),   // single byte negative
+            (-128i64, vec![0x80]), // min single byte negative
         ];
 
         for (value, expected) in test_cases {
             let item = StackItem::from_i64(value);
             let bytes = item.as_bytes().unwrap();
-            assert_eq!(bytes, expected, "fast path for {value} should produce {expected:?}");
+            assert_eq!(
+                bytes, expected,
+                "fast path for {value} should produce {expected:?}"
+            );
         }
 
         // Larger values fall back to BigInt serialization
         let large = StackItem::from_i64(128);
         let bytes = large.as_bytes().unwrap();
-        assert_eq!(bytes, vec![0x80, 0x00], "128 requires two bytes with sign bit");
+        assert_eq!(
+            bytes,
+            vec![0x80, 0x00],
+            "128 requires two bytes with sign bit"
+        );
     }
 
     #[test]
     fn into_bytes_small_integer_fast_path() {
         // PERF REGRESSION: into_bytes also uses fast path for small integers
-        let test_cases = vec![
-            (0i64, vec![]),
-            (42i64, vec![0x2A]),
-            (-1i64, vec![0xFF]),
-        ];
+        let test_cases = vec![(0i64, vec![]), (42i64, vec![0x2A]), (-1i64, vec![0xFF])];
 
         for (value, expected) in test_cases {
             let item = StackItem::from_i64(value);
@@ -1378,8 +1539,16 @@ mod zero_allocation_perf_tests {
         assert!(StackItem::ByteString(vec![0x01, 0x00]).as_bool().unwrap());
 
         // Compound types are always true (even empty)
-        assert!(StackItem::Buffer(BufferItem::new(vec![])).as_bool().unwrap());
-        assert!(StackItem::from_array(Vec::<StackItem>::new()).as_bool().unwrap());
+        assert!(
+            StackItem::Buffer(BufferItem::new(vec![]))
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            StackItem::from_array(Vec::<StackItem>::new())
+                .as_bool()
+                .unwrap()
+        );
     }
 
     #[test]

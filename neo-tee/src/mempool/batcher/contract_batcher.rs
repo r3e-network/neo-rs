@@ -284,9 +284,7 @@ impl ContractBatchScheduler {
         for (op, size) in &INSTRUCTION_SIZES {
             if *op == opcode {
                 if pos + size <= data.len() {
-                    return Some(InstructionInfo {
-                        size: *size,
-                    });
+                    return Some(InstructionInfo { size: *size });
                 }
             }
         }
@@ -509,7 +507,8 @@ impl<T> PriorityQ<T> {
         self.items.len()
     }
 
-    /// Check if queue is empty
+    /// Check if queue is empty (test helper).
+    #[cfg(test)]
     fn is_empty(&self) -> bool {
         self.items.is_empty()
     }

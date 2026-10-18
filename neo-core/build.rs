@@ -17,7 +17,7 @@ fn main() {
 
     tonic_build::configure()
         .build_server(false)
-        .compile(&[object_proto], &[proto_root])
+        .compile_protos(&[object_proto], &[proto_root])
         .expect("failed to compile neofs protos");
 
     println!("cargo:rerun-if-changed=proto/neofs/object/service.proto");

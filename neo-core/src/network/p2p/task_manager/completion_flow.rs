@@ -50,6 +50,15 @@ impl TaskManager {
 
         let actor_ref = entry.actor.clone();
 
+        // Capture whether this block was actually requested before completing
+        // the task entries (which removes them from the session).
+        let block_was_requested = block.as_ref().is_some_and(|block_ref| {
+            let index = block_ref.index();
+            entry.session.index_tasks.contains_key(&index)
+                || entry.session.inv_tasks.contains_key(&hash)
+                || entry.session.received_block.contains_key(&index)
+        });
+
         if entry.session.complete_inv_task(&hash) {
             self.decrement_inv_task(&hash);
         }
@@ -73,44 +82,72 @@ impl TaskManager {
             // persistence may lag behind block download by many blocks.
             should_request = true;
             let index = block_payload.index();
-            match validate_incoming_block(block_payload, entry.session.received_block.get(&index)) {
-                IncomingBlockOutcome::Store { index, block } => {
-                    entry.session.store_received_block(index, block);
-                }
-                IncomingBlockOutcome::KeepExisting => {}
-                IncomingBlockOutcome::Disconnect {
-                    index,
-                    reason,
-                    hash_error,
-                    remove_cached,
-                } => {
-                    if let Some(error) = hash_error {
-                        match reason {
-                            IncomingBlockDisconnect::InvalidIncomingHash => {
-                                warn!(
-                                    target: "neo",
-                                    actor = %actor_ref.path(),
-                                    block_index = index,
-                                    %error,
-                                    "disconnecting peer after receiving block with unhashable header"
-                                );
-                            }
-                            IncomingBlockDisconnect::InvalidCachedHash => {
-                                warn!(
-                                    target: "neo",
-                                    actor = %actor_ref.path(),
-                                    block_index = index,
-                                    %error,
-                                    "discarding cached received block with unhashable header"
-                                );
-                            }
-                            IncomingBlockDisconnect::ConflictingBlock => {}
+            let requested = block_was_requested
+                || entry.session.index_tasks.contains_key(&index)
+                || entry.session.inv_tasks.contains_key(&hash)
+                || entry.session.received_block.contains_key(&index);
+            if !requested {
+                // Never retain unsolicited blocks: they are the cheapest way for
+                // a peer to pin memory before validation.
+                trace!(
+                    target: "neo",
+                    actor = %actor_ref.path(),
+                    block_index = index,
+                    hash = %hash,
+                    "dropping unsolicited block payload"
+                );
+            } else {
+                match validate_incoming_block(
+                    block_payload,
+                    entry.session.received_block.get(&index),
+                ) {
+                    IncomingBlockOutcome::Store { index, block } => {
+                        if !entry.session.store_received_block(index, block) {
+                            warn!(
+                                target: "neo",
+                                actor = %actor_ref.path(),
+                                block_index = index,
+                                retained_blocks = entry.session.received_block.len(),
+                                retained_bytes = entry.session.received_block_bytes(),
+                                "dropping block: per-peer received-block budget exceeded"
+                            );
                         }
                     }
-                    if remove_cached {
-                        entry.session.received_block.remove(&index);
+                    IncomingBlockOutcome::KeepExisting => {}
+                    IncomingBlockOutcome::Disconnect {
+                        index,
+                        reason,
+                        hash_error,
+                        remove_cached,
+                    } => {
+                        if let Some(error) = hash_error {
+                            match reason {
+                                IncomingBlockDisconnect::InvalidIncomingHash => {
+                                    warn!(
+                                        target: "neo",
+                                        actor = %actor_ref.path(),
+                                        block_index = index,
+                                        %error,
+                                        "disconnecting peer after receiving block with unhashable header"
+                                    );
+                                }
+                                IncomingBlockDisconnect::InvalidCachedHash => {
+                                    warn!(
+                                        target: "neo",
+                                        actor = %actor_ref.path(),
+                                        block_index = index,
+                                        %error,
+                                        "discarding cached received block with unhashable header"
+                                    );
+                                }
+                                IncomingBlockDisconnect::ConflictingBlock => {}
+                            }
+                        }
+                        if remove_cached {
+                            entry.session.remove_received_block(index);
+                        }
+                        disconnect_reason = Some(reason.reason().to_string());
                     }
-                    disconnect_reason = Some(reason.reason().to_string());
                 }
             }
         }
@@ -159,7 +196,7 @@ impl TaskManager {
         let mut to_request = Vec::with_capacity(session_count);
 
         for (path, entry) in self.sessions.iter_mut() {
-            if let Some(stored) = entry.session.received_block.remove(&index) {
+            if let Some(stored) = entry.session.remove_received_block(index) {
                 match match_persisted_block(stored, &hash) {
                     PersistedBlockMatch::Matches => {
                         to_request.push(path.clone());

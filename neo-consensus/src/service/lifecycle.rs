@@ -19,6 +19,7 @@ impl ConsensusService {
 
         info!(block_index, "Starting consensus");
         self.context.reset_for_new_block(block_index, timestamp);
+        self.pending_commits.clear();
         self.context.prev_hash = prev_hash;
         self.context.version = version;
         self.running = true;

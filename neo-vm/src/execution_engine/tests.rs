@@ -291,4 +291,16 @@ mod execution_engine_tests {
         // Test gas remaining at 0
         assert_eq!(engine.gas_remaining(), 0);
     }
+
+    #[test]
+    fn max_stack_size_is_enforced_after_execution() {
+        let mut engine = ExecutionEngine::new(None);
+        // 2049 pushes exceed the default MaxStackSize (2048). C# FAULTs after
+        // the instruction that crosses the limit.
+        let script_bytes = vec![OpCode::PUSH1.byte(); 2049];
+        engine
+            .load_script(Script::new_relaxed(script_bytes), -1, 0)
+            .expect("load script");
+        assert_eq!(engine.execute(), VMState::FAULT);
+    }
 }

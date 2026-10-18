@@ -1,0 +1,18 @@
+[package]
+name = "validation-diff"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+neo-core = { path = "../../neo-core" }
+neo-primitives = { path = "../../neo-primitives" }
+neo-io = { path = "../../neo-io" }
+hex = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+
+[[bin]]
+name = "rust-validator"
+path = "rust_validator_cli.rs"

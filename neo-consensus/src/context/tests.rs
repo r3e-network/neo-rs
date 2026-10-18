@@ -801,3 +801,20 @@ fn test_message_cache_duplicate_and_contains_do_not_refresh_lru_order() {
     assert!(ctx.has_seen_message(&second_hash));
     assert!(ctx.has_seen_message(&overflow_hash));
 }
+
+#[test]
+fn commit_signing_waits_for_proposed_transactions() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+    ctx.proposed_block_hash = Some(UInt256::zero());
+    ctx.preparation_hash = Some(UInt256::zero());
+    ctx.proposed_tx_hashes = vec![UInt256::from([0x11; 32])];
+
+    assert!(
+        !ctx.can_sign_commit(),
+        "must not sign a commit before the proposed transactions are present"
+    );
+
+    ctx.mark_transactions_available();
+    assert!(ctx.can_sign_commit());
+}

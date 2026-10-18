@@ -33,12 +33,12 @@ pub(super) fn execute(opcode: u8, stack: &mut Vec<StackValue>) -> Result<Dispatc
         EQUAL => {
             let right = value_stack.pop_interpreter_value()?;
             let left = value_stack.pop_interpreter_value()?;
-            value_stack.push_interpreter_value(StackValue::Boolean(vm_equal(&left, &right)));
+            value_stack.push_interpreter_value(StackValue::Boolean(vm_equal(&left, &right)?));
         }
         NOTEQUAL => {
             let right = value_stack.pop_interpreter_value()?;
             let left = value_stack.pop_interpreter_value()?;
-            value_stack.push_interpreter_value(StackValue::Boolean(!vm_equal(&left, &right)));
+            value_stack.push_interpreter_value(StackValue::Boolean(!vm_equal(&left, &right)?));
         }
         LT => stack_shape::binary_bool(&mut value_stack, comparison_rules::less_than_values)?,
         LE => stack_shape::binary_bool(&mut value_stack, comparison_rules::less_or_equal_values)?,

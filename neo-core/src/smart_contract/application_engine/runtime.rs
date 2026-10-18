@@ -129,8 +129,10 @@ impl ApplicationEngine {
                 self.check_witness_hash(&hash).map_err(|e| e.to_string())?
             }
             33 => {
-                // Convert public key to hash
-                let hash = self.pubkey_to_hash(&hash_or_pubkey);
+                // Convert public key to hash (validates the curve point).
+                let hash = self
+                    .pubkey_to_hash(&hash_or_pubkey)
+                    .map_err(|e| e.to_string())?;
                 self.check_witness_hash(&hash).map_err(|e| e.to_string())?
             }
             _ => {

@@ -224,7 +224,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                 )?;
                 let right = pop_item(&mut stack)?;
                 let left = pop_item(&mut stack)?;
-                if vm_equal(&left, &right) {
+                if vm_equal(&left, &right)? {
                     ip = compute_jump_target_offset(ip, offset, script.len(), "JMPEQ")?;
                     continue;
                 }
@@ -561,7 +561,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                 )?;
                 let right = pop_item(&mut stack)?;
                 let left = pop_item(&mut stack)?;
-                if !vm_equal(&left, &right) {
+                if !vm_equal(&left, &right)? {
                     ip = compute_jump_target_offset(ip, offset, script.len(), "JMPNE")?;
                     continue;
                 }

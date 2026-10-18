@@ -147,6 +147,7 @@ impl ConsensusService {
             Some(invocation_script_from_signature(&payload.witness));
         self.context.proposed_timestamp = prepare_request.timestamp;
         self.context.nonce = prepare_request.nonce;
+        self.context.transactions_available = prepare_request.transaction_hashes.is_empty();
         self.context.proposed_tx_hashes = prepare_request.transaction_hashes;
 
         // Cache PrepareRequest payload hash (ExtensiblePayload.Hash) for PrepareResponse.
@@ -154,12 +155,33 @@ impl ConsensusService {
         if let Some(expected) = self.context.preparation_hash {
             // Drop buffered PrepareResponses that voted for a different hash
             // (early responses stored before this PrepareRequest arrived).
+            let before_count = self.context.prepare_responses.len();
             self.context
                 .prepare_responses
                 .retain(|idx, _| self.context.prepare_response_hashes.get(idx) == Some(&expected));
             self.context
                 .prepare_response_hashes
                 .retain(|_, hash| *hash == expected);
+
+            let purged = before_count - self.context.prepare_responses.len();
+            if purged > 0 {
+                warn!(
+                    block_index = self.context.block_index,
+                    purged_count = purged,
+                    "Purged PrepareResponses with mismatched preparation_hash - possible primary equivocation"
+                );
+                // If more than f responses were purged, consider requesting view change
+                // as this suggests the primary may be equivocating (sending different
+                // proposals to different validators).
+                if purged > self.context.f() {
+                    warn!(
+                        block_index = self.context.block_index,
+                        purged_count = purged,
+                        f = self.context.f(),
+                        "Suspicious: purged count exceeds f - primary may be equivocating"
+                    );
+                }
+            }
         }
 
         // Calculate block header hash from proposal data (for commit signatures).
@@ -184,6 +206,10 @@ impl ConsensusService {
 
         // Buffered early PrepareResponses may now form a quorum.
         self.check_prepare_responses()?;
+
+        // Commits that arrived before this proposal can now be authenticated
+        // against the block hash. If they already form M, finalize immediately.
+        self.promote_pending_commits()?;
 
         Ok(())
     }

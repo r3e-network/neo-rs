@@ -106,14 +106,16 @@ impl RemoteNode {
             return true;
         };
 
-        let Some(wire_message) = RemoteNode::build_wire_message(message) else {
-            return true;
-        };
-
         message_handlers::with_handlers(|handlers| {
             if handlers.is_empty() {
                 return true;
             }
+            // Serialize/decompress only when a handler actually needs the
+            // wire-format message. Building it unconditionally doubled LZ4
+            // work and transient allocations for every inbound frame.
+            let Some(wire_message) = RemoteNode::build_wire_message(message) else {
+                return true;
+            };
             for entry in handlers {
                 if !entry
                     .handler

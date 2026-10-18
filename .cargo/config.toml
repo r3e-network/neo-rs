@@ -1,6 +1,15 @@
 [build]
 jobs = 2
 
+# librocksdb-sys' Windows port uses FILE_ID_INFO / FileIdInfo, which MinGW
+# headers only expose when _WIN32_WINNT targets Windows 8+. Without this the
+# production `rocksdb` feature fails to compile on Windows GNU toolchains.
+# The macro is ignored by non-Windows compilers; an explicit user CFLAGS /
+# CXXFLAGS still wins because force is false.
+[env]
+CFLAGS = { value = "-D_WIN32_WINNT=0x0A00", force = false }
+CXXFLAGS = { value = "-D_WIN32_WINNT=0x0A00", force = false }
+
 [profile.dev]
 split-debuginfo = "unpacked"
 debug = 1

@@ -77,12 +77,19 @@ impl PersistedTransactionState {
 #[derive(Clone, Default)]
 pub struct LedgerTransactionStates {
     states: Vec<PersistedTransactionState>,
+    /// Lazily built hash -> index map. The per-transaction execution loop calls
+    /// `mark_vm_state` once for every transaction; without this map a block
+    /// with N transactions paid O(N^2) hash lookups.
+    index: Option<std::collections::HashMap<UInt256, usize>>,
 }
 
 impl LedgerTransactionStates {
     /// Creates a collection from the given transaction states.
     pub fn new(states: Vec<PersistedTransactionState>) -> Self {
-        Self { states }
+        Self {
+            states,
+            index: None,
+        }
     }
 
     /// Returns the contained transaction states in order.
@@ -90,26 +97,41 @@ impl LedgerTransactionStates {
         &self.states
     }
 
-    /// Sets the VM state of the transaction with `hash`, returning whether a match was found.
-    pub fn mark_vm_state(&mut self, hash: &UInt256, vm_state: VMState) -> bool {
-        for state in &mut self.states {
+    fn ensure_index(&mut self) {
+        if self.index.is_some() {
+            return;
+        }
+        let mut index = std::collections::HashMap::with_capacity(self.states.len());
+        for (position, state) in self.states.iter().enumerate() {
             match state.try_transaction_hash() {
-                Ok(tx_hash) if &tx_hash == hash => {
-                    state.set_vm_state(vm_state);
-                    return true;
+                Ok(hash) => {
+                    index.entry(hash).or_insert(position);
                 }
-                Ok(_) => {}
                 Err(error) => {
                     tracing::warn!(
                         target: "neo",
                         block_index = state.block_index(),
                         %error,
-                        "skipping transaction VM-state mark because transaction hash failed"
+                        "skipping transaction VM-state index because transaction hash failed"
                     );
                 }
             }
         }
-        false
+        self.index = Some(index);
+    }
+
+    /// Sets the VM state of the transaction with `hash`, returning whether a match was found.
+    pub fn mark_vm_state(&mut self, hash: &UInt256, vm_state: VMState) -> bool {
+        self.ensure_index();
+        let Some(position) = self
+            .index
+            .as_ref()
+            .and_then(|index| index.get(hash).copied())
+        else {
+            return false;
+        };
+        self.states[position].set_vm_state(vm_state);
+        true
     }
 
     /// Consumes the collection into `(hash, VM state)` pairs, panicking if any hash cannot be computed.

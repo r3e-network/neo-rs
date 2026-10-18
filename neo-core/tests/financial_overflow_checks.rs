@@ -30,12 +30,14 @@ fn test_multi_signature_contract_cost_no_overflow() {
 
 #[test]
 fn test_multi_signature_contract_cost_extreme_values() {
-    // Test with very large values that could cause overflow without saturation
+    // `m` and `n` are ABI-level i32 values. Even at i32::MAX the cost is
+    // ~7e13, which is far below i64::MAX, so saturation is not expected here;
+    // the contract is only to avoid wrapping or panicking.
     let cost = ContractHelper::multi_signature_contract_cost(i32::MAX, i32::MAX);
-    // Should saturate rather than panic or wrap
+    assert!(cost > 0, "cost must stay positive");
     assert!(
-        cost == i64::MAX,
-        "Extreme values should saturate to i64::MAX"
+        cost < i64::MAX,
+        "i32-bounded inputs must not saturate i64::MAX"
     );
 }
 

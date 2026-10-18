@@ -1,3 +1,5 @@
+#![cfg(feature = "runtime")]
+
 use neo_core::Transaction;
 /// Phase-4 Module #3: RwSet Conflict Detection Refinement Tests
 ///

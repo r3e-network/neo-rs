@@ -4,7 +4,6 @@ use crate::{
     NEOVM_STACK_ITEM_TYPE_BUFFER, NEOVM_STACK_ITEM_TYPE_BYTESTRING, NEOVM_STACK_ITEM_TYPE_INTEGER,
     NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE, NEOVM_STACK_ITEM_TYPE_MAP,
     NEOVM_STACK_ITEM_TYPE_STRUCT, StackItemType,
-    interpreter::runtime_types::structurally_equal,
     semantics::{
         collections as collection_rules, comparison as comparison_rules,
         conversion as conversion_rules, numeric,
@@ -68,30 +67,87 @@ pub(crate) fn primitive_key_equals(left: &StackValue, right: &StackValue) -> boo
     collection_rules::primitive_key_equal(&to_abi_value(left), &to_abi_value(right))
 }
 
-pub(crate) fn vm_equal(left: &StackValue, right: &StackValue) -> bool {
+pub(crate) fn vm_equal(left: &StackValue, right: &StackValue) -> Result<bool, String> {
+    // Keep the fast interpreter's structural equality bounded exactly like
+    // the jump-table `StackItem::equals_with_limits` path. Without these
+    // budgets a deeply nested Struct can exhaust the Rust stack or compare an
+    // unbounded amount of data, while the C# reference throws.
+    let mut remaining_stack = 2048usize;
+    let mut remaining_comparable = 65536usize;
+    vm_equal_with_budget(left, right, &mut remaining_stack, &mut remaining_comparable)
+}
+
+fn vm_equal_with_budget(
+    left: &StackValue,
+    right: &StackValue,
+    remaining_stack: &mut usize,
+    remaining_comparable: &mut usize,
+) -> Result<bool, String> {
     match (left, right) {
-        (StackValue::Integer(l), StackValue::Integer(r)) => l == r,
+        (StackValue::Integer(l), StackValue::Integer(r)) => Ok(l == r),
         (StackValue::Integer(l), StackValue::BigInteger(r))
         | (StackValue::BigInteger(r), StackValue::Integer(l)) => {
-            crate::abi::encode_integer(*l) == *r
+            Ok(crate::abi::encode_integer(*l) == *r)
         }
-        (StackValue::BigInteger(l), StackValue::BigInteger(r)) => l == r,
-        (StackValue::ByteString(l), StackValue::ByteString(r)) => l == r,
-        (StackValue::Boolean(l), StackValue::Boolean(r)) => l == r,
-        (StackValue::Pointer(l), StackValue::Pointer(r)) => l == r,
-        (StackValue::Null, StackValue::Null) => true,
-        (StackValue::Interop(l), StackValue::Interop(r)) => l == r,
-        (StackValue::Iterator(l), StackValue::Iterator(r)) => l == r,
+        (StackValue::BigInteger(l), StackValue::BigInteger(r)) => Ok(l == r),
+        (StackValue::ByteString(l), StackValue::ByteString(r)) => {
+            if *remaining_comparable == 0
+                || l.len() > *remaining_comparable
+                || r.len() > *remaining_comparable
+            {
+                return Err("The operand exceeds the maximum comparable size".to_string());
+            }
+            let compared = l.len().max(r.len()).max(1);
+            *remaining_comparable -= compared;
+            Ok(l == r)
+        }
+        (StackValue::Boolean(l), StackValue::Boolean(r)) => Ok(l == r),
+        (StackValue::Pointer(l), StackValue::Pointer(r)) => Ok(l == r),
+        (StackValue::Null, StackValue::Null) => Ok(true),
+        (StackValue::Interop(l), StackValue::Interop(r)) => Ok(l == r),
+        (StackValue::Iterator(l), StackValue::Iterator(r)) => Ok(l == r),
         (StackValue::Array(left_id, _), StackValue::Array(right_id, _))
         | (StackValue::Map(left_id, _), StackValue::Map(right_id, _))
-        | (StackValue::Buffer(left_id, _), StackValue::Buffer(right_id, _)) => left_id == right_id,
+        | (StackValue::Buffer(left_id, _), StackValue::Buffer(right_id, _)) => {
+            Ok(left_id == right_id)
+        }
         (StackValue::Struct(left_id, _), StackValue::Struct(right_id, _))
             if left_id == right_id =>
         {
-            true
+            Ok(true)
         }
-        (StackValue::Struct(_, _), StackValue::Struct(_, _)) => structurally_equal(left, right),
-        _ => false,
+        (StackValue::Struct(_, left_items), StackValue::Struct(_, right_items)) => {
+            if left_items.len() != right_items.len() {
+                return Ok(false);
+            }
+            for (left, right) in left_items.iter().zip(right_items.iter()) {
+                if *remaining_stack == 0 {
+                    return Err("Too many struct items to compare in struct comparison".to_string());
+                }
+                *remaining_stack -= 1;
+
+                if matches!(left, StackValue::ByteString(_)) {
+                    if !vm_equal_with_budget(left, right, remaining_stack, remaining_comparable)? {
+                        return Ok(false);
+                    }
+                    continue;
+                }
+
+                if *remaining_comparable == 0 {
+                    return Err(
+                        "The operand exceeds the maximum comparable size in struct comparison"
+                            .to_string(),
+                    );
+                }
+                *remaining_comparable -= 1;
+
+                if !vm_equal_with_budget(left, right, remaining_stack, remaining_comparable)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+        _ => Ok(false),
     }
 }
 
@@ -229,4 +285,35 @@ pub(crate) fn compute_jump_target_offset(
         return Err(format!("{name} target out of bounds"));
     }
     Ok(target as usize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn struct_equality_is_bounded_like_the_jump_table() {
+        let items = vec![StackValue::Integer(1); 2049];
+        let left = StackValue::Struct(1, items.clone());
+        let right = StackValue::Struct(2, items);
+        assert!(
+            vm_equal(&left, &right).is_err(),
+            "struct comparison must fail once the MaxStackSize budget is exhausted"
+        );
+    }
+
+    #[test]
+    fn struct_equality_accepts_exactly_the_budget() {
+        let items = vec![StackValue::Integer(1); 2048];
+        let left = StackValue::Struct(1, items.clone());
+        let right = StackValue::Struct(2, items);
+        assert_eq!(vm_equal(&left, &right), Ok(true));
+    }
+
+    #[test]
+    fn byte_string_equality_respects_max_comparable_size() {
+        let left = StackValue::ByteString(vec![0x11; 65_537]);
+        let right = StackValue::ByteString(vec![0x11; 65_537]);
+        assert!(vm_equal(&left, &right).is_err());
+    }
 }

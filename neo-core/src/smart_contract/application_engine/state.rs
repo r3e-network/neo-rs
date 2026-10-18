@@ -131,6 +131,39 @@ impl ApplicationEngine {
         native_contract_cache: Arc<Mutex<NativeContractsCache>>,
         diagnostic: Option<Box<dyn Diagnostic>>,
     ) -> Result<Self> {
+        let contracts = contracts
+            .into_iter()
+            .map(|(hash, state)| (hash, Arc::new(state)))
+            .collect();
+        Self::new_with_preloaded_native_shared(
+            trigger,
+            script_container,
+            snapshot_cache,
+            persisting_block,
+            protocol_settings,
+            gas_limit,
+            contracts,
+            native_contract_cache,
+            diagnostic,
+        )
+    }
+
+    /// Shared-contract-state variant used by the block persistence pipeline.
+    ///
+    /// Cloning the map only bumps `Arc` references; the NEF scripts and
+    /// manifests are not copied per transaction.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_preloaded_native_shared(
+        trigger: TriggerType,
+        script_container: Option<Arc<dyn Verifiable>>,
+        snapshot_cache: Arc<DataCache>,
+        persisting_block: Option<Arc<Block>>,
+        protocol_settings: ProtocolSettings,
+        gas_limit: i64,
+        contracts: HashMap<UInt160, Arc<ContractState>>,
+        native_contract_cache: Arc<Mutex<NativeContractsCache>>,
+        diagnostic: Option<Box<dyn Diagnostic>>,
+    ) -> Result<Self> {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
@@ -383,11 +416,13 @@ impl ApplicationEngine {
     /// a single shift semantic regardless of the active hardfork (report R06).
     fn select_hardfork_vm_semantics(&mut self) {
         let mut limits = neo_vm::ExecutionEngineLimits::DEFAULT;
-        limits.zero_shift_converts_to_integer = self
+        let gorgon_enabled = self
             .protocol_settings
             .hardforks
             .get(&crate::hardfork::Hardfork::HfGorgon)
             .is_some_and(|activation| self.current_block_index() >= *activation);
+        limits.zero_shift_converts_to_integer = gorgon_enabled;
+        limits.pre_gorgon_collection_semantics = !gorgon_enabled;
         self.vm_engine.engine_mut().set_limits(limits);
     }
     /// Returns the timestamp of the block currently being persisted.
@@ -541,6 +576,16 @@ impl ApplicationEngine {
     }
     /// Returns a snapshot (clone) of the deployed contract states known to this engine.
     pub fn contracts_snapshot(&self) -> HashMap<UInt160, ContractState> {
+        self.contracts
+            .iter()
+            .map(|(hash, state)| (*hash, (**state).clone()))
+            .collect()
+    }
+    /// Returns a cheap snapshot with shared contract states.
+    ///
+    /// Public for profiling; normal callers should use [`Self::contracts_snapshot`].
+    #[doc(hidden)]
+    pub fn contracts_shared_snapshot(&self) -> HashMap<UInt160, Arc<ContractState>> {
         self.contracts.clone()
     }
     /// Returns a clone of the current snapshot cache.
@@ -558,7 +603,7 @@ impl ApplicationEngine {
         self.native_registry.contracts().collect()
     }
     pub(super) fn get_contract(&self, hash: &UInt160) -> Option<&ContractState> {
-        self.contracts.get(hash)
+        self.contracts.get(hash).map(Arc::as_ref)
     }
     /// Extracts all storage changes from the execution as raw key-value pairs.
     ///

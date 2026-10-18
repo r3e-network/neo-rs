@@ -110,7 +110,7 @@ fn test_signature_contract_compactness() {
 /// Test 5: Invocation counter tracks multiple invocations correctly
 #[test]
 fn test_invocation_counter_increment() {
-    let contract = Contract::create_with_hash(UInt160::default(), vec![]);
+    let _contract = Contract::create_with_hash(UInt160::default(), vec![]);
 
     // Simulate invocation tracking via ApplicationEngine pattern
     let mut invocation_count = 0u32;
@@ -230,7 +230,6 @@ fn test_script_hash_matches_hash160() {
 #[test]
 fn test_multisig_n_parameter_range() {
     use neo_core::cryptography::{ECCurve, ECPoint};
-    use neo_core::error::CoreError;
 
     // These should succeed
     let valid_ns = vec![1usize, 10, 100, 512, 1024];
@@ -262,25 +261,8 @@ fn test_multisig_n_parameter_range() {
         );
     }
 
-    // n > 1024 should fail
-    let invalid_n = 1025usize;
-    let mut keys = Vec::with_capacity(invalid_n.min(10));
-    for i in 0..invalid_n.min(10) {
-        let mut bytes = vec![0x02u8];
-        bytes.extend_from_slice(&[(i % 255) as u8; 32]);
-
-        if let Ok(key) = ECPoint::from_bytes_with_curve(ECCurve::Secp256r1, &bytes) {
-            keys.push(key);
-        }
-    }
-
-    let result = Contract::try_create_multi_sig_redeem_script(1, &keys);
-
-    // n > 1024 should fail (skip as hard to generate valid keys at scale)
-    // let invalid_n = 1025usize;
-    // ...
-
-    assert!(true, "n parameter validation skipped");
+    // The n > 1024 rejection path is covered by the guarded constructor unit
+    // test; constructing 1025 valid secp256r1 keys here would be prohibitive.
 }
 
 // /// Test 10: Multi-sig parameter validation (m constraint) - SKIPPED DUE TO KEYGEN ISSUES

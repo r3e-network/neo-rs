@@ -207,13 +207,11 @@ impl ConsensusService {
                 }
             }
 
-            #[allow(clippy::collapsible_if)]
-            if self.context.preparation_hash.is_none() {
-                if let Some(hash) = recovery.preparation_hash {
-                    self.context.preparation_hash = Some(hash);
-                }
-            }
-
+            // Do not publish a recovery message's claimed PreparationHash into
+            // `context.preparation_hash`. C# keeps the recovery hash local and
+            // only accepts the primary slot after a verified PrepareRequest;
+            // setting it here let any single validator poison the expected hash
+            // and reject every honest PrepareResponse for the view.
             let primary_index = self.context.primary_index();
             let prep_hash = recovery.preparation_hash.or(self.context.preparation_hash);
             if let Some(prep_hash) = prep_hash {

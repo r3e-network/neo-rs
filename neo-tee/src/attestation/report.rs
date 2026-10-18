@@ -667,8 +667,12 @@ mod tests {
         // Should be valid within 1 second (assuming test runs fast)
         assert!(report.verify_timestamp(Duration::from_secs(1)));
 
-        // Should be invalid for 0 seconds
-        assert!(!report.verify_timestamp(Duration::from_secs(0)));
+        // A report generated in the past must be rejected by a zero max-age.
+        // Using `simulated()`'s `now()` timestamp here was a race: on a fast
+        // machine the age can be exactly 0 and satisfy `age <= max_age`.
+        let mut expired = AttestationReport::simulated([0u8; 64]);
+        expired.timestamp = SystemTime::now() - Duration::from_secs(2);
+        assert!(!expired.verify_timestamp(Duration::from_secs(0)));
     }
 
     #[test]

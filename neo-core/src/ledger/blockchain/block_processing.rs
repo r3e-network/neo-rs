@@ -4,6 +4,7 @@
 
 use super::*;
 use dashmap::mapref::entry::Entry;
+use std::sync::atomic::Ordering;
 use tracing::instrument;
 
 /// Maximum blocks to persist in a single drain pass.
@@ -143,39 +144,128 @@ impl Blockchain {
         }
     }
 
-    async fn add_unverified_block(&self, block: Arc<Block>) {
-        if self._block_cache_unverified.len() >= MAX_UNVERIFIED_CACHE_SIZE {
-            tracing::warn!(
+    pub(super) async fn add_unverified_block(&self, block: Arc<Block>) {
+        let block_hash = match Self::try_block_hash(block.as_ref()) {
+            Ok(hash) => hash,
+            Err(error) => {
+                warn!(
+                    target: "neo",
+                    error = %error,
+                    index = block.index(),
+                    "unverified block hash computation failed, dropping block"
+                );
+                return;
+            }
+        };
+        let index = block.index();
+        let cost = Self::unverified_block_cost(block.as_ref());
+
+        if cost > MAX_UNVERIFIED_CACHE_BYTES {
+            warn!(
                 target: "neo",
-                cache_size = self._block_cache_unverified.len(),
-                "unverified block cache full, dropping oldest entries"
+                index,
+                cost,
+                limit = MAX_UNVERIFIED_CACHE_BYTES,
+                "unverified block exceeds cache byte budget, dropping block"
             );
-            // Evict entries with the highest block indices (furthest from persistence).
-            // Keeping the lowest indices ensures persist_block_sequence can drain
-            // consecutive blocks without gaps.
-            let mut indices: Vec<u32> = self
-                ._block_cache_unverified
+            return;
+        }
+
+        // Deduplicate by hash and bound the number of fork candidates kept for
+        // a single height. Without these caps a peer can pin unbounded memory
+        // by sending many different blocks for the same future height.
+        //
+        // When the per-height cap is full we evict the oldest candidate and
+        // accept the new one. Silently dropping the newcomer let an attacker
+        // pre-fill every future height with cheap bogus blocks and censor the
+        // honest block (whose hash is then suppressed by the peer dedup cache).
+        let mut evicted_cost = 0usize;
+        if let Some(mut existing) = self._block_cache_unverified.get_mut(&index) {
+            let duplicate = existing
+                .blocks
                 .iter()
-                .map(|r| *r.key())
-                .collect();
-            indices.sort_unstable();
-            let evict_count = self._block_cache_unverified.len() / 4; // remove 25%
-            for &idx in indices.iter().rev().take(evict_count) {
-                self._block_cache_unverified.remove(&idx);
+                .any(|candidate| Self::try_block_hash(candidate.as_ref()).ok() == Some(block_hash));
+            if duplicate {
+                return;
+            }
+            if existing.blocks.len() >= MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT
+                && let Some(evicted) = existing.blocks.first().cloned()
+            {
+                existing.blocks.remove(0);
+                evicted_cost = Self::unverified_block_cost(evicted.as_ref());
             }
         }
+        if evicted_cost > 0 {
+            let _ = self._unverified_cache_bytes.fetch_update(
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+                |current| Some(current.saturating_sub(evicted_cost)),
+            );
+            let _ = self._unverified_cache_blocks.fetch_update(
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+                |current| Some(current.saturating_sub(1)),
+            );
+        }
+
+        if !self.evict_unverified_for(cost) {
+            warn!(
+                target: "neo",
+                index,
+                cost,
+                "unable to free space in unverified block cache, dropping block"
+            );
+            return;
+        }
+
         self._block_cache_unverified
-            .entry(block.index())
+            .entry(index)
             .or_insert_with(UnverifiedBlocksList::new)
             .blocks
             .push(block);
+        self._unverified_cache_bytes
+            .fetch_add(cost, Ordering::Relaxed);
+        self._unverified_cache_blocks
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Evicts the highest-index unverified entries until `incoming_cost` fits
+    /// within both the block-count and byte budgets. Returns false when no
+    /// further eviction is possible and the incoming block still does not fit.
+    fn evict_unverified_for(&self, incoming_cost: usize) -> bool {
+        loop {
+            let bytes = self._unverified_cache_bytes.load(Ordering::Relaxed);
+            let blocks = self._unverified_cache_blocks.load(Ordering::Relaxed);
+            if bytes.saturating_add(incoming_cost) <= MAX_UNVERIFIED_CACHE_BYTES
+                && blocks < MAX_UNVERIFIED_CACHE_SIZE
+            {
+                return true;
+            }
+
+            let Some(max_index) = self
+                ._block_cache_unverified
+                .iter()
+                .map(|entry| *entry.key())
+                .max()
+            else {
+                return false;
+            };
+
+            if self.remove_unverified_index(max_index).is_none() {
+                return false;
+            }
+        }
     }
 
     async fn persist_block_sequence(&self, block: Arc<Block>) -> bool {
+        let Some(context) = self.system_context.as_ref() else {
+            return false;
+        };
         let mut next_index = block.index().saturating_add(1);
         let mut persisted_count = 1usize; // count the first block
 
-        // Process the first block
+        // Process the first block. It was verified by `on_new_block` immediately
+        // before this call when it was the next height.
         let first_succeeded = self.persist_block_via_system(&block);
         if first_succeeded {
             self.handle_persist_completed(PersistCompleted { block })
@@ -204,6 +294,19 @@ impl Blockchain {
             let Some(next_block) = maybe_block else {
                 break;
             };
+
+            // Blocks in the unverified cache were not validated when they
+            // arrived. Validate against the verified header (or run full
+            // verification) before committing state. Try any remaining fork
+            // candidates at this height before giving up.
+            if !self.verify_block_for_persistence(next_block.as_ref(), context) {
+                warn!(
+                    target: "neo",
+                    index = next_block.index(),
+                    "dropping unverified block that failed pre-persist verification"
+                );
+                continue;
+            }
 
             let succeeded = self.persist_block_via_system(&next_block);
             if succeeded {
@@ -249,7 +352,19 @@ impl Blockchain {
                 break;
             };
 
-            // Also insert into block_cache for dedup (matches on_new_block path)
+            // The block may have come from the unverified cache (never
+            // validated) or from the verified block cache. Re-check it against
+            // the verified header chain before committing state.
+            if !self.verify_block_for_persistence(block.as_ref(), context) {
+                warn!(
+                    target: "neo",
+                    index = next_index,
+                    "drain_unverified: block failed pre-persist verification"
+                );
+                continue;
+            }
+
+            // Insert into block_cache for dedup only after verification.
             let hash = match Self::try_block_hash(block.as_ref()) {
                 Ok(hash) => hash,
                 Err(error) => {
@@ -273,6 +388,8 @@ impl Blockchain {
                 current_height = next_index;
                 persisted += 1;
             } else {
+                // Allow the block to be retried when it arrives again.
+                self._block_cache.remove(&hash);
                 warn!(
                     target: "neo",
                     index = next_index,
@@ -320,14 +437,26 @@ impl Blockchain {
 
     /// Pop a single block from the unverified cache at the given index.
     fn pop_from_unverified(&self, index: u32) -> Option<Arc<Block>> {
-        let mut entry = self._block_cache_unverified.get_mut(&index)?;
-        let block = entry.blocks.pop();
-        let is_empty = entry.blocks.is_empty();
-        drop(entry);
-        if is_empty {
+        let (block, cost, empty) = {
+            let mut entry = self._block_cache_unverified.get_mut(&index)?;
+            let block = entry.blocks.pop()?;
+            let cost = Self::unverified_block_cost(block.as_ref());
+            (block, cost, entry.blocks.is_empty())
+        };
+        if empty {
             self._block_cache_unverified.remove(&index);
         }
-        block
+        let _ = self._unverified_cache_bytes.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |current| Some(current.saturating_sub(cost)),
+        );
+        let _ = self._unverified_cache_blocks.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |current| Some(current.saturating_sub(1)),
+        );
+        Some(block)
     }
 
     pub(super) async fn on_new_extensible(&self, payload: ExtensiblePayload) -> VerifyResult {

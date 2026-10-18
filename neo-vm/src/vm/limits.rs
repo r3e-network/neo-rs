@@ -39,6 +39,10 @@ pub struct ExecutionEngineLimits {
     /// pushing it (Gorgon hardfork semantics). When `false`, a zero shift
     /// preserves the operand's original stack item type (pre-Gorgon).
     pub zero_shift_converts_to_integer: bool,
+    /// Whether HASKEY applies the post-Gorgon `MaxItemSize` bound to
+    /// ByteString/Buffer indices. Pre-Gorgon nodes only reject negative or
+    /// out-of-range indices (Neo PR #543).
+    pub pre_gorgon_collection_semantics: bool,
     /// Maximum number of instructions that can be executed.
     ///
     /// The C# reference `ExecutionEngineLimits` has no instruction-count limit:
@@ -68,6 +72,7 @@ impl ExecutionEngineLimits {
         // Neo N3 v3.10.1 targets activate the Gorgon hardfork; pre-Gorgon
         // replay must clear this flag (see ApplicationEngine construction).
         zero_shift_converts_to_integer: true,
+        pre_gorgon_collection_semantics: false,
     };
 
     /// Ensures the provided item size does not exceed the configured limit.

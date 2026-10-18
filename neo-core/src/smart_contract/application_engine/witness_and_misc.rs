@@ -519,7 +519,7 @@ impl ApplicationEngine {
             if !self.contracts.contains_key(&hash)
                 && let Some(state) = contract.contract_state(&self.protocol_settings, block_height)
             {
-                self.contracts.insert(hash, state);
+                self.contracts.insert(hash, Arc::new(state));
             }
             if let Err(error) = contract.initialize(self) {
                 // C# parity: ApplicationEngine.Log fires only for the

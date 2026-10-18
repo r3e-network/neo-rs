@@ -107,6 +107,12 @@ fn complete_inventory_stores_hashable_block() {
         Weak::new(),
     );
     let path = insert_session(&mut manager, &actor);
+    manager
+        .sessions
+        .get_mut(&path)
+        .expect("session")
+        .session
+        .register_index_task(7);
     let block = block_with_index_and_nonce(7, 1);
     let hash = block_hash(&block);
 

@@ -1,6 +1,7 @@
 use super::ConsensusEvent;
 use crate::ConsensusSigner;
 use crate::context::{ConsensusContext, ValidatorInfo};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use zeroize::Zeroizing;
@@ -22,6 +23,13 @@ pub struct ConsensusService {
     pub(super) running: bool,
     /// True only while replaying a RecoveryMessage payload set.
     pub(super) is_recovering: bool,
+    /// Current-view commits received before the proposal block hash is known.
+    ///
+    /// C# stores these payloads and re-verifies them once the header exists
+    /// (`OnMessage.cs:122-130`). Dropping them made a late/restarted node
+    /// unable to reach M commits after recovery installed the proposal.
+    /// Key: validator index; value: (view, signature, invocation script).
+    pub(super) pending_commits: HashMap<u8, (u8, Vec<u8>, Vec<u8>)>,
 }
 
 impl ConsensusService {
@@ -42,6 +50,7 @@ impl ConsensusService {
             event_tx,
             running: false,
             is_recovering: false,
+            pending_commits: HashMap::new(),
         }
     }
 
@@ -61,6 +70,7 @@ impl ConsensusService {
             event_tx,
             running: false,
             is_recovering: false,
+            pending_commits: HashMap::new(),
         }
     }
 }

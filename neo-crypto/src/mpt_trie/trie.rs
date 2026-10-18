@@ -53,8 +53,29 @@ where
     }
 
     /// Commits pending cache changes to the underlying store.
+    ///
+    /// # Security Note
+    /// In debug builds, this performs post-commit verification to ensure the
+    /// in-memory root hash matches the persisted state. This catches partial
+    /// commit failures that could lead to consensus divergence.
     pub fn commit(&mut self) -> MptResult<()> {
-        self.cache.commit()
+        #[cfg(debug_assertions)]
+        let expected_root = self.root_hash();
+
+        self.cache.commit()?;
+
+        #[cfg(debug_assertions)]
+        {
+            // Post-commit verification: ensure root hash consistency
+            let actual_root = self.root_hash();
+            if expected_root != actual_root {
+                return Err(MptError::invalid(
+                    "root hash mismatch after commit - cache/store inconsistency detected",
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     /// Retrieves the value associated with the supplied key (if present).

@@ -26,7 +26,6 @@ pub struct StdLib {
 
 impl StdLib {
     const ID: i32 = -2;
-    const MAX_INPUT_LENGTH: usize = 1024;
 
     /// Creates a new StdLib contract.
     pub fn new() -> Self {

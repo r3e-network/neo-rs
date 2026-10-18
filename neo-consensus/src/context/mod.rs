@@ -153,6 +153,16 @@ pub struct ConsensusContext {
     pub proposed_timestamp: u64,
     /// Proposed transaction hashes
     pub proposed_tx_hashes: Vec<UInt256>,
+    /// Whether this node holds and has verified every transaction in
+    /// `proposed_tx_hashes`. C# refuses to sign a Commit or assemble a block
+    /// before `TransactionHashes.All(p => Transactions.ContainsKey(p))`.
+    ///
+    /// This is transient: after a restart the transactions must be re-fetched
+    /// and re-validated before this node signs again.
+    pub transactions_available: bool,
+    /// Validators that rejected each transaction in a `ChangeView` (C#
+    /// `InvalidTransactions`: hash -> set of validator public keys).
+    pub rejected_tx_validators: HashMap<UInt256, std::collections::HashSet<u8>>,
     /// Nonce for the block
     pub nonce: u64,
 
@@ -230,6 +240,8 @@ impl ConsensusContext {
             preparation_hash: None,
             proposed_timestamp: 0,
             proposed_tx_hashes: Vec::new(),
+            transactions_available: false,
+            rejected_tx_validators: HashMap::new(),
             nonce: 0,
             prepare_request_received: false,
             prepare_responses: HashMap::new(),
@@ -342,7 +354,50 @@ impl ConsensusContext {
     /// unverified proposal.
     #[must_use]
     pub fn can_sign_commit(&self) -> bool {
-        self.proposed_block_hash.is_some() && self.preparation_hash.is_some()
+        self.proposed_block_hash.is_some()
+            && self.preparation_hash.is_some()
+            && (self.proposed_tx_hashes.is_empty() || self.transactions_available)
+    }
+
+    /// Marks the proposed transaction set as locally present and verified.
+    ///
+    /// The upper layer must call this only after validating every hash in
+    /// `proposed_tx_hashes` (C# checks `Transactions.ContainsKey` for all of
+    /// them before signing or assembling a block).
+    pub fn mark_transactions_available(&mut self) {
+        self.transactions_available = true;
+    }
+
+    /// Records transactions rejected by a `ChangeView` sender.
+    pub fn record_rejected_hashes(&mut self, validator_index: u8, hashes: &[UInt256]) {
+        for hash in hashes {
+            self.rejected_tx_validators
+                .entry(*hash)
+                .or_default()
+                .insert(validator_index);
+        }
+    }
+
+    /// Returns hashes rejected by more than F validators.
+    ///
+    /// C# uses this set to avoid re-proposing transactions the network has
+    /// already rejected, which otherwise burns views indefinitely.
+    #[must_use]
+    pub fn rejected_hashes_above_f(&self) -> Vec<UInt256> {
+        let threshold = self.f();
+        self.rejected_tx_validators
+            .iter()
+            .filter(|(_, validators)| validators.len() > threshold)
+            .map(|(hash, _)| *hash)
+            .collect()
+    }
+
+    /// Returns true when more than F validators rejected `hash`.
+    #[must_use]
+    pub fn is_rejected_transaction(&self, hash: &UInt256) -> bool {
+        self.rejected_tx_validators
+            .get(hash)
+            .is_some_and(|validators| validators.len() > self.f())
     }
 
     /// Returns true if we have enough commits (M signatures)
@@ -398,6 +453,7 @@ impl ConsensusContext {
         self.preparation_hash = None;
         self.proposed_timestamp = 0;
         self.proposed_tx_hashes.clear();
+        self.transactions_available = false;
         self.nonce = 0;
 
         // Clear signatures
@@ -428,6 +484,8 @@ impl ConsensusContext {
         self.preparation_hash = None;
         self.proposed_timestamp = 0;
         self.proposed_tx_hashes.clear();
+        self.transactions_available = false;
+        self.rejected_tx_validators.clear();
         self.nonce = 0;
         self.prepare_request_received = false;
         self.prepare_responses.clear();
@@ -903,6 +961,8 @@ impl ConsensusContext {
             preparation_hash: state.preparation_hash,
             proposed_timestamp: state.proposed_timestamp,
             proposed_tx_hashes: state.proposed_tx_hashes,
+            transactions_available: false,
+            rejected_tx_validators: HashMap::new(),
             nonce: state.nonce,
             prepare_request_received: state.prepare_request_received,
             prepare_responses: state.prepare_responses,

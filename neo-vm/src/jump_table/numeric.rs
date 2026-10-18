@@ -267,26 +267,32 @@ fn compare_with_null(
 
 #[inline]
 fn lt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    compare_with_null(engine, false, true, false, comparison::less_than_values)
+    compare_with_null(engine, false, false, false, comparison::less_than_values)
 }
 
 #[inline]
 fn le(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    compare_with_null(engine, true, true, false, comparison::less_or_equal_values)
+    compare_with_null(
+        engine,
+        false,
+        false,
+        false,
+        comparison::less_or_equal_values,
+    )
 }
 
 #[inline]
 fn gt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
-    compare_with_null(engine, false, false, true, comparison::greater_than_values)
+    compare_with_null(engine, false, false, false, comparison::greater_than_values)
 }
 
 #[inline]
 fn ge(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     compare_with_null(
         engine,
-        true,
         false,
-        true,
+        false,
+        false,
         comparison::greater_or_equal_values,
     )
 }
@@ -402,27 +408,19 @@ mod tests {
     }
 
     #[test]
-    fn ordered_comparisons_keep_core_null_policy() {
-        assert!(run_bool(
-            StackItem::Null,
-            StackItem::from_i64(1),
-            OpCode::LT,
-            lt
-        ));
-        assert!(!run_bool(
-            StackItem::from_i64(1),
-            StackItem::Null,
-            OpCode::LT,
-            lt
-        ));
-        assert!(run_bool(StackItem::Null, StackItem::Null, OpCode::LE, le));
-        assert!(run_bool(
-            StackItem::from_i64(1),
-            StackItem::Null,
-            OpCode::GT,
-            gt
-        ));
-        assert!(run_bool(StackItem::Null, StackItem::Null, OpCode::GE, ge));
+    fn ordered_comparisons_reject_null_operands() {
+        // C# JumpTable.Numeric: LT/LE/GT/GE push false whenever either
+        // operand is Null. This applies to Null/Null as well.
+        for (left, right) in [
+            (StackItem::Null, StackItem::from_i64(1)),
+            (StackItem::from_i64(1), StackItem::Null),
+            (StackItem::Null, StackItem::Null),
+        ] {
+            assert!(!run_bool(left.clone(), right.clone(), OpCode::LT, lt));
+            assert!(!run_bool(left.clone(), right.clone(), OpCode::LE, le));
+            assert!(!run_bool(left.clone(), right.clone(), OpCode::GT, gt));
+            assert!(!run_bool(left, right, OpCode::GE, ge));
+        }
     }
 
     #[test]

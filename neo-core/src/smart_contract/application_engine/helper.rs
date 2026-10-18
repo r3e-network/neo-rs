@@ -165,13 +165,22 @@ impl ApplicationEngine {
         let item = self.peek(index)?;
         Ok(item.is_null())
     }
-    /// Helper to convert public key to script hash
-    pub fn pubkey_to_hash(&self, pubkey: &[u8]) -> UInt160 {
+    /// Helper to convert public key to script hash.
+    ///
+    /// C# `CheckWitness` decodes the point with `ECPoint.DecodePoint`, which
+    /// rejects invalid curve points. Hashing arbitrary 33 bytes would silently
+    /// return `false` instead of the C# FAULT.
+    pub fn pubkey_to_hash(&self, pubkey: &[u8]) -> Result<UInt160, String> {
+        crate::cryptography::ECPoint::from_bytes_with_curve(
+            crate::cryptography::ECCurve::Secp256r1,
+            pubkey,
+        )
+        .map_err(|error| format!("Invalid public key: {error}"))?;
         // Create signature redeem script
         let script = crate::smart_contract::helper::Helper::signature_redeem_script(pubkey);
         // Hash the script
         let hash_bytes = Crypto::hash160(&script);
-        UInt160::from_bytes(&hash_bytes).expect("hash160 produces 20 bytes")
+        Ok(UInt160::from_bytes(&hash_bytes).expect("hash160 produces 20 bytes"))
     }
     /// Helper to get current block time
     #[must_use]

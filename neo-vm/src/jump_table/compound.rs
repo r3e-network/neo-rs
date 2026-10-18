@@ -38,9 +38,40 @@ fn byte_sequence_key_value(key: &StackItem) -> VmResult<crate::StackValue> {
     Ok(crate::StackValue::Integer(index))
 }
 
-fn byte_sequence_has_key(value: crate::StackValue, key: &StackItem) -> VmResult<bool> {
+fn byte_sequence_has_key(
+    value: crate::StackValue,
+    key: &StackItem,
+    pre_gorgon: bool,
+) -> VmResult<bool> {
     let key = byte_sequence_key_value(key)?;
-    crate::semantics::collections::has_key(&value, &key).map_err(VmError::invalid_operation_msg)
+    let result = if pre_gorgon {
+        crate::semantics::collections::has_key_pre_gorgon(&value, &key)
+    } else {
+        crate::semantics::collections::has_key(&value, &key)
+    };
+    result.map_err(VmError::invalid_operation_msg)
+}
+
+/// Post-Gorgon HASKEY rejects indices at/above `MaxItemSize`; pre-Gorgon only
+/// rejects negative values (Neo PR #543). Arrays/structs must follow the same
+/// rule as ByteString/Buffer.
+fn has_key_collection_index(key: &StackItem, pre_gorgon: bool, type_name: &str) -> VmResult<usize> {
+    let index = key
+        .as_int()?
+        .to_i64()
+        .ok_or_else(|| VmError::invalid_operation_msg(format!("Invalid {type_name} index")))?;
+    if index < 0 {
+        return Err(VmError::invalid_operation_msg(format!(
+            "HASKEY: negative {type_name} index"
+        )));
+    }
+    if !pre_gorgon && index >= crate::MAX_ITEM_SIZE as i64 {
+        return Err(VmError::invalid_operation_msg(
+            "HASKEY: index exceeds MaxItemSize",
+        ));
+    }
+    usize::try_from(index)
+        .map_err(|_| VmError::invalid_operation_msg(format!("Invalid {type_name} index")))
 }
 
 fn pick_byte_sequence_item(value: crate::StackValue, index: usize) -> VmResult<StackItem> {
@@ -364,6 +395,7 @@ fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
 
 /// Implements the HASKEY operation.
 fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let pre_gorgon = engine.limits().pre_gorgon_collection_semantics;
     // Get the current context
     let context = engine
         .current_context_mut()
@@ -375,25 +407,21 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
 
     let result = match &collection {
         StackItem::Array(array) => {
-            let index = key
-                .as_int()?
-                .to_usize()
-                .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
+            let index = has_key_collection_index(&key, pre_gorgon, "array")?;
             index < array.len()
         }
         StackItem::Struct(structure) => {
-            let index = key
-                .as_int()?
-                .to_usize()
-                .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
+            let index = has_key_collection_index(&key, pre_gorgon, "struct")?;
             index < structure.len()
         }
         StackItem::Map(map) => map.contains_key(&key)?,
-        StackItem::ByteString(bytes) => {
-            byte_sequence_has_key(crate::StackValue::ByteString(bytes.clone()), &key)?
-        }
+        StackItem::ByteString(bytes) => byte_sequence_has_key(
+            crate::StackValue::ByteString(bytes.clone()),
+            &key,
+            pre_gorgon,
+        )?,
         StackItem::Buffer(buffer) => {
-            byte_sequence_has_key(crate::StackValue::Buffer(buffer.data()), &key)?
+            byte_sequence_has_key(crate::StackValue::Buffer(buffer.data()), &key, pre_gorgon)?
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -433,25 +461,41 @@ fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 
 /// Implements the VALUES operation.
 fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let limits = *engine.limits();
     // Get the current context
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the map from the stack
-    let map = context.pop()?;
-
-    // Get the values from the map
-    match map {
+    let item = context.pop()?;
+    let values: Vec<StackItem> = match item {
+        // C# `VMArray` includes `Struct` (Struct : Array).
+        StackItem::Array(array) => array.items(),
+        StackItem::Struct(structure) => structure.items(),
         StackItem::Map(map) => {
-            let values: Vec<StackItem> =
-                map.with_items(|items| items.iter().map(|(_, v)| v.clone()).collect());
-            let array = Array::new(values, Some(context.reference_counter().clone()))?;
-            context.push(StackItem::Array(array))?;
+            map.with_items(|items| items.iter().map(|(_, value)| value.clone()).collect())
         }
-        _ => return Err(VmError::invalid_type_simple("Expected Map")),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "VALUES expects an Array, Struct, or Map",
+            ));
+        }
+    };
+
+    // C# clones nested Struct values (which are mutable) with the engine
+    // limits; other item kinds are copied by reference.
+    let mut values_out = Vec::with_capacity(values.len());
+    for value in values {
+        match value {
+            StackItem::Struct(structure) => {
+                values_out.push(StackItem::Struct(structure.clone_with_limits(&limits)?))
+            }
+            other => values_out.push(other),
+        }
     }
 
+    let array = Array::new(values_out, Some(context.reference_counter().clone()))?;
+    context.push(StackItem::Array(array))?;
     Ok(())
 }
 
@@ -621,10 +665,11 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
             let idx = normalize_index("Buffer", &key.as_integer()?, buffer.len())?;
             pick_byte_sequence_item(crate::StackValue::Buffer(buffer.data()), idx)?
         }
-        _ => {
-            return Err(VmError::invalid_type_simple(
-                "Expected Array, Struct, Map, ByteString, or Buffer",
-            ));
+        other => {
+            return Err(VmError::invalid_type_simple(format!(
+                "PICKITEM: unsupported {:?}",
+                other.stack_item_type()
+            )));
         }
     };
 

@@ -2,6 +2,12 @@ use super::*;
 impl InteropHost for ApplicationEngine {
     fn invoke_syscall(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
         if let Some(entry) = self.interop_handlers.get(&hash).copied() {
+            if !self.has_call_flags(entry.required_call_flags) {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Missing required call flags: {:?}",
+                    entry.required_call_flags
+                )));
+            }
             if entry.price > 0 {
                 self.add_cpu_fee(entry.price)
                     .map_err(map_core_error_to_vm_error)?;

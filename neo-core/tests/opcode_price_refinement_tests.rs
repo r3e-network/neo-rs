@@ -38,16 +38,23 @@ fn specific_opcode_prices_match_expected() {
         "SYSCALL price mismatch"
     );
 
-    // NEWARRAY (0xc5) should be 512
+    // NEWSTRUCT0 (0xc5) should be 16
     assert_eq!(
         ApplicationEngine::get_opcode_price(197),
-        512,
-        "NEWARRAY price mismatch"
+        16,
+        "NEWSTRUCT0 price mismatch"
     );
 
-    // APPEND (0xc8) should be 8192
+    // NEWMAP (0xc8) should be 8
     assert_eq!(
         ApplicationEngine::get_opcode_price(200),
+        8,
+        "NEWMAP price mismatch"
+    );
+
+    // APPEND (0xcf) should be 8192
+    assert_eq!(
+        ApplicationEngine::get_opcode_price(207),
         8192,
         "APPEND price mismatch"
     );
@@ -179,12 +186,15 @@ fn formal_verification_tie_in() {
         (32, 1, "NOP"),
         (65, 0, "SYSCALL"),
         (70, 2, "MUL"),
-        (195, 512, "NEWMAP"),
-        (196, 512, "SIZE"),
-        (197, 512, "NEWARRAY"),
-        (199, 0, "VALUES"),
-        (200, 8192, "APPEND"),
-        (205, 8192, "PICKITEM"),
+        (195, 512, "NEWARRAY"),
+        (196, 512, "NEWARRAY_T"),
+        (197, 16, "NEWSTRUCT0"),
+        (198, 512, "NEWSTRUCT"),
+        (200, 8, "NEWMAP"),
+        (202, 4, "SIZE"),
+        (205, 8192, "VALUES"),
+        (206, 64, "PICKITEM"),
+        (207, 8192, "APPEND"),
     ];
 
     for &(opcode, expected_price, name) in &key_opcodes {

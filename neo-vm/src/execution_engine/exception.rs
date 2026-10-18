@@ -75,13 +75,10 @@ impl ExecutionEngine {
         })?;
 
         if current_try_snapshot.state() == ExceptionHandlingState::Finally {
-            context.pop_try_context();
-            let end_pointer = base_ip
-                .checked_add(end_offset)
-                .ok_or_else(|| VmError::InvalidJump(end_offset))?;
-            let end_position =
-                usize::try_from(end_pointer).map_err(|_| VmError::InvalidJump(end_pointer))?;
-            context.set_instruction_pointer(end_position);
+            // C# ExecuteEndTry: ENDTRY is illegal inside a FINALLY block.
+            return Err(VmError::invalid_operation_msg(
+                "The opcode ENDTRY can't be executed in a FINALLY block",
+            ));
         } else if current_try_snapshot.has_finally() {
             let try_entry = context
                 .try_stack_last_mut()
@@ -114,8 +111,6 @@ impl ExecutionEngine {
 
     /// Executes an end finally operation
     pub fn execute_end_finally(&mut self) -> VmResult<()> {
-        use crate::ExceptionHandlingState;
-
         let end_pointer = {
             let context = self
                 .current_context_mut()
@@ -128,12 +123,6 @@ impl ExecutionEngine {
             let current_try_snapshot = context
                 .try_stack_last()
                 .expect("try stack should not be empty");
-
-            if current_try_snapshot.state() != ExceptionHandlingState::Finally {
-                return Err(VmError::invalid_operation_msg(
-                    "Invalid exception handling state",
-                ));
-            }
 
             let end_pointer = current_try_snapshot.end_pointer();
             context.pop_try_context();

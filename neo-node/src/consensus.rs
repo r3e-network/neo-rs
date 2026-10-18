@@ -517,9 +517,11 @@ impl ConsensusActor {
     fn on_persist_completed(&mut self, mut block: Block, ctx: &ActorContext) {
         let next_index = block.index().saturating_add(1);
         let hash = block.hash();
-        // Timer compensation starts at local persistence completion time, not the
-        // persisted block's header timestamp (which may be far older).
-        self.start_round(next_index, hash, Self::current_time_ms(), ctx);
+        // C# compares PrepareRequest.Timestamp against the parent header's
+        // timestamp. Using local wall-clock time here rejects honest proposals
+        // that were built before this node finished persisting the parent.
+        let prev_timestamp = block.header.timestamp();
+        self.start_round(next_index, hash, prev_timestamp, ctx);
     }
 
     fn on_timer_tick(&mut self) {
@@ -646,7 +648,23 @@ impl ConsensusActor {
         let header_size = estimate_header_size(&self.validators, required_signatures);
 
         let candidates = self.proposal_candidates(limit);
+        let rejected: HashSet<UInt256> = self
+            .service
+            .as_ref()
+            .map(|service| {
+                service
+                    .context()
+                    .rejected_hashes_above_f()
+                    .into_iter()
+                    .collect()
+            })
+            .unwrap_or_default();
         for tx in candidates {
+            // Skip transactions already rejected by >F validators; re-proposing
+            // them only burns views (C# InvalidTransactions).
+            if rejected.contains(&tx.hash()) {
+                continue;
+            }
             let candidate_count = selected.len() + 1;
             let size_with_count =
                 header_size + var_size(candidate_count as u64) + total_size + tx.size();
@@ -796,6 +814,7 @@ impl ConsensusActor {
                     tx_hash = %hash,
                     "prepare request includes on-chain transaction"
                 );
+                service.record_rejected_transaction(*hash);
                 let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
                 return;
             }
@@ -812,6 +831,7 @@ impl ConsensusActor {
                         tx_hash = %hash,
                         "prepare request contains conflicting transaction"
                     );
+                    service.record_rejected_transaction(*hash);
                     let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
                     return;
                 }
@@ -832,6 +852,7 @@ impl ConsensusActor {
                         tx_hash = %hash,
                         "prepare request contains conflicting transaction"
                     );
+                    service.record_rejected_transaction(*hash);
                     let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
                     return;
                 }
@@ -842,11 +863,13 @@ impl ConsensusActor {
                         tx_hash = %hash,
                         "transaction system fee exceeds max_block_system_fee"
                     );
+                    service.record_rejected_transaction(*hash);
                     let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
                     return;
                 }
 
                 if conflicts_with_context(tx, &transactions) {
+                    service.record_rejected_transaction(*hash);
                     let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
                     return;
                 }
@@ -858,6 +881,7 @@ impl ConsensusActor {
                     } else {
                         ChangeViewReason::TxInvalid
                     };
+                    service.record_rejected_transaction(*hash);
                     let _ = service.request_change_view(reason, now);
                     return;
                 }

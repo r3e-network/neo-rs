@@ -211,27 +211,18 @@ impl InteropService {
     /// The fast path handles ~95% of production syscalls with constant-time guarantees,
     /// eliminating HashMap overhead and cache misses.
     pub fn invoke_by_hash(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
-        // FAST PATH: Try built-in syscall lookup first (O(1) guaranteed, ~80ns average)
-        // Uses optimized u32 lookup directly without reconstructing full SHA-256 hash
-        if let Some(builtin_entry) = syscalls::get_syscall_entry_by_u32(hash) {
-            // Built-in syscall found - dispatch directly to host
-            let required_flags = CallFlags::from_bits_truncate(builtin_entry.call_flags as u8);
-
-            if !engine.has_call_flags(required_flags) {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Missing required call flags: {required_flags:?}"
-                )));
-            }
-
-            // All built-in syscalls are host-dispatched (no VM-internal handlers)
-            if let Some(result) = engine.invoke_host_syscall(hash) {
-                return result;
-            } else {
-                let method_name = syscalls::get_method_name(builtin_entry.method_id);
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Built-in syscall {method_name} requires an interop host"
-                )));
-            }
+        // FAST PATH: built-in syscalls are dispatched to the host.
+        //
+        // Do not validate call flags or gas against the static registry here:
+        // the authoritative, per-engine (and hardfork-dependent) metadata is
+        // registered by the host in `ApplicationEngine::register_host_service`.
+        // The static table is only a name/hash index. Duplicating policy there
+        // has caused real divergences (e.g. CreateStandardAccount was marked
+        // ReadStates-only, and storage reads required WriteStates).
+        if syscalls::get_syscall_entry_by_u32(hash).is_some()
+            && let Some(result) = engine.invoke_host_syscall(hash)
+        {
+            return result;
         }
 
         // SLOW PATH: Not a built-in syscall, check dynamically registered descriptors
