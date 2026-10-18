@@ -110,6 +110,15 @@ impl PersistCompletedHarness {
         Ok(())
     }
 
+    pub(super) fn into_parts(
+        self,
+    ) -> (
+        Vec<ConsensusService>,
+        Vec<mpsc::Receiver<ConsensusEvent>>,
+    ) {
+        (self.services, self.receivers)
+    }
+
     pub(super) fn take_events(&mut self) -> Vec<ConsensusEvent> {
         std::mem::take(&mut self.events)
     }
