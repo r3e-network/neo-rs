@@ -1,5 +1,6 @@
 use crate::cryptography::mpt_trie::{MptResult, MptStoreSnapshot};
 use crate::persistence::store::Store;
+use crate::persistence::store_snapshot::StoreSnapshot;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -204,14 +205,18 @@ impl StateStoreBackend for MemoryStateStoreBackend {
 pub struct SnapshotBackedStateStoreBackend {
     store: Arc<dyn Store>,
     pending: Mutex<HashMap<Vec<u8>, Option<Vec<u8>>>>,
+    /// Reused read snapshot, refreshed after each commit.
+    read_snapshot: RwLock<Arc<dyn StoreSnapshot>>,
 }
 
 impl SnapshotBackedStateStoreBackend {
     /// Creates a backend that reads through and commits to snapshots of `store`.
     pub fn new(store: Arc<dyn Store>) -> Self {
+        let read_snapshot = store.snapshot();
         Self {
             store,
             pending: Mutex::new(HashMap::new()),
+            read_snapshot: RwLock::new(read_snapshot),
         }
     }
 }
@@ -223,7 +228,7 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
             return value;
         }
 
-        let snapshot = self.store.snapshot();
+        let snapshot = Arc::clone(&self.read_snapshot.read());
         snapshot.try_get(&key.to_vec())
     }
 
@@ -272,6 +277,8 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
             .try_commit()
             .map_err(|e| format!("state service commit failed: {e}"))?;
         pending.clear();
+        drop(pending);
+        *self.read_snapshot.write() = self.store.snapshot();
         Ok(())
     }
 
