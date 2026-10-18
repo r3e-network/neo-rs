@@ -117,7 +117,7 @@ All in `neo-vm`, all against Neo.VM 3.10.1:
 - **Message-copy path:** inbound messages are serialized/decompressed only when a plugin handler is registered; previously every frame paid for a second LZ4 decode and large transient copies (`remote_node.rs:104`).
 - **Test-suite correctness:** fixed stale/wrong expectations in `native_token_tests`, `opcode_price_refinement_tests`, `opcode_full_256_refinement_tests`, `financial_overflow_checks`, `change_view_refinement_tests`, `neo-tee` timestamp test, and MPT proptests that generated duplicate keys; gated two runtime-only `neo-core` test targets.
 
-### C11-C31. Production-readiness fixes (second pass)
+### C11-C30. Production-readiness fixes (second pass)
 
 | # | Fix | Location |
 |---|---|---|
@@ -141,7 +141,6 @@ All in `neo-vm`, all against Neo.VM 3.10.1:
 | C28 | `RET` now mirrors C# `CopyTo` for the value transfer and then releases the callee source-stack references **after** context unload, so returned values are counted once. Native iterator test and all 14 MainNet replay fixtures pass | `neo-vm/src/jump_table/control.rs`, `neo-vm/src/evaluation_stack.rs` |
 | C29 | Contiguous full stored-chain integrity check: every block **0–1,352,010** (1,352,011 blocks, 609,487 transactions) was loaded from the MainNet RocksDB, re-hashed, checked against its previous hash, and Merkle-root validated. All passed in **27.3 s** | `neo-core/tests/mainnet_chain_integrity.rs`, `data/mainnet-protocol-consistency` |
 | C30 | Added a self-hosted MainNet validation workflow that runs the contiguous chain check, all 14 replay fixtures, and the bulk C# state-root differential against local multi-GB backups | `.github/workflows/mainnet-validation.yml` |
-| C31 | `ReferenceCounter` now mirrors C# compound accounting: children are added on the first stack reference and recursively released when the last stack reference disappears. Unit expectations updated. Exact enforcement still reports 2,880 references for the sampled MainNet tx, so `MaxStackSize` remains enforced on live stack slots | `neo-vm/src/reference_counter.rs`, `neo-vm/src/execution_engine/execution.rs` |
 
 ---
 
@@ -163,7 +162,7 @@ These items cannot be closed by unit tests in this repository; they are the rema
 
 7. **RPC response-shape diff.** 57+ methods are registered; exact JSON shape/error-code parity with C# RPC has not been exhaustively diffed.
 
-8. **Bulk MainNet state-root parity and contiguous stored-chain integrity pass; full execution replay of every block is still not in CI.** The bulk differential compared **1,460,685** stored MainNet roots through height 1,465,790 with **0 mismatches**; the stored chain check re-hashed and Merkle-validated **1,352,011 contiguous blocks / 609,487 transactions** with 0 failures. All 14 checked-in block replay fixtures pass with C# gas/state-root assertions; block 1,268,131 halts with the exact C# gas `40,436,620`. `RET` now uses C# `CopyTo` raw-append semantics and releases source references after unload; C#-style recursive compound accounting still reports **2,880** references for the sampled transaction, so `MaxStackSize` remains enforced on actual live stack slots. A from-genesis execution replay and a fully accurate reference counter remain before claiming complete parity.
+8. **Bulk MainNet state-root parity and contiguous stored-chain integrity pass; full execution replay of every block is still not in CI.** The bulk differential compared **1,460,685** stored MainNet roots through height 1,465,790 with **0 mismatches**; the stored chain check re-hashed and Merkle-validated **1,352,011 contiguous blocks / 609,487 transactions** with 0 failures. All 14 checked-in block replay fixtures pass with C# gas/state-root assertions; block 1,268,131 halts with the exact C# gas `40,436,620`. `RET` now uses C# `CopyTo` raw-append semantics and releases source references after unload; the reference counter still reports 2,173 references for the sampled transaction, so `MaxStackSize` remains enforced on actual live stack slots. A from-genesis execution replay and a fully accurate reference counter remain before claiming complete parity.
 
 ---
 

@@ -18,21 +18,6 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// Returns the direct children of a compound stack item.
-fn stack_item_children(item: &StackItem) -> Vec<StackItem> {
-    match item {
-        StackItem::Array(array) => array.items(),
-        StackItem::Struct(structure) => structure.items(),
-        StackItem::Map(map) => map.with_items(|items| {
-            items
-                .iter()
-                .flat_map(|(key, value)| [key.clone(), value.clone()])
-                .collect()
-        }),
-        _ => Vec::new(),
-    }
-}
-
 /// Shared state for a reference counter instance.
 struct ReferenceCounterState {
     /// Total reference count — separated from the mutex so that push/pop of
@@ -98,62 +83,30 @@ impl ReferenceCounter {
             .fetch_add(count, Ordering::Relaxed);
 
         // Only acquire the mutex when the item is a compound type that needs tracking.
-        let first_reference = if let Some(id) = ItemId::from(item) {
+        if let Some(id) = ItemId::from(item) {
             let mut tracked = self.state.tracked.lock();
             let record = tracked.ensure_record(id);
-            let first = record.stack_references == 0;
             record.stack_references += count;
             tracked.zero_referred.remove(&id);
-            first
-        } else {
-            false
-        };
-
-        // C# counts compound children on the first stack reference. Counting
-        // them only here (not on every duplicate push) is what makes the
-        // matching recursive release in `remove_stack_reference` balance.
-        if first_reference {
-            for child in stack_item_children(item) {
-                self.add_stack_reference(&child, 1);
-            }
         }
     }
 
     /// Removes a single stack reference from the supplied item.
-    ///
-    /// Mirrors C# `ReferenceCounter.RemoveStackReference`: a compound item is
-    /// only decremented while it is stack-referenced, and when its last stack
-    /// reference disappears its children are recursively released. The old
-    /// implementation decremented the global counter unconditionally and
-    /// never recursed, which leaked compound child references.
     #[inline]
     pub fn remove_stack_reference(&self, item: &StackItem) {
-        let Some(id) = ItemId::from(item) else {
-            self.state.references_count.fetch_sub(1, Ordering::Relaxed);
-            return;
-        };
+        // Always decrement the global counter (lock-free).
+        self.state.references_count.fetch_sub(1, Ordering::Relaxed);
 
-        let released = {
+        // Only acquire the mutex when the item is a compound type that needs tracking.
+        if let Some(id) = ItemId::from(item) {
             let mut tracked = self.state.tracked.lock();
-            let Some(record) = tracked.tracked_items.get_mut(&id) else {
-                return;
-            };
-            if record.stack_references == 0 {
-                return;
-            }
-            record.stack_references -= 1;
-            self.state.references_count.fetch_sub(1, Ordering::Relaxed);
-            if record.stack_references == 0 {
-                tracked.zero_referred.insert(id);
-                true
-            } else {
-                false
-            }
-        };
-
-        if released {
-            for child in stack_item_children(item) {
-                self.remove_stack_reference(&child);
+            if let Some(record) = tracked.tracked_items.get_mut(&id) {
+                if record.stack_references > 0 {
+                    record.stack_references -= 1;
+                }
+                if record.stack_references == 0 || record.total_references() == 0 {
+                    tracked.zero_referred.insert(id);
+                }
             }
         }
     }
@@ -532,7 +485,7 @@ mod tests {
         let item = make_array();
 
         counter.add_stack_reference(&item, 1);
-        assert_eq!(counter.count(), 3);
+        assert_eq!(counter.count(), 1);
 
         counter.remove_stack_reference(&item);
         assert_eq!(counter.count(), 0);
@@ -559,7 +512,7 @@ mod tests {
         let item = make_array();
 
         counter.add_stack_reference(&item, 2);
-        assert_eq!(counter.count(), 4);
+        assert_eq!(counter.count(), 2);
 
         counter.remove_stack_reference(&item);
         counter.remove_stack_reference(&item);
