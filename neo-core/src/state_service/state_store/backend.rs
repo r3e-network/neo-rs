@@ -207,6 +207,8 @@ pub struct SnapshotBackedStateStoreBackend {
     pending: Mutex<HashMap<Vec<u8>, Option<Vec<u8>>>>,
     /// Reused read snapshot, refreshed after each commit.
     read_snapshot: RwLock<Arc<dyn StoreSnapshot>>,
+    /// Bounded cache of recently read state keys.
+    node_cache: Mutex<lru::LruCache<Vec<u8>, Vec<u8>>>,
 }
 
 impl SnapshotBackedStateStoreBackend {
@@ -217,6 +219,9 @@ impl SnapshotBackedStateStoreBackend {
             store,
             pending: Mutex::new(HashMap::new()),
             read_snapshot: RwLock::new(read_snapshot),
+            node_cache: Mutex::new(lru::LruCache::new(
+                std::num::NonZeroUsize::new(262_144).expect("nonzero cache capacity"),
+            )),
         }
     }
 }
@@ -228,8 +233,15 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
             return value;
         }
 
+        if let Some(value) = self.node_cache.lock().get(key).cloned() {
+            return Some(value);
+        }
         let snapshot = Arc::clone(&self.read_snapshot.read());
-        snapshot.try_get(&key.to_vec())
+        let value = snapshot.try_get(&key.to_vec());
+        if let Some(value) = value.as_ref() {
+            self.node_cache.lock().put(key.to_vec(), value.clone());
+        }
+        value
     }
 
     fn put(&self, key: Vec<u8>, value: Vec<u8>) {
@@ -276,6 +288,19 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
         snapshot_mut
             .try_commit()
             .map_err(|e| format!("state service commit failed: {e}"))?;
+        {
+            let mut cache = self.node_cache.lock();
+            for (key, value) in pending.iter() {
+                match value {
+                    Some(value) => {
+                        cache.put(key.clone(), value.clone());
+                    }
+                    None => {
+                        cache.pop(key);
+                    }
+                }
+            }
+        }
         pending.clear();
         drop(pending);
         *self.read_snapshot.write() = self.store.snapshot();
