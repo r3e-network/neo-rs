@@ -36,6 +36,20 @@ impl ContractManagement {
         Ok(Some(contract))
     }
 
+    /// Gets a contract by ID directly from the snapshot (single key lookup).
+    pub fn get_contract_by_id_from_snapshot(
+        snapshot: &DataCache,
+        id: i32,
+    ) -> Result<Option<ContractState>> {
+        let storage_key = StorageKey::new(Self::ID, Self::contract_id_storage_key(id));
+        let Some(item) = snapshot.get(&storage_key) else {
+            return Ok(None);
+        };
+        let hash = UInt160::from_bytes(&item.value_bytes())
+            .map_err(|e| Error::invalid_data(format!("Invalid contract hash by id: {e}")))?;
+        Self::get_contract_from_snapshot(snapshot, &hash)
+    }
+
     /// Gets the contract from the provided store cache (including persisted storage).
     pub fn get_contract_from_store_cache(
         store_cache: &StoreCache,

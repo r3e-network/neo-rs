@@ -60,9 +60,6 @@ impl NativeContract for ContractManagement {
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
-        // Keep in-memory metadata aligned with persisted storage for this snapshot.
-        self.hydrate_from_engine(engine)?;
-
         match method {
             "getContract" => {
                 if args.len() != 1 {
@@ -72,7 +69,7 @@ impl NativeContract for ContractManagement {
                 }
                 let hash = UInt160::from_bytes(&args[0])
                     .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
-                match self.get_contract(&hash)? {
+                match Self::get_contract_from_snapshot(engine.snapshot_cache().as_ref(), &hash)? {
                     Some(contract) => {
                         let item = contract.to_stack_item()?;
                         let bytes =
@@ -89,6 +86,7 @@ impl NativeContract for ContractManagement {
                 }
             }
             "deploy" => {
+                self.hydrate_from_engine(engine)?;
                 if args.len() != 2 && args.len() != 3 {
                     return Err(Error::invalid_argument(
                         "deploy requires 2 or 3 arguments".to_string(),
@@ -112,6 +110,7 @@ impl NativeContract for ContractManagement {
                 Ok(bytes)
             }
             "update" => {
+                self.hydrate_from_engine(engine)?;
                 if args.len() != 2 && args.len() != 3 {
                     return Err(Error::invalid_argument(
                         "update requires 2 or 3 arguments".to_string(),
@@ -140,6 +139,7 @@ impl NativeContract for ContractManagement {
                 Ok(vec![])
             }
             "destroy" => {
+                self.hydrate_from_engine(engine)?;
                 if !args.is_empty() {
                     return Err(Error::invalid_argument(
                         "destroy requires no arguments".to_string(),
@@ -149,6 +149,7 @@ impl NativeContract for ContractManagement {
                 Ok(vec![])
             }
             "getMinimumDeploymentFee" => {
+                self.hydrate_from_engine(engine)?;
                 if !args.is_empty() {
                     return Err(Error::invalid_argument(
                         "getMinimumDeploymentFee requires no arguments".to_string(),
@@ -158,6 +159,7 @@ impl NativeContract for ContractManagement {
                 Ok(fee.to_le_bytes().to_vec())
             }
             "setMinimumDeploymentFee" => {
+                self.hydrate_from_engine(engine)?;
                 if args.len() != 1 {
                     return Err(Error::invalid_argument(
                         "setMinimumDeploymentFee requires 1 argument".to_string(),
@@ -169,6 +171,7 @@ impl NativeContract for ContractManagement {
                 Ok(vec![])
             }
             "hasMethod" => {
+                self.hydrate_from_engine(engine)?;
                 if args.len() != 3 {
                     return Err(Error::invalid_argument(
                         "hasMethod requires 3 arguments".to_string(),
@@ -204,7 +207,8 @@ impl NativeContract for ContractManagement {
                 }
                 let id = Self::decode_storage_i32(&args[0])
                     .ok_or_else(|| Error::invalid_argument("Invalid contract ID".to_string()))?;
-                match self.get_contract_by_id(id)? {
+                match Self::get_contract_by_id_from_snapshot(engine.snapshot_cache().as_ref(), id)?
+                {
                     Some(contract) => {
                         let item = contract.to_stack_item()?;
                         let bytes =
@@ -221,6 +225,7 @@ impl NativeContract for ContractManagement {
                 }
             }
             "getContractHashes" => {
+                self.hydrate_from_engine(engine)?;
                 if !args.is_empty() {
                     return Err(Error::invalid_argument(
                         "getContractHashes requires no arguments".to_string(),

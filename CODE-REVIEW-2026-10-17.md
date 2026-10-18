@@ -117,7 +117,7 @@ All in `neo-vm`, all against Neo.VM 3.10.1:
 - **Message-copy path:** inbound messages are serialized/decompressed only when a plugin handler is registered; previously every frame paid for a second LZ4 decode and large transient copies (`remote_node.rs:104`).
 - **Test-suite correctness:** fixed stale/wrong expectations in `native_token_tests`, `opcode_price_refinement_tests`, `opcode_full_256_refinement_tests`, `financial_overflow_checks`, `change_view_refinement_tests`, `neo-tee` timestamp test, and MPT proptests that generated duplicate keys; gated two runtime-only `neo-core` test targets.
 
-### C11-C35. Production-readiness fixes (second pass)
+### C11-C36. Production-readiness fixes (second pass)
 
 | # | Fix | Location |
 |---|---|---|
@@ -146,6 +146,7 @@ All in `neo-vm`, all against Neo.VM 3.10.1:
 | C33 | Achieved exact reference-counter enforcement: children are added/released on first/last stack reference, runtime append/set only adjusts references while the compound is stack-referenced, and decrements saturate instead of wrapping. `MaxStackSize` now uses the real counter with **no slot-based fallback**; the 1,268,131 transaction HALTs with the exact C# gas, and all 14 MainNet replays pass | `neo-vm/src/reference_counter.rs`, `neo-vm/src/stack_item/{array,struct_item,map}.rs`, `neo-vm/src/execution_engine/execution.rs` |
 | C34 | Full contiguous execution replay verified: **blocks 200,000..=1,352,000 (1,152,001 roots)** matched the C# reference with **0 gaps and 0 mismatches**, in chunked release runs. Two replay-harness limitations were fixed: Ledger storage is read from the chain store, and `Ledger.currentIndex` is overridden with the historical height (`block.index-1`) instead of the live chain tip. The latter explains all eight earlier `IdoContract` divergences (blocks 885,963–983,394); they were harness artifacts, not node bugs. An earlier from-genesis run matched 99,877 blocks | `neo-core/tests/mainnet_contiguous_replay.rs` |
 | C35 | Added real multi-node dBFT network tests: four `ConsensusService` instances exchange signed PrepareRequest/PrepareResponse/Commit payloads over **UDP** and, in a second test, over **TCP**, committing block 1 in both cases. These are real transport tests, not the direct in-process harness | `neo-consensus/src/service/tests/udp_cluster.rs`, `tcp_cluster.rs` |
+| C36 | Fixed a native-contract performance bug: `ContractManagement.getContract` hydrated every contract record on each call (~4.5 ms). It now performs a direct snapshot key lookup (~1.5 µs), and `getContractById` does the same. Heavy MainNet replay (blocks 1,346,000..=1,352,000) dropped from **286 s to 155 s** with identical roots | `neo-core/src/smart_contract/native/contract_management/{native_impl,query}.rs` |
 
 ## 4. Residual validation work
 

@@ -277,13 +277,31 @@ read from the chain store.
 ```text
 blocks 1..=99877: 0 state-root mismatches
 blocks 200000..=1352000: 1,152,001 roots checked, 0 gaps, 0 mismatches
-chunked release replay: 10,000 blocks per ~20 s (heavy ranges up to 286 s)
+chunked release replay: 10,000 light blocks in ~65 s; heavy range 1.35M in 155 s
 harness overrides: Ledger storage from chain store; historical Ledger.currentIndex
 ```
 
 The block 238,711 mismatch reported earlier was caused by the replay harness
 returning Null for `Ledger.getBlock`; routing Ledger storage to the chain store
 fixed it. Blocks 1..=1000 replay in ~5 s; 1..=10,000 in ~26 s.
+
+## Native contract lookup
+
+Every `ContractManagement.getContract` call used to hydrate all contract
+records from storage before answering: **~4.5 ms per call**. The heavy
+1,346,000..=1,352,000 range was dominated by this. `getContract` and
+`getContractById` now read the contract key directly from the snapshot.
+
+```text
+heavy range 1,346,000..=1,352,000 (6,001 blocks)
+before: 286 s
+after:  155 s
+speedup: 1.85x, identical roots
+```
+
+The replay harness also enables DataCache read caching only for blocks with
+more than two transactions, avoiding the per-block cache overhead on empty and
+light blocks.
 
 ## Real MainNet block replay
 

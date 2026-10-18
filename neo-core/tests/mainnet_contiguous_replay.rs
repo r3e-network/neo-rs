@@ -141,14 +141,15 @@ fn execute_empty_block(
                 .collect()
         })
     };
+    let cache_reads = block.transactions.len() > 2;
     let base_cache = Arc::new(DataCache::new_with_config(
         false,
         Some(store_get),
         Some(store_find),
         DataCacheConfig {
             track_reads_in_write_cache: true,
-            enable_read_cache: false,
-            enable_prefetching: false,
+            enable_read_cache: cache_reads,
+            enable_prefetching: cache_reads,
             ..Default::default()
         },
     ));
@@ -167,7 +168,11 @@ fn execute_empty_block(
     .expect("on persist engine");
     on_persist.native_on_persist().expect("native on persist");
     if profile {
-        eprintln!("profile block={} on_persist={:?}", block.index(), phase_started.elapsed());
+        eprintln!(
+            "profile block={} on_persist={:?}",
+            block.index(),
+            phase_started.elapsed()
+        );
     }
     let seeded_contracts = on_persist.contracts_snapshot();
     let seeded_native_cache = on_persist.native_contract_cache_handle();
@@ -204,8 +209,8 @@ fn execute_empty_block(
             Some(tx_store_find),
             DataCacheConfig {
                 track_reads_in_write_cache: false,
-                enable_read_cache: false,
-                enable_prefetching: false,
+                enable_read_cache: cache_reads,
+                enable_prefetching: cache_reads,
                 ..Default::default()
             },
         ));
@@ -239,7 +244,11 @@ fn execute_empty_block(
     }
 
     if profile {
-        eprintln!("profile block={} txs={:?}", block.index(), tx_started.elapsed());
+        eprintln!(
+            "profile block={} txs={:?}",
+            block.index(),
+            tx_started.elapsed()
+        );
     }
     let post_started = Instant::now();
     let mut post_persist = ApplicationEngine::new_with_preloaded_native(
@@ -260,7 +269,11 @@ fn execute_empty_block(
         .expect("native post persist");
     drop(post_persist);
     if profile {
-        eprintln!("profile block={} post_persist={:?}", block.index(), post_started.elapsed());
+        eprintln!(
+            "profile block={} post_persist={:?}",
+            block.index(),
+            post_started.elapsed()
+        );
     }
 
     let mut tracked: Vec<_> = base_cache.tracked_items().into_iter().collect();
@@ -290,7 +303,11 @@ fn execute_empty_block(
     }
     let root = trie_guard.root_hash()?;
     if profile {
-        eprintln!("profile block={} apply={:?}", block.index(), apply_started.elapsed());
+        eprintln!(
+            "profile block={} apply={:?}",
+            block.index(),
+            apply_started.elapsed()
+        );
     }
     Some((root, touched))
 }
