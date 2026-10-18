@@ -15,7 +15,7 @@ This is a large, real implementation (≈300k lines of Rust across 16 crates) wi
 The review found and fixed **more than 20 critical/high-severity defects**, including remote crash/DoS paths, a block-persistence path that could commit unverified blocks, a VM stack-limit bypass, consensus wire-format divergence, and dBFT safety gaps. After the fixes:
 
 - `cargo check --workspace` (library targets) succeeds **warning-free**; a few legacy test files still emit style warnings (unused imports/variables, naming), which do not affect runtime.
-- `cargo test --workspace --no-fail-fast`: **4,515 passed, 0 failed** across 219 suites (1 ignored; including all 121 architecture-conformance tests).
+- `cargo test --workspace --no-fail-fast`: **4,515 passed, 0 failed** across 220 suites (2 ignored; including all 121 architecture-conformance tests).
 - Before the review the same suite had **4,475 passed / 16 failed** (10 failures were real or stale tests fixed during this review; see §6).
 - The remaining work is **validation** (C# differential replay/state roots, multi-node dBFT cluster, native-contract execution vectors), not known code defects. See §4.
 
@@ -117,7 +117,7 @@ All in `neo-vm`, all against Neo.VM 3.10.1:
 - **Message-copy path:** inbound messages are serialized/decompressed only when a plugin handler is registered; previously every frame paid for a second LZ4 decode and large transient copies (`remote_node.rs:104`).
 - **Test-suite correctness:** fixed stale/wrong expectations in `native_token_tests`, `opcode_price_refinement_tests`, `opcode_full_256_refinement_tests`, `financial_overflow_checks`, `change_view_refinement_tests`, `neo-tee` timestamp test, and MPT proptests that generated duplicate keys; gated two runtime-only `neo-core` test targets.
 
-### C11-C33. Production-readiness fixes (second pass)
+### C11-C34. Production-readiness fixes (second pass)
 
 | # | Fix | Location |
 |---|---|---|
@@ -144,6 +144,7 @@ All in `neo-vm`, all against Neo.VM 3.10.1:
 | C31 | Extended the 4-validator dBFT harness with an offline-validator mode; with n=4, f=1, the three online validators still commit a block | `neo-consensus/src/service/tests/{helpers,persist}.rs` |
 | C32 | Locked C# `NEWARRAY` reference-count parity: 1,000 null children + the array = **1,001**, matching the C# reference | `neo-vm/tests/csharp_vm_vectors.rs` |
 | C33 | Achieved exact reference-counter enforcement: children are added/released on first/last stack reference, runtime append/set only adjusts references while the compound is stack-referenced, and decrements saturate instead of wrapping. `MaxStackSize` now uses the real counter with **no slot-based fallback**; the 1,268,131 transaction HALTs with the exact C# gas, and all 14 MainNet replays pass | `neo-vm/src/reference_counter.rs`, `neo-vm/src/stack_item/{array,struct_item,map}.rs`, `neo-vm/src/execution_engine/execution.rs` |
+| C34 | From-genesis contiguous execution replay: blocks **1..=99,877** were re-executed (transactions + OnPersist + PostPersist) against the previous state trie and every resulting root matched the C# reference. The run stopped at height 99,878 because the reference JSONL has a gap there, not because of a root mismatch | `neo-core/tests/mainnet_contiguous_replay.rs`, `data/mainnet-protocol-consistency` |
 
 ---
 
@@ -165,7 +166,7 @@ These items cannot be closed by unit tests in this repository; they are the rema
 
 7. **RPC response-shape diff.** 57+ methods are registered; exact JSON shape/error-code parity with C# RPC has not been exhaustively diffed.
 
-8. **Bulk MainNet state-root parity and contiguous stored-chain integrity pass; full execution replay of every block is still not in CI.** The bulk differential compared **1,460,685** stored MainNet roots through height 1,465,790 with **0 mismatches**; the stored chain check re-hashed and Merkle-validated **1,352,011 contiguous blocks / 609,487 transactions** with 0 failures. All 14 checked-in block replay fixtures pass with C# gas/state-root assertions; block 1,268,131 halts with the exact C# gas `40,436,620`. `RET` now uses C# `CopyTo` raw-append semantics and releases source references after unload; the exact reference counter now enforces `MaxStackSize` directly. A from-genesis execution replay and a real TCP cluster remain before claiming complete parity.
+8. **From-genesis execution replay passes through 99,877 blocks; full-chain execution replay and a real TCP cluster remain.** The bulk differential compared **1,460,685** stored MainNet roots through height 1,465,790 with **0 mismatches**; the stored chain check re-hashed and Merkle-validated **1,352,011 contiguous blocks / 609,487 transactions** with 0 failures. The new from-genesis replay executes every transaction plus OnPersist/PostPersist against the previous state trie and matched **99,877 blocks** before hitting a gap in the C# reference JSONL at 99,878. All 14 checked-in block replay fixtures pass with C# gas/state-root assertions; block 1,268,131 halts with the exact C# gas `40,436,620`. The exact reference counter enforces `MaxStackSize` directly. Extending the execution replay across the reference gap and running a real multi-node TCP dBFT cluster remain.
 
 ---
 
@@ -245,7 +246,7 @@ These items cannot be closed by unit tests in this repository; they are the rema
 | `cargo check --workspace` | Pass, **0 library warnings** (some legacy test-file style warnings remain) |
 | `cargo check -p neo-core --features rocksdb` | **Pass** (Windows/MinGW production storage) |
 | `cargo check -p neo-node --features full` | **Pass** (RocksDB + gRPC + monitoring + UPnP) |
-| `cargo test --workspace --no-fail-fast` | **4,515 passed, 0 failed** (219 suites) |
+| `cargo test --workspace --no-fail-fast` | **4,515 passed, 0 failed** (220 suites) |
 | `neo-tests --test no_local_neo_vm_dependency` | **121 passed, 0 failed** |
 | `cargo test -p neo-core --lib` | 633 passed |
 | `cargo test -p neo-consensus` | 116 unit + all integration tests passed |
@@ -260,6 +261,7 @@ These items cannot be closed by unit tests in this repository; they are the rema
 | Signature benchmark | secp256r1 verify 141.26 µs per witness (32-byte message) |
 | C# Neo.VM differential vectors | **26/26 pass** (`cargo test -p neo-vm --test csharp_vm_vectors`) |
 | MainNet block replay | **14/14 pass** against the local state-root DB, including C# state-root assertions |
+| From-genesis execution replay | **99,877 blocks**, 0 state-root mismatches (stops at reference-data gap 99,878) |
 | Stored MainNet chain | **1,352,011 blocks / 609,487 txs**, contiguous hashes + Merkle roots, 0 failures |
 | Bulk C# state-root diff | **1,460,685 roots compared, 0 mismatches** (heights 0–1,465,790) |
 | dBFT 4-validator harness | **4/4 pass**: round start, block commit, multiple rounds, one validator offline |
@@ -267,4 +269,4 @@ These items cannot be closed by unit tests in this repository; they are the rema
 | End-to-end empty-block persistence | 1.02 ms per block; 1 RET-tx 1.32 ms; 10 RET-tx 1.40 ms (native OnPersist + ledger + commit) |
 | RocksDB production persistence | Empty block **1.12 ms** (WAL + write batch) |
 
-**Bottom line:** the code-level blockers found in the review are fixed: unverified-block persistence, VM stack/allocation limits, syscall flags, opcode gas, dBFT wire format/timestamp, dBFT transaction availability and pending commits, invalid-transaction tracking, pre-Gorgon `HASKEY`, `TRY`/`ENDTRY` state, bounded interpreter equality, 33-byte `CheckWitness` validation, P2P memory bounds, architecture-conformance tests, and the production `full` feature build (RocksDB + gRPC). C# and chain evidence is now substantial: 26 Neo.VM vectors pass, all 14 checked-in MainNet block replay fixtures pass, **1,460,685 MainNet state roots through height 1,465,790 match the C# reference with 0 mismatches**, and the stored chain’s **1,352,011 contiguous blocks / 609,487 transactions** pass hash, previous-hash, and Merkle-root validation. `RET` now mirrors C# `CopyTo` raw-append semantics, and the 4-validator in-process dBFT harness commits blocks across multiple rounds and with one validator offline. Native-contract seeding, native-registry construction, memory-store snapshots, and per-transaction ledger-state lookup are measured and substantially faster. Library targets build warning-free and all 4,515 default tests pass. The exact reference counter now enforces `MaxStackSize`; the remaining gates are a from-genesis execution replay and a real multi-node network cluster. Until those are published, the honest label is **testnet/private-network ready**, not “mainnet-certified.”
+**Bottom line:** the code-level blockers found in the review are fixed: unverified-block persistence, VM stack/allocation limits, syscall flags, opcode gas, dBFT wire format/timestamp, dBFT transaction availability and pending commits, invalid-transaction tracking, pre-Gorgon `HASKEY`, `TRY`/`ENDTRY` state, bounded interpreter equality, 33-byte `CheckWitness` validation, P2P memory bounds, architecture-conformance tests, and the production `full` feature build (RocksDB + gRPC). C# and chain evidence is now substantial: 26 Neo.VM vectors pass, all 14 checked-in MainNet block replay fixtures pass, **1,460,685 MainNet state roots through height 1,465,790 match the C# reference with 0 mismatches**, and the stored chain’s **1,352,011 contiguous blocks / 609,487 transactions** pass hash, previous-hash, and Merkle-root validation. A from-genesis execution replay matched **99,877 consecutive blocks**, `RET` uses C# `CopyTo` semantics, and the 4-validator in-process dBFT harness commits blocks across multiple rounds and with one validator offline. Native-contract seeding, native-registry construction, memory-store snapshots, and per-transaction ledger-state lookup are measured and substantially faster. Library targets build warning-free and all 4,515 default tests pass. The exact reference counter now enforces `MaxStackSize`; the remaining gates are extending execution replay across the reference-data gap and a real multi-node network cluster. Until those are published, the honest label is **testnet/private-network ready**, not “mainnet-certified.”

@@ -266,6 +266,20 @@ This is correctness evidence, not a throughput benchmark; it took 10.92 s on
 the local RocksDB backup because it reads the stored roots rather than
 re-executing every block.
 
+## From-genesis execution replay
+
+`mainnet_contiguous_replay` now executes every transaction plus
+OnPersist/PostPersist for a contiguous genesis range against the previous
+state trie and compares the resulting root with the C# reference:
+
+```text
+blocks 1..=99877: 0 state-root mismatches
+stopped at block 99878: missing reference root in the JSONL
+elapsed: 263.7 s
+```
+
+Blocks 1..=1000 replay in ~5.3 s; 1..=10,000 in ~26.4 s.
+
 ## Real MainNet block replay
 
 All 14 checked-in `mainnet_block_*_repro` tests pass against the local
