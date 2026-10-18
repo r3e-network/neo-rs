@@ -48,9 +48,6 @@ fn load_reference_roots(path: &Path, start: u32, end: u32) -> HashMap<u32, neo_c
         };
         let height = height as u32;
         if height < start || height > end {
-            if height > end {
-                break;
-            }
             continue;
         }
         let root = value
@@ -93,7 +90,7 @@ fn execute_empty_block(
     state_store: &StateStore,
     block: Arc<Block>,
     root_prev: neo_core::UInt256,
-) -> Option<neo_core::UInt256> {
+) -> Option<(neo_core::UInt256, Vec<(Vec<u8>, Option<Vec<u8>>)>)> {
     let trie = Arc::new(Mutex::new(state_store.trie_for_root(root_prev)));
     let store_get = {
         let trie = Arc::clone(&trie);
@@ -232,6 +229,7 @@ fn execute_empty_block(
     tracked.sort_by(|a, b| (a.0.id, a.0.key()).cmp(&(b.0.id, b.0.key())));
     drop(base_cache);
     let mut trie_guard = trie.lock();
+    let mut touched = Vec::new();
     for (key, trackable) in &tracked {
         let state = format!("{:?}", trackable.state);
         if state == "None" || state == "NotFound" || key.id == -4 {
@@ -240,17 +238,19 @@ fn execute_empty_block(
         let key_bytes = key.to_array();
         match state.as_str() {
             "Added" | "Changed" => {
-                trie_guard
-                    .put(&key_bytes, &trackable.item.value_bytes())
-                    .expect("trie put");
+                let value = trackable.item.value_bytes().to_vec();
+                trie_guard.put(&key_bytes, &value).expect("trie put");
+                touched.push((key_bytes, Some(value)));
             }
             "Deleted" => {
                 trie_guard.delete(&key_bytes).expect("trie delete");
+                touched.push((key_bytes, None));
             }
             _ => {}
         }
     }
-    trie_guard.root_hash()
+    let root = trie_guard.root_hash()?;
+    Some((root, touched))
 }
 
 #[test]
@@ -289,21 +289,59 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
         .unwrap()
         .join("data/reference_stateroots.jsonl");
     let roots = load_reference_roots(&reference_path, start.saturating_sub(1), end);
+    let mut current_root = *roots
+        .get(&(start.saturating_sub(1)))
+        .unwrap_or_else(|| panic!("missing initial reference root"));
+    let mut checked = 0u64;
+    let mut gaps = 0u64;
 
     for index in start..=end {
         let block = ledger
             .get_block(&chain_cache, HashOrIndex::Index(index))
             .expect("read block")
             .unwrap_or_else(|| panic!("missing block {index}"));
-        let prev_root = *roots
-            .get(&(index - 1))
-            .unwrap_or_else(|| panic!("missing reference root {}", index - 1));
-        let expected = *roots
-            .get(&index)
-            .unwrap_or_else(|| panic!("missing reference root {index}"));
-        let actual = execute_empty_block(&state_store, Arc::new(block), prev_root)
-            .unwrap_or_else(|| panic!("block {index}: root computation failed"));
-        assert_eq!(actual, expected, "block {index} state root mismatch");
-        eprintln!("block {index}: root={actual}");
+        let tx_debug: Vec<String> = block
+            .transactions
+            .iter()
+            .map(|tx| hex::encode(tx.script()))
+            .collect();
+        let (actual, actual_entries) =
+            execute_empty_block(&state_store, Arc::new(block), current_root)
+                .unwrap_or_else(|| panic!("block {index}: root computation failed"));
+        if let Some(expected) = roots.get(&index) {
+            if actual != *expected {
+                let stored = state_store
+                    .get_state_root(index)
+                    .map(|root| root.root_hash.to_string())
+                    .unwrap_or_else(|| "missing".to_string());
+                eprintln!("mismatch block {index}: actual={actual} expected={expected} stored={stored}");
+                eprintln!("tx_scripts={tx_debug:?}");
+                let mut prev_trie = state_store.trie_for_root(current_root);
+                if let Ok(Some(prev_value)) = prev_trie.get(&hex::decode("faffffff0b").unwrap()) {
+                    eprintln!("  previous GAS total supply={}", hex::encode(prev_value));
+                }
+                let mut expected_trie = state_store.trie_for_root(*expected);
+                for (key, actual_value) in &actual_entries {
+                    let expected_value = expected_trie.get(key).ok().flatten();
+                    if expected_value.as_deref() != actual_value.as_deref() {
+                        eprintln!(
+                            "  key={} expected={:?} actual={:?}",
+                            hex::encode(key),
+                            expected_value.map(hex::encode),
+                            actual_value.as_ref().map(hex::encode)
+                        );
+                    }
+                }
+            }
+            assert_eq!(actual, *expected, "block {index} state root mismatch");
+            checked += 1;
+        } else {
+            gaps += 1;
+            if gaps <= 5 {
+                eprintln!("block {index}: reference gap, continuing with computed root");
+            }
+        }
+        current_root = actual;
     }
+    eprintln!("replay_range={start}..={end} checked={checked} reference_gaps={gaps}");
 }
