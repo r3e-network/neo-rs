@@ -295,9 +295,13 @@ records from storage before answering: **~4.5 ms per call**. The heavy
 ```text
 heavy range 1,346,000..=1,352,000 (6,001 blocks)
 before: 286 s
-after:  155 s
-speedup: 1.85x, identical roots
+after:  158.5 s
+speedup: 1.80x, identical roots
 ```
+
+A second fix in the same range removed full contract-state deserialization from
+ApplicationEngine::get_storage_context; it now reuses the engine contract cache
+(175.4 s -> 158.5 s on the same 6,001 blocks).
 
 The replay harness also enables DataCache read caching only for blocks with
 more than two transactions, avoiding the per-block cache overhead on empty and

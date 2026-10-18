@@ -210,15 +210,21 @@ impl ApplicationEngine {
         let contract_hash = self
             .current_script_hash
             .ok_or_else(|| Error::invalid_operation("No current contract"))?;
-        // 2. Get contract state to get the ID (matches C# snapshot lookup)
-        let contract = ContractManagement::get_contract_from_snapshot(
-            self.snapshot_cache.as_ref(),
-            &contract_hash,
-        )?
-        .ok_or_else(|| Error::not_found(format!("Contract not found: {}", contract_hash)))?;
+        // 2. Reuse the engine contract cache; deserializing the full ContractState
+        //    from the snapshot on every Storage.GetContext is expensive.
+        let contract_id = if let Some(contract) = self.contracts.get(&contract_hash) {
+            contract.id
+        } else {
+            ContractManagement::get_contract_from_snapshot(
+                self.snapshot_cache.as_ref(),
+                &contract_hash,
+            )?
+            .ok_or_else(|| Error::not_found(format!("Contract not found: {}", contract_hash)))?
+            .id
+        };
         // 3. Create storage context (matches C# StorageContext creation)
         Ok(StorageContext {
-            id: contract.id,
+            id: contract_id,
             is_read_only: false,
         })
     }
