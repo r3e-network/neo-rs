@@ -19,16 +19,16 @@ use neo_core::persistence::{
     SeekDirection, StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
 };
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::smart_contract::StorageKey;
 use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
+use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::native::LedgerTransactionStates;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
-use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::native::ledger_contract::PersistedTransactionState;
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };
-use neo_core::smart_contract::StorageKey;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::fs::File;
@@ -111,27 +111,25 @@ fn execute_empty_block(
     let store_find = {
         let trie = Arc::clone(&trie);
         let chain = Arc::clone(&chain_cache);
-        Arc::new(
-            move |prefix: Option<&StorageKey>, _dir: SeekDirection| {
-                if let Some(key) = prefix
-                    && key.id == -4
-                {
-                    return chain.find(Some(key), SeekDirection::Forward).collect();
-                }
-                let prefix = prefix.map(|key| key.to_array()).unwrap_or_default();
-                let mut trie = trie.lock();
-                trie.find(&prefix, None)
-                    .expect("trie find")
-                    .into_iter()
-                    .map(|entry| {
-                        (
-                            StorageKey::from_bytes(&entry.key),
-                            neo_core::smart_contract::StorageItem::from_bytes(entry.value),
-                        )
-                    })
-                    .collect()
-            },
-        )
+        Arc::new(move |prefix: Option<&StorageKey>, _dir: SeekDirection| {
+            if let Some(key) = prefix
+                && key.id == -4
+            {
+                return chain.find(Some(key), SeekDirection::Forward).collect();
+            }
+            let prefix = prefix.map(|key| key.to_array()).unwrap_or_default();
+            let mut trie = trie.lock();
+            trie.find(&prefix, None)
+                .expect("trie find")
+                .into_iter()
+                .map(|entry| {
+                    (
+                        StorageKey::from_bytes(&entry.key),
+                        neo_core::smart_contract::StorageItem::from_bytes(entry.value),
+                    )
+                })
+                .collect()
+        })
     };
     let base_cache = Arc::new(DataCache::new_with_config(
         false,
@@ -209,7 +207,11 @@ fn execute_empty_block(
         .expect("tx engine");
         tx_engine.set_state(tx_states);
         tx_engine
-            .load_script(tx.script().to_vec(), neo_core::smart_contract::CallFlags::ALL, None)
+            .load_script(
+                tx.script().to_vec(),
+                neo_core::smart_contract::CallFlags::ALL,
+                None,
+            )
             .expect("load tx script");
         let _ = tx_engine.execute_allow_fault();
         tx_states = tx_engine
@@ -316,7 +318,13 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
         let tx_debug: Vec<String> = block
             .transactions
             .iter()
-            .map(|tx| format!("script={} attrs={:?}", hex::encode(tx.script()), tx.attributes()))
+            .map(|tx| {
+                format!(
+                    "script={} attrs={:?}",
+                    hex::encode(tx.script()),
+                    tx.attributes()
+                )
+            })
             .collect();
         let (actual, actual_entries) = execute_empty_block(
             &state_store,
@@ -324,14 +332,16 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
             Arc::new(block),
             current_root,
         )
-                .unwrap_or_else(|| panic!("block {index}: root computation failed"));
+        .unwrap_or_else(|| panic!("block {index}: root computation failed"));
         if let Some(expected) = roots.get(&index) {
             if actual != *expected {
                 let stored = state_store
                     .get_state_root(index)
                     .map(|root| root.root_hash.to_string())
                     .unwrap_or_else(|| "missing".to_string());
-                eprintln!("mismatch block {index}: actual={actual} expected={expected} stored={stored}");
+                eprintln!(
+                    "mismatch block {index}: actual={actual} expected={expected} stored={stored}"
+                );
                 eprintln!("tx_scripts={tx_debug:?}");
                 for height in index.saturating_sub(2)..=index.saturating_add(2) {
                     if let Some(root) = state_store.get_state_root(height) {
@@ -345,12 +355,17 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
                 let gas_prefix = neo_core::smart_contract::StorageKey::create(-5, 29).to_array();
                 if let Ok(records) = gas_trie.find(&gas_prefix, None) {
                     for entry in records {
-                        eprintln!("  gas record key={} value={}", hex::encode(entry.key), hex::encode(entry.value));
+                        eprintln!(
+                            "  gas record key={} value={}",
+                            hex::encode(entry.key),
+                            hex::encode(entry.value)
+                        );
                     }
                 }
                 let mut prev_trie = state_store.trie_for_root(current_root);
                 let mut expected_trie = state_store.trie_for_root(*expected);
-                let account_prefix = neo_core::smart_contract::StorageKey::create(-6, 20).to_array();
+                let account_prefix =
+                    neo_core::smart_contract::StorageKey::create(-6, 20).to_array();
                 if let Ok(accounts) = expected_trie.find(&account_prefix, None) {
                     for entry in accounts {
                         let previous = prev_trie.get(&entry.key).ok().flatten();
@@ -366,7 +381,11 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
                 }
                 for (key, value) in &actual_entries {
                     if key.starts_with(&account_prefix) {
-                        eprintln!("  actual account change key={} new={:?}", hex::encode(key), value.as_ref().map(hex::encode));
+                        eprintln!(
+                            "  actual account change key={} new={:?}",
+                            hex::encode(key),
+                            value.as_ref().map(hex::encode)
+                        );
                     }
                 }
                 if let Ok(Some(prev_value)) = prev_trie.get(&hex::decode("faffffff0b").unwrap()) {

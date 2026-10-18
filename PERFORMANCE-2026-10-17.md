@@ -276,7 +276,8 @@ read from the chain store.
 
 ```text
 blocks 1..=99877: 0 state-root mismatches
-blocks 200000..=238711: 38,712 roots checked, 0 gaps, 0 mismatches
+blocks 200000..=250000: 50,001 roots checked, 0 gaps, 0 mismatches
+blocks 238711..=250000 in release: 25.5 s
 ```
 
 The block 238,711 mismatch reported earlier was caused by the replay harness
