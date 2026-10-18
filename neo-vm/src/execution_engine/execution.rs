@@ -249,11 +249,9 @@ impl ExecutionEngine {
             return Ok(());
         }
 
-        // Stack is at or over the reference limit. The reference counter can
-        // over-count across nested RET frames, so enforce the limit against
-        // the actual evaluation-stack slots as well. This keeps the memory
-        // bound without FAULTing legitimate MainNet transactions whose
-        // reference bookkeeping is conservative.
+        // The reference counter can over-count across nested calls and
+        // compound parent/child links, so enforce the limit against the
+        // actual live evaluation-stack slots as well.
         let actual_stack_size = self
             .invocation_stack()
             .iter()
