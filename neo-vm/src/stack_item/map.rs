@@ -55,10 +55,6 @@ impl Map {
             })),
         };
 
-        if let Some(rc) = map.reference_counter() {
-            map.add_reference_for_entries(&rc)?;
-        }
-
         Ok(map)
     }
 
@@ -135,13 +131,15 @@ impl Map {
             Self::validate_compound_reference(rc, &value)?;
 
             let parent = CompoundParent::Map(inner.id);
-            if let Some(old_value) = inner.items.get(&key) {
-                rc.remove_compound_reference(old_value, parent);
-            } else {
-                rc.add_compound_reference(&key, parent);
-            }
+            if rc.is_stack_referenced(parent) {
+                if let Some(old_value) = inner.items.get(&key) {
+                    rc.remove_compound_reference(old_value, parent);
+                } else {
+                    rc.add_compound_reference(&key, parent);
+                }
 
-            rc.add_compound_reference(&value, parent);
+                rc.add_compound_reference(&value, parent);
+            }
         }
 
         inner.items.insert(key, value);
@@ -161,8 +159,10 @@ impl Map {
 
         if let Some(rc) = &inner.reference_counter {
             let parent = CompoundParent::Map(inner.id);
-            rc.remove_compound_reference(key, parent);
-            rc.remove_compound_reference(&value, parent);
+            if rc.is_stack_referenced(parent) {
+                rc.remove_compound_reference(key, parent);
+                rc.remove_compound_reference(&value, parent);
+            }
         }
 
         Ok(value)
@@ -192,9 +192,11 @@ impl Map {
         Self::ensure_mutable(&inner)?;
         if let Some(rc) = &inner.reference_counter {
             let parent = CompoundParent::Map(inner.id);
-            for (key, value) in inner.items.iter() {
-                rc.remove_compound_reference(key, parent);
-                rc.remove_compound_reference(value, parent);
+            if rc.is_stack_referenced(parent) {
+                for (key, value) in inner.items.iter() {
+                    rc.remove_compound_reference(key, parent);
+                    rc.remove_compound_reference(value, parent);
+                }
             }
         }
         inner.items.clear();
@@ -247,17 +249,6 @@ impl Map {
         } else {
             Ok(())
         }
-    }
-
-    fn add_reference_for_entries(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        let inner = self.inner.lock();
-        let parent = CompoundParent::Map(inner.id);
-        for (key, value) in inner.items.iter() {
-            Self::validate_compound_reference(rc, value)?;
-            rc.add_compound_reference(key, parent);
-            rc.add_compound_reference(value, parent);
-        }
-        Ok(())
     }
 
     fn validate_key(&self, key: &StackItem) -> VmResult<()> {
@@ -319,7 +310,6 @@ impl Map {
             inner.reference_counter = Some(rc.clone());
         }
 
-        self.add_reference_for_entries(rc)?;
         Ok(())
     }
 }

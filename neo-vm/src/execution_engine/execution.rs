@@ -249,19 +249,13 @@ impl ExecutionEngine {
             return Ok(());
         }
 
-        // The reference counter can over-count across nested calls and
-        // compound parent/child links, so enforce the limit against the
-        // actual live evaluation-stack slots as well.
-        let actual_stack_size = self
-            .invocation_stack()
-            .iter()
-            .map(|context| context.evaluation_stack().len())
-            .sum::<usize>()
-            + self.result_stack().len();
-        if actual_stack_size > self.limits.max_stack_size as usize {
+        // Reference accounting now adds children on the first stack reference
+        // and releases them on the last, so enforce the real counter directly.
+        let current = self.reference_counter.check_zero_referred();
+        if current > self.limits.max_stack_size as usize {
             return Err(VmError::invalid_operation_msg(format!(
                 "MaxStackSize exceed: {}/{}",
-                actual_stack_size, self.limits.max_stack_size
+                current, self.limits.max_stack_size
             )));
         }
 

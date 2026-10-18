@@ -49,10 +49,6 @@ impl Array {
             })),
         };
 
-        if let Some(rc) = array.reference_counter() {
-            array.add_reference_for_items(&rc)?;
-        }
-
         Ok(array)
     }
 
@@ -125,8 +121,10 @@ impl Array {
             item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
             let parent = CompoundParent::Array(inner.id);
-            rc.remove_compound_reference(&inner.items[index], parent);
-            rc.add_compound_reference(&item, parent);
+            if rc.is_stack_referenced(parent) {
+                rc.remove_compound_reference(&inner.items[index], parent);
+                rc.add_compound_reference(&item, parent);
+            }
         }
 
         inner.items[index] = item;
@@ -141,7 +139,10 @@ impl Array {
         if let Some(rc) = &inner.reference_counter {
             item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
-            rc.add_compound_reference(&item, CompoundParent::Array(inner.id));
+            let parent = CompoundParent::Array(inner.id);
+            if rc.is_stack_referenced(parent) {
+                rc.add_compound_reference(&item, parent);
+            }
         }
 
         inner.items.push(item);
@@ -158,7 +159,10 @@ impl Array {
             .ok_or_else(|| VmError::invalid_operation_msg("Array is empty"))?;
 
         if let Some(rc) = &inner.reference_counter {
-            rc.remove_compound_reference(&item, CompoundParent::Array(inner.id));
+            let parent = CompoundParent::Array(inner.id);
+            if rc.is_stack_referenced(parent) {
+                rc.remove_compound_reference(&item, parent);
+            }
         }
 
         Ok(item)
@@ -182,8 +186,10 @@ impl Array {
         Self::ensure_mutable(&inner)?;
         if let Some(rc) = &inner.reference_counter {
             let parent = CompoundParent::Array(inner.id);
-            for item in &inner.items {
-                rc.remove_compound_reference(item, parent);
+            if rc.is_stack_referenced(parent) {
+                for item in &inner.items {
+                    rc.remove_compound_reference(item, parent);
+                }
             }
         }
         inner.items.clear();
@@ -218,7 +224,10 @@ impl Array {
         if let Some(rc) = &inner.reference_counter {
             item.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &item)?;
-            rc.add_compound_reference(&item, CompoundParent::Array(inner.id));
+            let parent = CompoundParent::Array(inner.id);
+            if rc.is_stack_referenced(parent) {
+                rc.add_compound_reference(&item, parent);
+            }
         }
 
         inner.items.insert(index, item);
@@ -238,7 +247,10 @@ impl Array {
         let removed = inner.items.remove(index);
 
         if let Some(rc) = &inner.reference_counter {
-            rc.remove_compound_reference(&removed, CompoundParent::Array(inner.id));
+            let parent = CompoundParent::Array(inner.id);
+            if rc.is_stack_referenced(parent) {
+                rc.remove_compound_reference(&removed, parent);
+            }
         }
 
         Ok(removed)
@@ -285,16 +297,6 @@ impl Array {
         }
     }
 
-    fn add_reference_for_items(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        let inner = self.inner.lock();
-        let parent = CompoundParent::Array(inner.id);
-        for item in &inner.items {
-            Self::validate_compound_reference(rc, item)?;
-            rc.add_compound_reference(item, parent);
-        }
-        Ok(())
-    }
-
     fn validate_compound_reference(rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
         match item {
             StackItem::Array(inner) => match inner.reference_counter() {
@@ -339,7 +341,6 @@ impl Array {
             inner.reference_counter = Some(rc.clone());
         }
 
-        self.add_reference_for_items(rc)?;
         Ok(())
     }
 }

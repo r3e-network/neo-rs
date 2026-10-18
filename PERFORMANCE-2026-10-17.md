@@ -12,11 +12,11 @@ Empty block through `NeoSystem::persist_block` with the durable RocksDB provider
 
 | Benchmark | Median |
 |---|---:|
-| `rocksdb_persist_empty_block` | **1.55 ms** |
+| `rocksdb_persist_empty_block` | **1.12 ms** |
 
 This is the actual production storage path (WAL + write batch + compaction
 bookkeeping), not the in-memory provider. It is slightly faster than the
-1.87 ms memory-store result because the memory store's copy-on-write snapshots
+1.02 ms memory-store result because the memory store's copy-on-write snapshots
 and BTreeMap scans are avoided; RocksDB uses native range scans and a durable
 write batch.
 
@@ -35,11 +35,11 @@ transactions (`benches-package/benches/block_persistence.rs`):
 
 | Benchmark | Median |
 |---|---:|
-| `persist_empty_block` | **1.87 ms** (range 1.53–2.15 ms) |
-| `persist_block_one_ret_tx` | **2.61 ms** (range 2.13–3.00 ms) |
-| `persist_block_ten_ret_txs` | **2.61 ms** (range 1.89–3.17 ms) |
+| `persist_empty_block` | **1.02 ms** (range 0.83–1.16 ms) |
+| `persist_block_one_ret_tx` | **1.32 ms** (range 1.07–1.51 ms) |
+| `persist_block_ten_ret_txs` | **1.40 ms** (range 1.22–1.54 ms) |
 
-The one-transaction case adds ~0.74 ms for engine setup, transaction execution,
+The one-transaction case adds ~0.30 ms for engine setup, transaction execution,
 ledger state, and cache merge. Ten transactions do **not** increase the median,
 confirming the per-transaction VM-state lookup is now O(1) instead of scanning
 the whole block state list. Before the lookup fix, each transaction scanned all
@@ -57,8 +57,8 @@ Changes:
 - prefix scans use the correct `BTreeMap` range,
 - snapshots overlay only matching write-batch keys instead of cloning the map.
 
-Result: empty-block persistence is **1.87 ms** instead of growing to ~4.0 ms;
-one-RET-tx persistence is **2.61 ms** instead of ~5.2 ms in the same
+Result: empty-block persistence is **1.02 ms** instead of growing to ~4.0 ms;
+one-RET-tx persistence is **1.32 ms** instead of ~5.2 ms in the same
 long-running criterion setup. Added tests cover prefix ordering and snapshot
 isolation from later store writes.
 
@@ -68,8 +68,8 @@ isolation from later store writes.
 in the block for each transaction, so a block with N transactions performed
 O(N²) hash lookups. It now builds a hash → index map lazily once per block.
 
-Measured with the end-to-end benchmark: one `RET` transaction = **2.61 ms**,
-ten `RET` transactions = **2.61 ms**. The per-transaction marginal cost no
+Measured with the end-to-end benchmark: one `RET` transaction = **1.32 ms**,
+ten `RET` transactions = **1.40 ms**. The per-transaction marginal cost no
 longer grows with block transaction count. Existing ledger tests
 (`batch_vm_state_update_applies_all_entries`, persist/update tests) still pass.
 
