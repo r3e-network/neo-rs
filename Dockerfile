@@ -47,6 +47,7 @@ COPY neo-telemetry/ neo-telemetry/
 COPY neo-node/ neo-node/
 COPY tests/ tests/
 COPY benches-package/ benches-package/
+COPY tools/ tools/
 COPY scripts/ scripts/
 COPY neo_mainnet_node.toml neo_testnet_node.toml neo_production_node.toml ./
 

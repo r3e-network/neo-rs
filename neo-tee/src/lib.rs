@@ -57,6 +57,6 @@ pub mod wallet;
 
 pub use attestation::{AttestationReport, AttestationService};
 pub use enclave::{EnclaveConfig, TeeEnclave};
-pub use error::{TeeError, TeeResult};
+pub use error::{EnclaveInitError, TeeError, TeeResult};
 pub use mempool::{FairOrderingPolicy, TeeMempool};
 pub use wallet::{SealedKey, TeeWallet, TeeWalletProvider};

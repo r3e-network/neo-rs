@@ -62,7 +62,6 @@ pub struct ReferenceCounter {
 
 impl ReferenceCounter {
     /// Creates a new reference counter.
-    #[must_use]
     pub fn new() -> Self {
         Self {
             state: Arc::new(ReferenceCounterState {
@@ -74,7 +73,6 @@ impl ReferenceCounter {
 
     /// Returns the total number of references currently tracked.
     #[inline]
-    #[must_use]
     pub fn count(&self) -> usize {
         self.state.references_count.load(Ordering::Relaxed)
     }
@@ -207,7 +205,6 @@ impl ReferenceCounter {
 
     /// Processes zero-referred items, matching the behaviour of the C# counter.
     #[inline]
-    #[must_use]
     pub fn check_zero_referred(&self) -> usize {
         let mut tracked = self.state.tracked.lock();
         if tracked.zero_referred.is_empty() {
@@ -335,7 +332,6 @@ impl ReferenceCounter {
     }
 
     /// Returns true when the compound parent currently has stack references.
-    #[must_use]
     pub fn is_stack_referenced(&self, parent: CompoundParent) -> bool {
         let id: ItemId = parent.into();
         let tracked = self.state.tracked.lock();
@@ -351,7 +347,6 @@ impl ReferenceCounter {
     }
 
     /// Returns true when both counters share the same underlying state.
-    #[must_use]
     pub fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.state, &other.state)
     }

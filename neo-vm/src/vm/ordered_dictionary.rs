@@ -20,7 +20,6 @@ where
     K: PartialEq,
 {
     /// Creates an empty ordered dictionary.
-    #[must_use]
     pub const fn new() -> Self {
         Self {
             entries: Vec::new(),
@@ -28,7 +27,6 @@ where
     }
 
     /// Creates an ordered dictionary with the specified capacity.
-    #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             entries: Vec::with_capacity(capacity),
@@ -36,13 +34,11 @@ where
     }
 
     /// Returns the number of stored entries.
-    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Returns `true` when the dictionary has no entries.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -89,7 +85,6 @@ where
     }
 
     /// Returns an iterator over the key/value pairs in insertion order.
-    #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&K, &V)> + ExactSizeIterator {
         self.entries.iter().map(|(k, v)| (k, v))
     }
