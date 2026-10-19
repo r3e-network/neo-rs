@@ -2,7 +2,6 @@
 
 use super::*;
 use crate::persistence::TrackState;
-use crate::smart_contract::native::LedgerContract;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

@@ -77,7 +77,6 @@ impl ApplicationEngine {
         Ok(())
     }
     /// Deletes the storage entry for the given key from the context's storage.
-    #[must_use]
     pub fn delete_storage_item(&mut self, context: &StorageContext, key: &[u8]) -> Result<()> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
         self.snapshot_cache.delete(&storage_key);
@@ -85,7 +84,6 @@ impl ApplicationEngine {
     }
     /// Pushes a verifiable script container onto the VM stack as an interop
     /// interface (`System.Runtime.GetScriptContainer`).
-    #[must_use]
     pub fn push_interop_container(&mut self, container: Arc<dyn Verifiable>) -> Result<(), String> {
         // The native `StackItem` model has no integer interop handle
         // (`StackItem::Interop(u64)` was a neo-vm-rs concept). Interop objects are
@@ -104,7 +102,6 @@ impl ApplicationEngine {
         }
     }
     /// Pops an iterator reference from the stack and returns its engine-side id.
-    #[must_use]
     pub fn pop_iterator_id(&mut self) -> Result<u32, String> {
         let item = self.pop()?;
         // Native iterators are `StackItem::InteropInterface(IteratorInterop { id })`.
@@ -120,7 +117,6 @@ impl ApplicationEngine {
         Ok(identifier)
     }
     /// Advances the iterator with the given id, returning whether a value is available.
-    #[must_use]
     pub fn iterator_next_internal(&mut self, iterator_id: u32) -> Result<bool, String> {
         let iterator = self
             .storage_iterators
@@ -129,7 +125,6 @@ impl ApplicationEngine {
         Ok(iterator.next())
     }
     /// Returns the current value of the iterator with the given id.
-    #[must_use]
     pub fn iterator_value_internal(&self, iterator_id: u32) -> Result<StackItem, String> {
         let iterator = self
             .storage_iterators

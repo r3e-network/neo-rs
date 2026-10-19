@@ -112,7 +112,7 @@ impl RustValidator {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        
+
         if timestamp > now + MAX_FUTURE_SECONDS * 1000 {
             return ValidationResult {
                 valid: false,
@@ -182,7 +182,10 @@ impl RustValidator {
     }
 
     /// 批量验证区块
-    pub fn validate_blocks(&self, tests: &[BlockValidationTest]) -> HashMap<String, ValidationResult> {
+    pub fn validate_blocks(
+        &self,
+        tests: &[BlockValidationTest],
+    ) -> HashMap<String, ValidationResult> {
         tests
             .iter()
             .map(|test| {

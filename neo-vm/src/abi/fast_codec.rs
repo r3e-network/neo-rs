@@ -38,7 +38,6 @@ const MAX_COLLECTION_LEN: usize = 4096;
 
 /// Decode stack from binary format
 #[inline]
-#[must_use]
 pub fn decode_stack(bytes: &[u8]) -> Result<Vec<StackValue>, &'static str> {
     let mut pos = 0;
     let len = read_u32(bytes, &mut pos, "truncated stack length")? as usize;

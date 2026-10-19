@@ -5,7 +5,7 @@ use crate::error::{EnclaveInitError, TeeError, TeeResult};
 use crate::sgx::VerifiedSgxEvidence;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{debug, error, info, warn};
 
 /// Enclave configuration
@@ -514,7 +514,7 @@ impl TeeEnclave {
     }
 
     /// Generate and save a new machine identifier
-    fn generate_and_save_machine_id(id_file: &PathBuf) -> Vec<u8> {
+    fn generate_and_save_machine_id(id_file: &Path) -> Vec<u8> {
         let id: [u8; 32] = rand::random();
 
         // Ensure parent directory exists

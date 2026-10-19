@@ -212,7 +212,9 @@ mod tests {
         let forward: Vec<_> = store.find(Some(&vec![1]), SeekDirection::Forward).collect();
         assert_eq!(forward, vec![(vec![1], vec![1]), (vec![1, 2], vec![1, 2])]);
 
-        let backward: Vec<_> = store.find(Some(&vec![1]), SeekDirection::Backward).collect();
+        let backward: Vec<_> = store
+            .find(Some(&vec![1]), SeekDirection::Backward)
+            .collect();
         assert_eq!(backward, vec![(vec![1, 2], vec![1, 2]), (vec![1], vec![1])]);
     }
 

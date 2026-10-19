@@ -45,7 +45,7 @@ fn create_valid_multisig(
         .iter()
         .take(m)
         .map(|(_, priv_key)| {
-            Secp256r1Crypto::sign_prehash(&Crypto::sha256(message), &priv_key)
+            Secp256r1Crypto::sign_prehash(&Crypto::sha256(message), priv_key)
                 .unwrap()
                 .to_vec()
         })
@@ -199,7 +199,7 @@ fn test_exact_signature_count_required() {
     let witness = Witness::new();
 
     // Add extra signature
-    let extra_sigs: Vec<Vec<u8>> = [&signatures[..], &vec![vec![0u8; 64]]].concat();
+    let extra_sigs: Vec<Vec<u8>> = [&signatures[..], &[vec![0u8; 64]]].concat();
 
     let result = witness
         .verify_multi_signature(b"test", &account, 3, &public_keys, &extra_sigs)

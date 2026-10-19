@@ -110,12 +110,7 @@ impl PersistCompletedHarness {
         Ok(())
     }
 
-    pub(super) fn into_parts(
-        self,
-    ) -> (
-        Vec<ConsensusService>,
-        Vec<mpsc::Receiver<ConsensusEvent>>,
-    ) {
+    pub(super) fn into_parts(self) -> (Vec<ConsensusService>, Vec<mpsc::Receiver<ConsensusEvent>>) {
         (self.services, self.receivers)
     }
 

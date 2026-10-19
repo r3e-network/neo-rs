@@ -12,7 +12,6 @@ pub const CHECK_SIG_PRICE: i64 = 1 << 15;
 pub const CHECK_MULTISIG_PRICE: i64 = 0;
 impl ApplicationEngine {
     /// Verifies a signature using secp256r1 (NIST P-256)
-    #[must_use]
     pub fn crypto_check_sig(&mut self) -> Result<bool, String> {
         // Neo VM calling convention: the first parameter is on top of the stack.
         // For standard signature witnesses, the invocation script pushes the signature and
@@ -25,7 +24,6 @@ impl ApplicationEngine {
     /// Verifies multiple signatures (m-of-n multisig)
     /// Stack order: pubkeys on top, signatures below
     /// Each can be either an Array of byte arrays, or an integer count followed by that many byte arrays
-    #[must_use]
     pub fn crypto_check_multisig(&mut self) -> Result<bool, String> {
         // Pop public keys first (top of stack)
         let public_keys = self.pop_sig_elements()?;
@@ -110,13 +108,11 @@ impl ApplicationEngine {
         }
     }
     /// SHA256 hash
-    #[must_use]
     pub fn crypto_sha256(&mut self) -> Result<(), String> {
         let data = self.pop_bytes()?;
         self.push_bytes(Crypto::sha256(&data).to_vec())
     }
     /// RIPEMD160 hash
-    #[must_use]
     pub fn crypto_ripemd160(&mut self) -> Result<(), String> {
         let data = self.pop_bytes()?;
         self.push_bytes(Crypto::ripemd160(&data).to_vec())

@@ -38,7 +38,6 @@ pub struct RpcResponse {
 impl RpcResponse {
     /// Creates an RPC response from JSON
     /// Matches C# `FromJson`
-    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let id = json.get("id").ok_or("Missing 'id' field")?.clone();
 
@@ -101,7 +100,6 @@ pub struct RpcResponseError {
 impl RpcResponseError {
     /// Creates an RPC response error from JSON
     /// Matches C# `FromJson`
-    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let code = json
             .get("code")

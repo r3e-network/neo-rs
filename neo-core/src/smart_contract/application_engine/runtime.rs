@@ -20,27 +20,22 @@ use std::string::String as StdString;
 use std::sync::Arc;
 impl ApplicationEngine {
     /// Gets the platform name
-    #[must_use]
     pub fn runtime_platform(&mut self) -> Result<(), String> {
         self.push_string("NEO".to_string())
     }
     /// Gets the trigger type
-    #[must_use]
     pub fn runtime_get_trigger(&mut self) -> Result<(), String> {
         self.push_integer(i64::from(self.trigger_type().bits()))
     }
     /// Gets the network magic number
-    #[must_use]
     pub fn runtime_get_network(&mut self) -> Result<(), String> {
         self.push_integer(self.protocol_settings().network as i64)
     }
     /// Gets the address version of the current network
-    #[must_use]
     pub fn runtime_get_address_version(&mut self) -> Result<(), String> {
         self.push_integer(self.protocol_settings().address_version as i64)
     }
     /// Gets the current block time
-    #[must_use]
     pub fn runtime_get_time(&mut self) -> Result<(), String> {
         let time = self.get_current_block_time()?;
         let big = BigInt::from(time);
@@ -48,7 +43,6 @@ impl ApplicationEngine {
             .map_err(|e| e.to_string())
     }
     /// Gets the script container
-    #[must_use]
     pub fn runtime_get_script_container(&mut self) -> Result<(), String> {
         let container = self
             .get_script_container()
@@ -91,7 +85,6 @@ impl ApplicationEngine {
         Ok(())
     }
     /// Gets the executing script hash
-    #[must_use]
     pub fn runtime_get_executing_script_hash(&mut self) -> Result<(), String> {
         if let Some(hash) = self.current_script_hash() {
             self.push_bytes(hash.to_bytes())
@@ -100,7 +93,6 @@ impl ApplicationEngine {
         }
     }
     /// Gets the calling script hash
-    #[must_use]
     pub fn runtime_get_calling_script_hash(&mut self) -> Result<(), String> {
         let hash = self.get_calling_script_hash();
         if let Some(hash) = hash {
@@ -110,7 +102,6 @@ impl ApplicationEngine {
         }
     }
     /// Gets the entry script hash
-    #[must_use]
     pub fn runtime_get_entry_script_hash(&mut self) -> Result<(), String> {
         if let Some(hash) = self.entry_script_hash() {
             self.push_bytes(hash.to_bytes())
@@ -119,7 +110,6 @@ impl ApplicationEngine {
         }
     }
     /// Checks witness
-    #[must_use]
     pub fn runtime_check_witness(&mut self) -> Result<(), String> {
         let hash_or_pubkey = self.pop_bytes()?;
         // Check if it's a hash (20 bytes) or public key (33 bytes)
@@ -142,14 +132,12 @@ impl ApplicationEngine {
         self.push_boolean(result)
     }
     /// Gets invocation counter
-    #[must_use]
     pub fn runtime_get_invocation_counter(&mut self) -> Result<(), String> {
         let hash = self.current_script_hash().ok_or("No current script")?;
         let counter = self.get_invocation_counter(&hash);
         self.push_integer(counter as i64)
     }
     /// Gets the next random number derived from VRF-like construction (matches C# GetRandom exactly).
-    #[must_use]
     pub fn runtime_get_random(&mut self) -> Result<(), String> {
         let network = self.protocol_settings().network;
         let aspid_enabled = self.is_hardfork_enabled(Hardfork::HfAspidochelone);
@@ -172,12 +160,10 @@ impl ApplicationEngine {
             .map_err(|e| e.to_string())
     }
     /// Gets the remaining GAS available for execution (matches C# GasLeft).
-    #[must_use]
     pub fn runtime_gas_left(&mut self) -> Result<(), String> {
         self.push_integer(self.gas_left())
     }
     /// Logs a message
-    #[must_use]
     pub fn runtime_log(&mut self) -> Result<(), String> {
         let message_bytes = self.pop_bytes()?;
         if message_bytes.len() > MAX_NOTIFICATION_SIZE {
@@ -199,7 +185,6 @@ impl ApplicationEngine {
         Ok(())
     }
     /// Sends a notification
-    #[must_use]
     pub fn runtime_notify(&mut self) -> Result<(), String> {
         // Match C# interop argument binding order:
         // System.Runtime.Notify(eventName, state)
@@ -277,7 +262,6 @@ impl ApplicationEngine {
         self.send_notification(script_hash, event_name, state)
     }
     /// Gets notifications
-    #[must_use]
     pub fn runtime_get_notifications(&mut self) -> Result<(), String> {
         let hash = if self.peek_is_null(0)? {
             self.pop()?;
@@ -294,7 +278,6 @@ impl ApplicationEngine {
         self.push_array(notifications)
     }
     /// Burns gas
-    #[must_use]
     pub fn runtime_burn_gas(&mut self, amount: i64) -> Result<(), String> {
         if amount <= 0 {
             return Err("GAS must be positive.".to_string());
@@ -305,7 +288,6 @@ impl ApplicationEngine {
         Ok(())
     }
     /// Gets the signers of the current transaction (matches C# GetCurrentSigners).
-    #[must_use]
     pub fn runtime_current_signers(&mut self) -> Result<(), String> {
         let Some(container) = self.get_script_container() else {
             return self.push_null();

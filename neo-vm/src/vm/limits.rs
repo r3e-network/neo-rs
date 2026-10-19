@@ -76,7 +76,6 @@ impl ExecutionEngineLimits {
     };
 
     /// Ensures the provided item size does not exceed the configured limit.
-    #[must_use]
     pub fn assert_max_item_size(&self, size: usize) -> Result<(), String> {
         if size > self.max_item_size as usize {
             return Err(format!(
@@ -88,7 +87,6 @@ impl ExecutionEngineLimits {
     }
 
     /// Ensures the supplied shift value is within bounds.
-    #[must_use]
     pub fn assert_shift(&self, shift: i32) -> Result<(), String> {
         if shift < 0 || shift > self.max_shift {
             return Err(format!("Invalid shift value: {}/{}", shift, self.max_shift));

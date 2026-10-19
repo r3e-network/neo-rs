@@ -59,12 +59,10 @@ impl ApplicationEngine {
     /// Checks whether the specified hash has witnessed the current execution.
     ///
     /// Public wrapper for C# `CheckWitness(UInt160)` semantics.
-    #[must_use]
     pub fn check_witness(&self, hash: &UInt160) -> Result<bool> {
         self.check_witness_internal(hash)
     }
     /// Backwards-compatible alias mirroring `check_witness`.
-    #[must_use]
     pub fn check_witness_hash(&self, hash: &UInt160) -> Result<bool> {
         self.check_witness_internal(hash)
     }
@@ -154,7 +152,6 @@ impl ApplicationEngine {
         self.vm_engine.current_context()
     }
     /// Deletes storage items by prefix.
-    #[must_use]
     pub fn delete_storage_by_prefix(&mut self, prefix: &[u8]) -> Result<()> {
         let keys: Vec<_> = self
             .snapshot_cache
@@ -223,7 +220,6 @@ impl ApplicationEngine {
         Ok(iterator_id)
     }
     /// Stores an existing storage iterator and returns its identifier.
-    #[must_use]
     pub fn store_storage_iterator(&mut self, iterator: StorageIterator) -> Result<u32, String> {
         let iterator_id = self.allocate_iterator_id().map_err(|err| err.to_string())?;
         self.storage_iterators.insert(iterator_id, iterator);
@@ -246,7 +242,6 @@ impl ApplicationEngine {
     }
     /// Advances a storage iterator to the next element.
     /// Returns true if successful, false if at the end.
-    #[must_use]
     pub fn iterator_next(&mut self, iterator_id: u32) -> Result<bool> {
         match self.storage_iterators.get_mut(&iterator_id) {
             Some(iterator) => Ok(iterator.next()),
@@ -257,7 +252,6 @@ impl ApplicationEngine {
         }
     }
     /// Gets the current value from a storage iterator.
-    #[must_use]
     pub fn iterator_value(&self, iterator_id: u32) -> Result<StackItem> {
         match self.storage_iterators.get(&iterator_id) {
             Some(iterator) => Ok(iterator.value()),
@@ -268,7 +262,6 @@ impl ApplicationEngine {
         }
     }
     /// Removes a storage iterator (cleanup).
-    #[must_use]
     pub fn dispose_iterator(&mut self, iterator_id: u32) -> Result<()> {
         self.storage_iterators.remove(&iterator_id);
         Ok(())
@@ -315,7 +308,6 @@ impl ApplicationEngine {
         self.native_registry.get(hash).map(|native| native.id())
     }
     /// Sets a storage item directly (for testing and internal use).
-    #[must_use]
     pub fn set_storage(&mut self, key: StorageKey, item: StorageItem) -> Result<()> {
         if self.snapshot_cache.get(&key).is_some() {
             self.snapshot_cache.update(key, item);
@@ -329,13 +321,11 @@ impl ApplicationEngine {
         self.snapshot_cache.get(key)
     }
     /// Deletes a storage item directly (for testing and internal use).
-    #[must_use]
     pub fn delete_storage(&mut self, key: &StorageKey) -> Result<()> {
         self.snapshot_cache.delete(key);
         Ok(())
     }
     /// Gets the storage context for a native contract.
-    #[must_use]
     pub fn get_native_storage_context(&self, contract_hash: &UInt160) -> Result<StorageContext> {
         // Create storage context for native contracts using the best available source:
         // preloaded contract metadata first, then native registry fallback.
@@ -365,7 +355,6 @@ impl ApplicationEngine {
         None
     }
     /// Puts a storage item (legacy API for native contracts).
-    #[must_use]
     pub fn put_storage_item_legacy(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         if let Some(current_hash) = &self.current_script_hash {
             let context = self.get_native_storage_context(current_hash)?;
@@ -377,7 +366,6 @@ impl ApplicationEngine {
     }
     /// Creates the script hash of a single-key (signature) account, charging the
     /// CheckSig fee (`System.Contract.CreateStandardAccount`).
-    #[must_use]
     pub fn create_standard_account(&mut self, public_key: &[u8]) -> Result<UInt160> {
         if public_key.len() != 33 {
             return Err(Error::invalid_operation(
@@ -443,7 +431,6 @@ impl ApplicationEngine {
         Ok(hash)
     }
     /// Deletes a storage item (legacy API for native contracts).
-    #[must_use]
     pub fn delete_storage_item_legacy(&mut self, key: &[u8]) -> Result<()> {
         if let Some(current_hash) = &self.current_script_hash {
             let context = self.get_native_storage_context(current_hash)?;
@@ -483,9 +470,8 @@ impl ApplicationEngine {
             };
             let current_hash = match stored_script_hash {
                 Some(hash) => hash,
-                None => UInt160::from_bytes(&current_context.script_hash()).map_err(|e| {
-                    Error::invalid_operation(format!("Invalid script hash: {e}"))
-                })?,
+                None => UInt160::from_bytes(&current_context.script_hash())
+                    .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?,
             };
             self.current_script_hash = Some(current_hash);
             if self.entry_script_hash.is_none() {
@@ -607,7 +593,6 @@ impl ApplicationEngine {
         data
     }
     /// Converts a VM stack item into bytes, mirroring the C# helper.
-    #[must_use]
     pub fn stack_item_to_bytes(item: StackItem) -> Result<Vec<u8>, String> {
         if matches!(item, StackItem::Null) {
             return crate::smart_contract::binary_serializer::BinarySerializer::serialize(

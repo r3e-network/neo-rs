@@ -1039,7 +1039,7 @@ version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef975e30683b2d965054bb0a836f8973857c4ebf6acf274fe46617cd285060d8"
 dependencies = [
- "foldhash 0.2.0",
+ "foldhash",
  "libm",
  "portable-atomic",
  "siphasher",
@@ -1095,12 +1095,6 @@ name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
-
-[[package]]
-name = "foldhash"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
 name = "foldhash"
@@ -1389,11 +1383,6 @@ name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
-dependencies = [
- "allocator-api2",
- "equivalent",
- "foldhash 0.1.5",
-]
 
 [[package]]
 name = "hashbrown"
@@ -1403,7 +1392,16 @@ checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 dependencies = [
  "allocator-api2",
  "equivalent",
- "foldhash 0.2.0",
+ "foldhash",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+dependencies = [
+ "foldhash",
 ]
 
 [[package]]
@@ -1616,7 +1614,7 @@ dependencies = [
  "http 1.5.0",
  "hyper 1.11.1",
  "hyper-util",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "tokio",
  "tokio-rustls 0.26.5",
  "tower-service",
@@ -2128,11 +2126,11 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "lru"
-version = "0.12.5"
+version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
+checksum = "ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5"
 dependencies = [
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -2328,7 +2326,7 @@ dependencies = [
 
 [[package]]
 name = "neo-benches"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "criterion",
  "hex",
@@ -2343,7 +2341,7 @@ dependencies = [
 
 [[package]]
 name = "neo-config"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "dirs",
  "serde",
@@ -2354,7 +2352,7 @@ dependencies = [
 
 [[package]]
 name = "neo-consensus"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "async-trait",
  "bincode",
@@ -2374,7 +2372,7 @@ dependencies = [
 
 [[package]]
 name = "neo-core"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "aes",
  "anyhow",
@@ -2456,7 +2454,7 @@ dependencies = [
 
 [[package]]
 name = "neo-crypto"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "base64 0.22.1",
  "bitvec",
@@ -2496,7 +2494,7 @@ dependencies = [
 
 [[package]]
 name = "neo-hsm"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2519,7 +2517,7 @@ dependencies = [
 
 [[package]]
 name = "neo-io"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2542,7 +2540,7 @@ dependencies = [
 
 [[package]]
 name = "neo-json"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "hashbrown 0.14.5",
  "indexmap",
@@ -2554,7 +2552,7 @@ dependencies = [
 
 [[package]]
 name = "neo-node"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2595,7 +2593,7 @@ dependencies = [
 
 [[package]]
 name = "neo-p2p"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -2612,7 +2610,7 @@ dependencies = [
 
 [[package]]
 name = "neo-primitives"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "bitflags 2.13.2",
  "bs58",
@@ -2631,7 +2629,7 @@ dependencies = [
 
 [[package]]
 name = "neo-rpc"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2679,7 +2677,7 @@ dependencies = [
 
 [[package]]
 name = "neo-storage"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "fastbloom",
  "hashbrown 0.14.5",
@@ -2698,7 +2696,7 @@ dependencies = [
 
 [[package]]
 name = "neo-tee"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2724,7 +2722,7 @@ dependencies = [
 
 [[package]]
 name = "neo-telemetry"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2743,7 +2741,7 @@ dependencies = [
 
 [[package]]
 name = "neo-tests"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "criterion",
  "hex",
@@ -2769,7 +2767,7 @@ dependencies = [
 
 [[package]]
 name = "neo-vm"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "base64 0.22.1",
  "bitflags 2.13.2",
@@ -3719,9 +3717,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "log",
  "once_cell",
@@ -4505,7 +4503,7 @@ version = "0.26.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0c85f2c3ef0b1cd58b36682f4b17aaa995f0e5db534d85692b4903abce21f67"
 dependencies = [
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "tokio",
 ]
 

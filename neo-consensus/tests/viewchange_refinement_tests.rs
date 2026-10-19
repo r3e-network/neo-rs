@@ -58,7 +58,7 @@ fn test_no_view_regression_across_sequence() {
             100 + i as u32,
             i,
             i,
-            (i as u64 * 1000u64),
+            i as u64 * 1000u64,
             ChangeViewReason::Timeout,
         );
         let current_view = msg.view_number;
@@ -81,8 +81,8 @@ fn test_consecutive_view_changes_strictly_increasing() {
         let msg = ChangeViewMessage::new(
             100 + view_num as u32,
             view_num,
-            view_num as u8,
-            ((view_num as u64 + 1u64) * 1000u64),
+            view_num,
+            (view_num as u64 + 1u64) * 1000u64,
             ChangeViewReason::Timeout,
         );
         views.push(msg.view_number);
@@ -114,7 +114,7 @@ fn test_timeout_bounds_valid() {
     // Verify timestamp is reasonable (within ~30 seconds drift from view timeout)
     let max_allowed_drift = 30000u64;
     let min_timestamp = (msg.view_number as u64) * 4000;
-    let max_timestamp = min_timestamp + max_allowed_drift;
+    let _max_timestamp = min_timestamp + max_allowed_drift;
 
     // The timestamp should be >= minimum based on view number
     assert!(msg.timestamp >= min_timestamp || current_time > 200000); // Allow for large current time
@@ -142,7 +142,7 @@ fn test_timestamp_bounds_for_high_views() {
 
     let lower_bound = (msg_high_view.view_number as u64) * 4000;
     let max_allowed_drift = 30000u64;
-    let upper_bound = lower_bound + max_allowed_drift;
+    let _upper_bound = lower_bound + max_allowed_drift;
 
     assert!(msg_high_view.timestamp >= lower_bound);
     // Adjust upper bound check based on actual timestamp semantics
@@ -427,8 +427,8 @@ fn test_full_view_change_lifecycle() {
         let msg = ChangeViewMessage::new(
             block_index,
             current_view,
-            view_num as u8,
-            (view_num + 1) * 10000,
+            view_num,
+            u64::from(view_num + 1) * 10000,
             ChangeViewReason::Timeout,
         );
 

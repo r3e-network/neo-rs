@@ -660,12 +660,8 @@ pub static STATE_OPERATIONS_PER_SECOND: LazyLock<Gauge> = LazyLock::new(|| {
 });
 
 /// Cache hit rate gauge (0.0 to 1.0)
-pub static CACHE_HIT_RATE: LazyLock<Gauge> = LazyLock::new(|| {
-    register_gauge(
-        "neo_cache_hit_rate",
-        "Cache hit rate ratio (0.0 to 1.0)",
-    )
-});
+pub static CACHE_HIT_RATE: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_cache_hit_rate", "Cache hit rate ratio (0.0 to 1.0)"));
 
 /// Latency histogram with p50/p95/p99 buckets
 pub static OPERATION_LATENCY: LazyLock<prometheus::Histogram> = LazyLock::new(|| {
@@ -679,8 +675,11 @@ pub static OPERATION_LATENCY: LazyLock<prometheus::Histogram> = LazyLock::new(||
         ]),
     )
     .unwrap_or_else(|_| {
-        Histogram::with_opts(HistogramOpts::new("neo_operation_latency_seconds", "Fallback"))
-            .expect("fallback")
+        Histogram::with_opts(HistogramOpts::new(
+            "neo_operation_latency_seconds",
+            "Fallback",
+        ))
+        .expect("fallback")
     });
 
     let _ = prometheus::register(Box::new(histogram.clone()));
@@ -688,12 +687,8 @@ pub static OPERATION_LATENCY: LazyLock<prometheus::Histogram> = LazyLock::new(||
 });
 
 /// CPU utilization gauge (0.0 to 1.0)
-pub static CPU_UTILIZATION: LazyLock<Gauge> = LazyLock::new(|| {
-    register_gauge(
-        "neo_cpu_utilization",
-        "CPU utilization ratio (0.0 to 1.0)",
-    )
-});
+pub static CPU_UTILIZATION: LazyLock<Gauge> =
+    LazyLock::new(|| register_gauge("neo_cpu_utilization", "CPU utilization ratio (0.0 to 1.0)"));
 
 // Internal tracking for deltas
 static STATE_ROOT_ACCEPTED_LAST: AtomicU64 = AtomicU64::new(0);

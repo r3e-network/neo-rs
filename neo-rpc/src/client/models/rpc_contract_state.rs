@@ -25,7 +25,6 @@ pub struct RpcContractState {
 impl RpcContractState {
     /// Creates from JSON
     /// Matches C# `FromJson`
-    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let id = json
             .get("id")
@@ -72,7 +71,6 @@ impl RpcContractState {
 
     /// Converts to JSON
     /// Matches C# `ToJson`
-    #[must_use]
     pub fn to_json(&self) -> Result<JObject, String> {
         let mut json = JObject::new();
         json.insert(

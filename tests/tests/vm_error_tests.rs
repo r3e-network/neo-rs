@@ -7,8 +7,8 @@
 //! - Memory limit exceeded
 //! - Invalid contract calls
 
-use neo_vm::{VmError, VmState};
 use neo_primitives::UInt160;
+use neo_vm::{VmError, VmState};
 
 // ============================================================================
 // Stack Error Tests
@@ -22,7 +22,10 @@ fn test_stack_overflow_error() {
 
 #[test]
 fn test_stack_underflow_error() {
-    let error = VmError::StackUnderflow { requested: 5, available: 2 };
+    let error = VmError::StackUnderflow {
+        requested: 5,
+        available: 2,
+    };
     assert!(error.to_string().contains("stack") || error.to_string().contains("underflow"));
 }
 
@@ -42,7 +45,10 @@ fn test_invalid_stack_item_type() {
 
 #[test]
 fn test_out_of_gas_error() {
-    let error = VmError::GasExhausted { used: 10_000_000, limit: 5_000_000 };
+    let error = VmError::GasExhausted {
+        used: 10_000_000,
+        limit: 5_000_000,
+    };
     assert!(error.to_string().to_lowercase().contains("gas"));
 }
 
@@ -159,8 +165,10 @@ fn test_division_by_zero() {
     let error = VmError::DivisionByZero {
         operation: "DIV".to_string(),
     };
-    assert!(error.to_string().to_lowercase().contains("zero") ||
-            error.to_string().to_lowercase().contains("division"));
+    assert!(
+        error.to_string().to_lowercase().contains("zero")
+            || error.to_string().to_lowercase().contains("division")
+    );
 }
 
 #[test]
@@ -337,16 +345,17 @@ fn test_cannot_convert_to_integer() {
 
 #[test]
 fn test_empty_evaluation_stack() {
-    let error = VmError::StackUnderflow { requested: 1, available: 0 };
+    let error = VmError::StackUnderflow {
+        requested: 1,
+        available: 0,
+    };
     // VM should handle empty stack gracefully
     assert!(!error.to_string().is_empty());
 }
 
 #[test]
 fn test_max_item_count_exceeded() {
-    let error = VmError::StackOverflow {
-        max_size: 2048,
-    };
+    let error = VmError::StackOverflow { max_size: 2048 };
     assert!(error.to_string().contains("2048") || error.to_string().contains("stack"));
 }
 

@@ -342,7 +342,6 @@ impl<T> PooledVec<T> {
     /// assert_eq!(vec.try_push(3), Err(3)); // Capacity exceeded
     /// ```
     #[inline]
-    #[must_use]
     pub fn try_push(&mut self, item: T) -> Result<(), T> {
         if self.inner.len() >= self.max_capacity && self.max_capacity > 0 {
             Err(item)

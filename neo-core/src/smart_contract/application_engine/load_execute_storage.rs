@@ -117,7 +117,6 @@ impl ApplicationEngine {
         }
     }
     /// Executes the loaded scripts until the VM halts or faults.
-    #[must_use]
     pub fn execute(&mut self) -> Result<()> {
         let state = self.execute_allow_fault();
         if state == VMState::FAULT {
@@ -129,7 +128,6 @@ impl ApplicationEngine {
         Ok(())
     }
     /// Adds gas to the consumed amount
-    #[must_use]
     pub fn add_gas(&mut self, amount: i64) -> Result<()> {
         self.gas_consumed = self.gas_consumed.saturating_add(amount);
         if self.gas_consumed > self.gas_limit {
@@ -171,7 +169,6 @@ impl ApplicationEngine {
     /// The committee address is computed from the current committee members
     /// (or standby committee if not yet initialized) using a multi-signature
     /// script requiring majority approval.
-    #[must_use]
     pub fn check_committee_witness(&self) -> Result<bool> {
         // SECURITY FIX: Previously this just called container.verify() which
         // always returned true. Now we properly verify against the committee
@@ -187,7 +184,6 @@ impl ApplicationEngine {
         self.check_witness_hash(&committee_address)
     }
     /// Clear all storage for a contract
-    #[must_use]
     pub fn clear_contract_storage(&mut self, contract_hash: &UInt160) -> Result<()> {
         let Some(contract_id) = self.get_contract_id_by_hash(contract_hash) else {
             return Ok(());
@@ -204,7 +200,6 @@ impl ApplicationEngine {
         Ok(())
     }
     /// Gets the storage context for the current contract (matches C# GetStorageContext exactly).
-    #[must_use]
     pub fn get_storage_context(&self) -> Result<StorageContext> {
         // 1. Get current contract hash
         let contract_hash = self
@@ -229,7 +224,6 @@ impl ApplicationEngine {
         })
     }
     /// Gets a read-only storage context (matches C# GetReadOnlyContext exactly).
-    #[must_use]
     pub fn get_read_only_storage_context(&self) -> Result<StorageContext> {
         let mut context = self.get_storage_context()?;
         context.is_read_only = true;

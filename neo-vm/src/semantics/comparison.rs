@@ -20,37 +20,31 @@ pub fn not_equal_values(left: &StackValue, right: &StackValue) -> bool {
 }
 
 /// Numeric equality across primitive numeric and byte-string values.
-#[must_use]
 pub fn num_equal_values(left: &StackValue, right: &StackValue) -> Result<bool, String> {
     Ok(integer_value_for_num_equal(left)? == integer_value_for_num_equal(right)?)
 }
 
 /// Numeric inequality across primitive numeric and byte-string values.
-#[must_use]
 pub fn num_not_equal_values(left: &StackValue, right: &StackValue) -> Result<bool, String> {
     Ok(!num_equal_values(left, right)?)
 }
 
 /// Numeric less-than with NeoVM's null-as-false comparison rule.
-#[must_use]
 pub fn less_than_values(left: &StackValue, right: &StackValue) -> Result<bool, String> {
     compare_ordered_values(left, right, |left, right| left < right)
 }
 
 /// Numeric less-than-or-equal with NeoVM's null-as-false comparison rule.
-#[must_use]
 pub fn less_or_equal_values(left: &StackValue, right: &StackValue) -> Result<bool, String> {
     compare_ordered_values(left, right, |left, right| left <= right)
 }
 
 /// Numeric greater-than with NeoVM's null-as-false comparison rule.
-#[must_use]
 pub fn greater_than_values(left: &StackValue, right: &StackValue) -> Result<bool, String> {
     compare_ordered_values(left, right, |left, right| left > right)
 }
 
 /// Numeric greater-than-or-equal with NeoVM's null-as-false comparison rule.
-#[must_use]
 pub fn greater_or_equal_values(left: &StackValue, right: &StackValue) -> Result<bool, String> {
     compare_ordered_values(left, right, |left, right| left >= right)
 }
@@ -96,7 +90,6 @@ pub fn bool_or(left: bool, right: bool) -> bool {
 }
 
 /// NeoVM `NZ`, which is a numeric zero check rather than general truthiness.
-#[must_use]
 pub fn nz_value(value: &StackValue) -> Result<bool, String> {
     Ok(!integer_value_for_nz(value)?.is_zero())
 }
@@ -130,7 +123,6 @@ pub fn boolean_value(value: &StackValue) -> bool {
 }
 
 /// Boolean conversion through NeoVM's strict integer path for `NOT`.
-#[must_use]
 pub fn strict_boolean_value(value: &StackValue) -> Result<bool, String> {
     match value {
         StackValue::Boolean(value) => Ok(*value),
@@ -153,7 +145,6 @@ pub fn strict_boolean_value(value: &StackValue) -> Result<bool, String> {
 }
 
 /// Boolean NOT using NeoVM's strict integer path.
-#[must_use]
 pub fn not_value(value: &StackValue) -> Result<bool, String> {
     Ok(!strict_boolean_value(value)?)
 }

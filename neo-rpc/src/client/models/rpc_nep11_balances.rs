@@ -41,7 +41,6 @@ impl RpcNep11Balances {
     }
 
     /// Creates from JSON.
-    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let (balances, user_script_hash) =
             parse_balance_list(json, protocol_settings, RpcNep11Balance::from_json)?;
@@ -89,7 +88,6 @@ impl RpcNep11Balance {
         json
     }
 
-    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let asset_hash_str = required_string(json, "assethash")?;
         let asset_hash = UInt160::parse(&asset_hash_str)
@@ -153,7 +151,6 @@ impl RpcNep11TokenBalance {
         json
     }
 
-    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let token_id_str = required_string(json, "tokenid")?;
         let token_id = hex::decode(token_id_str.trim_start_matches("0x"))

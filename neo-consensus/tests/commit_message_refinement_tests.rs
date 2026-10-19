@@ -122,7 +122,7 @@ fn test_serialization_returns_signature_only() {
 #[test]
 fn test_serialization_matches_coq_model() {
     // Create multiple commits with different signature content
-    let signatures = vec![
+    let signatures = [
         vec![0u8; 64],   // All zeros (placeholder for real ECDSA)
         vec![255u8; 64], // All ones
         (0..64).map(|i| (i % 256) as u8).collect::<Vec<_>>(), // Sequential pattern
@@ -278,14 +278,11 @@ fn test_coq_refinement_tie_in() {
         ("sequential", (1u8..=255).cycle().take(64).collect()),
     ];
 
-    for (name, sig) in test_data {
+    for (_name, sig) in test_data {
         let commit = CommitMessage::new(1, 0, 0, sig.clone());
 
         // Coq prediction: length must be 64
         assert_eq!(sig.len(), 64);
-
-        // Coq prediction: all bytes <= 255 (trivially true for Vec<u8>)
-        assert!(sig.iter().all(|&b| b <= 255));
 
         // Coq prediction: validate_commit c holds
         assert!(commit.validate().is_ok());
@@ -359,7 +356,6 @@ fn test_comprehensive_coverage_summary() {
 // Ensure this module is included in lib.rs test collection
 #[cfg(test)]
 mod integration {
-    use super::*;
 
     #[test]
     fn all_refinement_tests_compile_and_run() {

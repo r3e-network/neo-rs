@@ -4,13 +4,13 @@
 //! compression) and `NetworkMessage::from_bytes` for a 500-transaction block.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use neo_core::UInt160;
 use neo_core::WitnessScope;
 use neo_core::neo_io::{MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::network::p2p::payloads::{Block, Transaction};
 use neo_core::network::p2p::{Message, NetworkMessage, ProtocolMessage};
-use neo_core::UInt160;
 
 fn block_message(transaction_count: usize) -> NetworkMessage {
     let mut block = Block::new();

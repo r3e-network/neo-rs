@@ -61,7 +61,6 @@ impl KeyBuilder {
     /// # Errors
     ///
     /// Returns `KeyBuilderError::InvalidMaxLength` if `max_length` is zero.
-    #[must_use]
     pub fn try_new(id: i32, prefix: u8, max_length: usize) -> Result<Self, KeyBuilderError> {
         if max_length == 0 {
             return Err(KeyBuilderError::InvalidMaxLength);
@@ -97,7 +96,6 @@ impl KeyBuilder {
     }
 
     /// Adds a byte to the key.
-    #[must_use]
     pub fn try_add_byte(&mut self, key: u8) -> Result<&mut Self, KeyBuilderError> {
         self.check_length(1)?;
         self.cache_data[self.key_length] = key;
@@ -112,7 +110,6 @@ impl KeyBuilder {
     }
 
     /// Adds bytes to the key.
-    #[must_use]
     pub fn try_add(&mut self, key: &[u8]) -> Result<&mut Self, KeyBuilderError> {
         self.check_length(key.len())?;
         self.cache_data[self.key_length..self.key_length + key.len()].copy_from_slice(key);
@@ -155,7 +152,6 @@ impl KeyBuilder {
     /// # Errors
     ///
     /// Returns `KeyBuilderError::NegativeBigInteger` if the value is negative.
-    #[must_use]
     pub fn try_add_big_endian(&mut self, key: &BigInt) -> Result<&mut Self, KeyBuilderError> {
         let (sign, bytes) = key.to_bytes_be();
         if sign == num_bigint::Sign::Minus {

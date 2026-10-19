@@ -479,7 +479,7 @@ fn test_complete_block_structure_preservation() {
 fn test_concurrent_roundtrip_isolation() {
     // Test: Concurrent blocks maintain isolation through serialization
 
-    let header_template = BlockHeader::new(
+    let _header_template = BlockHeader::new(
         0,
         UInt256::zero(),
         UInt256::zero(),

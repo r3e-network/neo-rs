@@ -48,7 +48,6 @@ pub struct RpcInvokeResult {
 impl RpcInvokeResult {
     /// Creates from JSON
     /// Matches C# `FromJson`
-    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let script = required_string(json, "script")?;
 
@@ -115,7 +114,6 @@ pub struct RpcStack {
 impl RpcStack {
     /// Creates from JSON
     /// Matches C# `FromJson`
-    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let item_type = json
             .get("type")

@@ -42,33 +42,33 @@ fn get_type_tag(encoded: &[u8]) -> u8 {
 fn test_integer_encoding_roundtrip() {
     // Test positive integer
     let original = StackValue::Integer(42);
-    let encoded = encode_stack(&[original.clone()]);
+    let encoded = encode_stack(std::slice::from_ref(&original));
     let decoded = decode_stack(&encoded).expect("integer should decode successfully");
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0], original);
 
     // Test negative integer
     let original_neg = StackValue::Integer(-100);
-    let encoded_neg = encode_stack(&[original_neg.clone()]);
+    let encoded_neg = encode_stack(std::slice::from_ref(&original_neg));
     let decoded_neg = decode_stack(&encoded_neg).expect("negative integer should decode");
     assert_eq!(decoded_neg.len(), 1);
     assert_eq!(decoded_neg[0], original_neg);
 
     // Test zero
     let original_zero = StackValue::Integer(0);
-    let encoded_zero = encode_stack(&[original_zero.clone()]);
+    let encoded_zero = encode_stack(std::slice::from_ref(&original_zero));
     let decoded_zero = decode_stack(&encoded_zero).expect("zero should decode");
     assert_eq!(decoded_zero[0], original_zero);
 
     // Test max i64 boundary
     let original_max = StackValue::Integer(i64::MAX);
-    let encoded_max = encode_stack(&[original_max.clone()]);
+    let encoded_max = encode_stack(std::slice::from_ref(&original_max));
     let decoded_max = decode_stack(&encoded_max).expect("max i64 should decode");
     assert_eq!(decoded_max[0], original_max);
 
     // Test min i64 boundary
     let original_min = StackValue::Integer(i64::MIN);
-    let encoded_min = encode_stack(&[original_min.clone()]);
+    let encoded_min = encode_stack(std::slice::from_ref(&original_min));
     let decoded_min = decode_stack(&encoded_min).expect("min i64 should decode");
     assert_eq!(decoded_min[0], original_min);
 }
@@ -77,13 +77,13 @@ fn test_integer_encoding_roundtrip() {
 fn test_boolean_encoding_roundtrip() {
     // Test true
     let original_true = StackValue::Boolean(true);
-    let encoded_true = encode_stack(&[original_true.clone()]);
+    let encoded_true = encode_stack(std::slice::from_ref(&original_true));
     let decoded_true = decode_stack(&encoded_true).expect("true boolean should decode");
     assert_eq!(decoded_true[0], original_true);
 
     // Test false
     let original_false = StackValue::Boolean(false);
-    let encoded_false = encode_stack(&[original_false.clone()]);
+    let encoded_false = encode_stack(std::slice::from_ref(&original_false));
     let decoded_false = decode_stack(&encoded_false).expect("false boolean should decode");
     assert_eq!(decoded_false[0], original_false);
 
@@ -100,14 +100,14 @@ fn test_boolean_encoding_roundtrip() {
 fn test_bytestring_encoding_roundtrip() {
     // Test empty bytestring
     let original_empty = StackValue::ByteString(Vec::new());
-    let encoded_empty = encode_stack(&[original_empty.clone()]);
+    let encoded_empty = encode_stack(std::slice::from_ref(&original_empty));
     let decoded_empty = decode_stack(&encoded_empty).expect("empty bytestring should decode");
     assert_eq!(decoded_empty[0], original_empty);
 
     // Test non-empty bytestring - using 3 bytes so we know expected length
     let original_data = vec![0x01, 0x02, 0x03];
     let original = StackValue::ByteString(original_data.clone());
-    let encoded = encode_stack(&[original.clone()]);
+    let encoded = encode_stack(std::slice::from_ref(&original));
     let decoded = decode_stack(&encoded).expect("bytestring should decode");
     assert_eq!(decoded[0], original);
 
@@ -118,14 +118,14 @@ fn test_bytestring_encoding_roundtrip() {
 fn test_buffer_encoding_roundtrip() {
     // Test empty buffer
     let original_empty = StackValue::Buffer(Vec::new());
-    let encoded_empty = encode_stack(&[original_empty.clone()]);
+    let encoded_empty = encode_stack(std::slice::from_ref(&original_empty));
     let decoded_empty = decode_stack(&encoded_empty).expect("empty buffer should decode");
     assert_eq!(decoded_empty[0], original_empty);
 
     // Test non-empty buffer
     let original_data = vec![0xAA, 0xBB, 0xCC, 0xDD];
     let original = StackValue::Buffer(original_data.clone());
-    let encoded = encode_stack(&[original.clone()]);
+    let encoded = encode_stack(std::slice::from_ref(&original));
     let decoded = decode_stack(&encoded).expect("buffer should decode");
     assert_eq!(decoded[0], original);
 
@@ -148,19 +148,19 @@ fn test_buffer_encoding_roundtrip() {
 fn test_biginteger_encoding_roundtrip() {
     // Test zero-length BigInteger (edge case)
     let original_empty = StackValue::BigInteger(Vec::new());
-    let encoded_empty = encode_stack(&[original_empty.clone()]);
+    let encoded_empty = encode_stack(std::slice::from_ref(&original_empty));
     let decoded_empty = decode_stack(&encoded_empty).expect("empty BigInteger should decode");
     assert_eq!(decoded_empty[0], original_empty);
 
     // Test small value
     let original_small = StackValue::BigInteger(vec![0x01, 0x00]);
-    let encoded_small = encode_stack(&[original_small.clone()]);
+    let encoded_small = encode_stack(std::slice::from_ref(&original_small));
     let decoded_small = decode_stack(&encoded_small).expect("small BigInteger should decode");
     assert_eq!(decoded_small[0], original_small);
 
     // Test large value (little-endian two's complement)
     let original_large = StackValue::BigInteger(vec![0xFF; 32]);
-    let encoded_large = encode_stack(&[original_large.clone()]);
+    let encoded_large = encode_stack(std::slice::from_ref(&original_large));
     let decoded_large = decode_stack(&encoded_large).expect("large BigInteger should decode");
     assert_eq!(decoded_large[0], original_large);
 
@@ -175,19 +175,19 @@ fn test_biginteger_encoding_roundtrip() {
 fn test_pointer_encoding_roundtrip() {
     // Test zero pointer
     let original_zero = StackValue::Pointer(0);
-    let encoded_zero = encode_stack(&[original_zero.clone()]);
+    let encoded_zero = encode_stack(std::slice::from_ref(&original_zero));
     let decoded_zero = decode_stack(&encoded_zero).expect("zero pointer should decode");
     assert_eq!(decoded_zero[0], original_zero);
 
     // Test positive pointer
     let original_pos = StackValue::Pointer(1024);
-    let encoded_pos = encode_stack(&[original_pos.clone()]);
+    let encoded_pos = encode_stack(std::slice::from_ref(&original_pos));
     let decoded_pos = decode_stack(&encoded_pos).expect("positive pointer should decode");
     assert_eq!(decoded_pos[0], original_pos);
 
     // Test negative pointer
     let original_neg = StackValue::Pointer(-512);
-    let encoded_neg = encode_stack(&[original_neg.clone()]);
+    let encoded_neg = encode_stack(std::slice::from_ref(&original_neg));
     let decoded_neg = decode_stack(&encoded_neg).expect("negative pointer should decode");
     assert_eq!(decoded_neg[0], original_neg);
 
@@ -203,7 +203,7 @@ fn test_pointer_encoding_roundtrip() {
 fn test_array_encoding_roundtrip() {
     // Test empty array
     let original_empty = StackValue::Array(Vec::new());
-    let encoded_empty = encode_stack(&[original_empty.clone()]);
+    let encoded_empty = encode_stack(std::slice::from_ref(&original_empty));
     let decoded_empty = decode_stack(&encoded_empty).expect("empty array should decode");
     assert_eq!(decoded_empty[0], original_empty);
 
@@ -213,7 +213,7 @@ fn test_array_encoding_roundtrip() {
         StackValue::Integer(2),
         StackValue::Integer(3),
     ]);
-    let encoded_simple = encode_stack(&[original_simple.clone()]);
+    let encoded_simple = encode_stack(std::slice::from_ref(&original_simple));
     let decoded_simple = decode_stack(&encoded_simple).expect("simple array should decode");
     assert_eq!(decoded_simple[0], original_simple);
 
@@ -222,7 +222,7 @@ fn test_array_encoding_roundtrip() {
         StackValue::Array(vec![StackValue::Boolean(true)]),
         StackValue::Array(vec![StackValue::Null]),
     ]);
-    let encoded_nested = encode_stack(&[original_nested.clone()]);
+    let encoded_nested = encode_stack(std::slice::from_ref(&original_nested));
     let decoded_nested = decode_stack(&encoded_nested).expect("nested array should decode");
     assert_eq!(decoded_nested[0], original_nested);
 
@@ -233,7 +233,7 @@ fn test_array_encoding_roundtrip() {
         StackValue::ByteString(b"hello".to_vec()),
         StackValue::Null,
     ]);
-    let encoded_complex = encode_stack(&[original_complex.clone()]);
+    let encoded_complex = encode_stack(std::slice::from_ref(&original_complex));
     let decoded_complex = decode_stack(&encoded_complex).expect("complex array should decode");
     assert_eq!(decoded_complex[0], original_complex);
 
@@ -249,7 +249,7 @@ fn test_array_encoding_roundtrip() {
 fn test_struct_encoding_roundtrip() {
     // Test empty struct
     let original_empty = StackValue::Struct(Vec::new());
-    let encoded_empty = encode_stack(&[original_empty.clone()]);
+    let encoded_empty = encode_stack(std::slice::from_ref(&original_empty));
     let decoded_empty = decode_stack(&encoded_empty).expect("empty struct should decode");
     assert_eq!(decoded_empty[0], original_empty);
 
@@ -259,7 +259,7 @@ fn test_struct_encoding_roundtrip() {
         StackValue::Boolean(false),
         StackValue::ByteString(b"field1".to_vec()),
     ]);
-    let encoded_fields = encode_stack(&[original_fields.clone()]);
+    let encoded_fields = encode_stack(std::slice::from_ref(&original_fields));
     let decoded_fields = decode_stack(&encoded_fields).expect("struct should decode");
     assert_eq!(decoded_fields[0], original_fields);
 
@@ -277,7 +277,7 @@ fn test_struct_encoding_roundtrip() {
 fn test_map_encoding_roundtrip() {
     // Test empty map
     let original_empty = StackValue::Map(Vec::new());
-    let encoded_empty = encode_stack(&[original_empty.clone()]);
+    let encoded_empty = encode_stack(std::slice::from_ref(&original_empty));
     let decoded_empty = decode_stack(&encoded_empty).expect("empty map should decode");
     assert_eq!(decoded_empty[0], original_empty);
 
@@ -296,7 +296,7 @@ fn test_map_encoding_roundtrip() {
             StackValue::ByteString(b"three".to_vec()),
         ),
     ]);
-    let encoded_pairs = encode_stack(&[original_pairs.clone()]);
+    let encoded_pairs = encode_stack(std::slice::from_ref(&original_pairs));
     let decoded_pairs = decode_stack(&encoded_pairs).expect("map should decode");
     assert_eq!(decoded_pairs[0], original_pairs);
 
@@ -305,7 +305,7 @@ fn test_map_encoding_roundtrip() {
         (StackValue::Integer(42), StackValue::Null),
         (StackValue::Boolean(true), StackValue::Boolean(false)),
     ]);
-    let encoded_mixed = encode_stack(&[original_mixed_keys.clone()]);
+    let encoded_mixed = encode_stack(std::slice::from_ref(&original_mixed_keys));
     let decoded_mixed = decode_stack(&encoded_mixed).expect("mixed key map should decode");
     assert_eq!(decoded_mixed[0], original_mixed_keys);
 
@@ -330,8 +330,8 @@ fn test_array_vs_struct_distinction() {
         StackValue::ByteString(b"test".to_vec()),
     ]);
 
-    let encoded_array = encode_stack(&[array_value.clone()]);
-    let encoded_struct = encode_stack(&[struct_value.clone()]);
+    let encoded_array = encode_stack(std::slice::from_ref(&array_value));
+    let encoded_struct = encode_stack(std::slice::from_ref(&struct_value));
 
     // Different type tags must be present
     assert_eq!(get_type_tag(&encoded_array), STACK_VALUE_CODEC_TAG_ARRAY);
@@ -357,7 +357,7 @@ fn test_interop_handle_encoding() {
 
     for handle in handles {
         let original = StackValue::Interop(handle);
-        let encoded = encode_stack(&[original.clone()]);
+        let encoded = encode_stack(std::slice::from_ref(&original));
         let decoded = decode_stack(&encoded).expect("interop handle should decode");
         assert_eq!(decoded[0], original);
         assert_eq!(get_type_tag(&encoded), STACK_VALUE_CODEC_TAG_INTEROP);
@@ -371,7 +371,7 @@ fn test_iterator_handle_encoding() {
 
     for handle in handles {
         let original = StackValue::Iterator(handle);
-        let encoded = encode_stack(&[original.clone()]);
+        let encoded = encode_stack(std::slice::from_ref(&original));
         let decoded = decode_stack(&encoded).expect("iterator handle should decode");
         assert_eq!(decoded[0], original);
         assert_eq!(get_type_tag(&encoded), STACK_VALUE_CODEC_TAG_ITERATOR);
@@ -385,7 +385,7 @@ fn test_iterator_handle_encoding() {
 #[test]
 fn test_null_encoding_exact() {
     let original = StackValue::Null;
-    let encoded = encode_stack(&[original.clone()]);
+    let encoded = encode_stack(std::slice::from_ref(&original));
 
     // Encoding format: [len_u32:4][tag:1] = 5 bytes total for single null item
     assert_eq!(
@@ -406,23 +406,23 @@ fn test_null_encoding_exact() {
 fn test_null_in_collections() {
     // Null appearing in various contexts
     let in_array = StackValue::Array(vec![StackValue::Null, StackValue::Integer(1)]);
-    let encoded_array = encode_stack(&[in_array.clone()]);
+    let encoded_array = encode_stack(std::slice::from_ref(&in_array));
     let decoded_array = decode_stack(&encoded_array).expect("array with null should decode");
     assert_eq!(decoded_array[0], in_array);
 
     let in_struct = StackValue::Struct(vec![StackValue::Null]);
-    let encoded_struct = encode_stack(&[in_struct.clone()]);
+    let encoded_struct = encode_stack(std::slice::from_ref(&in_struct));
     let decoded_struct = decode_stack(&encoded_struct).expect("struct with null should decode");
     assert_eq!(decoded_struct[0], in_struct);
 
     let in_map_value = StackValue::Map(vec![(StackValue::Integer(1), StackValue::Null)]);
-    let encoded_map_value = encode_stack(&[in_map_value.clone()]);
+    let encoded_map_value = encode_stack(std::slice::from_ref(&in_map_value));
     let decoded_map_value =
         decode_stack(&encoded_map_value).expect("map with null value should decode");
     assert_eq!(decoded_map_value[0], in_map_value);
 
     let in_map_key = StackValue::Map(vec![(StackValue::Null, StackValue::Integer(1))]);
-    let encoded_map_key = encode_stack(&[in_map_key.clone()]);
+    let encoded_map_key = encode_stack(std::slice::from_ref(&in_map_key));
     let decoded_map_key = decode_stack(&encoded_map_key).expect("map with null key should decode");
     assert_eq!(decoded_map_key[0], in_map_key);
 }
@@ -549,24 +549,24 @@ fn test_expected_type_tags_match_constants() {
 fn test_empty_collections() {
     // Empty collections should encode/decode correctly
     let empty_array = StackValue::Array(Vec::new());
-    let encoded_empty_array = encode_stack(&[empty_array.clone()]);
+    let encoded_empty_array = encode_stack(std::slice::from_ref(&empty_array));
     let decoded_empty_array =
         decode_stack(&encoded_empty_array).expect("empty array should decode");
     assert_eq!(decoded_empty_array[0], empty_array);
 
     let empty_struct = StackValue::Struct(Vec::new());
-    let encoded_empty_struct = encode_stack(&[empty_struct.clone()]);
+    let encoded_empty_struct = encode_stack(std::slice::from_ref(&empty_struct));
     let decoded_empty_struct =
         decode_stack(&encoded_empty_struct).expect("empty struct should decode");
     assert_eq!(decoded_empty_struct[0], empty_struct);
 
     let empty_map = StackValue::Map(Vec::new());
-    let encoded_empty_map = encode_stack(&[empty_map.clone()]);
+    let encoded_empty_map = encode_stack(std::slice::from_ref(&empty_map));
     let decoded_empty_map = decode_stack(&encoded_empty_map).expect("empty map should decode");
     assert_eq!(decoded_empty_map[0], empty_map);
 
     let empty_bytes = StackValue::ByteString(Vec::new());
-    let encoded_empty_bytes = encode_stack(&[empty_bytes.clone()]);
+    let encoded_empty_bytes = encode_stack(std::slice::from_ref(&empty_bytes));
     let decoded_empty_bytes =
         decode_stack(&encoded_empty_bytes).expect("empty bytestring should decode");
     assert_eq!(decoded_empty_bytes[0], empty_bytes);
@@ -580,7 +580,7 @@ fn test_deeply_nested_structures() {
         deep = StackValue::Array(vec![deep]);
     }
 
-    let encoded = encode_stack(&[deep.clone()]);
+    let encoded = encode_stack(std::slice::from_ref(&deep));
     let decoded = decode_stack(&encoded).expect("deeply nested structure should decode");
     assert_eq!(decoded[0], deep);
 }
@@ -590,7 +590,7 @@ fn test_large_collections() {
     // Test large array (1000 elements)
     let large_array: Vec<StackValue> = (0..1000).map(|i| StackValue::Integer(i as i64)).collect();
     let large_sv = StackValue::Array(large_array.clone());
-    let encoded = encode_stack(&[large_sv.clone()]);
+    let encoded = encode_stack(std::slice::from_ref(&large_sv));
     let decoded = decode_stack(&encoded).expect("large array should decode");
     assert_eq!(decoded[0], large_sv);
 
@@ -604,7 +604,7 @@ fn test_large_collections() {
         })
         .collect();
     let large_map_sv = StackValue::Map(large_map.clone());
-    let encoded_map = encode_stack(&[large_map_sv.clone()]);
+    let encoded_map = encode_stack(std::slice::from_ref(&large_map_sv));
     let decoded_map = decode_stack(&encoded_map).expect("large map should decode");
     assert_eq!(decoded_map[0], large_map_sv);
 }
@@ -650,7 +650,7 @@ fn test_byte_content_preservation_string() {
 
     for bytes in test_cases {
         let original = StackValue::ByteString(bytes.clone());
-        let encoded = encode_stack(&[original.clone()]);
+        let encoded = encode_stack(std::slice::from_ref(&original));
         let decoded = decode_stack(&encoded).expect("byte string should decode");
 
         if let StackValue::ByteString(decoded_bytes) = &decoded[0] {
@@ -743,7 +743,7 @@ fn test_comprehensive_roundtrip_coverage() {
     ];
 
     for sv in &primitives {
-        let encoded = encode_stack(&[sv.clone()]);
+        let encoded = encode_stack(std::slice::from_ref(sv));
         let decoded = decode_stack(&encoded).unwrap();
         assert_eq!(decoded[0], *sv);
         test_count += 1;
@@ -757,7 +757,7 @@ fn test_comprehensive_roundtrip_coverage() {
     ];
 
     for sv in collections {
-        let encoded = encode_stack(&[sv.clone()]);
+        let encoded = encode_stack(std::slice::from_ref(&sv));
         let decoded = decode_stack(&encoded).unwrap();
         assert_eq!(decoded[0], sv);
         test_count += 1;
@@ -780,7 +780,7 @@ fn test_type_preservation_through_multiple_roundtrips() {
     ]);
 
     // First round-trip
-    let encoded1 = encode_stack(&[original.clone()]);
+    let encoded1 = encode_stack(std::slice::from_ref(&original));
     let decoded1 = decode_stack(&encoded1).expect("first roundtrip should succeed");
     assert_eq!(decoded1[0], original);
 
@@ -813,7 +813,9 @@ fn test_serialization_determinism() {
         ),
     ]);
 
-    let encodings: Vec<Vec<u8>> = (0..10).map(|_| encode_stack(&[sv.clone()])).collect();
+    let encodings: Vec<Vec<u8>> = (0..10)
+        .map(|_| encode_stack(std::slice::from_ref(&sv)))
+        .collect();
 
     for encoding in &encodings {
         assert_eq!(encoding, &encodings[0], "all encodings should be identical");

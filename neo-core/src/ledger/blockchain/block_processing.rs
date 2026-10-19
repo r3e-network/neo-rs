@@ -17,7 +17,7 @@ impl Blockchain {
     pub(super) async fn on_new_block(&self, block: Arc<Block>, verify: bool) -> VerifyResult {
         let span = tracing::Span::current();
         if let Ok(hash) = Self::try_block_hash(block.as_ref()) {
-            span.record("hash", &tracing::field::display(&hash));
+            span.record("hash", tracing::field::display(&hash));
         }
         let Some(context) = &self.system_context else {
             return VerifyResult::Invalid;

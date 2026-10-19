@@ -497,7 +497,7 @@ fn test_concurrent_prepare_responses() {
 /// Test recovery vs view change decision boundary
 #[test]
 fn test_recovery_vs_view_change_boundary() {
-    let mut env = TestEnvironment::new(7); // n=7, f=2, M=5
+    let env = TestEnvironment::new(7); // n=7, f=2, M=5
 
     // Scenario: F nodes have committed + 1 failed
     let committed = env.f_value(); // F=2

@@ -8,10 +8,10 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use neo_core::smart_contract::native::NativeRegistry;
 use neo_core::smart_contract::trigger_type::TriggerType;
-use neo_core::smart_contract::CallFlags;
 use neo_vm::InteropService;
 use std::sync::Arc;
 

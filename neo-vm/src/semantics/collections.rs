@@ -18,7 +18,6 @@ use crate::{
 const MAX_COLLECTION_ITEMS: usize = 2 * 1024;
 
 /// Convert a primitive NeoVM value into an index used by collection opcodes.
-#[must_use]
 pub fn collection_index_value(value: &StackValue) -> Result<i64, String> {
     match value {
         StackValue::Integer(value) => Ok(*value),
@@ -32,7 +31,6 @@ pub fn collection_index_value(value: &StackValue) -> Result<i64, String> {
 }
 
 /// Validate a NeoVM primitive map key.
-#[must_use]
 pub fn validate_map_key_value(key: &StackValue) -> Result<(), String> {
     match key {
         StackValue::Integer(_) | StackValue::Boolean(_) | StackValue::Null => Ok(()),
@@ -81,14 +79,12 @@ pub fn map_entry_index_by<T>(
 }
 
 /// Create a null-filled array.
-#[must_use]
 pub fn new_array(count: i64) -> Result<StackValue, String> {
     let count = bounded_collection_count(count, "NEWARRAY: negative count")?;
     Ok(StackValue::Array(vec![StackValue::Null; count]))
 }
 
 /// Create a type-filled array using NeoVM `NEWARRAY_T` defaults.
-#[must_use]
 pub fn new_array_t(count: i64, type_tag: u8) -> Result<StackValue, String> {
     let count = bounded_collection_count(count, "NEWARRAY_T: negative count")?;
     Ok(StackValue::Array(vec![
@@ -98,7 +94,6 @@ pub fn new_array_t(count: i64, type_tag: u8) -> Result<StackValue, String> {
 }
 
 /// Create a null-filled struct.
-#[must_use]
 pub fn new_struct(count: i64) -> Result<StackValue, String> {
     let count = bounded_collection_count(count, "NEWSTRUCT: negative count")?;
     Ok(StackValue::Struct(vec![StackValue::Null; count]))
@@ -115,7 +110,6 @@ fn bounded_collection_count(count: i64, negative_message: &'static str) -> Resul
 }
 
 /// Create a zero-filled buffer.
-#[must_use]
 pub fn new_buffer(size: i64) -> Result<StackValue, String> {
     let size = non_negative_count(size, "NEWBUFFER: negative size")?;
     if size > MAX_ITEM_SIZE {
@@ -131,7 +125,6 @@ pub fn new_map() -> StackValue {
 }
 
 /// Append a value to an array or struct.
-#[must_use]
 pub fn append(collection: &mut StackValue, value: StackValue) -> Result<(), String> {
     match collection {
         StackValue::Array(items) | StackValue::Struct(items) => {
@@ -189,7 +182,6 @@ pub fn set_item(
 }
 
 /// Pick an item from a collection-like value.
-#[must_use]
 pub fn pick_item(collection: &StackValue, key: &StackValue) -> Result<StackValue, String> {
     match collection {
         StackValue::Array(items) | StackValue::Struct(items) => {
@@ -218,7 +210,6 @@ pub fn pick_item(collection: &StackValue, key: &StackValue) -> Result<StackValue
 }
 
 /// Remove a key from a mutable collection.
-#[must_use]
 pub fn remove(collection: &mut StackValue, key: &StackValue) -> Result<(), String> {
     match collection {
         StackValue::Array(items) | StackValue::Struct(items) => {
@@ -244,7 +235,6 @@ pub fn remove(collection: &mut StackValue, key: &StackValue) -> Result<(), Strin
 }
 
 /// Return collection/string/buffer size.
-#[must_use]
 pub fn size(value: &StackValue) -> Result<i64, String> {
     match value {
         StackValue::Array(items) | StackValue::Struct(items) => Ok(items.len() as i64),
@@ -258,13 +248,11 @@ pub fn size(value: &StackValue) -> Result<i64, String> {
 }
 
 /// Return whether a key exists in a collection-like value.
-#[must_use]
 pub fn has_key(collection: &StackValue, key: &StackValue) -> Result<bool, String> {
     has_key_with_limit(collection, key, true)
 }
 
 /// Pre-Gorgon HASKEY: no `MaxItemSize` bound (Neo PR #543).
-#[must_use]
 pub fn has_key_pre_gorgon(collection: &StackValue, key: &StackValue) -> Result<bool, String> {
     has_key_with_limit(collection, key, false)
 }
@@ -305,7 +293,6 @@ fn has_key_index(key: &StackValue, check_max_item_size: bool) -> Result<usize, S
 }
 
 /// Return map keys as an array.
-#[must_use]
 pub fn keys(value: StackValue) -> Result<StackValue, String> {
     match value {
         StackValue::Map(pairs) => Ok(StackValue::Array(
@@ -316,7 +303,6 @@ pub fn keys(value: StackValue) -> Result<StackValue, String> {
 }
 
 /// Return map values or array/struct values as an array.
-#[must_use]
 pub fn values(value: StackValue) -> Result<StackValue, String> {
     match value {
         StackValue::Map(pairs) => Ok(StackValue::Array(
@@ -334,7 +320,6 @@ pub fn pack(items: Vec<StackValue>) -> StackValue {
 }
 
 /// Unpack array/struct values followed by their count.
-#[must_use]
 pub fn unpack(value: StackValue) -> Result<Vec<StackValue>, String> {
     match value {
         StackValue::Array(mut items) | StackValue::Struct(mut items) => {
@@ -347,7 +332,6 @@ pub fn unpack(value: StackValue) -> Result<Vec<StackValue>, String> {
 }
 
 /// Reverse an array or struct in place.
-#[must_use]
 pub fn reverse_items(collection: &mut StackValue) -> Result<(), String> {
     match collection {
         StackValue::Array(items) | StackValue::Struct(items) => {
@@ -359,7 +343,6 @@ pub fn reverse_items(collection: &mut StackValue) -> Result<(), String> {
 }
 
 /// Clear array, struct, or map items.
-#[must_use]
 pub fn clear_items(collection: &mut StackValue) -> Result<(), String> {
     match collection {
         StackValue::Array(items) | StackValue::Struct(items) => {
@@ -375,7 +358,6 @@ pub fn clear_items(collection: &mut StackValue) -> Result<(), String> {
 }
 
 /// Pop one item from a collection-like value, returning values to push in order.
-#[must_use]
 pub fn pop_item(value: StackValue) -> Result<Vec<StackValue>, String> {
     match value {
         StackValue::Array(mut items) => items

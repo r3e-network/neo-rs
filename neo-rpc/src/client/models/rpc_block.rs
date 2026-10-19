@@ -50,7 +50,6 @@ impl RpcBlock {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let block = super::super::utility::block_from_json(json, protocol_settings)?;
 

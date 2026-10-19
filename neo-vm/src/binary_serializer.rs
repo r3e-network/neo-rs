@@ -221,7 +221,6 @@ impl BinarySerializer {
     ///
     /// This is intended for callers that need to inspect persisted stack payloads
     /// but do not need local VM object identity or reference counting.
-    #[must_use]
     pub fn deserialize_stack_value(data: &[u8]) -> Result<StackValue, String> {
         Self::deserialize_stack_value_with_limits(
             data,
@@ -370,7 +369,6 @@ impl BinarySerializer {
     }
 
     /// Serialize a stack item with VM limits.
-    #[must_use]
     pub fn serialize(item: &StackItem, limits: &ExecutionEngineLimits) -> Result<Vec<u8>, String> {
         Self::serialize_with_limits(
             item,

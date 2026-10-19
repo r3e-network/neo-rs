@@ -52,7 +52,6 @@ impl StorageContext {
     }
 
     /// Builds a storage context from encoded bytes.
-    #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() != 5 {
             return Err("StorageContext payload must be 5 bytes".to_string());
@@ -78,7 +77,6 @@ impl StorageContext {
     }
 
     /// Parses a stack item into a storage context.
-    #[must_use]
     pub fn from_stack_item(item: &StackItem) -> Result<Self, String> {
         match item {
             StackItem::ByteString(bytes) => Self::from_bytes(bytes),

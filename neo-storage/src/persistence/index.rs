@@ -84,7 +84,6 @@ where
         }
     }
 
-    #[must_use]
     pub fn insert(&mut self, key: K, value: V) -> Result<(), String> {
         if self.unique {
             if self.data.contains_key(&key) {
@@ -215,7 +214,6 @@ where
         }
     }
 
-    #[must_use]
     pub fn insert(&mut self, key: K, value: V) -> Result<(), String> {
         if self.unique {
             if self.data.contains_key(&key) {

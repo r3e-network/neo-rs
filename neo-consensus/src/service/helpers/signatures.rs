@@ -67,7 +67,7 @@ impl ConsensusService {
         let mut key_bytes = Zeroizing::new([0u8; 32]);
         key_bytes.copy_from_slice(&self.private_key);
 
-        Secp256r1Crypto::sign_prehash(&Crypto::sha256(data), &*key_bytes)
+        Secp256r1Crypto::sign_prehash(&Crypto::sha256(data), &key_bytes)
             .map(|sig| sig.to_vec())
             .map_err(|e| {
                 warn!(error = %e, "ECDSA signing failed");

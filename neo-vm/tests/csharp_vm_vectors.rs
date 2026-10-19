@@ -42,36 +42,32 @@ fn format_value(value: &StackValue) -> String {
 fn csharp_vm_arithmetic_and_comparison_vectors_match() {
     // script | expected state | expected stack
     let vectors = [
-        ("11119e40", "HALT", "int:2"),     // PUSH1 PUSH1 ADD RET
-        ("12129e40", "HALT", "int:4"),     // PUSH2 PUSH2 ADD RET
-        ("11129f40", "HALT", "int:-1"),    // PUSH1 PUSH2 SUB RET
-        ("11129740", "HALT", "bool:0"),    // PUSH1 PUSH2 EQUAL RET
-        ("11129840", "HALT", "bool:1"),    // PUSH1 PUSH2 NOTEQUAL RET
-        ("1112b540", "HALT", "bool:1"),    // PUSH1 PUSH2 LT RET
-        ("1112b640", "HALT", "bool:1"),    // PUSH1 PUSH2 LE RET
-        ("1212b740", "HALT", "bool:0"),    // PUSH2 PUSH2 GT RET
-        ("1112b840", "HALT", "bool:0"),    // PUSH1 PUSH2 GE RET
-        ("1113a340", "HALT", "int:1"),     // PUSH1 PUSH3 POW RET
-        ("1110a240", "FAULT", ""),         // PUSH1 PUSH0 MOD RET
-        ("11129340", "HALT", "int:3"),     // PUSH1 PUSH2 XOR RET
+        ("11119e40", "HALT", "int:2"),            // PUSH1 PUSH1 ADD RET
+        ("12129e40", "HALT", "int:4"),            // PUSH2 PUSH2 ADD RET
+        ("11129f40", "HALT", "int:-1"),           // PUSH1 PUSH2 SUB RET
+        ("11129740", "HALT", "bool:0"),           // PUSH1 PUSH2 EQUAL RET
+        ("11129840", "HALT", "bool:1"),           // PUSH1 PUSH2 NOTEQUAL RET
+        ("1112b540", "HALT", "bool:1"),           // PUSH1 PUSH2 LT RET
+        ("1112b640", "HALT", "bool:1"),           // PUSH1 PUSH2 LE RET
+        ("1212b740", "HALT", "bool:0"),           // PUSH2 PUSH2 GT RET
+        ("1112b840", "HALT", "bool:0"),           // PUSH1 PUSH2 GE RET
+        ("1113a340", "HALT", "int:1"),            // PUSH1 PUSH3 POW RET
+        ("1110a240", "FAULT", ""),                // PUSH1 PUSH0 MOD RET
+        ("11129340", "HALT", "int:3"),            // PUSH1 PUSH2 XOR RET
         ("0c0361626340", "HALT", "bytes:616263"), // PUSHDATA1 "abc" RET
-        (
-            "0c036162630c036465668b40",
-            "HALT",
-            "bytes:616263646566",
-        ), // CAT "abc" "def"
+        ("0c036162630c036465668b40", "HALT", "bytes:616263646566"), // CAT "abc" "def"
         ("0c0361626311128c40", "HALT", "bytes:6263"), // SUBSTR "abc" 1 2
         ("0c03616263118d40", "HALT", "bytes:61"), // LEFT "abc" 1
         ("0c03616263118e40", "HALT", "bytes:63"), // RIGHT "abc" 1
-        ("0c03616263ca40", "HALT", "int:3"), // SIZE "abc"
-        ("34054021211140", "HALT", "int:1"), // CALL subtask; RET; NOP NOP; PUSH1; RET
-        ("c240", "HALT", "array:[]"),         // NEWARRAY0 RET
-        ("11c340", "HALT", "array:[null]"),   // PUSH1 NEWARRAY RET
-        ("c24a11cf40", "HALT", "array:[int:1]"), // NEWARRAY0 DUP PUSH1 APPEND RET
-        ("c24a11cfca40", "HALT", "int:1"),    // NEWARRAY0 DUP PUSH1 APPEND SIZE RET
-        ("11c310ce40", "HALT", "null"),       // PUSH1 NEWARRAY PUSH0 PICKITEM RET
-        ("111213bb40", "HALT", "bool:0"),     // PUSH1 PUSH2 PUSH3 WITHIN RET
-        ("121113bb40", "HALT", "bool:1"),     // PUSH2 PUSH1 PUSH3 WITHIN RET
+        ("0c03616263ca40", "HALT", "int:3"),      // SIZE "abc"
+        ("34054021211140", "HALT", "int:1"),      // CALL subtask; RET; NOP NOP; PUSH1; RET
+        ("c240", "HALT", "array:[]"),             // NEWARRAY0 RET
+        ("11c340", "HALT", "array:[null]"),       // PUSH1 NEWARRAY RET
+        ("c24a11cf40", "HALT", "array:[int:1]"),  // NEWARRAY0 DUP PUSH1 APPEND RET
+        ("c24a11cfca40", "HALT", "int:1"),        // NEWARRAY0 DUP PUSH1 APPEND SIZE RET
+        ("11c310ce40", "HALT", "null"),           // PUSH1 NEWARRAY PUSH0 PICKITEM RET
+        ("111213bb40", "HALT", "bool:0"),         // PUSH1 PUSH2 PUSH3 WITHIN RET
+        ("121113bb40", "HALT", "bool:1"),         // PUSH2 PUSH1 PUSH3 WITHIN RET
     ];
 
     for (hex, expected_state, expected_stack) in vectors {
@@ -104,11 +100,7 @@ fn csharp_newarray_reference_count_matches() {
     // 1001 (the array plus its 1000 null children).
     let mut engine = ExecutionEngine::new(None);
     engine
-        .load_script(
-            Script::new_relaxed(hex::decode("01e803c3").unwrap()),
-            -1,
-            0,
-        )
+        .load_script(Script::new_relaxed(hex::decode("01e803c3").unwrap()), -1, 0)
         .expect("load script");
     engine.execute_next().expect("push count");
     engine.execute_next().expect("newarray");

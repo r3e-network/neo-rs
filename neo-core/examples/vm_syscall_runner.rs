@@ -258,9 +258,12 @@ fn classify(message: &str) -> String {
         "divzero".into()
     } else if m.contains("index") || m.contains("out of bounds") || m.contains("range") {
         "range".into()
-    } else if m.contains("sender not specified") || m.contains("sender is not specified") {
-        "invalid".into()
-    } else if m.contains("public key") || m.contains("ecpoint") || m.contains("pubkey") {
+    } else if m.contains("sender not specified")
+        || m.contains("sender is not specified")
+        || m.contains("public key")
+        || m.contains("ecpoint")
+        || m.contains("pubkey")
+    {
         "invalid".into()
     } else if m.contains("type")
         || m.contains("cast")

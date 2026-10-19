@@ -315,7 +315,7 @@ impl PrefetchPipeline {
             _io_handle: Some(io_handle),
             _verification_handles: verification_handles.into_iter().map(Some).collect(),
             _controller_handle: Some(exec_handle),
-            state: state,
+            state,
             metrics_handle: None,
         }
     }

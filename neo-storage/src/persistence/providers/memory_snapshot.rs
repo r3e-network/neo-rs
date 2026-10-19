@@ -18,10 +18,7 @@ pub struct MemorySnapshot {
 
 impl MemorySnapshot {
     /// Creates a new MemorySnapshot from a shared immutable map.
-    pub fn new(
-        store: Arc<dyn Store>,
-        inner_data: Arc<BTreeMap<Vec<u8>, Vec<u8>>>,
-    ) -> Self {
+    pub fn new(store: Arc<dyn Store>, inner_data: Arc<BTreeMap<Vec<u8>, Vec<u8>>>) -> Self {
         Self {
             store,
             immutable_data: inner_data,

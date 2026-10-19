@@ -19,7 +19,6 @@ use neo_core::cryptography::{Crypto, Secp256r1Crypto};
 use neo_core::smart_contract::helper::Helper;
 use neo_core::{UInt160, Witness};
 use neo_vm::OpCode;
-use rand;
 
 /// Test data: Sample compressed public key format
 const TEST_PUBLIC_KEY_1: &[u8] = &[
@@ -56,7 +55,7 @@ fn test_script_hash_always_uint160_size() {
         );
 
         // Verify it's a valid UInt160 value
-        let _uint160_val: UInt160 = hash.into();
+        let _uint160_val: UInt160 = hash;
     }
 }
 
@@ -190,7 +189,7 @@ fn test_public_key_extraction_from_verification_script() {
      * Extracts public key from position [1..34] in actual script format
      */
     let verification_script = Helper::signature_redeem_script(TEST_PUBLIC_KEY_1);
-    let witness = Witness::new_with_scripts(vec![], verification_script.clone());
+    let _witness = Witness::new_with_scripts(vec![], verification_script.clone());
 
     // Manually extract expected public key using Rust slice operations
     // Script structure: [PUSHDATA1(1B), len(1B), pk[33B], SYSCALL(1B), hash(4B)]
@@ -259,7 +258,7 @@ fn test_multisig_required_signatures_validity() {
      * required_signatures cannot exceed registered public keys count
      */
     // Generate 3 valid public keys
-    let priv_keys = vec![
+    let priv_keys = [
         Secp256r1Crypto::generate_private_key(),
         Secp256r1Crypto::generate_private_key(),
         Secp256r1Crypto::generate_private_key(),
@@ -272,7 +271,7 @@ fn test_multisig_required_signatures_validity() {
 
     // Valid case: 2-of-3 multi-sig
     let m = 2usize;
-    let verification_script = Helper::multi_sig_redeem_script(m, &pub_keys);
+    let _verification_script = Helper::multi_sig_redeem_script(m, &pub_keys);
 
     assert_eq!(m, pub_keys.len() - 1, "M must be <= number of keys");
 
@@ -289,7 +288,7 @@ fn test_multisig_impossible_threshold_rejected() {
      * Validates multisig_impossible_threshold_check lemma
      * Should reject scenarios where required > available keys
      */
-    let priv_keys = vec![
+    let priv_keys = [
         Secp256r1Crypto::generate_private_key(),
         Secp256r1Crypto::generate_private_key(),
     ];
@@ -307,7 +306,7 @@ fn test_multisig_impossible_threshold_rejected() {
         &dummy_account,
         3, // Impossible threshold: more than available keys
         &pub_keys,
-        &vec![],
+        &[],
     );
 
     assert!(
@@ -518,7 +517,6 @@ fn test_verification_script_max_size_compliance() {
      * Validates witness respects MAX_VERIFICATION_SCRIPT constant (1024 bytes)
      * Tests boundary condition at maximum allowed size
      */
-
     const MAX_VERIF_SIZE: usize = 1024;
 
     // Test with maximum-sized script

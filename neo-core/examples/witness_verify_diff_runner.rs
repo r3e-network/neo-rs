@@ -19,7 +19,7 @@
 //!     <blocks.json> <out_rust.json> [max_gas_datoshi]
 
 use neo_core::neo_io::{MemoryReader, Serializable};
-use neo_core::network::p2p::payloads::{Block, Transaction};
+use neo_core::network::p2p::payloads::Block;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::Helper;

@@ -98,7 +98,7 @@ mod wave1_integration_tests {
         // Two transactions trying to modify same account
         let mut detector = neo_core::state_service::conflict_detector::ConflictDetector::new();
 
-        let conflicting_key = make_key(0xCAFeu64);
+        let conflicting_key = make_key(0xCAFEu64);
 
         let mut tx0_rwset = RwSetTracker::new();
         let mut tx1_rwset = RwSetTracker::new();

@@ -8,7 +8,7 @@
 //! - Invalid handshakes
 
 use neo_core::error::CoreError;
-use neo_primitives::{UInt160, UInt256};
+use neo_primitives::UInt256;
 
 // ============================================================================
 // Connection Error Tests

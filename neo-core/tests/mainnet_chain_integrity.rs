@@ -12,10 +12,10 @@
 //!     cargo test -p neo-core --features rocksdb --test mainnet_chain_integrity -- --ignored --nocapture
 
 use neo_core::UInt256;
+use neo_core::persistence::data_cache::DataCacheConfig;
 use neo_core::persistence::{
     StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
 };
-use neo_core::persistence::data_cache::DataCacheConfig;
 use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
 use neo_core::validation::validate_merkle_root;
@@ -74,8 +74,7 @@ fn stored_mainnet_chain_is_contiguous_and_has_valid_merkle_roots() {
         let stored_hash = block.hash();
         if index > 0 {
             assert_eq!(
-                block.header.previous_hash,
-                prev_hash,
+                block.header.previous_hash, prev_hash,
                 "prev-hash link broken at {index}"
             );
         }

@@ -389,7 +389,6 @@ impl ApplicationEngine {
     /// the previous one's caller — breaking `CalledByEntry` for the first
     /// queued payment when NEO.transfer also mints GAS with `onNEP17Payment`
     /// (MainNet divergence class: block 980196 / CheckWitness in receiver).
-    #[must_use]
     pub fn process_pending_native_calls(&mut self) -> Result<()> {
         if self.pending_native_calls.is_empty() {
             return Ok(());

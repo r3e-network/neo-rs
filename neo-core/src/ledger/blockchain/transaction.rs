@@ -13,7 +13,7 @@ impl Blockchain {
     ) -> bool {
         let span = tracing::Span::current();
         if let Ok(hash) = tx.try_hash() {
-            span.record("tx_hash", &tracing::field::display(&hash));
+            span.record("tx_hash", tracing::field::display(&hash));
         }
         let hash = match tx.try_hash() {
             Ok(hash) => hash,
@@ -78,7 +78,7 @@ impl Blockchain {
     pub(super) fn on_new_transaction(&self, transaction: &Transaction) -> VerifyResult {
         let span = tracing::Span::current();
         if let Ok(hash) = transaction.try_hash() {
-            span.record("tx_hash", &tracing::field::display(&hash));
+            span.record("tx_hash", tracing::field::display(&hash));
         }
         let Some(context) = &self.system_context else {
             return VerifyResult::Invalid;
@@ -150,10 +150,9 @@ impl Blockchain {
         let settings = context.protocol_settings();
 
         // Pass to mempool - scope the lock to avoid lifetime issues
-        let result = {
+        {
             let mut pool = memory_pool.lock();
             pool.try_add(transaction.clone(), snapshot, &settings)
-        };
-        result
+        }
     }
 }

@@ -74,7 +74,7 @@ fn opcode_price_bounds_check() {
 
         // All prices must be valid signed 64-bit integers
         assert!(
-            price >= i64::MIN && price <= i64::MAX,
+            (i64::MIN..=i64::MAX).contains(&price),
             "Opcode 0x{:02x} out of range",
             opcode
         );
@@ -94,7 +94,7 @@ fn find_most_expensive_opcodes() {
     }
 
     // Sort by price descending
-    priced_opcodes.sort_by(|a, b| b.1.cmp(&a.1));
+    priced_opcodes.sort_by_key(|entry| std::cmp::Reverse(entry.1));
 
     // Print top 10 most expensive
     println!("Top 10 most expensive opcodes:");

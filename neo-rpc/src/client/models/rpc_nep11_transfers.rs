@@ -44,7 +44,6 @@ impl RpcNep11Transfers {
     }
 
     /// Creates from JSON.
-    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let (sent, received, user_script_hash) =
             parse_transfer_lists(json, protocol_settings, RpcNep11Transfer::from_json)?;
@@ -104,7 +103,6 @@ impl RpcNep11Transfer {
     }
 
     /// Creates from JSON.
-    #[must_use]
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let token_id_str = json
             .get("tokenid")

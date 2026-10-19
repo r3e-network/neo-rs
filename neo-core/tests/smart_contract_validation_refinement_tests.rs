@@ -350,7 +350,7 @@ fn test_large_contract_near_boundary() {
         "Large contract must respect size limit"
     );
 
-    let hash = contract.script_hash();
+    let _hash = contract.script_hash();
     assert_ne!(
         contract.script_hash().to_array(),
         [0u8; 20],

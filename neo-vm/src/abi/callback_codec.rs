@@ -166,7 +166,6 @@ pub fn decode_stack_result_into(
 }
 
 /// Decodes a callback stack-frame result into a fresh stack vector.
-#[must_use]
 pub fn decode_stack_result(bytes: &[u8]) -> Result<Result<Vec<StackValue>, String>, String> {
     let mut cursor = Cursor::new(bytes);
     let tag = cursor.read_u8()?;

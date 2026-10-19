@@ -140,7 +140,6 @@ fn capacity_per_prefix(total_capacity: usize) -> usize {
 type Tier3GeneralPurpose = LruCache<Vec<u8>, Arc<Node>>;
 
 /// Utility functions for pattern detection
-
 /// Check if key represents a native contract state
 pub fn is_native_contract_leaf(key: &[u8]) -> bool {
     // Native contracts typically use specific contract IDs
@@ -339,8 +338,8 @@ where
             .read()
             .prefixes
             .read()
-            .iter()
-            .map(|(_, g)| g.len())
+            .values()
+            .map(|g| g.len())
             .sum::<usize>();
         let tier3 = self.tier3_general.len();
 
@@ -366,7 +365,7 @@ fn compute_node_hash(path_prefix: &[u8]) -> UInt256 {
     let hash = hasher.finish();
 
     UInt256::from([
-        (hash >> 0) as u8,
+        hash as u8,
         (hash >> 8) as u8,
         (hash >> 16) as u8,
         (hash >> 24) as u8,

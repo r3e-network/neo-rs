@@ -10,7 +10,6 @@ use neo_json::JObject;
 use neo_primitives::UInt256;
 
 /// Parses a transaction attribute from RPC JSON.
-#[must_use]
 pub fn attribute_from_json(json: &JObject) -> Result<TransactionAttribute, String> {
     let attr_type = json
         .get("type")

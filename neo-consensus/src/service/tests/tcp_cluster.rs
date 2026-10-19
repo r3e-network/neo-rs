@@ -120,7 +120,11 @@ async fn four_validators_commit_over_real_tcp_transport() {
     let network = 0x4E454F;
     let mut harness = PersistCompletedHarness::new(network, 4);
     harness
-        .persist_completed_all(0, neo_primitives::UInt256::from([1u8; 32]), 1_700_000_000_000)
+        .persist_completed_all(
+            0,
+            neo_primitives::UInt256::from([1u8; 32]),
+            1_700_000_000_000,
+        )
         .expect("start consensus");
     harness.fire_initial_timers().expect("primary proposal");
     let (mut services, mut receivers) = harness.into_parts();

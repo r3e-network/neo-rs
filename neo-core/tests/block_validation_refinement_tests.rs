@@ -223,12 +223,6 @@ fn test_valid_block_satisfies_constraints() {
         "Genesis timestamp must meet minimum threshold"
     );
 
-    // Validate primary index bounds
-    assert!(
-        genesis_block.header.primary_index <= 255,
-        "Primary index must fit within u8 range"
-    );
-
     // Validate transaction count
     assert!(
         genesis_block.transactions.len() <= MAX_TRANSACTIONS_PER_BLOCK,

@@ -19,7 +19,7 @@ use std::sync::Arc;
 /// Helper: Create a UInt256 key from u64
 fn make_key(value: u64) -> neo_core::UInt256 {
     let mut bytes = [0u8; 32];
-    bytes[..8].copy_from_slice(&(value as u64).to_le_bytes());
+    bytes[..8].copy_from_slice(&(value).to_le_bytes());
     neo_core::UInt256::from(bytes)
 }
 

@@ -82,7 +82,6 @@ impl ApplicationEngine {
         self.add_fee_pico(pico_gas)
     }
     /// Charges an execution fee expressed directly in datoshi.
-    #[must_use]
     pub fn charge_execution_fee(&mut self, fee: u64) -> Result<()> {
         self.add_fee_datoshi(
             i64::try_from(fee)
@@ -90,7 +89,6 @@ impl ApplicationEngine {
         )
     }
     /// Emits a notification event.
-    #[must_use]
     pub fn notify(&mut self, event_name: String, state: Vec<u8>) -> Result<()> {
         if let (Some(container), Some(contract_hash)) =
             (self.script_container.as_ref(), self.current_script_hash)
@@ -106,7 +104,6 @@ impl ApplicationEngine {
         Ok(())
     }
     /// Emits a log event.
-    #[must_use]
     pub fn log(&mut self, message: String) -> Result<()> {
         if let (Some(container), Some(contract_hash)) =
             (self.script_container.as_ref(), self.current_script_hash)
@@ -117,7 +114,6 @@ impl ApplicationEngine {
         Ok(())
     }
     /// Emits an event.
-    #[must_use]
     pub fn emit_event(&mut self, event_name: &str, args: Vec<Vec<u8>>) -> Result<()> {
         // 1. Validate event name length (must not exceed HASH_SIZE bytes)
         if event_name.len() > HASH_SIZE {
@@ -154,7 +150,6 @@ impl ApplicationEngine {
         self.calling_script_hash.unwrap_or_else(UInt160::zero)
     }
     /// Checks if enough gas is available for an operation.
-    #[must_use]
     pub fn check_gas(&self, required_gas: i64) -> Result<()> {
         let required_pico = required_gas
             .checked_mul(FEE_FACTOR)
@@ -263,7 +258,6 @@ impl ApplicationEngine {
     }
     /// Runs `onPersist` for every active native contract
     /// (`System.Contract.NativeOnPersist`); only valid under the OnPersist trigger.
-    #[must_use]
     pub fn native_on_persist(&mut self) -> Result<()> {
         if self.trigger != TriggerType::OnPersist {
             return Err(Error::invalid_operation(
@@ -325,7 +319,6 @@ impl ApplicationEngine {
     }
     /// Runs `postPersist` for every active native contract
     /// (`System.Contract.NativePostPersist`); only valid under the PostPersist trigger.
-    #[must_use]
     pub fn native_post_persist(&mut self) -> Result<()> {
         if self.trigger != TriggerType::PostPersist {
             return Err(Error::invalid_operation(
@@ -349,7 +342,6 @@ impl ApplicationEngine {
     }
     /// Consumes the given amount of GAS (in datoshi), failing if it exceeds
     /// the engine's configured fee amount.
-    #[must_use]
     pub fn consume_gas(&mut self, gas: i64) -> Result<()> {
         if gas < 0 {
             return Err(Error::invalid_operation(

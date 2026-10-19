@@ -87,7 +87,11 @@ async fn four_validators_commit_over_real_udp_transport() {
     let network = 0x4E454F;
     let mut harness = PersistCompletedHarness::new(network, 4);
     harness
-        .persist_completed_all(0, neo_primitives::UInt256::from([1u8; 32]), 1_700_000_000_000)
+        .persist_completed_all(
+            0,
+            neo_primitives::UInt256::from([1u8; 32]),
+            1_700_000_000_000,
+        )
         .expect("start consensus");
     harness.fire_initial_timers().expect("primary proposal");
     let (mut services, mut receivers) = harness.into_parts();
@@ -100,7 +104,7 @@ async fn four_validators_commit_over_real_udp_transport() {
     }
 
     let (committed_tx, mut committed_rx) = mpsc::channel(8);
-    for index in 0..4 {
+    for (index, socket) in sockets.iter().enumerate() {
         let peers = addresses
             .iter()
             .enumerate()
@@ -110,7 +114,7 @@ async fn four_validators_commit_over_real_udp_transport() {
         tokio::spawn(run_node(
             services.remove(0),
             receivers.remove(0),
-            Arc::clone(&sockets[index]),
+            Arc::clone(socket),
             peers,
             committed_tx.clone(),
         ));

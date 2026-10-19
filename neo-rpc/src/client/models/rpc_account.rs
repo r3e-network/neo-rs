@@ -44,7 +44,6 @@ impl RpcAccount {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let address = json
             .get("address")

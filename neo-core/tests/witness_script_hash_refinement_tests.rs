@@ -157,8 +157,8 @@ fn signature_redeem_script_opcode_positions() {
     assert_eq!(script[1], 33);
 
     // Positions 2-34: Public key (33 bytes)
-    for i in 2..35 {
-        assert_eq!(script[i], 0x02);
+    for &byte in &script[2..35] {
+        assert_eq!(byte, 0x02);
     }
 
     // Position 35: SYSCALL opcode
@@ -249,10 +249,7 @@ fn can_extract_individual_hash_bytes() {
     for idx in 0..20 {
         let byte_value = hash.as_bytes()[idx];
 
-        // All bytes are valid by definition of u8 type (0-255)
-        // This assertion is technically always true, but documents intent
         let _byte_check: usize = byte_value as usize;
-        assert!(byte_value <= 255);
     }
 }
 
@@ -266,11 +263,7 @@ fn hash_starts_with_known_prefix_for_empty_script() {
     // Extract first few bytes (these are deterministic values)
     let prefix_len = 8usize;
 
-    for i in 0..prefix_len {
-        let byte_value = empty_bytes[i];
-        // All bytes are valid by definition (0-255)
-        assert!(byte_value <= 255);
-    }
+    let _ = prefix_len;
 }
 
 // =============================================================
@@ -341,10 +334,8 @@ fn integration_witness_serialization_preserves_hash() {
 #[test]
 fn edge_case_minimal_public_key() {
     // Minimum valid compressed public key (33 bytes, 0x02 or 0x03 prefix)
-    let minimal_pk: Vec<u8> = (vec![0x02; 1])
-        .into_iter()
-        .chain((vec![0x00; 32]).into_iter())
-        .collect();
+    let mut minimal_pk = vec![0x02];
+    minimal_pk.extend_from_slice(&[0x00; 32]);
 
     assert_eq!(minimal_pk.len(), 33);
     assert_eq!(minimal_pk[0], 0x02);
@@ -456,7 +447,7 @@ fn comprehensive_witness_script_hash_validation() {
         ("Minimal script", vec![0x21]),
         (
             "Typical signature contract",
-            create_signature_redeem_script(&vec![0x02; 33]),
+            create_signature_redeem_script(&[0x02; 33]),
         ),
         ("Large script", vec![0x00; 512]),
         ("Maximum script", vec![0x00; 1024]),
@@ -491,7 +482,7 @@ fn validate_all_properties_together() {
         (&[0xAA][..], "single_byte"),
         (&[0x21, 0x02, 0xAC][..], "short_signature_contract"),
         (
-            &create_signature_redeem_script(&vec![0x02; 33])[..],
+            &create_signature_redeem_script(&[0x02; 33])[..],
             "valid_33byte_pubkey",
         ),
     ];

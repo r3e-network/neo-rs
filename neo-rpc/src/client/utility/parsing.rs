@@ -9,7 +9,6 @@ use serde_json::Value as JsonValue;
 use std::{fmt::Display, str::FromStr};
 
 /// Reads a required string field from a JSON object.
-#[must_use]
 pub fn required_string(json: &JObject, field: &str) -> Result<String, String> {
     json.get(field)
         .and_then(JToken::as_string)
@@ -32,7 +31,6 @@ pub fn insert_optional_string(json: &mut JObject, field: &str, value: Option<imp
 }
 
 /// Reads a required numeric field as a `u64`.
-#[must_use]
 pub fn required_u64_number(json: &JObject, field: &str) -> Result<u64, String> {
     json.get(field)
         .and_then(JToken::as_number)
@@ -41,7 +39,6 @@ pub fn required_u64_number(json: &JObject, field: &str) -> Result<u64, String> {
 }
 
 /// Reads a required numeric field as a `u32`.
-#[must_use]
 pub fn required_u32_number(json: &JObject, field: &str) -> Result<u32, String> {
     json.get(field)
         .and_then(JToken::as_number)
@@ -50,7 +47,6 @@ pub fn required_u32_number(json: &JObject, field: &str) -> Result<u32, String> {
 }
 
 /// Reads a required numeric field as a `u16`.
-#[must_use]
 pub fn required_u16_number(json: &JObject, field: &str) -> Result<u16, String> {
     json.get(field)
         .and_then(JToken::as_number)
@@ -89,7 +85,6 @@ pub fn required_bigint_string(
 }
 
 /// Reads a required `UInt256` string field.
-#[must_use]
 pub fn required_uint256(json: &JObject, field: &str) -> Result<UInt256, String> {
     let value = required_string(json, field)?;
     UInt256::parse(&value).map_err(|_| format!("Missing or invalid '{field}' field"))
@@ -289,7 +284,6 @@ pub fn parse_optional_string_array_strict(
 }
 
 /// Parses a base64-encoded string token.
-#[must_use]
 pub fn parse_base64_token(token: &JToken, field: &str) -> Result<Vec<u8>, String> {
     let text = token
         .as_string()
@@ -312,19 +306,16 @@ pub(crate) fn optional_base64_field_lossy(json: &JObject, field: &str) -> Option
 }
 
 /// Parses a u32 token that may be encoded as number or string.
-#[must_use]
 pub fn parse_u32_token(token: &JToken, field: &str) -> Result<u32, String> {
     parse_integer_token(token, field, "unsigned", |number| number as u32)
 }
 
 /// Parses a u64 token that may be encoded as number or string.
-#[must_use]
 pub fn parse_u64_token(token: &JToken, field: &str) -> Result<u64, String> {
     parse_integer_token(token, field, "unsigned", |number| number as u64)
 }
 
 /// Parses an i64 token that may be encoded as number or string.
-#[must_use]
 pub fn parse_i64_token(token: &JToken, field: &str) -> Result<i64, String> {
     parse_integer_token(token, field, "signed", |number| number as i64)
 }
@@ -350,7 +341,6 @@ where
 }
 
 /// Parses a nonce token that may be a hex string or number.
-#[must_use]
 pub fn parse_nonce_token(token: &JToken) -> Result<u64, String> {
     if let Some(text) = token.as_string() {
         let value = text.trim_start_matches("0x");
@@ -413,7 +403,6 @@ pub const fn oracle_response_code_to_str(code: OracleResponseCode) -> &'static s
     }
 }
 
-#[must_use]
 pub fn jtoken_to_serde(token: &JToken) -> Result<JsonValue, String> {
     serde_json::from_str(&token.to_string()).map_err(|err| err.to_string())
 }

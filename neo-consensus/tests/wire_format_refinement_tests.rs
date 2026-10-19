@@ -34,7 +34,7 @@ const COQ_HEADER_BYTES: usize = 7;
 /// Test Coq lemma: `Definition wire_len (body_len : nat) : nat := HEADER_BYTES + body_len.`
 #[test]
 fn test_consensus_payload_header_size_is_7_bytes() {
-    let test_cases = vec![
+    let test_cases = [
         // Empty body
         ConsensusPayload::new(0x4E454F, 0, 0, 0, ConsensusMessageType::Commit, vec![]),
         // Minimal body

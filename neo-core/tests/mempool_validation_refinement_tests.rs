@@ -515,12 +515,12 @@ fn t12_empty_pool_operations() {
     // Empty pool operations don't violate invariants
 
     let settings = test_settings();
-    let mut pool = MemoryPool::new(&settings);
+    let pool = MemoryPool::new(&settings);
 
     assert_eq!(pool.count(), 0);
 
     // Operations on empty pool are safe
-    let snapshot = funded_snapshot();
+    let _snapshot = funded_snapshot();
     let empty_iter: Vec<_> = pool.iter_verified().collect();
     assert!(empty_iter.is_empty());
 }

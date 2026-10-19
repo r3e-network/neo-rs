@@ -141,8 +141,8 @@ fn sort_stability_multiple_runs() {
     let message = b"sort-stability";
     let accounts: Vec<_> = (0..5)
         .map(|i| {
-            let msg = format!("{}-{}", String::from_utf8_lossy(*&message), i);
-            let (keys, sigs, acc, _) = create_complete_multisig(2, 3, msg.as_bytes());
+            let msg = format!("{}-{}", String::from_utf8_lossy(message), i);
+            let (_keys, _sigs, acc, _) = create_complete_multisig(2, 3, msg.as_bytes());
             acc
         })
         .collect();
@@ -213,7 +213,7 @@ fn duplicate_at_different_positions() {
     /**
      * Duplicates anywhere in array should fail regardless of position
      */
-    let (public_keys, signatures, account, pairs) =
+    let (_public_keys, signatures, _account, pairs) =
         create_complete_multisig(3, 3, b"duplicate-pos");
 
     // Place duplicate at start
@@ -256,7 +256,7 @@ fn duplicate_breaks_account_binding() {
      * Validates: Duplicate keys break script hash computation
      * Account binding becomes ambiguous
      */
-    let (valid_keys, signatures, valid_account, pairs) =
+    let (_valid_keys, signatures, valid_account, pairs) =
         create_complete_multisig(2, 2, b"dup-binding");
 
     let dup_keys = vec![pairs[0].0.clone(), pairs[0].0.clone()];
@@ -388,7 +388,7 @@ fn mixed_valid_invalid_one_each() {
      * One invalid sig doesn't prevent counting valid ones, but overall fails
      */
     let message = b"mixed-one-invalid";
-    let (public_keys, signatures, account, pairs) = create_complete_multisig(2, 3, message);
+    let (public_keys, signatures, account, _pairs) = create_complete_multisig(2, 3, message);
 
     // Corrupt one signature
     let mut corrupted = signatures.clone();
@@ -408,7 +408,7 @@ fn mixed_valid_invalid_majority_invalid() {
      * Majority invalid scenario
      */
     let message = b"mixed-majority";
-    let (public_keys, signatures, account, pairs) = create_complete_multisig(3, 4, message);
+    let (public_keys, signatures, account, _pairs) = create_complete_multisig(3, 4, message);
 
     // Corrupt 2 out of 3 signatures
     let mut corrupted = signatures.clone();
@@ -429,7 +429,7 @@ fn mixed_valid_invalid_last_one_fails() {
      * All but last signature valid
      */
     let message = b"mixed-last-fail";
-    let (public_keys, signatures, account, pairs) = create_complete_multisig(3, 4, message);
+    let (public_keys, signatures, account, _pairs) = create_complete_multisig(3, 4, message);
 
     // Corrupt only the last signature
     let mut corrupted = signatures.clone();
@@ -449,7 +449,7 @@ fn partial_success_doesnt_count() {
      * Validates: Valid signatures don't "count" if total < m
      */
     let message = b"partial-no-count";
-    let (public_keys, signatures, account, pairs) = create_complete_multisig(3, 4, message);
+    let (public_keys, signatures, account, _pairs) = create_complete_multisig(3, 4, message);
 
     // Only provide 2 signatures (both valid)
     let only_two = &signatures[..2];
@@ -469,7 +469,7 @@ fn independent_signature_validation() {
      * One bad sig doesn't affect others' verification
      */
     let message = b"independent-check";
-    let (public_keys, signatures, account, pairs) = create_complete_multisig(3, 3, message);
+    let (public_keys, signatures, account, _pairs) = create_complete_multisig(3, 3, message);
 
     // Corrupt middle signature only
     let mut corrupted = signatures.clone();

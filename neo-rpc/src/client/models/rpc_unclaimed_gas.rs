@@ -39,7 +39,6 @@ impl RpcUnclaimedGas {
 
     /// Creates from JSON
     /// Matches C# `FromJson`
-    #[must_use]
     pub fn from_json(json: &JObject) -> Result<Self, String> {
         let unclaimed_token = json
             .get("unclaimed")

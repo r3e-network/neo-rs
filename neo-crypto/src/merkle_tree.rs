@@ -218,7 +218,6 @@ fn depth_first_collect(node: &MerkleTreeNode, hashes: &mut Vec<UInt256>) {
     }
 }
 
-
 fn trim_node(node: &mut MerkleTreeNode, index: usize, depth: usize, flags: &[bool]) {
     if depth <= 1 || node.left.is_none() {
         return;
@@ -333,7 +332,10 @@ mod tests {
         // Also compute using the tree builder (reference implementation)
         let tree_root = MerkleTree::compute_root_with_tree(&hashes);
 
-        assert_eq!(root, tree_root, "Parallel implementation must match reference");
+        assert_eq!(
+            root, tree_root,
+            "Parallel implementation must match reference"
+        );
     }
 
     #[test]
@@ -345,7 +347,10 @@ mod tests {
         // Reference implementation
         let tree_root = MerkleTree::compute_root_with_tree(&hashes);
 
-        assert_eq!(root, tree_root, "Large parallel computation must match reference");
+        assert_eq!(
+            root, tree_root,
+            "Large parallel computation must match reference"
+        );
     }
 
     #[test]
@@ -377,10 +382,17 @@ mod tests {
         let pair12 = MerkleTree::hash_pair(&h1, &h2);
         let pair21 = MerkleTree::hash_pair(&h2, &h1);
 
-        assert_ne!(pair12, pair21, "Hash order must be preserved (non-commutative)");
+        assert_ne!(
+            pair12, pair21,
+            "Hash order must be preserved (non-commutative)"
+        );
 
         let root12 = MerkleTree::compute_root(&[h1, h2]);
-        assert_eq!(root12, Some(pair12), "compute_root must use left-to-right order");
+        assert_eq!(
+            root12,
+            Some(pair12),
+            "compute_root must use left-to-right order"
+        );
     }
 
     /// Performance regression test: parallel should be faster for large inputs
@@ -401,13 +413,19 @@ mod tests {
 
         // Verify correctness
         let tree_root = MerkleTree::compute_root_with_tree(&hashes);
-        assert_eq!(parallel_root, tree_root, "Performance test must maintain correctness");
+        assert_eq!(
+            parallel_root, tree_root,
+            "Performance test must maintain correctness"
+        );
 
         // Note: actual speedup depends on CPU cores and load
         // This test just ensures the optimization doesn't regress
         println!("1000-hash Merkle root computed in {:?}", parallel_time);
-        assert!(parallel_time.as_millis() < 100,
-                "Performance regression: 1000 hashes took {:?} (expected <100ms)", parallel_time);
+        assert!(
+            parallel_time.as_millis() < 100,
+            "Performance regression: 1000 hashes took {:?} (expected <100ms)",
+            parallel_time
+        );
     }
 
     /// Performance regression test: small inputs should use sequential path
@@ -427,8 +445,11 @@ mod tests {
         assert_eq!(root, tree_root);
 
         println!("7-hash Merkle root computed in {:?}", time);
-        assert!(time.as_micros() < 1000,
-                "Small tree performance regression: {:?} (expected <1ms)", time);
+        assert!(
+            time.as_micros() < 1000,
+            "Small tree performance regression: {:?} (expected <1ms)",
+            time
+        );
     }
 
     /// Stress test: ensure no panics with very large inputs

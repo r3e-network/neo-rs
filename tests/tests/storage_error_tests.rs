@@ -76,9 +76,7 @@ fn test_invalid_data_format() {
 
 #[test]
 fn test_checksum_mismatch() {
-    let error = StorageError::serialization(
-        "checksum mismatch: expected 0x1234, got 0x5678",
-    );
+    let error = StorageError::serialization("checksum mismatch: expected 0x1234, got 0x5678");
     assert!(error.to_string().contains("checksum"));
 }
 
@@ -224,8 +222,7 @@ fn test_incomplete_batch_write() {
 
 #[test]
 fn test_unsupported_operation_error() {
-    let error =
-        StorageError::invalid_operation("operation not supported by this provider");
+    let error = StorageError::invalid_operation("operation not supported by this provider");
     assert!(error.to_string().contains("not supported"));
 }
 

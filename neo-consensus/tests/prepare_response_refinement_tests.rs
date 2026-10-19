@@ -114,7 +114,7 @@ fn test_serialization_returns_hash_only() {
 #[test]
 fn test_serialization_matches_coq_model() {
     // Create multiple messages with different hash content
-    let hashes = vec![
+    let hashes = [
         UInt256::zero(),                            // All zeros
         UInt256::from_bytes(&[255u8; 32]).unwrap(), // All ones
         UInt256::from_bytes(&[1u8; 32]).unwrap(),   // Sequential pattern

@@ -92,43 +92,35 @@ impl ApplicationEngine {
         output
     }
     /// Helper to push a boolean to the stack
-    #[must_use]
     pub fn push_boolean(&mut self, value: bool) -> Result<(), String> {
         self.push(StackItem::from_bool(value))
     }
     /// Helper to push an integer to the stack
-    #[must_use]
     pub fn push_integer(&mut self, value: i64) -> Result<(), String> {
         self.push(StackItem::from_int(value))
     }
     /// Helper to push bytes to the stack
-    #[must_use]
     pub fn push_bytes(&mut self, value: Vec<u8>) -> Result<(), String> {
         self.push(StackItem::from_byte_string(value))
     }
     /// Helper to push a string to the stack
-    #[must_use]
     pub fn push_string(&mut self, value: String) -> Result<(), String> {
         self.push(StackItem::from_byte_string(value.into_bytes()))
     }
     /// Helper to push an array to the stack
-    #[must_use]
     pub fn push_array(&mut self, value: Vec<StackItem>) -> Result<(), String> {
         self.push(StackItem::from_array(value))
     }
     /// Helper to push null to the stack
-    #[must_use]
     pub fn push_null(&mut self) -> Result<(), String> {
         self.push(StackItem::null())
     }
     /// Helper to pop a boolean from the stack
-    #[must_use]
     pub fn pop_boolean(&mut self) -> Result<bool, String> {
         let item = self.pop()?;
         item.as_bool().map_err(|e| e.to_string())
     }
     /// Helper to pop an integer from the stack
-    #[must_use]
     pub fn pop_integer(&mut self) -> Result<i64, String> {
         let item = self.pop()?;
         let integer = item.into_int().map_err(|e| e.to_string())?;
@@ -137,20 +129,17 @@ impl ApplicationEngine {
             .ok_or_else(|| "Integer too large".to_string())
     }
     /// Helper to pop bytes from the stack
-    #[must_use]
     pub fn pop_bytes(&mut self) -> Result<Vec<u8>, String> {
         let item = self.pop()?;
         item.as_bytes().map_err(|e| e.to_string())
     }
     /// Helper to pop a string from the stack
-    #[must_use]
     pub fn pop_string(&mut self) -> Result<String, String> {
         let item = self.pop()?;
         let bytes = item.as_bytes().map_err(|e| e.to_string())?;
         String::from_utf8(bytes).map_err(|_| "Invalid UTF-8".to_string())
     }
     /// Helper to pop an array from the stack
-    #[must_use]
     pub fn pop_array(&mut self) -> Result<Vec<StackItem>, String> {
         let item = self.pop()?;
         match item {
@@ -160,7 +149,6 @@ impl ApplicationEngine {
         }
     }
     /// Helper to check if top of stack is null
-    #[must_use]
     pub fn peek_is_null(&self, index: usize) -> Result<bool, String> {
         let item = self.peek(index)?;
         Ok(item.is_null())
@@ -183,12 +171,10 @@ impl ApplicationEngine {
         Ok(UInt160::from_bytes(&hash_bytes).expect("hash160 produces 20 bytes"))
     }
     /// Helper to get current block time
-    #[must_use]
     pub fn get_current_block_time(&self) -> Result<u64, String> {
         self.current_block_timestamp()
     }
     /// Reserves a notification slot, enforcing hardfork limits.
-    #[must_use]
     pub fn reserve_notification_slot(&mut self) -> Result<(), String> {
         let state_arc = self.current_execution_state().map_err(|e| e.to_string())?;
         let mut state = state_arc.lock();
@@ -213,7 +199,6 @@ impl ApplicationEngine {
         self.push_notification(event);
     }
     /// Ensures the notification payload size stays within protocol limits.
-    #[must_use]
     pub fn ensure_notification_size(&self, state: &[StackItem]) -> Result<(), String> {
         detect_circular_reference(state)?;
         let limits = self.execution_limits();
@@ -250,7 +235,6 @@ impl ApplicationEngine {
         Ok(())
     }
     /// Helper to get notifications
-    #[must_use]
     pub fn get_notifications(&self, hash: Option<UInt160>) -> Result<Vec<StackItem>, String> {
         let limits = self.execution_limits();
         let mut result = Vec::new();

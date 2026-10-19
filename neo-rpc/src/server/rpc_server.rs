@@ -370,7 +370,7 @@ impl RpcServer {
                 }
             });
 
-            let mut builder = hyper::Server::builder(incoming);
+            let mut builder = hyper::Server::builder(incoming).http1_only(true);
             if self.settings.request_headers_timeout > 0 {
                 builder = builder
                     .http1_header_read_timeout(self.settings.request_headers_timeout_duration());
@@ -461,7 +461,7 @@ impl RpcServer {
                 }
             });
 
-            let mut builder = hyper::Server::builder(incoming);
+            let mut builder = hyper::Server::builder(incoming).http1_only(true);
             if self.settings.request_headers_timeout > 0 {
                 builder = builder
                     .http1_header_read_timeout(self.settings.request_headers_timeout_duration());
@@ -607,7 +607,6 @@ impl RpcServer {
         guard.retain(|_, session| !session.is_expired(expiration));
     }
 
-    #[must_use]
     pub fn store_session(&self, session: Session) -> Result<Uuid, RpcError> {
         self.purge_expired_sessions();
         let mut guard = self.sessions.lock();

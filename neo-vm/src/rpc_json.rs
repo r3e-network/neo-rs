@@ -19,7 +19,6 @@ struct RenderBudget {
 }
 
 /// Renders a single stack item as the Neo JSON-RPC stack envelope.
-#[must_use]
 pub fn stack_item_rpc_json(item: &StackItem, max_size: Option<usize>) -> Result<Value, VmError> {
     render_stack_item_with_size_check(item, max_size, SizeCheck::Immediate)
 }

@@ -7,7 +7,6 @@ mod no_syscalls;
 use no_syscalls::NoSyscalls;
 
 /// Interprets a script without host syscalls.
-#[must_use]
 pub fn interpret(script: &[u8]) -> Result<ExecutionResult, String> {
     let mut host = NoSyscalls;
     interpret_with_stack_and_syscalls_at(script, Vec::new(), 0, &mut host)

@@ -194,6 +194,7 @@ impl ContractBatchScheduler {
     /// - Extracts 4-byte descriptor following opcode
     /// - Converts descriptor to UInt160 using Neo interop hash algorithm
     /// - For CALLT (opcode 0x4E), returns None for now (requires token table lookup)
+    #[allow(clippy::collapsible_match)]
     fn extract_contract_hash(&self, data: &[u8]) -> Option<UInt160> {
         if data.is_empty() {
             return None;
@@ -214,7 +215,7 @@ impl ContractBatchScheduler {
                     if pos + 5 <= data.len() {
                         // Extract the 4-byte descriptor
                         let descriptor: [u8; 4] =
-                            data[pos + 1..pos + 5].try_into().unwrap_or_else(|_| [0; 4]);
+                            data[pos + 1..pos + 5].try_into().unwrap_or([0; 4]);
 
                         // Convert descriptor to UInt160
                         // NEO uses Hash160 for contract IDs - we can directly use descriptor
@@ -282,10 +283,8 @@ impl ContractBatchScheduler {
         ];
 
         for (op, size) in &INSTRUCTION_SIZES {
-            if *op == opcode {
-                if pos + size <= data.len() {
-                    return Some(InstructionInfo { size: *size });
-                }
+            if *op == opcode && pos + size <= data.len() {
+                return Some(InstructionInfo { size: *size });
             }
         }
 
@@ -318,7 +317,7 @@ impl ContractBatchScheduler {
                 // Known contract - add to appropriate queue
                 contract_queues
                     .entry(contract_hash)
-                    .or_insert_with(PriorityQ::new)
+                    .or_default()
                     .push(tx.clone());
             } else {
                 // Unknown/unidentified → default pool
@@ -357,7 +356,7 @@ impl ContractBatchScheduler {
             self.contract_queues
                 .write()
                 .entry(contract_hash)
-                .or_insert_with(PriorityQ::new)
+                .or_default()
                 .push(tx);
         } else {
             self.default_queue.write().push_back(tx);
@@ -378,6 +377,12 @@ impl ContractBatchScheduler {
 
         let queued_count: usize = contract_queues.values().map(|q| q.len()).sum();
         queued_count + default_queue.len()
+    }
+
+    /// Returns true when no transactions are queued.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -473,7 +478,7 @@ pub fn estimate_gas_cost(tx: &TeeMempoolEntry) -> u64 {
 
     // Count certain opcodes as indicators of computational intensity
     let syscall_count = tx.data.iter().filter(|&&b| b == 0x41).count();
-    let op_multiplier = (syscall_count as u64).max(1) * 1; // Minimal overhead for syscalls
+    let op_multiplier = (syscall_count as u64).max(1); // Minimal overhead for syscalls
 
     base_gas
         .saturating_add(size_bonus as u64)
@@ -540,7 +545,7 @@ mod tests {
         }
 
         let hash = [index; 32];
-        let sender = [index as u8; 20];
+        let sender = [index; 20];
 
         // Create OrderingKey manually (no Default impl)
         let ordering_key = crate::mempool::fair_ordering::OrderingKey {

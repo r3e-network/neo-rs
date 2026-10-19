@@ -9,12 +9,10 @@ use crate::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use crate::smart_contract::storage_context::StorageContext;
 impl ApplicationEngine {
     /// Gets storage context for reading
-    #[must_use]
     pub fn storage_get_context(&mut self) -> Result<StorageContext, String> {
         self.get_storage_context().map_err(|err| err.to_string())
     }
     /// Gets storage context for reading (readonly)
-    #[must_use]
     pub fn storage_get_read_only_context(&mut self) -> Result<StorageContext, String> {
         self.get_read_only_storage_context()
             .map_err(|err| err.to_string())
@@ -69,7 +67,6 @@ impl ApplicationEngine {
         Ok(())
     }
     /// Deletes a storage value
-    #[must_use]
     pub fn storage_delete(&mut self, context: StorageContext, key: Vec<u8>) -> Result<(), String> {
         if context.is_read_only {
             return Err("Context is read-only".to_string());
@@ -102,19 +99,16 @@ impl ApplicationEngine {
         self.find_storage_entries(&context, &prefix, options)
     }
     /// Gets a value from the current contract's storage context.
-    #[must_use]
     pub fn storage_get_local(&mut self, key: Vec<u8>) -> Result<Option<Vec<u8>>, String> {
         let context = self.storage_get_read_only_context()?;
         self.storage_get(context, key)
     }
     /// Puts a key/value pair into the current contract's storage context.
-    #[must_use]
     pub fn storage_put_local(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<(), String> {
         let context = self.storage_get_context()?;
         self.storage_put(context, key, value)
     }
     /// Deletes an entry from the current contract's storage context.
-    #[must_use]
     pub fn storage_delete_local(&mut self, key: Vec<u8>) -> Result<(), String> {
         let context = self.storage_get_context()?;
         self.storage_delete(context, key)

@@ -120,7 +120,7 @@ fn find_most_expensive_opcodes() {
     }
 
     // Sort by price descending
-    priced_opcodes.sort_by(|a, b| b.1.cmp(&a.1));
+    priced_opcodes.sort_by_key(|entry| std::cmp::Reverse(entry.1));
 
     println!("\n📊 Top 10 most expensive opcodes:");
     for (i, &(opcode_idx, price)) in priced_opcodes.iter().take(10).enumerate() {
@@ -282,13 +282,13 @@ fn validate_price_tier_distribution() {
 
         if price == 0 {
             *tier_counts.get_mut("ZERO (0)").unwrap() += 1;
-        } else if price >= 1 && price <= 4 {
+        } else if (1..=4).contains(&price) {
             *tier_counts.get_mut("VERY_LOW (1-4)").unwrap() += 1;
-        } else if price >= 8 && price <= 64 {
+        } else if (8..=64).contains(&price) {
             *tier_counts.get_mut("LOW (8-64)").unwrap() += 1;
-        } else if price >= 256 && price <= 2048 {
+        } else if (256..=2048).contains(&price) {
             *tier_counts.get_mut("MEDIUM (256-2048)").unwrap() += 1;
-        } else if price >= 512 && price <= 8192 {
+        } else if (512..=8192).contains(&price) {
             *tier_counts.get_mut("HIGH (512-8192)").unwrap() += 1;
         } else if price >= 32768 {
             *tier_counts.get_mut("MAX (32768+)").unwrap() += 1;

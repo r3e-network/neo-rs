@@ -22,7 +22,6 @@ pub fn is_type(value: &StackValue, type_tag: u8) -> bool {
 }
 
 /// Convert a public ABI stack value to the requested compact or NeoVM type.
-#[must_use]
 pub fn convert_value(value: StackValue, target_type: u8) -> Result<StackValue, String> {
     if matches!(value, StackValue::Null) {
         match normalize_stack_item_type_tag(target_type) {

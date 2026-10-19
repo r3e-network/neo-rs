@@ -426,7 +426,6 @@ impl ApplicationEngine {
         self.vm_engine.engine_mut().set_limits(limits);
     }
     /// Returns the timestamp of the block currently being persisted.
-    #[must_use]
     pub fn current_block_timestamp(&self) -> Result<u64, String> {
         self.persisting_block
             .as_deref()
@@ -438,7 +437,6 @@ impl ApplicationEngine {
         self.persisting_block.as_deref()
     }
     /// Returns the block currently being persisted, or an error if none.
-    #[must_use]
     pub fn get_persisting_block(&self) -> Result<Block> {
         self.persisting_block()
             .cloned()

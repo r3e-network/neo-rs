@@ -115,11 +115,12 @@ curl -s http://localhost:10332 -H 'Content-Type: application/json' \
 
 | neo-rs Version | Neo N3 Version | C# Reference                                                                                      |
 | -------------- | -------------- | ------------------------------------------------------------------------------------------------- |
+| 0.19.0         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (execution replay through block 1,352,000) |
 | 0.18.0         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (presets & serialization validated) |
 | 0.17.0         | 3.10.1         | [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) (presets & serialization validated) |
 | 0.4.x          | 3.8.2          | [`ede620e`](https://github.com/neo-project/neo/commit/ede620e5722c48e199a0f3f2ab482ae090c1b878) |
 
-This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.10.1) for blocks, transactions, and P2P messages. Validation status: serialization (block hash, size, header fields, byte round-trip) is verified against 27 real MainNet blocks captured from a live v3.10.1 seed, and the consensus protocol presets (network magic, ms-per-block, hardfork activations, standby committee) are reconciled field-by-field against live MainNet/TestNet nodes in CI. Full-chain equivalence (a complete MainNet sync with state-root comparison) is **not yet validated** — see `MAINNET-STATUS.md`.
+This implementation maintains byte-for-byte serialization compatibility with the official C# Neo implementation (v3.10.1) for blocks, transactions, and P2P messages. Validation status: serialization (block hash, size, header fields, byte round-trip) is verified against 27 real MainNet blocks captured from a live v3.10.1 seed, and the consensus protocol presets (network magic, ms-per-block, hardfork activations, standby committee) are reconciled field-by-field against live MainNet/TestNet nodes in CI. Execution replay is validated for 1,152,001 roots (blocks 200,000–1,352,000) and a separate 99,877-block from-genesis run; a single uninterrupted genesis-to-tip sync with state-root comparison is **not yet validated** — see `MAINNET-STATUS.md`.
 
 ### C# v3.10.1 Feature Parity
 

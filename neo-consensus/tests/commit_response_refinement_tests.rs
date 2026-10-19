@@ -19,7 +19,7 @@
 use neo_consensus::context::{ConsensusContext, ValidatorInfo};
 use neo_consensus::messages::commit::CommitMessage;
 use neo_crypto::ECPoint;
-use neo_primitives::{UInt160, UInt256};
+use neo_primitives::UInt160;
 
 // ============================================================================
 // SECTION 1: VALIDATOR SIGNATURE FORMAT VERIFICATION
@@ -97,10 +97,7 @@ fn test_ecdsa_signature_format_variations() {
     assert!(CommitMessage::new(1, 0, 0, max_sig).validate().is_ok());
 
     // Mixed random pattern simulating real ECDSA output
-    let mut mixed_sig = vec![0u8; 64];
-    for i in 0..64 {
-        mixed_sig[i] = (i % 256) as u8;
-    }
+    let mixed_sig: Vec<u8> = (0..64).map(|i| i as u8).collect();
     assert!(CommitMessage::new(1, 0, 0, mixed_sig).validate().is_ok());
 }
 
@@ -165,7 +162,7 @@ fn test_quorum_n_equals_7_typical_dft_network() {
 
     // Need 5 commits out of 7 validators
     for idx in 0..5 {
-        let sig = vec![idx as u8; 64];
+        let sig = vec![idx; 64];
         context.add_commit(idx, 0, sig).unwrap();
     }
 
@@ -179,7 +176,7 @@ fn test_quorum_n_equals_7_typical_dft_network() {
     // 4 commits should NOT be enough
     let mut context2 = ConsensusContext::new(200, validators.clone(), Some(0), None);
     for idx in 0..4 {
-        let sig = vec![idx as u8; 64];
+        let sig = vec![idx; 64];
         context2.add_commit(idx, 0, sig).unwrap();
     }
 
@@ -204,7 +201,7 @@ fn test_quorum_n_equals_10_large_consensus_group() {
 
     // Add 6 commits (one short of quorum)
     for idx in 0..6 {
-        let sig = vec![idx as u8; 64];
+        let sig = vec![idx; 64];
         context.add_commit(idx, 0, sig).unwrap();
     }
 
@@ -321,7 +318,7 @@ fn test_multiple_validators_no_conflicts() {
 
     // Each validator commits once
     for idx in 0..4 {
-        let sig = vec![idx as u8; 64];
+        let sig = vec![idx; 64];
         assert!(
             context.add_commit(idx, 0, sig).is_ok(),
             "Validator {} commit should succeed",
@@ -568,7 +565,7 @@ fn test_full_finality_workflow() {
     // Validators progressively commit
     let mut committed_count = 0;
     for idx in 0..7 {
-        let sig = vec![idx as u8; 64];
+        let sig = vec![idx; 64];
         context.add_commit(idx, 0, sig).unwrap();
         committed_count += 1;
 

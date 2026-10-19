@@ -73,7 +73,6 @@ fn encode_error_payload(message: &str) -> Vec<u8> {
 }
 
 /// Decodes an execution result from its binary wire form.
-#[must_use]
 pub fn decode_execution_result(bytes: &[u8]) -> Result<Result<ExecutionResult, String>, String> {
     let mut cursor = Cursor::new(bytes);
     match cursor.read_u8()? {

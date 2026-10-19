@@ -7,7 +7,6 @@ use crate::{
 };
 
 /// Concatenates two byte-oriented stack values.
-#[must_use]
 pub fn cat_values(left: &StackValue, right: &StackValue) -> Result<StackValue, String> {
     let result = concat_splice_values(left, right)
         .ok_or_else(|| "CAT: operands must expose byte memory".to_string())?;
@@ -22,7 +21,6 @@ pub fn cat_values(left: &StackValue, right: &StackValue) -> Result<StackValue, S
 }
 
 /// Returns a bounded slice of a byte-oriented stack value.
-#[must_use]
 pub fn substr_value(value: &StackValue, index: i64, count: i64) -> Result<StackValue, String> {
     let bytes = stack_value_span_bytes(value)
         .ok_or_else(|| "SUBSTR: value does not expose byte memory".to_string())?;
@@ -34,7 +32,6 @@ pub fn substr_value(value: &StackValue, index: i64, count: i64) -> Result<StackV
 }
 
 /// Returns the leftmost `count` bytes.
-#[must_use]
 pub fn left_value(value: &StackValue, count: i64) -> Result<StackValue, String> {
     let len = stack_value_span_bytes(value)
         .ok_or_else(|| "LEFT: value does not expose byte memory".to_string())?
@@ -48,7 +45,6 @@ pub fn left_value(value: &StackValue, count: i64) -> Result<StackValue, String> 
 }
 
 /// Returns the rightmost `count` bytes.
-#[must_use]
 pub fn right_value(value: &StackValue, count: i64) -> Result<StackValue, String> {
     let len = stack_value_span_bytes(value)
         .ok_or_else(|| "RIGHT: value does not expose byte memory".to_string())?

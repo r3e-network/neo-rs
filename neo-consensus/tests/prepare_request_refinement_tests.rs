@@ -179,9 +179,10 @@ fn test_no_duplicates_accepted() {
 fn test_duplicate_detection_single_dup() {
     // Validates: duplicate prevention in Rust validate() method
 
-    let mut hashes = Vec::new();
-    hashes.push(UInt256::from([1u8; 32]));
-    hashes.push(UInt256::from([1u8; 32])); // duplicate
+    let hashes = vec![
+        UInt256::from([1u8; 32]),
+        UInt256::from([1u8; 32]), // duplicate
+    ];
 
     let msg = PrepareRequestMessage::new(100, 0, 0, 0, UInt256::zero(), 1_726_598_400, 42, hashes);
 

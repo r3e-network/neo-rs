@@ -46,28 +46,34 @@ struct StateRootsOutput {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    
+
     if args.len() < 3 {
-        eprintln!("Usage: {} <input_blocks.json> <output_state_roots.json>", args[0]);
+        eprintln!(
+            "Usage: {} <input_blocks.json> <output_state_roots.json>",
+            args[0]
+        );
         std::process::exit(1);
     }
-    
+
     let input_path = PathBuf::from(&args[1]);
     let output_path = PathBuf::from(&args[2]);
-    
+
     println!("Loading blocks from {}...", input_path.display());
     let blocks_json = fs::read_to_string(&input_path)?;
     let blocks_file: BlocksFile = serde_json::from_str(&blocks_json)?;
-    
+
     println!("Processing {} blocks...", blocks_file.block_count);
-    
+
     let mut state_roots = Vec::new();
-    
+
     for (i, block_entry) in blocks_file.blocks.iter().enumerate() {
         if i % 100 == 0 {
-            println!("Progress: {}/{} blocks processed", i, blocks_file.block_count);
+            println!(
+                "Progress: {}/{} blocks processed",
+                i, blocks_file.block_count
+            );
         }
-        
+
         // TODO: 实际的区块处理逻辑
         // 现在先使用占位符
         let state_root = StateRoot {
@@ -76,12 +82,12 @@ fn main() -> Result<()> {
             state_root_hash: format!("0x{:064x}", block_entry.height), // 占位符
             timestamp: block_entry.time,
         };
-        
+
         state_roots.push(state_root);
     }
-    
+
     println!("Processed {} blocks", state_roots.len());
-    
+
     // 保存状态根
     let output = StateRootsOutput {
         network: blocks_file.network,
@@ -89,11 +95,11 @@ fn main() -> Result<()> {
         end_height: blocks_file.end_height,
         state_roots,
     };
-    
+
     let output_json = serde_json::to_string_pretty(&output)?;
     fs::write(&output_path, output_json)?;
-    
+
     println!("✅ State roots saved to {}", output_path.display());
-    
+
     Ok(())
 }

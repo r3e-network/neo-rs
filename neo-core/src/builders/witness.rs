@@ -29,7 +29,6 @@ impl WitnessBuilder {
     }
 
     /// Adds an invocation script (mutable reference).
-    #[must_use]
     pub fn add_invocation(&mut self, script: Vec<u8>) -> Result<&mut Self, CoreError> {
         set_script_once(
             &mut self.invocation,
@@ -40,7 +39,6 @@ impl WitnessBuilder {
     }
 
     /// Adds a verification script (mutable reference).
-    #[must_use]
     pub fn add_verification(&mut self, script: Vec<u8>) -> Result<&mut Self, CoreError> {
         set_script_once(
             &mut self.verification,
@@ -51,7 +49,6 @@ impl WitnessBuilder {
     }
 
     /// Builds an invocation script with a [`ScriptBuilder`] callback and adds it (mutable reference).
-    #[must_use]
     pub fn add_invocation_with_builder<F>(&mut self, config: F) -> Result<&mut Self, CoreError>
     where
         F: FnOnce(&mut ScriptBuilder),
@@ -61,7 +58,6 @@ impl WitnessBuilder {
     }
 
     /// Builds a verification script with a [`ScriptBuilder`] callback and adds it (mutable reference).
-    #[must_use]
     pub fn add_verification_with_builder<F>(&mut self, config: F) -> Result<&mut Self, CoreError>
     where
         F: FnOnce(&mut ScriptBuilder),

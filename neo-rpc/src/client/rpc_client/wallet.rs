@@ -14,7 +14,6 @@ use std::sync::Arc;
 impl RpcClient {
     /// Close the wallet opened by RPC.
     /// Matches C# `CloseWalletAsync`
-    #[must_use]
     pub async fn close_wallet(&self) -> Result<bool, ClientRpcError> {
         let result = self.rpc_send_async("closewallet", vec![]).await?;
         token_as_boolean(result, "closewallet")
@@ -22,7 +21,6 @@ impl RpcClient {
 
     /// Exports the private key of the specified address.
     /// Matches C# `DumpPrivKeyAsync`
-    #[must_use]
     pub async fn dump_priv_key(&self, address: &str) -> Result<String, ClientRpcError> {
         let result = self
             .rpc_send_async("dumpprivkey", vec![JToken::String(address.to_string())])
@@ -32,7 +30,6 @@ impl RpcClient {
 
     /// Imports a WIF private key into the wallet opened by RPC.
     /// Matches C# `ImportPrivKeyAsync`
-    #[must_use]
     pub async fn import_priv_key(&self, wif: &str) -> Result<RpcAccount, ClientRpcError> {
         let result = self
             .rpc_send_async("importprivkey", vec![JToken::String(wif.to_string())])
@@ -56,7 +53,6 @@ impl RpcClient {
 
     /// Creates a new account in the wallet opened by RPC.
     /// Matches C# `GetNewAddressAsync`
-    #[must_use]
     pub async fn get_new_address(&self) -> Result<String, ClientRpcError> {
         let result = self.rpc_send_async("getnewaddress", vec![]).await?;
         token_as_string(result, "getnewaddress")
@@ -64,7 +60,6 @@ impl RpcClient {
 
     /// Returns the balance of the specified asset in the wallet.
     /// Matches C# `GetWalletBalanceAsync`
-    #[must_use]
     pub async fn get_wallet_balance(&self, asset_id: &str) -> Result<BigDecimal, ClientRpcError> {
         let result = self
             .rpc_send_async(
@@ -105,7 +100,6 @@ impl RpcClient {
 
     /// Gets the amount of unclaimed GAS in the wallet.
     /// Matches C# `GetWalletUnclaimedGasAsync`
-    #[must_use]
     pub async fn get_wallet_unclaimed_gas(&self) -> Result<BigDecimal, ClientRpcError> {
         let result = self.rpc_send_async("getwalletunclaimedgas", vec![]).await?;
         let value = token_as_string(result, "getwalletunclaimedgas")?;
@@ -117,7 +111,6 @@ impl RpcClient {
 
     /// Lists all the accounts in the current wallet.
     /// Matches C# `ListAddressAsync`
-    #[must_use]
     pub async fn list_address(&self) -> Result<Vec<RpcAccount>, ClientRpcError> {
         let result = self.rpc_send_async("listaddress", vec![]).await?;
         parse_object_array_result(
@@ -131,7 +124,6 @@ impl RpcClient {
 
     /// Open wallet file in the provider's machine.
     /// Matches C# `OpenWalletAsync`
-    #[must_use]
     pub async fn open_wallet(&self, path: &str, password: &str) -> Result<bool, ClientRpcError> {
         let result = self
             .rpc_send_async(

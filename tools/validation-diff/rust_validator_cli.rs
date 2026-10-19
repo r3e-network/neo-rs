@@ -3,7 +3,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use neo_core::ProtocolSettings;
-use serde_json;
 use std::fs;
 use std::path::PathBuf;
 

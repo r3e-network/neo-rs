@@ -205,9 +205,7 @@ pub trait StateQueryExt {
 impl StateQueryExt for ReadOnlyStore {
     fn get_contract_storage(&self, contract_id: &[u8]) -> Vec<(Cow<'_, [u8]>, Cow<'_, [u8]>)> {
         let prefix = contract_id.to_vec();
-        self.iter_prefix(&prefix)
-            .filter_map(|(k, v)| Some((k, v)))
-            .collect()
+        self.iter_prefix(&prefix).collect()
     }
 
     fn get_account_balance(&self, _account: &[u8], _asset: &[u8]) -> Option<u64> {

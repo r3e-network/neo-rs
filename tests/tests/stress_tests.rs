@@ -7,13 +7,13 @@
 //! 4. Large block test - blocks with 1000+ transactions
 //! 5. Network stress test - high message volume and concurrent connections
 
-use std::time::{Duration, Instant};
-use parking_lot::Mutex;
-use tokio::task::JoinSet;
-use neo_core::network::p2p::payloads::{Transaction, Signer};
 use neo_core::builders::TransactionBuilder;
 use neo_core::ledger::{Block, BlockHeader};
+use neo_core::network::p2p::payloads::Transaction;
 use neo_primitives::{UInt160, WitnessScope};
+use parking_lot::Mutex;
+use std::time::{Duration, Instant};
+use tokio::task::JoinSet;
 use tracing::info;
 
 /// Stress test metrics collector
@@ -60,8 +60,7 @@ fn create_test_transaction(index: u64) -> Transaction {
         .network_fee(1_000_000)
         .valid_until(10000)
         .add_signer(|s, _tx| {
-            s.account(UInt160::zero())
-                .scope(WitnessScope::NONE);
+            s.account(UInt160::zero()).scope(WitnessScope::NONE);
         })
         .build()
 }
@@ -133,7 +132,10 @@ async fn stress_test_maximum_throughput() {
         let elapsed_ms = batch_start.elapsed().as_millis() as u64;
         let tps = (processed as f64 * 1000.0) / elapsed_ms as f64;
 
-        info!("Batch size {}: {:.2} TPS, {} total txs", batch_size, tps, processed);
+        info!(
+            "Batch size {}: {:.2} TPS, {} total txs",
+            batch_size, tps, processed
+        );
 
         if tps > peak_tps {
             peak_tps = tps;
@@ -147,12 +149,18 @@ async fn stress_test_maximum_throughput() {
     info!("=== MAXIMUM THROUGHPUT TEST RESULTS ===");
     info!("Peak TPS: {:.2}", peak_tps);
     info!("Optimal batch size: {}", optimal_batch_size);
-    info!("Total transactions processed: {}", metrics.total_transactions);
+    info!(
+        "Total transactions processed: {}",
+        metrics.total_transactions
+    );
     info!("Test duration: {}ms", metrics.total_duration_ms);
 
     // Assertions
     assert!(peak_tps > 100.0, "Peak TPS should exceed 100 TPS");
-    assert_eq!(metrics.failed_transactions, 0, "Should have no failed transactions");
+    assert_eq!(
+        metrics.failed_transactions, 0,
+        "Should have no failed transactions"
+    );
 }
 
 /// Test 2: Sustained load - 1 hour at 80% capacity
@@ -178,13 +186,18 @@ async fn stress_test_sustained_load() {
     let mut last_batch = Instant::now();
     let mut memory_samples = Vec::new();
 
-    info!("Running sustained load test at {} TPS for {:?}", target_tps, test_duration);
+    info!(
+        "Running sustained load test at {} TPS for {:?}",
+        target_tps, test_duration
+    );
 
     while start_time.elapsed() < test_duration {
         if last_batch.elapsed() >= batch_interval {
             let mut transactions = Vec::with_capacity(batch_size);
             for i in 0..batch_size {
-                transactions.push(create_test_transaction(metrics.total_transactions + i as u64));
+                transactions.push(create_test_transaction(
+                    metrics.total_transactions + i as u64,
+                ));
             }
 
             // Process batch
@@ -197,7 +210,7 @@ async fn stress_test_sustained_load() {
             last_batch = Instant::now();
 
             // Sample memory every 10 seconds
-            if start_time.elapsed().as_secs() % 10 == 0 {
+            if start_time.elapsed().as_secs().is_multiple_of(10) {
                 // Note: Real memory sampling would use sysinfo crate
                 let estimated_memory_mb = (metrics.total_transactions * 500) / (1024 * 1024);
                 memory_samples.push(estimated_memory_mb);
@@ -235,15 +248,26 @@ async fn stress_test_sustained_load() {
     info!("Successful: {}", metrics.successful_transactions);
     info!("Failed: {}", metrics.failed_transactions);
     info!("Average TPS: {:.2}", metrics.transactions_per_second());
-    info!("Test duration: {:.2}s", metrics.total_duration_ms as f64 / 1000.0);
+    info!(
+        "Test duration: {:.2}s",
+        metrics.total_duration_ms as f64 / 1000.0
+    );
     info!("Peak memory: {}MB", metrics.peak_memory_mb);
     info!("Memory growth: {:.2}%", memory_growth);
 
     // Assertions
-    assert!(metrics.transactions_per_second() >= target_tps * 0.9,
-            "Should maintain at least 90% of target TPS");
-    assert_eq!(metrics.failed_transactions, 0, "Should have no failed transactions");
-    assert!(memory_growth < 50.0, "Memory growth should be less than 50%");
+    assert!(
+        metrics.transactions_per_second() >= target_tps * 0.9,
+        "Should maintain at least 90% of target TPS"
+    );
+    assert_eq!(
+        metrics.failed_transactions, 0,
+        "Should have no failed transactions"
+    );
+    assert!(
+        memory_growth < 50.0,
+        "Memory growth should be less than 50%"
+    );
 }
 
 /// Test 3: Spike load - sudden 10x traffic increase
@@ -275,12 +299,15 @@ async fn stress_test_spike_load() {
 
         tokio::time::sleep(Duration::from_millis(20)).await; // 50 TPS
     }
-    let phase1_tps = (metrics.total_transactions as f64 * 1000.0)
-                     / phase1_start.elapsed().as_millis() as f64;
+    let phase1_tps =
+        (metrics.total_transactions as f64 * 1000.0) / phase1_start.elapsed().as_millis() as f64;
     info!("Phase 1 complete: {:.2} TPS", phase1_tps);
 
     // Phase 2: Spike load (10 seconds)
-    info!("Phase 2: SPIKE load at {} TPS ({}x)", spike_tps, spike_multiplier);
+    info!(
+        "Phase 2: SPIKE load at {} TPS ({}x)",
+        spike_tps, spike_multiplier
+    );
     let phase2_start = Instant::now();
     let phase2_start_count = metrics.total_transactions;
 
@@ -323,13 +350,25 @@ async fn stress_test_spike_load() {
     info!("Phase 1 (normal) TPS: {:.2}", phase1_tps);
     info!("Phase 2 (spike) TPS: {:.2}", phase2_tps);
     info!("Phase 3 (recovery) TPS: {:.2}", phase3_tps);
-    info!("Total duration: {:.2}s", metrics.total_duration_ms as f64 / 1000.0);
+    info!(
+        "Total duration: {:.2}s",
+        metrics.total_duration_ms as f64 / 1000.0
+    );
     info!("Failed transactions: {}", metrics.failed_transactions);
 
     // Assertions
-    assert_eq!(metrics.failed_transactions, 0, "Should handle spike without failures");
-    assert!(phase2_tps > phase1_tps * 5.0, "Should handle at least 5x spike");
-    assert!(phase3_tps >= phase1_tps * 0.8, "Should recover to near-normal performance");
+    assert_eq!(
+        metrics.failed_transactions, 0,
+        "Should handle spike without failures"
+    );
+    assert!(
+        phase2_tps > phase1_tps * 5.0,
+        "Should handle at least 5x spike"
+    );
+    assert!(
+        phase3_tps >= phase1_tps * 0.8,
+        "Should recover to near-normal performance"
+    );
 }
 
 /// Test 4: Large block processing - blocks with 1000+ transactions
@@ -391,7 +430,10 @@ async fn stress_test_large_blocks() {
     // Assertions
     assert_eq!(metrics.total_blocks, block_sizes.len() as u64);
     assert_eq!(metrics.failed_transactions, 0);
-    assert!(metrics.transactions_per_second() > 100.0, "Should process > 100 TPS");
+    assert!(
+        metrics.transactions_per_second() > 100.0,
+        "Should process > 100 TPS"
+    );
 }
 
 /// Test 5: Network stress - high message volume
@@ -460,7 +502,8 @@ async fn stress_test_network_load() {
     metrics.total_duration_ms = start_time.elapsed().as_millis() as u64;
 
     // Calculate aggregate throughput
-    let aggregate_tps = (metrics.total_transactions as f64 * 1000.0) / metrics.total_duration_ms as f64;
+    let aggregate_tps =
+        (metrics.total_transactions as f64 * 1000.0) / metrics.total_duration_ms as f64;
 
     info!("=== NETWORK STRESS TEST RESULTS ===");
     info!("Concurrent connections: {}", concurrent_connections);
@@ -469,7 +512,10 @@ async fn stress_test_network_load() {
     info!("Successful: {}", metrics.successful_transactions);
     info!("Failed: {}", metrics.failed_transactions);
     info!("Aggregate throughput: {:.2} TPS", aggregate_tps);
-    info!("Total duration: {:.2}s", metrics.total_duration_ms as f64 / 1000.0);
+    info!(
+        "Total duration: {:.2}s",
+        metrics.total_duration_ms as f64 / 1000.0
+    );
     info!("Success rate: {:.2}%", metrics.success_rate());
 
     // Assertions
@@ -479,5 +525,9 @@ async fn stress_test_network_load() {
     );
     assert_eq!(metrics.failed_transactions, 0, "Should have no failures");
     assert!(aggregate_tps > 1000.0, "Should handle > 1000 TPS aggregate");
-    assert_eq!(metrics.success_rate(), 100.0, "Should have 100% success rate");
+    assert_eq!(
+        metrics.success_rate(),
+        100.0,
+        "Should have 100% success rate"
+    );
 }
