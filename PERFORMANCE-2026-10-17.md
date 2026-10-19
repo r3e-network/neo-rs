@@ -301,7 +301,7 @@ speedup: 2.41x, identical roots
 
 A second fix in the same range removed full contract-state deserialization from
 ApplicationEngine::get_storage_context; it now reuses the engine contract cache
-(175.4 s -> 158.5 s on the same 6,001 blocks). Reusing the state backend read snapshot instead of creating a new RocksDB snapshot per MPT node read gives a further 158.5 s -> 152.2 s. A bounded 262,144-entry state node cache brings the same range to 122.4 s. Avoiding a full script hash on every RET (the cached context hash is already available) gives 118.6 s.
+(175.4 s -> 158.5 s on the same 6,001 blocks). Reusing the state backend read snapshot instead of creating a new RocksDB snapshot per MPT node read gives a further 158.5 s -> 152.2 s. A bounded 262,144-entry state node cache brings the same range to 122.4 s. Avoiding a full script hash on every RET (the cached context hash is already available) gives 118.6 s. The state-node cache capacity is configurable through NEO_STATE_NODE_CACHE_ENTRIES (default 262,144); 4,194,304 entries gives 115.9 s.
 
 The replay harness also enables DataCache read caching only for blocks with
 more than two transactions, avoiding the per-block cache overhead on empty and

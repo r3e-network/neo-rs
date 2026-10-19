@@ -214,13 +214,23 @@ pub struct SnapshotBackedStateStoreBackend {
 impl SnapshotBackedStateStoreBackend {
     /// Creates a backend that reads through and commits to snapshots of `store`.
     pub fn new(store: Arc<dyn Store>) -> Self {
+        let capacity = std::env::var("NEO_STATE_NODE_CACHE_ENTRIES")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(262_144);
+        Self::new_with_cache_capacity(store, capacity)
+    }
+
+    /// Creates a backend with an explicit node-cache entry capacity.
+    pub fn new_with_cache_capacity(store: Arc<dyn Store>, capacity: usize) -> Self {
         let read_snapshot = store.snapshot();
         Self {
             store,
             pending: Mutex::new(HashMap::new()),
             read_snapshot: RwLock::new(read_snapshot),
             node_cache: Mutex::new(lru::LruCache::new(
-                std::num::NonZeroUsize::new(262_144).expect("nonzero cache capacity"),
+                std::num::NonZeroUsize::new(capacity.max(1)).expect("nonzero cache capacity"),
             )),
         }
     }
