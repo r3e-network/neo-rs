@@ -455,13 +455,11 @@ impl ApplicationEngine {
     }
     pub(crate) fn refresh_context_tracking(&mut self) -> Result<()> {
         if let Some(current_context) = self.vm_engine.engine().current_context() {
-            let fallback_hash = UInt160::from_bytes(&current_context.script_hash())
-                .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
             let state_arc = current_context
                 .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-            let (current_hash, call_flags, calling_script_hash, context_snapshot) = {
+            let (stored_script_hash, call_flags, calling_script_hash, context_snapshot) = {
                 let state = state_arc.lock();
-                let current_hash = state.script_hash.unwrap_or(fallback_hash);
+                let stored_script_hash = state.script_hash;
                 let calling_script_hash = state
                     .native_calling_script_hash
                     .or(state.calling_script_hash)
@@ -477,11 +475,17 @@ impl ApplicationEngine {
                         })
                     });
                 (
-                    current_hash,
+                    stored_script_hash,
                     state.call_flags,
                     calling_script_hash,
                     state.snapshot_cache.clone(),
                 )
+            };
+            let current_hash = match stored_script_hash {
+                Some(hash) => hash,
+                None => UInt160::from_bytes(&current_context.script_hash()).map_err(|e| {
+                    Error::invalid_operation(format!("Invalid script hash: {e}"))
+                })?,
             };
             self.current_script_hash = Some(current_hash);
             if self.entry_script_hash.is_none() {
