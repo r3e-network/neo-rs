@@ -141,4 +141,6 @@ formal/**/.mimosa/
 .tools/*.jar
 .tools/*/*.jar
 .tools/**/*.jar
+# Local downloaded formal-verification toolchain (never commit)
+/.tools/
 *.jar
