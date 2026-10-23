@@ -93,6 +93,16 @@ __pycache__/
 blockchain_data/
 testnet_data/
 
+# Root-level captured terminal output and compiled proof artifacts.
+# These are byproducts of local audits, never sources; keep them out of review diffs.
+/*_output.txt
+/*_result*.txt
+/*_test.txt
+/*_errors.txt
+/*.vo
+/compilation_error.txt
+/compile_check.txt
+
 # Local node data (created when running neo-node from its crate dir)
 neo-node/StateRoot/
 
