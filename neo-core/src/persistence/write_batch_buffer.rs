@@ -463,10 +463,11 @@ impl AutoFlushBatchBuffer {
             std::thread::sleep(interval);
 
             // Check if we should flush based on time
-            if inner.has_pending() && inner.time_since_flush() >= interval {
-                if let Err(e) = inner.flush() {
-                    error!(target: "neo", error = %e, "auto flush failed");
-                }
+            if inner.has_pending()
+                && inner.time_since_flush() >= interval
+                && let Err(e) = inner.flush()
+            {
+                error!(target: "neo", error = %e, "auto flush failed");
             }
         }
     }
