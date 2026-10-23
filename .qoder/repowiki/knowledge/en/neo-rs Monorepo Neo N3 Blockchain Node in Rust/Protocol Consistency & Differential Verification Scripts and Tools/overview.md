@@ -1,1 +1,0 @@
-Collection of shell/Python harnesses and standalone tools that validate neo-rs against C# Neo N3 by comparing state roots, VM execution, RPC responses, gas calculations, and SGX evidence across mainnet and testnet histories.

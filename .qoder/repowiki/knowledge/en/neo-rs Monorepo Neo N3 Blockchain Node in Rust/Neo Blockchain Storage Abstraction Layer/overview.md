@@ -1,1 +1,0 @@
-Defines the storage traits, in-memory cache with change tracking, key/value types, and a pluggable store provider/factory system that form the single source of truth for Neo blockchain persistence.

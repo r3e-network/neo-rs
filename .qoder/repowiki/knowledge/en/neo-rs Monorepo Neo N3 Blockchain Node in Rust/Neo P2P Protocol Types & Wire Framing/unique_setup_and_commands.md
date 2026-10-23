@@ -1,1 +1,0 @@
-No special build steps; standard `cargo build` / `cargo test` from the workspace root. A roundtrip serialization test lives in `tests/protocol_roundtrip.rs` under dev-dependencies using `serde_json`.

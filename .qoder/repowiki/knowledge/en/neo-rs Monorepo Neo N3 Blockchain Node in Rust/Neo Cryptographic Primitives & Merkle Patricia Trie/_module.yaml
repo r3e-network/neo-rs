@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: neo_crypto
-title: Neo Cryptographic Primitives & Merkle Patricia Trie
-scope:
-    - neo-crypto/
-source_files: []
-depends_on: []
-related_to: []

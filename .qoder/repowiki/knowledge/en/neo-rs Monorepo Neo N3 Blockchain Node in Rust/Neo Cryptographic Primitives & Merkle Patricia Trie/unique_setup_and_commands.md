@@ -1,1 +1,0 @@
-Benchmarks run with `cargo bench --bench crypto_ops` (Criterion harness disabled in `Cargo.toml`); property tests require `proptest` feature via `cargo test --test property_tests`.

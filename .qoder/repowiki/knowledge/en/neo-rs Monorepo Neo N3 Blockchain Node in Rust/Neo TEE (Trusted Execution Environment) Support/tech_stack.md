@@ -1,1 +1,0 @@
-Rust crate using `thiserror`/`anyhow` for errors, `parking_lot::RwLock` for concurrent state, `aes-gcm` + `hkdf` + `sha2` for sealing, `zeroize` for secret zeroing, `neo-crypto` (secp256r1 + hash160) for signature operations, optional `sgx-isa` for DCAP quote verification, and `tracing` for logging.

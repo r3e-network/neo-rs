@@ -1,1 +1,0 @@
-Rust 2024 edition targeting libFuzzer via `libfuzzer-sys` 0.4 and the `cargo-fuzz` toolchain; LLVM/Clang required for the native fuzzer backend.

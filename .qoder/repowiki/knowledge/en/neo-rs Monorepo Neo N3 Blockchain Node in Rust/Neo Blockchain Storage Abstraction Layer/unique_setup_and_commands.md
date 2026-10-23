@@ -1,1 +1,0 @@
-No special build steps; the crate uses workspace-managed metadata (`version.workspace = true`, etc.) and has no Cargo features beyond an empty default set. Tests rely on `serde_json` as a dev dependency.

@@ -1,1 +1,0 @@
-Property-based tests are run via `cargo test --all-features` (or `cargo test proptest`); failing cases persist seed data under `proptest-regressions/uint160.txt` and `uint256.txt` that can be replayed deterministically.

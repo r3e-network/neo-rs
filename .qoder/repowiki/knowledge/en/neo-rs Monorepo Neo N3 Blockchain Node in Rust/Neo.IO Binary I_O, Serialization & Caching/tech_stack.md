@@ -1,1 +1,0 @@
-Rust with `bytes` for zero-copy buffer access, `thiserror` for error enums, `lru`/`hashbrown`/`indexmap` for cache backends, `lz4_flex` for payload compression, `parking_lot` for lock-backed caches, and optional `tracing` feature gated behind a Cargo feature flag.

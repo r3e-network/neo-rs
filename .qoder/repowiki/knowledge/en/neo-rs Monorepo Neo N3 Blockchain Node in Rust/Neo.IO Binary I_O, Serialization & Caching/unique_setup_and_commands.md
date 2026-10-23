@@ -1,1 +1,0 @@
-Enable optional tracing instrumentation via the `tracing` Cargo feature (`cargo build --features tracing`). Tests under `tests/` use `tokio` with the `full` runtime enabled via dev-dependencies.

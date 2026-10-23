@@ -1,1 +1,0 @@
-Rust implementation of Neo.Json value types (JToken, JArray, JObject) with ordered properties and a JSONPath query engine, matching the C# Neo.Json API.

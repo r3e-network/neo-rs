@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: neo_config
-title: Neo N3 Node Configuration Crate
-scope:
-    - neo-config/
-source_files: []
-depends_on: []
-related_to: []
