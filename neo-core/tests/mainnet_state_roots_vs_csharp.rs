@@ -66,23 +66,48 @@ fn local_state_roots_match_csharp_reference() {
         .to_path_buf();
     // Allow overriding the local state-root DB to test alternate backups
     // (e.g. NEO_BULK_ROOT_DB_PATH=data/mainnet.pre-274157-fix-20260419/StateRoot).
-    let state_root_path = match std::env::var("NEO_BULK_ROOT_DB_PATH").ok() {
-        Some(p) if !p.is_empty() => Path::new(&p).to_path_buf(),
-        _ => repo_root.join("data/mainnet/StateRoot"),
+    //
+    // Relative overrides are resolved against the repo root, not the process
+    // working directory: `cargo test` runs with cwd=neo-core/, so a documented
+    // `data/Plugins/...` path would otherwise point at neo-core/data/... and be
+    // skipped without anyone noticing.
+    let explicit_path = std::env::var("NEO_BULK_ROOT_DB_PATH")
+        .ok()
+        .filter(|p| !p.is_empty());
+    let state_root_path = match explicit_path.as_deref() {
+        Some(p) => {
+            let path = Path::new(p);
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                repo_root.join(path)
+            }
+        }
+        None => repo_root.join("data/mainnet/StateRoot"),
     };
     let reference_path = repo_root.join("data/reference_stateroots.jsonl");
 
     if !state_root_path.exists() {
+        // An explicit override that does not exist is a caller error, not a
+        // missing-data skip: silently returning would report `ok` while
+        // comparing nothing.
+        assert!(
+            explicit_path.is_none(),
+            "NEO_BULK_ROOT_DB_PATH points at {}, which does not exist",
+            state_root_path.display()
+        );
         eprintln!(
-            "[SKIPPED] {}: data/mainnet/StateRoot directory not present",
-            module_path!()
+            "[SKIPPED] {}: {} not present",
+            module_path!(),
+            state_root_path.display()
         );
         return;
     }
     if !reference_path.exists() {
         eprintln!(
-            "[SKIPPED] {}: data/reference_stateroots.jsonl not present",
-            module_path!()
+            "[SKIPPED] {}: {} not present",
+            module_path!(),
+            reference_path.display()
         );
         return;
     }
