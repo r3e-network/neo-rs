@@ -10,12 +10,26 @@ use crate::{
 use core::cell::UnsafeCell;
 
 const POST_SYSCALL_STACK_HEADROOM: usize = 8;
+
+// The retained-state buffers only exist for the riscv32 build. Every writer is
+// inside a `cfg!(target_arch = "riscv32")` branch, so on every other target the
+// code compiles but never touches the storage. Sizing them to zero there keeps
+// the five statics below out of BSS (they would reserve 10 MiB) and leaves no
+// interior-mutable bytes that a stray call could alias.
+#[cfg(target_arch = "riscv32")]
 const RETAINED_PREFIX_BUF_SIZE: usize = 2 * 1024 * 1024;
+#[cfg(not(target_arch = "riscv32"))]
+const RETAINED_PREFIX_BUF_SIZE: usize = 0;
+
 const MAX_RETAINED_DECODE_DEPTH: usize = 64;
 const MAX_RETAINED_COLLECTION_LEN: usize = 4096;
 
 pub(crate) struct RetainedPrefixBuffer(UnsafeCell<[u8; RETAINED_PREFIX_BUF_SIZE]>);
 
+// SAFETY: on riscv32 the VM executes on a single thread, and the remaining
+// targets never reach the buffers (zero-sized, and every accessor is behind a
+// `cfg!(target_arch = "riscv32")` check). Any future multi-threaded use of the
+// riscv32 path would have to replace this with per-engine storage instead.
 unsafe impl Sync for RetainedPrefixBuffer {}
 
 impl RetainedPrefixBuffer {
