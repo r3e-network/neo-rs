@@ -19,9 +19,10 @@ jobs:
   benchmark-regression:
     name: Benchmark Regression Check
     runs-on: ubuntu-latest
-    # A cold cache runs the full criterion suite twice (baseline + comparison):
-    # measured 2260 s for one pass on a warm build, so 45 min cannot hold both.
-    timeout-minutes: 90
+    # Two passes over the gated subset: 394 s on ubuntu-latest, 8.8 min for the
+    # whole job including the release build. 45 min leaves room for a cold
+    # cache without letting a hung run burn an hour and a half.
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4

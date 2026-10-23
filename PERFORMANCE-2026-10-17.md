@@ -348,14 +348,17 @@ invocation exit non-zero. Any additional criterion flag has the same effect.
 pairs.
 
 The blocking CI gate is `./scripts/bench-regression.sh --gate`. It measures a
-fixed subset (`mpt_state_root`, `block_persistence`, `native_contracts`) twice
-in the same job — once to record a baseline, once to compare against it — and
-fails on a >10% regression. The baseline is deliberately **not** cached across
-runs: criterion reports absolute wall times, so comparing a 2-core runner
-against a baseline produced on a different host measures machine variance, not
-code. The remaining targets are still available locally through
-`--save-baseline` / `--compare`, but are advisory because their run-to-run
-spread on an unchanged tree is larger than the threshold.
+fixed subset (`mpt_state_root`, `native_contracts`) twice in the same job —
+once to record a baseline, once to compare against it — and fails on a >20%
+regression that is also larger than 10 µs in absolute terms. The baseline is
+deliberately **not** cached across runs: criterion reports absolute wall times,
+so comparing a 2-core runner against a baseline produced on a different host
+measures machine variance, not code. The remaining targets are still available
+locally through `--save-baseline` / `--compare`, but are advisory because their
+run-to-run spread on an unchanged tree (10.4%, 11.9% and 22.1% observed for
+`persist_block_one_ret_tx`) is larger than any usable threshold.
+
+On `ubuntu-latest` the job takes 8.8 min end to end, of which 394 s is the gate.
 
 MainNet replay and bulk-root checks are ignored by default because they need
 the local chain/state backups. CI runs them in
