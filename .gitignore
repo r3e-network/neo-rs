@@ -160,3 +160,6 @@ formal/**/.mimosa/
 
 # AI-generated repository wiki (.qoder/repowiki), not project source
 /.qoder/
+
+# Local verification logs (not sources)
+/.audit-logs/
