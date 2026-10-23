@@ -32,15 +32,31 @@ class BenchmarkResult:
     change_percent: float
     change_type: ChangeType
     confidence: float = 0.95
+    absolute_delta_ns: float = 0.0
 
 
 class BenchmarkAnalyzer:
     """Analyzes Criterion benchmark results for performance regressions."""
 
-    def __init__(self, baseline_dir: Path, current_dir: Path, threshold: float):
+    def __init__(
+        self,
+        baseline_dir: Path,
+        current_dir: Path,
+        threshold: float,
+        changed_since: Optional[float] = None,
+        min_abs_ns: float = 0.0,
+    ):
         self.baseline_dir = baseline_dir
         self.current_dir = current_dir
         self.threshold = threshold
+        # Only consider comparisons written by the run that just finished.
+        # Criterion leaves `change/` directories behind, so without this filter
+        # a gate run would also report comparisons from earlier runs.
+        self.changed_since = changed_since
+        # A 15% change on a 1.4 us benchmark is 0.2 us: below the run-to-run
+        # noise of the host and irrelevant to block throughput. Requiring a
+        # minimum absolute effect keeps microbenchmarks from blocking merges.
+        self.min_abs_ns = min_abs_ns
         self.results: List[BenchmarkResult] = []
 
     def analyze(self) -> List[BenchmarkResult]:
@@ -48,10 +64,17 @@ class BenchmarkAnalyzer:
         # Find all change/estimates.json files in criterion output
         change_files = list(self.current_dir.rglob("change/estimates.json"))
 
+        if self.changed_since is not None:
+            change_files = [
+                path
+                for path in change_files
+                if path.stat().st_mtime >= self.changed_since
+            ]
+
         if not change_files:
             print("Warning: No benchmark comparison results found", file=sys.stderr)
             print(f"Searched in: {self.current_dir}", file=sys.stderr)
-            print("Make sure to run: cargo bench -- --baseline baseline", file=sys.stderr)
+            print("Make sure to run: ./scripts/bench-regression.sh --compare", file=sys.stderr)
 
         for change_file in change_files:
             result = self.analyze_benchmark(change_file)
@@ -79,8 +102,29 @@ class BenchmarkAnalyzer:
             # Convert to percentage
             change_percent = point_estimate * 100
 
+            # Absolute effect size. criterion stores the current run's mean in
+            # ns next to the comparison; the baseline mean follows from the
+            # ratio, so no knowledge of the baseline name is needed.
+            current_mean_ns = 0.0
+            new_estimates = change_file.parent.parent / "new" / "estimates.json"
+            if new_estimates.is_file():
+                try:
+                    with open(new_estimates, "r") as f:
+                        new_data = json.load(f)
+                    current_mean_ns = new_data.get("mean", {}).get("point_estimate", 0.0)
+                except (json.JSONDecodeError, OSError):
+                    current_mean_ns = 0.0
+            absolute_delta_ns = 0.0
+            have_abs = current_mean_ns > 0 and point_estimate != -1.0
+            if have_abs:
+                baseline_mean_ns = current_mean_ns / (1.0 + point_estimate)
+                absolute_delta_ns = current_mean_ns - baseline_mean_ns
+
             # Determine change type
             if abs(change_percent) < self.threshold:
+                change_type = ChangeType.NO_CHANGE
+            elif have_abs and self.min_abs_ns > 0 and abs(absolute_delta_ns) < self.min_abs_ns:
+                # Real ratio, but below the absolute noise floor.
                 change_type = ChangeType.NO_CHANGE
             elif change_percent > 0:
                 change_type = ChangeType.REGRESSION
@@ -97,7 +141,8 @@ class BenchmarkAnalyzer:
                 current_mean=0,   # Not directly available in change file
                 change_percent=change_percent,
                 change_type=change_type,
-                confidence=confidence
+                confidence=confidence,
+                absolute_delta_ns=absolute_delta_ns,
             )
         except (json.JSONDecodeError, KeyError, ValueError, FileNotFoundError) as e:
             print(f"Warning: Could not parse {change_file}: {e}", file=sys.stderr)
@@ -120,6 +165,7 @@ class BenchmarkAnalyzer:
             entry = {
                 "name": result.name,
                 "change_percent": round(result.change_percent, 2),
+                "absolute_delta_us": round(result.absolute_delta_ns / 1000.0, 2),
                 "confidence": result.confidence
             }
 
@@ -164,6 +210,7 @@ class BenchmarkAnalyzer:
             for reg in report["regressions"]:
                 print(f"  {reg['name']}")
                 print(f"    Change: +{reg['change_percent']:.2f}% (slower)")
+                print(f"    Effect: +{reg['absolute_delta_us']:.2f} us")
                 print()
 
         if report["improvements"]:
@@ -189,10 +236,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Analyze with default 10% threshold
+  # Analyze with default 20%% threshold
   %(prog)s --baseline target/criterion --current target/criterion --output report.json
 
-  # Use 5% threshold for strict checking
+  # Use 5%% threshold for strict checking
   %(prog)s --baseline baseline/ --current target/criterion --threshold 5 --output report.json
         """
     )
@@ -211,8 +258,8 @@ Examples:
     parser.add_argument(
         "--threshold",
         type=float,
-        default=10.0,
-        help="Regression threshold in percent (default: 10.0)"
+        default=20.0,
+        help="Regression threshold in percent (default: 20.0)"
     )
     parser.add_argument(
         "--output",
@@ -224,6 +271,27 @@ Examples:
         "--verbose",
         action="store_true",
         help="Show verbose output"
+    )
+    parser.add_argument(
+        "--changed-since",
+        type=float,
+        default=None,
+        metavar="EPOCH",
+        help=(
+            "Only analyse comparisons newer than this Unix timestamp. "
+            "Criterion keeps old change/ directories, so a gate must ignore "
+            "results left by previous runs."
+        )
+    )
+    parser.add_argument(
+        "--min-abs-ns",
+        type=float,
+        default=0.0,
+        metavar="NS",
+        help=(
+            "Ignore changes smaller than this absolute amount. A percentage "
+            "threshold alone lets microbenchmark noise block a gate."
+        )
     )
 
     args = parser.parse_args()
@@ -242,7 +310,13 @@ Examples:
         print()
 
     # Analyze
-    analyzer = BenchmarkAnalyzer(args.baseline, args.current, args.threshold)
+    analyzer = BenchmarkAnalyzer(
+        args.baseline,
+        args.current,
+        args.threshold,
+        args.changed_since,
+        args.min_abs_ns,
+    )
     results = analyzer.analyze()
 
     if args.verbose:

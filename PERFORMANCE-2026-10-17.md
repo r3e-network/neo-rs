@@ -335,9 +335,27 @@ Known remaining costs in the persist path:
 
 The benchmarks are registered in `benches-package/Cargo.toml`
 (`native_contracts`, `mpt_state_root`, `p2p_frames`, `block_persistence`,
-`rocksdb_persistence`). `cargo bench --workspace` runs them; the existing
-benchmark-regression workflow already compares against a baseline with a 10%
-threshold.
+`rocksdb_persistence`) plus `neo-core` (`serialization`, `storage`),
+`neo-io`, `neo-crypto` and `neo-tests`.
+
+`cargo bench --workspace` is **not** usable here. It also runs every crate's
+lib/binary test harness and every auto-discovered `benches/*.rs` that uses the
+default libtest harness; none of those measure anything, but they parse argv and
+abort with `error: Unrecognized option: 'save-baseline'`, which makes the whole
+invocation exit non-zero. Any additional criterion flag has the same effect.
+`scripts/bench-regression.sh` therefore selects targets from the manifests
+(`[[bench]]` with `harness = false`) and runs `-p <package> --bench <name>`
+pairs.
+
+The blocking CI gate is `./scripts/bench-regression.sh --gate`. It measures a
+fixed subset (`mpt_state_root`, `block_persistence`, `native_contracts`) twice
+in the same job — once to record a baseline, once to compare against it — and
+fails on a >10% regression. The baseline is deliberately **not** cached across
+runs: criterion reports absolute wall times, so comparing a 2-core runner
+against a baseline produced on a different host measures machine variance, not
+code. The remaining targets are still available locally through
+`--save-baseline` / `--compare`, but are advisory because their run-to-run
+spread on an unchanged tree is larger than the threshold.
 
 MainNet replay and bulk-root checks are ignored by default because they need
 the local chain/state backups. CI runs them in

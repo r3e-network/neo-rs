@@ -113,9 +113,9 @@ secp256k1 = { workspace = true }
 name = "serialization"
 harness = false
 
-#[[bench]]
-#name = "storage"
-#harness = false
+[[bench]]
+name = "storage"
+harness = false
 
 [build-dependencies]
 # NOTE: These are only used when neofs-grpc feature is enabled (build.rs checks

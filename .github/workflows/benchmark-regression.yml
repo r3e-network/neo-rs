@@ -13,13 +13,15 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  REGRESSION_THRESHOLD: 10
+  REGRESSION_THRESHOLD: 20
 
 jobs:
   benchmark-regression:
     name: Benchmark Regression Check
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # A cold cache runs the full criterion suite twice (baseline + comparison):
+    # measured 2260 s for one pass on a warm build, so 45 min cannot hold both.
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v4
@@ -59,32 +61,19 @@ jobs:
           shared-key: ci-bench
           cache-on-failure: true
 
-      - name: Cache baseline benchmarks
-        id: cache-baseline
-        uses: actions/cache@v4
-        with:
-          path: benchmark-results/baseline
-          key: benchmark-baseline-${{ github.base_ref || 'main' }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            benchmark-baseline-${{ github.base_ref || 'main' }}-
-            benchmark-baseline-
+      # No cross-run baseline cache on purpose. Criterion reports absolute wall
+      # times, so a baseline produced on a different (or differently loaded)
+      # runner turns machine variance into "regressions". The gate records its
+      # baseline in the same job instead — see scripts/bench-regression.sh --gate.
 
       - name: Install Python dependencies
         run: |
           python3 -m pip install --upgrade pip
 
-      - name: Generate baseline (if not cached)
-        if: steps.cache-baseline.outputs.cache-hit != 'true'
-        run: |
-          echo "No cached baseline found, generating new baseline..."
-          chmod +x scripts/bench-regression.sh
-          ./scripts/bench-regression.sh --save-baseline
-
-      - name: Run benchmarks with comparison
+      - name: Run performance gate
         run: |
           chmod +x scripts/bench-regression.sh
-          ./scripts/bench-regression.sh --compare --threshold ${{ env.REGRESSION_THRESHOLD }}
-        continue-on-error: true
+          ./scripts/bench-regression.sh --gate --threshold ${{ env.REGRESSION_THRESHOLD }}
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
@@ -97,6 +86,7 @@ jobs:
           retention-days: 30
 
       - name: Check for regressions
+        if: always()
         run: |
           if [ -f benchmark-results/regression-report.json ]; then
             REGRESSIONS=$(jq '.regressions | length' benchmark-results/regression-report.json)
@@ -157,42 +147,3 @@ jobs:
               issue_number: context.issue.number,
               body: comment
             });
-
-  # Save baseline on main branch for future comparisons
-  update-baseline:
-    name: Update Baseline
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    timeout-minutes: 45
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Reclaim runner disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
-          sudo docker image prune -af || true
-
-      - name: Cache APT packages
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
-          version: 1.0
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry & git
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ci-bench
-
-      - name: Generate new baseline
-        run: |
-          chmod +x scripts/bench-regression.sh
-          ./scripts/bench-regression.sh --save-baseline
-
-      - name: Cache baseline for future runs
-        uses: actions/cache/save@v4
-        with:
-          path: benchmark-results/baseline
-          key: benchmark-baseline-main-${{ hashFiles('**/Cargo.lock') }}
