@@ -67,9 +67,11 @@
 
 - **git commit message 一律英文**：subject 用 Conventional Commits（`fix(ci): ...`），body 也用英文。中文只用于聊天回复和 `.workbuddy/memory/*.md` 工作日志，不得进 commit message。
 
-## CI 成本（用户明确要求）
+## CI 成本（用户明确要求，2026-10-23 加严）
 
-- **不要频繁推送触发完整 CI**（14 个作业，贵）。做法：**本地验证 → 攒批 → 一次性推送**。非必要不单独推。
+- **默认不 push**。推送会触发 4 条工作流、几十个作业，用户明确说过「CI 时间很珍贵，尽量本地验证」。除非用户明确说「推」，否则只在本地提交。
+- 本地验证手段已足够：`cargo check --workspace`、`cargo test -p <crate> --lib`、`cargo clippy -p <crate> --all-targets -- -D warnings`、直接运行待验证脚本（`./scripts/bench-regression.sh --gate` 3m48s 跑完，结论与 Linux CI 一致）。**不要用「推上去看 CI」当验证手段。**
+- 若已经推了、CI 还在跑而用户要求停，直接 `gh run cancel <id>`。
 - **通用教训：写"全绿"断言类脚本必须做变异测试，且要确认变异真的命中目标**（曾因字符串出现 2 次、只替换了非注册点的第 1 处，误判脚本恒绿）。
 
 ## 依赖策略（cargo-deny）
