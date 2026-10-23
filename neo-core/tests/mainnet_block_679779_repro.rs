@@ -1,5 +1,7 @@
 #![cfg(feature = "rocksdb")]
 
+mod common;
+
 // Reproducer for block 679,779 divergence (fourth post-fix bug).
 //
 // Block 679,779 has 2 transactions, both HALT on mainnet (C# Neo v3.9.1):
@@ -45,7 +47,6 @@ use neo_core::state_service::state_store::{
 };
 use neo_core::{UInt160, UInt256};
 use parking_lot::Mutex;
-use std::path::Path;
 use std::sync::Arc;
 
 fn u160(hex: &str) -> UInt160 {
@@ -66,14 +67,7 @@ fn witness(invocation_b64: &str, verification_b64: &str) -> Witness {
 }
 
 fn open_state_store() -> StateStore {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("repo root")
-        .to_path_buf();
-    let state_root_path = match std::env::var("NEO_REPRO_DB_PATH").ok() {
-        Some(p) if !p.is_empty() => Path::new(&p).to_path_buf(),
-        _ => repo_root.join("data/mainnet/StateRoot"),
-    };
+    let state_root_path = common::repro_state_root_path();
     let provider = RocksDBStoreProvider::new(StorageConfig {
         path: state_root_path.clone(),
         read_only: true,
@@ -96,10 +90,17 @@ fn open_state_store() -> StateStore {
 fn replay_block_679779_debug() {
     let state_store = open_state_store();
     let Some(root_679778) = state_store.get_state_root(679_778).map(|r| r.root_hash) else {
+        let store = common::repro_state_root_path();
+        assert!(
+            !common::repro_requires_data(),
+            "state root #679778 is missing from {}: this reproducer would verify \
+             nothing, and NEO_REPRO_REQUIRE_DATA is set",
+            store.display()
+        );
         eprintln!(
-            "[SKIPPED] mainnet_block_679779_repro: state root 679778 not present in \
-             data/mainnet/StateRoot. This test is a no-op until the local DB has been \
-             synced past height 679_778. Reported as PASS but assertions did NOT run."
+            "[SKIPPED] state root #679778 is missing from {}; 0 assertions executed. \
+             Set NEO_REPRO_REQUIRE_DATA=1 to fail on a missing fixture instead.",
+            store.display()
         );
         return;
     };

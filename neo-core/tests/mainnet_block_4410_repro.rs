@@ -1,5 +1,7 @@
 #![cfg(feature = "rocksdb")]
 
+mod common;
+
 use neo_core::UInt160;
 use neo_core::ledger::{Block, BlockHeader};
 use neo_core::persistence::data_cache::{DataCache, DataCacheConfig, Trackable};
@@ -12,7 +14,6 @@ use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
 };
 use parking_lot::Mutex;
-use std::path::Path;
 use std::sync::Arc;
 
 fn u160_from_address(addr: &str) -> UInt160 {
@@ -20,16 +21,7 @@ fn u160_from_address(addr: &str) -> UInt160 {
 }
 
 fn open_state_store() -> StateStore {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("repo root")
-        .to_path_buf();
-    // Honor NEO_REPRO_DB_PATH override for compat with newer reproducers;
-    // default path matches the canonical mainnet state-root location.
-    let state_root_path = match std::env::var("NEO_REPRO_DB_PATH").ok() {
-        Some(p) if !p.is_empty() => Path::new(&p).to_path_buf(),
-        _ => repo_root.join("data/Plugins/mainnet/StateRoot"),
-    };
+    let state_root_path = common::repro_state_root_path();
     let provider = RocksDBStoreProvider::new(StorageConfig {
         path: state_root_path.clone(),
         read_only: true,
@@ -70,11 +62,22 @@ fn tracked_suffixes(cache: &DataCache, contract_id: i32, prefix: u8) -> Vec<(Vec
 }
 
 #[test]
-#[ignore = "requires local mainnet full-state data (default data/Plugins/mainnet/StateRoot, override via NEO_REPRO_DB_PATH)"]
+#[ignore = "requires local mainnet full-state data (auto-detected under data/, override via NEO_REPRO_DB_PATH)"]
 fn replay_block_4410_onpersist_postpersist() {
     let state_store = open_state_store();
     let Some(root_4409) = state_store.get_state_root(4409).map(|r| r.root_hash) else {
-        eprintln!("[SKIPPED] state root 4409 not present in StateRoot DB.");
+        let store = common::repro_state_root_path();
+        assert!(
+            !common::repro_requires_data(),
+            "state root #4409 is missing from {}: this reproducer would verify \
+             nothing, and NEO_REPRO_REQUIRE_DATA is set",
+            store.display()
+        );
+        eprintln!(
+            "[SKIPPED] state root #4409 is missing from {}; 0 assertions executed. \
+             Set NEO_REPRO_REQUIRE_DATA=1 to fail on a missing fixture instead.",
+            store.display()
+        );
         return;
     };
     let trie = Arc::new(Mutex::new(state_store.trie_for_root(root_4409)));

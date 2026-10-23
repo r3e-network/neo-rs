@@ -366,8 +366,7 @@ the local chain/state backups. CI runs them in
 `neo-mainnet-data`.
 
 ```text
-NEO_REPRO_DB_PATH=data/Plugins/StateService/StateRoot \
-  cargo test -p neo-core --features rocksdb --test mainnet_block_1268131_repro -- --ignored
+cargo test -p neo-core --features rocksdb --test mainnet_block_1268131_repro -- --ignored
 
 NEO_BULK_ROOT_DB_PATH=data/Plugins/StateService/StateRoot \
 NEO_BULK_ROOT_MAX_HEIGHT=1465790 \
@@ -376,3 +375,15 @@ NEO_BULK_ROOT_MAX_HEIGHT=1465790 \
 NEO_CHAIN_DB_PATH=data/mainnet-protocol-consistency \
   cargo test -p neo-core --features rocksdb --test mainnet_chain_integrity -- --ignored
 ```
+
+Relative `data/...` paths in these variables resolve against the repository root,
+not the process working directory (`cargo test` runs with `cwd = neo-core/`). The
+reproducers also accept `NEO_REPRO_DB_PATH` being unset: they probe
+`data/Plugins/StateService/StateRoot`, `data/mainnet/StateRoot` and
+`data/Plugins/mainnet/StateRoot` and use the first that exists.
+
+When the store does not cover the height a reproducer replays, it executes zero
+assertions but libtest still reports `ok`. That is a skip, not a verification, so
+the reproducers print `[SKIPPED] ... 0 assertions executed`.
+`NEO_REPRO_REQUIRE_DATA=1` turns it into a failure; the validation workflow sets
+it, so a data gap cannot pass as a green run.

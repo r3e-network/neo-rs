@@ -74,6 +74,10 @@ jobs:
       - name: MainNet block replay fixtures
         env:
           NEO_REPRO_DB_PATH: ${{ inputs.state_root_db }}
+          # A reproducer whose height is absent from the store runs zero
+          # assertions and still reports `ok`. This job exists to catch state-root
+          # divergences, so a missing fixture has to fail here.
+          NEO_REPRO_REQUIRE_DATA: "1"
         run: |
           for test in $(ls neo-core/tests/mainnet_block_*_repro.rs | \
               xargs -n1 basename | sed 's/\.rs$//'); do

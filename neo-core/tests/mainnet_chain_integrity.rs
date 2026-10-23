@@ -28,12 +28,32 @@ fn stored_mainnet_chain_is_contiguous_and_has_valid_merkle_roots() {
         .parent()
         .expect("repo root")
         .to_path_buf();
-    let db_path = std::env::var("NEO_CHAIN_DB_PATH")
+    // Relative overrides resolve against the repo root: `cargo test` runs with
+    // cwd = neo-core/, so a documented `data/...` path would otherwise point at
+    // neo-core/data/... and be reported as missing.
+    let explicit_db_path = std::env::var("NEO_CHAIN_DB_PATH")
         .ok()
-        .filter(|path| !path.is_empty())
-        .map(|path| Path::new(&path).to_path_buf())
-        .unwrap_or_else(|| repo_root.join("data/mainnet-protocol-consistency"));
+        .filter(|path| !path.is_empty());
+    let db_path = match explicit_db_path.as_deref() {
+        Some(path) => {
+            let path = Path::new(path);
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                repo_root.join(path)
+            }
+        }
+        None => repo_root.join("data/mainnet-protocol-consistency"),
+    };
     if !db_path.exists() {
+        // An explicit override that does not exist is a caller error, not a
+        // missing-data skip: silently returning would report `ok` while
+        // checking nothing.
+        assert!(
+            explicit_db_path.is_none(),
+            "NEO_CHAIN_DB_PATH points at {}, which does not exist",
+            db_path.display()
+        );
         eprintln!("[SKIPPED] {} does not exist", db_path.display());
         return;
     }

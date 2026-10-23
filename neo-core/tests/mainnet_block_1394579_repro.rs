@@ -1,5 +1,7 @@
 #![cfg(feature = "rocksdb")]
 
+mod common;
+
 // Reproducer for block 1,394,579 — Bug #12. State root divergence first appears
 // at this block (bisect against seed1.neo.org getstateroot vs local Rust trie
 // after bugs #10 and #11 fixes landed). Single tx 0xfa0f5683... is a NeoFS
@@ -30,7 +32,6 @@ use neo_core::state_service::state_store::{
 };
 use neo_core::{UInt160, UInt256};
 use parking_lot::Mutex;
-use std::path::Path;
 use std::sync::Arc;
 
 fn u160(hex: &str) -> UInt160 {
@@ -51,14 +52,7 @@ fn witness(invocation_b64: &str, verification_b64: &str) -> Witness {
 }
 
 fn open_state_store() -> StateStore {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("repo root")
-        .to_path_buf();
-    let state_root_path = match std::env::var("NEO_REPRO_DB_PATH").ok() {
-        Some(p) if !p.is_empty() => Path::new(&p).to_path_buf(),
-        _ => repo_root.join("data/Plugins/mainnet/StateRoot"),
-    };
+    let state_root_path = common::repro_state_root_path();
     let provider = RocksDBStoreProvider::new(StorageConfig {
         path: state_root_path.clone(),
         read_only: true,
@@ -85,7 +79,18 @@ const TX_VER: &str = include_str!("mainnet_block_1394579_data/tx_ver.b64");
 fn replay_block_1394579_assert_csharp_root() {
     let state_store = open_state_store();
     let Some(root_prev) = state_store.get_state_root(1_394_578).map(|r| r.root_hash) else {
-        eprintln!("[SKIPPED] state root 1394578 not present in StateRoot DB.");
+        let store = common::repro_state_root_path();
+        assert!(
+            !common::repro_requires_data(),
+            "state root #1394578 is missing from {}: this reproducer would verify \
+             nothing, and NEO_REPRO_REQUIRE_DATA is set",
+            store.display()
+        );
+        eprintln!(
+            "[SKIPPED] state root #1394578 is missing from {}; 0 assertions executed. \
+             Set NEO_REPRO_REQUIRE_DATA=1 to fail on a missing fixture instead.",
+            store.display()
+        );
         return;
     };
     eprintln!("loaded prior state root @1394578 = {}", root_prev);
