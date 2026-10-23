@@ -63,6 +63,10 @@
   - Rust RPC 注册面 = `register_handlers()` 内 `rpc_handlers![...]`；`middleware/rate_limiter.rs` 含同名字符串，正则易误纳——曾三版正则得 46/51/57 三个答案。
   - RPC 不在共识路径，缺失/多余不会分叉，属客户端兼容性问题。
 
+## 提交信息语言（用户明确要求）
+
+- **git commit message 一律英文**：subject 用 Conventional Commits（`fix(ci): ...`），body 也用英文。中文只用于聊天回复和 `.workbuddy/memory/*.md` 工作日志，不得进 commit message。
+
 ## CI 成本（用户明确要求）
 
 - **不要频繁推送触发完整 CI**（14 个作业，贵）。做法：**本地验证 → 攒批 → 一次性推送**。非必要不单独推。
