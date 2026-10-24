@@ -134,6 +134,11 @@ impl ReadOnlyStore {
     }
 }
 
+/// Owned iterator over snapshot entries.
+type OwnedEntryIterator<'a> = Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + 'a>;
+/// Contract storage entries returned with borrowed or owned data.
+type ContractStorageEntries<'a> = Vec<(Cow<'a, [u8]>, Cow<'a, [u8]>)>;
+
 /// Lazy iterator for prefix-based queries
 pub struct SeekableIterator<'a> {
     /// Cloned snapshot for this iteration session
@@ -143,7 +148,7 @@ pub struct SeekableIterator<'a> {
     prefix: Vec<u8>,
 
     /// Current position in iteration
-    current_iter: Option<Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + 'a>>,
+    current_iter: Option<OwnedEntryIterator<'a>>,
 
     /// Direction of iteration
     direction: SeekDirection,
@@ -196,14 +201,14 @@ impl<'a> Iterator for SeekableIterator<'a> {
 /// Extension trait for querying state roots efficiently
 pub trait StateQueryExt {
     /// Get contract storage items for a given contract ID
-    fn get_contract_storage(&self, contract_id: &[u8]) -> Vec<(Cow<'_, [u8]>, Cow<'_, [u8]>)>;
+    fn get_contract_storage(&self, contract_id: &[u8]) -> ContractStorageEntries<'_>;
 
     /// Get account balance at specific height
     fn get_account_balance(&self, account: &[u8], asset: &[u8]) -> Option<u64>;
 }
 
 impl StateQueryExt for ReadOnlyStore {
-    fn get_contract_storage(&self, contract_id: &[u8]) -> Vec<(Cow<'_, [u8]>, Cow<'_, [u8]>)> {
+    fn get_contract_storage(&self, contract_id: &[u8]) -> ContractStorageEntries<'_> {
         let prefix = contract_id.to_vec();
         self.iter_prefix(&prefix).collect()
     }

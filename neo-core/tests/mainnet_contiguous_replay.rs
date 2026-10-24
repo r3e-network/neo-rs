@@ -202,12 +202,14 @@ fn open_state_store(path: &Path) -> StateStore {
     )
 }
 
+type StateChanges = Vec<(Vec<u8>, Option<Vec<u8>>)>;
+
 fn execute_empty_block(
     state_store: &StateStore,
     chain_cache: Arc<StoreCache>,
     block: Arc<Block>,
     root_prev: neo_core::UInt256,
-) -> Option<(neo_core::UInt256, Vec<(Vec<u8>, Option<Vec<u8>>)>)> {
+) -> Option<(neo_core::UInt256, StateChanges)> {
     let trie = Arc::new(Mutex::new(state_store.trie_for_root(root_prev)));
     let ledger_index = block.index().saturating_sub(1);
     let ledger_current_key = StorageKey::new(-4, vec![12]).to_array();

@@ -63,10 +63,11 @@ type Tier1HotNativeLeaves = LruCache<UInt256, Arc<Node>>;
 /// Layer 2: Prefix-based cache for contract storage keys
 /// Supports up to 1M prefix groups with LRU eviction per group
 const PREFIX_GROUPS: usize = 256; // First byte as hash bucket
+type PrefixGroups = HashMap<u8, LruCache<Vec<u8>, Arc<Node>>>;
 
 pub struct ContractPrefixCache {
     /// [prefix_hash][actual_key] → node
-    prefixes: RwLock<HashMap<u8, LruCache<Vec<u8>, Arc<Node>>>>,
+    prefixes: RwLock<PrefixGroups>,
     capacity_per_group: usize,
 }
 
