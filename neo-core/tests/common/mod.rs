@@ -34,7 +34,11 @@ pub fn repo_root() -> PathBuf {
 }
 
 /// State-root layouts this repository has used, in probe order.
-const STATE_ROOT_LAYOUTS: [&str; 3] = [
+///
+/// The protocol-consistency store contains the complete starting tries for all
+/// checked-in block reproducers, including block 4410's height-4409 state.
+const STATE_ROOT_LAYOUTS: [&str; 4] = [
+    "data/mainnet-protocol-consistency/StateRoot",
     "data/Plugins/StateService/StateRoot",
     "data/mainnet/StateRoot",
     "data/Plugins/mainnet/StateRoot",
@@ -48,10 +52,9 @@ const STATE_ROOT_LAYOUTS: [&str; 3] = [
 /// read from `neo-core/data/...` and fail to open.
 ///
 /// Without an override, [`STATE_ROOT_LAYOUTS`] is probed and the first existing
-/// directory wins — the two layouts are both in use across documented setups,
-/// so hard-coding one of them made half the reproducers unusable. When nothing
-/// exists the first candidate is returned so the caller fails on an absolute
-/// path it can act on, after the probe list is logged.
+/// directory wins because several layouts remain in use across documented
+/// setups. When nothing exists the first candidate is returned so the caller
+/// fails on an absolute path it can act on, after the probe list is logged.
 pub fn repro_state_root_path() -> PathBuf {
     let root = repo_root();
     if let Some(raw) = std::env::var("NEO_REPRO_DB_PATH")
@@ -68,7 +71,10 @@ pub fn repro_state_root_path() -> PathBuf {
 
     let candidates: Vec<PathBuf> = STATE_ROOT_LAYOUTS
         .iter()
-        .map(|rel| rel.split('/').fold(root.clone(), |acc, part| acc.join(part)))
+        .map(|rel| {
+            rel.split('/')
+                .fold(root.clone(), |acc, part| acc.join(part))
+        })
         .collect();
     let found = candidates.iter().find(|path| path.is_dir()).cloned();
     match found {
