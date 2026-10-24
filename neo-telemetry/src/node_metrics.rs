@@ -783,28 +783,53 @@ pub fn update_storage_metrics(free_bytes: u64, total_bytes: u64) {
     DISK_TOTAL_BYTES.set(total_bytes as f64);
 }
 
+/// Snapshot of optimization-specific measurements (Phase 1-3).
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct OptimizationMetrics {
+    pub sync_current_height: u32,
+    pub sync_tip_height: u32,
+    pub transactions_verified: u64,
+    pub blocks_processed: u64,
+    pub cuckoo_lookups_hit: u64,
+    pub cuckoo_lookups_miss: u64,
+    pub syscall_lookup_latency_ns: f64,
+    pub batch_signatures_verified: u64,
+    pub average_batch_size: f64,
+    pub blake2b_throughput_bytes_per_sec: f64,
+    pub prefetch_io_latency_ns: f64,
+    pub prefetch_verify_latency_ns: f64,
+    pub prefetch_execute_latency_ns: f64,
+    pub cpu_usage_ratio: f64,
+    pub memory_usage_bytes: u64,
+    pub system_memory_total_bytes: u64,
+    pub fast_sync_enabled: bool,
+    pub block_processing_duration_s: f64,
+}
+
 /// Update optimization-specific metrics (Phase 1-3)
 #[allow(dead_code)] // Will be called from node when integrated
-pub fn update_optimization_metrics(
-    sync_current_height: u32,
-    sync_tip_height: u32,
-    transactions_verified: u64,
-    blocks_processed: u64,
-    cuckoo_lookups_hit: u64,
-    cuckoo_lookups_miss: u64,
-    syscall_lookup_latency_ns: f64,
-    batch_signatures_verified: u64,
-    average_batch_size: f64,
-    blake2b_throughput_bytes_per_sec: f64,
-    prefetch_io_latency_ns: f64,
-    prefetch_verify_latency_ns: f64,
-    prefetch_execute_latency_ns: f64,
-    cpu_usage_ratio: f64,
-    memory_usage_bytes: u64,
-    system_memory_total_bytes: u64,
-    fast_sync_enabled: bool,
-    block_processing_duration_s: f64,
-) {
+pub fn update_optimization_metrics(metrics: OptimizationMetrics) {
+    let OptimizationMetrics {
+        sync_current_height,
+        sync_tip_height,
+        transactions_verified,
+        blocks_processed,
+        cuckoo_lookups_hit,
+        cuckoo_lookups_miss,
+        syscall_lookup_latency_ns,
+        batch_signatures_verified,
+        average_batch_size,
+        blake2b_throughput_bytes_per_sec,
+        prefetch_io_latency_ns,
+        prefetch_verify_latency_ns,
+        prefetch_execute_latency_ns,
+        cpu_usage_ratio,
+        memory_usage_bytes,
+        system_memory_total_bytes,
+        fast_sync_enabled,
+        block_processing_duration_s,
+    } = metrics;
+
     // Sync metrics
     SYNC_CURRENT_HEIGHT.set(sync_current_height as f64);
     SYNC_TIP_HEIGHT.set(sync_tip_height as f64);
@@ -814,12 +839,8 @@ pub fn update_optimization_metrics(
     BLOCKS_PROCESSED_TOTAL.inc_by(blocks_processed as f64);
 
     // Cuckoo Hash metrics (use labels via separate counters)
-    for _ in 0..cuckoo_lookups_hit {
-        CUCKOO_HASH_LOOKUPS_HIT.inc();
-    }
-    for _ in 0..cuckoo_lookups_miss {
-        CUCKOO_HASH_LOOKUPS_MISS.inc();
-    }
+    CUCKOO_HASH_LOOKUPS_HIT.inc_by(cuckoo_lookups_hit as f64);
+    CUCKOO_HASH_LOOKUPS_MISS.inc_by(cuckoo_lookups_miss as f64);
 
     // Syscall lookup latency histogram
     SYSCALL_LOOKUP_LATENCY_BUCKETS.observe(syscall_lookup_latency_ns / 1e9); // Convert ns to s
@@ -1058,9 +1079,57 @@ mod tests {
     }
 
     #[test]
+    fn test_update_optimization_metrics() {
+        update_optimization_metrics(OptimizationMetrics {
+            sync_current_height: 100,
+            sync_tip_height: 105,
+            transactions_verified: 7,
+            blocks_processed: 3,
+            cuckoo_lookups_hit: 5,
+            cuckoo_lookups_miss: 2,
+            syscall_lookup_latency_ns: 500_000_000.0,
+            batch_signatures_verified: 11,
+            average_batch_size: 4.0,
+            blake2b_throughput_bytes_per_sec: 4096.0,
+            prefetch_io_latency_ns: 1_000_000_000.0,
+            prefetch_verify_latency_ns: 2_000_000_000.0,
+            prefetch_execute_latency_ns: 3_000_000_000.0,
+            cpu_usage_ratio: 1.5,
+            memory_usage_bytes: 1024,
+            system_memory_total_bytes: 8192,
+            fast_sync_enabled: true,
+            block_processing_duration_s: 0.25,
+        });
+
+        assert_eq!(SYNC_CURRENT_HEIGHT.get(), 100.0);
+        assert_eq!(SYNC_TIP_HEIGHT.get(), 105.0);
+        assert!(TRANSACTIONS_VERIFIED_COUNTER.get() >= 7.0);
+        assert!(BLOCKS_PROCESSED_TOTAL.get() >= 3.0);
+        assert!(CUCKOO_HASH_LOOKUPS_HIT.get() >= 5.0);
+        assert!(CUCKOO_HASH_LOOKUPS_MISS.get() >= 2.0);
+        assert!(SYSCALL_LOOKUP_LATENCY_BUCKETS.get_sample_count() > 0);
+        assert!(BATCH_SIGNATURES_VERIFIED_TOTAL.get() >= 11.0);
+        assert_eq!(AVERAGE_BATCH_SIZE.get(), 4.0);
+        assert_eq!(SIMD_BLAKE2B_THROUGHPUT_BYTES_PER_SECOND.get(), 4096.0);
+        for stage in ["io", "verify", "execute"] {
+            assert!(
+                PREFETCH_STAGE_LATENCIES_BUCKETS
+                    .with_label_values(&[stage])
+                    .get_sample_count()
+                    > 0
+            );
+        }
+        assert_eq!(CPU_USAGE_RATIO.get(), 1.0);
+        assert_eq!(MEMORY_USAGE_BYTES.get(), 1024.0);
+        assert_eq!(SYSTEM_MEMORY_TOTAL_BYTES.get(), 8192.0);
+        assert_eq!(FAST_SYNC_ENABLED.get(), 1.0);
+        assert!(BLOCK_PROCESSING_DURATION_BUCKETS.get_sample_count() > 0);
+    }
+
+    #[test]
     fn test_gather_prometheus() {
-        // Set a value to ensure metrics are registered
-        BLOCK_HEIGHT.set(100.0);
+        // Force lazy registration without changing a process-global gauge.
+        let _ = &*BLOCK_HEIGHT;
         let output = gather_prometheus();
         let text = String::from_utf8(output).expect("valid UTF-8");
         assert!(text.contains("neo_block_height"));
@@ -1216,15 +1285,16 @@ mod tests {
 
     #[test]
     fn test_all_metrics_in_output() {
-        // Set values for various metrics
-        BLOCK_HEIGHT.set(1000.0);
-        VM_EXECUTION_COUNT.inc();
-        STORAGE_READ_COUNT.inc();
-        CONSENSUS_COMMIT.inc();
-        P2P_CONNECTIONS_INBOUND.set(5.0);
-        CRYPTO_SIGNATURE_VERIFICATIONS.inc();
-        SMART_CONTRACT_INVOCATIONS.inc();
-        RPC_ACTIVE_CONNECTIONS.set(10.0);
+        // Registration tests must not mutate process-global metrics: other tests
+        // update and assert the same gauges concurrently.
+        let _ = &*BLOCK_HEIGHT;
+        let _ = &*VM_EXECUTION_COUNT;
+        let _ = &*STORAGE_READ_COUNT;
+        let _ = &*CONSENSUS_COMMIT;
+        let _ = &*P2P_CONNECTIONS_INBOUND;
+        let _ = &*CRYPTO_SIGNATURE_VERIFICATIONS;
+        let _ = &*SMART_CONTRACT_INVOCATIONS;
+        let _ = &*RPC_ACTIVE_CONNECTIONS;
 
         let output = gather_prometheus();
         let text = String::from_utf8(output).expect("valid UTF-8");
