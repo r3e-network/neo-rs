@@ -81,7 +81,7 @@
 
 - **禁止 `eprintln!("[SKIPPED]"); return;` 这类"缺数据就跳过"的写法单独存在**——libtest 报 `ok`，实际零断言。已见两处：`NEO_BULK_ROOT_DB_PATH`/`NEO_CHAIN_DB_PATH` 的默认缺失，以及 14 个 repro 的状态根缺失。
 - 现行规则：**显式 override 指向不存在的路径 = `assert!` 失败**；默认数据缺失可跳过，但必须打印 `0 assertions executed`，并提供严格开关。repro 用 `NEO_REPRO_REQUIRE_DATA=1`（`mainnet-validation.yml` 已置位）。
-- 判据：一条测试只要可能「什么都没验却报绿」，就必须有办法把它变成红。
+- 判据：一条测试只要可能「什么都没验却报绿」，就必须有办法把它变成红。连续重放还必须拒绝非法/反向范围与缺失/重复/畸形参考根，并断言 `checked == end-start+1`；仅比较到第一个参考根不算通过。
 
 ## 静默绿与 panic：两类必须主动搜的缺陷（2026-10-24 立规）
 
