@@ -636,6 +636,8 @@ fn verifies_state_root_witness_against_designated_state_validators() {
         .add_local_state_root(&local_root)
         .expect("local state root");
     local_snapshot.commit().expect("commit local root");
+    store.cache_state_root(local_root, false, None);
+    assert!(!store.validate_state_root_exists(5, true));
 
     // Build signed state root
     let mut signed_root = StateRoot::new_current(5, root_hash);
@@ -655,6 +657,71 @@ fn verifies_state_root_witness_against_designated_state_validators() {
 
     assert!(store.on_new_state_root(signed_root));
     assert_eq!(store.validated_root_index(), Some(5));
+    assert!(store.get_state_root(5).unwrap().witness.is_some());
+    assert!(store.get_cached_state_root(5).unwrap().witness.is_some());
+    assert!(store.validate_state_root_exists(5, true));
+}
+
+#[test]
+fn future_validated_root_replaces_witnessless_cached_root() {
+    let settings = ProtocolSettings::default_settings();
+    let keypair = KeyPair::generate().expect("generate keypair");
+    let validator = keypair.get_public_key_point().expect("public key point");
+    let validators = vec![validator.clone()];
+
+    let verifier = StateRootVerifier::new(
+        Arc::new(settings.clone()),
+        Arc::new(move || cache_with_designated_state_validators(5, &validators)),
+    );
+    let store = StateStore::new_with_verifier(
+        Arc::new(MemoryStateStoreBackend::new()),
+        StateServiceSettings::default(),
+        Some(verifier),
+    );
+
+    let root_hash = UInt256::from_bytes(&[10u8; 32]).unwrap();
+    let mut local_snapshot = store.snapshot();
+    local_snapshot
+        .add_local_state_root(&StateRoot::new_current(4, root_hash))
+        .expect("local state root at height 4");
+    local_snapshot
+        .commit()
+        .expect("commit local root at height 4");
+
+    let mut signed_root = StateRoot::new_current(5, root_hash);
+    let hash = signed_root.hash();
+    let mut sign_data = Vec::with_capacity(4 + hash.to_bytes().len());
+    sign_data.extend_from_slice(&settings.network.to_le_bytes());
+    sign_data.extend_from_slice(&hash.to_array());
+    let signature = keypair.sign(&sign_data).expect("sign state root");
+
+    let mut invocation = Vec::with_capacity(signature.len() + 2);
+    invocation.push(OpCode::PUSHDATA1.byte());
+    invocation.push(signature.len() as u8);
+    invocation.extend_from_slice(&signature);
+    let verification_script = Contract::create_multi_sig_redeem_script(1, &[validator]);
+    signed_root.witness = Some(Witness::new_with_scripts(invocation, verification_script));
+
+    assert!(store.on_new_state_root(signed_root));
+    assert_eq!(store.validated_root_index(), None);
+    assert!(store.get_state_root(5).is_none());
+
+    let local_root = StateRoot::new_current(5, root_hash);
+    let mut local_snapshot = store.snapshot();
+    local_snapshot
+        .add_local_state_root(&local_root)
+        .expect("local state root at height 5");
+    local_snapshot
+        .commit()
+        .expect("commit local root at height 5");
+    store.cache_state_root(local_root, false, None);
+
+    store.check_validated_state_root(5);
+
+    assert_eq!(store.validated_root_index(), Some(5));
+    assert!(store.get_state_root(5).unwrap().witness.is_some());
+    assert!(store.get_cached_state_root(5).unwrap().witness.is_some());
+    assert!(store.validate_state_root_exists(5, true));
 }
 
 // ============================================================================

@@ -557,6 +557,9 @@ impl StateStore {
             return false;
         }
         self.update_current_snapshot();
+        // Replace any witnessless local entry only after the witnessed root is durable.
+        // Reinsert through the cache API to keep the height and hash indexes coherent.
+        self.cache_state_root(state_root, true, None);
 
         metrics::record_ingest_result(true);
         true
