@@ -18,6 +18,10 @@ on:
         description: Path to the MainNet state-root RocksDB directory
         required: true
         default: data/Plugins/StateService/StateRoot
+      replay_state_root_db:
+        description: Path to the state-root RocksDB directory used for execution replay
+        required: true
+        default: data/mainnet-protocol-consistency/StateRoot
       max_state_root_height:
         description: Highest state-root height to compare
         required: true
@@ -62,9 +66,11 @@ jobs:
         env:
           CHAIN_DB: ${{ inputs.chain_db }}
           STATE_ROOT_DB: ${{ inputs.state_root_db }}
+          REPLAY_STATE_ROOT_DB: ${{ inputs.replay_state_root_db }}
         run: |
           test -d "$CHAIN_DB" || { echo "missing chain DB: $CHAIN_DB"; exit 1; }
           test -d "$STATE_ROOT_DB" || { echo "missing state-root DB: $STATE_ROOT_DB"; exit 1; }
+          test -d "$REPLAY_STATE_ROOT_DB" || { echo "missing replay state-root DB: $REPLAY_STATE_ROOT_DB"; exit 1; }
           test -f data/reference_stateroots.jsonl || {
             echo "missing data/reference_stateroots.jsonl"; exit 1;
           }
@@ -97,7 +103,7 @@ jobs:
       - name: From-genesis execution replay
         env:
           NEO_CHAIN_DB_PATH: ${{ inputs.chain_db }}
-          NEO_STATE_ROOT_DB_PATH: ${{ inputs.state_root_db }}
+          NEO_STATE_ROOT_DB_PATH: ${{ inputs.replay_state_root_db }}
           NEO_EMPTY_REPLAY_START: ${{ inputs.replay_start }}
           NEO_EMPTY_REPLAY_END: ${{ inputs.replay_end }}
         run: |
