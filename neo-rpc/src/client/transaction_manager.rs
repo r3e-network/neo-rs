@@ -77,11 +77,13 @@ impl TransactionManager {
         rpc_client: Arc<RpcClient>,
         script: &[u8],
         signers: Option<Vec<Signer>>,
-        _attributes: Option<Vec<TransactionAttribute>>,
+        attributes: Option<Vec<TransactionAttribute>>,
     ) -> Result<Self, RpcError> {
         let factory = TransactionManagerFactory::new(rpc_client);
+        let signers = signers.unwrap_or_default();
+        let attributes = attributes.unwrap_or_default();
         factory
-            .make_transaction(script, &signers.unwrap_or_default())
+            .make_transaction_with_attributes(script, &signers, &attributes)
             .await
     }
 
@@ -409,6 +411,55 @@ mod tests {
             .expect("manager");
 
         assert_eq!(manager.tx().signers()[0].scopes(), WitnessScope::GLOBAL);
+    }
+
+    #[tokio::test]
+    async fn make_transaction_preserves_attributes() {
+        if !localhost_binding_permitted() {
+            return;
+        }
+        let mut server = Server::new_async().await;
+        mock_block_count(&mut server, 100);
+        let invoke_result = invoke_result_payload(100, "10000000000000000");
+        let response_body = rpc_response(JToken::Object(invoke_result));
+        mock_invokescript(&mut server, &response_body);
+
+        let url = Url::parse(&server.url()).unwrap();
+        let client = Arc::new(RpcClient::builder(url).build().unwrap());
+        let manager = TransactionManager::make_transaction(
+            client,
+            &[0x01],
+            None,
+            Some(vec![TransactionAttribute::HighPriority]),
+        )
+        .await
+        .expect("manager");
+
+        assert_eq!(manager.tx().attributes().len(), 1);
+        assert!(matches!(
+            manager.tx().attributes()[0],
+            TransactionAttribute::HighPriority
+        ));
+    }
+
+    #[tokio::test]
+    async fn make_transaction_without_attributes_uses_empty_list() {
+        if !localhost_binding_permitted() {
+            return;
+        }
+        let mut server = Server::new_async().await;
+        mock_block_count(&mut server, 100);
+        let invoke_result = invoke_result_payload(100, "10000000000000000");
+        let response_body = rpc_response(JToken::Object(invoke_result));
+        mock_invokescript(&mut server, &response_body);
+
+        let url = Url::parse(&server.url()).unwrap();
+        let client = Arc::new(RpcClient::builder(url).build().unwrap());
+        let manager = TransactionManager::make_transaction(client, &[0x01], None, None)
+            .await
+            .expect("manager");
+
+        assert!(manager.tx().attributes().is_empty());
     }
 
     #[tokio::test]

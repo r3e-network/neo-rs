@@ -927,7 +927,7 @@ async fn traverse_iterator_rejects_expired_session() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn terminate_session_returns_false_for_unknown_session() {
+async fn terminate_session_rejects_unknown_session() {
     let config = RpcServerConfig {
         session_enabled: true,
         ..Default::default()
@@ -937,8 +937,35 @@ async fn terminate_session_returns_false_for_unknown_session() {
     let terminate = find_handler(&handlers, "terminatesession");
 
     let params = [Value::String(uuid::Uuid::new_v4().to_string())];
-    let result = (terminate.callback())(&server, &params).expect("unknown session");
-    assert_eq!(result, Value::Bool(false));
+    let err = (terminate.callback())(&server, &params).expect_err("unknown session");
+    assert_eq!(err.code(), -107);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn terminate_session_rejects_expired_session() {
+    let config = RpcServerConfig {
+        session_enabled: true,
+        session_expiration_time: 0,
+        ..Default::default()
+    };
+    let server = make_server(config);
+    let handlers = RpcServerSmartContract::register_handlers();
+    let terminate = find_handler(&handlers, "terminatesession");
+
+    let session = Session::new(
+        server.system(),
+        vec![OpCode::RET.byte()],
+        None,
+        None,
+        100_000_000,
+        None,
+    )
+    .expect("session");
+    let session_id = server.store_session(session).expect("store session");
+
+    let params = [Value::String(session_id.to_string())];
+    let err = (terminate.callback())(&server, &params).expect_err("expired session");
+    assert_eq!(err.code(), -107);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1071,6 +1098,10 @@ async fn traverse_iterator_returns_items_and_can_terminate_session() {
         (terminate.callback())(&server, &[Value::String(session_id.to_string())])
             .expect("terminate session");
     assert_eq!(terminate_result, Value::Bool(true));
+
+    let err = (terminate.callback())(&server, &[Value::String(session_id.to_string())])
+        .expect_err("repeated termination");
+    assert_eq!(err.code(), -107);
 
     let err = (traverse.callback())(&server, &params).expect_err("unknown session");
     assert_eq!(err.code(), -107);
