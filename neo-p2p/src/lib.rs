@@ -172,9 +172,6 @@ pub mod channels_config;
 /// Transaction containment type enumeration.
 pub mod contains_transaction_type;
 
-/// Raw P2P message framing (wire format).
-pub mod message;
-
 /// Error types and result handling.
 pub mod error;
 
@@ -231,7 +228,6 @@ pub use channels_config::ChannelsConfig;
 pub use contains_transaction_type::ContainsTransactionType;
 pub use error::{P2PError, P2PResult};
 pub use inventory_type::InventoryType;
-pub use message::RawMessage;
 pub use message_command::MessageCommand;
 pub use message_flags::MessageFlags;
 pub use node_capability_type::NodeCapabilityType;
