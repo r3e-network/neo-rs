@@ -1,5 +1,7 @@
 # Neo-RS Deep Performance Audit & Advanced Optimization Roadmap v1.0
 
+> **Unverified and superseded (2026-10-24).** The bottleneck impacts and projected gains below are proposals, not reproducible measurements. For measured results, see [PERFORMANCE-2026-10-17.md](PERFORMANCE-2026-10-17.md) and [CODE-REVIEW-2026-10-17.md](CODE-REVIEW-2026-10-17.md). This roadmap is preserved for history.
+
 **Date**: September 14, 2026  
 **Auditor**: Qoder (AI Agent)  
 **Scope**: Comprehensive codebase analysis + external cutting-edge technique research  

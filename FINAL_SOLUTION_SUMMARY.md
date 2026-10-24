@@ -1,5 +1,7 @@
 # Opcode Price Index Mapping Fix - FINAL SOLUTION
 
+> **Historical snapshot.** These early solution notes are superseded by [FINAL_COMPLETION_REPORT.md](FINAL_COMPLETION_REPORT.md) as the retained completion record. Preserved for history; not current-HEAD verification status.
+
 ## Complete Survey Results
 
 ### Step 1: Exact Byte Mappings (from opcode.rs)

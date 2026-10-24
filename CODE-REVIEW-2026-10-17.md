@@ -1,10 +1,12 @@
 # Neo N3 Rust Full Node — Independent Code Review
 
 **Date:** 2026-10-17  
-**Repository:** `D:\Giteo-rs` (commit `46db40a2` + working tree)  
+**Repository:** `D:\Git\neo-rs` (commit `46db40a2` + working tree)
 **Target:** Neo N3 v3.10.1 (C# reference), Neo.VM v3.10.1, DBFTPlugin 3.10.x, StateService/MPTTrie  
 **Reviewer:** DeepSeek Harness coding agent  
 **Scope:** architecture, protocol correctness/completeness, consensus safety, VM semantics/gas, P2P, storage/state root, Rust quality, performance claims
+
+> **Historical snapshot (2026-10-17).** This review covers commit `46db40a2` plus its then-current working tree, not current HEAD. Its findings and residual-validation items are preserved as written and must be rechecked before being cited as current status.
 
 ---
 

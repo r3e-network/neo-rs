@@ -1,5 +1,7 @@
 # Neo-RS Formal Verification - Immediate Execution Summary
 
+> **Historical snapshot (2026-09-15).** This point-in-time execution status is not current verification evidence. For the later historical synthesis, see [PHASE1-PHASE4-FINAL-REPORT.md](PHASE1-PHASE4-FINAL-REPORT.md). Preserved for history.
+
 **Date**: September 15, 2026  
 **Status**: Foundation Complete, Execution Pending Compilation Fixes  
 

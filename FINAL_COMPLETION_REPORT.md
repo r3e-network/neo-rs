@@ -1,6 +1,8 @@
 # Phase-1 Coq Formal Refinement - Opcode Price Index Mapping Fix
 ## FINAL COMPLETION REPORT
 
+> **Historical snapshot.** This is the retained completion record for the opcode-price index mapping fix, superseding the earlier [FINAL_SOLUTION_SUMMARY.md](FINAL_SOLUTION_SUMMARY.md). Its test counts are point-in-time evidence, not current-HEAD verification status.
+
 ### ✅ MISSION ACCOMPLISHED
 
 **Objective**: Fix all opcode name→byte-index mappings causing 6 secondary differential tests to fail in Neo N3 Rust node formal verification.

@@ -1,4 +1,7 @@
 # NEO-RS Optimization Status (2026-09-07)
+
+> **Historical snapshot (2026-09-07).** Superseded as a status source by [OPTIMIZATION-COMPLETED.md](OPTIMIZATION-COMPLETED.md); the counts and next steps below are not current-HEAD status. Preserved for history.
+
 ## ✅ COMPLETED
 ### 1. sgx.rs Collapsible If Fix
 - Fixed mrenclave validation (line ~96)

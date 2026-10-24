@@ -1,4 +1,7 @@
 # Neo-RS Optimization Report (2026-09-07)
+
+> **Historical snapshot (2026-09-07).** This is the retained report for the September 7 optimization cleanup; its counts and next steps are not current-HEAD status. Preserved for history.
+
 ## ✅ Completed Tasks
 **1. Code Quality Fixes**
 ✓ Fixed collapsible if statements in neo-tee/src/sgx.rs

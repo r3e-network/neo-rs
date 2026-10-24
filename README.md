@@ -75,7 +75,7 @@ curl -s http://localhost:10332 -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","method":"getblock","params":[1000,1],"id":1}'
 ```
 
-📖 **See [RPC Usage Guide](docs/RPC_USAGE.md) for comprehensive documentation.**
+📖 **See [RPC Hardening](docs/RPC_HARDENING.md) for RPC security and reverse-proxy configuration.**
 
 ## Documentation
 

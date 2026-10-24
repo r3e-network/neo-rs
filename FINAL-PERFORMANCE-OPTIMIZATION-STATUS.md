@@ -1,5 +1,7 @@
 # Neo-RS Performance Optimization: Final Status Report v2.0
 
+> **Unverified and superseded (2026-10-24).** The targets and completion claims below lack reproducible benchmark evidence. For measured results, see [PERFORMANCE-2026-10-17.md](PERFORMANCE-2026-10-17.md) and [CODE-REVIEW-2026-10-17.md](CODE-REVIEW-2026-10-17.md). This report is preserved for history.
+
 **Date**: September 14, 2026  
 **Status**: 🟢 **OPTIMIZATIONS MERGED & BUILT SUCCESSFULLY | DEPLOYMENT READY**  
 **Next Phase**: Production Validation & Benchmarking

@@ -1,5 +1,7 @@
 # Neo-RS 工作总结
 
+> **Historical snapshot (2026-03-23).** Superseded as a status source by the historical [MAINNET-STATUS.md](MAINNET-STATUS.md) and later dated evidence in [PERFORMANCE-2026-10-17.md](PERFORMANCE-2026-10-17.md). The node state and next steps below are not current. Preserved for history.
+
 ## 已完成工作
 
 ### 1. 性能优化（2026-03-23）

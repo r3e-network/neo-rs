@@ -1,5 +1,7 @@
 # Neo-RS Tier 3 Parallel Execution - Complete Implementation Summary
 
+> **Unverified and superseded (2026-10-24).** The integration and performance claims below are not reproducible current-HEAD evidence. For measured results and the persist-path review, see [PERFORMANCE-2026-10-17.md](PERFORMANCE-2026-10-17.md) and [CODE-REVIEW-2026-10-17.md](CODE-REVIEW-2026-10-17.md). This report is preserved for history.
+
 **Completion Date:** September 14, 2026  
 **Status:** ✅ **ALL WAVES COMPLETE & READY FOR INTEGRATION**
 

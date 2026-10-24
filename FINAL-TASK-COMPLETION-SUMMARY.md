@@ -1,5 +1,7 @@
 # Neo-RS Performance Optimization: Final Task Completion Summary
 
+> **Unverified and superseded (2026-10-24).** The performance multipliers and deployment-readiness claims below lack reproducible benchmark evidence. For measured results, see [PERFORMANCE-2026-10-17.md](PERFORMANCE-2026-10-17.md) and [CODE-REVIEW-2026-10-17.md](CODE-REVIEW-2026-10-17.md). This report is preserved for history.
+
 **Date**: September 14, 2026  
 **Overall Status**: 🟢 **ALL OPTIMIZATIONS COMPLETE | DEPLOYMENT READY**  
 **Performance Target**: 5 blocks/sec → 300-1000 blocks/sec (**100x-200x improvement**)
