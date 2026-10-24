@@ -205,6 +205,11 @@ jobs:
       uses: Swatinem/rust-cache@v2
       with:
         shared-key: ci-windows-msvc
+    # Default features only, on purpose: `--features full` pulls in
+    # librocksdb-sys, whose C++ build dominates the 30-minute budget of a lane
+    # that only needs to prove the workspace compiles on MSVC. Full-feature
+    # builds are covered by `node-full` on Linux and by local Windows
+    # verification (see outputs/audit-v017-final-report.md section 5).
     - name: Build neo-node
       run: cargo build --release --locked -p neo-node
   node-full:
