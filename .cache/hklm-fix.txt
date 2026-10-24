@@ -1,6 +1,0 @@
-﻿SET ProgramData = C:\ProgramData
-SET APPDATA = C:\Users\Administrator\AppData\Roaming
-SET LOCALAPPDATA = C:\Users\Administrator\AppData\Local
-VERIFY ProgramData = []
-VERIFY APPDATA = []
-VERIFY LOCALAPPDATA = []

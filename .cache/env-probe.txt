@@ -1,3 +1,0 @@
-﻿APPDATA=[]
-ProgramData=[]
-LOCALAPPDATA=[C:\Users\Administrator\AppData\Local]
