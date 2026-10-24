@@ -93,6 +93,23 @@ fn require_reference_roots(
     Ok(())
 }
 
+fn require_persisted_starting_root(
+    state_store: &StateStore,
+    height: u32,
+    expected: neo_core::UInt256,
+) -> Result<neo_core::UInt256, String> {
+    let persisted = state_store
+        .get_state_root(height)
+        .ok_or_else(|| format!("missing persisted starting state root at height {height}"))?;
+    if persisted.root_hash != expected {
+        return Err(format!(
+            "persisted starting state root mismatch at height {height}: stored={} reference={expected}",
+            persisted.root_hash
+        ));
+    }
+    Ok(expected)
+}
+
 fn env_value(name: &str) -> Result<Option<String>, String> {
     match std::env::var(name) {
         Ok(value) => Ok(Some(value)),
@@ -442,7 +459,7 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
             .unwrap_or_else(|error| panic!("{error}"));
     let (state_path, state_explicit) = repo_path(
         "NEO_STATE_ROOT_DB_PATH",
-        "data/Plugins/StateService/StateRoot",
+        "data/mainnet-protocol-consistency/StateRoot",
     )
     .unwrap_or_else(|error| panic!("{error}"));
     let has_explicit_override = has_range_override || chain_explicit || state_explicit;
@@ -473,7 +490,10 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
     let roots = load_reference_roots(&reference_path, start.saturating_sub(1), end)
         .unwrap_or_else(|error| panic!("{error}"));
     require_reference_roots(&roots, start, end).unwrap_or_else(|error| panic!("{error}"));
-    let mut current_root = roots[&(start.saturating_sub(1))];
+    let starting_height = start.saturating_sub(1);
+    let mut current_root =
+        require_persisted_starting_root(&state_store, starting_height, roots[&starting_height])
+            .unwrap_or_else(|error| panic!("{error}"));
     let mut checked = 0u64;
 
     for index in start..=end {
@@ -664,6 +684,39 @@ mod configuration_tests {
         assert_eq!(error, "missing reference root at height 1");
 
         std::fs::remove_file(path).expect("remove reference fixture");
+    }
+
+    #[test]
+    fn missing_persisted_starting_root_is_rejected() {
+        let store = StateStore::new_in_memory();
+        let expected = neo_core::UInt256::from([1u8; 32]);
+
+        let error = require_persisted_starting_root(&store, 0, expected).unwrap_err();
+
+        assert_eq!(error, "missing persisted starting state root at height 0");
+    }
+
+    #[test]
+    fn mismatched_persisted_starting_root_is_rejected() {
+        use neo_core::state_service::StateRoot;
+
+        let store = StateStore::new_in_memory();
+        let stored = neo_core::UInt256::from([1u8; 32]);
+        let expected = neo_core::UInt256::from([2u8; 32]);
+        let mut snapshot = store.snapshot();
+        snapshot
+            .add_local_state_root(&StateRoot::new_current(0, stored))
+            .expect("add starting root");
+        snapshot.commit().expect("commit starting root");
+
+        let error = require_persisted_starting_root(&store, 0, expected).unwrap_err();
+
+        assert_eq!(
+            error,
+            format!(
+                "persisted starting state root mismatch at height 0: stored={stored} reference={expected}"
+            )
+        );
     }
 
     #[test]
