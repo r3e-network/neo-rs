@@ -85,16 +85,22 @@ const HASH_SIZE: usize = 32;
 ///
 /// The following invariants **must** be upheld by the caller who creates a `HostPtr`:
 ///
-/// 1. **Lifetime**: The pointed-to `InteropHost` must outlive the `HostPtr` (and therefore
-///    the `ExecutionEngine` that holds it).
+/// 1. **Lifetime**: The pointed-to `InteropHost` must live at that address for as long
+///    as the pointer can be dereferenced. A raw pointer does not follow the host when
+///    it moves, and returning a host such as `ApplicationEngine` from a constructor
+///    moves it -- so a pointer stored before such a move is dangling. Callers must
+///    re-assign the pointer after any move and before the next dereference;
+///    `ApplicationEngine` does that at every VM entry point.
 /// 2. **Exclusive access**: While the `ExecutionEngine` holds this pointer, no other code
 ///    should hold a mutable reference to the same `InteropHost`.
 /// 3. **Single-thread access**: The `ExecutionEngine` is not shared across threads
 ///    concurrently. `HostPtr` implements `Send` so the engine can be *moved* between
 ///    threads, but it is deliberately `!Sync` because the raw pointer must not be
-///    dereferenced from multiple threads simultaneously.
+///    dereferenced from multiple threads simultaneously. Moving across threads has the
+///    same effect as any other move: the pointer is stale until re-assigned.
 /// 4. **Validity**: The pointer must not be dangling. The `Option` wrapper on the engine
-///    field handles the null case.
+///    field handles the null/absent case, and `ApplicationEngine` leaves it absent until
+///    the first execution entry point so that a moved engine never carries a stale one.
 ///
 /// `HostPtr` is `Copy` because it wraps a raw pointer -- this is required so that it can
 /// be extracted from `&self` before passing `&mut self` to the host callback methods
@@ -107,11 +113,12 @@ pub(crate) struct HostPtr(
     std::marker::PhantomData<*const ()>,
 );
 
-// SAFETY: `ExecutionEngine` (the sole owner of `HostPtr`) is never shared
-// across threads (`!Sync`). Sending the engine to another thread is safe
-// because the pointed-to host moves with it (the host is the parent struct
-// that owns the engine). All mutable access is serialized through
-// `&mut ExecutionEngine`.
+// SAFETY: `HostPtr` is `!Sync`, so the pointer is never dereferenced from two
+// threads at once, and all mutation goes through `&mut ExecutionEngine`. Sending
+// the engine to another thread is a move like any other: the pointer stays valid
+// only if the host moved with it *and* is re-attached, which the host type is
+// responsible for (see invariant 1). `ApplicationEngine` re-attaches at every VM
+// entry point, so no dereference can happen against a stale address.
 unsafe impl Send for HostPtr {}
 
 impl HostPtr {

@@ -104,7 +104,9 @@ impl ApplicationEngine {
         //     init_syscall_registry();
         // });
 
-        app.attach_host();
+        // No `attach_host` here: the engine is returned by value, so a pointer
+        // taken now would dangle the moment the caller receives it. The host
+        // pointer is attached at the entry points that actually execute the VM.
         app.register_native_contracts();
         app.refresh_policy_settings();
         app.register_default_interops()?;
@@ -224,7 +226,8 @@ impl ApplicationEngine {
         //     init_syscall_registry();
         // });
 
-        app.attach_host();
+        // See the note in `new_with_shared_block`: attaching here would leave a
+        // dangling pointer behind, because the engine moves when it is returned.
         app.refresh_policy_settings();
         app.register_default_interops()?;
         // Ignore any fees incurred during engine initialization.
@@ -236,12 +239,24 @@ impl ApplicationEngine {
         }
         Ok(app)
     }
+    /// Points the VM's interop host at this engine, so syscalls dispatch back
+    /// into it.
+    ///
+    /// This stores a self-reference, and a raw pointer does not follow the
+    /// struct when it moves -- returning an engine by value invalidates it. The
+    /// pointer is therefore attached inside every VM entry point
+    /// (`execute_allow_fault`, `execute_until_invocation_stack_depth`,
+    /// `load_script_with_state`) and nowhere else, and the constructors leave it
+    /// unset so that no stale pointer is ever reachable.
     pub(super) fn attach_host(&mut self) {
         let host: &mut dyn InteropHost = self;
         let host_ptr = host as *mut dyn InteropHost;
-        // SAFETY: `host_ptr` is derived from `&mut self` and the
-        // `ApplicationEngine` owns the `VmEngine`, so the pointer remains
-        // valid for the engine's lifetime.
+        // SAFETY: `host_ptr` is derived from `&mut self`, so it is valid as long
+        // as this engine stays at its current address, and `&mut self` keeps the
+        // engine exclusively borrowed until execution returns. Every path that
+        // dereferences the pointer runs inside a VM entry point, which calls this
+        // method first; nothing may dereference it between a move and the next
+        // attach.
         unsafe { self.vm_engine.engine_mut().set_interop_host(host_ptr) };
     }
     fn register_default_interops(&mut self) -> Result<()> {
