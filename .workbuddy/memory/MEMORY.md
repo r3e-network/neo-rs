@@ -83,6 +83,13 @@
 - 现行规则：**显式 override 指向不存在的路径 = `assert!` 失败**；默认数据缺失可跳过，但必须打印 `0 assertions executed`，并提供严格开关。repro 用 `NEO_REPRO_REQUIRE_DATA=1`（`mainnet-validation.yml` 已置位）。
 - 判据：一条测试只要可能「什么都没验却报绿」，就必须有办法把它变成红。
 
+## 静默绿与 panic：两类必须主动搜的缺陷（2026-10-24 立规）
+
+- **跳过 ≠ 通过**（见下）。另一类是**共识路径上的 panic**：任何对「脚本/交易决定的值」调 `.unwrap()`/`.expect()` 都是确定性崩溃；确定性 = 每个节点都在同一高度崩 = 全网停摆，比 fault 严重得多。审计时主动搜 `unwrap()/expect()/panic!/unreachable!`，再用 `#[cfg(test)]` 行号把测试代码排掉。
+- **判可达性要看硬分叉高度**：fast VM 路径只在 Gorgon 后启用（主网 12,020,000、testnet 17,960,000）。「主网今天不可达」不等于可忽略——私有链、testnet、以及主网到高度后都可达。
+- **修 panic 前先确认 C# 语义**：`external_vm.rs` 里 Pointer 转换失败，直觉是「fault 掉」，但 C# `PUSHA` 是 push `Pointer(Script, offset)` 后正常 HALT；改成 fault 会制造**共识分歧**。正确做法是补齐转换（快速解释器只跑当前 context 脚本，用 `context.script_arc()` 重建）。
+- **自引用裸指针**：`attach_host` 把 `&mut self` 存进自己拥有的 VM。裸指针不跟随 move，构造函数里 attach 再 `Ok(app)` 返回必然悬垂。规约应是「每个 VM 执行入口前重新 attach，构造期不 attach」。
+
 ## 依赖策略（cargo-deny）
 
 - `continue-on-error` 会把真失败吞成绿——任何"success"先确认没有软门控。
