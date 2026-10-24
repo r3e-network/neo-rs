@@ -304,12 +304,17 @@ impl ApplicationEngine {
         if script_uses_application_engine_host(script) {
             return None;
         }
+        // The guard above proves the stack is empty, so nothing is converted
+        // today. Keep the conversion fallible anyway: if that guard is ever
+        // relaxed, a value the fast VM cannot represent must fall back to the
+        // fork-aware interpreter rather than panic here.
         let initial_stack = context
             .evaluation_stack()
             .iter()
             .cloned()
-            .map(|v| VmStackValue::try_from(v).unwrap())
-            .collect::<Vec<_>>();
+            .map(VmStackValue::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
         Some(ExternalVmExecution {
             script: script.to_vec(),
             initial_stack,
@@ -338,10 +343,53 @@ impl ApplicationEngine {
         }
     }
     fn apply_external_vm_halt(&mut self, stack: Vec<VmStackValue>) -> VMState {
-        let stack_items: Vec<StackItem> = stack
-            .into_iter()
-            .map(|v| StackItem::try_from(v).unwrap())
-            .collect();
+        // The fast interpreter carries a pointer as a bare script offset
+        // (`StackValue::Pointer(i64)`), while `StackItem::Pointer` also records
+        // the owning script. It only ever executes the current context's script,
+        // so that context supplies the script here. Rebuilding the pointer keeps
+        // parity with C#, where `PUSHA` halts with a `Pointer` on the result
+        // stack instead of faulting.
+        //
+        // `Interop` and `Iterator` have no `StackItem` counterpart at all. They
+        // cannot appear for a script the fast interpreter accepts (any syscall
+        // other than the runtime-only set forces the fork-aware path), so a value
+        // that still fails to convert faults the invocation instead of panicking
+        // on attacker-controlled input.
+        let script = self
+            .vm_engine
+            .engine()
+            .current_context()
+            .map(|context| context.script_arc());
+        let mut stack_items = Vec::with_capacity(stack.len());
+        for value in stack {
+            let item = match value {
+                VmStackValue::Pointer(position) => {
+                    let Some(script) = script.as_ref() else {
+                        return self.apply_external_vm_fault(
+                            "external VM halted with a pointer but no execution context".to_string(),
+                            0,
+                        );
+                    };
+                    let Ok(position) = usize::try_from(position) else {
+                        return self.apply_external_vm_fault(
+                            format!("external VM halted with a negative pointer offset: {position}"),
+                            0,
+                        );
+                    };
+                    StackItem::from_pointer(Arc::clone(script), position)
+                }
+                other => match StackItem::try_from(other) {
+                    Ok(item) => item,
+                    Err(error) => {
+                        return self.apply_external_vm_fault(
+                            format!("external VM halted with an unconvertible stack value: {error}"),
+                            0,
+                        );
+                    }
+                },
+            };
+            stack_items.push(item);
+        }
         let context_index = match self
             .vm_engine
             .engine()
