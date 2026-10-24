@@ -22,6 +22,14 @@ on:
         description: Highest state-root height to compare
         required: true
         default: "1465790"
+      replay_start:
+        description: First MainNet block height to replay (inclusive)
+        required: true
+        default: "1"
+      replay_end:
+        description: Last MainNet block height to replay (inclusive)
+        required: true
+        default: "1000"
 
 concurrency:
   group: mainnet-validation-${{ github.ref }}
@@ -89,8 +97,9 @@ jobs:
       - name: From-genesis execution replay
         env:
           NEO_CHAIN_DB_PATH: ${{ inputs.chain_db }}
-          NEO_STATE_ROOT_DB_PATH: ${{ format('{0}/StateRoot', inputs.chain_db) }}
-          NEO_EMPTY_REPLAY_COUNT: "1000"
+          NEO_STATE_ROOT_DB_PATH: ${{ inputs.state_root_db }}
+          NEO_EMPTY_REPLAY_START: ${{ inputs.replay_start }}
+          NEO_EMPTY_REPLAY_END: ${{ inputs.replay_end }}
         run: |
           cargo test -p neo-core --features rocksdb \
             --test mainnet_contiguous_replay -- --ignored --nocapture
