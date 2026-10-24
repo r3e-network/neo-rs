@@ -8,8 +8,9 @@
 //! StateService trie, so those keys are read from the chain store and
 //! `Ledger.currentIndex` is overridden with the historical height
 //! (`block.index - 1`) rather than the live chain tip.
-//! Default range: blocks 1..=1000; override with
-//! `NEO_EMPTY_REPLAY_START` / `NEO_EMPTY_REPLAY_COUNT`.
+//! Default range: blocks 1..=1000; override with inclusive
+//! `NEO_EMPTY_REPLAY_START` / `NEO_EMPTY_REPLAY_END`. Legacy
+//! `NEO_EMPTY_REPLAY_COUNT` remains an alias for the inclusive end height.
 //!
 //! NEO_CHAIN_DB_PATH=data/mainnet-protocol-consistency
 //! NEO_STATE_ROOT_DB_PATH=data/mainnet-protocol-consistency/StateRoot
@@ -39,38 +40,148 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-fn load_reference_roots(path: &Path, start: u32, end: u32) -> HashMap<u32, neo_core::UInt256> {
-    let file = File::open(path).expect("open reference roots");
+fn load_reference_roots(
+    path: &Path,
+    start: u32,
+    end: u32,
+) -> Result<HashMap<u32, neo_core::UInt256>, String> {
+    let file = File::open(path)
+        .map_err(|error| format!("open reference roots {}: {error}", path.display()))?;
     let mut roots = HashMap::new();
-    for line in BufReader::new(file).lines() {
-        let line = line.expect("read reference line");
+    for (line_index, line) in BufReader::new(file).lines().enumerate() {
+        let line_number = line_index + 1;
+        let line = line.map_err(|error| format!("read reference line {line_number}: {error}"))?;
         if line.trim().is_empty() {
             continue;
         }
-        let value: serde_json::Value = serde_json::from_str(&line).expect("parse reference root");
-        let Some(height) = value.get("height").and_then(|v| v.as_u64()) else {
-            continue;
-        };
-        let height = height as u32;
+        let value: serde_json::Value = serde_json::from_str(&line)
+            .map_err(|error| format!("parse reference line {line_number}: {error}"))?;
+        let height = value
+            .get("height")
+            .and_then(|value| value.as_u64())
+            .ok_or_else(|| format!("reference line {line_number}: missing integer height"))?;
+        let height = u32::try_from(height)
+            .map_err(|_| format!("reference line {line_number}: height exceeds u32"))?;
         if height < start || height > end {
             continue;
         }
         let root = value
             .get("roothash")
-            .and_then(|v| v.as_str())
-            .expect("roothash");
-        roots.insert(height, neo_core::UInt256::parse(root).expect("parse root"));
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| format!("reference line {line_number}: missing roothash"))?;
+        let root = neo_core::UInt256::parse(root)
+            .map_err(|error| format!("reference line {line_number}: invalid root: {error}"))?;
+        if roots.insert(height, root).is_some() {
+            return Err(format!(
+                "reference line {line_number}: duplicate height {height}"
+            ));
+        }
     }
-    roots
+    Ok(roots)
 }
 
-fn repo_path(var: &str, default: &str) -> PathBuf {
+fn require_reference_roots(
+    roots: &HashMap<u32, neo_core::UInt256>,
+    start: u32,
+    end: u32,
+) -> Result<(), String> {
+    for height in start.saturating_sub(1)..=end {
+        if !roots.contains_key(&height) {
+            return Err(format!("missing reference root at height {height}"));
+        }
+    }
+    Ok(())
+}
+
+fn env_value(name: &str) -> Result<Option<String>, String> {
+    match std::env::var(name) {
+        Ok(value) => Ok(Some(value)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => Err(format!("{name} must contain valid UTF-8")),
+    }
+}
+
+fn parse_height(name: &str, value: String) -> Result<u32, String> {
+    value
+        .parse::<u32>()
+        .map_err(|_| format!("{name} must be an unsigned 32-bit integer, got {value:?}"))
+}
+
+fn parse_replay_range(
+    start: Option<String>,
+    end: Option<String>,
+    legacy_count: Option<String>,
+) -> Result<(u32, u32), String> {
+    if end.is_some() && legacy_count.is_some() {
+        return Err(
+            "NEO_EMPTY_REPLAY_END and legacy NEO_EMPTY_REPLAY_COUNT are mutually exclusive"
+                .to_string(),
+        );
+    }
+    let start = start
+        .map(|value| parse_height("NEO_EMPTY_REPLAY_START", value))
+        .transpose()?
+        .unwrap_or(1);
+    let end = end
+        .map(|value| parse_height("NEO_EMPTY_REPLAY_END", value))
+        .or_else(|| legacy_count.map(|value| parse_height("legacy NEO_EMPTY_REPLAY_COUNT", value)))
+        .transpose()?
+        .unwrap_or(1000);
+    if start == 0 {
+        return Err("NEO_EMPTY_REPLAY_START must be at least 1".to_string());
+    }
+    if end < start {
+        return Err(format!(
+            "replay range is empty: start {start} exceeds end {end}"
+        ));
+    }
+    Ok((start, end))
+}
+
+fn resolve_repo_path(
+    repo: &Path,
+    override_value: Option<String>,
+    default: &str,
+) -> Result<(PathBuf, bool), String> {
+    match override_value {
+        Some(value) if value.is_empty() => Err("path override must not be empty".to_string()),
+        Some(value) => {
+            let path = PathBuf::from(value);
+            Ok((
+                if path.is_absolute() {
+                    path
+                } else {
+                    repo.join(path)
+                },
+                true,
+            ))
+        }
+        None => Ok((repo.join(default), false)),
+    }
+}
+
+fn repo_path(var: &str, default: &str) -> Result<(PathBuf, bool), String> {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    std::env::var(var)
-        .ok()
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| repo.join(default))
+    let value = env_value(var)?;
+    resolve_repo_path(repo, value, default)
+        .map_err(|error| format!("invalid {var} override: {error}"))
+}
+
+fn data_directory_available(
+    path: &Path,
+    label: &str,
+    fail_if_missing: bool,
+) -> Result<bool, String> {
+    if path.is_dir() {
+        Ok(true)
+    } else if fail_if_missing {
+        Err(format!(
+            "configured MainNet {label} DB does not exist: {}",
+            path.display()
+        ))
+    } else {
+        Ok(false)
+    }
 }
 
 fn open_state_store(path: &Path) -> StateStore {
@@ -315,13 +426,31 @@ fn execute_empty_block(
 #[test]
 #[ignore = "requires local MainNet chain and state-root databases"]
 fn contiguous_blocks_replay_to_matching_state_roots() {
-    let chain_path = repo_path("NEO_CHAIN_DB_PATH", "data/mainnet-protocol-consistency");
-    let state_path = repo_path(
+    let start_value = env_value("NEO_EMPTY_REPLAY_START").unwrap_or_else(|error| panic!("{error}"));
+    let end_value = env_value("NEO_EMPTY_REPLAY_END").unwrap_or_else(|error| panic!("{error}"));
+    let legacy_count_value =
+        env_value("NEO_EMPTY_REPLAY_COUNT").unwrap_or_else(|error| panic!("{error}"));
+    let has_range_override =
+        start_value.is_some() || end_value.is_some() || legacy_count_value.is_some();
+    let (start, end) = parse_replay_range(start_value, end_value, legacy_count_value)
+        .unwrap_or_else(|error| panic!("invalid replay range: {error}"));
+
+    let (chain_path, chain_explicit) =
+        repo_path("NEO_CHAIN_DB_PATH", "data/mainnet-protocol-consistency")
+            .unwrap_or_else(|error| panic!("{error}"));
+    let (state_path, state_explicit) = repo_path(
         "NEO_STATE_ROOT_DB_PATH",
         "data/Plugins/StateService/StateRoot",
-    );
-    if !chain_path.exists() || !state_path.exists() {
-        eprintln!("[SKIPPED] missing MainNet chain/state-root DB");
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let has_explicit_override = has_range_override || chain_explicit || state_explicit;
+    let chain_available = data_directory_available(&chain_path, "chain", has_explicit_override)
+        .unwrap_or_else(|error| panic!("{error}"));
+    let state_available =
+        data_directory_available(&state_path, "state-root", has_explicit_override)
+            .unwrap_or_else(|error| panic!("{error}"));
+    if !chain_available || !state_available {
+        eprintln!("[SKIPPED] missing default MainNet chain/state-root DB");
         return;
     }
 
@@ -335,24 +464,15 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
     let ledger = LedgerContract::new();
     let state_store = open_state_store(&state_path);
 
-    let start: u32 = std::env::var("NEO_EMPTY_REPLAY_START")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(1);
-    let end: u32 = std::env::var("NEO_EMPTY_REPLAY_COUNT")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(1000);
     let reference_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .join("data/reference_stateroots.jsonl");
-    let roots = load_reference_roots(&reference_path, start.saturating_sub(1), end);
-    let mut current_root = *roots
-        .get(&(start.saturating_sub(1)))
-        .unwrap_or_else(|| panic!("missing initial reference root"));
+    let roots = load_reference_roots(&reference_path, start.saturating_sub(1), end)
+        .unwrap_or_else(|error| panic!("{error}"));
+    require_reference_roots(&roots, start, end).unwrap_or_else(|error| panic!("{error}"));
+    let mut current_root = roots[&(start.saturating_sub(1))];
     let mut checked = 0u64;
-    let mut gaps = 0u64;
 
     for index in start..=end {
         let block = ledger
@@ -450,12 +570,107 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
             assert_eq!(actual, *expected, "block {index} state root mismatch");
             checked += 1;
         } else {
-            gaps += 1;
-            if gaps <= 5 {
-                eprintln!("block {index}: reference gap, continuing with computed root");
-            }
+            panic!("missing reference root at height {index}");
         }
         current_root = actual;
     }
-    eprintln!("replay_range={start}..={end} checked={checked} reference_gaps={gaps}");
+    let expected_checks = u64::from(end) - u64::from(start) + 1;
+    assert_eq!(
+        checked, expected_checks,
+        "replay completed without comparing every requested state root"
+    );
+    eprintln!("replay_range={start}..={end} checked={checked} reference_gaps=0");
+}
+
+#[cfg(test)]
+mod configuration_tests {
+    use super::*;
+
+    const ZERO_ROOT: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+    #[test]
+    fn replay_range_defaults_and_legacy_count_remain_supported() {
+        assert_eq!(parse_replay_range(None, None, None), Ok((1, 1000)));
+        assert_eq!(
+            parse_replay_range(Some("200".to_string()), None, Some("250".to_string())),
+            Ok((200, 250))
+        );
+        assert_eq!(
+            parse_replay_range(Some("200".to_string()), Some("250".to_string()), None),
+            Ok((200, 250))
+        );
+    }
+
+    #[test]
+    fn malformed_or_empty_replay_ranges_are_rejected() {
+        for malformed in ["", "abc", "-1", "1.5", "4294967296"] {
+            assert!(parse_replay_range(Some(malformed.to_string()), None, None).is_err());
+            assert!(parse_replay_range(None, Some(malformed.to_string()), None).is_err());
+            assert!(parse_replay_range(None, None, Some(malformed.to_string())).is_err());
+        }
+        assert!(parse_replay_range(Some("0".to_string()), None, None).is_err());
+        assert!(parse_replay_range(Some("11".to_string()), Some("10".to_string()), None).is_err());
+        assert!(parse_replay_range(None, Some("10".to_string()), Some("10".to_string())).is_err());
+    }
+
+    #[test]
+    fn relative_data_overrides_resolve_against_repo_and_missing_explicit_paths_fail() {
+        let repo =
+            std::env::temp_dir().join(format!("neo-rs-replay-missing-repo-{}", std::process::id()));
+        let (resolved, explicit) = resolve_repo_path(
+            &repo,
+            Some("data/missing-chain".to_string()),
+            "data/default-chain",
+        )
+        .expect("resolve relative override");
+        assert!(explicit);
+        assert_eq!(resolved, repo.join("data/missing-chain"));
+        let error = data_directory_available(&resolved, "chain", true).unwrap_err();
+        assert!(error.contains("does not exist"));
+
+        let (default_path, explicit) =
+            resolve_repo_path(&repo, None, "data/default-chain").expect("resolve default");
+        assert!(!explicit);
+        assert!(!data_directory_available(&default_path, "chain", false).unwrap());
+    }
+
+    #[test]
+    fn empty_path_override_is_rejected() {
+        assert!(resolve_repo_path(Path::new("repo"), Some(String::new()), "data").is_err());
+    }
+
+    #[test]
+    fn truncated_and_incomplete_reference_data_are_rejected() {
+        let path = std::env::temp_dir().join(format!(
+            "neo-rs-replay-truncated-roots-{}.jsonl",
+            std::process::id()
+        ));
+        std::fs::write(&path, "{\"height\": 1, \"roothash\":").expect("write truncated fixture");
+        let error = load_reference_roots(&path, 0, 2).unwrap_err();
+        assert!(error.contains("parse reference line 1"));
+
+        std::fs::write(
+            &path,
+            format!(
+                "{{\"height\":0,\"roothash\":\"{ZERO_ROOT}\"}}\n\
+                 {{\"height\":2,\"roothash\":\"{ZERO_ROOT}\"}}\n"
+            ),
+        )
+        .expect("write incomplete fixture");
+        let roots = load_reference_roots(&path, 0, 2).expect("load incomplete fixture");
+        let error = require_reference_roots(&roots, 1, 2).unwrap_err();
+        assert_eq!(error, "missing reference root at height 1");
+
+        std::fs::remove_file(path).expect("remove reference fixture");
+    }
+
+    #[test]
+    fn complete_reference_range_is_accepted() {
+        let roots = HashMap::from([
+            (0, neo_core::UInt256::zero()),
+            (1, neo_core::UInt256::zero()),
+            (2, neo_core::UInt256::zero()),
+        ]);
+        assert_eq!(require_reference_roots(&roots, 1, 2), Ok(()));
+    }
 }
