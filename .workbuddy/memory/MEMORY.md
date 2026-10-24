@@ -11,7 +11,7 @@
 - `cargo fmt -p <crate>` 是 crate 级——工作树含 WIP 文件时**禁止**，只对自改文件用 `rustfmt --edition 2024 --check <file>` 单文件。
 - Windows 沙箱拦 `target/` 写入：cargo 命令一律 `dangerouslyDisableSandbox: true`。
 - **磁盘 / safe-delete（2026-10-23 实证）**：`target/` 曾涨到 **365 GB** 把 D: 占满（`df` 0 可用 → clang 写 `.o` 报 `No space left on device`）。`rm`、`Remove-Item -Recurse` 都被 safe-delete 拦（阈值 50 文件，报 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`）；**可用**的是 PowerShell `[System.IO.File]::Delete` / `[System.IO.Directory]::Delete`（纯 .NET 不过钩子），`cargo clean` 走 PowerShell 调用（Bash 里被 safe-bin 拦成 exit 127）。`du -sh target` 本身要 5 分钟以上，先看 `df`。cold build `-p neo-core --features rocksdb --tests` ≈ 11.5 分钟。
-- **`cargo test` 的 cwd 是包目录**（`neo-core/`）：所有 test 里读的环境变量相对路径必须拼 `repo_root`，否则 `data/...` 会指向 `neo-core/data/...`。统一入口 `neo-core/tests/common/mod.rs::repro_state_root_path()`（相对路径拼 repo root；无 `NEO_REPRO_DB_PATH` 时按 `data/Plugins/StateService/StateRoot` → `data/mainnet/StateRoot` → `data/Plugins/mainnet/StateRoot` 探测）。
+- **`cargo test` 的 cwd 是包目录**（`neo-core/`）：所有 test 里读的环境变量相对路径必须拼 `repo_root`，否则 `data/...` 会指向 `neo-core/data/...`。统一入口 `neo-core/tests/common/mod.rs::repro_state_root_path()`（相对路径拼 repo root；无 `NEO_REPRO_DB_PATH` 时优先 `data/mainnet-protocol-consistency/StateRoot`，再回退 Plugins/mainnet 旧布局）。配套库已让 14 个 repro 在严格模式下全部真实通过。
 
 ## 协议对账结论（C# 逐字取证）
 
@@ -29,7 +29,8 @@
 - **v0.15→v0.17 审计全部闭环（2026-09-09）**：5 个 P0 全证伪/闭环；F-NEW-1/2/3、D-04 全部处理；T01/T02/T06/T07/T08 完成；E1b 与 E2（fuzz）双双解锁；治理项（CI 双闸门+README+run_all 真实实现）落地；主工作区 dev profile 全成员 build 亦 EXIT=0。
 - 测试基线：neo-vm lib 129/0/0、neo-consensus lib 114/0/0、neo-core lib 742/0/0（runtime）、neo-core rocksdb 门控 83 二进制全绿、neo-rpc 与 neo-tests 全绿。
 - 遗留：`mainnet_block_*_repro` 是 **14 个文件**（旧记 18 是错的）全部 `#[ignore]`；`NEO_EXECUTION_SPECS_REF` repo variable 未配置（consistency workflow dispatch-only）。
-- **2026-10-23 更新**：本机 `data/Plugins/StateService/StateRoot`（20 GB）确实存在且覆盖到 146 万+。修好路径解析后**13/14 真实执行并与 C# 状态根一致**，仅 `mainnet_block_4410` 因库不含高度 4409 跳过。上面「本机无 full-state 数据」的说法作废。
+- **2026-10-23 更新**：本机 `data/Plugins/StateService/StateRoot`（20 GB）覆盖到 146 万+，可真实执行 13/14 repro，但缺 4410 所需的 height-4409。上面「本机无 full-state 数据」的说法作废。
+- **2026-10-24 重放数据约束**：配套 `data/mainnet-protocol-consistency/StateRoot` 已让 **14/14 repro（含 4410）严格真实通过**，也是默认首选。`mainnet_contiguous_replay` 使用同目录配套 chain/state DB；Plugins 库缺 height-0 起始根，不能用于从 genesis 连续重放。执行前已加起始根存在/相等校验；真实 `1..=20` 验证通过。
 - 报告集：`outputs/audit-v017-*.md`（scoping / t01 / t02 / t07-security / t08 / final）。
 
 ## CI 全绿基线（2026-09-10）
