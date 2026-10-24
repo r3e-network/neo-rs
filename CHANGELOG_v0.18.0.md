@@ -1,5 +1,11 @@
 # [0.18.0] - 2026-09-24
 
+> **Unverified and superseded (2026-10-24).** The multipliers below were written
+> as release notes without a reproducible benchmark. The only measured numbers
+> are in [PERFORMANCE-2026-10-17.md](PERFORMANCE-2026-10-17.md); "parallel block
+> validation" there covers the parallel Merkle tree, not transaction-level
+> parallel execution, which is still absent from the persist path.
+
 ## 🚀 Performance Improvements (189x Baseline)
 
 This release delivers a **189x performance improvement** over baseline, transforming Neo-RS into the highest-performance Neo N3 implementation available.

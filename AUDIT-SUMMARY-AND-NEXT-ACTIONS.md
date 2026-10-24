@@ -1,5 +1,13 @@
 # Neo-RS Performance Optimization: Audit Summary & Priority Actions
 
+> **Unverified and superseded (2026-10-24).** The goals below are marked as
+> achieved with no reproducible benchmark behind them, and "true parallel
+> execution" is not in the persist path: `NeoSystem::persist_block` executes
+> transactions serially, and the `optimistic_executor` / `conflict_detector`
+> modules are unused public API. For the measured state of the tree see
+> [PERFORMANCE-2026-10-17.md](PERFORMANCE-2026-10-17.md) and
+> [CODE-REVIEW-2026-10-17.md](CODE-REVIEW-2026-10-17.md).
+
 **Date**: September 14, 2026  
 **Status**: ✅ **COMPREHENSIVE AUDIT COMPLETE | ACTION PLAN DEFINED**
 
