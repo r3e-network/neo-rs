@@ -1,6 +1,6 @@
 # Protocol consistency status
 
-Updated: 2026-09-10T02:03:56.369919+00:00
+Updated: 2026-10-28
 
 ## Live sync verification
 
@@ -10,6 +10,34 @@ Updated: 2026-09-10T02:03:56.369919+00:00
 - Note: PASS: 230 goldens <= tip 1528989 match committed C# checkpoints (sparse L2 evidence; not contiguous L3)
 
 Auto-updated by `scripts/monitor-golden-compare-while-sync.py`.
+
+## Dense in-import campaign (2026-10-28)
+
+The authoritative lane is now the in-import gate: `neo-node --import-acc` with
+`NEO_REFERENCE_ROOTS_PATH=data/reference_stateroots.jsonl` and
+`NEO_REQUIRE_REFERENCE_ROOTS=1`. Every height is compared against the C# root and
+the import aborts at the first mismatch or missing reference row.
+
+| Item | Value |
+|------|-------|
+| Binary | `neo-node` built from clean worktree at `9ebbf0e4`, `--release --features full`, SHA-256 `E463ACD1FD0B47CE4032F9227822F4DF552E5E212C44D9DD664E3A3F3CB9C60E` |
+| Input | `data/bootstrap/chain.0.acc` (heights 0..=13,141,250) |
+| Reference | `data/reference_stateroots.jsonl` (C# roots 0..=13,150,240) |
+| Mode | `--state-root --state-root-full-state`, fresh `data/dense-campaign-20261028` |
+| Logs | `logs/dense-campaign-9ebbf0e4.err.log` |
+| Status | **Running.** No `[0, H]` claim until the import exits 0 at the ACC tip. |
+
+Found while starting the campaign:
+
+- **Pruning-mode trie corruption (fixed in `9ebbf0e4`).** With `full_state = false`,
+  the process-wide MPT node cache returned stale reference counts, so a node still
+  referenced by another parent was deleted. MainNet import aborted at block 105
+  (`unable to resolve hash during trie put`) after roots 0..=104 matched C#. Root
+  hashes were never wrong, but any pruning node would halt. Regression test:
+  `test_shared_leaf_survives_pruning_across_tries`. A pruning-mode import to
+  200,000 with the fixed binary runs as a MainNet check
+  (`logs/prune-check-9ebbf0e4.err.log`).
+- **`--state-root` ignored `full_state = true` from config (fixed in `55174e48`).**
 
 ## Claim language (current)
 
