@@ -25,6 +25,8 @@ the import aborts at the first mismatch or missing reference row.
 | Reference | `data/reference_stateroots.jsonl` (C# roots 0..=13,150,240) |
 | Mode | `--state-root --state-root-full-state`, fresh `data/dense-campaign-20261028` |
 | Logs | `logs/dense-campaign-9ebbf0e4.err.log` |
+| Precondition gate | PASS for 0..=13,141,250: every height present, zero missing/duplicate/malformed (8,990 rows above the range are ignored) |
+| Report | `outputs/dense-campaign-9ebbf0e4-report.json`, written by `scripts/mainnet_gate_report.py` when the import exits; only `status=clean` supports a claim |
 | Status | **Running.** No `[0, H]` claim until the import exits 0 at the ACC tip. |
 
 Found while starting the campaign:
