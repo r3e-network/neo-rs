@@ -146,6 +146,16 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     let tee_runtime = maybe_enable_tee_runtime(&cli, &node_config, &protocol_settings, &system)
         .context("failed to initialize TEE runtime")?;
 
+    // Like neo-cli, imported blocks pass through the plugins, so ApplicationLogs and
+    // TokensTracker must be registered before the .acc import starts.
+    let _application_logs_service =
+        maybe_enable_application_logs(&node_config, &protocol_settings, &system)
+            .context("failed to initialise ApplicationLogs")?;
+
+    let _tokens_tracker_service =
+        maybe_enable_tokens_tracker(&node_config, &protocol_settings, &system)
+            .context("failed to initialise TokensTracker")?;
+
     if let Some(import_path) = cli.import_acc.as_ref() {
         let summary =
             crate::import_acc::import_acc_file(&system, import_path, storage_path.as_deref())
@@ -173,14 +183,6 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
             return Ok(());
         }
     }
-
-    let _application_logs_service =
-        maybe_enable_application_logs(&node_config, &protocol_settings, &system)
-            .context("failed to initialise ApplicationLogs")?;
-
-    let _tokens_tracker_service =
-        maybe_enable_tokens_tracker(&node_config, &protocol_settings, &system)
-            .context("failed to initialise TokensTracker")?;
 
     let oracle_service = maybe_enable_oracle_service(&node_config, &protocol_settings, &system)
         .context("failed to initialise OracleService")?;

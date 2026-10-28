@@ -96,6 +96,26 @@ heights: 5107 (`CommitteeInfoContract.setInfo`), 21373 (GasToken fee-burn),
 4. Divergence handling: stop sync promotion → open reproducer → fix → re-verify
    contiguous range from last good height.
 
+## Behaviour lane (application logs)
+
+State roots cover every storage write, but not execution output that never reaches
+storage: notifications, result stacks, exception text. The behaviour lane compares
+`getapplicationlog` for the block (OnPersist/PostPersist) and every transaction.
+
+```bash
+python scripts/verify-protocol-consistency.py compare-applogs \
+  --local http://127.0.0.1:10332 --start 0 --end 200000 --stride 1
+```
+
+- Compared per execution: `trigger`, `vmstate`, `exception`, `gasconsumed`,
+  `stack`, `notifications` (key case and hex case normalised).
+- Fail-closed: any difference, any log missing on either side, or zero compared
+  items fails; the JSON report goes to `docs/protocol-consistency/reports/`.
+- The Rust side needs ApplicationLogs enabled. `--import-acc` registers
+  ApplicationLogs and TokensTracker before importing (as neo-cli does), so one
+  import produces the logs.
+- Tests: `scripts/tests/test_verify_protocol_consistency.py`.
+
 ## Runtime divergence gate (live nodes)
 
 Replay campaigns prove history; a running node has no reference file. Its live

@@ -8,6 +8,8 @@ Subcommands:
   refresh-goldens  Fetch C# getstateroot for checkpoint heights into the
                    committed golden file (fail if any height missing).
   compare-rpc      Contiguous fail-closed compare of local Rust vs C# RPC.
+  compare-applogs  Fail-closed compare of block and tx getapplicationlog
+                   (VM state, gas, exception, stack, notifications).
   compare-goldens  Sparse compare of local Rust vs committed C# goldens
                    (fast while syncing; not a contiguous L3 claim).
   report-status    Print claimable verified range language from a compare report.
@@ -272,6 +274,117 @@ def cmd_compare_rpc(args: argparse.Namespace) -> int:
     return 0
 
 
+APPLOG_EXECUTION_FIELDS = ("trigger", "vmstate", "exception", "gasconsumed", "stack", "notifications")
+
+
+def _normalize_json(value):
+    if isinstance(value, dict):
+        return {str(k).lower(): _normalize_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_normalize_json(v) for v in value]
+    if isinstance(value, str) and value.lower().startswith("0x"):
+        return value.lower()
+    return value
+
+
+def normalize_applog(log: dict) -> list[dict]:
+    """Return the consensus-relevant execution records of a getapplicationlog result."""
+    executions = _normalize_json(log).get("executions")
+    if not isinstance(executions, list):
+        raise ValueError("applicationlog has no executions list")
+    return [
+        {field: execution.get(field) for field in APPLOG_EXECUTION_FIELDS}
+        for execution in executions
+    ]
+
+
+def diff_applog(rust: dict, csharp: dict) -> list[str]:
+    """List every field where the Rust application log differs from C#."""
+    rust_execs = normalize_applog(rust)
+    csharp_execs = normalize_applog(csharp)
+    diffs = []
+    if len(rust_execs) != len(csharp_execs):
+        diffs.append(f"executions: rust has {len(rust_execs)}, csharp has {len(csharp_execs)}")
+    for index, (r, c) in enumerate(zip(rust_execs, csharp_execs)):
+        for field in APPLOG_EXECUTION_FIELDS:
+            if r[field] != c[field]:
+                diffs.append(
+                    f"executions[{index}].{field}: rust={json.dumps(r[field])[:300]} "
+                    f"csharp={json.dumps(c[field])[:300]}"
+                )
+    return diffs
+
+
+def cmd_compare_applogs(args: argparse.Namespace) -> int:
+    """Fail-closed behaviour compare: every block and tx application log in a range."""
+    if args.end < args.start or args.stride < 1:
+        print("need end >= start and stride >= 1", file=sys.stderr)
+        return 2
+
+    compared = 0
+    mismatches = []
+    missing = []
+    heights = list(range(args.start, args.end + 1, args.stride))
+    for height in heights:
+        try:
+            block = rpc_call(args.reference, "getblock", [height, True])
+        except Exception as exc:  # noqa: BLE001
+            missing.append({"height": height, "item": "block", "side": "csharp", "error": str(exc)})
+            continue
+        items = [("block", block["hash"])] + [("tx", tx["hash"]) for tx in block.get("tx", [])]
+        for kind, item_hash in items:
+            logs = {}
+            for side, url in (("csharp", args.reference), ("rust", args.local)):
+                try:
+                    logs[side] = rpc_call(url, "getapplicationlog", [item_hash])
+                except Exception as exc:  # noqa: BLE001
+                    missing.append(
+                        {"height": height, "item": item_hash, "side": side, "error": str(exc)}
+                    )
+            if len(logs) != 2:
+                print(f"MISSING {height} {kind} {item_hash}", file=sys.stderr)
+                continue
+            try:
+                diffs = diff_applog(logs["rust"], logs["csharp"])
+            except ValueError as exc:
+                diffs = [str(exc)]
+            compared += 1
+            if diffs:
+                mismatches.append({"height": height, "kind": kind, "item": item_hash, "diffs": diffs})
+                print(f"MISMATCH {height} {kind} {item_hash}: {diffs[0]}", file=sys.stderr)
+        if args.verbose or height == heights[-1] or (height - args.start) % (args.stride * 100) == 0:
+            print(f"height {height}: compared={compared} mismatches={len(mismatches)} missing={len(missing)}")
+
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    report = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "kind": "applicationlog",
+        "local": args.local,
+        "reference": args.reference,
+        "start": args.start,
+        "end": args.end,
+        "stride": args.stride,
+        "heights": len(heights),
+        "compared": compared,
+        "mismatches": mismatches,
+        "missing": missing,
+        "pass": not mismatches and not missing and compared > 0,
+    }
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    report_path = REPORT_DIR / f"compare-applogs-{args.start}-{args.end}-s{args.stride}-{stamp}.json"
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(f"Report -> {report_path}")
+    if not report["pass"]:
+        print(
+            f"FAIL: application logs not proven equal (compared={compared}, "
+            f"mismatches={len(mismatches)}, missing={len(missing)})",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"PASS: {compared} block/tx application logs match C# over {len(heights)} heights")
+    return 0
+
+
 def cmd_compare_goldens(args: argparse.Namespace) -> int:
     """Compare local neo-rs roots to committed C# goldens (heights <= local tip)."""
     if not GOLDENS_PATH.exists():
@@ -421,6 +534,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_cmp.add_argument("--end", type=int, required=True)
     p_cmp.add_argument("--verbose", action="store_true")
     p_cmp.set_defaults(func=cmd_compare_rpc)
+
+    p_al = sub.add_parser(
+        "compare-applogs",
+        help="Fail-closed Rust vs C# getapplicationlog compare for blocks and txs",
+    )
+    p_al.add_argument("--local", required=True, help="neo-rs RPC URL (ApplicationLogs enabled)")
+    p_al.add_argument("--reference", default="http://seed1.neo.org:10332")
+    p_al.add_argument("--start", type=int, required=True)
+    p_al.add_argument("--end", type=int, required=True)
+    p_al.add_argument("--stride", type=int, default=1)
+    p_al.add_argument("--verbose", action="store_true")
+    p_al.set_defaults(func=cmd_compare_applogs)
 
     p_cg = sub.add_parser(
         "compare-goldens",
