@@ -354,14 +354,20 @@ pub(crate) fn build_state_service_settings(
             PathBuf::from(state_path)
         };
         let state_path = resolved_state_dir.to_string_lossy().to_string();
+        // `--state-root-full-state` can only enable full state; it never silently
+        // overrides `full_state = true` from the configuration.
+        let full_state = cli.state_root_full_state
+            || node_config
+                .state_service_settings(protocol_settings)?
+                .is_some_and(|settings| settings.full_state);
         info!(
             target: "neo",
             path = %state_path,
-            full_state = cli.state_root_full_state,
+            full_state,
             "state root calculation enabled"
         );
         return Ok(Some(StateServiceSettings {
-            full_state: cli.state_root_full_state,
+            full_state,
             path: state_path,
             network: protocol_settings.network,
             auto_verify: false,
@@ -559,6 +565,29 @@ mod tests {
                 .contains("mempool.max_transactions_per_sender"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn state_root_cli_flag_keeps_configured_full_state() {
+        use clap::Parser;
+
+        let cfg: NodeConfig =
+            toml::from_str("[state_service]\nenabled = true\nfull_state = true\n")
+                .expect("parse config");
+        let settings = cfg.protocol_settings();
+
+        let cli = NodeCli::parse_from(["neo-node", "--state-root"]);
+        let resolved = build_state_service_settings(&cli, &cfg, Some("data"), &settings)
+            .expect("settings")
+            .expect("state service enabled");
+        assert!(resolved.full_state);
+
+        let cli = NodeCli::parse_from(["neo-node", "--state-root"]);
+        let resolved =
+            build_state_service_settings(&cli, &NodeConfig::default(), Some("data"), &settings)
+                .expect("settings")
+                .expect("state service enabled");
+        assert!(!resolved.full_state);
     }
 
     #[test]
