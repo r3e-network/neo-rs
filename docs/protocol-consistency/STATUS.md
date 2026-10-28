@@ -34,9 +34,8 @@ Found while starting the campaign:
   referenced by another parent was deleted. MainNet import aborted at block 105
   (`unable to resolve hash during trie put`) after roots 0..=104 matched C#. Root
   hashes were never wrong, but any pruning node would halt. Regression test:
-  `test_shared_leaf_survives_pruning_across_tries`. A pruning-mode import to
-  200,000 with the fixed binary runs as a MainNet check
-  (`logs/prune-check-9ebbf0e4.err.log`).
+  `test_shared_leaf_survives_pruning_across_tries`. MainNet check: a pruning-mode
+  import with the fixed binary matched every C# root for 0..=200,000.
 - **`--state-root` ignored `full_state = true` from config (fixed in `55174e48`).**
 
 ## Claim language (current)
