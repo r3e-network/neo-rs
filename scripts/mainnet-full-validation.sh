@@ -18,11 +18,11 @@
 #   7. campaign     DENSE lane: gate-based in-import verification (see below).
 #
 # Two lanes (see docs/PROTOCOL_CONSISTENCY.md "RPC limiter + two-lane design"):
-#   * DENSE  = `campaign`. The importer runs with data/reference_stateroots.jsonl
-#     present; neo::state_service compares the computed root to the C# reference
-#     at EVERY executed height in-process (not rate-limited) and aborts the
-#     import at the first divergence. The runner turns that into a fail-closed
-#     JSON report with the maximal verified contiguous prefix. Expect an abort.
+#   * DENSE  = `campaign`. The importer receives REFERENCE_FILE explicitly via
+#     NEO_REFERENCE_ROOTS_PATH and requires it via NEO_REQUIRE_REFERENCE_ROOTS=1;
+#     neo::state_service compares the computed root to the C# reference at EVERY
+#     executed height in-process (not rate-limited) and aborts at the first
+#     divergence. The runner emits a fail-closed JSON report. Expect an abort.
 #   * SAMPLED = `verify`. RPC getstateroot vs live C# seeds, stride >= 100,
 #     --parallel <= 40 (the local RPC is capped at 100 rps and 40 connections).
 #
@@ -42,7 +42,8 @@
 #   CAMPAIGN_PLUGINS_DIR   isolated plugins dir (exported as NEO_PLUGINS_DIR) so
 #                          the gate run does not share the StateService MPT store
 #   REFERENCE_FILE         C# reference jsonl (default data/reference_stateroots.jsonl)
-#   CAMPAIGN_IMPORT_LOG / CAMPAIGN_GATE_LOG / CAMPAIGN_REPORT_DIR  dense-lane I/O
+#   CAMPAIGN_IMPORT_LOG  base path for fresh per-run UTC-stamped import logs
+#   CAMPAIGN_GATE_LOG / CAMPAIGN_REPORT_DIR  dense-lane I/O
 #   EXPECTED_STOPS         comma list of known expected-stop heights
 #
 # A campaign run that aborts (first divergence) exits NON-ZERO and writes
@@ -92,9 +93,8 @@ VERIFY_PARALLEL="${VERIFY_PARALLEL:-32}"
 CAMPAIGN_START="${CAMPAIGN_START:-0}"
 CAMPAIGN_END="${CAMPAIGN_END:-13141249}"
 CAMPAIGN_STORE="${CAMPAIGN_STORE:-$DATA_DIR}"
-# The node loads its reference file from a HARD-CODED relative path
-# (neo-core/src/neo_system/storage.rs -> "data/reference_stateroots.jsonl"), so
-# the runner must be invoked from the repo root and this path must match it.
+# The campaign passes this path explicitly to the importer and requires the
+# reference file, so a missing override cannot silently disable verification.
 REFERENCE_FILE="${REFERENCE_FILE:-data/reference_stateroots.jsonl}"
 CAMPAIGN_PLUGINS_DIR="${CAMPAIGN_PLUGINS_DIR:-}"
 CAMPAIGN_IMPORT_LOG="${CAMPAIGN_IMPORT_LOG:-${LOG_DIR}/mainnet-campaign-import.log}"
@@ -317,7 +317,9 @@ step_campaign() {
   set -e
 
   local gate_ok="true"
-  if ! python3 scripts/mainnet_gate_report.py --gate-only \
+  if [[ "$gate_rc" -ne 0 ]]; then
+    gate_ok="false"
+  elif ! python3 scripts/mainnet_gate_report.py --gate-only \
       --gate-output "$CAMPAIGN_GATE_LOG" \
       --range-start "$CAMPAIGN_START" --range-end "$CAMPAIGN_END" >/dev/null 2>&1; then
     gate_ok="false"
@@ -327,11 +329,20 @@ step_campaign() {
   log "campaign: gate verify-only exit=${gate_rc} effective_pass=${gate_ok} reference_records=${ref_count:-0}"
 
   # 2. Import with the reference present. It aborts at the first divergence by
-  #    design; that abort is the mechanism, never swallowed as success.
+  #    design; that abort is the mechanism, never swallowed as success. Each run
+  #    gets a fresh log so stale output can never satisfy the reporter.
   local import_rc=127  # 127 = import never ran (gate refused)
+  local stamp run_import_log
+  stamp="$(date -u '+%Y%m%dT%H%M%SZ')"
+  run_import_log="${CAMPAIGN_IMPORT_LOG}.${stamp}"
+  : >"$run_import_log"
   if [[ "$gate_ok" == "true" ]]; then
-    log "campaign: import starting (expect abort at first divergence; log -> ${CAMPAIGN_IMPORT_LOG})"
-    local -a store_args=() env_args=(env -u NEO_IMPORT_ACC)
+    log "campaign: import starting (expect abort at first divergence; log -> ${run_import_log})"
+    local -a store_args=() env_args=(
+      env -u NEO_IMPORT_ACC
+      NEO_REFERENCE_ROOTS_PATH="$REFERENCE_FILE"
+      NEO_REQUIRE_REFERENCE_ROOTS=1
+    )
     [[ "$CAMPAIGN_STORE" != "$DATA_DIR" ]] && store_args=(--storage "$CAMPAIGN_STORE")
     [[ -n "$CAMPAIGN_PLUGINS_DIR" ]] && env_args+=(NEO_PLUGINS_DIR="$CAMPAIGN_PLUGINS_DIR")
     if [[ -n "${NEO_IMPORT_STOP_HEIGHT:-}" ]]; then
@@ -340,11 +351,10 @@ step_campaign() {
     if [[ -n "$CAMPAIGN_PLUGINS_DIR" ]]; then
       log "campaign: isolated plugins dir NEO_PLUGINS_DIR=${CAMPAIGN_PLUGINS_DIR}"
     fi
-    : >>"$CAMPAIGN_IMPORT_LOG"
     set +e
     "${env_args[@]}" "$NEO_NODE_BIN" --config "$CONFIG" \
       "${store_args[@]}" \
-      --import-acc "$ACC_FILE" --import-only 2>&1 | tee -a "$CAMPAIGN_IMPORT_LOG"
+      --import-acc "$ACC_FILE" --import-only 2>&1 | tee "$run_import_log"
     import_rc="${PIPESTATUS[0]}"
     set -e
     log "campaign: import exit=${import_rc}"
@@ -353,14 +363,13 @@ step_campaign() {
   fi
 
   # 3. Fail-closed JSON report.
-  local stamp out report_rc=0
-  stamp="$(date -u '+%Y%m%dT%H%M%SZ')"
+  local out report_rc=0
   out="${CAMPAIGN_REPORT_DIR}/mainnet-campaign-${CAMPAIGN_START}-${CAMPAIGN_END}-${stamp}.json"
   set +e
   python3 scripts/mainnet_gate_report.py \
     --gate-output "$CAMPAIGN_GATE_LOG" \
     --range-start "$CAMPAIGN_START" --range-end "$CAMPAIGN_END" \
-    --import-log "$CAMPAIGN_IMPORT_LOG" \
+    --import-log "$run_import_log" \
     --import-exit-code "$import_rc" \
     --gate-ok "$gate_ok" \
     --reference-file "$REFERENCE_FILE" \

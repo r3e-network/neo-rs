@@ -40,6 +40,7 @@ import argparse
 import gzip
 import http.client
 import json
+import re
 import sys
 import threading
 import time
@@ -175,24 +176,40 @@ class _RetryableJsonRpcError(RuntimeError):
 TRANSIENT_RPC_CODES = {-32001}
 
 
-def normalize_root(value: str | None) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip().lower()
-    if not text.startswith("0x"):
-        text = "0x" + text
-    return text
+_ROOT_PATTERN = re.compile(r"(?:0[xX])?[0-9a-fA-F]{64}\Z")
+
+
+def normalize_root(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"state root must be a string, got {type(value).__name__}")
+    text = value.strip()
+    if _ROOT_PATTERN.fullmatch(text) is None:
+        raise ValueError(f"invalid state root {value!r}: expected exactly 64 hex digits")
+    if text.startswith(("0x", "0X")):
+        text = text[2:]
+    return "0x" + text.lower()
 
 
 def fetch_stateroot(client: PooledRpcClient, height: int, retries: int) -> dict:
     result = client.call("getstateroot", [height], retries=retries)
     if not isinstance(result, dict):
         raise RuntimeError(f"getstateroot({height}) returned non-object: {result!r}")
-    root = normalize_root(result.get("roothash") or result.get("rootHash"))
-    if not root:
-        raise RuntimeError(f"getstateroot({height}) missing roothash/rootHash")
+    root_value = result.get("roothash", result.get("rootHash"))
+    try:
+        root = normalize_root(root_value)
+    except ValueError as exc:
+        raise RuntimeError(f"getstateroot({height}) returned invalid root: {exc}") from exc
+    index = result.get("index")
+    if isinstance(index, bool) or not isinstance(index, int):
+        raise RuntimeError(
+            f"getstateroot({height}) returned invalid index {index!r}: expected integer"
+        )
+    if index != height:
+        raise RuntimeError(
+            f"getstateroot({height}) returned mismatched index {index}"
+        )
     return {
-        "height": int(result.get("index", height)),
+        "height": index,
         "version": int(result.get("version", 0)),
         "roothash": root,
         "source": client.url,
@@ -200,29 +217,41 @@ def fetch_stateroot(client: PooledRpcClient, height: int, retries: int) -> dict:
 
 
 class Checkpoint:
-    """Append-only record of heights proven equal, flushed atomically."""
+    """Append-only record of heights proven equal for one exact RPC setup."""
 
-    def __init__(self, path: Path, reference: str) -> None:
+    def __init__(self, path: Path, local: str, reference: str) -> None:
         self.path = path
+        self.local = local
         self.reference = reference
         self._lock = threading.Lock()
         self.heights: dict[int, str] = {}
         if path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                if data.get("reference") == reference:
-                    self.heights = {
-                        int(k): normalize_root(v)  # type: ignore[arg-type]
-                        for k, v in (data.get("heights") or {}).items()
-                    }
-                else:
-                    print(
-                        f"checkpoint reference {data.get('reference')!r} != {reference!r}; "
-                        "ignoring checkpoint",
-                        file=sys.stderr,
+                if not isinstance(data, dict):
+                    raise ValueError("checkpoint must be a JSON object")
+                if data.get("local") != local:
+                    raise ValueError(
+                        f"checkpoint local {data.get('local')!r} != {local!r}"
                     )
-            except (OSError, ValueError) as exc:  # noqa: BLE001
-                print(f"ignoring unreadable checkpoint {path}: {exc}", file=sys.stderr)
+                if data.get("reference") != reference:
+                    raise ValueError(
+                        f"checkpoint reference {data.get('reference')!r} != {reference!r}"
+                    )
+                raw_heights = data.get("heights")
+                if not isinstance(raw_heights, dict):
+                    raise ValueError("checkpoint heights must be an object")
+                heights: dict[int, str] = {}
+                for raw_height, raw_root in raw_heights.items():
+                    if not isinstance(raw_height, str) or not raw_height.isdecimal():
+                        raise ValueError(f"invalid checkpoint height {raw_height!r}")
+                    height = int(raw_height)
+                    if str(height) != raw_height:
+                        raise ValueError(f"invalid checkpoint height {raw_height!r}")
+                    heights[height] = normalize_root(raw_root)
+                self.heights = heights
+            except (OSError, ValueError, TypeError) as exc:
+                print(f"ignoring invalid checkpoint {path}: {exc}", file=sys.stderr)
 
     def add(self, height: int, root: str) -> None:
         with self._lock:
@@ -233,6 +262,7 @@ class Checkpoint:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "updated_at": datetime.now(timezone.utc).isoformat(),
+            "local": self.local,
             "reference": self.reference,
             "count": len(self.heights),
             "heights": {str(k): v for k, v in sorted(self.heights.items())},
@@ -297,6 +327,31 @@ def _parse_reference_urls(raw: list[str] | None) -> list[str]:
     return urls or list(DEFAULT_REFERENCE_SEEDS)
 
 
+def canonical_rpc_url(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url.strip())
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
+        raise ValueError(f"invalid RPC URL {url!r}")
+    host = parsed.hostname.lower()
+    if ":" in host:
+        host = f"[{host}]"
+    userinfo = ""
+    if parsed.username is not None:
+        userinfo = parsed.username
+        if parsed.password is not None:
+            userinfo += f":{parsed.password}"
+        userinfo += "@"
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return urllib.parse.urlunsplit(
+        (
+            parsed.scheme.lower(),
+            f"{userinfo}{host}{port}",
+            parsed.path or "/",
+            parsed.query,
+            "",
+        )
+    )
+
+
 def run(args: argparse.Namespace) -> int:
     start, end = args.start, args.end
     if end < start:
@@ -329,12 +384,9 @@ def run(args: argparse.Namespace) -> int:
     # does not needlessly invalidate an otherwise-compatible checkpoint.
     reference_label = ",".join(sorted(reference_urls))
 
-    checkpoint = (
-        Checkpoint(Path(args.checkpoint), reference_label) if args.checkpoint else None
-    )
-
     try:
-        local_client = PooledRpcClient(args.local, timeout=args.timeout)
+        local_label = canonical_rpc_url(args.local)
+        local_client = PooledRpcClient(local_label, timeout=args.timeout)
         ref_clients = [
             PooledRpcClient(url, timeout=args.timeout) for url in reference_urls
         ]
@@ -342,12 +394,22 @@ def run(args: argparse.Namespace) -> int:
         print(f"invalid RPC url: {exc}", file=sys.stderr)
         return 2
 
+    checkpoint = (
+        Checkpoint(Path(args.checkpoint), local_label, reference_label)
+        if args.checkpoint
+        else None
+    )
+
     # Identify the heights that still need work (resume support). Under a stride
     # only the sampled heights are considered at all.
     todo: list[int] = []
     resumed = 0
     for h in sample_heights:
-        if checkpoint is not None and h in checkpoint.heights:
+        if (
+            checkpoint is not None
+            and h in checkpoint.heights
+            and h != args.force_mismatch_at
+        ):
             resumed += 1
             continue
         todo.append(h)
@@ -394,12 +456,14 @@ def run(args: argparse.Namespace) -> int:
                             "height": row["height"],
                             "local": row["local"],
                             "reference": row["reference"],
+                            "reference_source": row.get("reference_source"),
                             "injected": bool(row.get("injected")),
                         }
                     )
                     print(
                         f"MISMATCH {row['height']}\tlocal={row['local']}\t"
-                        f"reference={row['reference']}",
+                        f"reference={row['reference']}\t"
+                        f"reference_source={row.get('reference_source')}",
                         file=sys.stderr,
                     )
                 elif status == "missing_local":
@@ -441,7 +505,7 @@ def run(args: argparse.Namespace) -> int:
         claimable = (
             {"start": start, "end": claim_end} if claim_end >= start else None
         )
-        passed = not bad and claim_end == end
+        passed = not bad and matched == sample_count and claim_end == end
         claim_type = "contiguous"
     else:
         claimable = None  # sampled runs make no contiguous claim
@@ -453,7 +517,7 @@ def run(args: argparse.Namespace) -> int:
     hps = round(processed / elapsed, 2) if elapsed > 0 else 0.0
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "local": args.local,
+        "local": local_label,
         "reference": reference_label,
         "reference_urls": reference_urls,
         "start": start,

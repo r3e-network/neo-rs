@@ -2,7 +2,7 @@
 """Gate-based campaign reporter for the MainNet in-import state-root gate.
 
 The dense verification lane does NOT sweep RPC roots. Instead the importer runs
-with ``data/reference_stateroots.jsonl`` present; ``neo::state_service`` compares
+with an explicit, required reference-roots file; ``neo::state_service`` compares
 the computed root against the reference at EVERY executed height and, on the
 first divergence, returns an error that aborts the import. This script turns that
 run into a machine-readable, fail-closed campaign report.
@@ -15,18 +15,20 @@ It has two modes:
   campaign range, the campaign must refuse to run.
 
 * report mode (default)  parse the importer log + exit code and emit a JSON
-  report under ``outputs/`` with the localised first divergence and the maximal
-  verified contiguous prefix.
+  report under ``outputs/`` with observations and a contiguous-range claim only
+  when complete clean evidence is present.
 
 Fail-closed rules (the whole point of this tool):
   * An aborted run exits non-zero and is reported as ``diverged``/``aborted``.
   * A partial (bounded) run is reported as ``partial``; it is NEVER labelled a
     verified contiguous full range.
-  * Only a clean import that reaches ``range_end`` is reported as ``clean`` with
+  * Only an import with exit code 0, an explicit clean-completion marker, no
+    parsed mismatch, ``final_height == range_end``, and an observed reference
+    gate load covering the campaign range is reported as ``clean`` with
     ``verified_contiguous_prefix == [start, end]``.
-  * If the run aborted we never claim beyond ``divergence_height - 1``; if the
-    divergence height is unknown we fall back to the last flushed height, and if
-    even that is unknown we claim nothing (null prefix).
+  * Every non-clean status has a null verified contiguous prefix. Divergence,
+    final-height, and flush markers are observations, not proof of a contiguous
+    prefix: a resumed importer may have skipped earlier blocks.
 
 Exit codes: 0 = clean full pass (report mode) / gate effectively passed
 (--gate-only); 1 = anything else; 2 = usage error.
@@ -56,6 +58,10 @@ PERSIST_FAIL_RE = re.compile(r"failed to persist imported block (\d+)")
 FINAL_HEIGHT_RE = re.compile(r'"final_height":(\d+)')
 FLUSH_HEIGHT_RE = re.compile(r'"persisted_height":(\d+)')
 COMPLETED_RE = re.compile(r"completed \.acc import")
+REFERENCE_GATE_LOADED_RE = re.compile(
+    r"loaded (\d+) reference state roots for validation covering heights "
+    r"\[(\d+), (\d+)\]"
+)
 
 
 def _norm_root(value: str) -> str:
@@ -77,7 +83,7 @@ def parse_gate_output(text: str) -> dict:
     malformed = grab("malformed")
     out_of_range = grab("out-of-range")
     exists = "file exists : True" in text
-    gate_pass = "GATE: PASS" in text
+    gate_pass = re.search(r"^GATE: PASS\s*$", text, re.MULTILINE) is not None
     return {
         "exists": exists,
         "present": present,
@@ -90,23 +96,25 @@ def parse_gate_output(text: str) -> dict:
 
 
 def gate_effectively_passed(rep: dict, span: int) -> bool:
-    """Completeness essentials for the campaign range.
+    """Require explicit gate success and exact, clean campaign coverage.
 
     Out-of-range records (heights beyond ``range_end``) are tolerated: the node
     only compares the heights it actually executes, so extra roots are harmless.
-    Missing/duplicate/malformed records or a short file are fatal.
+    Every required counter must be present; missing counters never mean zero.
     """
-    if rep["present"] is None:
+    required_zero = ("missing", "duplicates", "malformed")
+    if any(rep.get(key) is None for key in ("present", *required_zero)):
         return False
-    missing = rep["missing"] or 0
-    duplicates = rep["duplicates"] or 0
-    malformed = rep["malformed"] or 0
-    present = rep["present"]
-    return missing == 0 and duplicates == 0 and malformed == 0 and present >= span
+    return (
+        rep.get("exists") is True
+        and rep.get("gate_pass_exact") is True
+        and rep["present"] == span
+        and all(rep[key] == 0 for key in required_zero)
+    )
 
 
 def parse_import_log(text: str) -> dict:
-    """Extract the localised divergence and progress markers from an import log."""
+    """Extract divergence, progress, and active reference-gate markers."""
     mismatches = [
         {
             "height": int(m.group(1)),
@@ -122,6 +130,8 @@ def parse_import_log(text: str) -> dict:
     persist_fails = [int(m.group(1)) for m in PERSIST_FAIL_RE.finditer(text)]
     final_heights = [int(m.group(1)) for m in FINAL_HEIGHT_RE.finditer(text)]
     flush_heights = [int(m.group(1)) for m in FLUSH_HEIGHT_RE.finditer(text)]
+    reference_gate_loads = list(REFERENCE_GATE_LOADED_RE.finditer(text))
+    reference_gate_load = reference_gate_loads[-1] if reference_gate_loads else None
     return {
         "mismatches": mismatches,
         "first_mismatch": mismatches[0] if mismatches else None,
@@ -129,6 +139,15 @@ def parse_import_log(text: str) -> dict:
         "final_height": max(final_heights) if final_heights else None,
         "last_flush_height": max(flush_heights) if flush_heights else None,
         "clean_completion": bool(COMPLETED_RE.search(text)),
+        "reference_gate_active": reference_gate_load is not None,
+        "reference_gate_count": (
+            int(reference_gate_load.group(1)) if reference_gate_load else None
+        ),
+        "reference_gate_range": (
+            [int(reference_gate_load.group(2)), int(reference_gate_load.group(3))]
+            if reference_gate_load
+            else None
+        ),
     }
 
 
@@ -143,14 +162,23 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
     if args.gate_output and Path(args.gate_output).exists():
         gate_text = Path(args.gate_output).read_text(encoding="utf-8", errors="replace")
     gate_rep = parse_gate_output(gate_text) if gate_text else None
-    gate_ok = args.gate_ok
-    if gate_rep is not None:
-        gate_ok = gate_ok and gate_effectively_passed(gate_rep, span)
+    gate_ok = bool(
+        args.gate_ok
+        and gate_rep is not None
+        and gate_effectively_passed(gate_rep, span)
+    )
 
     import_text = ""
     if args.import_log and Path(args.import_log).exists():
         import_text = Path(args.import_log).read_text(encoding="utf-8", errors="replace")
     parsed = parse_import_log(import_text)
+    reference_gate_range = parsed["reference_gate_range"]
+    reference_gate_covers = bool(
+        parsed["reference_gate_active"]
+        and reference_gate_range is not None
+        and reference_gate_range[0] <= range_start
+        and reference_gate_range[1] >= range_end
+    )
 
     expected_stops = set(args.expected_stops)
 
@@ -167,33 +195,25 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
         first = parsed["first_mismatch"]
         if first is not None:
             status = "diverged"
-            end = first["height"] - 1
-            prefix = {"start": range_start, "end": end} if end >= range_start else None
+            prefix = None
             if first["height"] in expected_stops:
                 notes.append(
                     f"Divergence at height {first['height']} is a KNOWN expected stop."
                 )
             notes.append(
-                f"Import aborted at the first state-root divergence (height "
-                f"{first['height']}); verified contiguous prefix ends at "
-                f"{first['height'] - 1}."
+                f"Import aborted at the first parsed state-root divergence (height "
+                f"{first['height']}). This is an observation only: a resumed "
+                f"importer may have skipped earlier blocks, so no contiguous "
+                f"prefix is claimed."
             )
         else:
             status = "aborted"
-            # No parsed divergence: fall back to the last flushed height.
-            fallback = parsed["last_flush_height"]
-            if fallback is not None and fallback >= range_start:
-                prefix = {"start": range_start, "end": fallback}
-                notes.append(
-                    "Abort without a parsed state-root divergence; prefix bounded by "
-                    "the last verified flush checkpoint."
-                )
-            else:
-                prefix = None
-                notes.append(
-                    "Abort without a parsed divergence or flush checkpoint; no "
-                    "contiguous prefix can be claimed (fail-closed)."
-                )
+            # A flush checkpoint proves persistence, not contiguous root equality.
+            prefix = None
+            notes.append(
+                "Abort without a parsed state-root divergence; no contiguous "
+                "prefix can be claimed from progress markers alone (fail-closed)."
+            )
             if parsed["persist_fail_height"] is not None:
                 notes.append(
                     f"Importer failed to persist block "
@@ -201,28 +221,33 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
                 )
     else:
         final_height = parsed["final_height"]
-        if final_height is not None and final_height >= range_end:
+        if (
+            parsed["clean_completion"]
+            and final_height == range_end
+            and parsed["first_mismatch"] is None
+            and reference_gate_covers
+        ):
             status = "clean"
             prefix = {"start": range_start, "end": range_end}
-            notes.append("Clean import reached range_end with zero divergences.")
+            notes.append(
+                "Clean completion marker, exact final_height==range_end, zero "
+                "parsed divergences, and an active reference-gate load covering "
+                "the campaign range."
+            )
         else:
             status = "partial"
-            end = final_height if final_height is not None else range_start - 1
-            prefix = {"start": range_start, "end": end} if end >= range_start else None
+            prefix = None
             notes.append(
-                "Import exited 0 but did not reach range_end (bounded/partial run); "
-                "this is NOT a verified contiguous full range."
+                "Import exited 0 without complete clean evidence (explicit "
+                "completion marker, final_height==range_end, no parsed "
+                "divergence, and an observed reference-gate load covering the "
+                "campaign range are all required); no prefix is claimed."
             )
 
     if status == "clean":
         claim = (
             f"neo-rs state roots verified contiguous [{range_start}, {range_end}] "
             f"against C# reference via the in-import gate (fail-closed)."
-        )
-    elif prefix is not None:
-        claim = (
-            f"verified contiguous prefix [{prefix['start']}, {prefix['end']}]; "
-            f"NOT verified beyond (status={status})."
         )
     else:
         claim = f"no verified contiguous range (status={status})."
@@ -244,6 +269,9 @@ def build_report(args: argparse.Namespace) -> tuple[dict, int]:
             "gate": {
                 "passed": bool(gate_ok),
                 "raw": gate_rep,
+                "active": parsed["reference_gate_active"],
+                "count": parsed["reference_gate_count"],
+                "range": parsed["reference_gate_range"],
             },
         },
         "import": {
