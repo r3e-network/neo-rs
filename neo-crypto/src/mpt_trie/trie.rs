@@ -29,7 +29,7 @@ where
 {
     /// Creates a new trie instance using the supplied store snapshot and optional root hash.
     pub fn new(store: Arc<S>, root: Option<UInt256>, full_state: bool) -> Self {
-        let cache = MptCache::new(store, CACHE_PREFIX);
+        let cache = MptCache::with_global_cache(store, CACHE_PREFIX, full_state);
         let root_node = root.map_or_else(Node::new, Node::new_hash);
         Self {
             cache,

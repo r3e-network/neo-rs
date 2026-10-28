@@ -353,6 +353,30 @@ mod mpt_tests {
     }
 
     #[test]
+    fn test_shared_leaf_survives_pruning_across_tries() {
+        let store = Arc::new(MockStore::new());
+        let mut trie = Trie::new(store.clone(), None, false);
+        trie.put(b"k1", b"shared").unwrap();
+        trie.commit().unwrap();
+
+        // Re-reading the shared leaf from the store raises its reference count to 2.
+        let mut trie = Trie::new(store.clone(), trie.root_hash(), false);
+        trie.put(b"k2", b"shared").unwrap();
+        trie.commit().unwrap();
+
+        // Replacing one owner must only decrement the shared leaf, not delete it.
+        let mut trie = Trie::new(store.clone(), trie.root_hash(), false);
+        trie.put(b"k1", b"other").unwrap();
+        trie.commit().unwrap();
+
+        // The store, not a process-wide cache, must hold every reachable node.
+        crate::mpt_trie::cache::GLOBAL_NODE_CACHE.clear();
+        let mut trie = Trie::new(store, trie.root_hash(), false);
+        assert_eq!(trie.get(b"k2").unwrap(), Some(b"shared".to_vec()));
+        trie.put(b"k3", b"third").unwrap();
+    }
+
+    #[test]
     fn test_delete_same_value() {
         let store = Arc::new(MockStore::new());
         let mut trie = Trie::new(store, None, false);

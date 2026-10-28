@@ -74,6 +74,11 @@ impl GlobalNodeCache {
         self.inner.write().push(key, value);
     }
 
+    /// Removes a node from the cache.
+    pub fn remove(&self, key: &UInt256) {
+        self.inner.write().pop(key);
+    }
+
     /// Returns cache statistics as `(hits, misses, hit_rate_percent)`.
     ///
     /// The hit rate is expressed as a percentage (0.0 to 100.0).
@@ -169,6 +174,7 @@ where
     store: Arc<S>,
     prefix: u8,
     entries: HashMap<UInt256, MptTrackable>,
+    use_global_cache: bool,
 }
 
 impl<S> MptCache<S>
@@ -176,11 +182,24 @@ where
     S: MptStoreSnapshot,
 {
     /// Creates a new cache backed by the given store snapshot with the specified key prefix.
+    ///
+    /// The process-wide [`GLOBAL_NODE_CACHE`] is not consulted; use
+    /// [`MptCache::with_global_cache`] to opt in.
     pub fn new(store: Arc<S>, prefix: u8) -> Self {
+        Self::with_global_cache(store, prefix, false)
+    }
+
+    /// Creates a cache that optionally reads through [`GLOBAL_NODE_CACHE`].
+    ///
+    /// Cached nodes carry a reference count that can lag the store, so the
+    /// global cache must only be enabled when reference counts never drive
+    /// deletion (full-state tries).
+    pub fn with_global_cache(store: Arc<S>, prefix: u8, use_global_cache: bool) -> Self {
         Self {
             store,
             prefix,
             entries: HashMap::new(),
+            use_global_cache,
         }
     }
 
@@ -228,6 +247,9 @@ where
     /// Flushes the pending changes to the underlying store.
     pub fn commit(&mut self) -> MptResult<()> {
         for (hash, entry) in &self.entries {
+            if self.use_global_cache && entry.state != TrackState::None {
+                GLOBAL_NODE_CACHE.remove(hash);
+            }
             match entry.state {
                 TrackState::None => {}
                 TrackState::Added | TrackState::Changed => {
@@ -250,18 +272,34 @@ where
     fn resolve_internal(&mut self, hash: &UInt256) -> MptResult<&mut MptTrackable> {
         let store = Arc::clone(&self.store);
         let prefix = self.prefix;
+        let use_global_cache = self.use_global_cache;
 
         match self.entries.entry(*hash) {
             Entry::Occupied(entry) => Ok(entry.into_mut()),
             Entry::Vacant(entry) => {
-                let node = Self::load_from_store_snapshot(&store, prefix, hash)?;
+                let node = Self::load_from_store_snapshot(&store, prefix, hash, use_global_cache)?;
                 Ok(entry.insert(MptTrackable::new(node)))
             }
         }
     }
 
-    fn load_from_store_snapshot(store: &S, prefix: u8, hash: &UInt256) -> MptResult<Option<Node>> {
+    fn load_from_store_snapshot(
+        store: &S,
+        prefix: u8,
+        hash: &UInt256,
+        use_global_cache: bool,
+    ) -> MptResult<Option<Node>> {
         let key = Self::key_for(prefix, hash);
+
+        if !use_global_cache {
+            let Some(bytes) = store.try_get(&key)? else {
+                return Ok(None);
+            };
+            let mut reader = MemoryReader::new(&bytes);
+            return Node::deserialize(&mut reader)
+                .map(Some)
+                .map_err(MptError::from);
+        }
 
         // TIER 1: Check global LRU cache (NOW RETURNS Arc<Node>)
         // CRITICAL OPTIMIZATION: Cache hit returns clone of Arc pointer (nanoseconds!)
