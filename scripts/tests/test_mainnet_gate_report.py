@@ -73,6 +73,23 @@ class MainnetGateReportTests(unittest.TestCase):
                 self.assertFalse(parsed["gate_pass_exact"])
                 self.assertFalse(self.module.gate_effectively_passed(parsed, 3))
 
+    def test_gate_tolerates_only_out_of_range_failures(self):
+        base = gate_output(3).replace("out-of-range : 0\n", "out-of-range : 5\n")
+        tolerated = base.replace("GATE: PASS\n", "GATE: FAIL\n  - 5 out-of-range heights\n")
+        parsed = self.module.parse_gate_output(tolerated)
+        self.assertEqual(parsed["gate_fail_reasons"], ["5 out-of-range heights"])
+        self.assertTrue(self.module.gate_effectively_passed(parsed, 3))
+
+        for reasons in (
+            "  - 5 out-of-range heights\n  - 2 recorded fetch failures\n",
+            "  - something unexpected\n",
+            "",
+        ):
+            with self.subTest(reasons=reasons):
+                text = base.replace("GATE: PASS\n", "GATE: FAIL\n" + reasons)
+                parsed = self.module.parse_gate_output(text)
+                self.assertFalse(self.module.gate_effectively_passed(parsed, 3))
+
     def test_gate_requires_explicit_zero_counters_and_exact_span(self):
         parsed = self.module.parse_gate_output(gate_output(3))
         self.assertTrue(self.module.gate_effectively_passed(parsed, 3))

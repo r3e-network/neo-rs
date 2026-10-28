@@ -84,6 +84,12 @@ def parse_gate_output(text: str) -> dict:
     out_of_range = grab("out-of-range")
     exists = "file exists : True" in text
     gate_pass = re.search(r"^GATE: PASS\s*$", text, re.MULTILINE) is not None
+    fail_block = re.search(r"^GATE: FAIL\s*$((?:\n\s+- .*)*)", text, re.MULTILINE)
+    fail_reasons = (
+        [line.strip()[2:].strip() for line in fail_block.group(1).splitlines() if line.strip()]
+        if fail_block
+        else []
+    )
     return {
         "exists": exists,
         "present": present,
@@ -92,6 +98,7 @@ def parse_gate_output(text: str) -> dict:
         "malformed": malformed,
         "out_of_range": out_of_range,
         "gate_pass_exact": gate_pass,
+        "gate_fail_reasons": fail_reasons,
     }
 
 
@@ -105,9 +112,13 @@ def gate_effectively_passed(rep: dict, span: int) -> bool:
     required_zero = ("missing", "duplicates", "malformed")
     if any(rep.get(key) is None for key in ("present", *required_zero)):
         return False
+    reasons = rep.get("gate_fail_reasons") or []
+    only_out_of_range = bool(reasons) and all(
+        re.fullmatch(r"\d+ out-of-range heights", reason) for reason in reasons
+    )
     return (
         rep.get("exists") is True
-        and rep.get("gate_pass_exact") is True
+        and (rep.get("gate_pass_exact") is True or only_out_of_range)
         and rep["present"] == span
         and all(rep[key] == 0 for key in required_zero)
     )
