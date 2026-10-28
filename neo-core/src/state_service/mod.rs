@@ -46,7 +46,7 @@ pub use root_cache::{
     DEFAULT_ROOT_CACHE_CAPACITY, StateRootCache, StateRootCacheEntry, StateRootCacheStats,
 };
 pub use state_root::StateRoot;
-pub use state_store::{StateStore, StateStoreTransaction};
+pub use state_store::{StateRootDivergence, StateStore, StateStoreTransaction};
 pub use vote::Vote;
 
 /// Event published when a validated state root is persisted.

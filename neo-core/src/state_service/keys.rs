@@ -19,6 +19,10 @@ impl Keys {
 
     /// Storage key for the current validated root index.
     pub const CURRENT_VALIDATED_ROOT_INDEX: &'static [u8] = &[0x04];
+
+    /// Storage key for a recorded local/validated state root divergence.
+    /// neo-rs only; C# StateService does not define this key.
+    pub const STATE_ROOT_DIVERGENCE: &'static [u8] = &[0x05];
 }
 
 #[cfg(test)]

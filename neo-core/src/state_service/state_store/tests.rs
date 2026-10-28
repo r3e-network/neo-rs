@@ -663,6 +663,77 @@ fn verifies_state_root_witness_against_designated_state_validators() {
 }
 
 #[test]
+fn validated_root_mismatch_halts_local_root_updates() {
+    let settings = ProtocolSettings::default_settings();
+    let keypair = KeyPair::generate().expect("generate keypair");
+    let validator = keypair.get_public_key_point().expect("public key point");
+    let validators = vec![validator.clone()];
+    let make_verifier = || {
+        let validators = validators.clone();
+        StateRootVerifier::new(
+            Arc::new(settings.clone()),
+            Arc::new(move || cache_with_designated_state_validators(5, &validators)),
+        )
+    };
+    let backend = Arc::new(MemoryStateStoreBackend::new());
+    let store = StateStore::new_with_verifier(
+        backend.clone(),
+        StateServiceSettings::default(),
+        Some(make_verifier()),
+    );
+
+    let local_hash = UInt256::from_bytes(&[9u8; 32]).unwrap();
+    let local_root = StateRoot::new_current(5, local_hash);
+    let mut local_snapshot = store.snapshot();
+    local_snapshot
+        .add_local_state_root(&local_root)
+        .expect("local state root");
+    local_snapshot.commit().expect("commit local root");
+    store.cache_state_root(local_root, false, None);
+
+    let validated_hash = UInt256::from_bytes(&[8u8; 32]).unwrap();
+    let mut signed_root = StateRoot::new_current(5, validated_hash);
+    let hash = signed_root.hash();
+    let mut sign_data = Vec::with_capacity(4 + hash.to_bytes().len());
+    sign_data.extend_from_slice(&settings.network.to_le_bytes());
+    sign_data.extend_from_slice(&hash.to_array());
+    let signature = keypair.sign(&sign_data).expect("sign state root");
+    let mut invocation = Vec::with_capacity(signature.len() + 2);
+    invocation.push(OpCode::PUSHDATA1.byte());
+    invocation.push(signature.len() as u8);
+    invocation.extend_from_slice(&signature);
+    let verification_script = Contract::create_multi_sig_redeem_script(1, &[validator]);
+    signed_root.witness = Some(Witness::new_with_scripts(invocation, verification_script));
+
+    assert!(store.state_root_divergence().is_none());
+    assert!(!store.on_new_state_root(signed_root));
+    let expected = StateRootDivergence {
+        height: 5,
+        local_root: local_hash,
+        validated_root: validated_hash,
+    };
+    assert_eq!(store.state_root_divergence(), Some(expected));
+    assert_eq!(store.validated_root_index(), None);
+
+    let err = store
+        .update_local_state_root_snapshot(6, std::iter::empty())
+        .expect_err("diverged store must refuse new local roots");
+    assert!(err.contains("state root divergence at height 5"), "{err}");
+
+    let reopened = StateStore::new_with_verifier(
+        backend,
+        StateServiceSettings::default(),
+        Some(make_verifier()),
+    );
+    assert_eq!(reopened.state_root_divergence(), Some(expected));
+    assert!(
+        reopened
+            .update_local_state_root_snapshot(6, std::iter::empty())
+            .is_err()
+    );
+}
+
+#[test]
 fn future_validated_root_replaces_witnessless_cached_root() {
     let settings = ProtocolSettings::default_settings();
     let keypair = KeyPair::generate().expect("generate keypair");

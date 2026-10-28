@@ -95,6 +95,40 @@ struct ReferenceRootLine {
 /// Maximum number of state roots to cache before persistence.
 pub const MAX_CACHE_COUNT: usize = 100;
 
+/// A validator-signed state root that disagreed with the locally computed root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StateRootDivergence {
+    /// Block height of the disagreeing roots.
+    pub height: u32,
+    /// Root computed by this node.
+    pub local_root: UInt256,
+    /// Root signed by the designated StateValidators.
+    pub validated_root: UInt256,
+}
+
+impl StateRootDivergence {
+    const ENCODED_LEN: usize = 4 + 32 + 32;
+
+    fn encode(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(Self::ENCODED_LEN);
+        bytes.extend_from_slice(&self.height.to_le_bytes());
+        bytes.extend_from_slice(&self.local_root.to_array());
+        bytes.extend_from_slice(&self.validated_root.to_array());
+        bytes
+    }
+
+    fn decode(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != Self::ENCODED_LEN {
+            return None;
+        }
+        Some(Self {
+            height: u32::from_le_bytes(bytes[..4].try_into().ok()?),
+            local_root: UInt256::from_bytes(&bytes[4..36]).ok()?,
+            validated_root: UInt256::from_bytes(&bytes[36..]).ok()?,
+        })
+    }
+}
+
 /// State store for managing state roots and the state trie.
 /// Matches C# StateStore class.
 pub struct StateStore {
@@ -110,6 +144,8 @@ pub struct StateStore {
     reference_roots: HashMap<u32, UInt256>,
     reference_min_height: Option<u32>,
     reference_max_height: Option<u32>,
+    /// Divergence observed in this process, kept even if persisting it failed.
+    divergence: RwLock<Option<StateRootDivergence>>,
 }
 
 impl StateStore {
@@ -136,6 +172,7 @@ impl StateStore {
             reference_roots: HashMap::new(),
             reference_min_height: None,
             reference_max_height: None,
+            divergence: RwLock::new(None),
         }
     }
 
@@ -443,17 +480,14 @@ impl StateStore {
             return false;
         }
 
-        let local_index = match self.local_root_index() {
-            Some(idx) => idx,
-            None => {
-                tracing::debug!(
-                    target: "state",
-                    index = state_root.index,
-                    "rejecting state root: missing local root index"
-                );
-                metrics::record_ingest_result(false);
-                return false;
-            }
+        let Some(local_index) = self.local_root_index() else {
+            tracing::debug!(
+                target: "state",
+                index = state_root.index,
+                "rejecting state root: missing local root index"
+            );
+            metrics::record_ingest_result(false);
+            return false;
         };
 
         // Cache future state roots
@@ -471,18 +505,15 @@ impl StateStore {
 
         // Verify and store
         let snapshot = self.snapshot();
-        let local_root = match snapshot.get_state_root(state_root.index) {
-            None => {
-                tracing::debug!(
-                    target: "state",
-                    index = state_root.index,
-                    local_index,
-                    "rejecting state root: local root not found"
-                );
-                metrics::record_ingest_result(false);
-                return false;
-            }
-            Some(r) => r,
+        let Some(local_root) = snapshot.get_state_root(state_root.index) else {
+            tracing::debug!(
+                target: "state",
+                index = state_root.index,
+                local_index,
+                "rejecting state root: local root not found"
+            );
+            metrics::record_ingest_result(false);
+            return false;
         };
 
         // Validate witness using the configured verifier (if available).
@@ -516,15 +547,13 @@ impl StateStore {
             return false;
         }
 
-        // Root hash must match
+        // Root hash must match; a mismatch against a verified witness is a fork.
         if local_root.root_hash != state_root.root_hash {
-            tracing::debug!(
-                target: "state",
-                index = state_root.index,
-                local_root_hash = %local_root.root_hash,
-                payload_root_hash = %state_root.root_hash,
-                "rejecting state root: root hash mismatch"
-            );
+            self.record_divergence(StateRootDivergence {
+                height: state_root.index,
+                local_root: local_root.root_hash,
+                validated_root: state_root.root_hash,
+            });
             metrics::record_ingest_result(false);
             return false;
         }
@@ -565,6 +594,51 @@ impl StateStore {
         true
     }
 
+    /// Returns the recorded local/validated state root divergence, if any.
+    pub fn state_root_divergence(&self) -> Option<StateRootDivergence> {
+        if let Some(divergence) = *self.divergence.read() {
+            return Some(divergence);
+        }
+        let bytes = self.store.try_get(Keys::STATE_ROOT_DIVERGENCE)?;
+        let divergence = StateRootDivergence::decode(&bytes);
+        if divergence.is_none() {
+            tracing::error!(
+                target: "neo::state_service",
+                "unreadable state root divergence record; treating the store as diverged"
+            );
+        }
+        divergence.or(Some(StateRootDivergence {
+            height: u32::MAX,
+            local_root: UInt256::zero(),
+            validated_root: UInt256::zero(),
+        }))
+    }
+
+    fn record_divergence(&self, divergence: StateRootDivergence) {
+        metrics::record_divergence();
+        tracing::error!(
+            target: "neo::state_service",
+            height = divergence.height,
+            local_root = %divergence.local_root,
+            validated_root = %divergence.validated_root,
+            "state root DIVERGENCE: validator-signed root differs from local root; halting local state root updates"
+        );
+        if self.state_root_divergence().is_some() {
+            return;
+        }
+        *self.divergence.write() = Some(divergence);
+        let mut tx = self.begin_transaction();
+        tx.put(Keys::STATE_ROOT_DIVERGENCE.to_vec(), divergence.encode());
+        if let Err(error) = tx.commit() {
+            tracing::error!(
+                target: "neo::state_service",
+                height = divergence.height,
+                %error,
+                "failed to persist state root divergence record"
+            );
+        }
+    }
+
     /// Updates the local state root snapshot with a change set.
     /// Called during block commit to update the state trie.
     pub fn update_local_state_root_snapshot(
@@ -578,6 +652,13 @@ impl StateStore {
             && height <= current_index
         {
             return Ok(());
+        }
+
+        if let Some(divergence) = self.state_root_divergence() {
+            return Err(format!(
+                "state root divergence at height {}: local {}, validated {}; refusing to persist block {height} (resync the state store after fixing the cause)",
+                divergence.height, divergence.local_root, divergence.validated_root
+            ));
         }
 
         // Keep all writes in an isolated overlay until the blockchain transaction commits.

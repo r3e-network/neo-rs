@@ -23,6 +23,18 @@ pub fn record_ingest_result(accepted: bool) {
     }
 }
 
+static DIVERGENCES: AtomicU64 = AtomicU64::new(0);
+
+/// Records a validator-signed state root that disagreed with the local root.
+pub fn record_divergence() {
+    DIVERGENCES.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Returns how many validated/local state root divergences were observed.
+pub fn state_root_divergences() -> u64 {
+    DIVERGENCES.load(Ordering::Relaxed)
+}
+
 /// Returns the current ingestion counters.
 pub fn state_root_ingest_stats() -> StateRootIngestStats {
     StateRootIngestStats {

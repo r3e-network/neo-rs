@@ -96,6 +96,38 @@ heights: 5107 (`CommitteeInfoContract.setInfo`), 21373 (GasToken fee-burn),
 4. Divergence handling: stop sync promotion → open reproducer → fix → re-verify
    contiguous range from last good height.
 
+## Runtime divergence gate (live nodes)
+
+Replay campaigns prove history; a running node has no reference file. Its live
+oracle is the StateValidator-signed `StateRoot` broadcast by the network.
+
+**Behaviour.** When `StateStore::on_new_state_root` receives a root whose witness
+verifies against the designated StateValidators at that height, and the local
+root for the same height has a different hash, the node:
+
+1. persists a divergence record (state store key `0x05`: height, local root,
+   validated root) so a restart cannot clear it;
+2. logs at `error` and counts it in `state_root_divergences` metrics;
+3. refuses every later local state-root update, so block persistence stops with
+   `state root divergence at height H ...` instead of building more state on a
+   fork that the network does not agree with.
+
+C# StateService silently rejects such a root and keeps going. Halting is
+deliberately stricter: a node whose state differs from a validator-signed root
+must not keep serving or extending that state.
+
+**API.** `StateStore::state_root_divergence() -> Option<StateRootDivergence>`
+returns the recorded divergence. Unsigned roots, roots failing witness
+verification, and roots for heights without a local root never trigger the gate.
+
+**Recovery.** Investigate the height with a reproducer, fix, then resync the
+state store (the record lives in it).
+
+**Tests.** `state_store::tests::validated_root_mismatch_halts_local_root_updates`
+covers the record, its persistence across a reopened store, and the refusal of
+further local updates; `verifies_state_root_witness_against_designated_state_validators`
+covers the matching path.
+
 ## Usage examples
 
 ```bash
