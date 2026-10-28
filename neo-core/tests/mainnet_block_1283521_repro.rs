@@ -15,9 +15,10 @@ mod common;
 // is MISSING from the state. This causes block 1,283,522 (where receiver is sender of
 // tx 0xa2b88a6e) to fail with InsufficientFunds during OnPersist's gas burn.
 //
-// This reproducer replays block 1,283,521 against the trie snapshot at 1,283,520
-// and prints every tracked storage write, with special attention to the receiver's
-// GAS account key. Run with NEO_GAS_WATCH_ACCOUNT=0xe69f64c8fa57c7b23a2c75f4b234c030993dc39b
+// This reproducer replays block 1,283,521 against the trie snapshot at 1,283,520,
+// prints every tracked storage write with special attention to the receiver's GAS
+// account key, and asserts the terminal state root from the C# MainNet oracle.
+// Run with NEO_GAS_WATCH_ACCOUNT=0xe69f64c8fa57c7b23a2c75f4b234c030993dc39b
 // to also get per-account watch logs from gas_token.rs.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -86,7 +87,7 @@ const SENDER_HEX: &str = "0x673a663cebe612f6e63e9bf85a2076d601fe5fb9";
 
 #[test]
 #[ignore = "requires local mainnet full-state data synced past height 1,283,520"]
-fn replay_block_1283521_debug() {
+fn replay_block_1283521_assert_csharp_root() {
     let state_store = open_state_store();
     let Some(root_prev) = state_store.get_state_root(1_283_520).map(|r| r.root_hash) else {
         let store = common::repro_state_root_path();
@@ -275,6 +276,11 @@ fn replay_block_1283521_debug() {
             n.state.len()
         );
     }
+    assert_eq!(
+        vm_state,
+        neo_vm::VmState::HALT,
+        "tx must HALT with the expected MainNet transfer semantics"
+    );
 
     tx_states = tx_engine
         .take_state::<LedgerTransactionStates>()
@@ -349,4 +355,41 @@ fn replay_block_1283521_debug() {
     } else {
         eprintln!("\n??? receiver entry present after replay — different from live sync ???");
     }
+
+    let mut applied = 0usize;
+    let mut all: Vec<_> = base_cache.tracked_items().into_iter().collect();
+    all.sort_by(|a, b| (a.0.id, a.0.key()).cmp(&(b.0.id, b.0.key())));
+    let mut trie_guard = trie.lock();
+    for (key, trackable) in all.iter() {
+        let state_str = format!("{:?}", trackable.state);
+        if state_str == "None" || state_str == "NotFound" || key.id == -4 {
+            continue;
+        }
+        let key_bytes = key.to_array();
+        match state_str.as_str() {
+            "Added" | "Changed" => {
+                trie_guard
+                    .put(&key_bytes, &trackable.item.value_bytes())
+                    .expect("trie.put");
+                applied += 1;
+            }
+            "Deleted" => {
+                trie_guard.delete(&key_bytes).expect("trie.delete");
+                applied += 1;
+            }
+            _ => {}
+        }
+    }
+    let new_root = trie_guard.root_hash();
+    drop(trie_guard);
+
+    // Independent C# MainNet oracle: tests/fixtures/protocol_consistency/
+    // csharp_stateroot_goldens.jsonl, height 1283521.
+    let expected = u256("0xf3400693122e3f012d6c77cb0bb7e6a5ec8af2bad03acb940d8d193e4d0a09ce");
+    eprintln!("\napplied={applied} new_root={new_root:?} expected={expected}");
+    assert_eq!(
+        new_root,
+        Some(expected),
+        "new state root must match C# expected at block 1,283,521"
+    );
 }
