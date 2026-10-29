@@ -10,7 +10,7 @@ fn hash_index_state_round_trips_via_stack_value() {
     let limits = ExecutionEngineLimits::default();
 
     let stack_representation = origin.to_stack_value();
-    assert!(matches!(stack_representation, StackValue::Struct(_)));
+    std::assert_matches!(stack_representation, StackValue::Struct(_));
 
     let serialized =
         BinarySerializer::serialize_stack_value(&stack_representation, &limits).expect("serialize");

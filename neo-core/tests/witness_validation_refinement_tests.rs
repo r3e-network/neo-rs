@@ -29,7 +29,7 @@ const TEST_PUBLIC_KEY_1: &[u8] = &[
 
 #[test]
 fn test_script_hash_always_uint160_size() {
-    /**
+    /*
      * Validates script_hash_size_correct theorem from Coq refinement
      * Property: Script hash always produces exactly 20 bytes (UInt160)
      */
@@ -61,7 +61,7 @@ fn test_script_hash_always_uint160_size() {
 
 #[test]
 fn test_script_hash_determinism_property() {
-    /**
+    /*
      * Validates script_hash_deterministic theorem from Coq refinement
      * Property: Same input script always produces identical hash (pure function)
      */
@@ -94,7 +94,7 @@ fn test_script_hash_determinism_property() {
 
 #[test]
 fn test_script_hash_single_sig_pattern_compliance() {
-    /**
+    /*
      * Validates canonical single-sig redeem script format compliance
      * Matches C# Contract.CreateSignatureContract implementation
      * Pattern: PUSHDATA1 (0x21) + 33-byte PK + CHECKSIG (0xAC)
@@ -148,7 +148,7 @@ fn test_script_hash_single_sig_pattern_compliance() {
 
 #[test]
 fn test_signature_extraction_from_invocation_script() {
-    /**
+    /*
      * Validates extraction logic matching extract_signature_from_invocation_script()
      * Expected format: PUSHDATA1 (0x21) + 66-byte invocation [1 + 64 sig bytes]
      */
@@ -184,7 +184,7 @@ fn test_signature_extraction_from_invocation_script() {
 
 #[test]
 fn test_public_key_extraction_from_verification_script() {
-    /**
+    /*
      * Validates extract_public_key_from_verification_script() implementation
      * Extracts public key from position [1..34] in actual script format
      */
@@ -220,7 +220,7 @@ fn test_public_key_extraction_from_verification_script() {
 
 #[test]
 fn test_witness_clone_preserves_hash() {
-    /**
+    /*
      * Validates unified_witness_clone_deterministic theorem
      * Cloned witnesses must have identical script hashes
      */
@@ -253,7 +253,7 @@ fn test_witness_clone_preserves_hash() {
 
 #[test]
 fn test_multisig_required_signatures_validity() {
-    /**
+    /*
      * Validates multisig_threshold_valid invariant
      * required_signatures cannot exceed registered public keys count
      */
@@ -284,7 +284,7 @@ fn test_multisig_required_signatures_validity() {
 
 #[test]
 fn test_multisig_impossible_threshold_rejected() {
-    /**
+    /*
      * Validates multisig_impossible_threshold_check lemma
      * Should reject scenarios where required > available keys
      */
@@ -321,7 +321,7 @@ fn test_multisig_impossible_threshold_rejected() {
 
 #[test]
 fn test_multisig_insufficient_signatures_rejected() {
-    /**
+    /*
      * Validates multisig_provided_sufficient invariant
      * Verification fails when provided signatures < required threshold
      */
@@ -362,7 +362,7 @@ fn test_multisig_insufficient_signatures_rejected() {
 
 #[test]
 fn test_script_hash_edge_case_empty_script() {
-    /**
+    /*
      * Edge case validation for empty verification script
      * Tests script_hash_size_correct with minimum-length input
      */
@@ -389,7 +389,7 @@ fn test_script_hash_edge_case_empty_script() {
 
 #[test]
 fn test_ecdsa_signature_format_validation() {
-    /**
+    /*
      * Validates 64-byte ECDSA signature structure requirements
      * Ensures r||s components are properly encoded
      */
@@ -464,7 +464,7 @@ fn test_witness_serialization_preserves_properties() {
 
 #[test]
 fn test_public_key_compression_prefix_validity() {
-    /**
+    /*
      * Validates compressed ECDSA public key prefix constraints
      * Prefix must be 0x02 (even y-coordinate) or 0x03 (odd y-coordinate)
      */
@@ -540,7 +540,7 @@ fn test_verification_script_max_size_compliance() {
 
 #[test]
 fn test_invocation_script_format_consistency() {
-    /**
+    /*
      * Validates invocation script follows PUSHDATA1 encoding scheme
      * Format: opcode (1) + length (1) + signature/args (variable)
      */
@@ -571,7 +571,7 @@ fn test_invocation_script_format_consistency() {
 
 #[test]
 fn test_signature_verify_with_correct_public_key() {
-    /**
+    /*
      * Validates ECDSA signature correctness against proper public key
      * Tests signature_verification_valid lemma concretely
      */
@@ -599,7 +599,7 @@ fn test_signature_verify_with_correct_public_key() {
 
 #[test]
 fn test_multi_signature_verification_success() {
-    /**
+    /*
      * Complete end-to-end validation of multi-sig verification flow
      * Tests full witness.verify_multi_signature() implementation
      */
@@ -652,7 +652,7 @@ fn test_multi_signature_verification_success() {
 
 #[test]
 fn test_script_hash_independence_from_invocation_script() {
-    /**
+    /*
      * Validates that script hash depends only on verification script
      * Changing invocation script should NOT affect script hash
      */
@@ -677,7 +677,7 @@ fn test_script_hash_independence_from_invocation_script() {
 
 #[test]
 fn test_witness_empty_constructors_equivalence() {
-    /**
+    /*
      * Validates all empty witness constructors produce equivalent instances
      * new(), empty(), new_with_scripts(vec![], vec![])
      */

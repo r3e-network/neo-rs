@@ -79,6 +79,24 @@ pub struct ProtocolSettings {
     pub initial_gas_distribution: u64,
 }
 
+/// Height configured for `fork`, if the config names one.
+///
+/// The match is exhaustive on [`Hardfork`]. Adding a hardfork fails to compile
+/// here, which is the bridge from `neo_config::HardforkHeights` into the
+/// runtime map. `getversion` then lists whatever that map contains.
+fn hardfork_height(heights: &neo_config::HardforkHeights, fork: Hardfork) -> Option<u32> {
+    match fork {
+        Hardfork::HfAspidochelone => heights.hf_aspidochelone,
+        Hardfork::HfBasilisk => heights.hf_basilisk,
+        Hardfork::HfCockatrice => heights.hf_cockatrice,
+        Hardfork::HfDomovoi => heights.hf_domovoi,
+        Hardfork::HfEchidna => heights.hf_echidna,
+        Hardfork::HfFaun => heights.hf_faun,
+        Hardfork::HfGorgon => heights.hf_gorgon,
+        Hardfork::HfHuyao => heights.hf_huyao,
+    }
+}
+
 impl ProtocolSettings {
     /// The number of members of the committee in NEO system.
     /// Matches C# CommitteeMembersCount property
@@ -103,20 +121,9 @@ impl ProtocolSettings {
             .map_err(|_| "memory_pool_max_transactions exceeds i32".to_string())?;
         let initial_gas_distribution = u64::try_from(config.initial_gas_distribution)
             .map_err(|_| "initial_gas_distribution must be non-negative".to_string())?;
-        let h = config.hardforks;
         let mut hardforks = HashMap::new();
-        let pairs = [
-            (Hardfork::HfAspidochelone, h.hf_aspidochelone),
-            (Hardfork::HfBasilisk, h.hf_basilisk),
-            (Hardfork::HfCockatrice, h.hf_cockatrice),
-            (Hardfork::HfDomovoi, h.hf_domovoi),
-            (Hardfork::HfEchidna, h.hf_echidna),
-            (Hardfork::HfFaun, h.hf_faun),
-            (Hardfork::HfGorgon, h.hf_gorgon),
-            (Hardfork::HfHuyao, h.hf_huyao),
-        ];
-        for (hardfork, height) in pairs {
-            if let Some(height) = height {
+        for hardfork in Hardfork::all() {
+            if let Some(height) = hardfork_height(&config.hardforks, hardfork) {
                 hardforks.insert(hardfork, height);
             }
         }

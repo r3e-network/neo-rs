@@ -1511,7 +1511,7 @@ mod zero_allocation_perf_tests {
         // ByteString to Buffer
         let bs = StackItem::ByteString(vec![0x01, 0x02]);
         let buf = bs.convert_to(StackItemType::Buffer).unwrap();
-        assert!(matches!(buf, StackItem::Buffer(_)));
+        std::assert_matches!(buf, StackItem::Buffer(_));
         assert_eq!(buf.as_bytes().unwrap(), vec![0x01, 0x02]);
 
         // Buffer to ByteString

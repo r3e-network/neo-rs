@@ -309,9 +309,8 @@ impl ConsensusService {
             return Ok(());
         }
 
-        let my_index = match self.context.my_index {
-            Some(index) => index,
-            None => return Ok(()),
+        let Some(my_index) = self.context.my_index else {
+            return Ok(());
         };
 
         if self.context.prepare_responses.contains_key(&my_index) {

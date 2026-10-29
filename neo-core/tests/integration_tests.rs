@@ -326,8 +326,8 @@ fn test_event_manager() {
 //     let state = system.local_node_state().await.unwrap();
 //     let history = state.broadcast_history();
 //     assert_eq!(history.len(), 2);
-//     assert!(matches!(history[0], BroadcastEvent::Relay(_)));
-//     assert!(matches!(history[1], BroadcastEvent::Direct(_)));
+//     std::assert_matches!(history[0], BroadcastEvent::Relay(_));
+//     std::assert_matches!(history[1], BroadcastEvent::Direct(_));
 //
 //     system.shutdown().await.unwrap();
 // }

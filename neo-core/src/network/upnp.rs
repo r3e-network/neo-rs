@@ -70,9 +70,8 @@ impl UPnP {
     /// let discovered = tokio::task::spawn_blocking(UPnP::discover).await?;
     /// ```
     pub fn discover() -> bool {
-        let socket = match UdpSocket::bind("0.0.0.0:0") {
-            Ok(s) => s,
-            Err(_) => return false,
+        let Ok(socket) = UdpSocket::bind("0.0.0.0:0") else {
+            return false;
         };
 
         let timeout = Self::get_timeout();
@@ -107,22 +106,19 @@ impl UPnP {
                 Ok(length) => {
                     if let Ok(resp) = std::str::from_utf8(&buffer[..length]) {
                         let resp_lower = resp.to_lowercase();
-                        if resp_lower.contains("upnp:rootdevice") {
-                            if let Some(location_pos) = resp_lower.find("location:") {
-                                let location_start = location_pos + 9;
-                                if let Some(resp_after_location) = resp.get(location_start..) {
-                                    if let Some(cr_pos) = resp_after_location.find('\r') {
-                                        let location_url = resp_after_location[..cr_pos].trim();
-                                        if let Some(service_url) =
-                                            Self::get_service_url(location_url)
-                                        {
-                                            if !service_url.is_empty() {
-                                                service_state().lock().service_url =
-                                                    Some(service_url);
-                                                return true;
-                                            }
-                                        }
-                                    }
+                        if resp_lower.contains("upnp:rootdevice")
+                            && let Some(location_pos) = resp_lower.find("location:")
+                        {
+                            let location_start = location_pos + 9;
+                            if let Some(resp_after_location) = resp.get(location_start..)
+                                && let Some(cr_pos) = resp_after_location.find('\r')
+                            {
+                                let location_url = resp_after_location[..cr_pos].trim();
+                                if let Some(service_url) = Self::get_service_url(location_url)
+                                    && !service_url.is_empty()
+                                {
+                                    service_state().lock().service_url = Some(service_url);
+                                    return true;
                                 }
                             }
                         }
@@ -297,9 +293,8 @@ impl UPnP {
             return false;
         };
 
-        let internal_ip = match Self::get_local_ip() {
-            Some(ip) => ip,
-            None => return false,
+        let Some(internal_ip) = Self::get_local_ip() else {
+            return false;
         };
 
         let args = format!(

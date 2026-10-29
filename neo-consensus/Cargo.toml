@@ -44,3 +44,6 @@ proptest = "1"
 
 [features]
 default = []
+
+[lints]
+workspace = true

@@ -479,9 +479,8 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
             }
             CALLA => {
                 let item = pop_item(&mut stack)?;
-                let offset = match item {
-                    StackValue::Pointer(p) => p,
-                    _ => return Err("CALLA expects a pointer".to_string()),
+                let StackValue::Pointer(offset) = item else {
+                    return Err("CALLA expects a pointer".to_string());
                 };
                 let return_ip = ip + 1;
                 let saved_init = slots_initialized;

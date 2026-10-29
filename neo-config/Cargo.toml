@@ -19,3 +19,6 @@ toml = { workspace = true }
 uuid = { workspace = true }
 dirs = "5.0"
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

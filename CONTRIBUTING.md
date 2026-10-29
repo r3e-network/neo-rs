@@ -34,10 +34,9 @@ Thanks for helping improve the Neo Rust node implementation. This guide will hel
 
 ### Prerequisites
 
-- **Rust**: Stable toolchain (1.88+). Install via [rustup](https://rustup.rs/):
-  ```bash
-  rustup default stable
-  ```
+- **Rust**: 1.99.1, pinned by `rust-toolchain.toml`. Install [rustup](https://rustup.rs/);
+  it selects the pinned toolchain automatically inside the repository. See
+  [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md) for the toolchain and lint policy.
 
 - **RocksDB**: Development headers required for storage backend:
   ```bash

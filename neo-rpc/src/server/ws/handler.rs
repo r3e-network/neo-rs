@@ -86,10 +86,7 @@ pub async fn ws_handler(
             msg = rx.next() => {
                 match msg {
                     Some(Ok(msg)) if msg.is_text() => {
-                        let text = match msg.to_str() {
-                            Ok(t) => t,
-                            Err(()) => continue,
-                        };
+                        let Ok(text) = msg.to_str() else { continue };
 
                         match serde_json::from_str::<WsRequest>(text) {
                             Ok(req) => {

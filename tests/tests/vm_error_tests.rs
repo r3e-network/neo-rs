@@ -141,19 +141,19 @@ fn test_invalid_parameter_count() {
 #[test]
 fn test_fault_state_handling() {
     let state = VmState::Fault;
-    assert!(matches!(state, VmState::Fault));
+    std::assert_matches!(state, VmState::Fault);
 }
 
 #[test]
 fn test_halt_state_handling() {
     let state = VmState::Halt;
-    assert!(matches!(state, VmState::Halt));
+    std::assert_matches!(state, VmState::Halt);
 }
 
 #[test]
 fn test_break_state_handling() {
     let state = VmState::Break;
-    assert!(matches!(state, VmState::Break));
+    std::assert_matches!(state, VmState::Break);
 }
 
 // ============================================================================

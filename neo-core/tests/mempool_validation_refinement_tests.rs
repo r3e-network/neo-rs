@@ -114,14 +114,14 @@ fn t1_fee_priority_higher_fee_comes_first() {
     let low_fee_tx = make_transaction(1, 1000, 100, false);
     let high_fee_tx = make_transaction(2, 2000, 100, false);
 
-    assert!(matches!(
+    std::assert_matches!(
         pool.try_add(low_fee_tx.clone(), &snapshot, &settings),
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
-    assert!(matches!(
+    );
+    std::assert_matches!(
         pool.try_add(high_fee_tx.clone(), &snapshot, &settings),
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
+    );
 
     // Drain by priority - highest should come first
     let items: Vec<_> = pool.iter_verified().collect();
@@ -150,14 +150,14 @@ fn t2_high_priority_flag_beats_lower_fee() {
     let regular_high_fee = make_transaction(1, 5000, 100, false);
     let high_priority_low_fee = make_transaction(2, 1000, 100, true);
 
-    assert!(matches!(
+    std::assert_matches!(
         pool.try_add(regular_high_fee.clone(), &snapshot, &settings),
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
-    assert!(matches!(
+    );
+    std::assert_matches!(
         pool.try_add(high_priority_low_fee.clone(), &snapshot, &settings),
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
+    );
 
     let items: Vec<_> = pool.iter_verified().collect();
 
@@ -182,14 +182,14 @@ fn t3_fee_per_byte_determines_order() {
     // Small script, same fee = higher fee-per-byte
     let small_tx = make_transaction(2, 2000, 100, false);
 
-    assert!(matches!(
+    std::assert_matches!(
         pool.try_add(large_tx.clone(), &snapshot, &settings),
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
-    assert!(matches!(
+    );
+    std::assert_matches!(
         pool.try_add(small_tx.clone(), &snapshot, &settings),
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
+    );
 
     let items: Vec<_> = pool.iter_verified().collect();
 
@@ -212,14 +212,14 @@ fn t4_network_fee_breaks_ties() {
     let tx1 = make_transaction(1, 2000, 100, false);
     let tx2 = make_transaction(2, 3000, 100, false);
 
-    assert!(matches!(
+    std::assert_matches!(
         pool.try_add(tx1.clone(), &snapshot, &settings),
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
-    assert!(matches!(
+    );
+    std::assert_matches!(
         pool.try_add(tx2.clone(), &snapshot, &settings),
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
+    );
 
     let items: Vec<_> = pool.iter_verified().collect();
 
@@ -315,18 +315,10 @@ fn t6_capacity_never_exceeded_512_limit() {
     let snapshot = funded_snapshot();
     let mut pool = MemoryPool::new(&settings);
 
-    let mut added_count = 0;
     for nonce in 0..1000 {
         let tx = make_transaction(nonce, 1000, 100, false);
 
-        let result = pool.try_add(tx, &snapshot, &settings);
-
-        if matches!(
-            result,
-            neo_core::ledger::verify_result::VerifyResult::Succeed
-        ) {
-            added_count += 1;
-        }
+        let _ = pool.try_add(tx, &snapshot, &settings);
 
         // Capacity check at every step
         let current_count = pool.count();
@@ -355,10 +347,10 @@ fn t7_overfill_triggers_eviction() {
     // Add 10 low-fee transactions
     for nonce in 0..10 {
         let tx = make_transaction(nonce, 1000, 100, false);
-        assert!(matches!(
+        std::assert_matches!(
             pool.try_add(tx, &snapshot, &settings),
             neo_core::ledger::verify_result::VerifyResult::Succeed
-        ));
+        );
     }
 
     assert_eq!(pool.count(), 10);
@@ -367,10 +359,10 @@ fn t7_overfill_triggers_eviction() {
     let high_fee_tx = make_transaction(11, 10000, 100, false);
     let result = pool.try_add(high_fee_tx.clone(), &snapshot, &settings);
 
-    assert!(matches!(
+    std::assert_matches!(
         result,
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
+    );
     assert_eq!(pool.count(), 10, "Should maintain exactly 10 transactions");
 }
 
@@ -424,18 +416,16 @@ fn t9_same_tx_hash_rejected_second_time() {
 
     // First addition should succeed
     let result1 = pool.try_add(tx.clone(), &snapshot, &settings);
-    assert!(matches!(
+    std::assert_matches!(
         result1,
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
+    );
 
     // Second addition of same transaction should return AlreadyInPool
     let result2 = pool.try_add(tx, &snapshot, &settings);
-    assert!(
-        matches!(
-            result2,
-            neo_core::ledger::verify_result::VerifyResult::AlreadyInPool
-        ),
+    std::assert_matches!(
+        result2,
+        neo_core::ledger::verify_result::VerifyResult::AlreadyInPool,
         "Second addition should return AlreadyInPool, got {:?}",
         result2
     );
@@ -461,10 +451,10 @@ fn t10_duplicate_detection_by_hash() {
     let tx1 = make_transaction(1, 1000, 100, false);
     let tx2 = make_transaction(2, 1000, 100, false);
 
-    assert!(matches!(
+    std::assert_matches!(
         pool.try_add(tx1.clone(), &snapshot, &settings),
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
+    );
 
     // Even though nonces differ, hash detection prevents duplicates
     // (Different nonce means different hash, so this won't catch duplicates)
@@ -483,10 +473,10 @@ fn t11_contains_key_prevents_duplicates() {
     let tx = make_transaction(1, 1000, 100, false);
     let tx_hash = tx.hash();
 
-    assert!(matches!(
+    std::assert_matches!(
         pool.try_add(tx.clone(), &snapshot, &settings),
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
+    );
 
     // Verify hash exists in pool
     assert!(
@@ -534,10 +524,10 @@ fn t13_single_element_pool() {
     let mut pool = MemoryPool::new(&settings);
 
     let tx = make_transaction(1, 1000, 100, false);
-    assert!(matches!(
+    std::assert_matches!(
         pool.try_add(tx.clone(), &snapshot, &settings),
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
+    );
 
     assert_eq!(pool.count(), 1);
 
@@ -559,10 +549,10 @@ fn t14_full_pool_largest_allowed() {
 
     for nonce in 0..512 {
         let tx = make_transaction(nonce, 1000, 100, false);
-        assert!(matches!(
+        std::assert_matches!(
             pool.try_add(tx, &snapshot, &settings),
             neo_core::ledger::verify_result::VerifyResult::Succeed
-        ));
+        );
     }
 
     assert_eq!(pool.count(), 512);
@@ -571,10 +561,10 @@ fn t14_full_pool_largest_allowed() {
     let new_tx = make_transaction(512, 10000, 100, false);
     let result = pool.try_add(new_tx, &snapshot, &settings);
 
-    assert!(matches!(
+    std::assert_matches!(
         result,
         neo_core::ledger::verify_result::VerifyResult::Succeed
-    ));
+    );
     assert_eq!(pool.count(), 512, "Full pool maintains capacity");
 }
 
@@ -589,10 +579,10 @@ fn t15_priority_tiebreaker_determinism() {
     // Create multiple transactions with identical fees and priority flags
     for nonce in 0..10 {
         let tx = make_transaction(nonce, 1000, 100, false);
-        assert!(matches!(
+        std::assert_matches!(
             pool.try_add(tx, &snapshot, &settings),
             neo_core::ledger::verify_result::VerifyResult::Succeed
-        ));
+        );
     }
 
     assert_eq!(pool.count(), 10);
@@ -628,10 +618,10 @@ fn t16_mixed_priority_scenario() {
 
     for (fee, script_len, high_priority) in scenarios {
         let tx = make_transaction(0, fee, script_len, high_priority);
-        assert!(matches!(
+        std::assert_matches!(
             pool.try_add(tx, &snapshot, &settings),
             neo_core::ledger::verify_result::VerifyResult::Succeed
-        ));
+        );
     }
 
     assert_eq!(pool.count(), 5);
@@ -685,8 +675,9 @@ fn t17_verification_tie_to_coq_model() {
     for nonce in 0..600 {
         let tx = make_transaction(nonce, 1000, 100, false);
         let result = pool.try_add(tx, &snapshot, &settings);
-        assert!(
-            matches!(result, VerifyResult::Succeed | VerifyResult::OutOfMemory),
+        std::assert_matches!(
+            result,
+            VerifyResult::Succeed | VerifyResult::OutOfMemory,
             "Unexpected admission result: {result:?}"
         );
         assert_eq!(pool.count(), (nonce as usize + 1).min(512));

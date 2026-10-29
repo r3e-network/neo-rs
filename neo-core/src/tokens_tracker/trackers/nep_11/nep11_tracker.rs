@@ -164,7 +164,7 @@ impl Nep11Tracker {
             return;
         }
 
-        let mut engine = match ApplicationEngine::new(
+        let Ok(mut engine) = ApplicationEngine::new(
             TriggerType::Application,
             None,
             Arc::new(snapshot.clone()),
@@ -172,9 +172,8 @@ impl Nep11Tracker {
             self.base.neo_system.settings().clone(),
             34_000_000,
             None,
-        ) {
-            Ok(engine) => engine,
-            Err(_) => return,
+        ) else {
+            return;
         };
 
         if engine
@@ -290,12 +289,10 @@ impl Tracker for Nep11Tracker {
                     continue;
                 }
 
-                let contract = match ContractManagement::get_contract_from_snapshot(
-                    snapshot,
-                    &notify.script_hash,
-                ) {
-                    Ok(Some(contract)) => contract,
-                    _ => continue,
+                let Ok(Some(contract)) =
+                    ContractManagement::get_contract_from_snapshot(snapshot, &notify.script_hash)
+                else {
+                    continue;
                 };
 
                 if !contract.manifest.supports_standard("NEP-11") {
@@ -317,11 +314,11 @@ impl Tracker for Nep11Tracker {
             use std::collections::hash_map::Entry;
 
             if let Entry::Vacant(entry) = divisibility.entry(record.asset) {
-                let contract_state =
-                    match ContractManagement::get_contract_from_snapshot(snapshot, &record.asset) {
-                        Ok(Some(state)) => state,
-                        _ => continue,
-                    };
+                let Ok(Some(contract_state)) =
+                    ContractManagement::get_contract_from_snapshot(snapshot, &record.asset)
+                else {
+                    continue;
+                };
                 let mut abi = contract_state.manifest.abi.clone();
                 let has_balance1 = abi.get_method("balanceOf", 1).is_some();
                 let has_balance2 = abi.get_method("balanceOf", 2).is_some();

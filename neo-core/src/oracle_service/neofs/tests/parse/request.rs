@@ -13,7 +13,7 @@ fn parse_neofs_request_payload() {
         parse_neofs_request(&format!("neofs:{}/{}", container, object)).expect("parse payload");
     assert_eq!(request.container, container);
     assert_eq!(request.object, object);
-    assert!(matches!(request.command, NeoFsCommand::Payload));
+    std::assert_matches!(request.command, NeoFsCommand::Payload);
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn parse_neofs_request_header_and_hash() {
     let object = sample_neofs_id(2);
     let header = parse_neofs_request(&format!("neofs:{}/{}/header", container, object))
         .expect("parse header");
-    assert!(matches!(header.command, NeoFsCommand::Header));
+    std::assert_matches!(header.command, NeoFsCommand::Header);
 
     let hash =
         parse_neofs_request(&format!("neofs:{}/{}/hash", container, object)).expect("parse hash");
@@ -98,7 +98,7 @@ fn parse_neofs_request_ignores_query_fragment() {
     let object = sample_neofs_id(2);
     let request = parse_neofs_request(&format!("neofs:{}/{}/header?foo=1#bar", container, object))
         .expect("parse header with query");
-    assert!(matches!(request.command, NeoFsCommand::Header));
+    std::assert_matches!(request.command, NeoFsCommand::Header);
     assert_eq!(request.container, container);
     assert_eq!(request.object, object);
 }

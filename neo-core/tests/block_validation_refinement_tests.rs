@@ -282,16 +282,16 @@ fn test_primary_index_bounds_checking() {
     assert!(validate_primary_index(4, 5).is_ok());
 
     // Invalid case: index 5 with 5 validators (exceeds max)
-    assert!(matches!(
+    std::assert_matches!(
         validate_primary_index(5, 5),
         Err(BlockValidationError::InvalidPrimaryIndex { index: 5, max: 5 })
-    ));
+    );
 
     // Invalid case: index 10 with 3 validators
-    assert!(matches!(
+    std::assert_matches!(
         validate_primary_index(10, 3),
         Err(BlockValidationError::InvalidPrimaryIndex { index: 10, max: 3 })
-    ));
+    );
 
     println!("✅ test_primary_index_bounds_checking passed");
 }
@@ -363,10 +363,10 @@ fn test_timestamp_range_validation() {
     assert!(validate_timestamp_bounds(current_time).is_ok());
 
     // Invalid: too far in past
-    assert!(matches!(
+    std::assert_matches!(
         validate_timestamp_bounds(0),
         Err(BlockValidationError::TimestampTooOld { .. })
-    ));
+    );
 
     println!("✅ test_timestamp_range_validation passed");
 }

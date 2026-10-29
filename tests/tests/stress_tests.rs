@@ -36,13 +36,6 @@ impl StressMetrics {
         (self.successful_transactions as f64 * 1000.0) / self.total_duration_ms as f64
     }
 
-    fn blocks_per_second(&self) -> f64 {
-        if self.total_duration_ms == 0 {
-            return 0.0;
-        }
-        (self.total_blocks as f64 * 1000.0) / self.total_duration_ms as f64
-    }
-
     fn success_rate(&self) -> f64 {
         if self.total_transactions == 0 {
             return 0.0;

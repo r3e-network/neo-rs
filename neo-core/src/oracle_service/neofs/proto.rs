@@ -5,6 +5,7 @@
     clippy::large_enum_variant,
     clippy::enum_variant_names,
     clippy::module_inception,
+    clippy::result_large_err,
     dead_code
 )]
 pub(super) mod neofs_proto {

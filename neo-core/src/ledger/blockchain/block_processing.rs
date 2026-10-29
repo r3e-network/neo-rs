@@ -196,16 +196,14 @@ impl Blockchain {
             }
         }
         if evicted_cost > 0 {
-            let _ = self._unverified_cache_bytes.fetch_update(
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-                |current| Some(current.saturating_sub(evicted_cost)),
-            );
-            let _ = self._unverified_cache_blocks.fetch_update(
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-                |current| Some(current.saturating_sub(1)),
-            );
+            self._unverified_cache_bytes
+                .update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                    current.saturating_sub(evicted_cost)
+                });
+            self._unverified_cache_blocks
+                .update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                    current.saturating_sub(1)
+                });
         }
 
         if !self.evict_unverified_for(cost) {
@@ -446,16 +444,14 @@ impl Blockchain {
         if empty {
             self._block_cache_unverified.remove(&index);
         }
-        let _ = self._unverified_cache_bytes.fetch_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |current| Some(current.saturating_sub(cost)),
-        );
-        let _ = self._unverified_cache_blocks.fetch_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |current| Some(current.saturating_sub(1)),
-        );
+        self._unverified_cache_bytes
+            .update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.saturating_sub(cost)
+            });
+        self._unverified_cache_blocks
+            .update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.saturating_sub(1)
+            });
         Some(block)
     }
 

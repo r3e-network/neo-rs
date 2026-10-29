@@ -297,8 +297,9 @@ mod tests {
         {
             match runtime {
                 Err(err) => {
-                    assert!(
-                        matches!(err, neo_tee::TeeError::EnclaveInitError { .. }),
+                    std::assert_matches!(
+                        err,
+                        neo_tee::TeeError::EnclaveInitError { .. },
                         "unexpected error: {err}"
                     );
                 }
@@ -324,8 +325,9 @@ mod tests {
         {
             match runtime {
                 Err(err) => {
-                    assert!(
-                        matches!(err, neo_tee::TeeError::EnclaveInitError { .. }),
+                    std::assert_matches!(
+                        err,
+                        neo_tee::TeeError::EnclaveInitError { .. },
                         "unexpected error: {err}"
                     );
                 }
@@ -346,18 +348,18 @@ mod tests {
 
     #[test]
     fn test_ordering_policy_parsing() {
-        assert!(matches!(
+        std::assert_matches!(
             parse_ordering_policy("fcfs"),
             FairOrderingPolicy::FirstComeFirstServed
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             parse_ordering_policy("batched"),
             FairOrderingPolicy::BatchedRandom { .. }
-        ));
-        assert!(matches!(
+        );
+        std::assert_matches!(
             parse_ordering_policy("commit-reveal"),
             FairOrderingPolicy::CommitReveal { .. }
-        ));
+        );
     }
 
     #[cfg(feature = "tee-sgx")]

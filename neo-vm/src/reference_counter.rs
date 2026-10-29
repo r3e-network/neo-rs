@@ -94,11 +94,11 @@ impl ReferenceCounter {
         if count == 0 {
             return;
         }
-        let _ = self.state.references_count.fetch_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |value| Some(value.saturating_sub(count)),
-        );
+        self.state
+            .references_count
+            .update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.saturating_sub(count)
+            });
     }
 
     /// Adds `count` stack references for the supplied item.

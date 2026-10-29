@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Neo Rust Node
 # R3E Network <jimmy@r3e.network>
 
-FROM rust:1.88-bookworm AS builder
+FROM rust:1.99.1-bookworm AS builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
@@ -29,7 +29,7 @@ ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
 WORKDIR /app
 
 # Copy manifests and workspace crates (kept explicit for better Docker layer caching).
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY neo-primitives/ neo-primitives/
 COPY neo-config/ neo-config/
 COPY neo-crypto/ neo-crypto/

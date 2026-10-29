@@ -593,9 +593,8 @@ impl NeoToken {
         let snapshot_ref = snapshot.as_ref();
         let context = engine.get_native_storage_context(&self.hash())?;
 
-        let mut state_account = match self.get_account_state(snapshot_ref, account)? {
-            Some(state) => state,
-            None => return Ok(false),
+        let Some(mut state_account) = self.get_account_state(snapshot_ref, account)? else {
+            return Ok(false);
         };
 
         // Validate account state

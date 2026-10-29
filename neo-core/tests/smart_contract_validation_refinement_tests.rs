@@ -269,9 +269,6 @@ fn test_multisig_n_parameter_range() {
 // #[test]
 // fn test_multisig_m_parameter_range() { /* disabled */ }
 
-/// Test 11: Multi-sig no public keys
-#[test]
-
 /// Test 12: Multi-sig parameter validation - no public keys
 #[test]
 fn test_multisig_no_public_keys() {

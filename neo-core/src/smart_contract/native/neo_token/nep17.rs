@@ -114,9 +114,8 @@ impl NeoToken {
                 self.write_account_state(&context, engine, &from, &state_from)?;
             }
         } else {
-            let mut state_from = match from_state_opt.take() {
-                Some(state) => state,
-                None => return Ok(vec![0]),
+            let Some(mut state_from) = from_state_opt.take() else {
+                return Ok(vec![0]);
             };
 
             // Validate balance is sufficient

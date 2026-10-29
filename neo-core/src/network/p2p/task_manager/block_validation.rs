@@ -146,10 +146,7 @@ mod tests {
 
         let outcome = validate_incoming_block(block, None);
 
-        assert!(matches!(
-            outcome,
-            IncomingBlockOutcome::Store { index: 7, .. }
-        ));
+        std::assert_matches!(outcome, IncomingBlockOutcome::Store { index: 7, .. });
     }
 
     #[test]
@@ -159,7 +156,7 @@ mod tests {
 
         let outcome = validate_incoming_block(block, Some(&cached));
 
-        assert!(matches!(outcome, IncomingBlockOutcome::KeepExisting));
+        std::assert_matches!(outcome, IncomingBlockOutcome::KeepExisting);
     }
 
     #[test]
@@ -169,7 +166,7 @@ mod tests {
 
         let outcome = validate_incoming_block(block, Some(&cached));
 
-        assert!(matches!(
+        std::assert_matches!(
             outcome,
             IncomingBlockOutcome::Disconnect {
                 index: 7,
@@ -177,7 +174,7 @@ mod tests {
                 hash_error: None,
                 remove_cached: false
             }
-        ));
+        );
     }
 
     #[test]

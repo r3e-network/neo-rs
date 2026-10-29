@@ -9,13 +9,11 @@ impl OracleNeoFsProtocol {
         auth: &NeoFsAuth,
         object_url: &str,
     ) -> (OracleResponseCode, String) {
-        let builder = match self.request_builder(reqwest::Method::HEAD, object_url, auth) {
-            Ok(builder) => builder,
-            Err(_) => return (OracleResponseCode::Error, String::new()),
+        let Ok(builder) = self.request_builder(reqwest::Method::HEAD, object_url, auth) else {
+            return (OracleResponseCode::Error, String::new());
         };
-        let response = match builder.send().await {
-            Ok(response) => response,
-            Err(_) => return (OracleResponseCode::Timeout, String::new()),
+        let Ok(response) = builder.send().await else {
+            return (OracleResponseCode::Timeout, String::new());
         };
 
         if let Some(code) = map_neofs_status(response.status()) {

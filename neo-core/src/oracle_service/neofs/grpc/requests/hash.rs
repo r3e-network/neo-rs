@@ -18,20 +18,17 @@ impl OracleNeoFsProtocol {
     ) -> (OracleResponseCode, String) {
         match range {
             None => {
-                let object = match self
+                let Ok(object) = self
                     .fetch_header_object_grpc(client, address, auth, oracle_key)
                     .await
-                {
-                    Ok(object) => object,
-                    Err(_) => return (OracleResponseCode::Error, String::new()),
+                else {
+                    return (OracleResponseCode::Error, String::new());
                 };
-                let header = match object.header.as_ref() {
-                    Some(header) => header,
-                    None => return (OracleResponseCode::Error, String::new()),
+                let Some(header) = object.header.as_ref() else {
+                    return (OracleResponseCode::Error, String::new());
                 };
-                let checksum = match header.payload_hash.as_ref() {
-                    Some(checksum) => checksum,
-                    None => return (OracleResponseCode::Error, String::new()),
+                let Some(checksum) = header.payload_hash.as_ref() else {
+                    return (OracleResponseCode::Error, String::new());
                 };
                 let hash =
                     UInt256::from_bytes(&checksum.sum).map_err(|_| OracleResponseCode::Error);
@@ -41,9 +38,8 @@ impl OracleNeoFsProtocol {
                 }
             }
             Some(range) => {
-                let meta = match build_neofs_meta_header(auth) {
-                    Ok(meta) => meta,
-                    Err(_) => return (OracleResponseCode::Error, String::new()),
+                let Ok(meta) = build_neofs_meta_header(auth) else {
+                    return (OracleResponseCode::Error, String::new());
                 };
                 let body = neofs_v2::object::get_range_hash_request::Body {
                     address: Some(address.clone()),
@@ -54,10 +50,9 @@ impl OracleNeoFsProtocol {
                     salt: Vec::new(),
                     r#type: neofs_v2::refs::ChecksumType::Sha256 as i32,
                 };
-                let verify = match build_neofs_request_verification_header(&body, &meta, oracle_key)
-                {
-                    Ok(verify) => verify,
-                    Err(_) => return (OracleResponseCode::Error, String::new()),
+                let Ok(verify) = build_neofs_request_verification_header(&body, &meta, oracle_key)
+                else {
+                    return (OracleResponseCode::Error, String::new());
                 };
                 let request = neofs_v2::object::GetRangeHashRequest {
                     body: Some(body),
@@ -69,9 +64,8 @@ impl OracleNeoFsProtocol {
                     Ok(response) => response.into_inner(),
                     Err(_) => return (OracleResponseCode::Error, String::new()),
                 };
-                let body = match response.body.as_ref() {
-                    Some(body) => body,
-                    None => return (OracleResponseCode::Error, String::new()),
+                let Some(body) = response.body.as_ref() else {
+                    return (OracleResponseCode::Error, String::new());
                 };
                 if validate_neofs_response(
                     body,

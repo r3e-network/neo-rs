@@ -7,9 +7,8 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap, HashMap};
 
 fn committee_public_key_from_stack_value(value: &StackValue) -> Result<ECPoint, String> {
-    let bytes = match value {
-        StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => bytes,
-        _ => return Err("committee entry public key must be byte array".to_string()),
+    let (StackValue::ByteString(bytes) | StackValue::Buffer(bytes)) = value else {
+        return Err("committee entry public key must be byte array".to_string());
     };
 
     ECPoint::from_bytes(bytes).map_err(|e| format!("invalid committee public key: {e}"))
@@ -43,9 +42,8 @@ impl NeoToken {
 
     pub(super) fn decode_committee_stack_value(value: StackValue) -> Result<Vec<ECPoint>, String> {
         fn decode_entry(entry: &StackValue) -> Result<Option<ECPoint>, String> {
-            let elements = match entry {
-                StackValue::Struct(items) | StackValue::Array(items) => items,
-                _ => return Ok(None),
+            let (StackValue::Struct(elements) | StackValue::Array(elements)) = entry else {
+                return Ok(None);
             };
 
             let first = elements
@@ -109,9 +107,8 @@ impl NeoToken {
         }
 
         fn decode_entry(entry: &StackValue) -> Result<Option<(ECPoint, BigInt)>, String> {
-            let elements = match entry {
-                StackValue::Struct(items) | StackValue::Array(items) => items,
-                _ => return Ok(None),
+            let (StackValue::Struct(elements) | StackValue::Array(elements)) = entry else {
+                return Ok(None);
             };
 
             if elements.len() < 2 {

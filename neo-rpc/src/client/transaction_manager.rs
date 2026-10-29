@@ -436,10 +436,10 @@ mod tests {
         .expect("manager");
 
         assert_eq!(manager.tx().attributes().len(), 1);
-        assert!(matches!(
+        std::assert_matches!(
             manager.tx().attributes()[0],
             TransactionAttribute::HighPriority
-        ));
+        );
     }
 
     #[tokio::test]

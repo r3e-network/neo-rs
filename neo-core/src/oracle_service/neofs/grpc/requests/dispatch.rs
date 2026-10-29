@@ -13,13 +13,11 @@ impl OracleNeoFsProtocol {
         auth: &NeoFsAuth,
         oracle_key: &KeyPair,
     ) -> (OracleResponseCode, String) {
-        let address = match build_neofs_grpc_address(&request) {
-            Ok(address) => address,
-            Err(_) => return (OracleResponseCode::Error, String::new()),
+        let Ok(address) = build_neofs_grpc_address(&request) else {
+            return (OracleResponseCode::Error, String::new());
         };
-        let mut client = match neofs_grpc_client(endpoint).await {
-            Ok(client) => client,
-            Err(_) => return (OracleResponseCode::Error, String::new()),
+        let Ok(mut client) = neofs_grpc_client(endpoint).await else {
+            return (OracleResponseCode::Error, String::new());
         };
 
         match request.command {

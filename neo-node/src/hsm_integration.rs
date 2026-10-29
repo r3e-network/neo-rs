@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use neo_hsm::{HsmConfig, HsmDeviceInfo, HsmDeviceType, HsmKeyInfo, HsmSigner};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::cli::NodeCli;
 
@@ -14,8 +14,6 @@ use crate::cli::NodeCli;
 pub struct HsmRuntime {
     /// The HSM signer instance
     pub signer: Arc<dyn HsmSigner>,
-    /// HSM configuration
-    pub config: HsmConfig,
     /// Cached key info (if a specific key was requested)
     pub active_key: Option<HsmKeyInfo>,
     /// Address version for the current network
@@ -31,11 +29,6 @@ impl HsmRuntime {
     /// Check if HSM is ready
     pub fn is_ready(&self) -> bool {
         self.signer.is_ready()
-    }
-
-    /// Get the active key info
-    pub fn active_key(&self) -> Option<&HsmKeyInfo> {
-        self.active_key.as_ref()
     }
 }
 
@@ -178,7 +171,6 @@ pub async fn initialize_hsm(cli: &NodeCli, address_version: u8) -> Result<HsmRun
 
     Ok(HsmRuntime {
         signer,
-        config,
         active_key,
         address_version,
     })

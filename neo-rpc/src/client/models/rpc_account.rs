@@ -103,7 +103,7 @@ mod tests {
         };
 
         let json = account.to_json();
-        assert!(matches!(json.get("label"), Some(JToken::Null)));
+        std::assert_matches!(json.get("label"), Some(JToken::Null));
         let parsed = RpcAccount::from_json(&json).expect("account");
         assert!(parsed.label.is_none());
         assert!(parsed.watch_only);

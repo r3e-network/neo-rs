@@ -175,7 +175,7 @@ fn test_consensus_message_framing() {
 // PROPERTIES: Monotonicity and Injectivity (Coq Lemmas)
 // ============================================================================
 
-/// All property-based tests for wire_format_refinement.v
+// All property-based tests for wire_format_refinement.v
 proptest! {
     /// Test Coq lemmas:
     /// - `wire_len_at_least_header`: For all b, 7 <= wire_len b

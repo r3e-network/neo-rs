@@ -109,9 +109,8 @@ async fn persist_block_stops_before_commit_when_committing_handler_fails() {
     block.header = header;
     block.transactions = Vec::new();
 
-    let err = match system.persist_block(block) {
-        Ok(_) => panic!("committing handler should block persistence"),
-        Err(err) => err,
+    let Err(err) = system.persist_block(block) else {
+        panic!("committing handler should block persistence")
     };
 
     assert!(err.to_string().contains("injected committing failure"));

@@ -304,11 +304,8 @@ impl RpcServer {
                         match listener.accept().await {
                             Ok((stream, remote_addr)) => {
                                 apply_tcp_keepalive(&stream, keepalive);
-                                let permit = if let Ok(permit) =
-                                    connection_limiter.clone().try_acquire_owned()
-                                {
-                                    permit
-                                } else {
+                                let Ok(permit) = connection_limiter.clone().try_acquire_owned()
+                                else {
                                     debug!(
                                         "RPC max concurrent connections reached; dropping {}",
                                         remote_addr
@@ -424,11 +421,8 @@ impl RpcServer {
                         match listener.accept().await {
                             Ok((stream, remote_addr)) => {
                                 apply_tcp_keepalive(&stream, keepalive);
-                                let permit = if let Ok(permit) =
-                                    connection_limiter.clone().try_acquire_owned()
-                                {
-                                    permit
-                                } else {
+                                let Ok(permit) = connection_limiter.clone().try_acquire_owned()
+                                else {
                                     debug!(
                                         "RPC max concurrent connections reached; dropping {}",
                                         remote_addr

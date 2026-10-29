@@ -150,11 +150,11 @@ impl OracleService {
             return false;
         }
 
-        let oracle_nodes =
-            match RoleManagement::new().get_designated_by_role_at(snapshot, Role::Oracle, height) {
-                Ok(nodes) => nodes,
-                Err(_) => return false,
-            };
+        let Ok(oracle_nodes) =
+            RoleManagement::new().get_designated_by_role_at(snapshot, Role::Oracle, height)
+        else {
+            return false;
+        };
 
         if oracle_nodes.is_empty() {
             return false;

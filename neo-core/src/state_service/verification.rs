@@ -125,9 +125,8 @@ impl VerificationContext {
             return false;
         }
 
-        let state_root = match self.load_state_root(store) {
-            Some(root) => root,
-            None => return false,
+        let Some(state_root) = self.load_state_root(store) else {
+            return false;
         };
 
         let Ok(sign_data) = get_sign_data_vec(state_root, network) else {
@@ -159,9 +158,8 @@ impl VerificationContext {
 
         let validators = self.validators.clone();
         let signatures = self.signatures.clone();
-        let state_root = match self.load_state_root(store) {
-            Some(root) => root,
-            None => return false,
+        let Some(state_root) = self.load_state_root(store) else {
+            return false;
         };
 
         if state_root.witness.is_none() {
@@ -343,9 +341,8 @@ impl StateVerificationActor {
         }
 
         let mut reader = MemoryReader::new(&payload.data[1..]);
-        let vote = match Vote::deserialize(&mut reader) {
-            Ok(vote) => vote,
-            Err(_) => return,
+        let Ok(vote) = Vote::deserialize(&mut reader) else {
+            return;
         };
 
         self.on_vote(vote).await;

@@ -62,9 +62,8 @@ async fn persist_block_reports_fee_burn_failure_for_unfunded_sender() {
     let system = NeoSystem::new(settings.clone(), None, None).expect("NeoSystem::new");
     let block = build_fee_burn_failure_block(&system, &settings);
 
-    let err = match system.persist_block(block) {
-        Ok(_) => panic!("persist should fail when sender cannot pay GAS fees"),
-        Err(err) => err,
+    let Err(err) = system.persist_block(block) else {
+        panic!("persist should fail when sender cannot pay GAS fees")
     };
     let message = err.to_string();
     assert!(

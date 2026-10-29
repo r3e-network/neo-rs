@@ -76,13 +76,11 @@ impl OracleNeoFsProtocol {
         url: &str,
         oracle_key: Option<&KeyPair>,
     ) -> (OracleResponseCode, String) {
-        let request = match parse_neofs_request(url) {
-            Ok(request) => request,
-            Err(_) => return (OracleResponseCode::Error, String::new()),
+        let Ok(request) = parse_neofs_request(url) else {
+            return (OracleResponseCode::Error, String::new());
         };
-        let endpoint = match normalize_neofs_endpoint(&settings.neofs_endpoint) {
-            Ok(endpoint) => endpoint,
-            Err(_) => return (OracleResponseCode::Error, String::new()),
+        let Ok(endpoint) = normalize_neofs_endpoint(&settings.neofs_endpoint) else {
+            return (OracleResponseCode::Error, String::new());
         };
         let auth = build_neofs_auth(settings, oracle_key);
 

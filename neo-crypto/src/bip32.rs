@@ -127,14 +127,14 @@ mod tests {
         let left_factor = [0xffu8; 32];
         let parent = [1u8; 32];
 
-        assert!(matches!(
+        std::assert_matches!(
             Bip32Crypto::add_private_keys_mod_order(&left_factor, &parent, ECCurve::Secp256r1),
             Err(CryptoError::InvalidArgument { .. })
-        ));
+        );
 
-        assert!(matches!(
+        std::assert_matches!(
             Bip32Crypto::add_private_keys_mod_order(&[1u8; 32], &parent, ECCurve::Ed25519),
             Err(CryptoError::InvalidArgument { .. })
-        ));
+        );
     }
 }

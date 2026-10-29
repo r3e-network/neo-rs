@@ -1,0 +1,4 @@
+# cargo-fuzz needs nightly (-Zsanitizer); overrides the workspace pin. See docs/TOOLCHAIN.md.
+[toolchain]
+channel = "nightly"
+profile = "minimal"

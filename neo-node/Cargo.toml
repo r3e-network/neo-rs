@@ -89,3 +89,6 @@ mimalloc = { version = "0.1", default-features = false }
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[lints]
+workspace = true

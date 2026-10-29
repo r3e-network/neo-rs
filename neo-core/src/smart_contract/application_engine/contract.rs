@@ -443,7 +443,7 @@ mod tests {
         let decoded = decode_native_result(ContractParameterType::Any, encoded)
             .expect("decode")
             .expect("stack item");
-        assert!(matches!(decoded, StackItem::Array(_)));
+        std::assert_matches!(decoded, StackItem::Array(_));
     }
     #[test]
     fn decode_native_result_array_payload_roundtrips() {
@@ -453,6 +453,6 @@ mod tests {
         let decoded = decode_native_result(ContractParameterType::Array, encoded)
             .expect("decode")
             .expect("stack item");
-        assert!(matches!(decoded, StackItem::Array(_)));
+        std::assert_matches!(decoded, StackItem::Array(_));
     }
 }

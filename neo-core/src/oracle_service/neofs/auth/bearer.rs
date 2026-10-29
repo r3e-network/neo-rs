@@ -26,17 +26,15 @@ pub(crate) fn build_neofs_auth(
         && signature.is_none()
         && signature_key.is_none()
         && token.as_deref().map(strip_bearer_prefix).is_some()
+        && let (Some(token_value), Some(key)) = (token.as_deref(), oracle_key)
+        && let Some((sig, key_bytes)) = sign_neofs_bearer(
+            strip_bearer_prefix(token_value),
+            key,
+            settings.neofs_wallet_connect,
+        )
     {
-        if let (Some(token_value), Some(key)) = (token.as_deref(), oracle_key) {
-            if let Some((sig, key_bytes)) = sign_neofs_bearer(
-                strip_bearer_prefix(token_value),
-                key,
-                settings.neofs_wallet_connect,
-            ) {
-                signature = Some(hex::encode(sig));
-                signature_key = Some(hex::encode(key_bytes));
-            }
-        }
+        signature = Some(hex::encode(sig));
+        signature_key = Some(hex::encode(key_bytes));
     }
 
     NeoFsAuth {

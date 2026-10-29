@@ -520,7 +520,7 @@ mod tests {
     #[test]
     fn test_error_creation() {
         let error = CoreError::invalid_format("test message");
-        assert!(matches!(error, CoreError::Invalid { .. }));
+        std::assert_matches!(error, CoreError::Invalid { .. });
         assert_eq!(error.to_string(), "Invalid: test message");
     }
 
@@ -569,10 +569,10 @@ mod tests {
     fn test_from_std_errors() {
         let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
         let core_error = CoreError::from(io_error);
-        assert!(matches!(core_error, CoreError::Io { .. }));
+        std::assert_matches!(core_error, CoreError::Io { .. });
 
         let parse_error = "abc".parse::<i32>().unwrap_err();
         let core_error = CoreError::from(parse_error);
-        assert!(matches!(core_error, CoreError::TypeConversion { .. }));
+        std::assert_matches!(core_error, CoreError::TypeConversion { .. });
     }
 }

@@ -84,7 +84,7 @@ fn test_make_transaction_custom_contracts_requires_gas_hash() {
     )
     .expect_err("expected witness scope failure");
 
-    assert!(matches!(err, WalletError::TransactionCreationFailed(_)));
+    std::assert_matches!(err, WalletError::TransactionCreationFailed(_));
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn test_make_transaction_none_scope_fails_then_global_succeeds() {
         neo_core::smart_contract::application_engine::TEST_MODE_GAS,
     )
     .expect_err("expected fee-only scope failure");
-    assert!(matches!(err, WalletError::TransactionCreationFailed(_)));
+    std::assert_matches!(err, WalletError::TransactionCreationFailed(_));
 
     let signer_global = Signer::new(account, WitnessScope::GLOBAL);
     let tx = WalletHelper::make_transaction(
@@ -178,5 +178,5 @@ fn test_make_transaction_missing_verification_contract_fails() {
     )
     .expect_err("expected missing contract failure");
 
-    assert!(matches!(err, WalletError::TransactionCreationFailed(_)));
+    std::assert_matches!(err, WalletError::TransactionCreationFailed(_));
 }

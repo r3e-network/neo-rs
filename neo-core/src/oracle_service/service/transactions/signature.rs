@@ -31,10 +31,7 @@ impl OracleService {
             message.extend_from_slice(&request_id.to_le_bytes());
             message.extend_from_slice(&tx_sign);
 
-            let sign = match key.sign(&message) {
-                Ok(sign) => sign,
-                Err(_) => return,
-            };
+            let Ok(sign) = key.sign(&message) else { return };
 
             let payload = serde_json::json!({
                 "id": counter,
@@ -49,12 +46,9 @@ impl OracleService {
             });
 
             for node in settings.nodes.iter() {
-                let url = match url::Url::parse(node) {
-                    Ok(url) => url,
-                    Err(_) => {
-                        warn!(target: "neo::oracle", node = %node, "invalid oracle node endpoint");
-                        continue;
-                    }
+                let Ok(url) = url::Url::parse(node) else {
+                    warn!(target: "neo::oracle", node = %node, "invalid oracle node endpoint");
+                    continue;
                 };
                 let res = https
                     .client()

@@ -29,9 +29,8 @@ impl OracleContract {
         let prefix = StorageKey::create(Self::ID, PREFIX_REQUEST);
         let mut results = Vec::new();
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
-            let id = match Self::parse_request_id(&key) {
-                Some(value) => value,
-                None => continue,
+            let Some(id) = Self::parse_request_id(&key) else {
+                continue;
             };
             let request = self.deserialize_request(&item.value_bytes())?;
             results.push((id, self.to_public_request(&request)));

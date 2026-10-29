@@ -568,10 +568,10 @@ mod tests {
         let message = NetworkMessage::new(ping);
         let result = connection.send_message(&message).await;
 
-        assert!(matches!(
+        std::assert_matches!(
             result,
             Err(NetworkError::ConnectionError(msg)) if msg.contains("Connection not active")
-        ));
+        );
     }
 
     #[tokio::test]

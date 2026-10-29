@@ -267,29 +267,29 @@ mod tests {
     fn converts_primitive_stack_values_without_local_stack_item() {
         let int_descriptor =
             InteropParameterDescriptor::new("value".to_string(), InteropParameterType::Int);
-        assert!(matches!(
+        std::assert_matches!(
             int_descriptor
                 .convert(&StackValue::BigInteger(vec![42]))
                 .unwrap(),
             ConvertedValue::Int(42)
-        ));
+        );
 
         let string_descriptor =
             InteropParameterDescriptor::new("value".to_string(), InteropParameterType::String);
-        assert!(matches!(
+        std::assert_matches!(
             string_descriptor
                 .convert(&StackValue::ByteString(b"neo".to_vec()))
                 .unwrap(),
             ConvertedValue::String(value) if value == "neo"
-        ));
+        );
 
         let generic_descriptor =
             InteropParameterDescriptor::new("value".to_string(), InteropParameterType::StackItem);
-        assert!(matches!(
+        std::assert_matches!(
             generic_descriptor
                 .convert(&StackValue::Array(vec![StackValue::Boolean(true)]))
                 .unwrap(),
             ConvertedValue::StackValue(StackValue::Array(values)) if values == vec![StackValue::Boolean(true)]
-        ));
+        );
     }
 }

@@ -96,9 +96,8 @@ exclude = [
 [workspace.package]
 version = "0.19.1"
 edition = "2024"
-# R14: the Cargo.lock pins `time 0.3.47` (via tracing-appender), whose own
-# manifest requires rustc 1.88 — 1.85 could not build the locked tree.
-rust-version = "1.88"
+# MSRV equals the rust-toolchain.toml pin; see docs/TOOLCHAIN.md.
+rust-version = "1.99"
 authors = [
     "R3E Network <jimmy@r3e.network>"
 ]
@@ -112,25 +111,27 @@ readme = "README.md"
 
 [workspace.metadata]
 # Minimum supported Rust version policy
-msrv = "1.88"
+msrv = "1.99"
 
+# Inherited by every member via `[lints] workspace = true`. CI runs clippy with
+# CARGO_BUILD_WARNINGS=deny, so every `warn` here is a hard gate in CI.
+# Policy: docs/TOOLCHAIN.md#lint-policy.
 [workspace.lints.clippy]
-# Enable pedantic lint group for improved code quality
-pedantic = { level = "warn", priority = -1 }
+# Adopted idioms (docs/TOOLCHAIN.md#adopted-language-and-library-features).
+manual_let_else = "warn"
 
-# Allow certain pedantic lints that are too noisy or not applicable
-module_name_repetitions = "allow"
-must_use_candidate = "allow"
-return_self_not_must_use = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-doc_markdown = "allow"
-# Allow for complex types in public APIs (common in blockchain code)
+# Style lints that do not fit this codebase (moved from the CI command line).
+doc_overindented_list_items = "allow"
+doc_lazy_continuation = "allow"
+large_enum_variant = "allow"
+module_inception = "allow"
 type_complexity = "allow"
-# Allow similar names (hash/Hash, block/Block) which are idiomatic
-similar_names = "allow"
-# Allow for builder pattern and fluent APIs
-missing_const_for_fn = "allow"
+len_zero = "allow"
+nonminimal_bool = "allow"
+enum_variant_names = "allow"
+too_many_arguments = "allow"
+field_reassign_with_default = "allow"
+assertions_on_constants = "allow"
 
 [workspace.dependencies]
 # === Internal crates ===

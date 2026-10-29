@@ -86,7 +86,7 @@ deployment/mainnet/
 
 ### Containerization (2 files)
 1. `Dockerfile` - Multi-stage production build
-   - Rust 1.88 builder
+   - Rust 1.99.1 builder
    - Debian slim runtime
    - Security hardening
    - Health checks
@@ -139,7 +139,7 @@ deployment/mainnet/
 - **Network**: 100 Mbps minimum (1 Gbps recommended)
 
 ### Software Dependencies
-- Rust 1.88+ (for building)
+- Rust 1.99+ (for building)
 - C++ compiler (GCC 11+/Clang 15+ on Linux, MSVC 2022+ on Windows)
 - RocksDB libraries
 - OpenSSL 3.0+

@@ -743,7 +743,7 @@ mod tests {
     #[test]
     fn test_error_creation() {
         let error = VmError::parse("test message");
-        assert!(matches!(error, VmError::Parse { .. }));
+        std::assert_matches!(error, VmError::Parse { .. });
         assert_eq!(error.to_string(), "Parse error: test message");
     }
 

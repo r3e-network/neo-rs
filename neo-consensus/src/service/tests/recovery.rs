@@ -320,10 +320,7 @@ async fn recovery_message_rejects_duplicate_compact_validators_and_clears_flag()
     sign_payload(&service, &mut payload, &keys[1]);
 
     let result = service.process_message(payload);
-    assert!(matches!(
-        result,
-        Err(crate::ConsensusError::DuplicateValidator(1))
-    ));
+    std::assert_matches!(result, Err(crate::ConsensusError::DuplicateValidator(1)));
     assert!(!service.is_recovering());
 }
 

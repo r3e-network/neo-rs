@@ -72,3 +72,6 @@ harness = false
 
 [features]
 default = []
+
+[lints]
+workspace = true

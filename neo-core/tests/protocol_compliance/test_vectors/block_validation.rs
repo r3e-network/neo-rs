@@ -68,8 +68,3 @@ pub fn load_mainnet_vectors() -> MainnetBlockVectors {
 pub fn mainnet_block_vectors() -> Vec<BlockValidationVector> {
     load_mainnet_vectors().blocks
 }
-
-/// Load test vectors from a JSON string.
-pub fn load_vectors_from_json(json_str: &str) -> Vec<BlockValidationVector> {
-    serde_json::from_str(json_str).expect("Failed to parse test vectors")
-}

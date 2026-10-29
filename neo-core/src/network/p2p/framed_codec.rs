@@ -154,7 +154,7 @@ mod tests {
 
         let result = codec.decode(&mut input);
 
-        assert!(matches!(result, Err(NetworkError::InvalidMessage(_))));
+        std::assert_matches!(result, Err(NetworkError::InvalidMessage(_)));
     }
 
     #[test]
@@ -244,7 +244,7 @@ mod tests {
         let mut framed = FramedRead::new(reader, NeoMessageCodec::new(1));
         let result = framed.next().await.expect("framed reader yields error");
 
-        assert!(matches!(result, Err(NetworkError::InvalidMessage(_))));
+        std::assert_matches!(result, Err(NetworkError::InvalidMessage(_)));
     }
 
     #[tokio::test]

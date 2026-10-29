@@ -1,7 +1,7 @@
 # Neo-rs Architecture Documentation
 
-> **Version**: 0.15.0
-> **Last Updated**: 2026-08-29
+> **Version**: 0.19.1
+> **Last Updated**: 2026-10-29
 > **Target Compatibility**: Neo N3 v3.10.1
 
 This document provides comprehensive architecture documentation for the neo-rs project, a professional Rust implementation of the Neo N3 blockchain node.
@@ -40,7 +40,18 @@ from services; foundation crates contain reusable data, storage, I/O, and
 configuration primitives. `neo-core::rpc` contains only shared core error
 models; the full RPC implementation lives in `neo-rpc`.
 
-### 1.2 Component Relationships
+Two wire and configuration facts have a single implementation:
+
+* The unsigned Neo N3 block header (the hash preimage) is
+  `neo-core/src/ledger/header_wire.rs`. The ledger `BlockHeader` and the P2P
+  `Header` both call it. `neo-core/tests/header_wire_parity.rs` checks that a
+  header encoded by either type decodes as the other.
+* Hardfork activation heights are named fields on
+  `neo-config::HardforkHeights`. `hardfork_height` in
+  `neo-core/src/protocol_settings.rs` is an exhaustive match onto
+  `Hardfork`, and RPC `getversion` lists the map that match fills. Adding a
+  hardfork variant fails to compile until the match reads the new field.
+
 ### 1.2 Component Relationships
 
 ```

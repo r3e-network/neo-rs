@@ -17,3 +17,6 @@ clap = { version = "4.0", features = ["derive"] }
 [[bin]]
 name = "rust-validator"
 path = "rust_validator_cli.rs"
+
+[lints]
+workspace = true

@@ -141,9 +141,8 @@ impl OracleContract {
     pub(super) fn deserialize_request(&self, bytes: &[u8]) -> Result<PendingRequest> {
         let stack_value =
             BinarySerializer::deserialize_stack_value(bytes).map_err(Error::serialization)?;
-        let items = match stack_value {
-            StackValue::Array(items) => items,
-            _ => return Err(Error::serialization("OracleRequest must be an Array")),
+        let StackValue::Array(items) = stack_value else {
+            return Err(Error::serialization("OracleRequest must be an Array"));
         };
         if items.len() < 7 {
             return Err(Error::serialization(format!(

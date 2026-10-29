@@ -57,7 +57,9 @@ jobs:
             zlib1g-dev
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2

@@ -74,9 +74,8 @@ impl ContractManagement {
         store_cache: &StoreCache,
         id: i32,
     ) -> Result<Option<ContractState>> {
-        let hash = match Self::get_contract_hash_by_id_from_store_cache(store_cache, id)? {
-            Some(hash) => hash,
-            None => return Ok(None),
+        let Some(hash) = Self::get_contract_hash_by_id_from_store_cache(store_cache, id)? else {
+            return Ok(None);
         };
         Self::get_contract_from_store_cache(store_cache, &hash)
     }

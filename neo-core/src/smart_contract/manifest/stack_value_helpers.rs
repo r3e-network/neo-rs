@@ -29,9 +29,8 @@ pub(super) fn decode_stack_value_objects<T>(
 where
     T: Default,
 {
-    let items = match stack_value {
-        StackValue::Array(items) | StackValue::Struct(items) => items,
-        _ => return Ok(None),
+    let (StackValue::Array(items) | StackValue::Struct(items)) = stack_value else {
+        return Ok(None);
     };
 
     items

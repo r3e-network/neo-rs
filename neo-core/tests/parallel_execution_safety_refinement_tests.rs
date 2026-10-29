@@ -29,7 +29,7 @@ fn make_key(value: u64) -> neo_core::UInt256 {
 
 #[test]
 fn rw_set_disjointness_test() {
-    /// Lemma verification: Independent txs have disjoint rw sets
+    // Lemma verification: Independent txs have disjoint rw sets
     let mut detector = ConflictDetector::new();
 
     // Tx 0 uses keys [1, 2, 3]
@@ -57,7 +57,7 @@ fn rw_set_disjointness_test() {
 
 #[test]
 fn rw_set_write_write_conflict_detection() {
-    /// Lemma verification: Concurrent writes to same key detected
+    // Lemma verification: Concurrent writes to same key detected
     let mut detector = ConflictDetector::new();
 
     // Both write same key
@@ -79,7 +79,7 @@ fn rw_set_write_write_conflict_detection() {
 
 #[test]
 fn rw_set_write_read_conflict_detection() {
-    /// Lemma verification: Write to key another reads creates conflict
+    // Lemma verification: Write to key another reads creates conflict
     let mut detector = ConflictDetector::new();
 
     // Tx 0 reads key 50
@@ -102,7 +102,7 @@ fn rw_set_write_read_conflict_detection() {
 
 #[test]
 fn rw_set_partial_overlap_detection() {
-    /// Lemma verification: Any shared access triggers conflict
+    // Lemma verification: Any shared access triggers conflict
     let mut detector = ConflictDetector::new();
 
     // Tx 0 uses keys [10, 20, 30]
@@ -129,7 +129,7 @@ fn rw_set_partial_overlap_detection() {
 
 #[test]
 fn rw_set_multiple_independent_groups() {
-    /// Lemma verification: Multiple groups can execute in parallel
+    // Lemma verification: Multiple groups can execute in parallel
     let mut detector = ConflictDetector::new();
 
     // Group A: Keys [1, 2, 3]
@@ -152,7 +152,7 @@ fn rw_set_multiple_independent_groups() {
 
 #[test]
 fn rw_set_complete_conflict_graph() {
-    /// Lemma verification: Complete conflict forces sequential execution
+    // Lemma verification: Complete conflict forces sequential execution
     let mut detector = ConflictDetector::new();
 
     // All write same key → complete conflict graph

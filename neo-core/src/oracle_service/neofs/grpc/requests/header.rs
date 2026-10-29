@@ -23,14 +23,11 @@ impl OracleNeoFsProtocol {
             Ok(object) => object,
             Err(msg) => return (OracleResponseCode::Error, msg),
         };
-        let header = match object.header.as_ref() {
-            Some(h) => h,
-            None => {
-                return (
-                    OracleResponseCode::Error,
-                    "object has no header".to_string(),
-                );
-            }
+        let Some(header) = object.header.as_ref() else {
+            return (
+                OracleResponseCode::Error,
+                "object has no header".to_string(),
+            );
         };
         let payload = build_neofs_object_payload(header, &object.payload);
         use base64::Engine as _;

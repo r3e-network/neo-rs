@@ -37,10 +37,10 @@ pub(super) async fn read_limited_body(
     response: reqwest::Response,
     max_len: usize,
 ) -> Result<Vec<u8>, OracleResponseCode> {
-    if let Some(len) = response.content_length() {
-        if len as usize > max_len {
-            return Err(OracleResponseCode::ResponseTooLarge);
-        }
+    if let Some(len) = response.content_length()
+        && len as usize > max_len
+    {
+        return Err(OracleResponseCode::ResponseTooLarge);
     }
 
     let mut body = Vec::new();

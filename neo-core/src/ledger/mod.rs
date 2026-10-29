@@ -25,6 +25,9 @@ pub mod blockchain_application_executed;
 pub mod genesis;
 /// Header caching for sync.
 pub mod header_cache;
+/// Shared Neo N3 block-header wire fields. Both `BlockHeader` and the P2P
+/// `Header` read and write this layout; neither may invent its own field order.
+pub(crate) mod header_wire;
 /// Ledger context for operations.
 pub mod ledger_context;
 /// Transaction memory pool.

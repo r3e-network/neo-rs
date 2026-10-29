@@ -21,8 +21,9 @@ jobs:
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@master
       with:
+        toolchain: "1.99.1"
         components: rustfmt
     - run: cargo fmt --all --check
   clippy:
@@ -43,8 +44,9 @@ jobs:
         packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@master
       with:
+        toolchain: "1.99.1"
         components: clippy
     - name: Setup sccache
       uses: mozilla-actions/sccache-action@v0.0.7
@@ -58,13 +60,12 @@ jobs:
       uses: Swatinem/rust-cache@v2
       with:
         shared-key: ci-lint
+    # Lint levels live in [workspace.lints] (Cargo.toml); CI only turns every
+    # remaining warning, rustc and clippy alike, into an error.
     - name: Clippy
-      run: "cargo clippy --workspace --all-targets --profile test -- \\\n  -D clippy::all\
-        \ \\\n  -A clippy::doc_overindented_list_items \\\n  -A clippy::doc_lazy_continuation\
-        \ \\\n  -A clippy::large_enum_variant \\\n  -A clippy::module_inception \\\
-        \n  -A clippy::type_complexity \\\n  -A clippy::len_zero \\\n  -A clippy::nonminimal_bool\
-        \ \\\n  -A clippy::enum_variant_names \\\n  -A clippy::too_many_arguments\
-        \ \\\n  -A clippy::field_reassign_with_default \\\n  -A clippy::assertions_on_constants\n"
+      env:
+        CARGO_BUILD_WARNINGS: deny
+      run: cargo clippy --workspace --all-targets --profile test --keep-going
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -83,7 +84,9 @@ jobs:
         packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "1.99.1"
     - name: Setup sccache
       uses: mozilla-actions/sccache-action@v0.0.7
       continue-on-error: true
@@ -122,7 +125,9 @@ jobs:
         packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "1.99.1"
     - name: Setup sccache
       uses: mozilla-actions/sccache-action@v0.0.7
       continue-on-error: true
@@ -200,7 +205,9 @@ jobs:
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "1.99.1"
     - name: Cache cargo
       uses: Swatinem/rust-cache@v2
       with:
@@ -230,7 +237,9 @@ jobs:
         packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "1.99.1"
     - name: Cache cargo registry & git
       uses: Swatinem/rust-cache@v2
       with:
@@ -241,8 +250,8 @@ jobs:
       run: cargo check --locked -p neo-node --features full
     - name: Test neo-core with full features
       run: cargo test --locked -p neo-core --features full --lib
-  msrv:
-    name: MSRV (1.88)
+  stable-forward:
+    name: Forward compatibility (latest stable)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -259,17 +268,16 @@ jobs:
         packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: "1.88"
+    - uses: dtolnay/rust-toolchain@stable
     - name: Cache cargo registry & git
       uses: Swatinem/rust-cache@v2
       with:
-        shared-key: ci-msrv
-    # R14: enforce the declared rust-version with a dedicated lane; stable-only
-    # CI hides lockfile/dependency MSRV breakage.
-    - name: Check workspace with declared MSRV
-      run: cargo check --locked --workspace
+        shared-key: ci-stable-forward
+    # MSRV equals the rust-toolchain.toml pin, which every other lane already
+    # builds with (docs/TOOLCHAIN.md). This lane overrides the pin with `+stable`
+    # so a new stable release that breaks the build shows up before the pin moves.
+    - name: Check workspace with latest stable
+      run: cargo +stable check --locked --workspace --all-targets
   features:
     name: Feature Matrix (${{ matrix.features }})
     runs-on: ubuntu-latest
@@ -297,7 +305,9 @@ jobs:
         packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "1.99.1"
     - name: Cache cargo registry & git
       uses: Swatinem/rust-cache@v2
       with:

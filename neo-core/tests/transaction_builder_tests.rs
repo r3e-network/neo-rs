@@ -66,10 +66,7 @@ fn transaction_builder_adds_attributes() {
         })
         .build();
     assert_eq!(tx.attributes().len(), 1);
-    assert!(matches!(
-        tx.attributes()[0],
-        TransactionAttribute::HighPriority
-    ));
+    std::assert_matches!(tx.attributes()[0], TransactionAttribute::HighPriority);
 }
 
 #[test]

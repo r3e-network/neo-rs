@@ -86,9 +86,8 @@ impl OracleResponse {
         }
 
         let oracle = OracleContract::new();
-        let request = match oracle.get_request(_snapshot, self.id) {
-            Ok(Some(request)) => request,
-            _ => return false,
+        let Ok(Some(request)) = oracle.get_request(_snapshot, self.id) else {
+            return false;
         };
 
         // The response transaction must consume exactly the GAS reserved by the request.
@@ -102,9 +101,8 @@ impl OracleResponse {
         // Oracle responses are authorized by the BFT address of the designated oracle
         // nodes for the next block (the same height used by the C# implementation).
         let ledger = LedgerContract::new();
-        let current_index = match ledger.current_index(_snapshot) {
-            Ok(index) => index,
-            Err(_) => return false,
+        let Ok(current_index) = ledger.current_index(_snapshot) else {
+            return false;
         };
         let designated = match RoleManagement::new().get_designated_by_role_at(
             _snapshot,

@@ -127,8 +127,7 @@ async fn actor_of_rejects_duplicate_name() -> ActorRuntimeResult<()> {
         .actor_of(Props::new(CounterActor::default), "counter")
         .expect_err("duplicate actor name should fail");
 
-    assert!(
-        matches!(err, ActorRuntimeError::System(message) if message.contains(&first.path().to_string()))
+    std::assert_matches!(err, ActorRuntimeError::System(message) if message.contains(&first.path().to_string())
     );
 
     system.shutdown().await?;
@@ -465,10 +464,10 @@ fn default_mailbox_prioritizes_system_messages() {
     mailbox.enqueue(MailboxMessage::System(SystemMessage::Stop));
     mailbox.enqueue(MailboxMessage::User(Envelope::new("second", None)));
 
-    assert!(matches!(
+    std::assert_matches!(
         mailbox.dequeue(),
         Some(MailboxMessage::System(SystemMessage::Stop))
-    ));
+    );
 
     let first = mailbox.dequeue().expect("first user message");
     assert_eq!(

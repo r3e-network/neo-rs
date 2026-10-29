@@ -117,10 +117,10 @@ async fn relay_directly_announces_inventory_to_remote_nodes() {
         .expect("timed out waiting for relay command")
         .expect("relay command");
 
-    assert!(matches!(
+    std::assert_matches!(
         command,
         RemoteNodeCommand::RelayInventory(RelayInventory::Extensible(_))
-    ));
+    );
 
     system.shutdown().await.expect("shutdown");
 }
@@ -161,12 +161,12 @@ async fn send_directly_pushes_full_inventory_to_remote_nodes() {
         .expect("timed out waiting for send command")
         .expect("send command");
 
-    assert!(matches!(
+    std::assert_matches!(
         command,
         RemoteNodeCommand::SendInventory {
             inventory: RelayInventory::Extensible(_)
         }
-    ));
+    );
 
     system.shutdown().await.expect("shutdown");
 }

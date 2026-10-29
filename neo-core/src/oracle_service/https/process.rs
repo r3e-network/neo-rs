@@ -121,49 +121,49 @@ impl OracleHttpsProtocol {
 
             // Handle redirects
             if let Some(location) = response.headers().get(reqwest::header::LOCATION) {
-                if let Ok(location) = location.to_str() {
-                    if let Ok(next_uri) = url::Url::parse(location) {
-                        // R15: never follow a scheme-downgrading redirect; an
-                        // HTTPS origin could otherwise steer this node to a
-                        // plain-HTTP target whose TLS identity was never
-                        // validated.
-                        if uri.scheme() == "https" && next_uri.scheme() != "https" {
-                            tracing::warn!(
-                                target: "neo::oracle",
-                                url = %next_uri,
-                                "Redirect downgrades from HTTPS; refusing"
-                            );
-                            return (OracleResponseCode::Forbidden, String::new());
-                        }
-
-                        // Validate redirect URL
-                        if let Err(reason) = validate_url_for_ssrf(next_uri.as_str()) {
-                            tracing::warn!(
-                                target: "neo::oracle",
-                                url = %next_uri,
-                                reason = %reason,
-                                "Redirect URL SSRF validation failed"
-                            );
-                            return (OracleResponseCode::Forbidden, String::new());
-                        }
-
-                        // Check redirect URL against whitelist/blacklist
-                        if !settings.is_url_allowed(next_uri.as_str()) {
-                            tracing::warn!(
-                                target: "neo::oracle",
-                                url = %next_uri,
-                                "Redirect URL blocked by whitelist/blacklist"
-                            );
-                            return (OracleResponseCode::Forbidden, String::new());
-                        }
-
-                        uri = next_uri;
-                        if redirects > 0 {
-                            redirects -= 1;
-                            continue;
-                        }
-                        return (OracleResponseCode::Timeout, String::new());
+                if let Ok(location) = location.to_str()
+                    && let Ok(next_uri) = url::Url::parse(location)
+                {
+                    // R15: never follow a scheme-downgrading redirect; an
+                    // HTTPS origin could otherwise steer this node to a
+                    // plain-HTTP target whose TLS identity was never
+                    // validated.
+                    if uri.scheme() == "https" && next_uri.scheme() != "https" {
+                        tracing::warn!(
+                            target: "neo::oracle",
+                            url = %next_uri,
+                            "Redirect downgrades from HTTPS; refusing"
+                        );
+                        return (OracleResponseCode::Forbidden, String::new());
                     }
+
+                    // Validate redirect URL
+                    if let Err(reason) = validate_url_for_ssrf(next_uri.as_str()) {
+                        tracing::warn!(
+                            target: "neo::oracle",
+                            url = %next_uri,
+                            reason = %reason,
+                            "Redirect URL SSRF validation failed"
+                        );
+                        return (OracleResponseCode::Forbidden, String::new());
+                    }
+
+                    // Check redirect URL against whitelist/blacklist
+                    if !settings.is_url_allowed(next_uri.as_str()) {
+                        tracing::warn!(
+                            target: "neo::oracle",
+                            url = %next_uri,
+                            "Redirect URL blocked by whitelist/blacklist"
+                        );
+                        return (OracleResponseCode::Forbidden, String::new());
+                    }
+
+                    uri = next_uri;
+                    if redirects > 0 {
+                        redirects -= 1;
+                        continue;
+                    }
+                    return (OracleResponseCode::Timeout, String::new());
                 }
                 return (OracleResponseCode::Timeout, String::new());
             }
@@ -199,17 +199,17 @@ impl OracleHttpsProtocol {
             }
 
             // Check content length header if present
-            if let Some(len) = response.content_length() {
-                if len as usize > settings.max_response_size {
-                    tracing::warn!(
-                        target: "neo::oracle",
-                        url = %uri,
-                        size = len,
-                        max_size = settings.max_response_size,
-                        "Response too large (Content-Length)"
-                    );
-                    return (OracleResponseCode::ResponseTooLarge, String::new());
-                }
+            if let Some(len) = response.content_length()
+                && len as usize > settings.max_response_size
+            {
+                tracing::warn!(
+                    target: "neo::oracle",
+                    url = %uri,
+                    size = len,
+                    max_size = settings.max_response_size,
+                    "Response too large (Content-Length)"
+                );
+                return (OracleResponseCode::ResponseTooLarge, String::new());
             }
 
             // Validate charset (only UTF-8 allowed)
@@ -224,16 +224,17 @@ impl OracleHttpsProtocol {
                         .find_map(|part| part.strip_prefix("charset="))
                         .map(|value| value.trim().to_ascii_lowercase())
                 });
-            if let Some(charset) = charset {
-                if charset != "utf-8" && charset != "utf8" {
-                    tracing::warn!(
-                        target: "neo::oracle",
-                        url = %uri,
-                        charset = %charset,
-                        "Non-UTF-8 charset not supported"
-                    );
-                    return (OracleResponseCode::Error, String::new());
-                }
+            if let Some(charset) = charset
+                && charset != "utf-8"
+                && charset != "utf8"
+            {
+                tracing::warn!(
+                    target: "neo::oracle",
+                    url = %uri,
+                    charset = %charset,
+                    "Non-UTF-8 charset not supported"
+                );
+                return (OracleResponseCode::Error, String::new());
             }
 
             // Read response body with size limit

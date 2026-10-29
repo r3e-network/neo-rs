@@ -83,22 +83,16 @@ impl TokenManagement {
         let context = engine.get_native_storage_context(&self.hash())?;
         let token_key = Self::token_state_key_suffix(&asset_id);
 
-        let token_data = match engine.get_storage_item(&context, &token_key) {
-            Some(data) => data,
-            None => {
-                return Err(CoreError::native_contract(
-                    "TokenManagement.mintNFT: asset not found",
-                ));
-            }
+        let Some(token_data) = engine.get_storage_item(&context, &token_key) else {
+            return Err(CoreError::native_contract(
+                "TokenManagement.mintNFT: asset not found",
+            ));
         };
 
-        let token_state = match Self::deserialize_token_state(&token_data) {
-            Some(state) => state,
-            None => {
-                return Err(CoreError::native_contract(
-                    "TokenManagement.mintNFT: invalid token state",
-                ));
-            }
+        let Some(token_state) = Self::deserialize_token_state(&token_data) else {
+            return Err(CoreError::native_contract(
+                "TokenManagement.mintNFT: invalid token state",
+            ));
         };
 
         if token_state.token_type != TokenType::NonFungible {
@@ -167,22 +161,16 @@ impl TokenManagement {
         let context = engine.get_native_storage_context(&self.hash())?;
         let nft_key = Self::nft_state_key_suffix(&nft_id);
 
-        let nft_data = match engine.get_storage_item(&context, &nft_key) {
-            Some(data) => data,
-            None => {
-                return Err(CoreError::native_contract(
-                    "TokenManagement.burnNFT: NFT not found",
-                ));
-            }
+        let Some(nft_data) = engine.get_storage_item(&context, &nft_key) else {
+            return Err(CoreError::native_contract(
+                "TokenManagement.burnNFT: NFT not found",
+            ));
         };
 
-        let nft_state = match Self::deserialize_nft_state(&nft_data) {
-            Some(state) => state,
-            None => {
-                return Err(CoreError::native_contract(
-                    "TokenManagement.burnNFT: invalid NFT state",
-                ));
-            }
+        let Some(nft_state) = Self::deserialize_nft_state(&nft_data) else {
+            return Err(CoreError::native_contract(
+                "TokenManagement.burnNFT: invalid NFT state",
+            ));
         };
 
         if nft_state.owner != engine.calling_script_hash()
@@ -194,22 +182,16 @@ impl TokenManagement {
         }
 
         let token_key = Self::token_state_key_suffix(&nft_state.asset_id);
-        let token_data = match engine.get_storage_item(&context, &token_key) {
-            Some(data) => data,
-            None => {
-                return Err(CoreError::native_contract(
-                    "TokenManagement.burnNFT: asset not found",
-                ));
-            }
+        let Some(token_data) = engine.get_storage_item(&context, &token_key) else {
+            return Err(CoreError::native_contract(
+                "TokenManagement.burnNFT: asset not found",
+            ));
         };
 
-        let mut token_state = match Self::deserialize_token_state(&token_data) {
-            Some(state) => state,
-            None => {
-                return Err(CoreError::native_contract(
-                    "TokenManagement.burnNFT: invalid token state",
-                ));
-            }
+        let Some(mut token_state) = Self::deserialize_token_state(&token_data) else {
+            return Err(CoreError::native_contract(
+                "TokenManagement.burnNFT: invalid token state",
+            ));
         };
 
         token_state.total_supply -= 1;
@@ -256,22 +238,16 @@ impl TokenManagement {
         let context = engine.get_native_storage_context(&self.hash())?;
         let nft_key = Self::nft_state_key_suffix(&nft_id);
 
-        let nft_data = match engine.get_storage_item(&context, &nft_key) {
-            Some(data) => data,
-            None => {
-                return Err(CoreError::native_contract(
-                    "TokenManagement.transferNFT: NFT not found",
-                ));
-            }
+        let Some(nft_data) = engine.get_storage_item(&context, &nft_key) else {
+            return Err(CoreError::native_contract(
+                "TokenManagement.transferNFT: NFT not found",
+            ));
         };
 
-        let mut nft_state = match Self::deserialize_nft_state(&nft_data) {
-            Some(state) => state,
-            None => {
-                return Err(CoreError::native_contract(
-                    "TokenManagement.transferNFT: invalid NFT state",
-                ));
-            }
+        let Some(mut nft_state) = Self::deserialize_nft_state(&nft_data) else {
+            return Err(CoreError::native_contract(
+                "TokenManagement.transferNFT: invalid NFT state",
+            ));
         };
 
         if nft_state.owner != from {

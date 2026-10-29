@@ -164,9 +164,8 @@ pub fn set_item(
         }
         StackValue::Buffer(bytes) => {
             let idx = buffer_index(&key, "SETITEM: buffer requires integer key and value")?;
-            let value = match value {
-                StackValue::Integer(value) => value,
-                _ => return Err("SETITEM: buffer requires integer key and value".into()),
+            let StackValue::Integer(value) = value else {
+                return Err("SETITEM: buffer requires integer key and value".into());
             };
             if idx >= bytes.len() {
                 return Err("SETITEM: buffer index out of range".into());

@@ -8,7 +8,7 @@ Professional Rust implementation of the Neo N3 blockchain node and CLI tools.
 
 [![Build Status](https://github.com/r3e-network/neo-rs/workflows/CI/badge.svg)](https://github.com/r3e-network/neo-rs/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Rust Version](https://img.shields.io/badge/rust-1.88+-blue.svg)](https://www.rust-lang.org)
+[![Rust Version](https://img.shields.io/badge/rust-1.99+-blue.svg)](https://www.rust-lang.org)
 
 ## Quick Start
 
@@ -85,6 +85,7 @@ curl -s http://localhost:10332 -H 'Content-Type: application/json' \
 | [Architecture Details](./docs/ARCHITECTURE.md) | Layering and service boundaries |
 | [Architecture Comparison](./docs/ARCHITECTURE_COMPARISON.md) | C# vs Rust implementation differences |
 | [Style Guide](./docs/STYLE.md) | Code organization, naming conventions, and standards |
+| [Toolchain Policy](./docs/TOOLCHAIN.md) | Pinned Rust version, MSRV, lint policy, compiler-level performance |
 | [Plugin System](./docs/PLUGIN_SYSTEM.md) | Plugin architecture and adding new services |
 | [CLI Architecture](./docs/CLI_ARCHITECTURE.md) | CLI design and wallet operation model |
 | [Deployment](./docs/DEPLOYMENT.md) | Production deployment guide |

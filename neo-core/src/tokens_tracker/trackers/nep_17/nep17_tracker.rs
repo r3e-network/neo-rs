@@ -153,7 +153,7 @@ impl Nep17Tracker {
             return;
         }
 
-        let mut engine = match ApplicationEngine::new(
+        let Ok(mut engine) = ApplicationEngine::new(
             crate::smart_contract::TriggerType::Application,
             None,
             Arc::new(snapshot.clone()),
@@ -161,9 +161,8 @@ impl Nep17Tracker {
             self.base.neo_system.settings().clone(),
             17_000_000,
             None,
-        ) {
-            Ok(engine) => engine,
-            Err(_) => return,
+        ) else {
+            return;
         };
         if engine
             .load_script(sb.to_array(), CallFlags::ALL, Some(record.asset))
@@ -234,12 +233,10 @@ impl Tracker for Nep17Tracker {
                     continue;
                 }
 
-                let contract = match ContractManagement::get_contract_from_snapshot(
-                    snapshot,
-                    &notify.script_hash,
-                ) {
-                    Ok(Some(contract)) => contract,
-                    _ => continue,
+                let Ok(Some(contract)) =
+                    ContractManagement::get_contract_from_snapshot(snapshot, &notify.script_hash)
+                else {
+                    continue;
                 };
 
                 if !contract.manifest.supports_standard("NEP-17") {

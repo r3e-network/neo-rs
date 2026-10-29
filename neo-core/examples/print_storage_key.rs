@@ -66,10 +66,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let raw = item.to_value();
             println!("value_hex=0x{}", hex::encode(&raw));
             println!("value_bigint={}", item.to_bigint());
-            if let Ok(stack_value) = BinarySerializer::deserialize_stack_value(&raw) {
-                if let Some(balance) = account_balance_from_stack_value(&stack_value) {
-                    println!("value_account_balance={balance}");
-                }
+            if let Ok(stack_value) = BinarySerializer::deserialize_stack_value(&raw)
+                && let Some(balance) = account_balance_from_stack_value(&stack_value)
+            {
+                println!("value_account_balance={balance}");
             }
         }
         None => println!("value_hex=<none>"),

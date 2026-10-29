@@ -136,10 +136,10 @@ fn nep6_wallet_can_open_read_only_without_password() -> WalletResult<()> {
     let reopened = Nep6Wallet::from_file_with_password(&wallet_path, None, Arc::clone(&settings))
         .expect("open wallet without password");
 
-    assert!(matches!(
+    std::assert_matches!(
         rt.block_on(reopened.sign(b"read-only", &script_hash)),
         Err(WalletError::AccountLocked)
-    ));
+    );
     assert!(rt.block_on(reopened.unlock(password))?);
 
     let signature = rt.block_on(reopened.sign(b"read-only", &script_hash))?;
@@ -184,10 +184,10 @@ fn nep6_wallet_changes_password_and_unlocks() -> WalletResult<()> {
     assert!(key_pair.verify(payload, &signature).expect("verify"));
 
     // Unlocking with old password should now fail
-    assert!(matches!(
+    std::assert_matches!(
         rt.block_on(wallet.unlock(old_password)),
         Err(WalletError::InvalidPassword)
-    ));
+    );
 
     // verify_password with new password returns true, old returns false
     assert!(rt.block_on(wallet.verify_password(new_password))?);

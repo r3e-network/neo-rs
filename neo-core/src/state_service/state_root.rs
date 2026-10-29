@@ -124,9 +124,8 @@ impl StateRoot {
     /// - verification script matches the expected BFT multi-sig contract
     /// - signatures satisfy the required threshold and are valid over `network || hash`
     pub fn verify(&self, settings: &ProtocolSettings, snapshot: &DataCache) -> bool {
-        let witness = match &self.witness {
-            Some(witness) => witness,
-            None => return false,
+        let Some(witness) = &self.witness else {
+            return false;
         };
 
         // Resolve the validator set at the given index (Role.StateValidator).
@@ -177,12 +176,10 @@ impl StateRoot {
             return false;
         }
 
-        let signatures = match Helper::parse_multi_sig_invocation(
-            &witness.invocation_script,
-            required_signatures,
-        ) {
-            Some(sigs) => sigs,
-            None => return false,
+        let Some(signatures) =
+            Helper::parse_multi_sig_invocation(&witness.invocation_script, required_signatures)
+        else {
+            return false;
         };
 
         // Sort validators to match the redeem script order.

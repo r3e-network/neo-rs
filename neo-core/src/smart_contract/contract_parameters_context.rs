@@ -232,9 +232,8 @@ impl ContractParametersContext {
                 return Ok(false);
             }
 
-            let item = match self.context_items.get_mut(&hash) {
-                Some(item) => item,
-                None => return Ok(false),
+            let Some(item) = self.context_items.get_mut(&hash) else {
+                return Ok(false);
             };
 
             if item
@@ -294,9 +293,8 @@ impl ContractParametersContext {
             return Ok(false);
         }
 
-        let item = match self.context_items.get_mut(&hash) {
-            Some(item) => item,
-            None => return Ok(false),
+        let Some(item) = self.context_items.get_mut(&hash) else {
+            return Ok(false);
         };
 
         if item.signatures.contains_key(&public_key) {

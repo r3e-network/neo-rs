@@ -212,7 +212,7 @@ max_files = 10
 
 #### Software Requirements
 - **OS**: Linux (Ubuntu 22.04+, Debian 12+) or Windows Server 2022+
-- **Rust**: 1.88+ (for building from source)
+- **Rust**: 1.99+ (for building from source)
 - **C++ Compiler**: 
   - Linux: GCC 11+ or Clang 15+
   - Windows: MSVC 2022+ (MinGW has RocksDB issues)
@@ -250,7 +250,7 @@ cargo build --profile production --features "full" --package neo-node --target x
 
 #### Cross-Platform Build (Docker)
 ```dockerfile
-FROM rust:1.88-bullseye as builder
+FROM rust:1.99.1-bookworm as builder
 RUN apt-get update && apt-get install -y librocksdb-dev clang
 WORKDIR /build
 COPY . .

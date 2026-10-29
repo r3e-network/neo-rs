@@ -79,7 +79,7 @@ fn create_complete_multisig(
 
 #[test]
 fn sort_ordering_deterministic_matching() {
-    /**
+    /*
      * Tests public_key_sorting_lemma theorem
      * Verifies: Keys sorted before verification ensures deterministic mapping
      */
@@ -102,7 +102,7 @@ fn sort_ordering_deterministic_matching() {
 
 #[test]
 fn unsorted_rejects_after_sorting() {
-    /**
+    /*
      * Validates that Rust implementation sorts input keys
      * Original order doesn't matter after internal sorting
      */
@@ -134,7 +134,7 @@ fn unsorted_rejects_after_sorting() {
 
 #[test]
 fn sort_stability_multiple_runs() {
-    /**
+    /*
      * Verifies: Same inputs always produce same sorted order
      * Ensures reproducible verification across runs
      */
@@ -158,7 +158,7 @@ fn sort_stability_multiple_runs() {
 
 #[test]
 fn sort_preserves_key_integrity() {
-    /**
+    /*
      * Validates that sorting doesn't alter key bytes
      * Only reorders, doesn't mutate content
      */
@@ -185,7 +185,7 @@ fn sort_preserves_key_integrity() {
 
 #[test]
 fn exact_duplicate_detection() {
-    /**
+    /*
      * Tests duplicate_key_rejection theorem
      * Identical public keys must cause validation failure
      */
@@ -210,7 +210,7 @@ fn exact_duplicate_detection() {
 
 #[test]
 fn duplicate_at_different_positions() {
-    /**
+    /*
      * Duplicates anywhere in array should fail regardless of position
      */
     let (_public_keys, signatures, _account, pairs) =
@@ -252,7 +252,7 @@ fn duplicate_at_different_positions() {
 
 #[test]
 fn duplicate_breaks_account_binding() {
-    /**
+    /*
      * Validates: Duplicate keys break script hash computation
      * Account binding becomes ambiguous
      */
@@ -273,7 +273,7 @@ fn duplicate_breaks_account_binding() {
 
 #[test]
 fn three_way_duplicate_complexity() {
-    /**
+    /*
      * Edge case: Three identical keys in 3-of-3 scheme
      * Amplified duplicate detection challenge
      */
@@ -301,7 +301,7 @@ fn three_way_duplicate_complexity() {
 
 #[test]
 fn zero_signatures_m_greater_zero() {
-    /**
+    /*
      * Tests insufficient_sig_handling theorem
      * Zero signatures when m > 0 must always fail
      */
@@ -317,7 +317,7 @@ fn zero_signatures_m_greater_zero() {
 
 #[test]
 fn one_short_always_rejected() {
-    /**
+    /*
      * Any count below m fails regardless of validity
      */
     let (public_keys, signatures, account, _pairs) = create_complete_multisig(3, 4, b"one-short");
@@ -335,7 +335,7 @@ fn one_short_always_rejected() {
 
 #[test]
 fn half_below_threshold() {
-    /**
+    /*
      * Even significantly below threshold fails
      */
     let (public_keys, signatures, account, _pairs) =
@@ -354,7 +354,7 @@ fn half_below_threshold() {
 
 #[test]
 fn negative_edge_case_check() {
-    /**
+    /*
      * Boundary: m value validation at extreme ranges
      * Though not directly "negative", validates bounds checking
      */
@@ -383,7 +383,7 @@ fn negative_edge_case_check() {
 
 #[test]
 fn mixed_valid_invalid_one_each() {
-    /**
+    /*
      * Tests partial_failure_localization theorem
      * One invalid sig doesn't prevent counting valid ones, but overall fails
      */
@@ -404,7 +404,7 @@ fn mixed_valid_invalid_one_each() {
 
 #[test]
 fn mixed_valid_invalid_majority_invalid() {
-    /**
+    /*
      * Majority invalid scenario
      */
     let message = b"mixed-majority";
@@ -425,7 +425,7 @@ fn mixed_valid_invalid_majority_invalid() {
 
 #[test]
 fn mixed_valid_invalid_last_one_fails() {
-    /**
+    /*
      * All but last signature valid
      */
     let message = b"mixed-last-fail";
@@ -445,7 +445,7 @@ fn mixed_valid_invalid_last_one_fails() {
 
 #[test]
 fn partial_success_doesnt_count() {
-    /**
+    /*
      * Validates: Valid signatures don't "count" if total < m
      */
     let message = b"partial-no-count";
@@ -464,7 +464,7 @@ fn partial_success_doesnt_count() {
 
 #[test]
 fn independent_signature_validation() {
-    /**
+    /*
      * Each signature validated independently
      * One bad sig doesn't affect others' verification
      */
@@ -492,7 +492,7 @@ fn independent_signature_validation() {
 
 #[test]
 fn ten_of_twenty_committee_scale() {
-    /**
+    /*
      * Real-world enterprise committee scenario
      * Tests scale and performance characteristics
      */
@@ -509,7 +509,7 @@ fn ten_of_twenty_committee_scale() {
 
 #[test]
 fn fifteen_of_twenty_one_committee_standard() {
-    /**
+    /*
      * Neo N3 committee-scale configuration
      */
     let message = b"neo-committee-15of21";
@@ -525,7 +525,7 @@ fn fifteen_of_twenty_one_committee_standard() {
 
 #[test]
 fn twenty_of_thirty_large_org() {
-    /**
+    /*
      * Very large organizational governance model
      */
     let message = b"large-org-20of30";
@@ -541,7 +541,7 @@ fn twenty_of_thirty_large_org() {
 
 #[test]
 fn eleven_of_seventeen_asymmetric() {
-    /**
+    /*
      * Odd ratio asymmetric configuration
      */
     let message = b"asymmetric-11of17";
@@ -557,7 +557,7 @@ fn eleven_of_seventeen_asymmetric() {
 
 #[test]
 fn high_ratio_requirement_strict() {
-    /**
+    /*
      * High percentage requirement (90%+)
      */
     let message = b"strict-90pct";
@@ -577,7 +577,7 @@ fn high_ratio_requirement_strict() {
 
 #[test]
 fn composite_sort_plus_insufficient() {
-    /**
+    /*
      * Unsorted input combined with insufficient signatures
      * Multiple failure modes can coexist
      */
@@ -599,7 +599,7 @@ fn composite_sort_plus_insufficient() {
 
 #[test]
 fn composite_dup_and_partial() {
-    /**
+    /*
      * Duplicate keys with insufficient signatures
      */
     let (_, signatures, _account, pairs) = create_complete_multisig(2, 2, b"dup-partial");
@@ -623,7 +623,7 @@ fn composite_dup_and_partial() {
 
 #[test]
 fn full_suite_coverage_summary() {
-    /**
+    /*
      * Summary validation confirming ALL depth properties covered:
      *
      * 1. ✓ public_key_sorting_lemma - tested by sort_* tests (4 tests)

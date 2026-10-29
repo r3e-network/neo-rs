@@ -278,6 +278,6 @@ mod tests {
             key: "some_key".to_string(),
         };
         let core_err: CoreError = storage_err.into();
-        assert!(matches!(core_err, CoreError::InvalidOperation { .. }));
+        std::assert_matches!(core_err, CoreError::InvalidOperation { .. });
     }
 }

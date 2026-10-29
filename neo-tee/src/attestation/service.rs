@@ -254,13 +254,10 @@ impl AttestationService {
 
     /// Verify a quote from raw bytes
     pub fn verify_quote(&self, quote_bytes: &[u8]) -> TeeResult<QuoteValidationResult> {
-        let quote = match Quote::from_bytes(quote_bytes) {
-            Some(q) => q,
-            None => {
-                return Err(TeeError::InvalidAttestationReport(
-                    "Failed to parse quote from bytes".to_string(),
-                ));
-            }
+        let Some(quote) = Quote::from_bytes(quote_bytes) else {
+            return Err(TeeError::InvalidAttestationReport(
+                "Failed to parse quote from bytes".to_string(),
+            ));
         };
 
         let options = self.config.to_quote_options();
@@ -286,13 +283,10 @@ impl AttestationService {
         quote_bytes: &[u8],
         expected_report_data: Option<&[u8; 64]>,
     ) -> TeeResult<QuoteValidationResult> {
-        let quote = match Quote::from_bytes(quote_bytes) {
-            Some(q) => q,
-            None => {
-                return Err(TeeError::InvalidAttestationReport(
-                    "Failed to parse quote from bytes".to_string(),
-                ));
-            }
+        let Some(quote) = Quote::from_bytes(quote_bytes) else {
+            return Err(TeeError::InvalidAttestationReport(
+                "Failed to parse quote from bytes".to_string(),
+            ));
         };
 
         // Verify report data if provided

@@ -405,7 +405,7 @@ fn test_off_view_commits_stored_but_not_counted() {
 // ============================================================================
 
 #[test]
-fn test_coq_lemma_M_formula_integration() {
+fn test_coq_lemma_m_formula_integration() {
     // Integrates Coq lemma: compute_M n = n - ⌊(n-1)/3⌋
     // Verified by checking Rust implementation matches formula
 
@@ -427,12 +427,12 @@ fn test_coq_lemma_M_formula_integration() {
             .collect();
 
         let context = ConsensusContext::new(100, validators.clone(), Some(0), None);
-        let computed_M = context.m();
+        let computed_m = context.m();
 
         assert_eq!(
-            computed_M, expected_m,
+            computed_m, expected_m,
             "M formula mismatch for n={}: computed={}, expected={}",
-            n, computed_M, expected_m
+            n, computed_m, expected_m
         );
     }
 }

@@ -135,9 +135,6 @@ fn test_state_machine_transition_prepare_request() {
     let _view_number: u8 = 0;
     let _validator_index: u8 = 0;
 
-    // Initial state: no prepare request received
-    let mut prepare_request_received = false;
-
     // Receive valid PrepareRequest simulation
     let payload_hash: [u8; 32] = [0xDE; 32];
     env.persist_message(
@@ -146,7 +143,7 @@ fn test_state_machine_transition_prepare_request() {
     );
 
     // Transition: mark request received
-    prepare_request_received = true;
+    let prepare_request_received = true;
 
     // Verify state changed correctly
     assert!(

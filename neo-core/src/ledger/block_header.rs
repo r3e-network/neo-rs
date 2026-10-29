@@ -1,9 +1,9 @@
-// NOTE: This type is a parallel implementation of [neo_core::network::p2p::payloads::header::Header].
-// Both serialize/deserialize the same Neo N3 block header wire format.
-// Any wire format change MUST be applied to both types.
-// TODO: Unify these into a single shared serialization to prevent divergence.
+// The unsigned wire layout shared with the P2P `Header` lives in
+// `crate::ledger::header_wire`. Witness framing stays here because this type
+// stores a witness list.
 
 use crate::cryptography::Crypto;
+use crate::ledger::header_wire::UnsignedHeader;
 use crate::neo_io::serializable::helper::{deserialize_array, get_var_size, serialize_array};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::{CoreResult, UInt160, UInt256, Witness};
@@ -100,44 +100,41 @@ impl BlockHeader {
 
     /// Serializes the unsigned portion of the header (everything except witnesses).
     pub fn serialize_unsigned(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u32(self.version)?;
-        writer.write_serializable(&self.previous_hash)?;
-        writer.write_serializable(&self.merkle_root)?;
-        writer.write_u64(self.timestamp)?;
-        writer.write_u64(self.nonce)?;
-        writer.write_u32(self.index)?;
-        writer.write_u8(self.primary_index)?;
-        writer.write_serializable(&self.next_consensus)?;
-        Ok(())
+        self.unsigned().write(writer)
     }
 
     /// Deserializes the unsigned portion of the header.
     pub fn deserialize_unsigned(reader: &mut MemoryReader) -> IoResult<Self> {
-        let version = reader.read_u32()?;
-        if version > 0 {
+        let fields = UnsignedHeader::read(reader)?;
+        if fields.version > 0 {
             return Err(IoError::invalid_data("Unsupported block header version"));
         }
 
-        let previous_hash = <UInt256 as Serializable>::deserialize(reader)?;
-        let merkle_root = <UInt256 as Serializable>::deserialize(reader)?;
-        let timestamp = reader.read_u64()?;
-        let nonce = reader.read_u64()?;
-        let index = reader.read_u32()?;
-        let primary_index = reader.read_u8()?;
-        let next_consensus = <UInt160 as Serializable>::deserialize(reader)?;
-
         Ok(Self {
-            version,
-            previous_hash,
-            merkle_root,
-            timestamp,
-            nonce,
-            index,
-            primary_index,
-            next_consensus,
+            version: fields.version,
+            previous_hash: fields.previous_hash,
+            merkle_root: fields.merkle_root,
+            timestamp: fields.timestamp,
+            nonce: fields.nonce,
+            index: fields.index,
+            primary_index: fields.primary_index,
+            next_consensus: fields.next_consensus,
             witnesses: Vec::new(),
             _hash: Mutex::new(None),
         })
+    }
+
+    fn unsigned(&self) -> UnsignedHeader {
+        UnsignedHeader {
+            version: self.version,
+            previous_hash: self.previous_hash,
+            merkle_root: self.merkle_root,
+            timestamp: self.timestamp,
+            nonce: self.nonce,
+            index: self.index,
+            primary_index: self.primary_index,
+            next_consensus: self.next_consensus,
+        }
     }
 
     /// Computes the header hash (matches C# CalculateHash).

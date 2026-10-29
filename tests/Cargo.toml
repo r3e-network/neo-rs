@@ -102,3 +102,6 @@ path = "tests/network_error_tests.rs"
 name = "performance_benchmarks"
 path = "benches/performance_benchmarks.rs"
 harness = false
+
+[lints]
+workspace = true

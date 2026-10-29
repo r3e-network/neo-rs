@@ -136,7 +136,7 @@ async fn prepare_request_with_wrong_primary_rejected() {
     sign_payload(&service, &mut payload, &keys[1]);
 
     let result = service.process_message(payload);
-    assert!(matches!(result, Err(ConsensusError::InvalidPrimary { .. })));
+    std::assert_matches!(result, Err(ConsensusError::InvalidPrimary { .. }));
 }
 
 #[tokio::test]
@@ -163,7 +163,7 @@ async fn prepare_response_rejects_mismatched_hash() {
     sign_payload(&service, &mut payload, &keys[1]);
 
     let result = service.process_message(payload);
-    assert!(matches!(result, Err(ConsensusError::HashMismatch { .. })));
+    std::assert_matches!(result, Err(ConsensusError::HashMismatch { .. }));
 }
 
 #[tokio::test]
@@ -263,7 +263,7 @@ async fn prepare_response_duplicate_from_same_validator_rejected() {
     sign_payload(&service, &mut conflicting_payload, &keys[1]);
 
     let result = service.process_message(conflicting_payload);
-    assert!(matches!(result, Err(ConsensusError::AlreadyReceived(1))));
+    std::assert_matches!(result, Err(ConsensusError::AlreadyReceived(1)));
 }
 
 #[tokio::test]
@@ -307,7 +307,7 @@ async fn byzantine_conflicting_prepare_responses_do_not_replace_first() {
     sign_payload(&service, &mut conflicting_payload, &keys[1]);
 
     let result = service.process_message(conflicting_payload);
-    assert!(matches!(result, Err(ConsensusError::AlreadyReceived(1))));
+    std::assert_matches!(result, Err(ConsensusError::AlreadyReceived(1)));
 
     assert_eq!(service.context().prepare_responses.len(), 1);
     assert!(service.context().prepare_responses.contains_key(&1));
@@ -335,7 +335,7 @@ async fn prepare_response_with_wrong_block_rejected() {
 
     let msg_hash = service.dbft_payload_hash(&payload).expect("payload hash");
     let result = service.process_message(payload);
-    assert!(matches!(result, Err(ConsensusError::WrongBlock { .. })));
+    std::assert_matches!(result, Err(ConsensusError::WrongBlock { .. }));
     assert!(!service.context().has_seen_message(&msg_hash));
 }
 

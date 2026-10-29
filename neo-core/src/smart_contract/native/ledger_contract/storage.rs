@@ -152,9 +152,8 @@ impl LedgerContract {
         S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = block_storage_key(self.id, hash);
-        let item = match snapshot.try_get(&key) {
-            Some(item) => item,
-            None => return Ok(None),
+        let Some(item) = snapshot.try_get(&key) else {
+            return Ok(None);
         };
 
         let trimmed = deserialize_trimmed_block(&item.value_bytes())?;

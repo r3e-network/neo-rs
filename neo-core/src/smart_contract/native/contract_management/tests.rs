@@ -562,7 +562,7 @@ fn list_contracts_rejects_malformed_contract_payload() {
 
     let err = ContractManagement::list_contracts(snapshot.as_ref())
         .expect_err("malformed contract payload should fail");
-    assert!(matches!(err, Error::Codec { .. }));
+    std::assert_matches!(err, Error::Codec { .. });
 }
 
 #[test]
@@ -588,7 +588,7 @@ fn validate_snapshot_integrity_rejects_duplicate_non_native_ids() {
 
     let err = ContractManagement::validate_snapshot_integrity(snapshot.as_ref())
         .expect_err("duplicate contract ids should fail integrity check");
-    assert!(matches!(err, Error::Invalid { .. }));
+    std::assert_matches!(err, Error::Invalid { .. });
     assert!(
         err.to_string()
             .contains("duplicate non-native contract id 1")
@@ -621,7 +621,7 @@ fn hydrate_from_engine_rejects_duplicate_non_native_ids() {
     let err = cm
         .hydrate_from_engine(&engine)
         .expect_err("duplicate contract ids should fail hydration");
-    assert!(matches!(err, Error::Invalid { .. }));
+    std::assert_matches!(err, Error::Invalid { .. });
 }
 
 #[test]

@@ -59,3 +59,6 @@ name = "rocksdb_persistence"
 path = "benches/rocksdb_persistence.rs"
 harness = false
 required-features = ["rocksdb"]
+
+[lints]
+workspace = true

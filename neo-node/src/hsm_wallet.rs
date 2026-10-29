@@ -22,7 +22,6 @@ use crate::wallet_scripts::signature_invocation;
 pub struct HsmWallet {
     name: String,
     signer: Arc<dyn HsmSigner>,
-    protocol_settings: Arc<ProtocolSettings>,
     version: Version,
     accounts: Arc<RwLock<HashMap<UInt160, Arc<HsmWalletAccount>>>>,
     default_account: RwLock<Option<UInt160>>,
@@ -62,7 +61,6 @@ impl HsmWallet {
         Ok(Self {
             name: "hsm-wallet".to_string(),
             signer,
-            protocol_settings: settings,
             version: Version::new(1, 0, 0),
             accounts: Arc::new(RwLock::new(accounts)),
             default_account: RwLock::new(default_account),
@@ -275,7 +273,6 @@ pub struct HsmWalletAccount {
     is_default: bool,
     contract: Contract,
     key_id: String,
-    public_key: Vec<u8>,
     signer: Arc<dyn HsmSigner>,
     protocol_settings: Arc<ProtocolSettings>,
 }
@@ -288,8 +285,7 @@ impl HsmWalletAccount {
     ) -> WalletResult<Self> {
         let script_hash = UInt160::from_bytes(&key.script_hash)
             .map_err(|err| WalletError::Other(err.to_string()))?;
-        let public_key = key.public_key.clone();
-        let contract = signature_contract_from_public_key(&public_key)?;
+        let contract = signature_contract_from_public_key(&key.public_key)?;
 
         if contract.script_hash() != script_hash {
             return Err(WalletError::Other(format!(
@@ -304,7 +300,6 @@ impl HsmWalletAccount {
             is_default: false,
             contract,
             key_id: key.key_id.clone(),
-            public_key,
             signer: Arc::clone(signer),
             protocol_settings: Arc::clone(settings),
         })
@@ -449,7 +444,7 @@ mod tests {
     use neo_core::network::p2p::payloads::signer::Signer;
     use neo_core::smart_contract::helper::Helper as ContractHelper;
     use neo_crypto::{Crypto, Secp256r1Crypto};
-    use neo_hsm::{HsmConfig, SimulationSigner};
+    use neo_hsm::SimulationSigner;
     use neo_vm::OpCode;
 
     #[tokio::test]
@@ -460,7 +455,6 @@ mod tests {
         let settings = Arc::new(ProtocolSettings::default());
         let runtime = HsmRuntime {
             signer: Arc::new(signer),
-            config: HsmConfig::default(),
             active_key: Some(key.clone()),
             address_version: settings.address_version,
         };

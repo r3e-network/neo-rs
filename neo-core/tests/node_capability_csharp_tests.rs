@@ -50,6 +50,6 @@ fn csharp_ut_unknown_capability_deserialize_unknown_roundtrip() {
     let buf = [0xff, 0x03, 0x01, 0x02, 0x03];
     let mut reader = MemoryReader::new(&buf);
     let cap = <NodeCapability as Serializable>::deserialize(&mut reader).expect("deserialize");
-    assert!(matches!(cap, NodeCapability::Unknown { .. }));
+    std::assert_matches!(cap, NodeCapability::Unknown { .. });
     assert_eq!(cap.to_array().expect("serialize"), buf);
 }

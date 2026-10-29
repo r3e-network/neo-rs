@@ -207,9 +207,9 @@ impl Witness {
             return Ok(false);
         }
 
-        let script = match Helper::try_multi_sig_redeem_script(required_signatures, public_keys) {
-            Ok(script) => script,
-            Err(_) => return Ok(false),
+        let Ok(script) = Helper::try_multi_sig_redeem_script(required_signatures, public_keys)
+        else {
+            return Ok(false);
         };
 
         if UInt160::from_script(&script) != *account {

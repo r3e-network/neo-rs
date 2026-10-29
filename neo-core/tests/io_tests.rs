@@ -670,15 +670,12 @@ fn test_byte_extensions_compression_errors() {
     let compressed = data.compress_lz4().unwrap();
 
     let too_small = compressed.decompress_lz4(data.len() - 1);
-    assert!(matches!(too_small, Err(CoreError::Compression { .. })));
+    std::assert_matches!(too_small, Err(CoreError::Compression { .. }));
 
     let mut corrupted = compressed.clone();
     corrupted[0] = corrupted[0].wrapping_add(1);
     let corrupted_result = corrupted.decompress_lz4(usize::MAX);
-    assert!(matches!(
-        corrupted_result,
-        Err(CoreError::Compression { .. })
-    ));
+    std::assert_matches!(corrupted_result, Err(CoreError::Compression { .. }));
 }
 
 /// Test serialization round-trip with UInt160

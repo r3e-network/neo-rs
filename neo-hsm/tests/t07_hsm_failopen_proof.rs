@@ -67,7 +67,7 @@ async fn pin_guessing_is_not_throttled() {
             .unlock(&format!("wrong-{attempt}"))
             .await
             .expect_err("wrong pin must fail");
-        assert!(matches!(err, neo_hsm::HsmError::InvalidPin));
+        std::assert_matches!(err, neo_hsm::HsmError::InvalidPin);
     }
 
     // After 100 wrong attempts the correct PIN still works: no lockout.

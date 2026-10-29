@@ -244,14 +244,11 @@ impl<'a> MemoryReader<'a> {
     #[inline]
     pub fn read_var_int(&mut self, max: u64) -> IoResult<u64> {
         let unread = &self.buffer[self.position..];
-        let (value, width) = match read_var_int_prefix(unread) {
-            Some(decoded) => decoded,
-            None => {
-                if !unread.is_empty() {
-                    self.position += 1;
-                }
-                return Err(IoError::Format);
+        let Some((value, width)) = read_var_int_prefix(unread) else {
+            if !unread.is_empty() {
+                self.position += 1;
             }
+            return Err(IoError::Format);
         };
         self.position += width;
         if value > max {

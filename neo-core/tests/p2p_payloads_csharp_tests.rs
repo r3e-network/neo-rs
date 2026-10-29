@@ -1069,7 +1069,7 @@ fn csharp_ut_high_priority_attribute_parity() {
     let bytes = attr.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
     let clone = TransactionAttribute::deserialize_from(&mut reader).expect("deserialize");
-    assert!(matches!(clone, TransactionAttribute::HighPriority));
+    std::assert_matches!(clone, TransactionAttribute::HighPriority);
 
     let mut invalid = bytes.clone();
     invalid[0] = 0xff;
@@ -1145,7 +1145,7 @@ fn csharp_ut_not_valid_before_attribute_parity() {
     let bytes = attr.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
     let clone = TransactionAttribute::deserialize_from(&mut reader).expect("deserialize");
-    assert!(matches!(clone, TransactionAttribute::NotValidBefore(_)));
+    std::assert_matches!(clone, TransactionAttribute::NotValidBefore(_));
 
     let mut invalid = bytes.clone();
     invalid[0] = 0xff;
@@ -1180,7 +1180,7 @@ fn csharp_ut_conflicts_attribute_parity() {
     let bytes = attr.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
     let clone = TransactionAttribute::deserialize_from(&mut reader).expect("deserialize");
-    assert!(matches!(clone, TransactionAttribute::Conflicts(_)));
+    std::assert_matches!(clone, TransactionAttribute::Conflicts(_));
 
     let mut invalid = bytes.clone();
     invalid[0] = 0xff;
@@ -1226,7 +1226,7 @@ fn csharp_ut_notary_assisted_attribute_parity() {
     let bytes = attr.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
     let clone = TransactionAttribute::deserialize_from(&mut reader).expect("deserialize");
-    assert!(matches!(clone, TransactionAttribute::NotaryAssisted(_)));
+    std::assert_matches!(clone, TransactionAttribute::NotaryAssisted(_));
 
     let mut invalid = bytes.clone();
     invalid[0] = 0xff;

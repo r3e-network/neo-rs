@@ -17,16 +17,16 @@ pub fn neofs_json_header(header: &neofs_v2::object::Header) -> Option<String> {
         );
     }
 
-    if let Some(container) = header.container_id.as_ref() {
-        if let Some(json) = neofs_json_container_id(container) {
-            push_json_field(&mut out, &mut first, "containerID", &json);
-        }
+    if let Some(container) = header.container_id.as_ref()
+        && let Some(json) = neofs_json_container_id(container)
+    {
+        push_json_field(&mut out, &mut first, "containerID", &json);
     }
 
-    if let Some(owner) = header.owner_id.as_ref() {
-        if let Some(json) = neofs_json_owner_id(owner) {
-            push_json_field(&mut out, &mut first, "ownerID", &json);
-        }
+    if let Some(owner) = header.owner_id.as_ref()
+        && let Some(json) = neofs_json_owner_id(owner)
+    {
+        push_json_field(&mut out, &mut first, "ownerID", &json);
     }
 
     if header.creation_epoch != 0 {
@@ -47,10 +47,10 @@ pub fn neofs_json_header(header: &neofs_v2::object::Header) -> Option<String> {
         );
     }
 
-    if let Some(hash) = header.payload_hash.as_ref() {
-        if let Some(json) = neofs_json_checksum(hash) {
-            push_json_field(&mut out, &mut first, "payloadHash", &json);
-        }
+    if let Some(hash) = header.payload_hash.as_ref()
+        && let Some(json) = neofs_json_checksum(hash)
+    {
+        push_json_field(&mut out, &mut first, "payloadHash", &json);
     }
 
     let object_type = match neofs_v2::object::ObjectType::try_from(header.object_type) {

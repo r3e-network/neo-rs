@@ -765,9 +765,8 @@ impl ConsensusActor {
             return;
         }
 
-        let my_index = match self.my_index {
-            Some(index) => index,
-            None => return,
+        let Some(my_index) = self.my_index else {
+            return;
         };
 
         if service.context().prepare_responses.contains_key(&my_index) {
@@ -1152,9 +1151,8 @@ impl ConsensusActor {
     }
 
     fn save_recovery_to_store(&self, service: &ConsensusService) -> bool {
-        let store = match self.recovery_store.as_ref() {
-            Some(store) => store,
-            None => return false,
+        let Some(store) = self.recovery_store.as_ref() else {
+            return false;
         };
 
         let Ok(data) = service.context().to_bytes() else {

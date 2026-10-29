@@ -140,9 +140,8 @@ pub fn verify_basic_auth(header: Option<&str>, auth: &BasicAuth) -> bool {
 
     let value = parts.next().unwrap_or("").trim();
 
-    let decoded = match BASE64_STANDARD.decode(value) {
-        Ok(bytes) => bytes,
-        Err(_) => return false,
+    let Ok(decoded) = BASE64_STANDARD.decode(value) else {
+        return false;
     };
 
     let Some(index) = decoded.iter().position(|byte| *byte == b':') else {

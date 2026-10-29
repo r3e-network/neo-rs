@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn test_key_not_found_error() {
         let err = StorageError::key_not_found("test_key");
-        assert!(matches!(err, StorageError::KeyNotFound { .. }));
+        std::assert_matches!(err, StorageError::KeyNotFound { .. });
         assert!(err.to_string().contains("test_key"));
         assert!(err.to_string().contains("Key not found"));
     }
@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn test_serialization_error() {
         let err = StorageError::serialization("invalid format");
-        assert!(matches!(err, StorageError::Serialization { .. }));
+        std::assert_matches!(err, StorageError::Serialization { .. });
         assert!(err.to_string().contains("invalid format"));
         assert!(err.to_string().contains("Serialization error"));
     }
@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn test_backend_error() {
         let err = StorageError::backend("connection failed");
-        assert!(matches!(err, StorageError::Backend { .. }));
+        std::assert_matches!(err, StorageError::Backend { .. });
         assert!(err.to_string().contains("connection failed"));
         assert!(err.to_string().contains("Storage backend error"));
     }
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn test_invalid_operation_error() {
         let err = StorageError::invalid_operation("cannot write to read-only store");
-        assert!(matches!(err, StorageError::InvalidOperation { .. }));
+        std::assert_matches!(err, StorageError::InvalidOperation { .. });
         assert!(err.to_string().contains("cannot write to read-only store"));
         assert!(err.to_string().contains("Invalid operation"));
     }

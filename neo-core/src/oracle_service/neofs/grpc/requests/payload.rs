@@ -15,17 +15,15 @@ impl OracleNeoFsProtocol {
         auth: &NeoFsAuth,
         oracle_key: &KeyPair,
     ) -> (OracleResponseCode, String) {
-        let meta = match build_neofs_meta_header(auth) {
-            Ok(meta) => meta,
-            Err(_) => return (OracleResponseCode::Error, String::new()),
+        let Ok(meta) = build_neofs_meta_header(auth) else {
+            return (OracleResponseCode::Error, String::new());
         };
         let body = neofs_v2::object::get_request::Body {
             address: Some(address.clone()),
             raw: false,
         };
-        let verify = match build_neofs_request_verification_header(&body, &meta, oracle_key) {
-            Ok(verify) => verify,
-            Err(_) => return (OracleResponseCode::Error, String::new()),
+        let Ok(verify) = build_neofs_request_verification_header(&body, &meta, oracle_key) else {
+            return (OracleResponseCode::Error, String::new());
         };
         let request = neofs_v2::object::GetRequest {
             body: Some(body),
@@ -33,9 +31,8 @@ impl OracleNeoFsProtocol {
             verify_header: Some(verify),
         };
 
-        let response = match client.get(request).await {
-            Ok(response) => response,
-            Err(_) => return (OracleResponseCode::Error, String::new()),
+        let Ok(response) = client.get(request).await else {
+            return (OracleResponseCode::Error, String::new());
         };
         let mut stream = response.into_inner();
         let mut payload = Vec::new();
@@ -45,9 +42,8 @@ impl OracleNeoFsProtocol {
         loop {
             match stream.message().await {
                 Ok(Some(mut item)) => {
-                    let body = match item.body.take() {
-                        Some(body) => body,
-                        None => return (OracleResponseCode::Error, String::new()),
+                    let Some(body) = item.body.take() else {
+                        return (OracleResponseCode::Error, String::new());
                     };
                     if validate_neofs_response(
                         &body,
@@ -61,9 +57,8 @@ impl OracleNeoFsProtocol {
 
                     match body.object_part {
                         Some(neofs_v2::object::get_response::body::ObjectPart::Init(init)) => {
-                            let header = match init.header {
-                                Some(header) => header,
-                                None => return (OracleResponseCode::Error, String::new()),
+                            let Some(header) = init.header else {
+                                return (OracleResponseCode::Error, String::new());
                             };
                             let length = header.payload_length;
                             if length > MAX_RESULT_SIZE as u64 {

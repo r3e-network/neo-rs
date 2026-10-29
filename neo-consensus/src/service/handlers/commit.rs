@@ -93,26 +93,23 @@ impl ConsensusService {
         // verify the commit signature against. Without it, we cannot authenticate
         // the signature and must reject the commit to prevent unverified commits
         // from counting toward the M-of-N threshold.
-        let block_hash = match self.context.proposed_block_hash {
-            Some(hash) => hash,
-            None => {
-                // C# stores the payload and re-verifies it once the header is
-                // known. Keep the witness-verified commit (the 64-byte block
-                // signature is checked when the proposal arrives).
-                self.pending_commits.insert(
-                    payload.validator_index,
-                    (
-                        payload.view_number,
-                        payload.data.clone(),
-                        invocation_script_from_signature(&payload.witness),
-                    ),
-                );
-                debug!(
-                    validator = payload.validator_index,
-                    "Commit buffered until the proposal block hash is available"
-                );
-                return Ok(());
-            }
+        let Some(block_hash) = self.context.proposed_block_hash else {
+            // C# stores the payload and re-verifies it once the header is
+            // known. Keep the witness-verified commit (the 64-byte block
+            // signature is checked when the proposal arrives).
+            self.pending_commits.insert(
+                payload.validator_index,
+                (
+                    payload.view_number,
+                    payload.data.clone(),
+                    invocation_script_from_signature(&payload.witness),
+                ),
+            );
+            debug!(
+                validator = payload.validator_index,
+                "Commit buffered until the proposal block hash is available"
+            );
+            return Ok(());
         };
 
         // dBFT commit signature is a signature over block.GetSignData(network),

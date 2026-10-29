@@ -7,11 +7,11 @@ pub(crate) fn build_neofs_header_payload(headers: &reqwest::header::HeaderMap) -
     let mut payload = String::from("{ ");
     let mut first = true;
 
-    if let Some(value) = header_str(headers, "X-Object-Id") {
-        if let Some(b64) = base64_from_base58(&value, Some(32)) {
-            let object_id = format!("{{ \"value\": {} }}", json_string(&b64));
-            push_json_field(&mut payload, &mut first, "objectID", &object_id);
-        }
+    if let Some(value) = header_str(headers, "X-Object-Id")
+        && let Some(b64) = base64_from_base58(&value, Some(32))
+    {
+        let object_id = format!("{{ \"value\": {} }}", json_string(&b64));
+        push_json_field(&mut payload, &mut first, "objectID", &object_id);
     }
 
     if let Some(header_payload) = build_neofs_header_proto(headers) {
@@ -30,18 +30,18 @@ fn build_neofs_header_proto(headers: &reqwest::header::HeaderMap) -> Option<Stri
     let mut header = String::from("{ ");
     let mut first = true;
 
-    if let Some(value) = header_str(headers, "X-Container-Id") {
-        if let Some(b64) = base64_from_base58(&value, Some(32)) {
-            let container_id = format!("{{ \"value\": {} }}", json_string(&b64));
-            push_json_field(&mut header, &mut first, "containerID", &container_id);
-        }
+    if let Some(value) = header_str(headers, "X-Container-Id")
+        && let Some(b64) = base64_from_base58(&value, Some(32))
+    {
+        let container_id = format!("{{ \"value\": {} }}", json_string(&b64));
+        push_json_field(&mut header, &mut first, "containerID", &container_id);
     }
 
-    if let Some(value) = header_str(headers, "X-Owner-Id") {
-        if let Some(b64) = base64_from_base58(&value, Some(25)) {
-            let owner_id = format!("{{ \"value\": {} }}", json_string(&b64));
-            push_json_field(&mut header, &mut first, "ownerID", &owner_id);
-        }
+    if let Some(value) = header_str(headers, "X-Owner-Id")
+        && let Some(b64) = base64_from_base58(&value, Some(25))
+    {
+        let owner_id = format!("{{ \"value\": {} }}", json_string(&b64));
+        push_json_field(&mut header, &mut first, "ownerID", &owner_id);
     }
 
     if let Some(length) =

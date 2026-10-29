@@ -237,7 +237,7 @@ mod execution_engine_tests {
         // Adding more gas should fail
         let result = engine.add_gas_consumed(1);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), VmError::GasExhausted { .. }));
+        std::assert_matches!(result.unwrap_err(), VmError::GasExhausted { .. });
     }
 
     #[test]

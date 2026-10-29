@@ -509,9 +509,8 @@ impl PrefetchPipeline {
 impl Drop for PrefetchPipeline {
     fn drop(&mut self) {
         // Attempt graceful shutdown if still in running state
-        let mut state = match self.state.lock() {
-            Ok(s) => s,
-            Err(_) => return,
+        let Ok(mut state) = self.state.lock() else {
+            return;
         };
 
         if *state == PipelineState::Running || *state == PipelineState::Paused {

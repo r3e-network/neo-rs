@@ -21,6 +21,7 @@ impl From<KeyBuilderError> for CoreError {
 /// This is a newtype wrapper around [`neo_storage::KeyBuilder`] that adds
 /// core-specific methods. All standard key-building methods are available
 /// via `Deref`.
+#[derive(Debug)]
 pub struct KeyBuilder {
     inner: neo_storage::KeyBuilder,
 }
@@ -104,21 +105,21 @@ mod tests {
         // Authoritative semantics (neo_storage::KeyBuilder is the single source of
         // truth): a zero max_length is rejected at construction time.
         let result = KeyBuilder::try_new(1, 0x01, 0);
-        assert!(matches!(result, Err(KeyBuilderError::InvalidMaxLength)));
+        std::assert_matches!(result, Err(KeyBuilderError::InvalidMaxLength));
     }
 
     #[test]
     fn test_try_add_exceeds_max_length() {
         let mut builder = KeyBuilder::try_new(1, 0x01, 5).unwrap();
         let result = builder.try_add(&[0u8; 10]);
-        assert!(matches!(result, Err(KeyBuilderError::DataTooLarge { .. })));
+        std::assert_matches!(result, Err(KeyBuilderError::DataTooLarge { .. }));
     }
 
     #[test]
     fn test_try_add_big_endian_negative() {
         let mut builder = KeyBuilder::new_with_default(1, 0x01);
         let result = builder.try_add_big_endian(&BigInt::from(-1));
-        assert!(matches!(result, Err(KeyBuilderError::NegativeBigInteger)));
+        std::assert_matches!(result, Err(KeyBuilderError::NegativeBigInteger));
     }
 
     #[test]

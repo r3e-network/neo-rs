@@ -65,10 +65,7 @@ impl NativeContract for GasToken {
 
         // Burn system fee + network fee from each transaction sender
         for tx in &block.transactions {
-            let sender = match tx.sender() {
-                Some(s) => s,
-                None => continue, // Skip transactions without a sender
-            };
+            let Some(sender) = tx.sender() else { continue };
             let total_fee = tx.system_fee() + tx.network_fee();
             let burn_amount = BigInt::from(total_fee);
             let pre_balance = self.balance_of_snapshot(snapshot_ref, &sender);

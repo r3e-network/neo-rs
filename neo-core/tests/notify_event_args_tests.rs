@@ -18,17 +18,15 @@ fn notify_event_args_to_stack_item_deep_copies_state() {
         _ => panic!("expected array from NotifyEventArgs::to_stack_item"),
     };
 
-    let state_array = match state_item {
-        StackItem::Array(array) => array,
-        _ => panic!("expected array state in NotifyEventArgs::to_stack_item"),
+    let StackItem::Array(state_array) = state_item else {
+        panic!("expected array state in NotifyEventArgs::to_stack_item")
     };
     state_array
         .push(StackItem::from_int(2))
         .expect("push into state array");
 
-    let original_array = match &args.state[0] {
-        StackItem::Array(array) => array,
-        _ => panic!("expected array state in NotifyEventArgs"),
+    let StackItem::Array(original_array) = &args.state[0] else {
+        panic!("expected array state in NotifyEventArgs")
     };
     assert_eq!(original_array.items().len(), 1);
 }

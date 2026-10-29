@@ -12,10 +12,10 @@ pub(super) fn validate_neofs_response<B: Message>(
     if !verify_neofs_matryoshka(body, meta, verify) {
         return Err("invalid neofs response signature".to_string());
     }
-    if let Some(status) = meta.status.as_ref() {
-        if !is_neofs_status_success(status) {
-            return Err("neofs response status error".to_string());
-        }
+    if let Some(status) = meta.status.as_ref()
+        && !is_neofs_status_success(status)
+    {
+        return Err("neofs response status error".to_string());
     }
     Ok(())
 }
@@ -25,9 +25,8 @@ fn verify_neofs_matryoshka<B: Message>(
     meta: &neofs_v2::session::ResponseMetaHeader,
     verify: &neofs_v2::session::ResponseVerificationHeader,
 ) -> bool {
-    let meta_sig = match verify.meta_signature.as_ref() {
-        Some(sig) => sig,
-        None => return false,
+    let Some(meta_sig) = verify.meta_signature.as_ref() else {
+        return false;
     };
     if !verify_neofs_signature_bytes(meta_sig, &meta.encode_to_vec()) {
         return false;
@@ -38,18 +37,16 @@ fn verify_neofs_matryoshka<B: Message>(
         .as_ref()
         .map(|origin| origin.encode_to_vec())
         .unwrap_or_default();
-    let origin_sig = match verify.origin_signature.as_ref() {
-        Some(sig) => sig,
-        None => return false,
+    let Some(origin_sig) = verify.origin_signature.as_ref() else {
+        return false;
     };
     if !verify_neofs_signature_bytes(origin_sig, &origin_bytes) {
         return false;
     }
 
     if verify.origin.is_none() {
-        let body_sig = match verify.body_signature.as_ref() {
-            Some(sig) => sig,
-            None => return false,
+        let Some(body_sig) = verify.body_signature.as_ref() else {
+            return false;
         };
         return verify_neofs_signature_bytes(body_sig, &body.encode_to_vec());
     }

@@ -135,3 +135,6 @@ jsonrpsee-server = [
     "server",
     "dep:jsonrpsee",
 ]
+
+[lints]
+workspace = true

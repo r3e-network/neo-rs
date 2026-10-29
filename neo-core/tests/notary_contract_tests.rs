@@ -439,7 +439,7 @@ fn test_deposit_stack_value_roundtrip() {
 
     let original = Deposit::new(BigInt::from(500), 100);
     let stack_value = original.to_stack_value();
-    assert!(matches!(stack_value, StackValue::Struct(_)));
+    std::assert_matches!(stack_value, StackValue::Struct(_));
 
     let mut recovered = Deposit::default();
     recovered.from_stack_value(stack_value).unwrap();

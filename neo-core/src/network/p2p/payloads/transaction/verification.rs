@@ -325,7 +325,7 @@ impl Transaction {
         let container: Arc<dyn crate::Verifiable> = Arc::new(self.clone());
         let snapshot_clone = Arc::new(snapshot.clone());
 
-        let mut engine = match ApplicationEngine::new(
+        let Ok(mut engine) = ApplicationEngine::new(
             TriggerType::Verification,
             Some(container),
             snapshot_clone,
@@ -333,17 +333,16 @@ impl Transaction {
             settings.clone(),
             verification_gas,
             None,
-        ) {
-            Ok(engine) => engine,
-            Err(_) => return false,
+        ) else {
+            return false;
         };
 
         let verification_script = witness.verification_script.clone();
 
         if verification_script.is_empty() {
-            let contract = match ContractManagement::get_contract_from_snapshot(snapshot, hash) {
-                Ok(Some(contract)) => contract,
-                _ => return false,
+            let Ok(Some(contract)) = ContractManagement::get_contract_from_snapshot(snapshot, hash)
+            else {
+                return false;
             };
 
             let mut abi = contract.manifest.abi.clone();

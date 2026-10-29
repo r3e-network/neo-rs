@@ -283,9 +283,8 @@ impl RemoteNode {
 
         let snapshot = self.build_snapshot(&payload);
 
-        let parent = match ctx.parent() {
-            Some(parent) => parent,
-            None => return Ok(()),
+        let Some(parent) = ctx.parent() else {
+            return Ok(());
         };
 
         debug!(
@@ -782,33 +781,33 @@ mod tests {
     #[test]
     fn handshake_gate_requires_version_first() {
         let version = RemoteNode::handshake_gate_decision(false, false, MessageCommand::Version);
-        assert!(matches!(version, HandshakeGateDecision::AcceptVersion));
+        std::assert_matches!(version, HandshakeGateDecision::AcceptVersion);
 
         let verack = RemoteNode::handshake_gate_decision(false, false, MessageCommand::Verack);
-        assert!(matches!(verack, HandshakeGateDecision::Reject(_)));
+        std::assert_matches!(verack, HandshakeGateDecision::Reject(_));
 
         let ping = RemoteNode::handshake_gate_decision(false, false, MessageCommand::Ping);
-        assert!(matches!(ping, HandshakeGateDecision::Reject(_)));
+        std::assert_matches!(ping, HandshakeGateDecision::Reject(_));
     }
 
     #[test]
     fn handshake_gate_requires_verack_after_version() {
         let verack = RemoteNode::handshake_gate_decision(true, false, MessageCommand::Verack);
-        assert!(matches!(verack, HandshakeGateDecision::AcceptVerack));
+        std::assert_matches!(verack, HandshakeGateDecision::AcceptVerack);
 
         let ping = RemoteNode::handshake_gate_decision(true, false, MessageCommand::Ping);
-        assert!(matches!(ping, HandshakeGateDecision::Reject(_)));
+        std::assert_matches!(ping, HandshakeGateDecision::Reject(_));
     }
 
     #[test]
     fn handshake_gate_rejects_duplicate_handshake_messages_after_completion() {
         let version = RemoteNode::handshake_gate_decision(true, true, MessageCommand::Version);
-        assert!(matches!(version, HandshakeGateDecision::Reject(_)));
+        std::assert_matches!(version, HandshakeGateDecision::Reject(_));
 
         let verack = RemoteNode::handshake_gate_decision(true, true, MessageCommand::Verack);
-        assert!(matches!(verack, HandshakeGateDecision::Reject(_)));
+        std::assert_matches!(verack, HandshakeGateDecision::Reject(_));
 
         let ping = RemoteNode::handshake_gate_decision(true, true, MessageCommand::Ping);
-        assert!(matches!(ping, HandshakeGateDecision::AcceptProtocol));
+        std::assert_matches!(ping, HandshakeGateDecision::AcceptProtocol);
     }
 }

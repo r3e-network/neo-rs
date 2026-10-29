@@ -183,18 +183,16 @@ impl Header {
         let verification_script = witness.verification_script.clone();
 
         if verification_script.is_empty() {
-            let contract =
-                match ContractManagement::get_contract_from_snapshot(snapshot, script_hash) {
-                    Ok(Some(contract)) => contract,
-                    _ => {
-                        debug!(
-                            target: "neo",
-                            %script_hash,
-                            "contract not found for verification"
-                        );
-                        return false;
-                    }
-                };
+            let Ok(Some(contract)) =
+                ContractManagement::get_contract_from_snapshot(snapshot, script_hash)
+            else {
+                debug!(
+                    target: "neo",
+                    %script_hash,
+                    "contract not found for verification"
+                );
+                return false;
+            };
 
             let mut abi = contract.manifest.abi.clone();
             let method = match abi.get_method(

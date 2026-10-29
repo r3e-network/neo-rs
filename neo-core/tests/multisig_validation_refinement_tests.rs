@@ -60,7 +60,7 @@ fn create_valid_multisig(
 
 #[test]
 fn test_threshold_m_equals_n_all_sigs_required() {
-    /**
+    /*
      * Validates threshold_correctness theorem when m=n
      * Property: Exactly n signatures needed when m=n
      */
@@ -77,7 +77,7 @@ fn test_threshold_m_equals_n_all_sigs_required() {
 
 #[test]
 fn test_threshold_2_of_3_standard_pattern() {
-    /**
+    /*
      * Validates threshold_correctness theorem for common 2-of-3 pattern
      * Property: Only 2 signatures required out of 3 available
      */
@@ -97,7 +97,7 @@ fn test_threshold_2_of_3_standard_pattern() {
 
 #[test]
 fn test_threshold_15_of_21_committee_scale() {
-    /**
+    /*
      * Validates threshold_correctness for Neo committee-sized multisig
      * Real-world scale test: production configuration
      */
@@ -117,7 +117,7 @@ fn test_threshold_15_of_21_committee_scale() {
 
 #[test]
 fn test_under_sig_rejection_one_short() {
-    /**
+    /*
      * Validates under_sig_rejection theorem
      * Property: Fewer than m signatures leads to failure
      */
@@ -137,7 +137,7 @@ fn test_under_sig_rejection_one_short() {
 
 #[test]
 fn test_under_sig_rejection_zero_signatures() {
-    /**
+    /*
      * Edge case: zero signatures with m > 0
      * Should definitely fail
      */
@@ -154,7 +154,7 @@ fn test_under_sig_rejection_zero_signatures() {
 
 #[test]
 fn test_zero_required_signatures_invalid() {
-    /**
+    /*
      * Validates boundary: m=0 rejected per line 202
      * Zero required signatures violates threshold semantics
      */
@@ -168,7 +168,7 @@ fn test_zero_required_signatures_invalid() {
 
 #[test]
 fn test_m_greater_than_n_invalid() {
-    /**
+    /*
      * Validates boundary: m > n rejected per line 204
      * Cannot require more signatures than available keys
      */
@@ -190,7 +190,7 @@ fn test_m_greater_than_n_invalid() {
 
 #[test]
 fn test_exact_signature_count_required() {
-    /**
+    /*
      * Validates line 205: signatures.len() must equal required_signatures
      * Excess signatures cause failure
      */
@@ -210,7 +210,7 @@ fn test_exact_signature_count_required() {
 
 #[test]
 fn test_ecdsa_signature_length_validation() {
-    /**
+    /*
      * Validates signature length requirement (64 bytes) per lines 228-235
      */
     let bad_signature = vec![0u8; 32]; // Too short
@@ -231,7 +231,7 @@ fn test_ecdsa_signature_length_validation() {
 
 #[test]
 fn test_duplicate_key_prevention() {
-    /**
+    /*
      * Validates duplicate_prevention_enforced axiom
      * Duplicate public keys break account binding
      */
@@ -256,7 +256,7 @@ fn test_duplicate_key_prevention() {
 
 #[test]
 fn test_public_key_sorting_deterministic() {
-    /**
+    /*
      * Validates public_key_sorting property
      * Keys sorted before verification ensures deterministic assignment
      */
@@ -272,7 +272,7 @@ fn test_public_key_sorting_deterministic() {
 
 #[test]
 fn test_account_binding_script_hash_match() {
-    /**
+    /*
      * Validates account_binding theorem
      * Account parameter must match multisig script hash
      */
@@ -298,7 +298,7 @@ fn test_account_binding_script_hash_match() {
 
 #[test]
 fn test_account_binding_wrong_account_fails() {
-    /**
+    /*
      * Validates account binding mismatch detection
      */
     let message = b"wrong-acct";
@@ -318,7 +318,7 @@ fn test_account_binding_wrong_account_fails() {
 
 #[test]
 fn test_complete_property_suite_summary() {
-    /**
+    /*
      * Summary validation confirming ALL Coq theorem coverage:
      *
      * 1. ✓ threshold_correctness - Tested by test_threshold_*

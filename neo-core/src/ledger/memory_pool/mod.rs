@@ -562,13 +562,10 @@ impl MemoryPool {
                 continue;
             }
 
-            let conflicts = match self.check_conflicts(&item.transaction) {
-                Ok(list) => list,
-                Err(_) => {
-                    self.unverified.remove(&hash);
-                    invalidated.push(unwrap_or_clone_arc(item.transaction));
-                    continue;
-                }
+            let Ok(conflicts) = self.check_conflicts(&item.transaction) else {
+                self.unverified.remove(&hash);
+                invalidated.push(unwrap_or_clone_arc(item.transaction));
+                continue;
             };
 
             // Build conflict transactions Vec with pre-allocated capacity

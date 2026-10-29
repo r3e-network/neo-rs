@@ -27,3 +27,6 @@ serde_json = { workspace = true }
 [lib]
 name = "neo_json"
 path = "src/lib.rs"
+
+[lints]
+workspace = true

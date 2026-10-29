@@ -218,9 +218,8 @@ impl WalletAccount for StandardWalletAccount {
             return Ok(true);
         }
 
-        let nep2 = match &self.nep2_key {
-            Some(value) => value,
-            None => return Ok(false),
+        let Some(nep2) = &self.nep2_key else {
+            return Ok(false);
         };
 
         let version = self.protocol_settings.address_version;

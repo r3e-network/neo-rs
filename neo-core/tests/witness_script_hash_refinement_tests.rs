@@ -65,7 +65,7 @@ fn script_hash_always_produces_20_bytes() {
 }
 
 #[test]
-fn hash_length_matches_coq_UINT160_SIZE_constant() {
+fn hash_length_matches_coq_uint160_size_constant() {
     // Tie-in: Coq defines UINT160_LENGTH := 20
     // Rust must match this exactly
     const COQ_UINT160_LENGTH: usize = 20;
@@ -258,7 +258,7 @@ fn hash_starts_with_known_prefix_for_empty_script() {
     // Example: hash for empty verification script
 
     let empty_hash = compute_script_hash(&[]);
-    let empty_bytes = empty_hash.as_bytes();
+    let _empty_bytes = empty_hash.as_bytes();
 
     // Extract first few bytes (these are deterministic values)
     let prefix_len = 8usize;
@@ -368,7 +368,6 @@ fn edge_case_all_zeros_vs_all_ones() {
 // Property-Based Testing (QuickCheck-style)
 // ============================================================================
 
-#[cfg(feature = "proptest")]
 mod property_tests {
     use super::*;
     use proptest::prelude::*;
@@ -382,20 +381,20 @@ mod property_tests {
         }
     }
 
-    #[test]
-    fn prop_script_hash_always_20_bytes(proptest_only_pk: Vec<u8>) {
-        // Property: For ANY public key, hash length is always 20
-        let script = create_signature_redeem_script(&proptest_only_pk);
-        let hash = compute_script_hash(&script);
-        prop_assert_eq!(hash.as_bytes().len(), 20);
-    }
+    proptest! {
+        #[test]
+        fn prop_script_hash_always_20_bytes(script in prop::collection::vec(any::<u8>(), 0..1024)) {
+            // Property: For ANY script, hash length is always 20
+            prop_assert_eq!(compute_script_hash(&script).as_bytes().len(), 20);
+        }
 
-    #[test]
-    fn prop_redeem_script_length_consistency(pk: Vec<u8>) {
-        // Property: Any 33-byte pubkey produces 35-byte redeem script
-        if pk.len() == 33 {
+        #[test]
+        fn prop_redeem_script_length_consistency(pk in random_public_key()) {
+            // Property: Any 33-byte pubkey produces a 56-byte redeem script
+            // (layout documented in rust_witness_single_sig_hash_example).
             let script = create_signature_redeem_script(&pk);
-            prop_assert_eq!(script.len(), 35);
+            prop_assert_eq!(script.len(), 56);
+            prop_assert_eq!(compute_script_hash(&script).as_bytes().len(), 20);
         }
     }
 }

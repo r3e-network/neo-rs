@@ -88,9 +88,8 @@ impl ConsensusService {
     /// Fail-closed: without `can_sign_commit()` the node withholds rather than
     /// signing a zero/default hash. Idempotent for the current view.
     pub(in crate::service) fn try_broadcast_own_commit(&mut self) -> ConsensusResult<()> {
-        let my_index = match self.context.my_index {
-            Some(index) => index,
-            None => return Ok(()),
+        let Some(my_index) = self.context.my_index else {
+            return Ok(());
         };
 
         if self.context.commit_view_numbers.get(&my_index).copied()
@@ -155,9 +154,8 @@ impl ConsensusService {
         use neo_crypto::Secp256r1Crypto;
 
         // Get the validator's public key
-        let validator = match self.context.validators.get(validator_index as usize) {
-            Some(v) => v,
-            None => return false,
+        let Some(validator) = self.context.validators.get(validator_index as usize) else {
+            return false;
         };
 
         // Verify signature length (64 bytes for secp256r1)

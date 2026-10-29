@@ -1,5 +1,5 @@
-[build]
-jobs = 2
+# Build parallelism is left at Cargo's default (all cores). On memory-constrained
+# machines set CARGO_BUILD_JOBS instead of capping it here; see docs/TOOLCHAIN.md.
 
 # librocksdb-sys' Windows port uses FILE_ID_INFO / FileIdInfo, which MinGW
 # headers only expose when _WIN32_WINNT targets Windows 8+. Without this the

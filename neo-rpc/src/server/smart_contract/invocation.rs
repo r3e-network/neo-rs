@@ -226,9 +226,8 @@ fn process_invoke_with_wallet(
         Some(list) if !list.is_empty() => list,
         _ => return,
     };
-    let wallet = match server.wallet() {
-        Some(wallet) => wallet,
-        None => return,
+    let Some(wallet) = server.wallet() else {
+        return;
     };
 
     match build_and_sign_transaction(server, script, signers, snapshot, system_fee, wallet) {

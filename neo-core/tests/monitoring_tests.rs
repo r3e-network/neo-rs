@@ -295,10 +295,10 @@ async fn test_push_otlp_sends_payload() {
     fn parse_content_length(header_bytes: &[u8]) -> Option<usize> {
         let header = String::from_utf8_lossy(header_bytes);
         for line in header.split("\r\n") {
-            if let Some((key, value)) = line.split_once(':') {
-                if key.trim().eq_ignore_ascii_case("content-length") {
-                    return value.trim().parse().ok();
-                }
+            if let Some((key, value)) = line.split_once(':')
+                && key.trim().eq_ignore_ascii_case("content-length")
+            {
+                return value.trim().parse().ok();
             }
         }
         None
@@ -319,23 +319,22 @@ async fn test_push_otlp_sends_payload() {
                     Ok(0) => break,
                     Ok(n) => {
                         buffer.extend_from_slice(&chunk[..n]);
-                        if let Some(header_end) = find_header_end(&buffer) {
-                            if let Some(content_length) =
+                        if let Some(header_end) = find_header_end(&buffer)
+                            && let Some(content_length) =
                                 parse_content_length(&buffer[..header_end])
-                            {
-                                let total_len = header_end + content_length;
-                                if buffer.len() < total_len {
-                                    continue;
-                                }
-                                let body = String::from_utf8_lossy(&buffer[header_end..total_len])
-                                    .to_string();
-                                let mut guard = received_clone.lock().await;
-                                *guard = Some(body);
-                                let _ = socket
-                                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-                                    .await;
-                                break;
+                        {
+                            let total_len = header_end + content_length;
+                            if buffer.len() < total_len {
+                                continue;
                             }
+                            let body =
+                                String::from_utf8_lossy(&buffer[header_end..total_len]).to_string();
+                            let mut guard = received_clone.lock().await;
+                            *guard = Some(body);
+                            let _ = socket
+                                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                                .await;
+                            break;
                         }
                     }
                     Err(_) => break,

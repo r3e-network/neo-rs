@@ -544,6 +544,6 @@ mod tests {
         let mut hash = [0u8; 32];
         hash[0] = 100;
         let result = mempool.add_transaction(hash, vec![100], 1000, 500, sender);
-        assert!(matches!(result, Err(TeeError::MempoolFull)));
+        std::assert_matches!(result, Err(TeeError::MempoolFull));
     }
 }

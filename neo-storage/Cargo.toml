@@ -49,3 +49,6 @@ serde_json = { workspace = true }
 
 [features]
 default = []
+
+[lints]
+workspace = true

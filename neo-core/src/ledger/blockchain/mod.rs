@@ -200,16 +200,14 @@ impl Blockchain {
             .map(|block| Self::unverified_block_cost(block.as_ref()))
             .fold(0usize, usize::saturating_add);
         let count = removed.blocks.len();
-        let _ = self._unverified_cache_bytes.fetch_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |current| Some(current.saturating_sub(bytes)),
-        );
-        let _ = self._unverified_cache_blocks.fetch_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |current| Some(current.saturating_sub(count)),
-        );
+        self._unverified_cache_bytes
+            .update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.saturating_sub(bytes)
+            });
+        self._unverified_cache_blocks
+            .update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.saturating_sub(count)
+            });
         Some(removed)
     }
 

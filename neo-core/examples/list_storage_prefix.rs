@@ -1,6 +1,5 @@
 use neo_core::persistence::{
-    ReadOnlyStoreGeneric, SeekDirection, StorageConfig, StoreCache, StoreProvider,
-    providers::RocksDBStoreProvider,
+    SeekDirection, StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
 };
 use neo_core::smart_contract::StorageKey;
 use std::path::PathBuf;
@@ -54,10 +53,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .take(limit)
     {
         let key_hex = hex::encode(key.to_array());
-        if let Some(pattern) = key_match_hex.as_ref() {
-            if !key_hex.contains(pattern) {
-                continue;
-            }
+        if let Some(pattern) = key_match_hex.as_ref()
+            && !key_hex.contains(pattern)
+        {
+            continue;
         }
         println!(
             "key=0x{} value_len={} value_hex=0x{}",

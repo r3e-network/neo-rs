@@ -300,7 +300,7 @@ mod tests {
             .traverse_iterator(&uuid_first, 10)
             .expect("traverse iterator");
         assert_eq!(values.len(), 2);
-        assert!(matches!(values[0], StackItem::Struct(_)));
+        std::assert_matches!(values[0], StackItem::Struct(_));
 
         let tail = session
             .traverse_iterator(&uuid_first, 10)

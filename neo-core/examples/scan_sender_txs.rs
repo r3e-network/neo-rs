@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut scanned = 0u64;
     for index in start..=end {
         scanned += 1;
-        if scanned % 50_000 == 0 {
+        if scanned.is_multiple_of(50_000) {
             eprintln!("scan_progress blocks={scanned} current_index={index} hits={hits}");
         }
 

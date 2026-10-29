@@ -470,7 +470,7 @@ mod tests {
         obj.insert("value".to_string(), JToken::Boolean(true));
 
         let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
-        assert!(matches!(item, StackValue::Boolean(true)));
+        std::assert_matches!(item, StackValue::Boolean(true));
     }
 
     #[test]
@@ -483,7 +483,7 @@ mod tests {
         obj.insert("id".to_string(), JToken::String("iter-1".to_string()));
 
         let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
-        assert!(matches!(item, StackValue::Interop(0)));
+        std::assert_matches!(item, StackValue::Interop(0));
     }
 
     #[test]
@@ -511,12 +511,12 @@ mod tests {
         pointer.insert("value".to_string(), JToken::String("7".to_string()));
 
         let item = RpcUtility::stack_item_from_json(&pointer).expect("pointer");
-        assert!(matches!(item, StackValue::Pointer(7)));
+        std::assert_matches!(item, StackValue::Pointer(7));
 
         let mut any = JObject::new();
         any.insert("type".to_string(), JToken::String("Any".to_string()));
         let item = RpcUtility::stack_item_from_json(&any).expect("any");
-        assert!(matches!(item, StackValue::Null));
+        std::assert_matches!(item, StackValue::Null);
     }
 
     #[test]
@@ -540,7 +540,7 @@ mod tests {
         let mut empty = JObject::new();
         empty.insert("type".to_string(), JToken::String("Unknown".to_string()));
         let item = RpcUtility::stack_item_from_json(&empty).expect("fallback null");
-        assert!(matches!(item, StackValue::Null));
+        std::assert_matches!(item, StackValue::Null);
     }
 
     #[test]
@@ -738,10 +738,7 @@ mod tests {
 
         assert_eq!(parsed.attributes().len(), attributes.len());
         // Check representative attributes for correctness
-        assert!(matches!(
-            parsed.attributes()[0],
-            TransactionAttribute::HighPriority
-        ));
+        std::assert_matches!(parsed.attributes()[0], TransactionAttribute::HighPriority);
         if let TransactionAttribute::NotValidBefore(nvb) = &parsed.attributes()[1] {
             assert_eq!(nvb.height, 42);
         } else {
@@ -776,7 +773,7 @@ mod tests {
             obj
         };
         let conflicts = attribute_from_json(&conflicts_json).unwrap();
-        assert!(matches!(conflicts, TransactionAttribute::Conflicts(_)));
+        std::assert_matches!(conflicts, TransactionAttribute::Conflicts(_));
 
         let mut nvb = JObject::new();
         nvb.insert(
@@ -785,7 +782,7 @@ mod tests {
         );
         nvb.insert("height".to_string(), JToken::Number(5f64));
         let nvb_attr = attribute_from_json(&nvb).unwrap();
-        assert!(matches!(nvb_attr, TransactionAttribute::NotValidBefore(_)));
+        std::assert_matches!(nvb_attr, TransactionAttribute::NotValidBefore(_));
 
         let mut notary = JObject::new();
         notary.insert(
@@ -794,10 +791,7 @@ mod tests {
         );
         notary.insert("nkeys".to_string(), JToken::Number(2f64));
         let notary_attr = attribute_from_json(&notary).unwrap();
-        assert!(matches!(
-            notary_attr,
-            TransactionAttribute::NotaryAssisted(_)
-        ));
+        std::assert_matches!(notary_attr, TransactionAttribute::NotaryAssisted(_));
 
         let mut oracle = JObject::new();
         oracle.insert(
@@ -811,10 +805,7 @@ mod tests {
             JToken::String(BASE64.encode(b"hello")),
         );
         let oracle_attr = attribute_from_json(&oracle).unwrap();
-        assert!(matches!(
-            oracle_attr,
-            TransactionAttribute::OracleResponse(_)
-        ));
+        std::assert_matches!(oracle_attr, TransactionAttribute::OracleResponse(_));
     }
 
     #[test]

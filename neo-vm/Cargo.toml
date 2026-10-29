@@ -36,3 +36,6 @@ proptest = "1"
 [features]
 default = []
 pooled-engine = []
+
+[lints]
+workspace = true

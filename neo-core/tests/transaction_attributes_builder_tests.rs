@@ -52,7 +52,7 @@ fn transaction_attributes_builder_add_high_priority() {
         .build();
 
     assert_eq!(attrs.len(), 1);
-    assert!(matches!(attrs[0], TransactionAttribute::HighPriority));
+    std::assert_matches!(attrs[0], TransactionAttribute::HighPriority);
 }
 
 #[test]

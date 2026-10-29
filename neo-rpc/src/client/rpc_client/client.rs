@@ -117,14 +117,11 @@ impl RpcClient {
     fn as_rpc_response(content: &str, throw_on_error: bool) -> Result<RpcResponse, ClientRpcError> {
         let json = JToken::parse(content, MAX_JSON_NESTING)
             .map_err(|e| ClientRpcError::new(-32700, format!("Parse error: {e}")))?;
-        let response_obj = match json {
-            JToken::Object(obj) => obj,
-            _ => {
-                return Err(ClientRpcError::new(
-                    -32700,
-                    "Invalid response format".to_string(),
-                ));
-            }
+        let JToken::Object(response_obj) = json else {
+            return Err(ClientRpcError::new(
+                -32700,
+                "Invalid response format".to_string(),
+            ));
         };
 
         let mut response = RpcResponse::from_json(&response_obj)

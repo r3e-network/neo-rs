@@ -366,13 +366,16 @@ impl ApplicationEngine {
                 VmStackValue::Pointer(position) => {
                     let Some(script) = script.as_ref() else {
                         return self.apply_external_vm_fault(
-                            "external VM halted with a pointer but no execution context".to_string(),
+                            "external VM halted with a pointer but no execution context"
+                                .to_string(),
                             0,
                         );
                     };
                     let Ok(position) = usize::try_from(position) else {
                         return self.apply_external_vm_fault(
-                            format!("external VM halted with a negative pointer offset: {position}"),
+                            format!(
+                                "external VM halted with a negative pointer offset: {position}"
+                            ),
                             0,
                         );
                     };
@@ -382,7 +385,9 @@ impl ApplicationEngine {
                     Ok(item) => item,
                     Err(error) => {
                         return self.apply_external_vm_fault(
-                            format!("external VM halted with an unconvertible stack value: {error}"),
+                            format!(
+                                "external VM halted with an unconvertible stack value: {error}"
+                            ),
                             0,
                         );
                     }
@@ -390,20 +395,17 @@ impl ApplicationEngine {
             };
             stack_items.push(item);
         }
-        let context_index = match self
+        let Some(context_index) = self
             .vm_engine
             .engine()
             .invocation_stack()
             .len()
             .checked_sub(1)
-        {
-            Some(index) => index,
-            None => {
-                return self.apply_external_vm_fault(
-                    "No execution context after external VM halt".to_string(),
-                    0,
-                );
-            }
+        else {
+            return self.apply_external_vm_fault(
+                "No execution context after external VM halt".to_string(),
+                0,
+            );
         };
         if let Err(error) = self.vm_engine.engine_mut().remove_context(context_index) {
             return self.apply_external_vm_fault(error.to_string(), 0);
@@ -431,9 +433,8 @@ impl ApplicationEngine {
     }
 }
 fn script_uses_application_engine_host(script: &[u8]) -> bool {
-    let instructions = match neo_vm::parse_script_instructions(script) {
-        Ok(instructions) => instructions,
-        Err(_) => return true,
+    let Ok(instructions) = neo_vm::parse_script_instructions(script) else {
+        return true;
     };
     for instruction in instructions {
         match instruction.opcode() {

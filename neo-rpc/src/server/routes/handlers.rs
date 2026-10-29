@@ -238,11 +238,9 @@ fn process_object(
     }
 
     let method_value = obj.remove("method");
-    let method = if let Some(value) =
+    let Some(method) =
         method_value.and_then(|value| value.as_str().map(std::string::ToString::to_string))
-    {
-        value
-    } else {
+    else {
         RPC_ERR_TOTAL.inc();
         if let Some(outcome) = charge_standard_rate_limit(filters, client_ip) {
             return outcome;
@@ -259,9 +257,7 @@ fn process_object(
     }
 
     let params_value = obj.remove("params").unwrap_or(Value::Array(Vec::new()));
-    let params = if let Value::Array(values) = params_value {
-        values
-    } else {
+    let Value::Array(params) = params_value else {
         RPC_ERR_TOTAL.inc();
         return RequestOutcome::error(error_response(id, RpcError::invalid_request()), false);
     };

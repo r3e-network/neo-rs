@@ -1,0 +1,6 @@
+# Single source of truth for the Rust toolchain; see docs/TOOLCHAIN.md.
+# Keep in sync with `rust-version` in Cargo.toml and the Dockerfile base image.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

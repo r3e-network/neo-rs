@@ -22,20 +22,18 @@ impl OracleNeoFsProtocol {
                 "object range is invalid (expected 'Offset|Length')".to_string(),
             );
         };
-        let builder = match self.request_builder(reqwest::Method::GET, object_url, auth) {
-            Ok(builder) => builder,
-            Err(_) => return (OracleResponseCode::Error, String::new()),
+        let Ok(builder) = self.request_builder(reqwest::Method::GET, object_url, auth) else {
+            return (OracleResponseCode::Error, String::new());
         };
-        let response = match builder
+        let Ok(response) = builder
             .header(
                 reqwest::header::RANGE,
                 format!("bytes={}-{}", range.offset, end),
             )
             .send()
             .await
-        {
-            Ok(response) => response,
-            Err(_) => return (OracleResponseCode::Timeout, String::new()),
+        else {
+            return (OracleResponseCode::Timeout, String::new());
         };
 
         if let Some(code) = map_neofs_status(response.status()) {

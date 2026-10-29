@@ -288,7 +288,7 @@ mod tests {
         let result = <[u8; 4]>::from_storage_bytes(data); // expects 4 bytes
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, StorageValueError::InvalidFormat { .. }));
+        std::assert_matches!(err, StorageValueError::InvalidFormat { .. });
     }
 
     #[test]
@@ -457,22 +457,16 @@ mod tests {
     fn test_fixed_array_size_mismatch_errors() {
         // Test size mismatch error paths
         let result4_from_5 = <[u8; 4]>::from_storage_bytes(&[1, 2, 3, 4, 5]);
-        assert!(matches!(
-            result4_from_5,
-            Err(StorageValueError::InvalidFormat { .. })
-        ));
+        std::assert_matches!(result4_from_5, Err(StorageValueError::InvalidFormat { .. }));
 
         let result8_from_4 = <[u8; 8]>::from_storage_bytes(&[1, 2, 3, 4]);
-        assert!(matches!(
-            result8_from_4,
-            Err(StorageValueError::InvalidFormat { .. })
-        ));
+        std::assert_matches!(result8_from_4, Err(StorageValueError::InvalidFormat { .. }));
 
         let result32_from_0 = <[u8; 32]>::from_storage_bytes(&[]);
-        assert!(matches!(
+        std::assert_matches!(
             result32_from_0,
             Err(StorageValueError::InvalidFormat { .. })
-        ));
+        );
     }
 
     #[test]

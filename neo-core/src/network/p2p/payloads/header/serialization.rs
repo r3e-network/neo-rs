@@ -1,12 +1,10 @@
-// NOTE: This type is a parallel implementation of [neo_core::ledger::block_header::BlockHeader].
-// Both serialize/deserialize the same Neo N3 block header wire format.
-// Any wire format change MUST be applied to both types.
-// TODO: Unify these into a single shared serialization to prevent divergence.
+// Unsigned fields come from `crate::ledger::header_wire`, the same layout
+// `BlockHeader` hashes. This file only frames the single header witness.
 
 use super::{Header, Witness};
 use crate::error::CoreResult;
+use crate::ledger::header_wire::UnsignedHeader;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::{UInt160, UInt256};
 
 impl Header {
     /// Returns the unsigned serialization used for hashing.
@@ -30,15 +28,20 @@ impl Header {
 
     /// Serialize without witness.
     pub(super) fn serialize_unsigned(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u32(self.version)?;
-        writer.write_serializable(&self.prev_hash)?;
-        writer.write_serializable(&self.merkle_root)?;
-        writer.write_u64(self.timestamp)?;
-        writer.write_u64(self.nonce)?;
-        writer.write_u32(self.index)?;
-        writer.write_u8(self.primary_index)?;
-        writer.write_serializable(&self.next_consensus)?;
-        Ok(())
+        self.unsigned().write(writer)
+    }
+
+    fn unsigned(&self) -> UnsignedHeader {
+        UnsignedHeader {
+            version: self.version,
+            previous_hash: self.prev_hash,
+            merkle_root: self.merkle_root,
+            timestamp: self.timestamp,
+            nonce: self.nonce,
+            index: self.index,
+            primary_index: self.primary_index,
+            next_consensus: self.next_consensus,
+        }
     }
 }
 
@@ -64,17 +67,18 @@ impl Serializable for Header {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let version = reader.read_u32()?;
-        if version > 0 {
+        let fields = UnsignedHeader::read(reader)?;
+        if fields.version > 0 {
             return Err(IoError::invalid_data("unsupported header version"));
         }
-        let prev_hash = <UInt256 as Serializable>::deserialize(reader)?;
-        let merkle_root = <UInt256 as Serializable>::deserialize(reader)?;
-        let timestamp = reader.read_u64()?;
-        let nonce = reader.read_u64()?;
-        let index = reader.read_u32()?;
-        let primary_index = reader.read_u8()?;
-        let next_consensus = <UInt160 as Serializable>::deserialize(reader)?;
+        let version = fields.version;
+        let prev_hash = fields.previous_hash;
+        let merkle_root = fields.merkle_root;
+        let timestamp = fields.timestamp;
+        let nonce = fields.nonce;
+        let index = fields.index;
+        let primary_index = fields.primary_index;
+        let next_consensus = fields.next_consensus;
 
         // Read witness count (should be 1)
         let witness_count = reader.read_var_uint()?;

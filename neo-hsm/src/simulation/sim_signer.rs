@@ -277,7 +277,7 @@ mod tests {
 
         // Wrong PIN should fail
         let result = signer.unlock("wrong").await;
-        assert!(matches!(result, Err(HsmError::InvalidPin)));
+        std::assert_matches!(result, Err(HsmError::InvalidPin));
 
         // Correct PIN should work
         signer.unlock("1234").await.expect("Failed to unlock");

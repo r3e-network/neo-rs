@@ -581,10 +581,10 @@ mod tests {
         let current_time = TimeProvider::current().utc_now_timestamp_millis() as u64;
         let future_timestamp = current_time + MAX_TIMESTAMP_DRIFT_MS + 10_000; // 10 seconds buffer
         let result = validate_timestamp_bounds(future_timestamp);
-        assert!(matches!(
+        std::assert_matches!(
             result,
             Err(BlockValidationError::TimestampTooFarInFuture { .. })
-        ));
+        );
     }
 
     #[test]
