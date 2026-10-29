@@ -512,7 +512,7 @@ Located in `.github/workflows/`:
 
 - **Neo N3**: Neo blockchain version 3
 - **C# Parity**: Byte-for-byte compatibility with official C# implementation
-- **Protocol Version**: Currently targeting v3.10.1
+- **Protocol Version**: Currently targeting C# Neo v3.10.2. NeoVM stays v3.10.1. The only protocol delta from v3.10.1 is multisig public-key validation; see `docs/protocol/NEO_3.10.2.md`.
 - **Native Contracts**: Built-in smart contracts (GasToken, NeoToken, etc.)
 - **dBFT**: Delegated Byzantine Fault Tolerance consensus
 

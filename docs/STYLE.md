@@ -1,9 +1,37 @@
 # Neo-rs Code Style Guide
 
-> **Version**: 1.0.0  
-> **Last Updated**: 2026-01-28
+> **Version**: 1.1.0
+> **Last Updated**: 2026-10-29
 
 This document defines the coding standards and conventions for the neo-rs project.
+Language features and the compiler pin live in [TOOLCHAIN.md](TOOLCHAIN.md).
+The layer model below is the one `tests/tests/layer_boundary_tests.rs` enforces.
+
+## Language and architecture baseline
+
+Dependencies point at the same layer or a lower one. `tests/tests/layer_boundary_tests.rs` fails the build on an upward edge, and every production crate has to appear in that map.
+
+| Layer | Crates |
+|---|---|
+| 0 Foundation | `neo-primitives`, `neo-json`, `neo-storage`, `neo-io`, `neo-config` |
+| 1 Crypto | `neo-crypto` |
+| 2 VM and protocol | `neo-vm`, `neo-core`, `neo-p2p`, `neo-consensus` |
+| 3 Services | `neo-rpc`, `neo-telemetry`, `neo-tee`, `neo-hsm` |
+| 4 Application | `neo-node` |
+
+A wire layout that two types hash or encode has one writer. The unsigned Neo N3 block header is `neo-core/src/ledger/header_wire.rs` (`UnsignedHeader::WIRE_SIZE` is the byte length). Witness framing stays on the ledger `BlockHeader` and the P2P `Header`.
+
+On the Rust 1.99 pin, write new code with these forms:
+
+| Form | Use |
+|---|---|
+| `let … else` | Early-return destructuring. `clippy::manual_let_else` warns otherwise. |
+| `if let A = x && let B = y` | Chained patterns. Prefer this over a nested `if let`. |
+| `std::assert_matches!` | Pattern assertions. The macro is not in the prelude, and the value must implement `Debug`. |
+| `Atomic*::update` | Infallible atomic read-modify-write. `fetch_update` stays only when the closure can fail. |
+| `Box::into_non_null` | A box that must be stored as a pointer. Do not pair `Box::into_raw` with `mem::forget(Box::from_raw(_))`. |
+
+`f32`/`f64::algebraic_*` is not used. Consensus code must stay deterministic. A permanent `Box::leak` that lives for the process (RPC method names) stays; leak-then-free does not.
 
 ## Table of Contents
 
@@ -726,15 +754,14 @@ async fn concurrent_operations_work() {
 ### Minimize Unsafe Usage
 
 ```rust
-// ✅ GOOD: Prefer safe alternatives
+// Prefer safe alternatives.
 let bytes = vec![0u8; 1024];
 
-// ❌ BAD: Unnecessary unsafe
-let bytes = unsafe {
-    let ptr = std::alloc::alloc(layout);
-    Vec::from_raw_parts(ptr, 0, 1024)
-};
+// A box stored as a pointer keeps the non-null newtype from Box::into_non_null.
+let ptr = Box::into_non_null(Box::new(value));
 ```
+
+`Vec::from_raw_parts` and `Box::from_raw` are for reconstructing an allocation this crate still owns. They are not a way to silence a double-free after `ptr::read`.
 
 ### Document Safety Requirements
 

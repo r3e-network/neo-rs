@@ -1,8 +1,8 @@
 # Neo-rs Architecture Documentation
 
-> **Version**: 0.19.1
+> **Version**: 0.20.0
 > **Last Updated**: 2026-10-29
-> **Target Compatibility**: Neo N3 v3.10.1
+> **Target Compatibility**: Neo N3 v3.10.2 (NeoVM v3.10.1). See [docs/protocol/NEO_3.10.2.md](protocol/NEO_3.10.2.md).
 
 This document provides comprehensive architecture documentation for the neo-rs project, a professional Rust implementation of the Neo N3 blockchain node.
 
@@ -24,16 +24,18 @@ This document provides comprehensive architecture documentation for the neo-rs p
 ### 1.1 High-Level Architecture Diagram
 
 ```text
-Application:  neo-node
-    │
-Services:    neo-rpc (server/client), neo-telemetry, neo-tee, neo-hsm
-    │
-Protocol:    neo-core, neo-vm, neo-consensus, neo-p2p
-    │
-Crypto:      neo-crypto
-    │
-Foundation:  neo-primitives, neo-json, neo-storage, neo-io, neo-config
+Layer 4 Application:  neo-node
+        │
+Layer 3 Services:     neo-rpc (server/client), neo-telemetry, neo-tee, neo-hsm
+        │
+Layer 2 Protocol:     neo-vm, neo-core, neo-consensus, neo-p2p
+        │
+Layer 1 Crypto:       neo-crypto
+        │
+Layer 0 Foundation:   neo-primitives, neo-json, neo-storage, neo-io, neo-config
 ```
+
+`tests/tests/layer_boundary_tests.rs` is the check for this map. A crate may depend on its own layer or a lower one. An upward edge fails that test. Crate rustdoc uses these same layer numbers.
 
 The node is the application entry point. Protocol and VM crates are isolated
 from services; foundation crates contain reusable data, storage, I/O, and

@@ -63,6 +63,10 @@ fn p2p_header_and_block_header_encode_the_same_bytes() {
     let ledger_bytes = encode(&ledger);
     assert_eq!(p2p_bytes, ledger_bytes);
     assert_eq!(p2p.size(), ledger.size());
+    assert_eq!(
+        BlockHeader::UNSIGNED_WIRE_SIZE,
+        4 + 32 + 32 + 8 + 8 + 4 + 1 + 20
+    );
 
     let from_p2p: BlockHeader = decode(&p2p_bytes);
     let from_ledger: Header = decode(&ledger_bytes);
@@ -74,8 +78,8 @@ fn p2p_header_and_block_header_encode_the_same_bytes() {
 #[test]
 fn either_type_rejects_a_second_witness() {
     let mut bytes = encode(&sample_block_header());
-    // The witness count is the first byte after the 4+32+32+8+8+4+1+20 unsigned prefix.
-    let count_at = 4 + 32 + 32 + 8 + 8 + 4 + 1 + 20;
+    // The witness count is the first byte after the unsigned prefix.
+    let count_at = BlockHeader::UNSIGNED_WIRE_SIZE;
     assert_eq!(bytes[count_at], 1);
     bytes[count_at] = 2;
     assert!(try_decode::<BlockHeader>(&bytes).is_err());

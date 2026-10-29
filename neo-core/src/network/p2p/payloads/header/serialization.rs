@@ -47,13 +47,7 @@ impl Header {
 
 impl Serializable for Header {
     fn size(&self) -> usize {
-        4 + 32
-            + 32
-            + 8
-            + 8
-            + 4
-            + 1
-            + 20
+        UnsignedHeader::WIRE_SIZE
             + crate::neo_io::serializable::helper::get_var_size(1)
             + self.witness.size()
     }

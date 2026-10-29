@@ -39,13 +39,18 @@
 //!
 //! ## Layer Position
 //!
-//! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
+//! This crate is **Layer 2 (VM and protocol)**. The full node protocol lives
+//! in `neo-core::network`; this crate is the small message vocabulary that
+//! `neo-core` and `neo-node` can share without a cycle.
 //!
 //! ```text
-//! Layer 1 (Core):   neo-p2p ◄── YOU ARE HERE
+//! Layer 2 (VM and protocol): neo-p2p, neo-core
 //!            │
 //!            ▼
-//! Layer 0 (Foundation): neo-primitives
+//! Layer 1 (Crypto): neo-crypto
+//!            │
+//!            ▼
+//! Layer 0 (Foundation): neo-primitives, neo-io
 //! ```
 //!
 //! ## When to Use This Crate

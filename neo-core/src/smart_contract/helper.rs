@@ -86,10 +86,14 @@ impl Helper {
         script[36..40] == Self::check_sig_hash()
     }
 
-    /// Maximum number of public keys allowed in a multi-sig contract (C# neo v3.10.1).
+    /// Maximum number of public keys allowed in a multi-sig contract (C# neo v3.10.2).
     pub const MAX_PUBLIC_KEYS_PER_MULTISIG: usize = 1024;
 
     /// Checks if a script is a multi-sig contract.
+    ///
+    /// This is the only classification path. C# v3.10.2 decodes every public key
+    /// before any `IsMultiSigContract` overload returns true; a shape-only check
+    /// let a malformed key through the `bool` overload.
     pub fn is_multi_sig_contract(script: &[u8]) -> bool {
         Self::parse_multi_sig_contract(script).is_some()
     }
@@ -177,9 +181,10 @@ impl Helper {
     /// Parses a multi-signature contract script, returning the required signature count and
     /// the ordered public keys when the script matches the canonical Neo multi-sig format.
     ///
-    /// Mirrors C# `Helper.IsMultiSigContract` (v3.10.1): m/n accept `PUSHINT8`/`PUSHINT16`
+    /// Mirrors C# `Helper.IsMultiSigContract` (v3.10.2): m/n accept `PUSHINT8`/`PUSHINT16`
     /// as well as `PUSH1..PUSH16`, both are bounded by 1..=1024, every 33-byte key must
     /// decode as a secp256r1 point, and the tail must be `n`-push, `SYSCALL`, `CheckMultisig`.
+    /// Decoding runs even when the caller only needs a boolean.
     pub fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, Vec<Vec<u8>>)> {
         use neo_vm::OpCode;
 

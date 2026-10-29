@@ -43,13 +43,15 @@
 //!
 //! ## Layer Position
 //!
-//! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
+//! This crate is **Layer 2 (VM and protocol)**, beside `neo-core`. It does
+//! not depend on `neo-core`. Callers in `neo-core` and `neo-consensus` sit
+//! in the same layer.
 //!
 //! ```text
-//! Layer 2 (Service): Application layer
+//! Layer 2 (VM and protocol): neo-vm, neo-core, neo-consensus
 //!            │
 //!            ▼
-//! Layer 1 (Core):   neo_core::neo_vm embedded runtime
+//! Layer 1 (Crypto): neo-crypto
 //!            │
 //!            ▼
 //! Layer 0 (Foundation): neo-primitives, neo-io

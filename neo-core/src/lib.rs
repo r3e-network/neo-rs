@@ -26,23 +26,29 @@
 //!
 //! ## Layer Position
 //!
-//! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
+//! This crate is **Layer 2 (VM and protocol)**. Dependencies stay in this
+//! layer or go downward. Services (`neo-rpc`) and the node are above it.
 //!
 //! ```text
-//! Layer 1 (Core):   neo-core ◄── YOU ARE HERE
+//! Layer 2 (VM and protocol): neo-vm, neo-core, neo-p2p, neo-consensus
 //!            │
 //!            ▼
-//! Layer 0 (Foundation): neo-primitives, neo-crypto, neo-storage
+//! Layer 1 (Crypto): neo-crypto
+//!            │
+//!            ▼
+//! Layer 0 (Foundation): neo-primitives, neo-io, neo-storage, neo-json, neo-config
 //! ```
 //!
 //! ## Dependencies
 //!
-//! This crate depends only on Layer 0 (Foundation) crates:
 //! - [`neo_primitives`]: Core types (`UInt160`, `UInt256`)
 //! - [`neo_crypto`]: Cryptographic operations
 //! - [`neo_storage`]: Storage traits
 //! - [`neo_io`]: I/O operations
 //! - [`neo_json`]: JSON handling
+//! - [`neo_config`]: Protocol configuration, including hardfork heights
+//! - [`neo_vm`]: Execution engine
+//! - `neo-p2p`: P2P message vocabulary shared with the node
 //!
 //! ## Features
 //!

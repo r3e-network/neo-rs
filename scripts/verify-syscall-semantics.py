@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify syscall *semantics* (not just names) against the C# v3.10.1 reference.
+"""Verify syscall *semantics* (not just names) against the C# v3.10.2 reference.
 
 `verify-syscall-parity.py` proves the Rust node registers the same syscall *names*
 and derives the same *hashes* as C#. It does not prove the two implementations agree
@@ -65,7 +65,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / ".cache" / "csharp-parity"
 
 CSHARP_BASE = "https://raw.githubusercontent.com/neo-project/neo"
-CSHARP_REF = os.environ.get("NEO_CSHARP_REF", "v3.10.1")
+CSHARP_REF = os.environ.get("NEO_CSHARP_REF", "v3.10.2")
 CSHARP_DIR = "src/Neo/SmartContract"
 
 CSHARP_FILES = [

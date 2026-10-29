@@ -132,6 +132,143 @@ fn test_is_multi_sig_contract_invalid_cases() {
     assert!(!Helper::is_multi_sig_contract(&case2));
 }
 
+/// C# v3.10.2 `TestIsMultiSigContract_InvalidPublicKey`.
+///
+/// Prefix 0 and prefix 4 are not compressed secp256r1 points. Every
+/// classification path must reject the script.
+#[test]
+fn test_is_multi_sig_contract_rejects_undecodable_public_key() {
+    for prefix in [0u8, 4] {
+        let script = multisig_script(1, &[undecodable_key(prefix)]);
+        assert!(
+            !Helper::is_multi_sig_contract(&script),
+            "prefix {prefix:#x} must not be a multisig contract"
+        );
+        assert!(Helper::parse_multi_sig_contract(&script).is_none());
+        assert!(!Helper::is_standard_contract(&script));
+    }
+}
+
+/// C# v3.10.2 `TestIsMultiSigContract_WrongCurve`.
+///
+/// The first secp256k1 point has no secp256r1 compressed encoding. A multisig
+/// script that includes it is not standard. The other three compressed points
+/// also lie on secp256r1, so a script of just those three is standard.
+#[test]
+fn test_is_multi_sig_contract_rejects_secp256k1_only_point() {
+    let keys: Vec<Vec<u8>> = K256_UNCOMPRESSED
+        .iter()
+        .map(|hex| compressed_secp256k1(hex))
+        .collect();
+
+    let bad = multisig_script(3, &keys);
+    assert!(!Helper::is_multi_sig_contract(&bad));
+    assert!(Helper::parse_multi_sig_contract(&bad).is_none());
+
+    let good = multisig_script(3, &keys[1..]);
+    let parsed = Helper::parse_multi_sig_contract(&good).expect("three shared points");
+    assert_eq!(parsed.0, 3);
+    assert_eq!(parsed.1.len(), 3);
+    assert!(Helper::is_multi_sig_contract(&good));
+}
+
+/// C# `TestIsSignatureContract_WrongCurve`. Signature scripts are not decoded.
+#[test]
+fn test_is_signature_contract_does_not_decode_public_key() {
+    let key = compressed_secp256k1(K256_UNCOMPRESSED[0]);
+    let script = Helper::signature_redeem_script(&key);
+    assert!(Helper::is_signature_contract(&script));
+    assert!(Helper::is_standard_contract(&script));
+}
+
+/// C# v3.10.2 `Test_Verify_MalformedMultiSigWitness`.
+///
+/// The witness has the multisig shape and an all-zero public key. It is not a
+/// standard witness, so state-independent verification accepts it and
+/// state-dependent verification rejects it. That holds whether or not the
+/// signer account equals the witness script hash.
+#[test]
+fn test_malformed_multisig_witness_is_not_standard() {
+    use neo_core::ledger::VerifyResult;
+
+    let verification = multisig_script(1, &[undecodable_key(0)]);
+    let mut invocation = ScriptBuilder::new();
+    invocation.emit_push(&[0u8; 64]);
+    let invocation = invocation.to_array();
+    let witness = Witness::new_with_scripts(invocation, verification);
+    let settings = ProtocolSettings::default();
+    let snapshot = DataCache::new(false);
+
+    for matching_script_hash in [true, false] {
+        let account = if matching_script_hash {
+            witness.script_hash()
+        } else {
+            UInt160::from_script(&[1, 2, 3])
+        };
+        let mut tx = Transaction::new();
+        tx.set_nonce(123_456);
+        tx.set_system_fee(0);
+        tx.set_network_fee(1_0000_0000);
+        tx.set_valid_until_block(10);
+        tx.set_script(vec![OpCode::PUSH1.byte()]);
+        tx.set_signers(vec![Signer::new(account, WitnessScope::GLOBAL)]);
+        tx.set_witnesses(vec![witness.clone()]);
+
+        assert_eq!(
+            matching_script_hash,
+            account == tx.witnesses()[0].script_hash()
+        );
+        assert_eq!(
+            tx.verify_state_independent(&settings),
+            VerifyResult::Succeed
+        );
+        assert_eq!(
+            tx.verify_state_dependent(&settings, &snapshot, None, &[]),
+            VerifyResult::Invalid
+        );
+        assert_eq!(
+            tx.verify(&settings, &snapshot, None, &[]),
+            VerifyResult::Invalid
+        );
+    }
+}
+
+/// Uncompressed secp256k1 points from C# `TestIsMultiSigContract_WrongCurve`.
+const K256_UNCOMPRESSED: [&str; 4] = [
+    "047b4e72ae854b6a0955b3e02d92651ab7fa641a936066776ad438f95bb674a269a63ff98544691663d91a6cfcd215831f01bfb7a226363a6c5c67ef14541dba07",
+    "040486468683c112125978ffe876245b2006bfe739aca8539b67335079262cb27ad0dedc9e5583f99b61c6f46bf80b97eaec3654b87add0e5bd7106c69922a229d",
+    "040d26fc2ad3b1aae20f040b5f83380670f8ef5c2b2ac921ba3bdd79fd0af0525177715fd4370b1012ddd10579698d186ab342c223da3e884ece9cab9b6638c7bb",
+    "04a114d72fe2997cdac67427b6f39ea08ed46213c8bb6a461bbac2a6212cf43fb510f8adf59b0b087a7859f96d0288e5e94800eab8388f30f03f92b2e4d807dfce",
+];
+
+fn undecodable_key(prefix: u8) -> Vec<u8> {
+    let mut key = vec![0u8; 33];
+    key[0] = prefix;
+    key
+}
+
+fn compressed_secp256k1(uncompressed_hex: &str) -> Vec<u8> {
+    use neo_core::cryptography::{ECCurve, ECPoint, Hex};
+
+    let encoded = Hex::decode(uncompressed_hex).expect("hex");
+    ECPoint::from_bytes_with_curve(ECCurve::Secp256k1, &encoded)
+        .expect("secp256k1 point")
+        .to_bytes()
+}
+
+fn multisig_script(m: i64, keys: &[Vec<u8>]) -> Vec<u8> {
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push_int(m);
+    for key in keys {
+        builder.emit_push(key);
+    }
+    builder.emit_push_int(keys.len() as i64);
+    builder
+        .emit_syscall("System.Crypto.CheckMultisig")
+        .expect("CheckMultisig syscall");
+    builder.to_array()
+}
+
 // ============================================================================
 // Helper.GetContractHash tests (from C# UT_Helper.cs)
 // ============================================================================

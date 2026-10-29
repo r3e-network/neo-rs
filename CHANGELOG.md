@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-29
+
+### Protocol
+- Target C# Neo v3.10.2. The only consensus delta from v3.10.1 is multisig classification: every path decodes secp256r1 public keys before a script is a standard multisig contract. NeoVM stays v3.10.1. See `docs/protocol/NEO_3.10.2.md`.
+- Unsigned block-header bytes have one writer (`UnsignedHeader`) and one length (`WIRE_SIZE`). Hardfork heights are read by an exhaustive match.
+
+### Toolchain
+- Pin and MSRV are Rust 1.99. Workspace lints are enforced. `let … else`, let chains, `std::assert_matches!`, and `Atomic::update` are the adopted forms.
+
+### Consistency work already on main since v0.19.1
+- Fail-closed application-log comparison, state-root halt after a validator-signed divergence, and the pruned MPT cache fix.
+
 ## [0.18.0] - 2026-09-24
 
 ### Performance

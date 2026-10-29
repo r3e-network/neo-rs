@@ -22,6 +22,10 @@ pub(crate) struct UnsignedHeader {
 }
 
 impl UnsignedHeader {
+    /// Byte length of `write`. Field widths are the Neo N3 wire widths.
+    pub(crate) const WIRE_SIZE: usize =
+        4 + UInt256::LENGTH + UInt256::LENGTH + 8 + 8 + 4 + 1 + UInt160::LENGTH;
+
     pub(crate) fn write(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         writer.write_u32(self.version)?;
         writer.write_serializable(&self.previous_hash)?;

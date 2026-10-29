@@ -77,7 +77,7 @@ was defined but no crate opted in, so it had no effect.
 | 1.99 | `Atomic*::update` | Replaces the deprecated `fetch_update` when the closure is infallible (`try_update` otherwise). |
 | 1.96 | `core::range::Range` (`Copy`) | Allowed for stored spans; public APIs keep `impl RangeBounds`. |
 | 1.98 | `{integer}::format_into(&mut NumBuffer)` | Use when profiling shows integer-to-text on a hot path. Today none qualifies: RPC/JSON numbers go through `serde_json` (`itoa`/`ryu`). |
-| 1.99 | `Box::into_non_null`, `Vec::into_parts` | Preferred over raw-pointer round trips in `unsafe` code. |
+| 1.99 | `Box::into_non_null`, `Vec::into_parts` | Preferred over raw-pointer round trips in `unsafe` code. `ArenaMemoryPool` stores `NonNull` from `Box::into_non_null`. |
 
 Explicitly **not** adopted:
 

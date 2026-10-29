@@ -37,13 +37,17 @@
 //!
 //! ## Layer Position
 //!
-//! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
+//! This crate is **Layer 3 (Services)**. The `server` feature is what pulls
+//! in `neo-core`. A client-only build stays on the foundation crates.
 //!
 //! ```text
-//! Layer 1 (Core):   neo-rpc ◄── YOU ARE HERE
+//! Layer 3 (Services): neo-rpc
 //!            │
 //!            ▼
-//! Layer 0 (Foundation): neo-primitives, neo-io, neo-json
+//! Layer 2 (VM and protocol): neo-core, neo-vm   (server feature)
+//!            │
+//!            ▼
+//! Layer 0 (Foundation): neo-primitives, neo-io, neo-json, neo-config
 //! ```
 //!
 //! ## Features

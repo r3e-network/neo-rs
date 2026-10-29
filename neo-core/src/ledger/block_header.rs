@@ -164,6 +164,9 @@ impl BlockHeader {
     pub fn index(&self) -> u32 {
         self.index
     }
+
+    /// Byte length of the unsigned header. The P2P `Header` uses the same value.
+    pub const UNSIGNED_WIRE_SIZE: usize = UnsignedHeader::WIRE_SIZE;
 }
 
 impl Default for BlockHeader {
@@ -202,15 +205,7 @@ impl Serializable for BlockHeader {
     }
 
     fn size(&self) -> usize {
-        let mut size = 0;
-        size += 4; // version
-        size += UInt256::LENGTH; // previous_hash
-        size += UInt256::LENGTH; // merkle_root
-        size += 8; // timestamp
-        size += 8; // nonce
-        size += 4; // index
-        size += 1; // primary index
-        size += UInt160::LENGTH; // next consensus
+        let mut size = Self::UNSIGNED_WIRE_SIZE;
         size += get_var_size(self.witnesses.len() as u64);
         size += self
             .witnesses

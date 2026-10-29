@@ -47,6 +47,9 @@
 //! arena.reset();
 //! ```
 
+use std::cell::Cell;
+use std::ptr::NonNull;
+
 /// Thread-safe arena pool for VM allocations.
 ///
 /// Uses thread-local storage for zero-cost allocation and reset operations.
@@ -61,7 +64,9 @@
 /// - **Full Reset**: Single operation to reclaim ALL allocated memory at transaction end
 #[derive(Clone)]
 pub struct ArenaMemoryPool {
-    inner: std::cell::Cell<*mut UnsafeArena>,
+    /// Shared arena pointer. `Clone` copies the `NonNull`; the allocation is
+    /// not freed, because a `Drop` would run once per clone.
+    inner: Cell<NonNull<UnsafeArena>>,
 }
 
 struct UnsafeArena {
@@ -84,14 +89,14 @@ impl ArenaMemoryPool {
     /// Creates a new arena memory pool with default capacity.
     #[must_use]
     pub fn new() -> Self {
-        let inner = Box::into_raw(Box::new(UnsafeArena {
+        let inner = Box::into_non_null(Box::new(UnsafeArena {
             arena: bumpalo::Bump::new(),
             capacity_bytes: Self::DEFAULT_CAPACITY,
             used_bytes: std::cell::Cell::new(0),
         }));
 
         Self {
-            inner: std::cell::Cell::new(inner),
+            inner: Cell::new(inner),
         }
     }
 
@@ -107,15 +112,21 @@ impl ArenaMemoryPool {
     /// let arena = ArenaMemoryPool::with_capacity(2 * 1024 * 1024); // 2MB
     /// ```
     pub fn with_capacity(capacity: usize) -> Self {
-        let inner = Box::into_raw(Box::new(UnsafeArena {
+        let inner = Box::into_non_null(Box::new(UnsafeArena {
             arena: bumpalo::Bump::with_capacity(capacity),
             capacity_bytes: capacity,
             used_bytes: std::cell::Cell::new(0),
         }));
 
         Self {
-            inner: std::cell::Cell::new(inner),
+            inner: Cell::new(inner),
         }
+    }
+
+    fn arena(&self) -> &UnsafeArena {
+        // SAFETY: `inner` comes from `Box::into_non_null` and is never freed.
+        // Clones alias the same allocation.
+        unsafe { self.inner.get().as_ref() }
     }
 
     /// Allocates a value T from the arena using bump allocation (O(1)).
@@ -145,10 +156,10 @@ impl ArenaMemoryPool {
     /// assert_eq!(*item.as_int().unwrap(), 42);
     /// ```
     pub unsafe fn allocate<T>(&self, value: T) -> &T {
-        let raw_ptr = self.inner.get();
-        let ptr = unsafe { (*raw_ptr).arena.alloc(value) };
-        let used = unsafe { (*raw_ptr).used_bytes.get() };
-        unsafe { (*raw_ptr).used_bytes.set(used + std::mem::size_of::<T>()) };
+        let arena = self.arena();
+        let ptr = arena.arena.alloc(value);
+        let used = arena.used_bytes.get();
+        arena.used_bytes.set(used + std::mem::size_of::<T>());
         ptr
     }
 
@@ -182,18 +193,10 @@ impl ArenaMemoryPool {
             return &[];
         }
         // Allocate `len` contiguous elements, each a copy of `initial_value`.
-        let raw_ptr = self.inner.get();
-        let slice = unsafe {
-            (*raw_ptr)
-                .arena
-                .alloc_slice_fill_with(len, |_| initial_value)
-        };
-        let used = unsafe { (*raw_ptr).used_bytes.get() };
-        unsafe {
-            (*raw_ptr)
-                .used_bytes
-                .set(used + std::mem::size_of::<T>() * len)
-        };
+        let arena = self.arena();
+        let slice = arena.arena.alloc_slice_fill_with(len, |_| initial_value);
+        let used = arena.used_bytes.get();
+        arena.used_bytes.set(used + std::mem::size_of::<T>() * len);
         slice
     }
 
@@ -223,11 +226,10 @@ impl ArenaMemoryPool {
     /// let next = arena.allocate(42);
     /// ```
     pub fn reset(&self) {
-        let raw_ptr = self.inner.get();
         unsafe {
-            (*raw_ptr).arena.reset();
+            self.inner.get().as_mut().arena.reset();
         }
-        unsafe { (*raw_ptr).used_bytes.set(0) };
+        self.arena().used_bytes.set(0);
     }
 
     /// Gets the current number of bytes allocated in this arena.
@@ -244,15 +246,13 @@ impl ArenaMemoryPool {
     /// println!("Used {} KB", arena.used_bytes() / 1024);
     /// ```
     pub fn used_bytes(&self) -> usize {
-        let raw_ptr = self.inner.get();
-        unsafe { (*raw_ptr).used_bytes.get() }
+        self.arena().used_bytes.get()
     }
 
     /// Gets the configured capacity in bytes.
     #[must_use]
     pub fn capacity_bytes(&self) -> usize {
-        let raw_ptr = self.inner.get();
-        unsafe { (*raw_ptr).capacity_bytes }
+        self.arena().capacity_bytes
     }
 
     /// Checks if the arena has enough remaining space for an allocation.

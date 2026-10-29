@@ -61,11 +61,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / ".cache" / "csharp-parity"
 
 CSHARP_BASE = "https://raw.githubusercontent.com/neo-project/neo"
-# The audit targets Neo N3 v3.10.1, so that tag is the baseline. Do NOT default to
+# The audit targets Neo N3 v3.10.2, so that tag is the baseline. Do NOT default to
 # master-n3: it is a moving development branch and has already diverged (e.g. it
-# removed NeoToken.getCandidates, which v3.10.1 still exposes), which would report
+# removed NeoToken.getCandidates, which v3.10.2 still exposes), which would report
 # false "extra in Rust" diffs.
-CSHARP_REF = os.environ.get("NEO_CSHARP_REF", "v3.10.1")
+CSHARP_REF = os.environ.get("NEO_CSHARP_REF", "v3.10.2")
 
 RUST_NATIVE_DIR = REPO_ROOT / "neo-core" / "src" / "smart_contract" / "native"
 

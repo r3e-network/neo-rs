@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify native-contract method *semantics* against the C# v3.10.1 reference.
+"""Verify native-contract method *semantics* against the C# v3.10.2 reference.
 
 `verify-native-parity.py` answers "does Rust expose the same method names as C#?".
 It deliberately does not look at anything else (its docstring says so). A method can
@@ -64,7 +64,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / ".cache" / "csharp-parity"
 
 CSHARP_BASE = "https://raw.githubusercontent.com/neo-project/neo"
-CSHARP_REF = os.environ.get("NEO_CSHARP_REF", "v3.10.1")
+CSHARP_REF = os.environ.get("NEO_CSHARP_REF", "v3.10.2")
 CSHARP_DIR = "src/Neo/SmartContract/Native"
 
 RUST_NATIVE_DIR = REPO_ROOT / "neo-core" / "src" / "smart_contract" / "native"

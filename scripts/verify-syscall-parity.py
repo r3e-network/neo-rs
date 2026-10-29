@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Rust interop-service (syscall) parity against the C# v3.10.1 reference.
+"""Verify Rust interop-service (syscall) parity against the C# v3.10.2 reference.
 
 Companion to `verify-native-parity.py`, which covers native contract methods. This
 script covers the other half of the execution surface: the `System.*` syscalls a
@@ -50,7 +50,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / ".cache" / "csharp-parity"
 
 CSHARP_BASE = "https://raw.githubusercontent.com/neo-project/neo"
-CSHARP_REF = os.environ.get("NEO_CSHARP_REF", "v3.10.1")
+CSHARP_REF = os.environ.get("NEO_CSHARP_REF", "v3.10.2")
 CSHARP_DIR = "src/Neo/SmartContract"
 
 # Register() is spread over the ApplicationEngine partial classes; Helper and

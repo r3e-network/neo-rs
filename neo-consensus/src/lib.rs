@@ -48,16 +48,21 @@
 //!
 //! ## Layer Position
 //!
-//! This crate is part of **Layer 1 (Core)** in the neo-rs architecture:
+//! This crate is **Layer 2 (VM and protocol)** and does not depend on
+//! `neo-core`. The node feeds it blocks and collects signed commits across
+//! that boundary.
 //!
 //! ```text
-//! Layer 2 (Service)
+//! Layer 4 (Application): neo-node
 //!            │
 //!            ▼
-//! Layer 1 (Core):   neo-consensus ◄── YOU ARE HERE
+//! Layer 2 (VM and protocol): neo-consensus, neo-vm
 //!            │
 //!            ▼
-//! Layer 0 (Foundation): neo-primitives, neo-crypto
+//! Layer 1 (Crypto): neo-crypto
+//!            │
+//!            ▼
+//! Layer 0 (Foundation): neo-primitives, neo-io
 //! ```
 //!
 //! ## Consensus Flow
