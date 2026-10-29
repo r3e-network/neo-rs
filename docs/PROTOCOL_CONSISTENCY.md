@@ -110,7 +110,8 @@ python scripts/verify-protocol-consistency.py compare-applogs \
 - Compared per execution: `trigger`, `vmstate`, `exception`, `gasconsumed`,
   `stack`, `notifications` (key case and hex case normalised).
 - Fail-closed: any difference, any log missing on either side, or zero compared
-  items fails. The first failure stops the run. `--collect-all` keeps scanning.
+  items fails. A height whose fetches failed is retried; a field mismatch
+  stops the run on the first attempt. `--collect-all` keeps scanning.
 - Each finished height is appended to
   `docs/protocol-consistency/reports/compare-applogs-<start>-<end>-s<stride>.jsonl`.
   A later run of the same range skips heights already marked ok and rechecks

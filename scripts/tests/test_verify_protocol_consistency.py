@@ -67,6 +67,13 @@ class DiffApplogTests(unittest.TestCase):
                 self.assertEqual(len(diffs), 1)
                 self.assertIn(f"executions[0].{field}", diffs[0])
 
+    def test_fetch_failures_retry_and_field_mismatches_do_not(self):
+        retry = self.module.applog_height_should_retry
+        self.assertTrue(retry([], [{"side": "csharp"}], 0, 4))
+        self.assertFalse(retry([], [{"side": "csharp"}], 3, 4))
+        self.assertFalse(retry([{"diffs": ["gas"]}], [{"side": "rust"}], 0, 4))
+        self.assertFalse(retry([], [], 0, 4))
+
     def test_journal_passes_only_when_every_height_is_ok(self):
         covers = self.module.applog_journal_covers
         self.assertFalse(covers([0, 1], []))

@@ -298,6 +298,16 @@ def normalize_applog(log: dict) -> list[dict]:
     ]
 
 
+def applog_height_should_retry(
+    mismatches: list, missing: list, attempt: int, limit: int
+) -> bool:
+    """Retry a height only when every failure was a fetch error.
+
+    A field mismatch is deterministic evidence and must not be retried away.
+    """
+    return not mismatches and bool(missing) and attempt + 1 < limit
+
+
 def applog_journal_covers(heights: list[int], rows: list[dict]) -> bool:
     """True only when every requested height has a latest successful comparison."""
     latest: dict[int, dict] = {}
@@ -430,44 +440,75 @@ def cmd_compare_applogs(args: argparse.Namespace) -> int:
         height_missing = []
         height_mismatches = []
         compared = 0
-        try:
-            block = rpc_call(args.reference, "getblock", [height, True])
-        except Exception as exc:  # noqa: BLE001
-            height_missing.append(
-                {"height": height, "item": "block", "side": "csharp", "error": str(exc)}
-            )
-            block = None
-        if block is not None:
-            items = [("block", block["hash"])] + [
-                ("tx", tx["hash"]) for tx in block.get("tx", [])
-            ]
-            for kind, item_hash in items:
-                logs = {}
-                for side, url in (("csharp", args.reference), ("rust", args.local)):
+        for attempt in range(4):
+            height_missing = []
+            height_mismatches = []
+            compared = 0
+            try:
+                block = rpc_call(args.reference, "getblock", [height, True])
+            except Exception as exc:  # noqa: BLE001
+                height_missing.append(
+                    {"height": height, "item": "block", "side": "csharp", "error": str(exc)}
+                )
+                block = None
+            if block is not None:
+                try:
+                    items = [("block", block["hash"])] + [
+                        ("tx", tx["hash"]) for tx in block.get("tx", [])
+                    ]
+                except (KeyError, TypeError) as exc:
+                    height_missing.append(
+                        {
+                            "height": height,
+                            "item": "block",
+                            "side": "csharp",
+                            "error": f"getblock payload missing hash: {exc}",
+                        }
+                    )
+                    items = []
+                for kind, item_hash in items:
+                    logs = {}
+                    for side, url in (("csharp", args.reference), ("rust", args.local)):
+                        try:
+                            logs[side] = rpc_call(url, "getapplicationlog", [item_hash])
+                        except Exception as exc:  # noqa: BLE001
+                            height_missing.append(
+                                {
+                                    "height": height,
+                                    "item": item_hash,
+                                    "side": side,
+                                    "error": str(exc),
+                                }
+                            )
+                    if len(logs) != 2:
+                        print(f"MISSING {height} {kind} {item_hash}", file=sys.stderr)
+                        continue
                     try:
-                        logs[side] = rpc_call(url, "getapplicationlog", [item_hash])
-                    except Exception as exc:  # noqa: BLE001
-                        height_missing.append(
+                        diffs = diff_applog(logs["rust"], logs["csharp"])
+                    except ValueError as exc:
+                        diffs = [str(exc)]
+                    compared += 1
+                    if diffs:
+                        height_mismatches.append(
                             {
                                 "height": height,
+                                "kind": kind,
                                 "item": item_hash,
-                                "side": side,
-                                "error": str(exc),
+                                "diffs": diffs,
                             }
                         )
-                if len(logs) != 2:
-                    print(f"MISSING {height} {kind} {item_hash}", file=sys.stderr)
-                    continue
-                try:
-                    diffs = diff_applog(logs["rust"], logs["csharp"])
-                except ValueError as exc:
-                    diffs = [str(exc)]
-                compared += 1
-                if diffs:
-                    height_mismatches.append(
-                        {"height": height, "kind": kind, "item": item_hash, "diffs": diffs}
-                    )
-                    print(f"MISMATCH {height} {kind} {item_hash}: {diffs[0]}", file=sys.stderr)
+                        print(
+                            f"MISMATCH {height} {kind} {item_hash}: {diffs[0]}",
+                            file=sys.stderr,
+                        )
+            if not applog_height_should_retry(height_mismatches, height_missing, attempt, 4):
+                break
+            print(
+                f"RETRY height {height} attempt {attempt + 2} after fetch failure",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(2**attempt)
         ok = not height_missing and not height_mismatches and compared > 0
         _append_applog_journal(
             journal_path,
