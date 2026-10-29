@@ -298,6 +298,22 @@ def normalize_applog(log: dict) -> list[dict]:
     ]
 
 
+def applog_journal_covers(heights: list[int], rows: list[dict]) -> bool:
+    """True only when every requested height has a latest successful comparison."""
+    latest: dict[int, dict] = {}
+    for row in rows:
+        if "height" not in row:
+            continue
+        latest[int(row["height"])] = row
+    if not heights:
+        return False
+    for height in heights:
+        row = latest.get(height)
+        if not row or not row.get("ok") or int(row.get("compared") or 0) < 1:
+            return False
+    return True
+
+
 def diff_applog(rust: dict, csharp: dict) -> list[str]:
     """List every field where the Rust application log differs from C#."""
     rust_execs = normalize_applog(rust)
@@ -315,46 +331,45 @@ def diff_applog(rust: dict, csharp: dict) -> list[str]:
     return diffs
 
 
-def cmd_compare_applogs(args: argparse.Namespace) -> int:
-    """Fail-closed behaviour compare: every block and tx application log in a range."""
-    if args.end < args.start or args.stride < 1:
-        print("need end >= start and stride >= 1", file=sys.stderr)
-        return 2
+def _applog_journal_path(args: argparse.Namespace) -> Path:
+    if args.journal:
+        return Path(args.journal)
+    return REPORT_DIR / f"compare-applogs-{args.start}-{args.end}-s{args.stride}.jsonl"
 
-    compared = 0
+
+def _load_applog_journal(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            rows.append(json.loads(line))
+    return rows
+
+
+def _append_applog_journal(path: Path, row: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        handle.flush()
+
+
+def _write_applog_report(args: argparse.Namespace, heights: list[int], rows: list[dict]) -> tuple[Path, bool]:
+    latest: dict[int, dict] = {}
+    for row in rows:
+        if "height" in row:
+            latest[int(row["height"])] = row
     mismatches = []
     missing = []
-    heights = list(range(args.start, args.end + 1, args.stride))
+    compared = 0
     for height in heights:
-        try:
-            block = rpc_call(args.reference, "getblock", [height, True])
-        except Exception as exc:  # noqa: BLE001
-            missing.append({"height": height, "item": "block", "side": "csharp", "error": str(exc)})
+        row = latest.get(height)
+        if not row:
             continue
-        items = [("block", block["hash"])] + [("tx", tx["hash"]) for tx in block.get("tx", [])]
-        for kind, item_hash in items:
-            logs = {}
-            for side, url in (("csharp", args.reference), ("rust", args.local)):
-                try:
-                    logs[side] = rpc_call(url, "getapplicationlog", [item_hash])
-                except Exception as exc:  # noqa: BLE001
-                    missing.append(
-                        {"height": height, "item": item_hash, "side": side, "error": str(exc)}
-                    )
-            if len(logs) != 2:
-                print(f"MISSING {height} {kind} {item_hash}", file=sys.stderr)
-                continue
-            try:
-                diffs = diff_applog(logs["rust"], logs["csharp"])
-            except ValueError as exc:
-                diffs = [str(exc)]
-            compared += 1
-            if diffs:
-                mismatches.append({"height": height, "kind": kind, "item": item_hash, "diffs": diffs})
-                print(f"MISMATCH {height} {kind} {item_hash}: {diffs[0]}", file=sys.stderr)
-        if args.verbose or height == heights[-1] or (height - args.start) % (args.stride * 100) == 0:
-            print(f"height {height}: compared={compared} mismatches={len(mismatches)} missing={len(missing)}")
-
+        compared += int(row.get("compared") or 0)
+        mismatches.extend(row.get("mismatches") or [])
+        missing.extend(row.get("missing") or [])
+    passed = applog_journal_covers(heights, rows)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -368,21 +383,114 @@ def cmd_compare_applogs(args: argparse.Namespace) -> int:
         "compared": compared,
         "mismatches": mismatches,
         "missing": missing,
-        "pass": not mismatches and not missing and compared > 0,
+        "journal": str(_applog_journal_path(args)),
+        "pass": passed,
     }
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     report_path = REPORT_DIR / f"compare-applogs-{args.start}-{args.end}-s{args.stride}-{stamp}.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(f"Report -> {report_path}")
-    if not report["pass"]:
+    return report_path, passed
+
+
+def cmd_compare_applogs(args: argparse.Namespace) -> int:
+    """Fail-closed behaviour compare: every block and tx application log in a range."""
+    if args.end < args.start or args.stride < 1:
+        print("need end >= start and stride >= 1", file=sys.stderr)
+        return 2
+
+    heights = list(range(args.start, args.end + 1, args.stride))
+    journal_path = _applog_journal_path(args)
+    rows = _load_applog_journal(journal_path)
+    latest = {}
+    for row in rows:
+        if "height" in row:
+            latest[int(row["height"])] = row
+    pending = [height for height in heights if not (latest.get(height) or {}).get("ok")]
+
+    def finish(code: int) -> int:
+        report_rows = _load_applog_journal(journal_path)
+        report_path, passed = _write_applog_report(args, heights, report_rows)
+        print(f"Report -> {report_path}")
+        if code == 0 and not passed:
+            code = 1
+        if code != 0:
+            print(
+                "FAIL: application logs not proven equal "
+                f"(journal={journal_path})",
+                file=sys.stderr,
+            )
+            return code
         print(
-            f"FAIL: application logs not proven equal (compared={compared}, "
-            f"mismatches={len(mismatches)}, missing={len(missing)})",
-            file=sys.stderr,
+            f"PASS: application logs match C# for every height in "
+            f"[{args.start}, {args.end}] (journal={journal_path})"
         )
-        return 1
-    print(f"PASS: {compared} block/tx application logs match C# over {len(heights)} heights")
-    return 0
+        return 0
+
+    for height in pending:
+        height_missing = []
+        height_mismatches = []
+        compared = 0
+        try:
+            block = rpc_call(args.reference, "getblock", [height, True])
+        except Exception as exc:  # noqa: BLE001
+            height_missing.append(
+                {"height": height, "item": "block", "side": "csharp", "error": str(exc)}
+            )
+            block = None
+        if block is not None:
+            items = [("block", block["hash"])] + [
+                ("tx", tx["hash"]) for tx in block.get("tx", [])
+            ]
+            for kind, item_hash in items:
+                logs = {}
+                for side, url in (("csharp", args.reference), ("rust", args.local)):
+                    try:
+                        logs[side] = rpc_call(url, "getapplicationlog", [item_hash])
+                    except Exception as exc:  # noqa: BLE001
+                        height_missing.append(
+                            {
+                                "height": height,
+                                "item": item_hash,
+                                "side": side,
+                                "error": str(exc),
+                            }
+                        )
+                if len(logs) != 2:
+                    print(f"MISSING {height} {kind} {item_hash}", file=sys.stderr)
+                    continue
+                try:
+                    diffs = diff_applog(logs["rust"], logs["csharp"])
+                except ValueError as exc:
+                    diffs = [str(exc)]
+                compared += 1
+                if diffs:
+                    height_mismatches.append(
+                        {"height": height, "kind": kind, "item": item_hash, "diffs": diffs}
+                    )
+                    print(f"MISMATCH {height} {kind} {item_hash}: {diffs[0]}", file=sys.stderr)
+        ok = not height_missing and not height_mismatches and compared > 0
+        _append_applog_journal(
+            journal_path,
+            {
+                "height": height,
+                "ok": ok,
+                "compared": compared,
+                "mismatches": height_mismatches,
+                "missing": height_missing,
+            },
+        )
+        if args.verbose or height == heights[-1] or (height - args.start) % (args.stride * 100) == 0:
+            print(
+                f"height {height}: ok={ok} compared={compared} "
+                f"mismatches={len(height_mismatches)} missing={len(height_missing)}",
+                flush=True,
+            )
+        if not ok and not args.collect_all:
+            return finish(1)
+        if args.delay_ms > 0:
+            time.sleep(args.delay_ms / 1000.0)
+
+    return finish(0)
 
 
 def cmd_compare_goldens(args: argparse.Namespace) -> int:
@@ -544,6 +652,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_al.add_argument("--start", type=int, required=True)
     p_al.add_argument("--end", type=int, required=True)
     p_al.add_argument("--stride", type=int, default=1)
+    p_al.add_argument(
+        "--delay-ms",
+        type=int,
+        default=0,
+        help="Pause between heights so the public C# RPC is not flooded",
+    )
+    p_al.add_argument(
+        "--journal",
+        default="",
+        help="JSONL of per-height results. A later run skips heights already marked ok. "
+        "A pass requires every height in the range to be ok in this file.",
+    )
+    p_al.add_argument(
+        "--collect-all",
+        action="store_true",
+        help="Keep scanning after the first missing log or field mismatch",
+    )
     p_al.add_argument("--verbose", action="store_true")
     p_al.set_defaults(func=cmd_compare_applogs)
 

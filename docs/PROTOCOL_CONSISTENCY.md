@@ -110,10 +110,16 @@ python scripts/verify-protocol-consistency.py compare-applogs \
 - Compared per execution: `trigger`, `vmstate`, `exception`, `gasconsumed`,
   `stack`, `notifications` (key case and hex case normalised).
 - Fail-closed: any difference, any log missing on either side, or zero compared
-  items fails; the JSON report goes to `docs/protocol-consistency/reports/`.
+  items fails. The first failure stops the run. `--collect-all` keeps scanning.
+- Each finished height is appended to
+  `docs/protocol-consistency/reports/compare-applogs-<start>-<end>-s<stride>.jsonl`.
+  A later run of the same range skips heights already marked ok and rechecks
+  failures. The JSON report passes only when that journal covers every height.
 - The Rust side needs ApplicationLogs enabled. `--import-acc` registers
-  ApplicationLogs and TokensTracker before importing (as neo-cli does), so one
-  import produces the logs.
+  ApplicationLogs and TokensTracker before importing (as neo-cli does).
+  Import runs in fast-sync mode, which skips committing handlers unless they
+  opt in. `ApplicationLogsService` opts in, and each import checkpoint flushes
+  its store, because the import RocksDB profile disables the write-ahead log.
 - Tests: `scripts/tests/test_verify_protocol_consistency.py`.
 
 ## Runtime divergence gate (live nodes)

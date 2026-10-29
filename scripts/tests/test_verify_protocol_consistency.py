@@ -67,6 +67,36 @@ class DiffApplogTests(unittest.TestCase):
                 self.assertEqual(len(diffs), 1)
                 self.assertIn(f"executions[0].{field}", diffs[0])
 
+    def test_journal_passes_only_when_every_height_is_ok(self):
+        covers = self.module.applog_journal_covers
+        self.assertFalse(covers([0, 1], []))
+        self.assertFalse(covers([0, 1], [{"height": 0, "ok": True, "compared": 1}]))
+        self.assertFalse(
+            covers(
+                [0, 1],
+                [
+                    {"height": 0, "ok": True, "compared": 1},
+                    {"height": 1, "ok": False, "compared": 1},
+                ],
+            )
+        )
+        self.assertFalse(
+            covers(
+                [0],
+                [{"height": 0, "ok": True, "compared": 0}],
+            )
+        )
+        self.assertTrue(
+            covers(
+                [0, 1],
+                [
+                    {"height": 1, "ok": False, "compared": 0},
+                    {"height": 0, "ok": True, "compared": 2},
+                    {"height": 1, "ok": True, "compared": 1},
+                ],
+            )
+        )
+
     def test_execution_count_and_missing_executions_fail(self):
         rust = copy.deepcopy(CSHARP_LOG)
         rust["executions"].append(copy.deepcopy(rust["executions"][0]))
