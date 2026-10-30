@@ -21,8 +21,9 @@ impl CallStack {
     #[inline]
     pub(in crate::interpreter) fn new() -> Self {
         Self {
-            // Safety: MaybeUninit does not require initialization
-            frames: unsafe { core::mem::MaybeUninit::uninit().assume_init() },
+            // MaybeUninit slots are valid while uninitialized. Const repeat
+            // avoids assume_init on the whole array.
+            frames: [const { core::mem::MaybeUninit::uninit() }; MAX_CALL_DEPTH],
             len: 0,
             #[cfg(target_arch = "riscv32")]
             retained_len: 0,
