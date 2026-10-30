@@ -53,7 +53,7 @@ pub struct Notary {
     /// Contract script hash.
     hash: UInt160,
     /// Registered methods.
-    methods: Vec<NativeMethod>,
+    methods: &'static [NativeMethod],
 }
 
 impl Notary {
@@ -65,13 +65,12 @@ impl Notary {
         // Notary contract hash: 0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b
         // This is the official Neo N3 Notary contract hash computed from:
         // Helper.GetContractHash(UInt160.Zero, 0, "Notary")
-        let hash = UInt160::parse("0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b")
-            .expect("Valid Notary contract hash");
+        let hash = crate::smart_contract::native::static_contract_hash!("0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b");
 
         Self {
             id: Self::ID,
             hash,
-            methods: Self::native_methods(),
+            methods: crate::smart_contract::native::static_native_methods!(Notary::native_methods()),
         }
     }
 

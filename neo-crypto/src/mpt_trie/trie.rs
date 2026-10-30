@@ -1,5 +1,5 @@
 use super::MptCache;
-use super::cache::MptStoreSnapshot;
+use super::cache::{GlobalNodeCache, MptStoreSnapshot};
 use super::error::{MptError, MptResult};
 use super::node::{BRANCH_CHILD_COUNT, BRANCH_VALUE_INDEX, MAX_KEY_LENGTH, MAX_VALUE_LENGTH, Node};
 use super::node_type::NodeType;
@@ -38,9 +38,40 @@ where
         }
     }
 
+    /// Creates a new trie instance backed by a store-scoped [`GlobalNodeCache`].
+    pub fn new_with_node_cache(
+        store: Arc<S>,
+        root: Option<UInt256>,
+        full_state: bool,
+        node_cache: Option<Arc<GlobalNodeCache>>,
+    ) -> Self {
+        let root_node = root.map_or_else(Node::new, Node::new_hash);
+        Self::new_with_root_node(store, root_node, full_state, node_cache)
+    }
+
+    /// Creates a new trie instance starting from a pre-resolved root [`Node`].
+    pub fn new_with_root_node(
+        store: Arc<S>,
+        root_node: Node,
+        full_state: bool,
+        node_cache: Option<Arc<GlobalNodeCache>>,
+    ) -> Self {
+        let cache = MptCache::with_node_cache(store, CACHE_PREFIX, node_cache);
+        Self {
+            cache,
+            root: root_node,
+            full_state,
+        }
+    }
+
     /// Returns a reference to the current root node.
     pub const fn root(&self) -> &Node {
         &self.root
+    }
+
+    /// Takes ownership of the current in-memory root [`Node`], leaving an empty node in its place.
+    pub fn take_root(&mut self) -> Node {
+        std::mem::take(&mut self.root)
     }
 
     /// Returns the current root hash if the trie is not empty.
@@ -48,8 +79,19 @@ where
         if self.root.is_empty() {
             None
         } else {
+            let _ = Self::parallel_hash_subtrees(&self.root);
             Some(self.root.hash())
         }
+    }
+
+    /// Flushes all in-memory dirty nodes into the underlying [`MptCache`].
+    pub fn flush_dirty(&mut self) -> MptResult<()> {
+        if !self.root.is_dirty() {
+            return Ok(());
+        }
+        Self::parallel_hash_subtrees(&self.root)?;
+        let _ = Self::flush_dirty_node(&mut self.cache, &mut self.root)?;
+        Ok(())
     }
 
     /// Commits pending cache changes to the underlying store.
@@ -59,6 +101,8 @@ where
     /// in-memory root hash matches the persisted state. This catches partial
     /// commit failures that could lead to consensus divergence.
     pub fn commit(&mut self) -> MptResult<()> {
+        self.flush_dirty()?;
+
         #[cfg(debug_assertions)]
         let expected_root = self.root_hash();
 
@@ -226,6 +270,103 @@ where
         trie.get_required(key)
     }
 
+    fn parallel_hash_subtrees(node: &Node) -> MptResult<()> {
+        Self::parallel_hash_subtrees_depth(node, 0)
+    }
+
+    fn parallel_hash_subtrees_depth(node: &Node, fanout_depth: usize) -> MptResult<()> {
+        if !node.is_dirty() {
+            return Ok(());
+        }
+        match node.node_type {
+            NodeType::ExtensionNode => {
+                if let Some(ref next) = node.next {
+                    Self::parallel_hash_subtrees_depth(next, fanout_depth)?;
+                }
+                let _ = node.try_hash()?;
+                Ok(())
+            }
+            NodeType::BranchNode if fanout_depth < 2 => {
+                let dirty_count = node.children.iter().filter(|c| c.is_dirty()).count();
+                if dirty_count >= 2 {
+                    use rayon::prelude::*;
+                    node.children
+                        .par_iter()
+                        .filter(|c| c.is_dirty())
+                        .try_for_each(|child| {
+                            Self::parallel_hash_subtrees_depth(child, fanout_depth + 1)
+                        })?;
+                } else {
+                    for child in &node.children {
+                        if child.is_dirty() {
+                            Self::parallel_hash_subtrees_depth(child, fanout_depth)?;
+                        }
+                    }
+                }
+                let _ = node.try_hash()?;
+                Ok(())
+            }
+            _ => {
+                let _ = node.try_hash()?;
+                Ok(())
+            }
+        }
+    }
+
+    fn cache_flushed_node(
+        cache: &mut MptCache<S>,
+        node: &mut Node,
+        known_absent_in_store: bool,
+    ) -> MptResult<bool> {
+        let preimage = node.take_hash_preimage();
+        node.clear_dirty();
+        let cached = node.clone();
+        if let Some(preimage) = preimage {
+            cached.set_hash_preimage(preimage);
+        }
+        cache.put_node_with_hint(cached, known_absent_in_store)
+    }
+
+    fn flush_dirty_node(cache: &mut MptCache<S>, node: &mut Node) -> MptResult<bool> {
+        if !node.is_dirty() {
+            return Ok(false);
+        }
+        match node.node_type {
+            NodeType::Empty | NodeType::HashNode => {
+                node.clear_dirty();
+                Ok(false)
+            }
+            NodeType::LeafNode => {
+                let _ = node.try_hash()?;
+                Self::cache_flushed_node(cache, node, false)
+            }
+            NodeType::ExtensionNode => {
+                let mut child_absent = false;
+                if let Some(ref mut next_arc) = node.next
+                    && next_arc.is_dirty()
+                {
+                    let next = Arc::make_mut(next_arc);
+                    child_absent = Self::flush_dirty_node(cache, next)?;
+                }
+                let _ = node.try_hash()?;
+                Self::cache_flushed_node(cache, node, child_absent)
+            }
+            NodeType::BranchNode => {
+                let mut any_child_absent = false;
+                for child_arc in &mut node.children {
+                    if child_arc.is_dirty() {
+                        let child = Arc::make_mut(child_arc);
+                        if Self::flush_dirty_node(cache, child)? {
+                            any_child_absent = true;
+                        }
+                    }
+                }
+                let _ = node.try_hash()?;
+                Self::cache_flushed_node(cache, node, any_child_absent)
+            }
+        }
+    }
+
     fn try_get_node(
         cache: &mut MptCache<S>,
         _full_state: bool,
@@ -243,7 +384,7 @@ where
             NodeType::Empty => Ok(None),
             NodeType::HashNode => {
                 let resolved = cache
-                    .resolve(&node.hash())?
+                    .resolve_node(&node.hash())?
                     .ok_or_else(|| MptError::storage("unable to resolve hash during trie get"))?;
                 *node = resolved;
                 Self::try_get_node(cache, _full_state, node, path)
@@ -286,16 +427,15 @@ where
         match node.node_type {
             NodeType::LeafNode => {
                 if path.is_empty() {
-                    if !full_state {
+                    if !node.is_dirty() && !full_state {
                         let old_hash = node.try_hash()?;
                         cache.delete_node(old_hash)?;
                     }
                     *node = val;
-                    cache.put_node(node.clone())?;
                     return Ok(());
                 }
                 let mut branch = Node::new_branch();
-                let old_leaf = std::mem::replace(node, Node::new());
+                let old_leaf = std::mem::take(node);
                 branch.set_child(BRANCH_VALUE_INDEX, old_leaf);
                 let index = path[0] as usize;
 
@@ -305,13 +445,16 @@ where
                     .ok_or_else(|| MptError::invalid("branch child index out of bounds"))?;
                 Self::put_internal(cache, full_state, child, &path[1..], val)?;
 
-                cache.put_node(branch.clone())?;
                 *node = branch;
             }
             NodeType::ExtensionNode => {
                 if path.starts_with(&node.key) {
                     let consumed = node.key.len();
-                    let old_hash = node.try_hash()?;
+                    let old_hash = if !node.is_dirty() && !full_state {
+                        Some(node.try_hash()?)
+                    } else {
+                        None
+                    };
 
                     // Use get_next_mut for copy-on-write semantics
                     let next = node
@@ -319,17 +462,16 @@ where
                         .ok_or_else(|| MptError::invalid("extension node missing child"))?;
                     Self::put_internal(cache, full_state, next, &path[consumed..], val)?;
 
-                    if !full_state {
+                    if let Some(old_hash) = old_hash {
                         cache.delete_node(old_hash)?;
                     }
                     node.set_dirty();
-                    cache.put_node(node.clone())?;
                     return Ok(());
                 }
 
                 let prefix_len = Self::common_prefix_len(&node.key, path);
-                let old_hash = node.try_hash()?;
-                if !full_state {
+                if !node.is_dirty() && !full_state {
+                    let old_hash = node.try_hash()?;
                     cache.delete_node(old_hash)?;
                 }
 
@@ -347,7 +489,6 @@ where
                     child_branch.set_child(key_remain[0] as usize, next_node);
                 } else {
                     let ext_child = Node::new_extension(key_remain[1..].to_vec(), next_node)?;
-                    cache.put_node(ext_child.clone())?;
                     child_branch.set_child(key_remain[0] as usize, ext_child);
                 }
 
@@ -367,18 +508,19 @@ where
                     child_branch.set_child(path_remain[0] as usize, value_child);
                 }
 
-                cache.put_node(child_branch.clone())?;
-
                 if prefix.is_empty() {
                     *node = child_branch;
                 } else {
                     let ext = Node::new_extension(prefix, child_branch)?;
-                    cache.put_node(ext.clone())?;
                     *node = ext;
                 }
             }
             NodeType::BranchNode => {
-                let old_hash = node.try_hash()?;
+                let old_hash = if !node.is_dirty() && !full_state {
+                    Some(node.try_hash()?)
+                } else {
+                    None
+                };
                 if path.is_empty() {
                     let child = node
                         .get_child_mut(BRANCH_VALUE_INDEX)
@@ -391,11 +533,10 @@ where
                         .ok_or_else(|| MptError::invalid("branch child index out of bounds"))?;
                     Self::put_internal(cache, full_state, child, &path[1..], val)?;
                 }
-                if !full_state {
+                if let Some(old_hash) = old_hash {
                     cache.delete_node(old_hash)?;
                 }
                 node.set_dirty();
-                cache.put_node(node.clone())?;
             }
             NodeType::Empty => {
                 if path.is_empty() {
@@ -403,18 +544,13 @@ where
                 } else {
                     // C# uses extension node to store the remaining path,
                     // pointing to the leaf which stores only the value.
-                    cache.put_node(val.clone())?;
                     let ext = Node::new_extension(path.to_vec(), val)?;
-                    cache.put_node(ext.clone())?;
                     *node = ext;
-                }
-                if node.node_type == NodeType::LeafNode {
-                    cache.put_node(node.clone())?;
                 }
             }
             NodeType::HashNode => {
                 let resolved = cache
-                    .resolve(&node.hash())?
+                    .resolve_node(&node.hash())?
                     .ok_or_else(|| MptError::storage("unable to resolve hash during trie put"))?;
                 *node = resolved;
                 Self::put_internal(cache, full_state, node, path, val)?;
@@ -432,7 +568,7 @@ where
         match node.node_type {
             NodeType::LeafNode => {
                 if path.is_empty() {
-                    if !full_state {
+                    if !node.is_dirty() && !full_state {
                         let old_hash = node.try_hash()?;
                         cache.delete_node(old_hash)?;
                     }
@@ -444,7 +580,11 @@ where
             NodeType::ExtensionNode => {
                 if path.starts_with(&node.key) {
                     let consumed = node.key.len();
-                    let old_hash = node.try_hash()?;
+                    let old_hash = if !node.is_dirty() && !full_state {
+                        Some(node.try_hash()?)
+                    } else {
+                        None
+                    };
                     let result = {
                         let next = node
                             .get_next_mut()
@@ -454,7 +594,7 @@ where
                     if !result {
                         return Ok(false);
                     }
-                    if !full_state {
+                    if let Some(old_hash) = old_hash {
                         cache.delete_node(old_hash)?;
                     }
 
@@ -473,32 +613,29 @@ where
                         .is_some_and(|n| n.node_type == NodeType::ExtensionNode);
 
                     if should_merge {
-                        if !full_state {
-                            let child_hash = node
-                                .next
-                                .as_ref()
-                                .ok_or_else(|| {
-                                    MptError::invalid("extension node missing child during merge")
-                                })?
-                                .hash();
-                            cache.delete_node(child_hash)?;
-                        }
                         let next_node = node.take_next().ok_or_else(|| {
                             MptError::invalid("extension node missing child during take")
                         })?;
+                        if !next_node.is_dirty() && !full_state {
+                            let child_hash = next_node.try_hash()?;
+                            cache.delete_node(child_hash)?;
+                        }
                         node.key.extend_from_slice(&next_node.key);
                         node.next = next_node.next;
                     }
 
                     node.set_dirty();
-                    cache.put_node(node.clone())?;
                     Ok(true)
                 } else {
                     Ok(false)
                 }
             }
             NodeType::BranchNode => {
-                let old_hash = node.try_hash()?;
+                let old_hash = if !node.is_dirty() && !full_state {
+                    Some(node.try_hash()?)
+                } else {
+                    None
+                };
                 let result = if path.is_empty() {
                     let child = node
                         .get_child_mut(BRANCH_VALUE_INDEX)
@@ -514,7 +651,7 @@ where
                 if !result {
                     return Ok(false);
                 }
-                if !full_state {
+                if let Some(old_hash) = old_hash {
                     cache.delete_node(old_hash)?;
                 }
 
@@ -531,7 +668,6 @@ where
 
                 if indexes.len() > 1 {
                     node.set_dirty();
-                    cache.put_node(node.clone())?;
                     return Ok(true);
                 }
 
@@ -550,7 +686,7 @@ where
 
                 // Resolve hash node if necessary
                 let mut last_child = if last_child_arc.node_type == NodeType::HashNode {
-                    cache.resolve(&last_child_arc.hash())?.ok_or_else(|| {
+                    cache.resolve_node(&last_child_arc.hash())?.ok_or_else(|| {
                         MptError::storage("unable to resolve hash during trie delete")
                     })?
                 } else {
@@ -561,7 +697,7 @@ where
                 };
 
                 if last_child.node_type == NodeType::ExtensionNode {
-                    if !full_state {
+                    if !last_child.is_dirty() && !full_state {
                         let child_hash = last_child.try_hash()?;
                         cache.delete_node(child_hash)?;
                     }
@@ -569,19 +705,17 @@ where
                     key.extend_from_slice(&last_child.key);
                     last_child.key = key;
                     last_child.set_dirty();
-                    cache.put_node(last_child.clone())?;
                     *node = last_child;
                     Ok(true)
                 } else {
                     let ext = Node::new_extension(vec![last_index], last_child)?;
-                    cache.put_node(ext.clone())?;
                     *node = ext;
                     Ok(true)
                 }
             }
             NodeType::Empty => Ok(false),
             NodeType::HashNode => {
-                let resolved = cache.resolve(&node.hash())?.ok_or_else(|| {
+                let resolved = cache.resolve_node(&node.hash())?.ok_or_else(|| {
                     MptError::storage("unable to resolve hash during trie delete")
                 })?;
                 *node = resolved;
@@ -608,7 +742,7 @@ where
             NodeType::Empty => Ok(false),
             NodeType::HashNode => {
                 let resolved = cache
-                    .resolve(&node.hash())?
+                    .resolve_node(&node.hash())?
                     .ok_or_else(|| MptError::storage("unable to resolve hash during proof"))?;
                 *node = resolved;
                 Self::get_proof_node(cache, node, path, proof)
@@ -659,7 +793,7 @@ where
             NodeType::Empty => Ok((Vec::new(), None)),
             NodeType::HashNode => {
                 let resolved = cache
-                    .resolve(&node.hash())?
+                    .resolve_node(&node.hash())?
                     .ok_or_else(|| MptError::storage("unable to resolve hash during trie seek"))?;
                 *node = resolved;
                 Self::seek_node(cache, node, path)
@@ -730,7 +864,7 @@ where
             NodeType::Empty => {}
             NodeType::HashNode => {
                 let resolved = cache
-                    .resolve(&node.hash())?
+                    .resolve_node(&node.hash())?
                     .ok_or_else(|| MptError::storage("unable to resolve hash during trie find"))?;
                 Self::traverse(cache, Some(resolved), path, from, offset, results)?;
             }

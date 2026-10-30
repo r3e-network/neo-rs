@@ -23,8 +23,12 @@ pub struct ExecutionContextState {
     /// The native calling script hash (set by native contracts)
     pub native_calling_script_hash: Option<UInt160>,
 
-    /// The contract being executed
-    pub contract: Option<ContractState>,
+    /// The contract being executed.
+    ///
+    /// Shared via `Arc`: the same `ContractState` (NEF script + manifest) is
+    /// referenced by the engine's contract cache and by every context that
+    /// executes it, so loading a context must not deep-clone it.
+    pub contract: Option<Arc<ContractState>>,
 
     /// The call flags for this context
     pub call_flags: CallFlags,

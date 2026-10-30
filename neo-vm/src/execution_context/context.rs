@@ -15,6 +15,7 @@ use crate::script::Script;
 use neo_crypto::Crypto;
 use parking_lot::Mutex;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A slot for storing variables or arguments in a context.
 ///
@@ -22,9 +23,18 @@ use std::sync::Arc;
 /// can continue to reference `execution_context::Slot`.
 pub type Slot = crate::slot::Slot;
 
+static NEXT_CONTEXT_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_context_id() -> u64 {
+    NEXT_CONTEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
 /// Represents an execution context in the Neo Virtual Machine.
 /// This matches the C# implementation's `ExecutionContext` class.
 pub struct ExecutionContext {
+    /// Identity of this context object. Clones receive a new id. The id is never
+    /// reused, so callers can cache facts about one context for its lifetime.
+    id: u64,
     /// The shared states (script, evaluation stack, static fields)
     shared_states: SharedStates,
 
@@ -50,6 +60,7 @@ impl ExecutionContext {
     #[must_use]
     pub fn new(script: Script, rvcount: i32, reference_counter: &ReferenceCounter) -> Self {
         Self {
+            id: next_context_id(),
             shared_states: SharedStates::new(script, reference_counter.clone()),
             instruction_pointer: 0,
             rvcount,
@@ -57,6 +68,13 @@ impl ExecutionContext {
             arguments: None,
             try_stack: None,
         }
+    }
+
+    /// Returns the unique id assigned when this context object was created.
+    #[inline]
+    #[must_use]
+    pub fn context_id(&self) -> u64 {
+        self.id
     }
 
     /// Returns the script for this context.
@@ -373,6 +391,7 @@ impl ExecutionContext {
         // as they would need separate reference counter handling
 
         Ok(Self {
+            id: next_context_id(),
             shared_states,
             instruction_pointer: self.instruction_pointer,
             rvcount: self.rvcount,
@@ -388,6 +407,7 @@ impl ExecutionContext {
     #[must_use]
     pub fn clone_with_position(&self, position: usize) -> Self {
         Self {
+            id: next_context_id(),
             shared_states: self.shared_states.clone(),
             instruction_pointer: position,
             rvcount: 0,

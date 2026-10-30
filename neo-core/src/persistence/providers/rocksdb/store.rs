@@ -16,7 +16,14 @@ use parking_lot::{Mutex, RwLock};
 use rocksdb::{
     DB, DBIteratorWithThreadMode, ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions,
 };
-use std::{collections::BTreeMap, fs, mem, sync::Arc, time::Instant};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs, mem,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use tracing::{debug, error, warn};
 
 use neo_storage::{StorageError, StorageResult};
@@ -366,8 +373,8 @@ pub struct RocksDbSnapshot {
     /// Wrapped in `ManuallyDrop` so the explicit `Drop` impl can release it
     /// before `db` is freed. Do not reorder or unwrap without updating `Drop`.
     snapshot: mem::ManuallyDrop<DbSnapshot<'static>>,
-    write_batch: Mutex<WriteBatch>,
-    pending_changes: Mutex<BTreeMap<Vec<u8>, Option<Vec<u8>>>>,
+    pending_changes: Mutex<HashMap<Vec<u8>, Option<Vec<u8>>>>,
+    has_pending_changes: AtomicBool,
     /// Optional read cache for this snapshot
     read_cache: Option<Arc<StorageReadCache>>,
     /// Read-ahead configuration
@@ -387,8 +394,8 @@ impl RocksDbSnapshot {
 
         Self {
             snapshot: mem::ManuallyDrop::new(snapshot),
-            write_batch: Mutex::new(WriteBatch::default()),
-            pending_changes: Mutex::new(BTreeMap::new()),
+            pending_changes: Mutex::new(HashMap::new()),
+            has_pending_changes: AtomicBool::new(false),
             read_cache,
             read_ahead_config,
             db,
@@ -417,6 +424,14 @@ impl RocksDbSnapshot {
         provider::build_read_options(Some(&*self.snapshot), &self.read_ahead_config)
     }
 
+    fn point_read_options(&self) -> ReadOptions {
+        let mut options = ReadOptions::default();
+        options.set_snapshot(&*self.snapshot);
+        options.set_verify_checksums(self.read_ahead_config.verify_checksums);
+        options.fill_cache(self.read_ahead_config.fill_cache);
+        options
+    }
+
     fn iterator_from(
         &self,
         key_or_prefix: &[u8],
@@ -432,6 +447,9 @@ impl RocksDbSnapshot {
     }
 
     fn pending_change(&self, key: &[u8]) -> Option<Option<Vec<u8>>> {
+        if !self.has_pending_changes.load(Ordering::Acquire) {
+            return None;
+        }
         self.pending_changes.lock().get(key).cloned()
     }
 
@@ -440,6 +458,9 @@ impl RocksDbSnapshot {
         key_prefix: Option<&[u8]>,
         direction: SeekDirection,
     ) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
+        if !self.has_pending_changes.load(Ordering::Acquire) {
+            return None;
+        }
         let prefix = key_prefix.unwrap_or(&[]);
         let pending_changes = {
             let pending = self.pending_changes.lock();
@@ -512,7 +533,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
             return change;
         }
 
-        match self.db.get_opt(key, &self.read_options()) {
+        match self.db.get_opt(key, &self.point_read_options()) {
             Ok(value) => value,
             Err(err) => fail_fast_read("snapshot get", &err),
         }
@@ -570,7 +591,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
         // the shared cache (which holds latest-state values for keys mutated
         // after this snapshot was created) nor populate it with historical
         // values that post-commit readers would then observe.
-        match self.db.get_opt(&raw, &self.read_options()) {
+        match self.db.get_opt(&raw, &self.point_read_options()) {
             Ok(Some(bytes)) => Some(StorageItem::from_bytes(bytes)),
             Ok(None) => None,
             Err(err) => fail_fast_read("snapshot get", &err),
@@ -640,22 +661,20 @@ impl ReadOnlyStore for RocksDbSnapshot {}
 
 impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     fn delete(&mut self, key: Vec<u8>) -> StorageResult<()> {
-        self.write_batch.lock().delete(key.clone());
-        self.pending_changes.lock().insert(key.clone(), None);
         if let Some(ref cache) = self.read_cache {
             cache.remove(&StorageKey::from_bytes(&key));
         }
+        self.pending_changes.get_mut().insert(key, None);
+        self.has_pending_changes.store(true, Ordering::Release);
         Ok(())
     }
 
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> StorageResult<()> {
-        self.write_batch.lock().put(key.clone(), value.clone());
-        self.pending_changes
-            .lock()
-            .insert(key.clone(), Some(value.clone()));
         if let Some(ref cache) = self.read_cache {
             cache.remove(&StorageKey::from_bytes(&key));
         }
+        self.pending_changes.get_mut().insert(key, Some(value));
+        self.has_pending_changes.store(true, Ordering::Release);
         Ok(())
     }
 }
@@ -668,23 +687,13 @@ impl StoreSnapshot for RocksDbSnapshot {
     fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
         use crate::persistence::storage::StorageError;
 
-        let mut batch_guard = self.write_batch.lock();
-        let mut pending_guard = self.pending_changes.lock();
-
-        if batch_guard.is_empty() {
+        if !self.has_pending_changes.load(Ordering::Acquire) {
             return Ok(());
         }
-
-        let batch_data = batch_guard.data().to_vec();
-        let pending_snapshot = pending_guard.clone();
-
-        let mut batch = WriteBatch::default();
-        mem::swap(&mut *batch_guard, &mut batch);
-        pending_guard.clear();
-        drop(pending_guard);
-        drop(batch_guard);
-
-        let _start = Instant::now();
+        if self.pending_changes.get_mut().is_empty() {
+            self.has_pending_changes.store(false, Ordering::Release);
+            return Ok(());
+        }
 
         let mut write_opts = WriteOptions::default();
         let batch_config = self.store.batch_config.read();
@@ -703,16 +712,20 @@ impl StoreSnapshot for RocksDbSnapshot {
         // is harmless — readers will simply miss the cache and re-fetch the
         // unchanged value from RocksDB.
         if let Some(ref cache) = self.read_cache {
-            for key in pending_snapshot.keys() {
+            for key in self.pending_changes.get_mut().keys() {
                 cache.remove(&StorageKey::from_bytes(key));
             }
         }
 
+        let mut batch = WriteBatch::default();
+        for (key, value) in self.pending_changes.get_mut().iter() {
+            match value {
+                Some(val) => batch.put(key, val),
+                None => batch.delete(key),
+            }
+        }
+
         if let Err(err) = self.db.write_opt(batch, &write_opts) {
-            let mut batch_guard = self.write_batch.lock();
-            let mut pending_guard = self.pending_changes.lock();
-            *batch_guard = WriteBatch::from_data(&batch_data);
-            *pending_guard = pending_snapshot;
             error!(target: "neo", error = %err, "rocksdb snapshot commit failed");
             return Err(StorageError::CommitFailed(format!(
                 "RocksDB write failed: {}",
@@ -720,6 +733,8 @@ impl StoreSnapshot for RocksDbSnapshot {
             )));
         }
 
+        self.pending_changes.get_mut().clear();
+        self.has_pending_changes.store(false, Ordering::Release);
         Ok(())
     }
 }

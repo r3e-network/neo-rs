@@ -26,15 +26,17 @@ impl RemoteNode {
         if matches!(
             payload.inventory_type,
             InventoryType::Consensus | InventoryType::Extensible
-        ) {
-            // Consensus/extensible inventories can arrive at very high frequency on public testnet.
-            // Pulling each item via TaskManager causes sync starvation and relay loops.
+        ) && self.system.is_fast_sync_mode()
+        {
+            // During fast sync, consensus/extensible inventories can arrive at high frequency
+            // and starve block download bandwidth. Once synced, process extensible inventories
+            // (dBFT messages, StateService votes/roots, etc.) normally.
             trace!(
                 target: "neo",
                 endpoint = %self.endpoint,
                 inventory_type = ?payload.inventory_type,
                 count = payload.hashes.len(),
-                "ignoring consensus/extensible inv announcement"
+                "ignoring consensus/extensible inv announcement during fast sync"
             );
             return;
         }
@@ -321,7 +323,7 @@ impl RemoteNode {
             .tell_from_async(
                 BlockchainCommand::InventoryExtensible {
                     payload,
-                    relay: false,
+                    relay: true,
                 },
                 Some(ctx.self_ref()),
             )

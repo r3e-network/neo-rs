@@ -7,6 +7,17 @@ use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::find_options::FindOptions;
 use crate::smart_contract::iterators::{IteratorInterop, StorageIterator};
 use crate::smart_contract::storage_context::StorageContext;
+use std::sync::OnceLock;
+
+fn trace_storage_get() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("NEO_TRACE_STORAGE_GET").is_some())
+}
+
+fn trace_storage_put() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("NEO_TRACE_STORAGE_PUT").is_some())
+}
 impl ApplicationEngine {
     /// Gets storage context for reading
     pub fn storage_get_context(&mut self) -> Result<StorageContext, String> {
@@ -183,7 +194,7 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
     let context = StorageContext::from_stack_item(&context_item)
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
     let key = pop_storage_bytes(app, "System.Storage.Get", "key")?;
-    let trace_enabled = std::env::var_os("NEO_TRACE_STORAGE_GET").is_some();
+    let trace_enabled = trace_storage_get();
     let trace_context_id = context.id;
     let trace_context_read_only = context.is_read_only;
     let trace_key_len = key.len();
@@ -198,7 +209,7 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
         None
     };
     let value = app
-        .storage_get(context, key.clone())
+        .storage_get(context, key)
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
     if trace_enabled {
         eprintln!(
@@ -230,7 +241,7 @@ fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
         .map_err(|e| map_storage_error("System.Storage.Put", e))?;
     let key = pop_storage_bytes(app, "System.Storage.Put", "key")?;
     let value = pop_storage_bytes(app, "System.Storage.Put", "value")?;
-    if std::env::var_os("NEO_TRACE_STORAGE_PUT").is_some() {
+    if trace_storage_put() {
         let key_preview = key
             .iter()
             .take(16)

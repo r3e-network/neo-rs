@@ -47,7 +47,7 @@ impl ApplicationEngine {
         };
         let param_count = method.parameters.len();
         self.load_contract_context(
-            contract,
+            Arc::new(contract),
             method,
             call_flags,
             param_count,
@@ -135,28 +135,23 @@ impl ApplicationEngine {
         }
         Ok(())
     }
-    /// Emit a notification event
+    /// Emit a notification event.
+    ///
+    /// OnPersist and PostPersist have no transaction container. The event is
+    /// still recorded, matching C# `ApplicationEngine.SendNotification`.
     pub fn emit_notification(
         &mut self,
         script_hash: &UInt160,
         event_name: &str,
         state: &[Vec<u8>],
     ) -> Result<()> {
-        if let Some(container) = &self.script_container {
-            let state_items = state
-                .iter()
-                .cloned()
-                .map(StackItem::from_byte_string)
-                .collect::<Vec<_>>();
-            let notification = NotifyEventArgs::new(
-                Arc::clone(container),
-                *script_hash,
-                event_name.to_string(),
-                state_items,
-            );
-            self.emit_notify_event(notification);
-        }
-        Ok(())
+        let state_items = state
+            .iter()
+            .cloned()
+            .map(StackItem::from_byte_string)
+            .collect::<Vec<_>>();
+        self.send_notification(*script_hash, event_name.to_string(), state_items)
+            .map_err(Error::invalid_operation)
     }
     /// Check if committee witness is present
     ///

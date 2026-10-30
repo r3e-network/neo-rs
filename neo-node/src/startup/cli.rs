@@ -33,7 +33,7 @@ pub(crate) fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
         node_config.p2p.enable_compression = Some(false);
     }
     if let Some(seconds) = cli.block_time {
-        node_config.blockchain.block_time = Some(seconds);
+        node_config.blockchain.block_time = Some(seconds.saturating_mul(1_000));
     }
     if let Some(backend) = &cli.backend {
         node_config.storage.backend = Some(backend.clone());
@@ -84,13 +84,18 @@ pub(crate) fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
         let mut disabled = node_config.rpc.disabled_methods.clone();
         for method in [
             "openwallet",
+            "closewallet",
             "listplugins",
             "dumpprivkey",
             "importprivkey",
+            "getnewaddress",
             "sendfrom",
             "sendto",
+            "sendtoaddress",
             "sendmany",
+            "canceltransaction",
             "sendrawtransaction",
+            "startconsensus",
         ] {
             if !disabled.iter().any(|m| m.eq_ignore_ascii_case(method)) {
                 if method == "sendrawtransaction" {

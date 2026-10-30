@@ -46,13 +46,15 @@ use std::sync::Arc;
 /// Instruction storage strategy.
 ///
 /// - **Eager**: All instructions are pre-parsed at construction time and stored
-///   in an immutable `HashMap`. Lookups require no locking.
+///   by byte offset. Lookups are an index into a shared table, with no lock
+///   and no hash.
 /// - **Lazy**: Instructions are parsed on first access and cached behind a
 ///   `RwLock` (only used for relaxed-mode scripts that skip up-front parsing).
 #[derive(Debug, Clone)]
 enum InstructionCache {
-    /// Pre-populated, immutable cache — no lock on the read path.
-    Eager(HashMap<usize, Arc<Instruction>>),
+    /// Pre-parsed table shared by clones of the script. `None` means that
+    /// offset is not the start of an instruction.
+    Eager(Arc<Vec<Option<Arc<Instruction>>>>),
     /// Lazily populated cache — `RwLock` for concurrent reads, rare writes.
     Lazy(Arc<RwLock<HashMap<usize, Arc<Instruction>>>>),
 }
@@ -61,10 +63,9 @@ enum InstructionCache {
 ///
 /// # Performance
 ///
-/// When constructed with strict mode (or via [`Script::new`] with
-/// `strict_mode = true`), all instructions are parsed eagerly and stored in a
-/// plain `HashMap`. The hot `get_instruction()` path then performs a single
-/// `HashMap::get` with **no locking**.
+/// [`Script::new`] parses every instruction once and stores it by byte offset.
+/// The hot `get_instruction()` path then indexes that table. Clones of the
+/// script share the table.
 ///
 /// Scripts created with relaxed / no-validation constructors use a
 /// `RwLock<HashMap>` that lazily caches instructions on first access.
@@ -76,8 +77,7 @@ pub struct Script {
     /// The script data
     script: Vec<u8>,
 
-    /// Cached instructions — either eagerly populated (lock-free) or lazily
-    /// populated behind a `RwLock`.
+    /// Cached instructions — either a shared offset table or a lazy map.
     instructions: InstructionCache,
 
     /// Whether strict mode is enabled
@@ -144,14 +144,14 @@ impl Script {
             hash_code,
         };
 
+        // One parse covers validation for both modes and leaves a lock-free
+        // table. Contract execution uses this constructor, so later instruction
+        // fetches do not hash or take a lock.
+        let table = s.parse_instruction_table()?;
+        s.instructions = InstructionCache::Eager(Arc::new(table));
         if strict_mode {
-            // Parse all instructions eagerly and promote to lock-free cache.
-            let map = s.parse_all_instructions()?;
-            s.instructions = InstructionCache::Eager(map);
             s.strict_mode = true;
             s.validate_strict()?;
-        } else {
-            s.validate()?;
         }
 
         Ok(s)
@@ -188,18 +188,20 @@ impl Script {
         }
     }
 
-    /// Parses all instructions from the script into a `HashMap` keyed by byte
-    /// offset. Used during construction to build the eager (lock-free) cache.
-    fn parse_all_instructions(&self) -> VmResult<HashMap<usize, Arc<Instruction>>> {
-        let mut instructions = HashMap::new();
+    /// Parses every instruction into a table indexed by its starting offset.
+    fn parse_instruction_table(&self) -> VmResult<Vec<Option<Arc<Instruction>>>> {
+        let mut table = vec![None; self.script.len()];
 
         for instruction in
             parse_script_instructions(&self.script).map_err(VmError::invalid_script_msg)?
         {
-            instructions.insert(instruction.pointer(), Arc::new(instruction));
+            let pointer = instruction.pointer();
+            if let Some(slot) = table.get_mut(pointer) {
+                *slot = Some(Arc::new(instruction));
+            }
         }
 
-        Ok(instructions)
+        Ok(table)
     }
 
     /// Validates the script.
@@ -229,10 +231,8 @@ impl Script {
     ///
     /// # Performance
     ///
-    /// For strict-mode scripts the instruction cache is an immutable `HashMap`,
-    /// so this is a plain hash-lookup with **no locking**. For relaxed-mode
-    /// scripts a `RwLock`-guarded cache is used (read lock on hit, write lock
-    /// on miss).
+    /// Scripts from [`Script::new`] index a shared table. Relaxed-mode scripts
+    /// use a `RwLock`-guarded cache (read lock on hit, write lock on miss).
     pub fn get_instruction(&self, position: usize) -> VmResult<Arc<Instruction>> {
         if position >= self.script.len() {
             return Err(VmError::invalid_operation_msg(format!(
@@ -241,12 +241,11 @@ impl Script {
         }
 
         match &self.instructions {
-            // Fast path: lock-free lookup in the pre-populated cache.
-            // Arc::clone is just an atomic increment — no data copying.
-            InstructionCache::Eager(map) => match map.get(&position) {
+            // Index by byte offset. Arc::clone is an atomic increment.
+            InstructionCache::Eager(table) => match table.get(position).and_then(Option::as_ref) {
                 Some(instruction) => Ok(Arc::clone(instruction)),
                 None => Err(VmError::invalid_operation_msg(format!(
-                    "Position {position} not found with strict mode"
+                    "Position {position} is not an instruction boundary"
                 ))),
             },
 
@@ -473,6 +472,13 @@ mod tests {
         assert_eq!(
             script.range(0, 2).expect("Operation failed"),
             vec![OpCode::PUSH1.byte(), OpCode::PUSH2.byte()]
+        );
+
+        let indexed = Script::new(script_bytes, false).expect("non-strict script");
+        assert_eq!(indexed.get_instruction(0).unwrap().opcode(), OpCode::PUSH1);
+        assert_eq!(
+            indexed.clone().get_instruction(2).unwrap().opcode(),
+            OpCode::ADD
         );
 
         // Test hash code

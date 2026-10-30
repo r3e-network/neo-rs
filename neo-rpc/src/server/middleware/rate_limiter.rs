@@ -164,6 +164,14 @@ fn build_tier_limiters(
         .collect()
 }
 
+fn scale_down_non_zero(value: u32, divisor: u32) -> u32 {
+    if value == 0 {
+        0
+    } else {
+        (value / divisor).max(1)
+    }
+}
+
 fn resolved_tier_config(
     default_config: &RateLimitConfig,
     tier_configs: &HashMap<RateLimitTier, RateLimitConfig>,
@@ -174,17 +182,17 @@ fn resolved_tier_config(
         .cloned()
         .unwrap_or_else(|| match tier {
             RateLimitTier::Cheap => RateLimitConfig {
-                max_rps: default_config.max_rps * 2,
-                burst: default_config.burst * 2,
+                max_rps: default_config.max_rps.saturating_mul(2),
+                burst: default_config.burst.saturating_mul(2),
             },
             RateLimitTier::Standard => default_config.clone(),
             RateLimitTier::Expensive => RateLimitConfig {
-                max_rps: default_config.max_rps / 5,
-                burst: default_config.burst / 5,
+                max_rps: scale_down_non_zero(default_config.max_rps, 5),
+                burst: scale_down_non_zero(default_config.burst, 5),
             },
             RateLimitTier::Write => RateLimitConfig {
-                max_rps: default_config.max_rps / 10,
-                burst: default_config.burst / 10,
+                max_rps: scale_down_non_zero(default_config.max_rps, 10),
+                burst: scale_down_non_zero(default_config.burst, 10),
             },
         })
 }
@@ -197,6 +205,7 @@ pub struct GovernorRateLimiter {
     tier_configs: HashMap<RateLimitTier, RateLimitConfig>,
     tier_limiters: HashMap<RateLimitTier, TierLimiter>,
     last_access: DashMap<IpAddr, Instant>,
+    last_cleanup: parking_lot::Mutex<Instant>,
     /// Whether rate limiting is enabled
     enabled: bool,
 }
@@ -211,7 +220,7 @@ impl GovernorRateLimiter {
     /// silently produced a Standard burst of 200.
     #[must_use]
     pub fn new(config: RateLimitConfig) -> Self {
-        let enabled = config.max_rps > 0;
+        let enabled = config.max_rps > 0 && config.burst > 0;
         let mut tier_configs = HashMap::new();
 
         tier_configs.insert(
@@ -225,15 +234,15 @@ impl GovernorRateLimiter {
         tier_configs.insert(
             RateLimitTier::Expensive,
             RateLimitConfig {
-                max_rps: config.max_rps / 5,
-                burst: config.burst / 5,
+                max_rps: scale_down_non_zero(config.max_rps, 5),
+                burst: scale_down_non_zero(config.burst, 5),
             },
         );
         tier_configs.insert(
             RateLimitTier::Write,
             RateLimitConfig {
-                max_rps: config.max_rps / 10,
-                burst: config.burst / 10,
+                max_rps: scale_down_non_zero(config.max_rps, 10),
+                burst: scale_down_non_zero(config.burst, 10),
             },
         );
 
@@ -242,6 +251,7 @@ impl GovernorRateLimiter {
             tier_configs,
             tier_limiters,
             last_access: DashMap::new(),
+            last_cleanup: parking_lot::Mutex::new(Instant::now()),
             enabled,
         }
     }
@@ -253,11 +263,12 @@ impl GovernorRateLimiter {
         tier_configs: HashMap<RateLimitTier, RateLimitConfig>,
     ) -> Self {
         let tier_limiters = build_tier_limiters(&default_config, &tier_configs);
-        let enabled = default_config.max_rps > 0;
+        let enabled = default_config.max_rps > 0 && default_config.burst > 0;
         Self {
             tier_configs,
             tier_limiters,
             last_access: DashMap::new(),
+            last_cleanup: parking_lot::Mutex::new(Instant::now()),
             enabled,
         }
     }
@@ -321,6 +332,7 @@ impl GovernorRateLimiter {
     /// Remove entries that haven't been accessed in 10 minutes
     fn cleanup_stale_entries(&self) {
         const STALE_AFTER: Duration = Duration::from_secs(10 * 60);
+        const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
         const MAX_ENTRIES: usize = 4096;
 
         if self.last_access.len() <= MAX_ENTRIES {
@@ -328,6 +340,16 @@ impl GovernorRateLimiter {
         }
 
         let now = Instant::now();
+        {
+            let Some(mut last_cleanup) = self.last_cleanup.try_lock() else {
+                return;
+            };
+            if now.duration_since(*last_cleanup) < CLEANUP_INTERVAL {
+                return;
+            }
+            *last_cleanup = now;
+        }
+
         self.last_access
             .retain(|_, last_access| now.duration_since(*last_access) < STALE_AFTER);
         for tier_limiter in self.tier_limiters.values() {

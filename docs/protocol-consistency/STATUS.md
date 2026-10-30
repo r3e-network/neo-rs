@@ -1,6 +1,6 @@
 # Protocol consistency status
 
-Updated: 2026-10-28
+Updated: 2026-10-29
 
 ## Live sync verification
 
@@ -24,10 +24,33 @@ the import aborts at the first mismatch or missing reference row.
 | Input | `data/bootstrap/chain.0.acc` (heights 0..=13,141,250) |
 | Reference | `data/reference_stateroots.jsonl` (C# roots 0..=13,150,240) |
 | Mode | `--state-root --state-root-full-state`, fresh `data/dense-campaign-20261028` |
-| Logs | `logs/dense-campaign-9ebbf0e4.err.log` |
+| Logs | `logs/dense-campaign-9ebbf0e4.err.log` and, after the reboot, `logs/dense-campaign-9ebbf0e4-resume.err.log` |
 | Precondition gate | PASS for 0..=13,141,250: every height present, zero missing/duplicate/malformed (8,990 rows above the range are ignored) |
 | Report | `outputs/dense-campaign-9ebbf0e4-report.json`, written by `scripts/mainnet_gate_report.py` when the import exits; only `status=clean` supports a claim |
-| Status | **Running.** No `[0, H]` claim until the import exits 0 at the ACC tip. |
+| Status | **Resumed after a host reboot at 2026-10-29 06:39 +08.** The last disk-verified flush was height 780,000 (chain and state root index). Resume opened at `local_height=780000` and matched the C# root again at 785,000. No `[0, H]` claim until the import exits 0 at the ACC tip. |
+
+## Behaviour lane (application logs)
+
+`compare-applogs` is in `scripts/verify-protocol-consistency.py`. The first import
+(blocks 0..=300,000) stored no logs: `.acc` import enables fast sync, and
+`ApplicationLogsService` did not opt in, so its committing handler never ran.
+The empty store was confirmed after the reboot (`getapplicationlog` returned
+unknown hash; the log DB had no SST files). The handler now opts in and import
+checkpoints flush its store. The fresh import of blocks 1..=300,000 finished at
+2026-10-29 09:22 +08 with `state_root_index` 300,000. The first compare stopped
+at height 0 because genesis was persisted before ApplicationLogs was registered.
+Genesis is now persisted after the plugin is registered. OnPersist and
+PostPersist `vmstate` was stored as `BREAK` and rewritten to `HALT` (300,001
+block logs). Genesis OnPersist was still short of C#: native `Deploy` events
+were dropped when the engine had no transaction, and the NEO mint notification
+was emitted before those deploys because initialization ran at engine
+construction. Both are fixed. Height 0 and height 105 match C#. The full
+0..=300,000 compare stopped at height 44538: the transaction fault text still
+carried the Rust `System.Contract.Call` wrapper
+(`Method 'pause' ... UInt160(0x...)`) instead of the C# sentence
+(`Method "pause" ... 0x...`). New logs store the C# sentence. A store written
+before that change needs `NEO_REWRITE_GAS_EXCEPTION=1` before the height can
+match. The range is not a pass until the journal covers every height.
 
 Found while starting the campaign:
 

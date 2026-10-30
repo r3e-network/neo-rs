@@ -234,12 +234,35 @@ impl DataCache {
         }
     }
 
+    /// Drains tracked changes from a child cache and merges them into this cache without cloning.
+    pub fn merge_from_child(&self, child: &DataCache) {
+        let drained: Vec<(StorageKey, Trackable)> = {
+            let mut child_state = child.state.write();
+            child_state.dictionary.drain().collect()
+        };
+        for (key, trackable) in drained {
+            log_watched_storage_event(
+                "merge",
+                "merge_tracked_items",
+                &key,
+                None,
+                Some(trackable.state),
+                Some(&trackable.item),
+            );
+            match trackable.state {
+                TrackState::Added => self.add(key, trackable.item),
+                TrackState::Changed => self.update(key, trackable.item),
+                TrackState::Deleted => self.delete(&key),
+                TrackState::None | TrackState::NotFound => {}
+            }
+        }
+    }
+
     /// Creates an isolated writable fork backed by the same underlying store.
     pub fn fork_isolated(&self) -> Self {
         let state = self.state.read();
         let cloned_state = InnerState {
             dictionary: state.dictionary.clone(),
-            change_set: state.change_set.clone(),
         };
         drop(state);
 
@@ -377,41 +400,60 @@ impl DataCache {
             cache.remove(&key);
         }
 
-        self.apply_add(&key, value.clone())?;
-        for handler in self.on_update.read().iter() {
-            handler(self, &key, &value);
+        let handlers = self.on_update.read();
+        if handlers.is_empty() {
+            drop(handlers);
+            self.apply_add(key, value)?;
+        } else {
+            let key_clone = key.clone();
+            let value_clone = value.clone();
+            self.apply_add(key, value)?;
+            for handler in handlers.iter() {
+                handler(self, &key_clone, &value_clone);
+            }
         }
         Ok(())
     }
 
-    fn apply_add(&self, key: &StorageKey, value: StorageItem) -> DataCacheResult {
+    fn apply_add(&self, key: StorageKey, value: StorageItem) -> DataCacheResult {
+        use std::collections::hash_map::Entry;
         let mut state = self.state.write();
-        let prev_state = state
-            .dictionary
-            .get(key)
-            .map(|t| t.state)
-            .unwrap_or(TrackState::NotFound);
-        let new_state = match prev_state {
-            TrackState::Deleted => TrackState::Changed,
-            TrackState::NotFound => TrackState::Added,
-            TrackState::None | TrackState::Added | TrackState::Changed => {
-                return Err(DataCacheError::InvalidState(format!(
-                    "Add is invalid for existing state {prev_state:?}"
-                )));
+        match state.dictionary.entry(key) {
+            Entry::Occupied(mut occupied) => {
+                let prev_state = occupied.get().state;
+                let new_state = match prev_state {
+                    TrackState::Deleted => TrackState::Changed,
+                    TrackState::NotFound => TrackState::Added,
+                    TrackState::None | TrackState::Added | TrackState::Changed => {
+                        return Err(DataCacheError::InvalidState(format!(
+                            "Add is invalid for existing state {prev_state:?}"
+                        )));
+                    }
+                };
+                log_watched_storage_event(
+                    "add",
+                    "apply_add",
+                    occupied.key(),
+                    Some(prev_state),
+                    Some(new_state),
+                    Some(&value),
+                );
+                let entry = occupied.get_mut();
+                entry.item = value;
+                entry.state = new_state;
             }
-        };
-        log_watched_storage_event(
-            "add",
-            "apply_add",
-            key,
-            Some(prev_state),
-            Some(new_state),
-            Some(&value),
-        );
-        state
-            .dictionary
-            .insert(key.clone(), Trackable::new(value, new_state));
-        state.change_set.insert(key.clone());
+            Entry::Vacant(vacant) => {
+                log_watched_storage_event(
+                    "add",
+                    "apply_add",
+                    vacant.key(),
+                    Some(TrackState::NotFound),
+                    Some(TrackState::Added),
+                    Some(&value),
+                );
+                vacant.insert(Trackable::new(value, TrackState::Added));
+            }
+        }
         Ok(())
     }
 
@@ -428,37 +470,56 @@ impl DataCache {
             cache.put(key.clone(), value.clone(), size);
         }
 
-        self.apply_update(&key, value.clone());
-        for handler in self.on_update.read().iter() {
-            handler(self, &key, &value);
+        let handlers = self.on_update.read();
+        if handlers.is_empty() {
+            drop(handlers);
+            self.apply_update(key, value);
+        } else {
+            let key_clone = key.clone();
+            let value_clone = value.clone();
+            self.apply_update(key, value);
+            for handler in handlers.iter() {
+                handler(self, &key_clone, &value_clone);
+            }
         }
     }
 
-    fn apply_update(&self, key: &StorageKey, value: StorageItem) {
+    fn apply_update(&self, key: StorageKey, value: StorageItem) {
+        use std::collections::hash_map::Entry;
         let mut state = self.state.write();
-        let prev_state = state
-            .dictionary
-            .get(key)
-            .map(|t| t.state)
-            .unwrap_or(TrackState::NotFound);
-        let new_state = match prev_state {
-            TrackState::Added => TrackState::Added,
-            TrackState::Changed | TrackState::None => TrackState::Changed,
-            TrackState::Deleted => TrackState::Added,
-            TrackState::NotFound => TrackState::Changed,
-        };
-        log_watched_storage_event(
-            "update",
-            "apply_update",
-            key,
-            Some(prev_state),
-            Some(new_state),
-            Some(&value),
-        );
-        state
-            .dictionary
-            .insert(key.clone(), Trackable::new(value, new_state));
-        state.change_set.insert(key.clone());
+        match state.dictionary.entry(key) {
+            Entry::Occupied(mut occupied) => {
+                let prev_state = occupied.get().state;
+                let new_state = match prev_state {
+                    TrackState::Added => TrackState::Added,
+                    TrackState::Changed | TrackState::None => TrackState::Changed,
+                    TrackState::Deleted => TrackState::Added,
+                    TrackState::NotFound => TrackState::Changed,
+                };
+                log_watched_storage_event(
+                    "update",
+                    "apply_update",
+                    occupied.key(),
+                    Some(prev_state),
+                    Some(new_state),
+                    Some(&value),
+                );
+                let entry = occupied.get_mut();
+                entry.item = value;
+                entry.state = new_state;
+            }
+            Entry::Vacant(vacant) => {
+                log_watched_storage_event(
+                    "update",
+                    "apply_update",
+                    vacant.key(),
+                    Some(TrackState::NotFound),
+                    Some(TrackState::Changed),
+                    Some(&value),
+                );
+                vacant.insert(Trackable::new(value, TrackState::Changed));
+            }
+        }
     }
 
     /// Deletes an item from the cache.
@@ -477,43 +538,46 @@ impl DataCache {
     }
 
     fn apply_delete(&self, key: &StorageKey) {
-        let (prev_state, previous_item) = {
+        let prev_state = {
             let state = self.state.read();
-            let previous = state.dictionary.get(key);
-            (
-                previous.map(|t| t.state).unwrap_or(TrackState::NotFound),
-                previous.map(|t| t.item.clone()),
-            )
+            state
+                .dictionary
+                .get(key)
+                .map(|t| t.state)
+                .unwrap_or(TrackState::NotFound)
         };
 
         match prev_state {
             TrackState::Added => {
                 let mut state = self.state.write();
                 state.dictionary.remove(key);
-                state.change_set.remove(key);
                 log_watched_storage_event(
                     "delete",
                     "apply_delete_added",
                     key,
                     Some(prev_state),
                     Some(TrackState::NotFound),
-                    previous_item.as_ref(),
+                    None,
                 );
             }
             TrackState::Changed | TrackState::None => {
                 let mut state = self.state.write();
-                state.dictionary.insert(
-                    key.clone(),
-                    Trackable::new(StorageItem::default(), TrackState::Deleted),
-                );
-                state.change_set.insert(key.clone());
+                if let Some(entry) = state.dictionary.get_mut(key) {
+                    entry.item = StorageItem::default();
+                    entry.state = TrackState::Deleted;
+                } else {
+                    state.dictionary.insert(
+                        key.clone(),
+                        Trackable::new(StorageItem::default(), TrackState::Deleted),
+                    );
+                }
                 log_watched_storage_event(
                     "delete",
                     "apply_delete_tracked",
                     key,
                     Some(prev_state),
                     Some(TrackState::Deleted),
-                    previous_item.as_ref(),
+                    None,
                 );
             }
             TrackState::Deleted => {
@@ -523,7 +587,7 @@ impl DataCache {
                     key,
                     Some(prev_state),
                     Some(TrackState::Deleted),
-                    previous_item.as_ref(),
+                    None,
                 );
             }
             TrackState::NotFound => {
@@ -549,7 +613,6 @@ impl DataCache {
                 match current_state {
                     TrackState::Added => {
                         state.dictionary.remove(key);
-                        state.change_set.remove(key);
                         log_watched_storage_event(
                             "delete",
                             "apply_delete_not_found_added",
@@ -564,7 +627,6 @@ impl DataCache {
                             key.clone(),
                             Trackable::new(StorageItem::default(), TrackState::Deleted),
                         );
-                        state.change_set.insert(key.clone());
                         log_watched_storage_event(
                             "delete",
                             "apply_delete_not_found_emit",
@@ -606,50 +668,95 @@ impl DataCache {
         }
 
         let mut state = self.state.write();
-        let keys: Vec<StorageKey> = state.change_set.iter().cloned().collect();
-        for key in keys {
-            if let Some(trackable) = state.dictionary.get_mut(&key) {
-                match trackable.state {
-                    TrackState::Added | TrackState::Changed => {
-                        trackable.state = TrackState::None;
-                    }
-                    TrackState::Deleted => {
-                        state.dictionary.remove(&key);
-                    }
-                    TrackState::None | TrackState::NotFound => {}
-                }
+        state.dictionary.retain(|_, trackable| match trackable.state {
+            TrackState::Added | TrackState::Changed => {
+                trackable.state = TrackState::None;
+                true
             }
-        }
-        state.change_set.clear();
+            TrackState::Deleted => false,
+            TrackState::None | TrackState::NotFound => true,
+        });
     }
 
     /// Resets the cache for reuse.
     pub fn reset(&self) {
         let mut state = self.state.write();
         state.dictionary.clear();
-        state.change_set.clear();
         drop(state);
-        *self.pattern_tracker.write() = AccessPatternTracker::new();
+        if self.config.enable_prefetching {
+            *self.pattern_tracker.write() = AccessPatternTracker::new();
+        }
     }
 
     /// Gets all tracked items for persistence.
     pub fn tracked_items(&self) -> Vec<(StorageKey, Trackable)> {
         let state = self.state.read();
         state
-            .change_set
+            .dictionary
             .iter()
-            .filter_map(|key| {
-                state
-                    .dictionary
-                    .get(key)
-                    .map(|trackable| (key.clone(), trackable.clone()))
+            .filter(|(_, trackable)| {
+                matches!(
+                    trackable.state,
+                    TrackState::Added | TrackState::Changed | TrackState::Deleted
+                )
             })
+            .map(|(key, trackable)| (key.clone(), trackable.clone()))
             .collect()
+    }
+
+    /// Iterates over all modified entries (`Added`, `Changed`, `Deleted`) without cloning.
+    pub fn for_each_tracked_change<F>(&self, mut f: F)
+    where
+        F: FnMut(&StorageKey, &StorageItem, TrackState),
+    {
+        let state = self.state.read();
+        for (key, trackable) in &state.dictionary {
+            if matches!(
+                trackable.state,
+                TrackState::Added | TrackState::Changed | TrackState::Deleted
+            ) {
+                f(key, &trackable.item, trackable.state);
+            }
+        }
+    }
+
+    /// Writes all modified entries directly to a byte store writer without intermediate cloning.
+    pub fn apply_tracked_to_writer<W>(&self, writer: &mut W) -> crate::error::StorageResult<bool>
+    where
+        W: crate::persistence::write_store::WriteStore<Vec<u8>, Vec<u8>> + ?Sized,
+    {
+        let state = self.state.read();
+        let mut any_written = false;
+        for (key, trackable) in &state.dictionary {
+            match trackable.state {
+                TrackState::Added | TrackState::Changed => {
+                    writer.put(key.to_array(), trackable.item.to_value())?;
+                    any_written = true;
+                }
+                TrackState::Deleted => {
+                    writer.delete(key.to_array())?;
+                    any_written = true;
+                }
+                TrackState::None | TrackState::NotFound => {}
+            }
+        }
+        Ok(any_written)
     }
 
     /// Gets the change set.
     pub fn get_change_set(&self) -> Vec<StorageKey> {
-        self.state.read().change_set.iter().cloned().collect()
+        self.state
+            .read()
+            .dictionary
+            .iter()
+            .filter(|(_, trackable)| {
+                matches!(
+                    trackable.state,
+                    TrackState::Added | TrackState::Changed | TrackState::Deleted
+                )
+            })
+            .map(|(key, _)| key.clone())
+            .collect()
     }
 
     /// Gets the configuration.
@@ -686,17 +793,14 @@ impl DataCache {
         if let Some(store_find) = &self.store_find {
             let state = self.state.read();
             let mut overlays = BTreeMap::new();
-            for key in &state.change_set {
+            for (key, trackable) in &state.dictionary {
+                let Some(item) = overlay_item(trackable) else {
+                    continue;
+                };
                 if !key_matches_prefix(key, prefix_bytes.as_deref()) {
                     continue;
                 }
-
-                let Some(trackable) = state.dictionary.get(key) else {
-                    continue;
-                };
-                if let Some(item) = overlay_item(trackable) {
-                    overlays.insert(key.clone(), item);
-                }
+                overlays.insert(key.clone(), item);
             }
             drop(state);
 
@@ -751,31 +855,41 @@ impl DataCache {
 
     /// Returns the number of pending changes.
     pub fn pending_change_count(&self) -> usize {
-        self.state.read().change_set.len()
+        self.state
+            .read()
+            .dictionary
+            .values()
+            .filter(|t| {
+                matches!(
+                    t.state,
+                    TrackState::Added | TrackState::Changed | TrackState::Deleted
+                )
+            })
+            .count()
     }
 
     /// Returns true if there are any pending changes.
     pub fn has_pending_changes(&self) -> bool {
-        !self.state.read().change_set.is_empty()
+        self.state.read().dictionary.values().any(|t| {
+            matches!(
+                t.state,
+                TrackState::Added | TrackState::Changed | TrackState::Deleted
+            )
+        })
     }
 
     /// Extracts all tracked changes as raw key-value pairs.
     pub fn extract_raw_changes(&self) -> Vec<(Vec<u8>, Option<Vec<u8>>)> {
         let state = self.state.read();
         state
-            .change_set
+            .dictionary
             .iter()
-            .filter_map(|key| {
-                state
-                    .dictionary
-                    .get(key)
-                    .and_then(|trackable| match trackable.state {
-                        TrackState::Added | TrackState::Changed => {
-                            Some((key.to_array(), Some(trackable.item.to_value())))
-                        }
-                        TrackState::Deleted => Some((key.to_array(), None)),
-                        TrackState::None | TrackState::NotFound => None,
-                    })
+            .filter_map(|(key, trackable)| match trackable.state {
+                TrackState::Added | TrackState::Changed => {
+                    Some((key.to_array(), Some(trackable.item.to_value())))
+                }
+                TrackState::Deleted => Some((key.to_array(), None)),
+                TrackState::None | TrackState::NotFound => None,
             })
             .collect()
     }

@@ -140,7 +140,7 @@ pub(crate) fn spawn_metrics_pump(
                 state.header_height = header_height;
                 state.peer_count = peer_count;
                 state.mempool_size = mempool_size;
-                state.is_syncing = header_lag > 0;
+                state.is_syncing = metrics_system.context().is_fast_sync_mode() || header_lag > 0;
             }
         }
     });

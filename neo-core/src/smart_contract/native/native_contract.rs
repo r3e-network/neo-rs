@@ -40,10 +40,7 @@ pub trait NativeContract: Any + Send + Sync {
     /// Determines whether the native contract is active under the given settings.
     fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
         match self.active_in() {
-            Some(hardfork) => {
-                let activation_height = settings.hardforks.get(&hardfork).copied().unwrap_or(0);
-                block_height >= activation_height
-            }
+            Some(hardfork) => settings.is_hardfork_enabled(hardfork, block_height),
             None => true,
         }
     }

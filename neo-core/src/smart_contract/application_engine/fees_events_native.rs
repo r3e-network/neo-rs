@@ -39,9 +39,12 @@ impl ApplicationEngine {
     }
     /// Adds picoGAS to `FeeConsumed` / `GasConsumed`.
     fn add_fee_pico(&mut self, pico_gas: i64) -> Result<()> {
-        if let Ok(state_arc) = self.current_execution_state()
-            && state_arc.lock().whitelisted
-        {
+        let whitelisted = if self.fee_whitelist_context != 0 {
+            self.fee_whitelist_flag
+        } else {
+            self.refresh_fee_whitelist()
+        };
+        if whitelisted {
             return Ok(());
         }
         if pico_gas < 0 {
@@ -61,6 +64,41 @@ impl ApplicationEngine {
             return Err(Error::insufficient_gas(required, available));
         }
         Ok(())
+    }
+    /// Drops the cached whitelist flag. The next fee charge reads it again.
+    ///
+    /// Call this when the current context changes, and after the flag itself is
+    /// assigned. The fixed whitelist fee is charged before that assignment.
+    pub(super) fn invalidate_fee_whitelist(&mut self) {
+        self.fee_whitelist_context = 0;
+    }
+
+    /// Reads the current context's whitelist flag and remembers it.
+    fn refresh_fee_whitelist(&mut self) -> bool {
+        let current = self.vm_engine.engine().current_context().map(|context| {
+            let id = context.context_id();
+            if self.fee_whitelist_context == id {
+                return (id, self.fee_whitelist_flag, false);
+            }
+            let flag = context
+                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new)
+                .lock()
+                .whitelisted;
+            (id, flag, true)
+        });
+        match current {
+            None => {
+                self.fee_whitelist_context = 0;
+                false
+            }
+            Some((id, flag, refresh)) => {
+                if refresh {
+                    self.fee_whitelist_context = id;
+                    self.fee_whitelist_flag = flag;
+                }
+                flag
+            }
+        }
     }
     /// Adds a fee expressed in execution units.
     ///

@@ -71,6 +71,48 @@ Conclusions:
   (Rust 1.99.1, `hashing` suite, exit 139). The PGO script is for the MSVC host
   on Windows, and for Linux.
 
+## State-root commit path (2026-10-30)
+
+Block import spends its time in two places after execution: hashing every dirty
+MPT node, then writing those nodes through the RocksDB snapshot.
+
+The hash of a node is SHA-256 of its body without the reference count. The
+bytes stored in RocksDB are that same body plus the reference count. `try_hash`
+keeps the body. `MptCache::commit` appends the current reference instead of
+walking the node a second time. If the body was not kept, commit serializes
+from scratch, so a node loaded from the store still writes the same bytes.
+
+`RocksDbSnapshot` keeps uncommitted writes in a `HashMap` for point reads.
+Range scans still merge those writes into a sorted map before returning, so
+prefix iteration order does not change. The write batch is built from that map
+once, at commit. A key written more than once in the same snapshot keeps only
+its latest value.
+
+## Execution path (2026-10-30)
+
+Contract execution reads the same storage item many times. `StorageItem` keeps
+its bytes in an `Arc`, so a cache hit increments a reference count. Replacing
+the value installs a new `Arc`; an earlier clone keeps the previous bytes.
+
+Opcode fees used to lock the current execution context on every instruction to
+read a whitelist flag. The engine reads that flag once. Loading or unloading a
+context, and assigning the whitelist flag, drops the cached value. Later
+instructions in the same context only test the cached flag. The fixed whitelist
+fee is charged before the flag is set, so that charge is not skipped.
+
+Contract scripts are parsed once in `Script::new`. Each later instruction is
+an index into that table, shared by clones of the script. Scripts that skip
+validation still fill a locked map on first use. `System.Storage.Get` moves
+the key into the lookup. The storage trace switches are read once per process.
+
+## Trie node cache (2026-10-30)
+
+A trie lookup that hits `GlobalNodeCache` takes a shared lock and returns the
+cached `Arc`. The store key is built only after a miss. The per-block cache
+keeps that `Arc`. The trie receives one detached copy. Changing a reference
+count copies the node first, so the cached node stays as it was stored. One
+hit in sixteen also moves the node to the front of the eviction list.
+
 ## Target Improvements
 
 - Block processing: 30-50% faster

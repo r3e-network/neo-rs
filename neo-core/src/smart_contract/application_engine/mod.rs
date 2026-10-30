@@ -204,6 +204,10 @@ pub struct ApplicationEngine {
     fee_amount: i64,
     fee_consumed: i64,
     exec_fee_factor: u32,
+    /// `ExecutionContext::context_id` whose whitelist flag is cached. Zero means
+    /// the cache is empty. Context ids start at 1 and are never reused.
+    fee_whitelist_context: u64,
+    fee_whitelist_flag: bool,
     storage_price: u32,
     call_flags: CallFlags,
     vm_engine: VmEngineHost,

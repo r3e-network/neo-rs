@@ -96,24 +96,10 @@ impl CommittingHandler for StateServiceCommitHandlers {
             ));
         }
 
-        // Collect tracked items NOW while snapshot is still alive.
         let height = block.index();
-        let changes: Vec<_> = snapshot
-            .tracked_items()
-            .into_iter()
-            .map(|(key, trackable)| (key, trackable.item, trackable.state))
-            .collect();
-
-        // Compute and stage the root synchronously. The previous
-        // implementation spawned a thread and immediately joined it, paying
-        // a thread-creation cost per block without overlapping any work
-        // (review §5.1). Panics are contained exactly as the old join() path
-        // contained them, and the staging/error gate is unchanged: only
-        // compute and stage the root here — persisting it before the block
-        // transaction commits would advance the state root on failed blocks.
         let state_store = Arc::clone(&self.state_store);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-            state_store.update_local_state_root_snapshot(height, changes.into_iter())
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            state_store.update_local_state_root_from_cache(height, snapshot)
         }));
 
         match result {

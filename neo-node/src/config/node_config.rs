@@ -260,6 +260,21 @@ impl NodeConfig {
             )));
         }
 
+        if let Some(consensus) = &self.consensus {
+            if !consensus.enabled {
+                return Ok(None);
+            }
+            let section = DbftSection {
+                enabled: consensus.enabled,
+                auto_start: consensus.auto_start,
+                ..DbftSection::default()
+            };
+            return Ok(Some(dbft_section_settings(
+                &section,
+                protocol_settings.network,
+            )));
+        }
+
         load_dbft_plugin_settings(protocol_settings.network)
     }
 

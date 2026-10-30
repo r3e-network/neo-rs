@@ -148,6 +148,18 @@ fn flush_and_verify_checkpoint(
     if let Some(state_store) = state_store.as_ref() {
         state_store.flush();
     }
+    // Application logs live in their own store. The import profile disables the
+    // write-ahead log, so leave them unflushed and a restart has no behaviour oracle.
+    if let Ok(Some(logs)) =
+        system.get_service::<neo_core::application_logs::ApplicationLogsService>()
+    {
+        logs.flush();
+    }
+    if let Ok(Some(tracker)) =
+        system.get_service::<neo_core::tokens_tracker::TokensTrackerService>()
+    {
+        tracker.flush();
+    }
     let state_root_index = state_store
         .as_ref()
         .map(|store| store.local_root_index().unwrap_or(0));
@@ -298,7 +310,7 @@ pub fn import_acc_file(
                     .seek(SeekFrom::Current(skip_len))
                     .with_context(|| format!("failed to seek past block payload at item {}", i))?;
                 skipped += 1;
-                if skipped % 100_000 == 0 {
+                if skipped.is_multiple_of(100_000) {
                     info!(
                         target: "neo",
                         skipped,
@@ -344,7 +356,7 @@ pub fn import_acc_file(
             current_height = block_index;
             imported += 1;
 
-            let periodic_flush_due = imported % flush_interval == 0;
+            let periodic_flush_due = imported.is_multiple_of(flush_interval);
             if periodic_flush_due {
                 let _ = flush_and_verify_checkpoint(
                     system,
@@ -377,7 +389,7 @@ pub fn import_acc_file(
                 break;
             }
 
-            let should_log_progress = imported % progress_interval == 0
+            let should_log_progress = imported.is_multiple_of(progress_interval)
                 || last_progress_log_at.elapsed().as_secs() >= progress_heartbeat_secs;
             if should_log_progress {
                 let elapsed = started_at.elapsed().as_secs_f64();
@@ -460,6 +472,16 @@ pub fn import_acc_file(
             // and is not covered by `system.store().flush()`).
             if let Ok(Some(state_store)) = system.state_store() {
                 state_store.flush();
+            }
+            if let Ok(Some(logs)) =
+                system.get_service::<neo_core::application_logs::ApplicationLogsService>()
+            {
+                logs.flush();
+            }
+            if let Ok(Some(tracker)) =
+                system.get_service::<neo_core::tokens_tracker::TokensTrackerService>()
+            {
+                tracker.flush();
             }
             info!(
                 target: "neo",

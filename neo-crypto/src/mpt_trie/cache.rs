@@ -1,7 +1,7 @@
 use super::error::{MptError, MptResult};
 use super::node::Node;
 use lru::LruCache;
-use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_io::{MemoryReader, Serializable};
 use neo_primitives::UINT256_SIZE;
 use neo_primitives::UInt256;
 use parking_lot::RwLock;
@@ -53,20 +53,22 @@ impl GlobalNodeCache {
     /// Gets a cached node by hash, updating hit/miss statistics.
     ///
     /// Returns `None` if the node is not in the cache (counts as miss).
+    ///
+    /// A hit clones the `Arc` under a shared lock. One hit in sixteen also
+    /// moves that node to the front of the LRU list. The cached node is not
+    /// modified.
     #[must_use]
     pub fn get(&self, key: &UInt256) -> Option<Arc<Node>> {
-        let key_copy = *key;
-        let result = {
-            let mut guard = self.inner.write();
-            guard.get(&key_copy).cloned()
-        };
-
-        if result.is_some() {
-            self.hits.fetch_add(1, Ordering::Relaxed);
-        } else {
+        let hit = self.inner.read().peek(key).map(Arc::clone);
+        let Some(node) = hit else {
             self.misses.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
+        let hits = self.hits.fetch_add(1, Ordering::Relaxed);
+        if hits & 15 == 0 {
+            let _ = self.inner.write().get(key);
         }
-        result
+        Some(node)
     }
 
     /// Inserts a node into the cache, evicting LRU entries if at capacity.
@@ -131,12 +133,6 @@ enum TrackState {
     Deleted,
 }
 
-fn to_array<T: Serializable>(value: &T) -> neo_io::IoResult<Vec<u8>> {
-    let mut writer = BinaryWriter::new();
-    value.serialize(&mut writer)?;
-    Ok(writer.into_bytes())
-}
-
 /// Abstraction over the persistence snapshot used by the trie cache.
 pub trait MptStoreSnapshot: Send + Sync {
     /// Retrieves the serialized node associated with the specified key.
@@ -150,15 +146,19 @@ pub trait MptStoreSnapshot: Send + Sync {
 }
 
 struct MptTrackable {
-    node: Option<Node>,
+    /// Shared with [`GlobalNodeCache`] until a reference-count update detaches it.
+    node: Option<Arc<Node>>,
     state: TrackState,
+    initial_ref: u32,
 }
 
 impl MptTrackable {
-    const fn new(node: Option<Node>) -> Self {
+    fn new(node: Option<Arc<Node>>) -> Self {
+        let initial_ref = node.as_ref().map_or(0, |n| n.reference);
         Self {
             node,
             state: TrackState::None,
+            initial_ref,
         }
     }
 }
@@ -175,6 +175,7 @@ where
     prefix: u8,
     entries: HashMap<UInt256, MptTrackable>,
     use_global_cache: bool,
+    node_cache: Option<Arc<GlobalNodeCache>>,
 }
 
 impl<S> MptCache<S>
@@ -200,56 +201,153 @@ where
             prefix,
             entries: HashMap::new(),
             use_global_cache,
+            node_cache: None,
+        }
+    }
+
+    /// Creates a cache backed by a store-scoped [`GlobalNodeCache`].
+    pub fn with_node_cache(
+        store: Arc<S>,
+        prefix: u8,
+        node_cache: Option<Arc<GlobalNodeCache>>,
+    ) -> Self {
+        Self {
+            store,
+            prefix,
+            entries: HashMap::new(),
+            use_global_cache: false,
+            node_cache,
         }
     }
 
     /// Resolves the node identified by the supplied hash if present either in the
     /// in-memory cache or the underlying store.
     pub fn resolve(&mut self, hash: &UInt256) -> MptResult<Option<Node>> {
+        let resolved = self.resolve_node(hash)?;
+        if let Some(ref node) = resolved {
+            node.clear_cached_hash();
+        }
+        Ok(resolved)
+    }
+
+    /// Resolves the node while keeping its pre-cached hash intact for internal trie operations.
+    pub(crate) fn resolve_node(&mut self, hash: &UInt256) -> MptResult<Option<Node>> {
         let entry = self.resolve_internal(hash)?;
-        Ok(entry.node.clone())
+        Ok(entry.node.as_ref().map(|node| node.as_ref().clone()))
     }
 
     /// Adds or updates the supplied node inside the cache.
     pub fn put_node(&mut self, node: Node) -> MptResult<()> {
-        let hash = node.try_hash()?;
-        let entry = self.resolve_internal(&hash)?;
-
-        if let Some(ref mut existing) = entry.node {
-            existing.reference = existing.reference.saturating_add(1);
-            entry.state = TrackState::Changed;
-        } else {
-            let mut stored = node;
-            stored.reference = 1;
-            entry.node = Some(stored);
-            entry.state = TrackState::Added;
-        }
+        let _ = self.put_node_with_hint(node, false)?;
         Ok(())
+    }
+
+    /// Adds or updates the supplied node inside the cache, returning `true` if the node
+    /// did not exist in the persistent store prior to this cache session (`initial_ref == 0`).
+    ///
+    /// When `known_absent_in_store` is `true` (because at least one child of this node has
+    /// `initial_ref == 0`), a vacant entry in `self.entries` skips querying the underlying
+    /// persistent store.
+    pub(crate) fn put_node_with_hint(
+        &mut self,
+        mut node: Node,
+        known_absent_in_store: bool,
+    ) -> MptResult<bool> {
+        node.clear_dirty();
+        let hash = node.try_hash()?;
+
+        if known_absent_in_store {
+            return match self.entries.entry(hash) {
+                Entry::Occupied(occupied) => {
+                    let entry = occupied.into_mut();
+                    if let Some(existing) = entry.node.as_mut() {
+                        let next = existing.reference.saturating_add(1);
+                        Arc::make_mut(existing).reference = next;
+                    } else {
+                        node.reference = 1;
+                        entry.node = Some(Arc::new(node));
+                    }
+                    entry.state = if entry.initial_ref > 0 {
+                        TrackState::Changed
+                    } else {
+                        TrackState::Added
+                    };
+                    Ok(entry.initial_ref == 0)
+                }
+                Entry::Vacant(vacant) => {
+                    node.reference = 1;
+                    vacant.insert(MptTrackable {
+                        node: Some(Arc::new(node)),
+                        state: TrackState::Added,
+                        initial_ref: 0,
+                    });
+                    Ok(true)
+                }
+            };
+        }
+
+        let entry = self.resolve_internal(&hash)?;
+        let initial_ref = entry.initial_ref;
+        if let Some(existing) = entry.node.as_mut() {
+            let next = existing.reference.saturating_add(1);
+            Arc::make_mut(existing).reference = next;
+        } else {
+            node.reference = 1;
+            entry.node = Some(Arc::new(node));
+        }
+        entry.state = if initial_ref > 0 {
+            TrackState::Changed
+        } else {
+            TrackState::Added
+        };
+        Ok(initial_ref == 0)
     }
 
     /// Decrements the reference count for the node or marks it for deletion when it
     /// is no longer referenced.
     pub fn delete_node(&mut self, hash: UInt256) -> MptResult<()> {
         let entry = self.resolve_internal(&hash)?;
-        let Some(node) = entry.node.as_mut() else {
-            return Ok(());
+        let initial_ref = entry.initial_ref;
+        let still_referenced = {
+            let Some(slot) = entry.node.as_mut() else {
+                return Ok(());
+            };
+            if slot.reference > 1 {
+                let next = slot.reference - 1;
+                Arc::make_mut(slot).reference = next;
+                true
+            } else {
+                false
+            }
         };
-        if node.reference > 1 {
-            node.reference -= 1;
-            entry.state = TrackState::Changed;
+        if still_referenced {
+            entry.state = if initial_ref > 0 {
+                TrackState::Changed
+            } else {
+                TrackState::Added
+            };
         } else {
             entry.node = None;
-            entry.state = TrackState::Deleted;
+            entry.state = if initial_ref > 0 {
+                TrackState::Deleted
+            } else {
+                TrackState::None
+            };
         }
         Ok(())
     }
 
     /// Flushes the pending changes to the underlying store.
     pub fn commit(&mut self) -> MptResult<()> {
+        let active_cache: Option<&GlobalNodeCache> = if let Some(ref cache) = self.node_cache {
+            Some(cache.as_ref())
+        } else if self.use_global_cache {
+            Some(&GLOBAL_NODE_CACHE)
+        } else {
+            None
+        };
+
         for (hash, entry) in &self.entries {
-            if self.use_global_cache && entry.state != TrackState::None {
-                GLOBAL_NODE_CACHE.remove(hash);
-            }
             match entry.state {
                 TrackState::None => {}
                 TrackState::Added | TrackState::Changed => {
@@ -257,11 +355,17 @@ where
                         .node
                         .as_ref()
                         .ok_or_else(|| MptError::invalid("cache entry missing node"))?;
-                    let data = to_array(node).map_err(MptError::from)?;
+                    let data = node.stored_bytes()?;
                     self.store.put(self.key(hash), data)?;
+                    if let Some(cache) = active_cache {
+                        cache.put(*hash, Arc::new(node.to_cached_node(*hash)));
+                    }
                 }
                 TrackState::Deleted => {
                     self.store.delete(self.key(hash))?;
+                    if let Some(cache) = active_cache {
+                        cache.remove(hash);
+                    }
                 }
             }
         }
@@ -273,11 +377,19 @@ where
         let store = Arc::clone(&self.store);
         let prefix = self.prefix;
         let use_global_cache = self.use_global_cache;
+        let node_cache = self.node_cache.clone();
 
         match self.entries.entry(*hash) {
             Entry::Occupied(entry) => Ok(entry.into_mut()),
             Entry::Vacant(entry) => {
-                let node = Self::load_from_store_snapshot(&store, prefix, hash, use_global_cache)?;
+                let active_cache: Option<&GlobalNodeCache> = if let Some(ref cache) = node_cache {
+                    Some(cache.as_ref())
+                } else if use_global_cache {
+                    Some(&GLOBAL_NODE_CACHE)
+                } else {
+                    None
+                };
+                let node = Self::load_from_store_snapshot(&store, prefix, hash, active_cache)?;
                 Ok(entry.insert(MptTrackable::new(node)))
             }
         }
@@ -287,46 +399,36 @@ where
         store: &S,
         prefix: u8,
         hash: &UInt256,
-        use_global_cache: bool,
-    ) -> MptResult<Option<Node>> {
-        let key = Self::key_for(prefix, hash);
-
-        if !use_global_cache {
+        active_cache: Option<&GlobalNodeCache>,
+    ) -> MptResult<Option<Arc<Node>>> {
+        let Some(cache) = active_cache else {
+            let key = Self::key_for(prefix, hash);
             let Some(bytes) = store.try_get(&key)? else {
                 return Ok(None);
             };
             let mut reader = MemoryReader::new(&bytes);
-            return Node::deserialize(&mut reader)
-                .map(Some)
-                .map_err(MptError::from);
+            let node = Node::deserialize(&mut reader).map_err(MptError::from)?;
+            node.set_cached_hash(*hash);
+            return Ok(Some(Arc::new(node)));
+        };
+
+        // The store key is built only after a miss. A hit returns the cached
+        // Arc itself; the caller detaches a node when it needs to mutate one.
+        if let Some(cached_arc) = cache.get(hash) {
+            return Ok(Some(cached_arc));
         }
 
-        // TIER 1: Check global LRU cache (NOW RETURNS Arc<Node>)
-        // CRITICAL OPTIMIZATION: Cache hit returns clone of Arc pointer (nanoseconds!)
-        // Before: Cached Vec<u8> → deserialize (~1-5μs per node) → node
-        // After:  Cached Arc<Node> → clone Arc (nanoseconds) → deref → node
-        let cached_arc = GLOBAL_NODE_CACHE.get(hash);
-
-        if let Some(cached_arc) = cached_arc {
-            // ✅ CACHE HIT: Clone the Arc (cheap!), then deref to Node
-            // Note: This clones the Arc reference count, NOT copying Node data
-            return Ok(Some(cached_arc.as_ref().clone()));
-        }
-
-        // TIER 2: Load from RocksDB (only on miss - disk I/O bound)
+        let key = Self::key_for(prefix, hash);
         let Some(bytes) = store.try_get(&key)? else {
             return Ok(None);
         };
 
         let mut reader = MemoryReader::new(&bytes);
         let node = Node::deserialize(&mut reader).map_err(MptError::from)?;
-        let node_arc = Arc::new(node.clone());
-
-        // INSERT FULLY-DESERIALIZED NODE WRAPPED IN ARC
-        // This enables zero-deserialization hits for next block
-        GLOBAL_NODE_CACHE.put(*hash, node_arc);
-
-        Ok(Some(node))
+        node.set_cached_hash(*hash);
+        let node_arc = Arc::new(node);
+        cache.put(*hash, Arc::clone(&node_arc));
+        Ok(Some(node_arc))
     }
 
     fn key(&self, hash: &UInt256) -> Vec<u8> {

@@ -191,7 +191,7 @@ impl LedgerContract {
         Self::require_no_args("currentIndex", args)?;
         let snapshot = engine.snapshot_cache();
         let index = self.current_index(snapshot.as_ref())?;
-        Ok(index.to_le_bytes().to_vec())
+        Ok(BigInt::from(index).to_signed_bytes_le())
     }
 
     pub(super) fn invoke_get_block(

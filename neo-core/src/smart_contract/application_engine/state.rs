@@ -61,6 +61,8 @@ impl ApplicationEngine {
             fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
             fee_consumed: 0,
             exec_fee_factor: PolicyContract::DEFAULT_EXEC_FEE_FACTOR * (FEE_FACTOR as u32),
+            fee_whitelist_context: 0,
+            fee_whitelist_flag: false,
             storage_price: PolicyContract::DEFAULT_STORAGE_PRICE,
             call_flags: CallFlags::ALL,
             vm_engine: VmEngineHost::new(engine),
@@ -180,6 +182,8 @@ impl ApplicationEngine {
             fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
             fee_consumed: 0,
             exec_fee_factor: PolicyContract::DEFAULT_EXEC_FEE_FACTOR * (FEE_FACTOR as u32),
+            fee_whitelist_context: 0,
+            fee_whitelist_flag: false,
             storage_price: PolicyContract::DEFAULT_STORAGE_PRICE,
             call_flags: CallFlags::ALL,
             vm_engine: VmEngineHost::new(engine),
@@ -337,6 +341,17 @@ impl ApplicationEngine {
     #[cfg(test)]
     pub(crate) fn force_vm_state(&mut self, state: VMState) {
         self.vm_engine.engine_mut().set_state(state);
+    }
+
+    /// Native OnPersist and PostPersist do not enter the VM loop. The engine
+    /// is constructed in `BREAK`, while C# `ApplicationEngine.Execute` records
+    /// a successful native persist as `HALT`. Leave `FAULT` and an already
+    /// halted engine unchanged.
+    #[cfg(feature = "runtime")]
+    pub(crate) fn record_native_persist_success(&mut self) {
+        if self.state() == VMState::BREAK {
+            self.vm_engine.engine_mut().set_state(VMState::HALT);
+        }
     }
     /// Records the VM state for a transaction in the ledger state tracker.
     pub fn record_transaction_vm_state(&mut self, hash: &UInt256, vm_state: VMState) -> bool {

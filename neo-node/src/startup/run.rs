@@ -128,7 +128,10 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         info!(target: "neo", path, "rpc server configuration emitted");
     }
 
-    let system = NeoSystem::new_with_state_service(
+    // Genesis must be persisted after ApplicationLogs and TokensTracker are
+    // registered. Construction used to persist it immediately, and the .acc
+    // import then skipped height 0, so those plugins never saw the genesis block.
+    let system = NeoSystem::new_with_state_service_deferring_genesis(
         protocol_settings.clone(),
         store_provider.clone(),
         storage_path.clone(),
@@ -155,6 +158,69 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     let _tokens_tracker_service =
         maybe_enable_tokens_tracker(&node_config, &protocol_settings, &system)
             .context("failed to initialise TokensTracker")?;
+
+    system
+        .persist_genesis_if_absent()
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+        .context("failed to persist genesis block")?;
+    if let Some(logs) = _application_logs_service.as_ref() {
+        logs.flush();
+    }
+
+    let rewrite_vmstate = std::env::var_os("NEO_REWRITE_PERSIST_VMSTATE").is_some();
+    let rewrite_gas_exception = std::env::var_os("NEO_REWRITE_GAS_EXCEPTION").is_some();
+    if rewrite_vmstate || rewrite_gas_exception {
+        if rewrite_vmstate {
+            let rewritten = _application_logs_service
+                .as_ref()
+                .map(|logs| logs.rewrite_native_persist_break_to_halt())
+                .transpose()
+                .map_err(|err| anyhow::anyhow!(err))
+                .context("failed to rewrite native persist vmstate")?
+                .unwrap_or(0);
+            info!(
+                target: "neo",
+                rewritten,
+                "rewrote OnPersist/PostPersist vmstate BREAK to HALT"
+            );
+        }
+        if rewrite_gas_exception {
+            let rewritten = _application_logs_service
+                .as_ref()
+                .map(|logs| logs.rewrite_fault_exception_messages())
+                .transpose()
+                .map_err(|err| anyhow::anyhow!(err))
+                .context("failed to rewrite fault exception text")?
+                .unwrap_or(0);
+            info!(
+                target: "neo",
+                rewritten,
+                "rewrote application log fault exceptions to C# text"
+            );
+        }
+        if let Some(logs) = _application_logs_service.as_ref() {
+            logs.flush();
+        }
+        system
+            .shutdown()
+            .await
+            .map_err(|e| anyhow::anyhow!(e.to_string()))
+            .context("failed to shut down NeoSystem after application log rewrite")?;
+        return Ok(());
+    }
+
+    if std::env::var_os("NEO_EXIT_AFTER_GENESIS").is_some() {
+        info!(
+            target: "neo",
+            "genesis persisted and NEO_EXIT_AFTER_GENESIS is set; shutting down"
+        );
+        system
+            .shutdown()
+            .await
+            .map_err(|e| anyhow::anyhow!(e.to_string()))
+            .context("failed to shut down NeoSystem after genesis persist")?;
+        return Ok(());
+    }
 
     if let Some(import_path) = cli.import_acc.as_ref() {
         let summary =
@@ -236,8 +302,14 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
             .register_handlers(RpcServerConsensus::register_handlers());
     }
 
-    let hsm_wallet_enabled =
-        maybe_enable_hsm_wallet(&cli, &node_config, &rpc_server, &system).await?;
+    let hsm_wallet_enabled = maybe_enable_hsm_wallet(
+        &cli,
+        &node_config,
+        &rpc_server,
+        wallet_provider.as_ref(),
+        &system,
+    )
+    .await?;
 
     #[cfg(feature = "tee")]
     let tee_wallet_enabled = maybe_enable_tee_wallet(
@@ -307,6 +379,12 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     // high-throughput batch profile.
     if let Ok(Some(state_store)) = system.state_store() {
         state_store.flush();
+    }
+    if let Some(logs) = _application_logs_service.as_ref() {
+        logs.flush();
+    }
+    if let Some(tracker) = _tokens_tracker_service.as_ref() {
+        tracker.flush();
     }
     info!(target: "neo", "storage flush complete");
 

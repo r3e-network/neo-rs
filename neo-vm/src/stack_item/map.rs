@@ -146,16 +146,15 @@ impl Map {
         Ok(())
     }
 
-    /// Removes the value for the specified key.
-    pub fn remove(&self, key: &StackItem) -> VmResult<StackItem> {
+    /// Removes the value for the specified key, returning `None` if the key is absent.
+    pub fn remove_entry(&self, key: &StackItem) -> VmResult<Option<StackItem>> {
         let mut inner = self.inner.lock();
         Self::ensure_mutable(&inner)?;
         self.validate_key(key)?;
 
-        let value = inner
-            .items
-            .remove(key)
-            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))?;
+        let Some(value) = inner.items.remove(key) else {
+            return Ok(None);
+        };
 
         if let Some(rc) = &inner.reference_counter {
             let parent = CompoundParent::Map(inner.id);
@@ -165,7 +164,13 @@ impl Map {
             }
         }
 
-        Ok(value)
+        Ok(Some(value))
+    }
+
+    /// Removes the value for the specified key.
+    pub fn remove(&self, key: &StackItem) -> VmResult<StackItem> {
+        self.remove_entry(key)?
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))
     }
 
     /// Gets the number of items in the map.
@@ -252,6 +257,14 @@ impl Map {
     }
 
     fn validate_key(&self, key: &StackItem) -> VmResult<()> {
+        if !matches!(
+            key,
+            StackItem::Boolean(_) | StackItem::Integer(_) | StackItem::ByteString(_)
+        ) {
+            return Err(VmError::invalid_type_simple(
+                "Map key must be a PrimitiveType (Boolean, Integer, or ByteString)",
+            ));
+        }
         // Fast path: avoid allocation for ByteString keys (the common case).
         let len = if let Some(slice) = key.as_bytes_ref() {
             slice.len()
@@ -317,5 +330,46 @@ impl Map {
 impl From<Map> for VmOrderedDictionary<StackItem, StackItem> {
     fn from(map: Map) -> Self {
         map.items()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use num_bigint::BigInt;
+
+    #[test]
+    fn map_remove_entry_returns_none_for_missing_key() {
+        let map = Map::new(Vec::new(), None).expect("map");
+        let missing = StackItem::from_int(BigInt::from(42));
+        assert!(
+            map.remove_entry(&missing)
+                .expect("remove_entry succeeds")
+                .is_none()
+        );
+        assert!(map.remove(&missing).is_err());
+    }
+
+    #[test]
+    fn map_rejects_null_and_buffer_keys() {
+        let map = Map::new(Vec::new(), None).expect("map");
+        assert!(
+            map.set(StackItem::Null, StackItem::from_bool(true))
+                .is_err()
+        );
+        assert!(
+            map.set(
+                StackItem::from_buffer(vec![1, 2, 3]),
+                StackItem::from_bool(true)
+            )
+            .is_err()
+        );
+        assert!(
+            map.set(
+                StackItem::from_byte_string(vec![1, 2, 3]),
+                StackItem::from_bool(true),
+            )
+            .is_ok()
+        );
     }
 }

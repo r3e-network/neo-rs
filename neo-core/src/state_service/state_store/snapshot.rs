@@ -1,6 +1,6 @@
 use super::{StateServiceSettings, StateStoreBackend, StateStoreSnapshot};
 use crate::UInt256;
-use crate::cryptography::mpt_trie::Trie;
+use crate::cryptography::mpt_trie::{GlobalNodeCache, Node, Trie};
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::state_service::StateRoot;
 use crate::state_service::keys::Keys;
@@ -18,9 +18,38 @@ pub struct StateSnapshot {
 impl StateSnapshot {
     /// Creates a new state snapshot.
     pub fn new(store: Arc<dyn StateStoreBackend>, settings: StateServiceSettings) -> Self {
+        Self::new_with_node_cache(store, settings, None)
+    }
+
+    /// Creates a new state snapshot backed by a store-scoped [`GlobalNodeCache`].
+    pub fn new_with_node_cache(
+        store: Arc<dyn StateStoreBackend>,
+        settings: StateServiceSettings,
+        node_cache: Option<Arc<GlobalNodeCache>>,
+    ) -> Self {
+        Self::new_with_cached_root(store, settings, node_cache, None)
+    }
+
+    /// Creates a new state snapshot reusing a pre-resolved root [`Node`] when its hash matches.
+    pub fn new_with_cached_root(
+        store: Arc<dyn StateStoreBackend>,
+        settings: StateServiceSettings,
+        node_cache: Option<Arc<GlobalNodeCache>>,
+        cached_root: Option<(UInt256, Node)>,
+    ) -> Self {
         let current_root = Self::get_current_local_root_hash_internal(&*store);
         let snapshot = StateStoreSnapshot::new(Arc::clone(&store));
-        let trie = Trie::new(Arc::new(snapshot), current_root, settings.full_state);
+        let root_node = match (current_root, cached_root) {
+            (Some(curr), Some((cached_hash, cached_node))) if curr == cached_hash => cached_node,
+            (Some(curr), _) => Node::new_hash(curr),
+            (None, _) => Node::new(),
+        };
+        let trie = Trie::new_with_root_node(
+            Arc::new(snapshot),
+            root_node,
+            settings.full_state,
+            node_cache,
+        );
 
         Self {
             store,

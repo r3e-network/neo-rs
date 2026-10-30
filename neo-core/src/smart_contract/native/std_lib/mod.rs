@@ -21,7 +21,7 @@ mod strings;
 pub struct StdLib {
     id: i32,
     hash: UInt160,
-    methods: Vec<NativeMethod>,
+    methods: &'static [NativeMethod],
 }
 
 impl StdLib {
@@ -30,13 +30,12 @@ impl StdLib {
     /// Creates a new StdLib contract.
     pub fn new() -> Self {
         // StdLib contract hash: 0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0
-        let hash = UInt160::parse("0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0")
-            .expect("Valid StdLib contract hash");
+        let hash = crate::smart_contract::native::static_contract_hash!("0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0");
 
         Self {
             id: Self::ID,
             hash,
-            methods: Self::native_methods(),
+            methods: crate::smart_contract::native::static_native_methods!(StdLib::native_methods()),
         }
     }
 

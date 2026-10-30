@@ -364,13 +364,15 @@ fn execute_empty_block(
                 None,
             )
             .expect("load tx script");
-        let _ = tx_engine.execute_allow_fault();
+        let vm_state = tx_engine.execute_allow_fault();
         tx_states = tx_engine
             .take_state::<LedgerTransactionStates>()
             .unwrap_or_else(|| LedgerTransactionStates::new(Vec::new()));
         drop(tx_engine);
-        let tracked: Vec<_> = tx_snapshot.tracked_items().into_iter().collect();
-        base_cache.merge_tracked_items(&tracked);
+        if vm_state == neo_vm::VmState::HALT {
+            let tracked: Vec<_> = tx_snapshot.tracked_items().into_iter().collect();
+            base_cache.merge_tracked_items(&tracked);
+        }
     }
 
     if profile {

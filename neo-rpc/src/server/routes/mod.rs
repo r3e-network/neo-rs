@@ -146,7 +146,9 @@ pub fn build_ws_route(
 
                 let event_rx = event_tx.subscribe();
                 let mgr = subscription_mgr.clone();
-                ws.on_upgrade(move |socket| super::ws::ws_handler(socket, event_rx, mgr))
+                ws.max_frame_size(64 * 1024)
+                    .max_message_size(64 * 1024)
+                    .on_upgrade(move |socket| super::ws::ws_handler(socket, event_rx, mgr))
                     .into_response()
             },
         )

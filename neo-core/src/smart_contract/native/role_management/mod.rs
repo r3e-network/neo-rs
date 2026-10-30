@@ -21,7 +21,7 @@ mod storage;
 pub struct RoleManagement {
     id: i32,
     hash: UInt160,
-    methods: Vec<NativeMethod>,
+    methods: &'static [NativeMethod],
 }
 
 impl RoleManagement {
@@ -32,13 +32,12 @@ impl RoleManagement {
     /// Creates a new RoleManagement contract.
     pub fn new() -> Self {
         // RoleManagement contract hash: 0x49cf4e5378ffcd4dec034fd98a174c5491e395e2
-        let hash = UInt160::parse("0x49cf4e5378ffcd4dec034fd98a174c5491e395e2")
-            .expect("Valid RoleManagement contract hash");
+        let hash = crate::smart_contract::native::static_contract_hash!("0x49cf4e5378ffcd4dec034fd98a174c5491e395e2");
 
         Self {
             id: Self::ID,
             hash,
-            methods: Self::native_methods(),
+            methods: crate::smart_contract::native::static_native_methods!(RoleManagement::native_methods()),
         }
     }
 

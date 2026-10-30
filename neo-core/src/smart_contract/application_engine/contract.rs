@@ -305,7 +305,7 @@ fn push_native_result(
     return_type: ContractParameterType,
     result: Vec<u8>,
 ) -> Result<(), String> {
-    let Some(item) = decode_native_result(return_type, result)? else {
+    let Some(item) = decode_native_result(return_type, result, engine.limits())? else {
         return Ok(());
     };
     engine.push(item).map_err(|e| e.to_string())
@@ -313,6 +313,7 @@ fn push_native_result(
 fn decode_native_result(
     return_type: ContractParameterType,
     result: Vec<u8>,
+    limits: &ExecutionEngineLimits,
 ) -> Result<Option<StackItem>, String> {
     match return_type {
         ContractParameterType::Void => Ok(None),
@@ -336,7 +337,7 @@ fn decode_native_result(
                 // for stack types such as Array/Map/Any (e.g., getContract miss).
                 return Ok(Some(StackItem::null()));
             }
-            match BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None) {
+            match BinarySerializer::deserialize(&result, limits, None) {
                 Ok(item) => Ok(Some(item)),
                 Err(_) => Ok(Some(StackItem::from_byte_string(result))),
             }
@@ -345,7 +346,7 @@ fn decode_native_result(
             if result.is_empty() {
                 return Ok(Some(StackItem::null()));
             }
-            match BinarySerializer::deserialize(&result, &ExecutionEngineLimits::default(), None) {
+            match BinarySerializer::deserialize(&result, limits, None) {
                 Ok(item) => Ok(Some(item)),
                 Err(_) => Ok(Some(StackItem::from_byte_string(result))),
             }
@@ -416,23 +417,35 @@ mod tests {
     use super::*;
     #[test]
     fn decode_native_result_array_empty_is_null() {
-        let item = decode_native_result(ContractParameterType::Array, Vec::new())
-            .expect("decode")
-            .expect("stack item");
+        let item = decode_native_result(
+            ContractParameterType::Array,
+            Vec::new(),
+            &ExecutionEngineLimits::default(),
+        )
+        .expect("decode")
+        .expect("stack item");
         assert!(item.is_null());
     }
     #[test]
     fn decode_native_result_any_empty_is_null() {
-        let item = decode_native_result(ContractParameterType::Any, Vec::new())
-            .expect("decode")
-            .expect("stack item");
+        let item = decode_native_result(
+            ContractParameterType::Any,
+            Vec::new(),
+            &ExecutionEngineLimits::default(),
+        )
+        .expect("decode")
+        .expect("stack item");
         assert!(item.is_null());
     }
     #[test]
     fn decode_native_result_any_invalid_payload_preserves_raw_bytes() {
-        let item = decode_native_result(ContractParameterType::Any, vec![0xff])
-            .expect("decode")
-            .expect("stack item");
+        let item = decode_native_result(
+            ContractParameterType::Any,
+            vec![0xff],
+            &ExecutionEngineLimits::default(),
+        )
+        .expect("decode")
+        .expect("stack item");
         assert_eq!(item.as_bytes().expect("bytes"), vec![0xff]);
     }
     #[test]
@@ -440,9 +453,13 @@ mod tests {
         let original = StackItem::from_array(vec![StackItem::from_int(BigInt::from(1u8))]);
         let encoded = BinarySerializer::serialize(&original, &ExecutionEngineLimits::default())
             .expect("encode");
-        let decoded = decode_native_result(ContractParameterType::Any, encoded)
-            .expect("decode")
-            .expect("stack item");
+        let decoded = decode_native_result(
+            ContractParameterType::Any,
+            encoded,
+            &ExecutionEngineLimits::default(),
+        )
+        .expect("decode")
+        .expect("stack item");
         std::assert_matches!(decoded, StackItem::Array(_));
     }
     #[test]
@@ -450,9 +467,13 @@ mod tests {
         let original = StackItem::from_array(vec![StackItem::from_int(BigInt::from(1u8))]);
         let encoded = BinarySerializer::serialize(&original, &ExecutionEngineLimits::default())
             .expect("encode");
-        let decoded = decode_native_result(ContractParameterType::Array, encoded)
-            .expect("decode")
-            .expect("stack item");
+        let decoded = decode_native_result(
+            ContractParameterType::Array,
+            encoded,
+            &ExecutionEngineLimits::default(),
+        )
+        .expect("decode")
+        .expect("stack item");
         std::assert_matches!(decoded, StackItem::Array(_));
     }
 }

@@ -170,11 +170,11 @@ impl NativeContract for Notary {
                 let account = UInt160::from_bytes(&args[0])
                     .map_err(|_| Error::native_contract("Invalid account hash"))?;
                 let expiration = self.expiration_of_arc(&snapshot, &account);
-                Ok(expiration.to_le_bytes().to_vec())
+                Ok(BigInt::from(expiration).to_signed_bytes_le())
             }
             "getMaxNotValidBeforeDelta" => {
                 let delta = self.get_max_not_valid_before_delta_arc(&snapshot);
-                Ok(delta.to_le_bytes().to_vec())
+                Ok(BigInt::from(delta).to_signed_bytes_le())
             }
             "verify" => self.verify(engine, args),
             "onNEP17Payment" => self.on_nep17_payment(engine, args),

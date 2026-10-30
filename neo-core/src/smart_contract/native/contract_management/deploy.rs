@@ -149,17 +149,14 @@ impl ContractManagement {
         let contract_hash_bytes = contract_hash.as_bytes();
 
         // Store contract in in-memory cache and prepare metadata snapshots
-        let (next_id_bytes, min_fee_bytes) = {
+        let next_id_bytes = {
             let mut storage = self.storage.write();
 
             storage.contracts.insert(contract_hash, contract.clone());
             storage.contract_ids.insert(contract_id, contract_hash);
             storage.contract_count += 1;
 
-            (
-                Self::encode_storage_i32(storage.next_id),
-                Self::encode_storage_i64(storage.minimum_deployment_fee),
-            )
+            Self::encode_storage_i32(storage.next_id)
         };
 
         // Persist contract metadata in native storage so it survives engine reloads.
@@ -176,11 +173,6 @@ impl ContractManagement {
             contract_hash_bytes.as_ref(),
         )?;
         engine.put_storage_item(&context, &Self::next_id_key(), &next_id_bytes)?;
-        engine.put_storage_item(
-            &context,
-            &Self::minimum_deployment_fee_key(),
-            &min_fee_bytes,
-        )?;
 
         // Call contract's _deploy method if it exists
         if contract

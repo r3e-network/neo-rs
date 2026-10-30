@@ -50,67 +50,12 @@ impl ExecutionEngine {
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
         if context.instruction_pointer() >= context.script().len() {
-            // Perform implicit RET when reaching end of script.
-            // Pop return values directly from the eval stack instead of
-            // peek+clone, since the context is about to be destroyed.
-            let rvcount = context.rvcount();
-            let eval_stack_len = context.evaluation_stack().len();
-
-            // C# executes a synthetic RET when the instruction pointer reaches
-            // the end of the script, so the explicit RET RVCount check applies
-            // here too. Clamping silently changed a FAULT into a HALT with a
-            // truncated result stack.
-            if rvcount >= 0 && eval_stack_len != rvcount as usize {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Return value count mismatch: expected {}, but got {} items on the evaluation stack",
-                    rvcount, eval_stack_len
-                )));
-            }
-
-            let count = if rvcount >= 0 {
-                rvcount as usize
-            } else {
-                eval_stack_len
-            };
-
-            // Pop items from the top of the eval stack (they come out in
-            // reverse order, so we reverse once to restore original order).
-            let mut items = Vec::with_capacity(count);
-            if count > 0 {
-                let ctx = self
-                    .current_context_mut()
-                    .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-                for _ in 0..count {
-                    items.push(ctx.pop()?);
-                }
-                items.reverse();
-            }
-
-            // Remove the current context
-            let context_index = self.invocation_stack.len() - 1;
-            self.remove_context(context_index)?;
-
-            // Route return items to caller or result stack
-            if !items.is_empty() {
-                if self.invocation_stack.is_empty() {
-                    for item in items {
-                        self.result_stack.push(item)?;
-                    }
-                } else {
-                    let caller = self
-                        .current_context_mut()
-                        .ok_or_else(|| VmError::invalid_operation_msg("No caller context"))?;
-                    for item in items {
-                        caller.push(item)?;
-                    }
-                }
-            }
-
-            // If no more contexts, halt
-            if self.invocation_stack.is_empty() {
-                self.set_state(VMState::HALT);
-            }
-
+            // Perform implicit RET when reaching end of script, delegating to
+            // the canonical RET handler so shared evaluation stacks and host
+            // `on_context_unloaded` hooks behave identically to an explicit RET.
+            crate::jump_table::control::ret(self, &Instruction::ret())?;
+            let _ = self.reference_counter.check_zero_referred();
+            self.is_jumping = false;
             return Ok(());
         }
 

@@ -27,4 +27,9 @@ impl TokensTrackerService {
     pub fn store(&self) -> Arc<dyn Store> {
         Arc::clone(&self.store)
     }
+
+    /// Flushes the underlying token tracker store to disk.
+    pub fn flush(&self) {
+        self.store.flush();
+    }
 }

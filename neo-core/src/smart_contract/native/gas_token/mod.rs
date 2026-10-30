@@ -31,7 +31,7 @@ static GAS_HASH: LazyLock<UInt160> =
 
 /// GAS native token with NEP-17 compliant behaviour.
 pub struct GasToken {
-    methods: Vec<NativeMethod>,
+    methods: &'static [NativeMethod],
 }
 
 crate::impl_default_via_new!(GasToken);
@@ -45,7 +45,7 @@ impl GasToken {
     /// Creates a new GasToken native contract instance.
     pub fn new() -> Self {
         Self {
-            methods: Self::native_methods(),
+            methods: crate::smart_contract::native::static_native_methods!(GasToken::native_methods()),
         }
     }
 

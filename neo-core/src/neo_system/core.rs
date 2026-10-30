@@ -177,11 +177,49 @@ impl NeoSystem {
     /// Creates a new NeoSystem with custom state service settings.
     ///
     /// Use this method when you need to enable state root calculation and validation.
+    /// Genesis is persisted before the function returns. Plugins that must observe
+    /// genesis should use [`Self::new_with_state_service_deferring_genesis`].
     pub fn new_with_state_service(
         settings: ProtocolSettings,
         storage_provider: Option<Arc<dyn StoreProvider>>,
         storage_path: Option<String>,
         state_service_settings: Option<crate::state_service::state_store::StateServiceSettings>,
+    ) -> CoreResult<Arc<Self>> {
+        Self::open_with_genesis_policy(
+            settings,
+            storage_provider,
+            storage_path,
+            state_service_settings,
+            true,
+        )
+    }
+
+    /// Creates a NeoSystem without persisting genesis.
+    ///
+    /// Register committing handlers, then call [`Self::persist_genesis_if_absent`].
+    /// Genesis is the first block those handlers must observe. Persisting it
+    /// inside construction drops that block for plugins registered afterwards.
+    pub fn new_with_state_service_deferring_genesis(
+        settings: ProtocolSettings,
+        storage_provider: Option<Arc<dyn StoreProvider>>,
+        storage_path: Option<String>,
+        state_service_settings: Option<crate::state_service::state_store::StateServiceSettings>,
+    ) -> CoreResult<Arc<Self>> {
+        Self::open_with_genesis_policy(
+            settings,
+            storage_provider,
+            storage_path,
+            state_service_settings,
+            false,
+        )
+    }
+
+    fn open_with_genesis_policy(
+        settings: ProtocolSettings,
+        storage_provider: Option<Arc<dyn StoreProvider>>,
+        storage_path: Option<String>,
+        state_service_settings: Option<crate::state_service::state_store::StateServiceSettings>,
+        persist_genesis: bool,
     ) -> CoreResult<Arc<Self>> {
         #[cfg(test)]
         let _test_guard = TEST_SYSTEM_MUTEX.lock();
@@ -189,7 +227,6 @@ impl NeoSystem {
         let actor_system = ActorSystem::new("neo").map_err(to_core_error)?;
         let settings_arc = Arc::new(settings.clone());
         let genesis_ledger = crate::ledger::create_genesis_block(&settings);
-        let genesis_hash = genesis_ledger.hash();
         let genesis_block = Arc::new(super::converters::convert_ledger_block(genesis_ledger));
 
         let service_registry = Arc::new(ServiceRegistry::new());
@@ -326,19 +363,27 @@ impl NeoSystem {
 
         initialise_plugins(&system)?;
 
-        // Ensure genesis block is persisted if not present
-        {
-            let store = system.store();
-            let snapshot = store.snapshot();
-            let store_cache = StoreCache::new_from_snapshot(snapshot);
-            let ledger_contract = LedgerContract::new();
-            if !ledger_contract.contains_block(&store_cache, &genesis_hash) {
-                tracing::info!(target: "neo", "persisting genesis block to initialize state");
-                system.persist_block(genesis_block.as_ref().clone())?;
-            }
+        if persist_genesis {
+            system.persist_genesis_if_absent()?;
         }
 
         Ok(system)
+    }
+
+    /// Persists the canonical genesis block when the ledger does not already
+    /// contain it. Committing handlers registered before this call observe genesis.
+    pub fn persist_genesis_if_absent(&self) -> CoreResult<()> {
+        let genesis_ledger = crate::ledger::create_genesis_block(self.settings());
+        let genesis_hash = genesis_ledger.hash();
+        let store = self.store();
+        let snapshot = store.snapshot();
+        let store_cache = StoreCache::new_from_snapshot(snapshot);
+        let ledger_contract = LedgerContract::new();
+        if !ledger_contract.contains_block(&store_cache, &genesis_hash) {
+            tracing::info!(target: "neo", "persisting genesis block to initialize state");
+            self.persist_block((*self.genesis_block).clone())?;
+        }
+        Ok(())
     }
 
     /// View of the underlying actor system.

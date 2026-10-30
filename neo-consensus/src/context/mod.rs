@@ -275,7 +275,7 @@ impl ConsensusContext {
     /// Returns the number of faulty nodes tolerated: f = (n-1)/3
     #[must_use]
     pub fn f(&self) -> usize {
-        (self.validator_count() - 1) / 3
+        self.validator_count().saturating_sub(1) / 3
     }
 
     /// Returns the number of nodes required for consensus: M = n - f

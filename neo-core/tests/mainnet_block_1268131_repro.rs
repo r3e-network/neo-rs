@@ -2,12 +2,12 @@
 
 mod common;
 
-// Reproducer for block 1,268,131 — Bug #11 (OPEN). State root divergence first
-// appears at this block (bisect via seed1.neo.org getstateroot vs local Rust trie
-// after bug #10 fix landed). Single tx 0x2c11be50... calls `offline_mint(epoch_id,
-// account)` on the puppet NFT contract 0x76a8f8a7a901b29a33013b469949f4b08db15756.
+// Reproducer for block 1,268,131 — Bug #11 (FIXED: I2-01..I2-06). State root
+// divergence previously appeared at this block. Single tx 0x2c11be50... calls
+// `offline_mint(epoch_id, account)` on the puppet NFT contract
+// 0x76a8f8a7a901b29a33013b469949f4b08db15756.
 // C# applog: HALT, returns ByteString "1", emits Transfer(Null, sender, 1, "1").
-// Rust: FAULTs. The signer scope is CalledByEntry (1). Cause TBD.
+// Fixed by preserving calling_script_hash across native Contract.Call / syscalls.
 //
 // C# expected state root @ 1,268,131: 0xdf0f41ed960f56d2644b26a126c6a240f8c1201fec6e501095fcdb13528ebb42
 // C# expected state root @ 1,268,130: 0x547a380ccd2409657a9f080c7f8706a484281d0fed5b9053276050db4dbcdc85

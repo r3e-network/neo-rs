@@ -24,7 +24,7 @@ pub(crate) use bls12381::Bls12381Interop;
 pub struct CryptoLib {
     id: i32,
     hash: UInt160,
-    methods: Vec<NativeMethod>,
+    methods: &'static [NativeMethod],
 }
 
 impl CryptoLib {
@@ -33,13 +33,12 @@ impl CryptoLib {
     /// Creates a new CryptoLib instance with its native method table.
     pub fn new() -> Self {
         // CryptoLib contract hash: 0x726cb6e0cd8628a1350a611384688911ab75f51b
-        let hash = UInt160::parse("0x726cb6e0cd8628a1350a611384688911ab75f51b")
-            .expect("Valid CryptoLib contract hash");
+        let hash = crate::smart_contract::native::static_contract_hash!("0x726cb6e0cd8628a1350a611384688911ab75f51b");
 
         Self {
             id: Self::ID,
             hash,
-            methods: Self::native_methods(),
+            methods: crate::smart_contract::native::static_native_methods!(CryptoLib::native_methods()),
         }
     }
 

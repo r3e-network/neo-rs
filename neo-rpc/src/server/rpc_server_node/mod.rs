@@ -16,7 +16,7 @@ use neo_core::network::p2p::payloads::{block::Block, transaction::Transaction};
 use serde_json::{Map, Value, json};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::runtime::{Handle, Runtime};
+use tokio::runtime::Handle;
 use tokio::task::block_in_place;
 
 #[cfg(test)]
@@ -44,11 +44,22 @@ impl RpcServerNode {
         let system = server.system();
         let unconnected_endpoints = {
             let fut = system.unconnected_peers();
-            if let Ok(handle) = Handle::try_current() {
+            if let Ok(handle) = Handle::try_current()
+                && handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
+            {
                 block_in_place(|| handle.block_on(fut))
             } else {
-                let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
-                runtime.block_on(fut)
+                std::thread::scope(|s| {
+                    s.spawn(|| {
+                        let runtime = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .map_err(|err| internal_error(err.to_string()))?;
+                        Ok::<_, RpcException>(runtime.block_on(fut))
+                    })
+                    .join()
+                    .unwrap_or_else(|_| Err(internal_error("RPC worker thread panicked")))
+                })?
             }
         }
         .map_err(|err| internal_error(err.to_string()))?;
@@ -229,11 +240,22 @@ impl RpcServerNode {
         }
 
         let fut = system.local_node_state();
-        let result = if let Ok(handle) = Handle::try_current() {
+        let result = if let Ok(handle) = Handle::try_current()
+            && handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
+        {
             block_in_place(|| handle.block_on(fut))
         } else {
-            let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
-            runtime.block_on(fut)
+            std::thread::scope(|s| {
+                s.spawn(|| {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|err| internal_error(err.to_string()))?;
+                    Ok::<_, RpcException>(runtime.block_on(fut))
+                })
+                .join()
+                .unwrap_or_else(|_| Err(internal_error("RPC worker thread panicked")))
+            })?
         };
         result.map_err(|err| internal_error(err.to_string()))
     }

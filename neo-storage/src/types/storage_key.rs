@@ -247,7 +247,20 @@ impl Ord for StorageKey {
 
 impl From<Vec<u8>> for StorageKey {
     fn from(value: Vec<u8>) -> Self {
-        Self::from_bytes(&value)
+        if value.len() < 4 {
+            return Self {
+                id: 0,
+                key: value.clone(),
+                cache: Some(value),
+            };
+        }
+        let id = i32::from_le_bytes([value[0], value[1], value[2], value[3]]);
+        let key = value[4..].to_vec();
+        Self {
+            id,
+            key,
+            cache: Some(value),
+        }
     }
 }
 

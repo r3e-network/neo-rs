@@ -116,11 +116,64 @@ python scripts/verify-protocol-consistency.py compare-applogs \
   `docs/protocol-consistency/reports/compare-applogs-<start>-<end>-s<stride>.jsonl`.
   A later run of the same range skips heights already marked ok and rechecks
   failures. The JSON report passes only when that journal covers every height.
-- The Rust side needs ApplicationLogs enabled. `--import-acc` registers
-  ApplicationLogs and TokensTracker before importing (as neo-cli does).
-  Import runs in fast-sync mode, which skips committing handlers unless they
+- The Rust side needs ApplicationLogs enabled. The node registers
+  ApplicationLogs and TokensTracker, then persists genesis, then imports.
+  Persisting genesis inside `NeoSystem` construction drops height 0: the
+  ledger already contains it, and `.acc` import skips `declared_index <=
+  local_height` without executing it. `NEO_EXIT_AFTER_GENESIS=1` persists
+  genesis on a scratch chain that shares the ApplicationLogs path and exits,
+  which writes the missing genesis log into an existing store.
+- Import runs in fast-sync mode, which skips committing handlers unless they
   opt in. `ApplicationLogsService` opts in, and each import checkpoint flushes
   its store, because the import RocksDB profile disables the write-ahead log.
+- Successful OnPersist and PostPersist are recorded as `vmstate=HALT`. The
+  engine starts in `BREAK` and those triggers do not enter the VM loop; C#
+  `Execute` still reports `HALT`. Logs already stored as `BREAK` can be
+  repaired in place with `NEO_REWRITE_PERSIST_VMSTATE=1`, which rewrites only
+  those two triggers and then exits.
+- C# `ContractManagement.OnDeployAsync` awaits `_initialize` and `_deploy`
+  before `SendNotification` of `Deploy` or `Update`. Those user-contract
+  notifications therefore precede the native `Deploy`/`Update` event. Rust
+  runs that hook to completion inside `deploy`/`update` before emitting the
+  native event. Queuing it until after `System.Contract.CallNative` returns
+  records the native event first.
+- C# `SendNotification` stores `state.DeepCopy(asImmutable: true)`. A `Buffer`
+  becomes a `ByteString` with the same bytes. Rust notification cloning does
+  the same conversion. Leaving the `Buffer` in the log fails application-log
+  compare even when the bytes match, as at mainnet height 10550
+  (`OnDeploy` argument `AQc=`). Logs already stored by the older importer
+  keep `Buffer` and emit that native event before the hook. Repairing them
+  rewrites `Buffer` to `ByteString` and, when a transaction execution contains
+  exactly one ContractManagement `Deploy` or `Update`, moves that event to the
+  end of the notification list. A calling script that notifies again after the
+  hook still fails the compare, so the repair does not hide that case.
+- C# `ApplicationEngine.AddFee` faults with `InvalidOperationException`
+  (`Insufficient GAS.`). Application logs store
+  `Exception.InnerException.Message`, or `Exception.Message` when there is no
+  inner exception. Rust gas faults (`Gas exhausted: used N, limit M`,
+  `Insufficient gas: required N, available M`, `Gas limit exceeded`,
+  `Out of gas`, `VM exceeded gas limit during execution`) are stored as that
+  same string. A trailing VM diagnostic ` [ip=N]` or
+  ` [ip=N opcode=NAME eval_depth=N]` is removed; C# does not put the
+  instruction pointer in the exception text. `NEO_REWRITE_GAS_EXCEPTION=1`
+  rewrites those stored strings in place and then exits. C# `OpCode.ASSERT`
+  throws `ASSERT is executed with false result.` (with the period). Rust's
+  `AssertFailed` display text omits that period; the stored log uses the C#
+  sentence. A missing contract method is the same kind of text difference.
+  C# `CallContract` throws
+  `Method "name" with N parameter(s) doesn't exist in the contract 0xhash.`
+  Rust used to store the VM wrapper around that fault:
+  `Interop service error: service System.Contract.Call, error: Invalid operation: Method 'name' with N parameter(s) doesn't exist in the contract UInt160(0xhash).`
+  The stored log keeps the C# sentence. `NEO_REWRITE_GAS_EXCEPTION=1` rewrites
+  a log that still has the wrapper. Other exception texts stay unchanged so a
+  real message difference still fails the compare.
+- Genesis OnPersist notifications are part of native initialization: each
+  active native contract is initialized, then ContractManagement emits
+  `Deploy`. Those events have no transaction container and must still be
+  stored. The NEO total-supply mint emits `Transfer` to the standby BFT
+  account during that contract's initialization, immediately before its
+  `Deploy` notification. Engine construction must not initialize natives,
+  or those mint events are recorded before any `Deploy`.
 - Tests: `scripts/tests/test_verify_protocol_consistency.py`.
 
 ## Runtime divergence gate (live nodes)

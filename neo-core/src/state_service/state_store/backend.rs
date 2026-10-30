@@ -83,19 +83,18 @@ impl StateStoreBackend for StagedStateStoreBackend {
     }
 
     fn commit(&self) -> Result<(), String> {
-        let pending = self.pending.lock();
-        for (key, value) in pending.iter() {
+        let mut pending = self.pending.lock();
+        for (key, value) in pending.drain() {
             match value {
-                Some(value) => self.base.put(key.clone(), value.clone()),
-                None => self.base.delete(key),
+                Some(value) => self.base.put(key, value),
+                None => self.base.delete(&key),
             }
         }
+        drop(pending);
         if let Err(error) = self.base.commit() {
             self.base.discard_pending();
             return Err(error);
         }
-        drop(pending);
-        self.pending.lock().clear();
         Ok(())
     }
 
@@ -300,18 +299,17 @@ impl StateStoreBackend for SnapshotBackedStateStoreBackend {
             .map_err(|e| format!("state service commit failed: {e}"))?;
         {
             let mut cache = self.node_cache.lock();
-            for (key, value) in pending.iter() {
+            for (key, value) in pending.drain() {
                 match value {
                     Some(value) => {
-                        cache.put(key.clone(), value.clone());
+                        cache.put(key, value);
                     }
                     None => {
-                        cache.pop(key);
+                        cache.pop(&key);
                     }
                 }
             }
         }
-        pending.clear();
         drop(pending);
         *self.read_snapshot.write() = self.store.snapshot();
         Ok(())

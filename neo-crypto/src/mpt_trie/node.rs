@@ -7,8 +7,10 @@ use neo_primitives::UINT256_SIZE;
 use neo_primitives::UInt256;
 use parking_lot::RwLock;
 use std::mem;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tracing::error;
+
+static EMPTY_NODE_ARC: LazyLock<Arc<Node>> = LazyLock::new(|| Arc::new(Node::new()));
 
 const MAX_STORAGE_KEY_SIZE: usize = 64;
 const MAX_STORAGE_VALUE_SIZE: usize = u16::MAX as usize;
@@ -34,7 +36,12 @@ pub struct Node {
     pub node_type: NodeType,
     /// Reference count tracking how many parents point to this node.
     pub reference: u32,
+    /// Whether this node has been created or mutated in memory and not yet flushed to `MptCache`.
+    dirty: bool,
     hash: RwLock<Option<UInt256>>,
+    /// Body serialized without the reference suffix. Filled by `try_hash` and
+    /// consumed when the node is written, so commit does not walk the node again.
+    hash_preimage: RwLock<Option<Vec<u8>>>,
     /// Children for branch nodes - stored as Arc for structural sharing
     pub children: Vec<Arc<Self>>,
     /// Key for extension nodes
@@ -47,15 +54,7 @@ pub struct Node {
 
 impl Default for Node {
     fn default() -> Self {
-        Self {
-            node_type: NodeType::Empty,
-            reference: 0,
-            hash: RwLock::new(None),
-            children: Vec::new(),
-            key: Vec::new(),
-            next: None,
-            value: Vec::new(),
-        }
+        Self::new()
     }
 }
 
@@ -66,11 +65,14 @@ impl Clone for Node {
     /// enabling O(1) subtree sharing while the data itself remains immutable.
     fn clone(&self) -> Self {
         let cached_hash = *self.hash.read();
+        let cached_preimage = self.hash_preimage.read();
         match self.node_type {
             NodeType::BranchNode => Self {
                 node_type: self.node_type,
                 reference: self.reference,
-                hash: RwLock::new(None),
+                dirty: self.dirty,
+                hash: RwLock::new(cached_hash),
+                hash_preimage: RwLock::new(cached_preimage.clone()),
                 children: self.children.iter().map(Arc::clone).collect(),
                 key: Vec::new(),
                 next: None,
@@ -79,7 +81,9 @@ impl Clone for Node {
             NodeType::ExtensionNode => Self {
                 node_type: self.node_type,
                 reference: self.reference,
-                hash: RwLock::new(None),
+                dirty: self.dirty,
+                hash: RwLock::new(cached_hash),
+                hash_preimage: RwLock::new(cached_preimage.clone()),
                 children: Vec::new(),
                 key: self.key.clone(),
                 next: self.next.as_ref().map(Arc::clone),
@@ -88,7 +92,9 @@ impl Clone for Node {
             NodeType::LeafNode => Self {
                 node_type: self.node_type,
                 reference: self.reference,
-                hash: RwLock::new(None),
+                dirty: self.dirty,
+                hash: RwLock::new(cached_hash),
+                hash_preimage: RwLock::new(cached_preimage.clone()),
                 children: Vec::new(),
                 key: self.key.clone(),
                 next: None,
@@ -97,7 +103,9 @@ impl Clone for Node {
             NodeType::HashNode => Self {
                 node_type: self.node_type,
                 reference: self.reference,
+                dirty: false,
                 hash: RwLock::new(cached_hash),
+                hash_preimage: RwLock::new(cached_preimage.clone()),
                 children: Vec::new(),
                 key: Vec::new(),
                 next: None,
@@ -106,7 +114,9 @@ impl Clone for Node {
             NodeType::Empty => Self {
                 node_type: self.node_type,
                 reference: self.reference,
+                dirty: false,
                 hash: RwLock::new(None),
+                hash_preimage: RwLock::new(None),
                 children: Vec::new(),
                 key: Vec::new(),
                 next: None,
@@ -119,8 +129,25 @@ impl Clone for Node {
 impl Node {
     /// Creates an empty node.
     #[must_use]
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self {
+            node_type: NodeType::Empty,
+            reference: 0,
+            dirty: false,
+            hash: RwLock::new(None),
+            hash_preimage: RwLock::new(None),
+            children: Vec::new(),
+            key: Vec::new(),
+            next: None,
+            value: Vec::new(),
+        }
+    }
+
+    /// Returns a shared `Arc<Node>` pointing to the immutable empty node sentinel.
+    #[inline]
+    #[must_use]
+    pub fn empty_arc() -> Arc<Self> {
+        Arc::clone(&EMPTY_NODE_ARC)
     }
 
     /// Creates a new branch node with default children.
@@ -129,10 +156,10 @@ impl Node {
         Self {
             node_type: NodeType::BranchNode,
             reference: 1,
+            dirty: true,
             hash: RwLock::new(None),
-            children: (0..BRANCH_CHILD_COUNT)
-                .map(|_| Arc::new(Self::new()))
-                .collect(),
+            hash_preimage: RwLock::new(None),
+            children: vec![Self::empty_arc(); BRANCH_CHILD_COUNT],
             key: Vec::new(),
             next: None,
             value: Vec::new(),
@@ -148,7 +175,9 @@ impl Node {
         Ok(Self {
             node_type: NodeType::ExtensionNode,
             reference: 1,
+            dirty: true,
             hash: RwLock::new(None),
+            hash_preimage: RwLock::new(None),
             children: Vec::new(),
             key,
             next: Some(Arc::new(next)),
@@ -162,7 +191,9 @@ impl Node {
         Self {
             node_type: NodeType::LeafNode,
             reference: 1,
+            dirty: true,
             hash: RwLock::new(None),
+            hash_preimage: RwLock::new(None),
             children: Vec::new(),
             key: Vec::new(),
             next: None,
@@ -176,7 +207,9 @@ impl Node {
         Self {
             node_type: NodeType::HashNode,
             reference: 0,
+            dirty: false,
             hash: RwLock::new(Some(hash)),
+            hash_preimage: RwLock::new(None),
             children: Vec::new(),
             key: Vec::new(),
             next: None,
@@ -185,13 +218,120 @@ impl Node {
     }
 
     /// Returns `true` if the node represents the empty sentinel.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.node_type == NodeType::Empty
     }
 
-    /// Marks the node as dirty causing its cached hash to be recomputed next time.
-    pub fn set_dirty(&mut self) {
+    /// Returns `true` if this node has not yet been flushed into `MptCache`.
+    #[inline]
+    pub const fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Clears the uncommitted dirty flag once the node has been registered in `MptCache`.
+    #[inline]
+    pub fn clear_dirty(&mut self) {
+        self.dirty = false;
+    }
+
+    /// Sets the known hash on a node (e.g. immediately after deserializing by hash key).
+    #[inline]
+    pub fn set_cached_hash(&self, hash: UInt256) {
+        *self.hash.write() = Some(hash);
+    }
+
+    /// Clears the cached hash without changing the dirty flag.
+    #[inline]
+    pub fn clear_cached_hash(&self) {
         *self.hash.write() = None;
+    }
+
+    /// Marks the node as dirty causing its cached hash to be recomputed next time.
+    #[inline]
+    pub fn set_dirty(&mut self) {
+        self.dirty = true;
+        *self.hash.write() = None;
+        *self.hash_preimage.write() = None;
+    }
+
+    /// Removes the cached hash body so the caller can attach it to another node.
+    pub(crate) fn take_hash_preimage(&self) -> Option<Vec<u8>> {
+        self.hash_preimage.write().take()
+    }
+
+    /// Restores a hash body previously removed with [`Self::take_hash_preimage`].
+    pub(crate) fn set_hash_preimage(&self, bytes: Vec<u8>) {
+        *self.hash_preimage.write() = Some(bytes);
+    }
+
+    /// Returns the bytes that are written to the store for this node.
+    ///
+    /// When `try_hash` has kept the body, that body is reused and the current
+    /// reference count is appended. The kept body is consumed. A node without
+    /// a kept body is serialized from scratch.
+    pub(crate) fn stored_bytes(&self) -> MptResult<Vec<u8>> {
+        if let Some(preimage) = self.hash_preimage.write().take() {
+            return Ok(append_reference(preimage, self.node_type, self.reference));
+        }
+        let mut writer = BinaryWriter::with_capacity(self.byte_size());
+        self.serialize(&mut writer).map_err(MptError::from)?;
+        Ok(writer.into_bytes())
+    }
+
+    /// Converts a committed node into the compact representation stored in `GlobalNodeCache`,
+    /// where all non-empty children are `HashNode`s and the node's own hash is pre-cached.
+    #[must_use]
+    pub fn to_cached_node(&self, hash: UInt256) -> Self {
+        match self.node_type {
+            NodeType::BranchNode => Self {
+                node_type: NodeType::BranchNode,
+                reference: self.reference,
+                dirty: false,
+                hash: RwLock::new(Some(hash)),
+                hash_preimage: RwLock::new(None),
+                children: self
+                    .children
+                    .iter()
+                    .map(|c| match c.node_type {
+                        NodeType::Empty => Self::empty_arc(),
+                        NodeType::HashNode => Arc::clone(c),
+                        _ => Arc::new(Self::new_hash(c.hash())),
+                    })
+                    .collect(),
+                key: Vec::new(),
+                next: None,
+                value: Vec::new(),
+            },
+            NodeType::ExtensionNode => Self {
+                node_type: NodeType::ExtensionNode,
+                reference: self.reference,
+                dirty: false,
+                hash: RwLock::new(Some(hash)),
+                hash_preimage: RwLock::new(None),
+                children: Vec::new(),
+                key: self.key.clone(),
+                next: self.next.as_ref().map(|n| match n.node_type {
+                    NodeType::Empty => Self::empty_arc(),
+                    NodeType::HashNode => Arc::clone(n),
+                    _ => Arc::new(Self::new_hash(n.hash())),
+                }),
+                value: Vec::new(),
+            },
+            NodeType::LeafNode => Self {
+                node_type: NodeType::LeafNode,
+                reference: self.reference,
+                dirty: false,
+                hash: RwLock::new(Some(hash)),
+                hash_preimage: RwLock::new(None),
+                children: Vec::new(),
+                key: Vec::new(),
+                next: None,
+                value: self.value.clone(),
+            },
+            NodeType::HashNode => Self::new_hash(hash),
+            NodeType::Empty => Self::new(),
+        }
     }
 
     /// Computes the node hash (Hash256 of the serialized payload without the reference).
@@ -215,6 +355,7 @@ impl Node {
         let hash_bytes = Crypto::hash256(&data);
         let hash = UInt256::from_bytes(&hash_bytes).map_err(MptError::from)?;
         *self.hash.write() = Some(hash);
+        *self.hash_preimage.write() = Some(data);
         Ok(hash)
     }
 
@@ -243,18 +384,20 @@ impl Node {
     }
 
     /// Returns the serialized size when used as a child of another node.
+    #[inline]
     pub fn byte_size_as_child(&self) -> usize {
         match self.node_type {
-            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
-                Self::new_hash(self.hash()).byte_size()
-            }
-            NodeType::HashNode | NodeType::Empty => self.byte_size(),
+            NodeType::BranchNode
+            | NodeType::ExtensionNode
+            | NodeType::LeafNode
+            | NodeType::HashNode => 1 + UINT256_SIZE,
+            NodeType::Empty => 1,
         }
     }
 
     /// Serializes the node without the `reference` field.
     pub fn to_array_without_reference(&self) -> MptResult<Vec<u8>> {
-        let mut writer = BinaryWriter::new();
+        let mut writer = BinaryWriter::with_capacity(self.byte_size());
         self.serialize_without_reference(&mut writer)?;
         Ok(writer.into_bytes())
     }
@@ -263,8 +406,9 @@ impl Node {
     pub fn serialize_as_child(&self, writer: &mut BinaryWriter) -> MptResult<()> {
         match self.node_type {
             NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
-                let hashed = Self::new_hash(self.hash());
-                Serializable::serialize(&hashed, writer).map_err(MptError::from)
+                let hash = self.try_hash()?;
+                writer.write_u8(NodeType::HashNode.to_byte())?;
+                writer.write_bytes(&hash.to_bytes()).map_err(MptError::from)
             }
             NodeType::HashNode | NodeType::Empty => {
                 Serializable::serialize(self, writer).map_err(MptError::from)
@@ -303,7 +447,12 @@ impl Node {
     /// Sets a child node at the given index.
     pub fn set_child(&mut self, index: usize, child: Self) {
         if index < self.children.len() {
-            self.children[index] = Arc::new(child);
+            self.children[index] = if child.is_empty() {
+                Self::empty_arc()
+            } else {
+                Arc::new(child)
+            };
+            self.set_dirty();
         }
     }
 
@@ -393,14 +542,24 @@ impl Node {
     fn deserialize_branch(reader: &mut MemoryReader) -> IoResult<Vec<Arc<Self>>> {
         let mut children = Vec::with_capacity(BRANCH_CHILD_COUNT);
         for _ in 0..BRANCH_CHILD_COUNT {
-            children.push(Arc::new(Self::deserialize(reader)?));
+            let child = Self::deserialize(reader)?;
+            if child.is_empty() {
+                children.push(Self::empty_arc());
+            } else {
+                children.push(Arc::new(child));
+            }
         }
         Ok(children)
     }
 
     fn deserialize_extension(reader: &mut MemoryReader) -> IoResult<(Vec<u8>, Arc<Self>)> {
         let key = reader.read_var_bytes(MAX_KEY_LENGTH)?;
-        let next = Arc::new(Self::deserialize(reader)?);
+        let child = Self::deserialize(reader)?;
+        let next = if child.is_empty() {
+            Self::empty_arc()
+        } else {
+            Arc::new(child)
+        };
         Ok((key, next))
     }
 
@@ -424,7 +583,9 @@ impl Serializable for Node {
                 Ok(Self {
                     node_type,
                     reference,
+                    dirty: false,
                     hash: RwLock::new(None),
+                    hash_preimage: RwLock::new(None),
                     children,
                     key: Vec::new(),
                     next: None,
@@ -437,7 +598,9 @@ impl Serializable for Node {
                 Ok(Self {
                     node_type,
                     reference,
+                    dirty: false,
                     hash: RwLock::new(None),
+                    hash_preimage: RwLock::new(None),
                     children: Vec::new(),
                     key,
                     next: Some(next),
@@ -450,7 +613,9 @@ impl Serializable for Node {
                 Ok(Self {
                     node_type,
                     reference,
+                    dirty: false,
                     hash: RwLock::new(None),
+                    hash_preimage: RwLock::new(None),
                     children: Vec::new(),
                     key: Vec::new(),
                     next: None,
@@ -459,17 +624,9 @@ impl Serializable for Node {
             }
             NodeType::HashNode => {
                 let hash = Self::deserialize_hash(reader)?;
-                Ok(Self {
-                    node_type,
-                    reference: 0,
-                    hash: RwLock::new(Some(hash)),
-                    children: Vec::new(),
-                    key: Vec::new(),
-                    next: None,
-                    value: Vec::new(),
-                })
+                Ok(Self::new_hash(hash))
             }
-            NodeType::Empty => Ok(Self::default()),
+            NodeType::Empty => Ok(Self::new()),
         }
     }
 
@@ -487,4 +644,14 @@ impl Serializable for Node {
     fn size(&self) -> usize {
         self.byte_size()
     }
+}
+
+fn append_reference(mut body: Vec<u8>, node_type: NodeType, reference: u32) -> Vec<u8> {
+    if matches!(
+        node_type,
+        NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode
+    ) {
+        neo_io::var_int::write_var_int(u64::from(reference), &mut body);
+    }
+    body
 }

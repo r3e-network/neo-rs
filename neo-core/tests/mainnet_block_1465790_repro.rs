@@ -2,8 +2,9 @@
 
 mod common;
 
-// Reproducer for block 1,465,790 — Bug #13. State root divergence first appears
-// at this block (last byte-exact match was h=1,465,789).
+// Reproducer for block 1,465,790 — Bug #13 (FIXED: I2-08). State root divergence
+// previously appeared at this block (fixed by returning `true` for same-key/value
+// `Map` overwrites in `System.Runtime.CheckWitness` / `StdLib` / `Map` semantics).
 //
 // 2 txs:
 // - tx[0]: 0x522e338ce3955f00fdcdd551b0dfa2ffe3ccdcac3bcbca285dea84108fc46f8b

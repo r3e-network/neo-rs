@@ -149,14 +149,14 @@ impl NativeContract for ContractManagement {
                 Ok(vec![])
             }
             "getMinimumDeploymentFee" => {
-                self.hydrate_from_engine(engine)?;
                 if !args.is_empty() {
                     return Err(Error::invalid_argument(
                         "getMinimumDeploymentFee requires no arguments".to_string(),
                     ));
                 }
-                let fee = self.get_minimum_deployment_fee()?;
-                Ok(fee.to_le_bytes().to_vec())
+                let fee = self
+                    .get_minimum_deployment_fee_from_snapshot(engine.snapshot_cache().as_ref())?;
+                Ok(BigInt::from(fee).to_signed_bytes_le())
             }
             "setMinimumDeploymentFee" => {
                 self.hydrate_from_engine(engine)?;
@@ -171,7 +171,6 @@ impl NativeContract for ContractManagement {
                 Ok(vec![])
             }
             "hasMethod" => {
-                self.hydrate_from_engine(engine)?;
                 if args.len() != 3 {
                     return Err(Error::invalid_argument(
                         "hasMethod requires 3 arguments".to_string(),
@@ -185,7 +184,12 @@ impl NativeContract for ContractManagement {
                 let pcount = Self::decode_storage_i32(&args[2]).ok_or_else(|| {
                     Error::invalid_argument("Invalid parameter count".to_string())
                 })?;
-                let result = self.has_method(&hash, &method, pcount)?;
+                let result = self.has_method_from_snapshot(
+                    engine.snapshot_cache().as_ref(),
+                    &hash,
+                    &method,
+                    pcount,
+                )?;
                 Ok(vec![if result { 1 } else { 0 }])
             }
             "isContract" => {
@@ -225,7 +229,6 @@ impl NativeContract for ContractManagement {
                 }
             }
             "getContractHashes" => {
-                self.hydrate_from_engine(engine)?;
                 if !args.is_empty() {
                     return Err(Error::invalid_argument(
                         "getContractHashes requires no arguments".to_string(),
@@ -268,9 +271,12 @@ impl NativeContract for ContractManagement {
                 continue;
             };
 
-            let existing_state = {
-                let storage = self.storage.read();
-                storage.contracts.get(&contract_hash).cloned()
+            let existing_state = match Self::get_contract_from_snapshot(
+                engine.snapshot_cache().as_ref(),
+                &contract_hash,
+            )? {
+                Some(state) => Some(state),
+                None => self.storage.read().contracts.get(&contract_hash).cloned(),
             };
 
             let is_new = existing_state.is_none();

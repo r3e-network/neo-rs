@@ -96,9 +96,9 @@ impl NativeContract for NeoToken {
                 StorageItem::from_bytes(Self::encode_amount(&total_supply)),
             )?;
 
-            // NOTE: C# NeoToken.InitializeAsync mints with transferNotifyEnabled
-            // = false, so the genesis mint deliberately emits NO Transfer
-            // notification. Do not add one here.
+            // Mainnet genesis OnPersist emits this mint. The recipient is the
+            // standby BFT account and the amount is the NEO total supply.
+            self.emit_transfer_event(engine, None, Some(&account), &total_supply)?;
         }
 
         Ok(())

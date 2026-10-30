@@ -48,7 +48,7 @@ static NEO_HASH: LazyLock<UInt160> =
 /// This type exposes the canonical identifiers used throughout the node and
 /// wires the NEP-17 surface alongside governance and committee management.
 pub struct NeoToken {
-    methods: Vec<NativeMethod>,
+    methods: &'static [NativeMethod],
 }
 
 crate::impl_default_via_new!(NeoToken);

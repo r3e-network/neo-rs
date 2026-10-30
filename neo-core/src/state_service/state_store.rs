@@ -54,6 +54,7 @@ use super::metrics;
 use super::root_cache::StateRootCache;
 use super::state_root::StateRoot;
 use crate::UInt256;
+use crate::cryptography::mpt_trie::{GlobalNodeCache, Node};
 use crate::error::CoreResult;
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::persistence::{
@@ -134,6 +135,8 @@ impl StateRootDivergence {
 pub struct StateStore {
     store: Arc<dyn StateStoreBackend>,
     settings: StateServiceSettings,
+    node_cache: Arc<GlobalNodeCache>,
+    cached_trie_root: RwLock<Option<(UInt256, Node)>>,
     cache: RwLock<HashMap<u32, StateRoot>>,
     /// LRU cache for recent state roots to avoid disk lookups.
     root_cache: RwLock<StateRootCache>,
@@ -160,10 +163,18 @@ impl StateStore {
         settings: StateServiceSettings,
         verifier: Option<StateRootVerifier>,
     ) -> Self {
-        let snapshot = StateSnapshot::new(Arc::clone(&store), settings.clone());
+        let initial_divergence = Self::load_divergence(&*store);
+        let node_cache = Arc::new(GlobalNodeCache::new());
+        let snapshot = StateSnapshot::new_with_node_cache(
+            Arc::clone(&store),
+            settings.clone(),
+            Some(Arc::clone(&node_cache)),
+        );
         Self {
             store,
             settings,
+            node_cache,
+            cached_trie_root: RwLock::new(None),
             cache: RwLock::new(HashMap::new()),
             root_cache: RwLock::new(StateRootCache::with_default_capacity()),
             current_snapshot: RwLock::new(Some(snapshot)),
@@ -172,8 +183,24 @@ impl StateStore {
             reference_roots: HashMap::new(),
             reference_min_height: None,
             reference_max_height: None,
-            divergence: RwLock::new(None),
+            divergence: RwLock::new(initial_divergence),
         }
+    }
+
+    fn load_divergence(store: &dyn StateStoreBackend) -> Option<StateRootDivergence> {
+        let bytes = store.try_get(Keys::STATE_ROOT_DIVERGENCE)?;
+        let divergence = StateRootDivergence::decode(&bytes);
+        if divergence.is_none() {
+            tracing::error!(
+                target: "neo::state_service",
+                "unreadable state root divergence record; treating the store as diverged"
+            );
+        }
+        divergence.or(Some(StateRootDivergence {
+            height: u32::MAX,
+            local_root: UInt256::zero(),
+            validated_root: UInt256::zero(),
+        }))
     }
 
     /// Creates a new in-memory state store for testing.
@@ -318,7 +345,11 @@ impl StateStore {
 
     /// Gets a new snapshot.
     pub fn snapshot(&self) -> StateSnapshot {
-        StateSnapshot::new(Arc::clone(&self.store), self.settings.clone())
+        StateSnapshot::new_with_node_cache(
+            Arc::clone(&self.store),
+            self.settings.clone(),
+            Some(Arc::clone(&self.node_cache)),
+        )
     }
 
     /// Opens a transactional view over the underlying state store backend.
@@ -596,22 +627,7 @@ impl StateStore {
 
     /// Returns the recorded local/validated state root divergence, if any.
     pub fn state_root_divergence(&self) -> Option<StateRootDivergence> {
-        if let Some(divergence) = *self.divergence.read() {
-            return Some(divergence);
-        }
-        let bytes = self.store.try_get(Keys::STATE_ROOT_DIVERGENCE)?;
-        let divergence = StateRootDivergence::decode(&bytes);
-        if divergence.is_none() {
-            tracing::error!(
-                target: "neo::state_service",
-                "unreadable state root divergence record; treating the store as diverged"
-            );
-        }
-        divergence.or(Some(StateRootDivergence {
-            height: u32::MAX,
-            local_root: UInt256::zero(),
-            validated_root: UInt256::zero(),
-        }))
+        *self.divergence.read()
     }
 
     fn record_divergence(&self, divergence: StateRootDivergence) {
@@ -639,6 +655,59 @@ impl StateStore {
         }
     }
 
+    /// Updates the local state root snapshot directly from a [`DataCache`] without
+    /// cloning excluded `LedgerContract` entries.
+    pub fn update_local_state_root_from_cache(
+        &self,
+        height: u32,
+        snapshot_cache: &crate::persistence::DataCache,
+    ) -> Result<(), String> {
+        if let Some(current_index) = self.local_root_index()
+            && height <= current_index
+        {
+            return Ok(());
+        }
+
+        if let Some(divergence) = self.state_root_divergence() {
+            return Err(format!(
+                "state root divergence at height {}: local {}, validated {}; refusing to persist block {height} (resync the state store after fixing the cause)",
+                divergence.height, divergence.local_root, divergence.validated_root
+            ));
+        }
+
+        let debug_dump = std::env::var("NEO_DEBUG_STATE_ROOT").is_ok();
+        let mut ops: Vec<(Vec<u8>, i32, Option<Vec<u8>>)> = Vec::new();
+        snapshot_cache.for_each_tracked_change(|key, item, state| {
+            if debug_dump {
+                eprintln!(
+                    "[DEBUG_STATE_ROOT h={height}] contract_id={} key={} state={:?} val={}",
+                    key.id,
+                    hex::encode(key.as_bytes()),
+                    state,
+                    hex::encode(item.value_bytes())
+                );
+            }
+            if key.id == LedgerContract::ID {
+                return;
+            }
+            match state {
+                TrackState::Added | TrackState::Changed => {
+                    ops.push((
+                        key.as_bytes().into_owned(),
+                        key.id,
+                        Some(item.value_bytes().into_owned()),
+                    ));
+                }
+                TrackState::Deleted => {
+                    ops.push((key.as_bytes().into_owned(), key.id, None));
+                }
+                TrackState::None | TrackState::NotFound => {}
+            }
+        });
+
+        self.apply_local_state_root_ops(height, ops, debug_dump)
+    }
+
     /// Updates the local state root snapshot with a change set.
     /// Called during block commit to update the state trie.
     pub fn update_local_state_root_snapshot(
@@ -661,20 +730,8 @@ impl StateStore {
             ));
         }
 
-        // Keep all writes in an isolated overlay until the blockchain transaction commits.
-        // The overlay is applied to the base backend only from update_local_state_root.
-        let staged_backend = Arc::new(StagedStateStoreBackend::new(self.store.clone()));
-        let mut snapshot = StateSnapshot::new(staged_backend, self.settings.clone());
-        let root_hash_before = snapshot.trie.root_hash().unwrap_or_else(UInt256::zero);
-        let mut put_count: u32 = 0;
-        let mut del_count: u32 = 0;
-        let mut _skip_count: u32 = 0;
-        let mut _ledger_skip: u32 = 0;
-        let debug_dump = std::env::var("NEO_DEBUG_STATE_ROOT").is_ok()
-            || height == 172613
-            || height == 182902
-            || height == 203262
-            || height == 274157;
+        let debug_dump = std::env::var("NEO_DEBUG_STATE_ROOT").is_ok();
+        let mut ops: Vec<(Vec<u8>, i32, Option<Vec<u8>>)> = Vec::new();
         for (key, item, state) in change_set {
             if debug_dump {
                 eprintln!(
@@ -688,44 +745,79 @@ impl StateStore {
             // Match Neo.Plugins.StateService behaviour: exclude ledger contract storage
             // from trie updates to keep state root consensus-compatible.
             if key.id == LedgerContract::ID {
-                _ledger_skip += 1;
                 continue;
             }
-            let key_bytes = key.as_bytes();
             match state {
                 TrackState::Added | TrackState::Changed => {
-                    let value_bytes = item.value_bytes();
-                    if height == 5107 {
-                        eprintln!(
-                            "[DEBUG 5107] contract {} key {} val {} state {:?}",
-                            key.id,
-                            hex::encode(&key_bytes),
-                            hex::encode(&value_bytes),
-                            state
-                        );
-                    }
+                    ops.push((
+                        key.as_bytes().into_owned(),
+                        key.id,
+                        Some(item.value_bytes().into_owned()),
+                    ));
+                }
+                TrackState::Deleted => {
+                    ops.push((key.as_bytes().into_owned(), key.id, None));
+                }
+                TrackState::None | TrackState::NotFound => {}
+            }
+        }
+
+        self.apply_local_state_root_ops(height, ops, debug_dump)
+    }
+
+    fn apply_local_state_root_ops(
+        &self,
+        height: u32,
+        mut ops: Vec<(Vec<u8>, i32, Option<Vec<u8>>)>,
+        debug_dump: bool,
+    ) -> Result<(), String> {
+        // Keep all writes in an isolated overlay until the blockchain transaction commits.
+        // The overlay is applied to the base backend only from update_local_state_root.
+        let staged_backend = Arc::new(StagedStateStoreBackend::new(self.store.clone()));
+        let cached_root = self.cached_trie_root.write().take();
+        let mut snapshot = StateSnapshot::new_with_cached_root(
+            staged_backend,
+            self.settings.clone(),
+            Some(Arc::clone(&self.node_cache)),
+            cached_root,
+        );
+        let root_hash_before = if debug_dump {
+            snapshot.trie.root_hash().unwrap_or_else(UInt256::zero)
+        } else {
+            UInt256::zero()
+        };
+        let mut put_count: u32 = 0;
+        let mut del_count: u32 = 0;
+
+        // Sort updates by nibble/key prefix to maximize MPT traversal locality.
+        ops.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
+        for (key_bytes, contract_id, value_opt) in ops {
+            match value_opt {
+                Some(value_bytes) => {
                     snapshot.trie.put(&key_bytes, &value_bytes).map_err(|e| {
                         format!(
-                            "state root trie put failed at height {height} for contract {}: {e}",
-                            key.id
+                            "state root trie put failed at height {height} for contract {contract_id}: {e}"
                         )
                     })?;
                     put_count += 1;
                 }
-                TrackState::Deleted => {
+                None => {
                     snapshot.trie.delete(&key_bytes).map_err(|e| {
                         format!(
-                            "state root trie delete failed at height {height} for contract {}: {e}",
-                            key.id
+                            "state root trie delete failed at height {height} for contract {contract_id}: {e}"
                         )
                     })?;
                     del_count += 1;
                 }
-                TrackState::None | TrackState::NotFound => {
-                    _skip_count += 1;
-                }
             }
         }
+
+        // Flush dirty nodes once for the entire block (with parallel subtree hashing)
+        snapshot
+            .trie
+            .flush_dirty()
+            .map_err(|e| format!("state root trie flush failed at height {height}: {e}"))?;
 
         // Get new root hash
         let root_hash = snapshot.trie.root_hash().unwrap_or_else(UInt256::zero);
@@ -795,11 +887,22 @@ impl StateStore {
         // Commit and dispose snapshot
         {
             let mut state_snap = self.state_snapshot.write();
-            if let Some(mut snapshot) = state_snap.take()
-                && let Err(error) = snapshot.commit()
-            {
-                snapshot.discard_pending();
-                return Err(error);
+            if let Some(mut snapshot) = state_snap.take() {
+                if let Err(error) = snapshot.commit() {
+                    snapshot.discard_pending();
+                    self.node_cache.clear();
+                    return Err(error);
+                }
+                if let Some(root_hash) = snapshot.trie.root_hash()
+                    && !root_hash.is_zero()
+                {
+                    let next_root = if height.is_multiple_of(2000) {
+                        Node::new_hash(root_hash)
+                    } else {
+                        snapshot.trie.take_root()
+                    };
+                    *self.cached_trie_root.write() = Some((root_hash, next_root));
+                }
             }
         }
 

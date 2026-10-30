@@ -56,7 +56,7 @@ pub(super) struct ContractStorage {
 pub struct ContractManagement {
     pub(super) id: i32,
     pub(super) hash: UInt160,
-    pub(super) methods: Vec<NativeMethod>,
+    pub(super) methods: &'static [NativeMethod],
     pub(super) storage: Arc<RwLock<ContractStorage>>,
 }
 
@@ -65,8 +65,7 @@ impl ContractManagement {
 
     /// Returns the well-known script hash of the ContractManagement native contract.
     pub fn contract_hash() -> UInt160 {
-        UInt160::parse("0xfffdc93764dbaddd97c48f252a53ea4643faa3fd")
-            .expect("Valid ContractManagement contract hash")
+        crate::smart_contract::native::static_contract_hash!("0xfffdc93764dbaddd97c48f252a53ea4643faa3fd")
     }
 
     #[inline]
@@ -203,7 +202,18 @@ impl ContractManagement {
             Self::stack_item_from_payload(data),
             StackItem::from_bool(is_update),
         ];
-        engine.queue_contract_call_from_native(self.hash, *contract_hash, "_deploy", args);
+        // C# awaits CallFromNativeContractAsync before SendNotification, so
+        // _initialize and _deploy (and their notifications) finish first.
+        let original_depth = engine.invocation_stack().len();
+        engine.call_from_native_contract_dynamic(&self.hash, contract_hash, "_deploy", args)?;
+        let state = engine.execute_until_invocation_stack_depth(original_depth);
+        if state == neo_vm::VmState::FAULT {
+            let message = engine
+                .fault_exception()
+                .unwrap_or("VM execution faulted during _deploy")
+                .to_string();
+            return Err(Error::invalid_operation(message));
+        }
         Ok(())
     }
 
@@ -223,7 +233,7 @@ impl ContractManagement {
         Self {
             id: Self::ID,
             hash,
-            methods: Self::native_methods(),
+            methods: crate::smart_contract::native::static_native_methods!(ContractManagement::native_methods()),
             storage: Arc::new(RwLock::new(storage)),
         }
     }

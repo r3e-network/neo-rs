@@ -88,6 +88,39 @@ use crate::UInt160;
 use indexmap::IndexMap;
 use std::sync::{Arc, OnceLock};
 
+/// Builds a native contract's method table exactly once per process and
+/// returns it as a `&'static [NativeMethod]`.
+///
+/// Native contracts are constructed ad hoc on hot paths (for example
+/// `PolicyContract::new().is_blocked_snapshot(..)` on every contract call, or
+/// `LedgerContract::new().current_index(..)`). Rebuilding the method table on
+/// each construction allocated dozens of `NativeMethod`s (names, parameter
+/// vectors, parameter names) per call. The tables are immutable, so sharing a
+/// single process-wide instance is behaviour-preserving.
+///
+/// The builder expression must name the concrete type (not `Self`), because
+/// it is evaluated inside a nested `static` item.
+macro_rules! static_native_methods {
+    ($builder:expr) => {{
+        static METHODS: ::std::sync::LazyLock<
+            ::std::vec::Vec<$crate::smart_contract::native::NativeMethod>,
+        > = ::std::sync::LazyLock::new(|| $builder);
+        METHODS.as_slice()
+    }};
+}
+pub(crate) use static_native_methods;
+
+/// Parses a well-known native contract hash once per process.
+macro_rules! static_contract_hash {
+    ($hex:literal) => {{
+        static HASH: ::std::sync::LazyLock<$crate::UInt160> = ::std::sync::LazyLock::new(|| {
+            $crate::UInt160::parse($hex).expect("valid native contract hash literal")
+        });
+        *HASH
+    }};
+}
+pub(crate) use static_contract_hash;
+
 /// Registry for native contracts.
 pub struct NativeRegistry {
     contracts: IndexMap<UInt160, Arc<dyn NativeContract>>,

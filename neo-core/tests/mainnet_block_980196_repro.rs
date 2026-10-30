@@ -299,12 +299,11 @@ fn replay_block_980196_debug() {
             .unwrap_or_else(|| LedgerTransactionStates::new(Vec::new()));
 
         // tx0 must HALT for the C# state root to match. If it FAULTs we have repro'd bug #8.
-        if vm_state != neo_vm::VmState::HALT {
-            eprintln!(
-                "\n!!! tx{} FAULTed at block 980,196 — bug #8 reproduced (gas={gas}) !!!",
-                idx,
-            );
-        }
+        assert_eq!(
+            vm_state,
+            neo_vm::VmState::HALT,
+            "tx{idx} FAULTed at block 980,196 (gas={gas})"
+        );
 
         let tracked: Vec<_> = tx_snapshot.tracked_items().into_iter().collect();
         base_cache.merge_tracked_items(&tracked);

@@ -23,7 +23,7 @@ pub use state::{LedgerTransactionStates, PersistedTransactionState};
 pub struct LedgerContract {
     id: i32,
     hash: UInt160,
-    methods: Vec<NativeMethod>,
+    methods: &'static [NativeMethod],
 }
 
 impl LedgerContract {
@@ -33,13 +33,12 @@ impl LedgerContract {
     /// Creates a new LedgerContract instance
     pub fn new() -> Self {
         // LedgerContract hash: 0xda65b600f7124ce6c79950c1772a36403104f2be
-        let hash = UInt160::parse("0xda65b600f7124ce6c79950c1772a36403104f2be")
-            .expect("Valid LedgerContract hash");
+        let hash = crate::smart_contract::native::static_contract_hash!("0xda65b600f7124ce6c79950c1772a36403104f2be");
 
         Self {
             id: Self::ID,
             hash,
-            methods: Self::native_methods(),
+            methods: crate::smart_contract::native::static_native_methods!(LedgerContract::native_methods()),
         }
     }
 }

@@ -318,7 +318,7 @@ pub fn pack(items: Vec<StackValue>) -> StackValue {
     StackValue::Array(items)
 }
 
-/// Unpack array/struct values followed by their count.
+/// Unpack array/struct/map values followed by their count.
 pub fn unpack(value: StackValue) -> Result<Vec<StackValue>, String> {
     match value {
         StackValue::Array(mut items) | StackValue::Struct(mut items) => {
@@ -326,7 +326,17 @@ pub fn unpack(value: StackValue) -> Result<Vec<StackValue>, String> {
             items.push(StackValue::Integer(count));
             Ok(items)
         }
-        _ => Err("UNPACK: not an array or struct".into()),
+        StackValue::Map(pairs) => {
+            let count = pairs.len() as i64;
+            let mut out = Vec::with_capacity(pairs.len() * 2 + 1);
+            for (key, val) in pairs {
+                out.push(val);
+                out.push(key);
+            }
+            out.push(StackValue::Integer(count));
+            Ok(out)
+        }
+        _ => Err("UNPACK: not an array, struct, or map".into()),
     }
 }
 

@@ -112,8 +112,7 @@ impl StoreCache {
             return Err(DataCacheError::ReadOnly);
         }
 
-        let tracked = self.data_cache.tracked_items();
-        if tracked.is_empty() {
+        if !self.data_cache.has_pending_changes() {
             self.data_cache.commit();
             return Ok(());
         }
@@ -129,9 +128,11 @@ impl StoreCache {
         };
 
         if let Some(snapshot) = Arc::get_mut(&mut writer_snapshot) {
-            apply_tracked(&tracked, snapshot).map_err(|e| {
-                DataCacheError::CommitFailed(format!("storage write failed: {}", e))
-            })?;
+            self.data_cache
+                .apply_tracked_to_writer(snapshot)
+                .map_err(|e| {
+                    DataCacheError::CommitFailed(format!("storage write failed: {}", e))
+                })?;
             snapshot
                 .try_commit()
                 .map_err(|e| DataCacheError::CommitFailed(e.to_string()))?;

@@ -280,7 +280,7 @@ fn detect_stack_item_cycle(
             )
         }
         StackItem::Struct(items) => {
-            let key = CompoundKey::Array(items.id());
+            let key = CompoundKey::Struct(items.id());
             detect_compound_cycle(
                 key,
                 visiting,
@@ -345,49 +345,90 @@ fn clone_stack_item_as_immutable(
         StackItem::Boolean(value) => Ok(StackItem::Boolean(*value)),
         StackItem::Integer(value) => Ok(StackItem::Integer(value.clone())),
         StackItem::ByteString(bytes) => Ok(StackItem::ByteString(bytes.clone())),
-        StackItem::Buffer(buffer) => Ok(StackItem::Buffer(buffer.clone())),
+        // C# Buffer.DeepCopy(asImmutable: true) stores a ByteString copy.
+        StackItem::Buffer(buffer) => Ok(StackItem::ByteString(buffer.data())),
         StackItem::Pointer(pointer) => Ok(StackItem::Pointer(pointer.clone())),
         StackItem::InteropInterface(iface) => Ok(StackItem::InteropInterface(iface.clone())),
         StackItem::Array(items) => {
-            let key = CompoundKey::Array(item as *const _ as usize);
+            let key = CompoundKey::Array(items.id());
             if let Some(existing) = seen.get(&key) {
                 return Ok(existing.clone());
             }
             let mut cloned_items = Vec::with_capacity(items.len());
-            let cloned_item = StackItem::from_array(Vec::<StackItem>::new());
-            seen.insert(key, cloned_item.clone());
             for element in items.iter() {
                 cloned_items.push(clone_stack_item_as_immutable(&element, seen)?);
             }
-            Ok(StackItem::from_array(cloned_items))
+            let cloned_item = StackItem::from_array(cloned_items);
+            seen.insert(key, cloned_item.clone());
+            Ok(cloned_item)
         }
         StackItem::Struct(items) => {
-            let key = CompoundKey::Struct(item as *const _ as usize);
+            let key = CompoundKey::Struct(items.id());
             if let Some(existing) = seen.get(&key) {
                 return Ok(existing.clone());
             }
             let mut cloned_items = Vec::with_capacity(items.len());
-            let cloned_item = StackItem::from_struct(Vec::<StackItem>::new());
-            seen.insert(key, cloned_item.clone());
             for element in items.iter() {
                 cloned_items.push(clone_stack_item_as_immutable(&element, seen)?);
             }
-            Ok(StackItem::from_struct(cloned_items))
+            let cloned_item = StackItem::from_struct(cloned_items);
+            seen.insert(key, cloned_item.clone());
+            Ok(cloned_item)
         }
         StackItem::Map(entries) => {
-            let key = CompoundKey::Map(item as *const _ as usize);
+            let key = CompoundKey::Map(entries.id());
             if let Some(existing) = seen.get(&key) {
                 return Ok(existing.clone());
             }
             let mut cloned_entries = Vec::with_capacity(entries.len());
-            let cloned_item = StackItem::from_map(Vec::<(StackItem, StackItem)>::new());
-            seen.insert(key, cloned_item.clone());
             for (entry_key, entry_value) in entries.iter() {
                 let cloned_key = clone_stack_item_as_immutable(&entry_key, seen)?;
                 let cloned_value = clone_stack_item_as_immutable(&entry_value, seen)?;
                 cloned_entries.push((cloned_key, cloned_value));
             }
-            Ok(StackItem::from_map(cloned_entries))
+            let cloned_item = StackItem::from_map(cloned_entries);
+            seen.insert(key, cloned_item.clone());
+            Ok(cloned_item)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clone_notification_state_preserves_distinct_sibling_arrays_and_structs() {
+        let first = StackItem::from_array(vec![StackItem::from_int(1)]);
+        let second = StackItem::from_array(vec![StackItem::from_int(2)]);
+        let outer = StackItem::from_array(vec![first, second]);
+
+        let cloned = clone_notification_state(&[outer]).expect("clone notification state");
+        let StackItem::Array(outer_arr) = &cloned[0] else {
+            panic!("expected outer array");
+        };
+        assert_eq!(outer_arr.len(), 2);
+        let items = outer_arr.items();
+        let StackItem::Array(a0) = &items[0] else {
+            panic!("expected first inner array");
+        };
+        let StackItem::Array(a1) = &items[1] else {
+            panic!("expected second inner array");
+        };
+        assert_eq!(a0.items(), vec![StackItem::from_int(1)]);
+        assert_eq!(a1.items(), vec![StackItem::from_int(2)]);
+    }
+
+    #[test]
+    fn clone_notification_state_stores_buffer_as_byte_string() {
+        let state = StackItem::from_array(vec![StackItem::from_buffer(vec![0x01, 0x07])]);
+        let cloned = clone_notification_state(&[state]).expect("clone notification state");
+        let StackItem::Array(items) = &cloned[0] else {
+            panic!("expected array");
+        };
+        assert_eq!(
+            items.items(),
+            vec![StackItem::from_byte_string(vec![0x01, 0x07])]
+        );
     }
 }

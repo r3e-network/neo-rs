@@ -2,14 +2,13 @@
 
 mod common;
 
-// Reproducer for block 1,394,579 — Bug #12. State root divergence first appears
-// at this block (bisect against seed1.neo.org getstateroot vs local Rust trie
-// after bugs #10 and #11 fixes landed). Single tx 0xfa0f5683... is a NeoFS
-// contract update via ContractManagement: pushes (manifest_json, NEF_bytes,
-// data=Null) and calls `update` on contract 0x2cafa46838e8b564468ebd868dcafdd99dce6221.
+// Reproducer for block 1,394,579 — Bug #12 (FIXED: I2-07). State root divergence
+// previously appeared at this block. Single tx 0xfa0f5683... is a NeoFS contract
+// update via ContractManagement: pushes (manifest_json, NEF_bytes, data=Null)
+// and calls `update` on contract 0x2cafa46838e8b564468ebd868dcafdd99dce6221.
 // C# applog: HALT, gas=85913699, emits Update event with the new script hash.
-// Rust: FAULTs (cause TBD — likely ContractManagement.update path or VM opcode
-// in the contract's _deploy handler).
+// Fixed by refreshing the per-tx contract cache in `ContractManagement::update`
+// before queuing the `_deploy` hook.
 //
 // C# expected state root @ 1,394,579: 0x074aae40e3b09ed04e19262cd3f4e45a23f7ef1d8997de2a1c228fd1e24575d0
 

@@ -19,6 +19,8 @@ protocol_enum! {
         TxInvalid = 0x4,
         /// A proposed block was rejected by policy.
         BlockRejectedByPolicy = 0x5,
+        /// A proposed block was invalid.
+        BlockInvalid = 0x6,
     }
 }
 

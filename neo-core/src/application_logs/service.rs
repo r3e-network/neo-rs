@@ -63,6 +63,101 @@ impl ApplicationLogsService {
         *guard = Some(self.store.snapshot());
     }
 
+    /// Flushes committed logs to durable storage.
+    ///
+    /// Import uses a RocksDB profile with the write-ahead log disabled, so a
+    /// checkpoint must flush this store or a restart drops the logs.
+    pub fn flush(&self) {
+        self.store.flush();
+    }
+
+    /// Rewrites OnPersist and PostPersist `vmstate` values that were stored as
+    /// the engine's initial `BREAK`. Those triggers run outside the VM loop and
+    /// C# records a successful one as `HALT`. Committed blocks only reach this
+    /// store when native persist succeeded, so `BREAK` there is that initial
+    /// state, not a breakpoint.
+    pub fn rewrite_native_persist_break_to_halt(&self) -> Result<u64, String> {
+        use crate::persistence::seek_direction::SeekDirection;
+
+        let prefix = vec![Self::PREFIX_BLOCK];
+        let read = self.store.snapshot();
+        let matched: Vec<(Vec<u8>, Vec<u8>)> = read
+            .find(Some(&prefix), SeekDirection::Forward)
+            .take_while(|(key, _)| key.first().copied() == Some(Self::PREFIX_BLOCK))
+            .collect();
+        drop(read);
+
+        let mut changed = 0u64;
+        let mut write = self.store.snapshot();
+        let Some(snapshot) = Arc::get_mut(&mut write) else {
+            return Err("application logs rewrite failed: snapshot is still shared".to_string());
+        };
+        for (key, raw) in matched {
+            let Ok(mut value) = serde_json::from_slice::<Value>(&raw) else {
+                continue;
+            };
+            if !promote_native_persist_vmstate(&mut value) {
+                continue;
+            }
+            let bytes = serde_json::to_vec(&value)
+                .map_err(|err| format!("failed to serialize rewritten application log: {err}"))?;
+            snapshot
+                .put(key, bytes)
+                .map_err(|err| format!("failed to rewrite application log: {err}"))?;
+            changed += 1;
+        }
+        snapshot
+            .try_commit()
+            .map_err(|err| format!("application logs rewrite commit failed: {err}"))?;
+        Ok(changed)
+    }
+
+    /// Rewrites stored fault exception text so it matches the C# application log.
+    ///
+    /// Gas exhaustion becomes `Insufficient GAS.`, a trailing VM diagnostic
+    /// suffix is removed, and a missing-method fault drops the Rust
+    /// `System.Contract.Call` wrapper. See `csharp_fault_exception_message`.
+    pub fn rewrite_fault_exception_messages(&self) -> Result<u64, String> {
+        use crate::persistence::seek_direction::SeekDirection;
+
+        let prefixes = [Self::PREFIX_BLOCK, Self::PREFIX_TX];
+        let mut matched = Vec::new();
+        {
+            let read = self.store.snapshot();
+            for prefix in prefixes {
+                let prefix_key = vec![prefix];
+                matched.extend(
+                    read.find(Some(&prefix_key), SeekDirection::Forward)
+                        .take_while(|(key, _)| key.first().copied() == Some(prefix)),
+                );
+            }
+        }
+
+        let mut changed = 0u64;
+        let mut write = self.store.snapshot();
+        let Some(snapshot) = Arc::get_mut(&mut write) else {
+            return Err("application logs rewrite failed: snapshot is still shared".to_string());
+        };
+        for (key, raw) in matched {
+            let Ok(mut value) = serde_json::from_slice::<Value>(&raw) else {
+                continue;
+            };
+            if !normalize_stored_fault_exceptions(&mut value) {
+                continue;
+            }
+            let bytes = serde_json::to_vec(&value)
+                .map_err(|err| format!("failed to serialize rewritten application log: {err}"))?;
+            snapshot
+                .put(key, bytes)
+                .map_err(|err| format!("failed to rewrite application log: {err}"))?;
+            changed += 1;
+        }
+        snapshot
+            .try_commit()
+            .map_err(|err| format!("application logs rewrite commit failed: {err}"))?;
+        Ok(changed)
+    }
+
     fn commit_batch(&self) -> Result<(), String> {
         let mut guard = self.snapshot.lock();
         let Some(snapshot_arc) = guard.as_mut() else {
@@ -178,6 +273,12 @@ impl ApplicationLogsService {
                 exception = Some(err.to_string());
             }
         }
+        if let Some(message) = exception.as_mut() {
+            let normalized = csharp_fault_exception_message(message);
+            if normalized != *message {
+                *message = normalized;
+            }
+        }
 
         if include_exception || exception.is_some() {
             trigger.insert(
@@ -215,6 +316,12 @@ impl ApplicationLogsService {
 }
 
 impl CommittingHandler for ApplicationLogsService {
+    fn run_during_fast_sync(&self) -> bool {
+        // `.acc` import enables fast sync. Application logs are the behaviour
+        // oracle for that import, so this handler must still run.
+        true
+    }
+
     fn blockchain_committing_handler(
         &self,
         system: &dyn Any,
@@ -292,6 +399,207 @@ fn trigger_to_string(trigger: TriggerType) -> &'static str {
     } else {
         "Unknown"
     }
+}
+
+/// Application-log exception text aligned with C# `ExecutionLogState`.
+///
+/// C# stores `Exception.InnerException.Message`, or `Exception.Message` when
+/// there is no inner exception. `ApplicationEngine.AddFee` throws
+/// `InvalidOperationException("Insufficient GAS.")`. Rust records the same
+/// condition with its own wording, and `ExecutionEngine::on_fault` appends
+/// ` [ip=N opcode=NAME eval_depth=N]`. That suffix is diagnostic only.
+/// C# `OpCode.ASSERT` uses `ASSERT is executed with false result.` Rust's
+/// `AssertFailed` display omits the period. C# `CallContract` reports a missing
+/// method as `Method "name" with N parameter(s) doesn't exist in the contract 0xhash.`
+/// Rust's VM display wraps that fault in `Interop service error` and
+/// `Invalid operation`, and `UInt160`'s debug text adds a type name.
+pub(crate) fn csharp_fault_exception_message(message: &str) -> String {
+    let stripped = strip_vm_diagnostic_suffix(message);
+    if is_engine_gas_fault(stripped) {
+        "Insufficient GAS.".to_string()
+    } else if stripped == "ASSERT is executed with false result" {
+        "ASSERT is executed with false result.".to_string()
+    } else if let Some(missing_method) = csharp_missing_contract_method(stripped) {
+        missing_method
+    } else {
+        stripped.to_string()
+    }
+}
+
+fn csharp_missing_contract_method(message: &str) -> Option<String> {
+    let message = unwrap_interop_service_error(message);
+    let message = message
+        .strip_prefix("Invalid operation: ")
+        .unwrap_or(message);
+    let rest = message.strip_prefix("Method ")?;
+    let mut chars = rest.chars();
+    let quote = chars.next()?;
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
+    let rest = chars.as_str();
+    let end = rest.find(quote)?;
+    let name = &rest[..end];
+    if name.is_empty() {
+        return None;
+    }
+    let rest = rest[end + quote.len_utf8()..].strip_prefix(" with ")?;
+    let count_len = rest.bytes().take_while(u8::is_ascii_digit).count();
+    if count_len == 0 {
+        return None;
+    }
+    let count = &rest[..count_len];
+    let rest = rest[count_len..].strip_prefix(" parameter(s) doesn't exist in the contract ")?;
+    let (hash, tail) = contract_hash_text(rest)?;
+    if tail != "." {
+        return None;
+    }
+    Some(format!(
+        "Method \"{name}\" with {count} parameter(s) doesn't exist in the contract {hash}."
+    ))
+}
+
+fn unwrap_interop_service_error(message: &str) -> &str {
+    const PREFIX: &str = "Interop service error: service ";
+    const MARKER: &str = ", error: ";
+    let Some(rest) = message.strip_prefix(PREFIX) else {
+        return message;
+    };
+    let Some(index) = rest.find(MARKER) else {
+        return message;
+    };
+    if rest[..index].is_empty() {
+        return message;
+    }
+    let inner = &rest[index + MARKER.len()..];
+    if inner.is_empty() { message } else { inner }
+}
+
+fn contract_hash_text(text: &str) -> Option<(&str, &str)> {
+    if let Some(inner) = text.strip_prefix("UInt160(") {
+        let end = inner.find(')')?;
+        let hash = &inner[..end];
+        if !is_script_hash_text(hash) {
+            return None;
+        }
+        return Some((hash, &inner[end + 1..]));
+    }
+    const HASH_LEN: usize = 42;
+    if text.len() < HASH_LEN || !is_script_hash_text(&text[..HASH_LEN]) {
+        return None;
+    }
+    Some((&text[..HASH_LEN], &text[HASH_LEN..]))
+}
+
+fn is_script_hash_text(text: &str) -> bool {
+    let Some(hex) = text.strip_prefix("0x") else {
+        return false;
+    };
+    hex.len() == 40 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn strip_vm_diagnostic_suffix(message: &str) -> &str {
+    let Some(start) = message.rfind(" [ip=") else {
+        return message;
+    };
+    let suffix = &message[start..];
+    if suffix_is_vm_diagnostic(suffix) {
+        &message[..start]
+    } else {
+        message
+    }
+}
+
+fn suffix_is_vm_diagnostic(suffix: &str) -> bool {
+    let Some(rest) = suffix.strip_prefix(" [ip=") else {
+        return false;
+    };
+    let Some(rest) = rest.strip_suffix(']') else {
+        return false;
+    };
+    let mut parts = rest.split(' ');
+    let Some(ip) = parts.next() else {
+        return false;
+    };
+    if ip.is_empty() || !ip.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    match (parts.next(), parts.next(), parts.next()) {
+        (None, None, None) => true,
+        (Some(opcode), Some(depth), None) => {
+            let Some(opcode_name) = opcode.strip_prefix("opcode=") else {
+                return false;
+            };
+            let Some(depth) = depth.strip_prefix("eval_depth=") else {
+                return false;
+            };
+            !opcode_name.is_empty()
+                && !depth.is_empty()
+                && depth.bytes().all(|byte| byte.is_ascii_digit())
+        }
+        _ => false,
+    }
+}
+
+fn is_engine_gas_fault(message: &str) -> bool {
+    matches!(
+        message,
+        "Gas limit exceeded" | "Out of gas" | "VM exceeded gas limit during execution"
+    ) || is_counted_gas_fault(message, "Gas exhausted: used ", ", limit ")
+        || is_counted_gas_fault(message, "Insufficient gas: required ", ", available ")
+}
+
+fn is_counted_gas_fault(message: &str, prefix: &str, separator: &str) -> bool {
+    let Some(rest) = message.strip_prefix(prefix) else {
+        return false;
+    };
+    let Some((left, right)) = rest.split_once(separator) else {
+        return false;
+    };
+    !left.is_empty()
+        && left.bytes().all(|byte| byte.is_ascii_digit())
+        && !right.is_empty()
+        && right.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn normalize_stored_fault_exceptions(value: &mut Value) -> bool {
+    let Some(executions) = value.get_mut("executions").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    let mut changed = false;
+    for exec in executions {
+        let Some(obj) = exec.as_object_mut() else {
+            continue;
+        };
+        let Some(message) = obj.get("exception").and_then(Value::as_str) else {
+            continue;
+        };
+        let normalized = csharp_fault_exception_message(message);
+        if normalized != message {
+            obj.insert("exception".to_string(), Value::String(normalized));
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn promote_native_persist_vmstate(value: &mut Value) -> bool {
+    let Some(executions) = value.get_mut("executions").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    let mut changed = false;
+    for exec in executions {
+        let Some(obj) = exec.as_object_mut() else {
+            continue;
+        };
+        let trigger = obj.get("trigger").and_then(Value::as_str);
+        let vmstate = obj.get("vmstate").and_then(Value::as_str);
+        if matches!(trigger, Some("OnPersist" | "PostPersist")) && vmstate == Some("BREAK") {
+            obj.insert("vmstate".to_string(), Value::String("HALT".to_string()));
+            changed = true;
+        }
+    }
+    changed
 }
 
 fn vm_state_to_string(state: VMState) -> &'static str {
@@ -454,6 +762,15 @@ mod tests {
     }
 
     #[test]
+    fn application_logs_run_during_fast_sync_import() {
+        let service = ApplicationLogsService::new(
+            settings(UnhandledExceptionPolicy::Ignore),
+            Arc::new(FailingStore),
+        );
+        assert!(CommittingHandler::run_during_fast_sync(&service));
+    }
+
+    #[test]
     fn commit_batch_propagates_snapshot_try_commit_failure() {
         let service = ApplicationLogsService::new(
             settings(UnhandledExceptionPolicy::Ignore),
@@ -497,5 +814,109 @@ mod tests {
         service.handle_error("injected failure", "committed");
 
         assert!(service.disabled.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn csharp_fault_exception_message_matches_addfee_text() {
+        assert_eq!(
+            csharp_fault_exception_message(
+                "Gas exhausted: used 30, limit 1 [ip=0 opcode=PUSH1 eval_depth=0]"
+            ),
+            "Insufficient GAS."
+        );
+        assert_eq!(
+            csharp_fault_exception_message("Gas exhausted: used 30, limit 1"),
+            "Insufficient GAS."
+        );
+        assert_eq!(
+            csharp_fault_exception_message("Insufficient gas: required 30, available 1 [ip=4]"),
+            "Insufficient GAS."
+        );
+        assert_eq!(
+            csharp_fault_exception_message("Gas limit exceeded"),
+            "Insufficient GAS."
+        );
+        assert_eq!(
+            csharp_fault_exception_message("Out of gas"),
+            "Insufficient GAS."
+        );
+        assert_eq!(
+            csharp_fault_exception_message("VM exceeded gas limit during execution"),
+            "Insufficient GAS."
+        );
+        assert_eq!(
+            csharp_fault_exception_message("Insufficient GAS."),
+            "Insufficient GAS."
+        );
+        assert_eq!(
+            csharp_fault_exception_message(
+                "Called Contract Does Not Exist: 0xabc [ip=12 opcode=SYSCALL eval_depth=1]"
+            ),
+            "Called Contract Does Not Exist: 0xabc"
+        );
+        assert_eq!(
+            csharp_fault_exception_message("user threw Gas exhausted: used 1, limit 1 extra"),
+            "user threw Gas exhausted: used 1, limit 1 extra"
+        );
+        assert_eq!(
+            csharp_fault_exception_message("keep [ip=not-a-diagnostic]"),
+            "keep [ip=not-a-diagnostic]"
+        );
+        assert_eq!(
+            csharp_fault_exception_message("ASSERT is executed with false result"),
+            "ASSERT is executed with false result."
+        );
+        assert_eq!(
+            csharp_fault_exception_message(
+                "ASSERT is executed with false result [ip=8 opcode=ASSERT eval_depth=1]"
+            ),
+            "ASSERT is executed with false result."
+        );
+        assert_eq!(
+            csharp_fault_exception_message("ASSERT is executed with false result: paused"),
+            "ASSERT is executed with false result: paused"
+        );
+        assert_eq!(
+            csharp_fault_exception_message(
+                "Interop service error: service System.Contract.Call, error: Invalid operation: Method 'pause' with 0 parameter(s) doesn't exist in the contract UInt160(0x385501cb0288b2953db767b0dc971478539456cb)."
+            ),
+            "Method \"pause\" with 0 parameter(s) doesn't exist in the contract 0x385501cb0288b2953db767b0dc971478539456cb."
+        );
+        assert_eq!(
+            csharp_fault_exception_message(
+                "Interop service error: service System.Contract.Call, error: Invalid operation: Method \"pause\" with 0 parameter(s) doesn't exist in the contract 0x385501cb0288b2953db767b0dc971478539456cb. [ip=20 opcode=SYSCALL eval_depth=2]"
+            ),
+            "Method \"pause\" with 0 parameter(s) doesn't exist in the contract 0x385501cb0288b2953db767b0dc971478539456cb."
+        );
+        assert_eq!(
+            csharp_fault_exception_message(
+                "Method \"pause\" with 0 parameter(s) doesn't exist in the contract 0x385501cb0288b2953db767b0dc971478539456cb."
+            ),
+            "Method \"pause\" with 0 parameter(s) doesn't exist in the contract 0x385501cb0288b2953db767b0dc971478539456cb."
+        );
+        assert_eq!(
+            csharp_fault_exception_message(
+                "Method 'pause' with 0 parameter(s) doesn't exist in the contract UInt160(0x385501cb0288b2953db767b0dc971478539456cb). extra"
+            ),
+            "Method 'pause' with 0 parameter(s) doesn't exist in the contract UInt160(0x385501cb0288b2953db767b0dc971478539456cb). extra"
+        );
+        assert_eq!(
+            csharp_fault_exception_message(
+                "Interop service error: service System.Contract.Call, error: Invalid operation: something else"
+            ),
+            "Interop service error: service System.Contract.Call, error: Invalid operation: something else"
+        );
+
+        let mut value = serde_json::json!({
+            "executions": [{
+                "exception": "Gas exhausted: used 30, limit 1 [ip=0 opcode=PUSH1 eval_depth=0]"
+            }]
+        });
+        assert!(normalize_stored_fault_exceptions(&mut value));
+        assert_eq!(
+            value["executions"][0]["exception"].as_str(),
+            Some("Insufficient GAS.")
+        );
+        assert!(!normalize_stored_fault_exceptions(&mut value));
     }
 }

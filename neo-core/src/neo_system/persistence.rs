@@ -213,21 +213,16 @@ impl NeoSystem {
             enable_prefetching: false,
             ..Default::default()
         };
-        let mut tx =
+        let tx =
             StoreTransaction::from_snapshot_with_config(self.store().snapshot(), base_cache_config);
         let base_snapshot = Arc::new(tx.cache().data_cache().clone());
-        let tx_store_get: StorageGetFn = {
-            let base = Arc::clone(&base_snapshot);
-            Arc::new(move |key: &StorageKey| base.get(key))
-        };
-        let tx_store_find: StorageFindFn = {
-            let base = Arc::clone(&base_snapshot);
-            Arc::new(
-                move |prefix: Option<&StorageKey>, direction: SeekDirection| {
-                    base.find(prefix, direction).collect::<Vec<_>>()
-                },
-            )
-        };
+        if ledger_block.transactions.len() >= 2 {
+            use rayon::prelude::*;
+            ledger_block
+                .transactions
+                .par_iter()
+                .try_for_each(|tx| tx.try_hash().map(|_| ()))?;
+        }
 
         let on_persist_started = if perf_enabled {
             Some(Instant::now())
@@ -261,6 +256,7 @@ impl NeoSystem {
         };
         set_storage_watch_context(ledger_block.index(), StorageWatchPhase::OnPersist, None);
         on_persist_engine.native_on_persist()?;
+        on_persist_engine.record_native_persist_success();
         if let Some(started) = on_persist_native_started {
             persist_perf_stats()
                 .on_persist_native_ns
@@ -297,155 +293,168 @@ impl NeoSystem {
                 LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new())
             });
 
-        let tx_snapshot = Arc::new(DataCache::new_with_config(
-            false,
-            Some(Arc::clone(&tx_store_get)),
-            Some(Arc::clone(&tx_store_find)),
-            tx_cache_config,
-        ));
-        for tx in &ledger_block.transactions {
-            let tx_hash = tx.try_hash()?;
-            set_storage_watch_context(
-                ledger_block.index(),
-                StorageWatchPhase::Application,
-                Some(tx_hash),
-            );
-            let tx_prepare_started = if perf_enabled {
-                Some(Instant::now())
-            } else {
-                None
+        if !ledger_block.transactions.is_empty() {
+            let tx_store_get: StorageGetFn = {
+                let base = Arc::clone(&base_snapshot);
+                Arc::new(move |key: &StorageKey| base.get(key))
             };
-            tx_snapshot.reset();
-            let container: Arc<dyn crate::Verifiable> = Arc::new(tx.clone());
-            let mut tx_engine = ApplicationEngine::new_with_preloaded_native_shared(
-                TriggerType::Application,
-                Some(container),
-                Arc::clone(&tx_snapshot),
-                Some(Arc::clone(&persisting_block)),
-                self.settings().clone(),
-                tx.system_fee(),
-                seeded_contracts.clone(),
-                Arc::clone(&seeded_native_cache),
-                None,
-            )?;
-
-            tx_engine.set_state(tx_states);
-            tx_engine.load_script(tx.script().to_vec(), CallFlags::ALL, None)?;
-            if let Some(started) = tx_prepare_started {
-                persist_perf_stats()
-                    .tx_prepare_ns
-                    .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
-            }
-
-            let tx_exec_started = if perf_enabled {
-                Some(Instant::now())
-            } else {
-                None
+            let tx_store_find: StorageFindFn = {
+                let base = Arc::clone(&base_snapshot);
+                Arc::new(
+                    move |prefix: Option<&StorageKey>, direction: SeekDirection| {
+                        base.find(prefix, direction).collect::<Vec<_>>()
+                    },
+                )
             };
-            let vm_state = tx_engine.execute_allow_fault();
-            // Diagnostic: log execution details for traced blocks (NEO_TRACE_BLOCK env var)
-            if should_trace_block(ledger_block.index()) {
-                let gas_consumed = tx_engine.gas_consumed();
-                let notif_count = tx_engine.notifications().len();
-                let exception = tx_engine.fault_exception().map(|s| s.to_string());
-                warn!(
-                    target: "neo",
-                    block_index = ledger_block.index(),
-                    %tx_hash,
-                    ?vm_state,
-                    gas_consumed,
-                    notif_count,
-                    exception = ?exception,
-                    "TRACE: tx execution result"
+            let tx_snapshot = Arc::new(DataCache::new_with_config(
+                false,
+                Some(tx_store_get),
+                Some(tx_store_find),
+                tx_cache_config,
+            ));
+            for tx in &ledger_block.transactions {
+                let tx_hash = tx.try_hash()?;
+                set_storage_watch_context(
+                    ledger_block.index(),
+                    StorageWatchPhase::Application,
+                    Some(tx_hash),
                 );
-                for (idx, notif) in tx_engine.notifications().iter().enumerate() {
-                    let state_items: Vec<String> = notif
-                        .state
-                        .iter()
-                        .map(|item| match item {
-                            StackItem::Null => "null".to_string(),
-                            StackItem::Boolean(b) => format!("bool:{}", b),
-                            StackItem::Integer(n) => format!("int:{}", n),
-                            StackItem::ByteString(b) => {
-                                format!("bytes:0x{}", hex::encode(b))
-                            }
-                            _ => format!("{:?}", item.stack_item_type()),
-                        })
-                        .collect();
+                let tx_prepare_started = if perf_enabled {
+                    Some(Instant::now())
+                } else {
+                    None
+                };
+                let container: Arc<dyn crate::Verifiable> = Arc::new(tx.clone());
+                let mut tx_engine = ApplicationEngine::new_with_preloaded_native_shared(
+                    TriggerType::Application,
+                    Some(container),
+                    Arc::clone(&tx_snapshot),
+                    Some(Arc::clone(&persisting_block)),
+                    self.settings().clone(),
+                    tx.system_fee(),
+                    seeded_contracts.clone(),
+                    Arc::clone(&seeded_native_cache),
+                    None,
+                )?;
+
+                tx_engine.set_state(tx_states);
+                tx_engine.load_script(tx.script().to_vec(), CallFlags::ALL, None)?;
+                if let Some(started) = tx_prepare_started {
+                    persist_perf_stats()
+                        .tx_prepare_ns
+                        .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+                }
+
+                let tx_exec_started = if perf_enabled {
+                    Some(Instant::now())
+                } else {
+                    None
+                };
+                let vm_state = tx_engine.execute_allow_fault();
+                // Diagnostic: log execution details for traced blocks (NEO_TRACE_BLOCK env var)
+                if should_trace_block(ledger_block.index()) {
+                    let gas_consumed = tx_engine.gas_consumed();
+                    let notif_count = tx_engine.notifications().len();
+                    let exception = tx_engine.fault_exception().map(|s| s.to_string());
                     warn!(
                         target: "neo",
                         block_index = ledger_block.index(),
                         %tx_hash,
-                        notif_idx = idx,
-                        contract = %notif.script_hash,
-                        event = %notif.event_name,
-                        state = ?state_items,
-                        "TRACE: notification"
+                        ?vm_state,
+                        gas_consumed,
+                        notif_count,
+                        exception = ?exception,
+                        "TRACE: tx execution result"
                     );
-                }
-            }
-            if let Some(started) = tx_exec_started {
-                persist_perf_stats()
-                    .tx_execute_ns
-                    .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
-            }
-            if emit_detailed_execution {
-                let executed_tx = ApplicationExecuted::new(&mut tx_engine);
-                self.actor_system()
-                    .event_stream()
-                    .publish(executed_tx.clone());
-                executed.push(executed_tx);
-            } else {
-                // Keep ledger transaction VM states accurate without building
-                // full `ApplicationExecuted` payloads during fast-sync/import.
-                let _ = tx_engine.record_transaction_vm_state(&tx_hash, vm_state);
-            }
-            tx_states = tx_engine
-                .take_state::<LedgerTransactionStates>()
-                .unwrap_or_else(|| {
-                    LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new())
-                });
-
-            let tx_merge_started = if perf_enabled {
-                Some(Instant::now())
-            } else {
-                None
-            };
-            match vm_state {
-                VMState::HALT => {
-                    let tracked = tx_snapshot.tracked_items();
-                    base_snapshot.merge_tracked_items(&tracked);
-                }
-                VMState::FAULT => {
-                    if should_trace_fault(ledger_block.index(), &tx_hash) {
+                    for (idx, notif) in tx_engine.notifications().iter().enumerate() {
+                        let state_items: Vec<String> = notif
+                            .state
+                            .iter()
+                            .map(|item| match item {
+                                StackItem::Null => "null".to_string(),
+                                StackItem::Boolean(b) => format!("bool:{}", b),
+                                StackItem::Integer(n) => format!("int:{}", n),
+                                StackItem::ByteString(b) => {
+                                    format!("bytes:0x{}", hex::encode(b))
+                                }
+                                _ => format!("{:?}", item.stack_item_type()),
+                            })
+                            .collect();
                         warn!(
                             target: "neo",
-                            %tx_hash,
                             block_index = ledger_block.index(),
-                            exception = tx_engine.fault_exception().unwrap_or("<none>"),
-                            "transaction execution faulted; skipping storage merge"
-                        );
-                    } else {
-                        debug!(
-                            target: "neo",
                             %tx_hash,
-                            block_index = ledger_block.index(),
-                            exception = ?tx_engine.fault_exception(),
-                            "transaction execution faulted; skipping storage merge"
+                            notif_idx = idx,
+                            contract = %notif.script_hash,
+                            event = %notif.event_name,
+                            state = ?state_items,
+                            "TRACE: notification"
                         );
                     }
                 }
-                other => {
-                    return Err(CoreError::system(format!(
-                        "unexpected transaction VM state {:?} for hash {}",
-                        other, tx_hash
-                    )));
+                if let Some(started) = tx_exec_started {
+                    persist_perf_stats()
+                        .tx_execute_ns
+                        .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
                 }
-            }
-            if let Some(started) = tx_merge_started {
-                persist_perf_stats()
-                    .tx_merge_ns
-                    .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+                if emit_detailed_execution {
+                    let executed_tx = ApplicationExecuted::new(&mut tx_engine);
+                    self.actor_system()
+                        .event_stream()
+                        .publish(executed_tx.clone());
+                    executed.push(executed_tx);
+                } else {
+                    // Keep ledger transaction VM states accurate without building
+                    // full `ApplicationExecuted` payloads during fast-sync/import.
+                    let _ = tx_engine.record_transaction_vm_state(&tx_hash, vm_state);
+                }
+                tx_states = tx_engine
+                    .take_state::<LedgerTransactionStates>()
+                    .unwrap_or_else(|| {
+                        LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new())
+                    });
+
+                let tx_merge_started = if perf_enabled {
+                    Some(Instant::now())
+                } else {
+                    None
+                };
+                match vm_state {
+                    VMState::HALT => {
+                        base_snapshot.merge_from_child(&tx_snapshot);
+                    }
+                    VMState::FAULT => {
+                        tx_snapshot.reset();
+                        if should_trace_fault(ledger_block.index(), &tx_hash) {
+                            warn!(
+                                target: "neo",
+                                %tx_hash,
+                                block_index = ledger_block.index(),
+                                exception = tx_engine.fault_exception().unwrap_or("<none>"),
+                                "transaction execution faulted; skipping storage merge"
+                            );
+                        } else {
+                            debug!(
+                                target: "neo",
+                                %tx_hash,
+                                block_index = ledger_block.index(),
+                                exception = ?tx_engine.fault_exception(),
+                                "transaction execution faulted; skipping storage merge"
+                            );
+                        }
+                    }
+                    other => {
+                        return Err(CoreError::system(format!(
+                            "unexpected transaction VM state {:?} for hash {}",
+                            other, tx_hash
+                        )));
+                    }
+                }
+                if let Some(started) = tx_merge_started {
+                    persist_perf_stats()
+                        .tx_merge_ns
+                        .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+                }
             }
         }
 
@@ -483,6 +492,7 @@ impl NeoSystem {
         post_persist_engine.set_state(tx_states);
         set_storage_watch_context(ledger_block.index(), StorageWatchPhase::PostPersist, None);
         post_persist_engine.native_post_persist()?;
+        post_persist_engine.record_native_persist_success();
         if let Some(started) = post_persist_native_started {
             persist_perf_stats()
                 .post_persist_native_ns
@@ -509,21 +519,6 @@ impl NeoSystem {
                 state_store.discard_staged_local_state_root();
             }
             return Err(error);
-        }
-
-        let apply_tracked_started = if perf_enabled {
-            Some(Instant::now())
-        } else {
-            None
-        };
-        crate::persistence::transaction::apply_tracked_items(
-            tx.cache_mut(),
-            base_snapshot.tracked_items(),
-        );
-        if let Some(started) = apply_tracked_started {
-            persist_perf_stats()
-                .apply_tracked_ns
-                .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
         }
 
         let commit_started = if perf_enabled {

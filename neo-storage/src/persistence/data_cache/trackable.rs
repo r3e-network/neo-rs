@@ -1,6 +1,6 @@
 use crate::persistence::read_cache::ReadCacheConfig;
 use crate::types::{StorageItem, StorageKey};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use thiserror::Error;
 
 /// Represents an entry in the cache.
@@ -9,14 +9,12 @@ pub type Trackable = crate::cache::TrackableEntry<StorageItem>;
 /// Internal state protected by RwLock for thread-safe Copy-on-Write
 pub(crate) struct InnerState {
     pub(crate) dictionary: HashMap<StorageKey, Trackable>,
-    pub(crate) change_set: HashSet<StorageKey>,
 }
 
 impl InnerState {
     pub(crate) fn new() -> Self {
         Self {
             dictionary: HashMap::new(),
-            change_set: HashSet::new(),
         }
     }
 }

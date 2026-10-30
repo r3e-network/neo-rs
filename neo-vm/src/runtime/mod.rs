@@ -171,22 +171,38 @@ impl VmContext {
 
     /// Pushes the value of argument slot `index`.
     pub fn load_arg(&mut self, index: usize) {
+        if index >= self.args.len() {
+            self.fault("invalid argument index");
+            return;
+        }
         self.push_value(self.args[index].clone());
     }
 
     /// Stores the top value into argument slot `index`.
     pub fn store_arg(&mut self, index: usize) {
+        if index >= self.args.len() {
+            self.fault("invalid argument index");
+            return;
+        }
         let value = self.pop_value();
         self.args[index] = value;
     }
 
     /// Pushes the value of local slot `index`.
     pub fn load_local(&mut self, index: usize) {
+        if index >= self.locals.len() {
+            self.fault("invalid local index");
+            return;
+        }
         self.push_value(self.locals[index].clone());
     }
 
     /// Stores the top value into local slot `index`.
     pub fn store_local(&mut self, index: usize) {
+        if index >= self.locals.len() {
+            self.fault("invalid local index");
+            return;
+        }
         let value = self.pop_value();
         self.locals[index] = value;
     }

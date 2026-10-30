@@ -1,6 +1,6 @@
 use super::*;
 use crate::Witness;
-use crate::i_event_handlers::WalletChangedHandler;
+use crate::i_event_handlers::{CommittingHandler, WalletChangedHandler};
 use crate::ledger::Block as LedgerBlock;
 use crate::ledger::{Block, block_header::BlockHeader as LedgerBlockHeader};
 use crate::neo_io::Serializable;
@@ -22,7 +22,7 @@ use crate::{UInt160, UInt256};
 use async_trait::async_trait;
 use std::any::Any;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 use tokio::time::{Duration, sleep, timeout};
 
@@ -521,5 +521,44 @@ async fn local_node_actor_tracks_peers() {
     assert!(system.remove_peer(endpoint).await.unwrap());
     assert_eq!(system.peer_count().await.unwrap(), 0);
 
+    system.shutdown().await.expect("shutdown succeeds");
+}
+
+struct GenesisIndexCapture {
+    seen: Arc<AtomicU32>,
+}
+
+impl CommittingHandler for GenesisIndexCapture {
+    fn blockchain_committing_handler(
+        &self,
+        _system: &dyn Any,
+        block: &crate::ledger::block::Block,
+        _snapshot: &crate::persistence::data_cache::DataCache,
+        _executed: &[crate::ledger::blockchain_application_executed::ApplicationExecuted],
+    ) {
+        self.seen.store(block.index(), Ordering::SeqCst);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn deferred_genesis_persist_notifies_handlers_registered_after_new() {
+    let system = NeoSystem::new_with_state_service_deferring_genesis(
+        ProtocolSettings::default(),
+        None,
+        None,
+        None,
+    )
+    .expect("system to start");
+    let seen = Arc::new(AtomicU32::new(u32::MAX));
+    system
+        .register_committing_handler(Arc::new(GenesisIndexCapture {
+            seen: Arc::clone(&seen),
+        }))
+        .expect("register handler");
+
+    system.persist_genesis_if_absent().expect("persist genesis");
+
+    assert_eq!(seen.load(Ordering::SeqCst), 0);
+    assert_eq!(system.current_block_index(), 0);
     system.shutdown().await.expect("shutdown succeeds");
 }

@@ -131,6 +131,32 @@ impl ContractManagement {
         }
     }
 
+    /// Checks if a contract has a specific method using the provided snapshot cache,
+    /// falling back to the in-memory cache.
+    pub fn has_method_from_snapshot(
+        &self,
+        snapshot: &DataCache,
+        hash: &UInt160,
+        method: &str,
+        parameter_count: i32,
+    ) -> Result<bool> {
+        if parameter_count < -1 || parameter_count > u16::MAX as i32 {
+            return Err(Error::invalid_argument(
+                "Parameter count is out of range".to_string(),
+            ));
+        }
+        let contract = match Self::get_contract_from_snapshot(snapshot, hash)? {
+            Some(c) => Some(c),
+            None => self.storage.read().contracts.get(hash).cloned(),
+        };
+        if let Some(contract) = contract {
+            let mut abi = contract.manifest.abi.clone();
+            Ok(abi.get_method(method, parameter_count).is_some())
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Gets all contract hashes
     pub fn get_contract_hashes(&self) -> Result<Vec<UInt160>> {
         let storage = self.storage.read();
@@ -225,6 +251,19 @@ impl ContractManagement {
         Ok(storage.minimum_deployment_fee)
     }
 
+    /// Gets the minimum deployment fee from the provided snapshot cache,
+    /// falling back to the in-memory setting.
+    pub fn get_minimum_deployment_fee_from_snapshot(&self, snapshot: &DataCache) -> Result<i64> {
+        let key = StorageKey::new(Self::ID, Self::minimum_deployment_fee_key());
+        if let Some(item) = snapshot.get(&key) {
+            let value = item.value_bytes();
+            if let Some(fee) = Self::decode_storage_i64(&value) {
+                return Ok(fee);
+            }
+        }
+        self.get_minimum_deployment_fee()
+    }
+
     /// Sets the minimum deployment fee (committee only)
     pub fn set_minimum_deployment_fee(
         &self,
@@ -245,15 +284,12 @@ impl ContractManagement {
         }
 
         // Update storage
-        let (min_fee_bytes, next_id_bytes) = {
+        let min_fee_bytes = {
             let mut storage = self.storage.write();
 
             storage.minimum_deployment_fee = value;
 
-            (
-                Self::encode_storage_i64(storage.minimum_deployment_fee),
-                Self::encode_storage_i32(storage.next_id),
-            )
+            Self::encode_storage_i64(storage.minimum_deployment_fee)
         };
 
         let context = engine.get_native_storage_context(&self.hash)?;
@@ -262,7 +298,6 @@ impl ContractManagement {
             &Self::minimum_deployment_fee_key(),
             &min_fee_bytes,
         )?;
-        engine.put_storage_item(&context, &Self::next_id_key(), &next_id_bytes)?;
 
         Ok(())
     }

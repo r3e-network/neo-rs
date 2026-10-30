@@ -139,6 +139,14 @@ impl ConsensusService {
                 return Ok(());
             }
 
+            const CANDIDATE_REASONS: [ChangeViewReason; 5] = [
+                ChangeViewReason::Timeout,
+                ChangeViewReason::ChangeAgreement,
+                ChangeViewReason::TxNotFound,
+                ChangeViewReason::BlockRejectedByPolicy,
+                ChangeViewReason::BlockInvalid,
+            ];
+
             for cv in &recovery.change_view_messages {
                 if cv.validator_index as usize >= self.context.validator_count() {
                     continue;
@@ -147,23 +155,35 @@ impl ConsensusService {
                 else {
                     continue;
                 };
-                let msg = ChangeViewMessage::new(
-                    payload.block_index,
-                    cv.original_view_number,
-                    cv.validator_index,
-                    cv.timestamp,
-                    ChangeViewReason::Timeout,
-                );
-                let recovered = ConsensusPayload {
-                    network: self.network,
-                    block_index: payload.block_index,
-                    validator_index: cv.validator_index,
-                    view_number: cv.original_view_number,
-                    message_type: ConsensusMessageType::ChangeView,
-                    data: msg.serialize(),
-                    witness: signature.to_vec(),
-                };
-                self.reprocess_recovery_payload(recovered);
+                let witness = signature.to_vec();
+                let mut matched_payload = None;
+                for reason in CANDIDATE_REASONS {
+                    let msg = ChangeViewMessage::new(
+                        payload.block_index,
+                        cv.original_view_number,
+                        cv.validator_index,
+                        cv.timestamp,
+                        reason,
+                    );
+                    let candidate = ConsensusPayload {
+                        network: self.network,
+                        block_index: payload.block_index,
+                        validator_index: cv.validator_index,
+                        view_number: cv.original_view_number,
+                        message_type: ConsensusMessageType::ChangeView,
+                        data: msg.serialize(),
+                        witness: witness.clone(),
+                    };
+                    if let Ok(sign_data) = self.dbft_sign_data(&candidate)
+                        && self.verify_signature(&sign_data, &candidate.witness, cv.validator_index)
+                    {
+                        matched_payload = Some(candidate);
+                        break;
+                    }
+                }
+                if let Some(recovered) = matched_payload {
+                    self.reprocess_recovery_payload(recovered);
+                }
             }
 
             // R20: the change views above may have advanced us to

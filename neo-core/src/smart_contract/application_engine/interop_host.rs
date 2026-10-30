@@ -25,6 +25,7 @@ impl InteropHost for ApplicationEngine {
         engine: &mut ExecutionEngine,
         context: &ExecutionContext,
     ) -> VmResult<()> {
+        self.invalidate_fee_whitelist();
         let state_arc =
             context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
         let call_flags = state_arc.lock().call_flags;
@@ -39,6 +40,7 @@ impl InteropHost for ApplicationEngine {
         engine: &mut ExecutionEngine,
         context: &ExecutionContext,
     ) -> VmResult<()> {
+        self.invalidate_fee_whitelist();
         // DEADLOCK FIX: When CALL creates a callee context via clone_with_position,
         // caller and callee share the same `states: Arc<RwLock<HashMap>>`. Looking up
         // the same TypeId (ExecutionContextState) returns the same Arc<Mutex<T>>.

@@ -1,10 +1,10 @@
 #![cfg(feature = "rocksdb")]
 
 // Probe which mainnet state-root heights are present in `data/mainnet/StateRoot`.
-// Companion to the mainnet_block_*_repro tests — those tests silently no-op if
-// their predecessor height is missing, which is easy to confuse with "PASS".
+// Companion to the mainnet_block_*_repro tests — those tests fail when their
+// predecessor height is missing in the local StateRoot DB.
 // This test reports presence/absence so the harness operator can tell which
-// reproducers will exercise their assertions.
+// reproducers have local StateRoot data available.
 
 use neo_core::persistence::StorageConfig;
 use neo_core::persistence::{providers::RocksDBStoreProvider, store_provider::StoreProvider};

@@ -183,12 +183,32 @@ impl ConsensusSigner for WalletConsensusSigner {
     }
 
     fn sign(&self, data: &[u8], script_hash: &UInt160) -> neo_consensus::ConsensusResult<Vec<u8>> {
-        // Use block_in_place to avoid blocking the async runtime.
-        // SAFETY: This is safe because block_in_place moves the task to a blocking thread pool.
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(self.wallet.sign(data, script_hash))
-        })
-        .map_err(|err| {
+        let sign_res = if let Ok(handle) = tokio::runtime::Handle::try_current()
+            && handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
+        {
+            tokio::task::block_in_place(|| handle.block_on(self.wallet.sign(data, script_hash)))
+        } else {
+            std::thread::scope(|s| {
+                s.spawn(|| {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|err| {
+                            neo_consensus::ConsensusError::state_error(format!(
+                                "Failed to build signing runtime: {err}"
+                            ))
+                        })?;
+                    Ok(rt.block_on(self.wallet.sign(data, script_hash)))
+                })
+                .join()
+                .unwrap_or_else(|_| {
+                    Err(neo_consensus::ConsensusError::state_error(
+                        "Wallet signing thread panicked".to_string(),
+                    ))
+                })
+            })?
+        };
+        sign_res.map_err(|err| {
             neo_consensus::ConsensusError::state_error(format!("Wallet signing failed: {err}"))
         })
     }
@@ -410,23 +430,30 @@ impl ConsensusActor {
                 } else {
                     warn!(target: "neo", "recovery log does not match current height; ignoring");
                 }
-            } else if self.recovery_path.exists() {
-                match ConsensusContext::load(
-                    &self.recovery_path,
-                    validator_infos.clone(),
-                    Some(my_index),
-                ) {
-                    Ok(context) if context.block_index == block_index => {
-                        use_recovery = Some(context);
-                    }
-                    Ok(_) => {
-                        warn!(
-                            target: "neo",
-                            "recovery log does not match current height; ignoring"
-                        );
-                    }
-                    Err(err) => {
-                        warn!(target: "neo", %err, "failed to load consensus recovery log");
+            } else {
+                let fallback_path = if self.recovery_path.is_dir() {
+                    self.recovery_path.join("consensus.context")
+                } else {
+                    self.recovery_path.clone()
+                };
+                if fallback_path.is_file() {
+                    match ConsensusContext::load(
+                        &fallback_path,
+                        validator_infos.clone(),
+                        Some(my_index),
+                    ) {
+                        Ok(context) if context.block_index == block_index => {
+                            use_recovery = Some(context);
+                        }
+                        Ok(_) => {
+                            warn!(
+                                target: "neo",
+                                "recovery log does not match current height; ignoring"
+                            );
+                        }
+                        Err(err) => {
+                            warn!(target: "neo", %err, "failed to load consensus recovery log");
+                        }
                     }
                 }
             }
@@ -576,10 +603,15 @@ impl ConsensusActor {
             // it must not skip the Commit durability gate.
             let mut saved = self.save_recovery_to_store(service);
             if !saved {
-                if let Some(parent) = self.recovery_path.parent() {
+                let fallback_path = if self.recovery_path.is_dir() {
+                    self.recovery_path.join("consensus.context")
+                } else {
+                    self.recovery_path.clone()
+                };
+                if let Some(parent) = fallback_path.parent() {
                     let _ = tokio::fs::create_dir_all(parent).await;
                 }
-                if let Err(err) = service.save_context(&self.recovery_path) {
+                if let Err(err) = service.save_context(&fallback_path) {
                     warn!(target: "neo", %err, "failed to persist consensus recovery log");
                 } else {
                     saved = true;
@@ -834,6 +866,21 @@ impl ConsensusActor {
                     let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
                     return;
                 }
+                if tx.system_fee() > self.settings.max_block_system_fee {
+                    warn!(
+                        target: "neo",
+                        tx_hash = %hash,
+                        "transaction system fee exceeds max_block_system_fee"
+                    );
+                    service.record_rejected_transaction(*hash);
+                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
+                    return;
+                }
+                if conflicts_with_context(tx, &transactions) {
+                    service.record_rejected_transaction(*hash);
+                    let _ = service.request_change_view(ChangeViewReason::TxInvalid, now);
+                    return;
+                }
                 transactions.insert(*hash, tx.clone());
                 verification_context.add_transaction(tx);
                 continue;
@@ -913,7 +960,9 @@ impl ConsensusActor {
             return;
         }
 
-        let total_system_fee = transactions.values().map(|tx| tx.system_fee()).sum::<i64>();
+        let total_system_fee = transactions
+            .values()
+            .fold(0i64, |acc, tx| acc.saturating_add(tx.system_fee()));
         if total_system_fee > self.settings.max_block_system_fee {
             let _ = service.request_change_view(ChangeViewReason::BlockRejectedByPolicy, now);
             return;
@@ -1035,6 +1084,23 @@ impl ConsensusActor {
 
     fn on_relay_result(&mut self, result: RelayResult) {
         if result.result != VerifyResult::Succeed {
+            return;
+        }
+
+        if result.inventory_type == InventoryType::Transaction {
+            let waiting_on_tx = self
+                .missing_transactions
+                .as_ref()
+                .is_some_and(|missing| missing.contains(&result.hash))
+                || self
+                    .pending_block
+                    .as_ref()
+                    .is_some_and(|block| block.transaction_hashes.contains(&result.hash));
+            if waiting_on_tx {
+                let now = Self::current_time_ms();
+                self.try_prepare_response(now);
+                self.try_finalize_pending_block(now);
+            }
             return;
         }
 

@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
+use std::sync::Arc;
 
 use neo_primitives::{StorageValue, StorageValueResult};
 use serde::{Deserialize, Serialize};
@@ -25,8 +26,13 @@ pub trait CacheProvider: Send + Sync + fmt::Debug {
 /// a typed cache (BigInteger / Interoperable) and a constant flag.
 #[derive(Serialize, Deserialize)]
 pub struct StorageItem {
-    /// The stored value bytes.
-    value: Vec<u8>,
+    /// The stored value bytes. Shared so cache hits clone the item without
+    /// copying the buffer. Mutations replace the `Arc`.
+    #[serde(
+        serialize_with = "serialize_shared_bytes",
+        deserialize_with = "deserialize_shared_bytes"
+    )]
+    value: Arc<Vec<u8>>,
     /// Whether this item is constant (cannot be modified).
     is_constant: bool,
     /// Optional typed cache for lazy materialisation.
@@ -34,12 +40,26 @@ pub struct StorageItem {
     cache: Option<Box<dyn CacheProvider>>,
 }
 
+fn serialize_shared_bytes<S>(value: &Arc<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    value.as_ref().serialize(serializer)
+}
+
+fn deserialize_shared_bytes<'de, D>(deserializer: D) -> Result<Arc<Vec<u8>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::<u8>::deserialize(deserializer).map(Arc::new)
+}
+
 impl StorageItem {
     /// Creates a new empty storage item.
     #[must_use]
     pub fn new() -> Self {
         Self {
-            value: Vec::new(),
+            value: Arc::new(Vec::new()),
             is_constant: false,
             cache: None,
         }
@@ -49,7 +69,7 @@ impl StorageItem {
     #[must_use]
     pub fn from_bytes(value: Vec<u8>) -> Self {
         Self {
-            value,
+            value: Arc::new(value),
             is_constant: false,
             cache: None,
         }
@@ -59,7 +79,7 @@ impl StorageItem {
     #[must_use]
     pub fn constant(value: Vec<u8>) -> Self {
         Self {
-            value,
+            value: Arc::new(value),
             is_constant: true,
             cache: None,
         }
@@ -70,7 +90,7 @@ impl StorageItem {
     #[must_use]
     pub fn to_value(&self) -> Vec<u8> {
         if !self.value.is_empty() || self.cache.is_none() {
-            return self.value.clone();
+            return self.value.as_ref().clone();
         }
         self.cache.as_ref().unwrap().to_bytes()
     }
@@ -79,7 +99,7 @@ impl StorageItem {
     /// cache is populated).
     #[must_use]
     pub fn value(&self) -> &[u8] {
-        &self.value
+        self.value.as_slice()
     }
 
     /// Returns the value bytes, borrowing when possible and falling back to
@@ -94,7 +114,7 @@ impl StorageItem {
 
     /// Sets the stored value and clears the cache.
     pub fn set_value(&mut self, value: Vec<u8>) {
-        self.value = value;
+        self.value = Arc::new(value);
         self.cache = None;
     }
 
@@ -137,20 +157,22 @@ impl StorageItem {
     /// This is used by higher-level crates (e.g. neo-core) when setting a
     /// cache-backed value that should materialise lazily.
     pub fn clear_value(&mut self) {
-        self.value.clear();
+        if !self.value.is_empty() {
+            self.value = Arc::new(Vec::new());
+        }
     }
 
     /// Materialises the cache into the value bytes (no-op when bytes are
     /// already populated or no cache is present).
     pub fn seal(&mut self) {
         if self.value.is_empty() {
-            self.value = self.to_value();
+            self.value = Arc::new(self.to_value());
         }
     }
 
     /// Copies value, cache, and constant flag from another instance.
     pub fn from_replica(&mut self, replica: &StorageItem) {
-        self.value = replica.value.clone();
+        self.value = Arc::clone(&replica.value);
         self.is_constant = replica.is_constant;
         self.cache = replica.cache.as_ref().map(|c| c.clone_box());
     }
@@ -162,7 +184,7 @@ impl StorageItem {
 
     /// Convenience helper to populate the value from raw bytes.
     pub fn deserialize_from_bytes(&mut self, data: &[u8]) {
-        self.value = data.to_vec();
+        self.value = Arc::new(data.to_vec());
         self.cache = None;
     }
 }
@@ -173,7 +195,7 @@ impl StorageItem {
 impl Clone for StorageItem {
     fn clone(&self) -> Self {
         Self {
-            value: self.value.clone(),
+            value: Arc::clone(&self.value),
             is_constant: self.is_constant,
             cache: self.cache.as_ref().map(|c| c.clone_box()),
         }
@@ -253,7 +275,7 @@ impl StorageValue for StorageItem {
             return Ok(Self::default());
         }
         let is_constant = data[0] != 0;
-        let value = data[1..].to_vec();
+        let value = Arc::new(data[1..].to_vec());
         Ok(Self {
             value,
             is_constant,
@@ -294,6 +316,19 @@ mod tests {
         let mut item = StorageItem::from_bytes(vec![0x01]);
         item.set_value(vec![0x02, 0x03]);
         assert_eq!(item.value(), &[0x02, 0x03]);
+    }
+
+    #[test]
+    fn clone_shares_bytes_until_the_value_is_replaced() {
+        let mut item = StorageItem::from_bytes(vec![0x01, 0x02, 0x03]);
+        let cloned = item.clone();
+        assert_eq!(cloned.value(), item.value());
+        item.set_value(vec![0x09]);
+        assert_eq!(item.value(), &[0x09]);
+        assert_eq!(cloned.value(), &[0x01, 0x02, 0x03]);
+        item.clear_value();
+        assert!(item.value().is_empty());
+        assert_eq!(cloned.value(), &[0x01, 0x02, 0x03]);
     }
 
     #[test]

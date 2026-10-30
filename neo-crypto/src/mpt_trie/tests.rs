@@ -120,6 +120,28 @@ mod mpt_tests {
     }
 
     #[test]
+    fn stored_bytes_reuse_the_hash_body_and_follow_reference_changes() {
+        let mut leaf = prepare_mpt_node2();
+        leaf.try_hash().unwrap();
+        leaf.reference = 4;
+        let expected = leaf.to_array().unwrap();
+        assert_eq!(leaf.stored_bytes().unwrap(), expected);
+        assert_eq!(leaf.stored_bytes().unwrap(), expected);
+
+        leaf.set_dirty();
+        leaf.value = vec![0x99];
+        let rewritten = leaf.to_array().unwrap();
+        assert_ne!(rewritten, expected);
+        assert_eq!(leaf.stored_bytes().unwrap(), rewritten);
+
+        let mut branch = prepare_mpt_node3();
+        branch.try_hash().unwrap();
+        branch.reference = 70_000;
+        let expected = branch.to_array().unwrap();
+        assert_eq!(branch.stored_bytes().unwrap(), expected);
+    }
+
+    #[test]
     fn test_leaf_serialize_as_child() {
         let node = prepare_mpt_node2();
         let buffer = serialize_child(&node);

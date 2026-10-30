@@ -125,7 +125,7 @@ impl PolicyContract {
 pub struct PolicyContract {
     id: i32,
     hash: UInt160,
-    methods: Vec<NativeMethod>,
+    methods: &'static [NativeMethod],
 }
 
 impl PolicyContract {
@@ -186,13 +186,12 @@ impl PolicyContract {
     /// Creates a new Policy contract.
     pub fn new() -> Self {
         // Policy contract hash: 0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b
-        let hash = UInt160::parse("0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b")
-            .expect("PolicyContract hash should be valid");
+        let hash = crate::smart_contract::native::static_contract_hash!("0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b");
 
         Self {
             id: Self::ID,
             hash,
-            methods: Self::native_methods(),
+            methods: crate::smart_contract::native::static_native_methods!(PolicyContract::native_methods()),
         }
     }
 }

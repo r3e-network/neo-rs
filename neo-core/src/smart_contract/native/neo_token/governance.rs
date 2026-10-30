@@ -22,12 +22,14 @@ impl NeoToken {
             ));
         }
         let account = self.read_account(&args[0])?;
-        let end = if args[1].len() >= 4 {
-            u32::from_le_bytes([args[1][0], args[1][1], args[1][2], args[1][3]])
+        let end = if args[1].is_empty() {
+            0
         } else {
-            return Err(CoreError::native_contract(
-                "Invalid end block argument".to_string(),
-            ));
+            BigInt::from_signed_bytes_le(&args[1])
+                .to_u32()
+                .ok_or_else(|| {
+                    CoreError::native_contract("Invalid end block argument".to_string())
+                })?
         };
         let snapshot = engine.snapshot_cache();
         let expect_end = engine

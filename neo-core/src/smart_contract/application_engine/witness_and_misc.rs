@@ -511,22 +511,10 @@ impl ApplicationEngine {
             {
                 self.contracts.insert(hash, Arc::new(state));
             }
-            if let Err(error) = contract.initialize(self) {
-                // C# parity: ApplicationEngine.Log fires only for the
-                // System.Runtime.Log syscall (RuntimeService.Log). Native
-                // contract initialization failures surface as exceptions
-                // during genesis persisting in C#, never as LogEventArgs.
-                // Emitting an engine log here polluted `logs()` for every
-                // height-0 engine carrying a script container (RPC invoke
-                // against a fresh chain included), so keep the diagnostic on
-                // the tracing channel instead.
-                tracing::warn!(
-                    target: "neo::engine",
-                    contract = contract.name(),
-                    error = %error,
-                    "Native contract initialization failed"
-                );
-            }
+            // Initialization runs from ContractManagement.OnPersist so genesis
+            // notifications stay in C# order: initialize, then Deploy, per
+            // native contract. Doing it here emits the NEO and GAS mints
+            // before any Deploy.
         }
     }
     pub(super) fn refresh_policy_settings(&mut self) {

@@ -644,6 +644,7 @@ pub(crate) async fn maybe_enable_hsm_wallet(
     cli: &NodeCli,
     node_config: &NodeConfig,
     rpc_server: &Option<Arc<ParkingRwLock<RpcServer>>>,
+    wallet_provider: Option<&Arc<NodeWalletProvider>>,
     system: &Arc<NeoSystem>,
 ) -> Result<bool> {
     #[cfg(feature = "hsm")]
@@ -652,10 +653,13 @@ pub(crate) async fn maybe_enable_hsm_wallet(
             return Ok(false);
         }
 
-        let Some(server) = rpc_server else {
-            warn!(target: "neo", "HSM requested but RPC is disabled; skipping HSM wallet");
+        if rpc_server.is_none() && wallet_provider.is_none() {
+            warn!(
+                target: "neo",
+                "HSM requested but neither RPC nor wallet provider is active; skipping HSM wallet"
+            );
             return Ok(false);
-        };
+        }
 
         if resolve_wallet_config(cli, node_config)?.is_some() {
             warn!(
@@ -675,13 +679,21 @@ pub(crate) async fn maybe_enable_hsm_wallet(
         )
         .await
         .context("failed to build HSM wallet")?;
-        server.write().set_wallet(Some(Arc::new(wallet)));
-        return Ok(true);
+        let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
+        if let Some(provider) = wallet_provider {
+            provider.set_wallet(Some(wallet_arc.clone()));
+        }
+        if !cli.rpc_hardened
+            && let Some(server) = rpc_server
+        {
+            server.write().set_wallet(Some(wallet_arc));
+        }
+        Ok(true)
     }
 
     #[cfg(not(feature = "hsm"))]
     {
-        let _ = (cli, node_config, rpc_server, system);
+        let _ = (cli, node_config, rpc_server, wallet_provider, system);
         Ok(false)
     }
 }
@@ -730,7 +742,9 @@ pub(crate) fn maybe_enable_tee_wallet(
     if let Some(provider) = wallet_provider {
         provider.set_wallet(Some(wallet_arc.clone()));
     }
-    if let Some(server) = rpc_server {
+    if !cli.rpc_hardened
+        && let Some(server) = rpc_server
+    {
         server.write().set_wallet(Some(wallet_arc));
     }
 
@@ -754,16 +768,16 @@ fn resolve_tee_wallet_path(cli: &NodeCli, node_config: &NodeConfig) -> PathBuf {
         return path;
     }
 
-    if node_config.unlock_wallet.is_active {
-        if let Some(path) = node_config.unlock_wallet.path.as_ref() {
-            if node_config.unlock_wallet.password.is_some() {
-                warn!(
-                    target: "neo::tee",
-                    "unlock_wallet.password is ignored for TEE wallets"
-                );
-            }
-            return PathBuf::from(path);
+    if node_config.unlock_wallet.is_active
+        && let Some(path) = node_config.unlock_wallet.path.as_ref()
+    {
+        if node_config.unlock_wallet.password.is_some() {
+            warn!(
+                target: "neo::tee",
+                "unlock_wallet.password is ignored for TEE wallets"
+            );
         }
+        return PathBuf::from(path);
     }
 
     cli.tee_data_path.join("wallet")
@@ -833,11 +847,13 @@ pub(crate) fn maybe_open_wallet(
     if let Some(provider) = wallet_provider {
         provider.set_wallet(Some(wallet_arc.clone()));
     }
-    if let Some(server) = rpc_server {
+    if !cli.rpc_hardened
+        && let Some(server) = rpc_server
+    {
         server.write().set_wallet(Some(wallet_arc.clone()));
     }
 
-    if rpc_server.is_some() {
+    if !cli.rpc_hardened && rpc_server.is_some() {
         info!(
             target: "neo",
             path = %wallet_path.display(),

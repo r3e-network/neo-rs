@@ -62,7 +62,7 @@ struct PendingRequest {
 pub struct OracleContract {
     id: i32,
     hash: UInt160,
-    methods: Vec<NativeMethod>,
+    methods: &'static [NativeMethod],
     /// Oracle configuration.
     config: OracleConfig,
 }
@@ -73,13 +73,12 @@ impl OracleContract {
     /// Creates a new Oracle contract.
     pub fn new() -> Self {
         // Oracle contract hash: 0xfe924b7cfe89ddd271abaf7210a80a7e11178758
-        let hash = UInt160::parse("0xfe924b7cfe89ddd271abaf7210a80a7e11178758")
-            .expect("Valid OracleContract hash");
+        let hash = crate::smart_contract::native::static_contract_hash!("0xfe924b7cfe89ddd271abaf7210a80a7e11178758");
 
         Self {
             id: Self::ID,
             hash,
-            methods: Self::native_methods(),
+            methods: crate::smart_contract::native::static_native_methods!(OracleContract::native_methods()),
             config: OracleConfig::default(),
         }
     }

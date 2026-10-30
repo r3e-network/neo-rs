@@ -10,7 +10,12 @@ impl StateStore {
     /// Gets a proof for a storage key at a given root.
     pub fn get_proof(&self, root: UInt256, key: &StorageKey) -> Option<Vec<Vec<u8>>> {
         let snapshot = StateStoreSnapshot::new(Arc::clone(&self.store));
-        let mut trie = Trie::new(Arc::new(snapshot), Some(root), self.settings.full_state);
+        let mut trie = Trie::new_with_node_cache(
+            Arc::new(snapshot),
+            Some(root),
+            self.settings.full_state,
+            Some(Arc::clone(&self.node_cache)),
+        );
         let key_bytes = key.as_bytes();
         trie.try_get_proof(&key_bytes)
             .ok()
@@ -21,7 +26,12 @@ impl StateStore {
     /// Builds a trie anchored at the supplied root hash for querying state.
     pub fn trie_for_root(&self, root: UInt256) -> Trie<StateStoreSnapshot> {
         let snapshot = StateStoreSnapshot::new(Arc::clone(&self.store));
-        Trie::new(Arc::new(snapshot), Some(root), self.settings.full_state)
+        Trie::new_with_node_cache(
+            Arc::new(snapshot),
+            Some(root),
+            self.settings.full_state,
+            Some(Arc::clone(&self.node_cache)),
+        )
     }
 
     /// Verifies a proof.
