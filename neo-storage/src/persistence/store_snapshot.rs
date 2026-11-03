@@ -28,4 +28,14 @@ pub trait StoreSnapshot:
     /// are properly handled and not silently ignored, which could lead to data loss or
     /// blockchain state inconsistency.
     fn try_commit(&mut self) -> SnapshotCommitResult;
+
+    /// Commits with synchronous durability and WAL enabled.
+    ///
+    /// Backends must override this method explicitly; falling back to a normal
+    /// commit would make consensus persistence configuration unsafe.
+    fn try_commit_durable(&mut self) -> SnapshotCommitResult {
+        Err(StorageError::InvalidOperation {
+            message: "snapshot backend does not support durable commits".to_string(),
+        })
+    }
 }

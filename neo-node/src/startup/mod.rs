@@ -7,6 +7,7 @@
 pub(crate) mod cli;
 mod config;
 mod logging;
+mod reference_roots;
 mod run;
 pub(crate) mod services;
 mod signal;

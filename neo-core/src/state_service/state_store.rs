@@ -96,6 +96,9 @@ struct ReferenceRootLine {
 /// Maximum number of state roots to cache before persistence.
 pub const MAX_CACHE_COUNT: usize = 100;
 
+/// Fetches a trusted reference root for a block height when no static entry exists.
+pub type ReferenceRootFetcher = dyn Fn(u32) -> Result<UInt256, String> + Send + Sync + 'static;
+
 /// A validator-signed state root that disagreed with the locally computed root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StateRootDivergence {
@@ -147,6 +150,9 @@ pub struct StateStore {
     reference_roots: HashMap<u32, UInt256>,
     reference_min_height: Option<u32>,
     reference_max_height: Option<u32>,
+    /// Optional live reference used after the static JSONL range ends.
+    reference_root_fetcher: RwLock<Option<Arc<ReferenceRootFetcher>>>,
+    reference_roots_required: bool,
     /// Divergence observed in this process, kept even if persisting it failed.
     divergence: RwLock<Option<StateRootDivergence>>,
 }
@@ -183,6 +189,8 @@ impl StateStore {
             reference_roots: HashMap::new(),
             reference_min_height: None,
             reference_max_height: None,
+            reference_root_fetcher: RwLock::new(None),
+            reference_roots_required: false,
             divergence: RwLock::new(initial_divergence),
         }
     }
@@ -298,6 +306,45 @@ impl StateStore {
     /// Returns the inclusive range `[min_height, max_height]` of loaded reference roots.
     pub fn reference_range(&self) -> (Option<u32>, Option<u32>) {
         (self.reference_min_height, self.reference_max_height)
+    }
+
+    /// Requires every executed height to have either a static or live reference root.
+    pub fn set_reference_roots_required(&mut self, required: bool) {
+        self.reference_roots_required = required;
+    }
+
+    /// Installs a live reference source for heights not present in the static JSONL file.
+    pub fn set_reference_root_fetcher(&self, fetcher: Arc<ReferenceRootFetcher>) {
+        *self.reference_root_fetcher.write() = Some(fetcher);
+    }
+
+    fn reference_root_for(&self, height: u32) -> Result<Option<UInt256>, String> {
+        if let Some(root) = self.reference_roots.get(&height) {
+            return Ok(Some(*root));
+        }
+
+        let fetcher = self.reference_root_fetcher.read().clone();
+        if let Some(fetcher) = fetcher {
+            return fetcher(height).map(Some).map_err(|error| {
+                format!("failed to fetch reference state root at height {height}: {error}")
+            });
+        }
+
+        if let (Some(min_h), Some(max_h)) = (self.reference_min_height, self.reference_max_height)
+            && height >= min_h
+            && height <= max_h
+        {
+            return Err(format!(
+                "missing reference state root at height {height} within active reference range [{min_h}, {max_h}]"
+            ));
+        }
+
+        if self.reference_roots_required {
+            return Err(format!(
+                "required reference state root unavailable at height {height}; configure a complete static file or NEO_REFERENCE_ROOTS_RPC"
+            ));
+        }
+        Ok(None)
     }
 
     /// Returns whether the state store keeps full historical state.
@@ -828,9 +875,9 @@ impl StateStore {
             );
         }
 
-        // Validate against reference roots (fail-closed)
-        if let Some(expected) = self.reference_roots.get(&height) {
-            if root_hash == *expected {
+        // Validate against static or live reference roots (fail-closed).
+        if let Some(expected) = self.reference_root_for(height)? {
+            if root_hash == expected {
                 if height.is_multiple_of(5000) {
                     tracing::info!(
                         target: "neo::state_service",
@@ -847,11 +894,7 @@ impl StateStore {
         } else if let (Some(min_h), Some(max_h)) =
             (self.reference_min_height, self.reference_max_height)
         {
-            if height >= min_h && height <= max_h {
-                return Err(format!(
-                    "missing reference state root at height {height} within active reference range [{min_h}, {max_h}]"
-                ));
-            } else if height.is_multiple_of(5000) {
+            if height.is_multiple_of(5000) {
                 tracing::info!(
                     target: "neo::state_service",
                     height,

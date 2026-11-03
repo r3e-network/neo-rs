@@ -6,6 +6,7 @@ use super::config::{
     check_storage_network, select_store_provider, validate_node_config,
 };
 use super::logging::{spawn_metrics_pump, start_health_endpoint_if_enabled};
+use super::reference_roots::configure_live_reference_roots;
 use super::services::{
     apply_mempool_policy, build_channels_config, maybe_enable_application_logs,
     maybe_enable_dbft_consensus, maybe_enable_hsm_wallet, maybe_enable_oracle_service,
@@ -14,14 +15,21 @@ use super::services::{
 };
 #[cfg(feature = "tee")]
 use super::services::{maybe_enable_tee_runtime, maybe_enable_tee_wallet};
-use super::signal::wait_for_shutdown_signal;
+use super::signal::{parse_live_stop_height, wait_for_live_stop_height, wait_for_shutdown_signal};
 use super::tasks::{BackgroundTasks, DEFAULT_BACKGROUND_TASK_SHUTDOWN};
+use crate::ai_agent::AiAgentRuntime;
 use crate::cli::NodeCli;
-use crate::config::NodeConfig;
+use crate::config::{NodeConfig, SignerProviderKind};
 use crate::rpc_consensus::RpcServerConsensus;
+use crate::signing_provider::{
+    ActiveSignerBackend, NODE_SIGNING_TENANT, ORACLE_SIGNING_PRINCIPAL, RPC_SIGNING_PRINCIPAL,
+    STATE_SIGNING_PRINCIPAL, initialize_signer_service,
+};
 use anyhow::{Context, Result, bail};
 use neo_core::neo_system::NeoSystem;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::signing::SecurityLevel;
+use neo_rpc::server::RpcSignerRuntime;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 #[cfg(feature = "tee")]
@@ -30,6 +38,9 @@ use tracing::info;
 use tracing::warn;
 
 pub(crate) async fn run(cli: NodeCli) -> Result<()> {
+    let live_stop_height =
+        parse_live_stop_height(std::env::var("NEO_LIVE_STOP_HEIGHT").ok().as_deref())
+            .map_err(anyhow::Error::msg)?;
     let mut node_config = NodeConfig::load(&cli.config)?;
     apply_cli_overrides(&cli, &mut node_config);
 
@@ -139,11 +150,21 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     )
     .map_err(|e| anyhow::anyhow!(e.to_string()))
     .context("failed to initialise NeoSystem")?;
+    configure_live_reference_roots(&system)
+        .context("failed to configure live state-root validation")?;
 
     validate_contract_management_integrity(&system)
         .context("contract management storage integrity check failed")?;
 
     apply_mempool_policy(&node_config, &system);
+    let diagnostics_config = node_config.diagnostics.clone().unwrap_or_default();
+    let ai_agent_runtime = Arc::new(
+        AiAgentRuntime::new(&diagnostics_config, system.clone())
+            .context("failed to initialize AI diagnostics runtime")?,
+    );
+    ai_agent_runtime
+        .configure_mempool(&diagnostics_config)
+        .context("failed to configure diagnostics quarantine")?;
 
     #[cfg(feature = "tee")]
     let tee_runtime = maybe_enable_tee_runtime(&cli, &node_config, &protocol_settings, &system)
@@ -276,22 +297,13 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         || dbft_settings
             .as_ref()
             .map(|settings| settings.auto_start)
-            .unwrap_or(false);
+            .unwrap_or(false)
+        || node_config
+            .signer_service
+            .as_ref()
+            .is_some_and(|settings| settings.enabled);
     let wallet_provider = setup_wallet_provider(&rpc_server, &system, needs_wallet_provider)
         .context("failed to initialise wallet provider")?;
-    maybe_enable_state_service_verification(
-        &system,
-        &state_service_settings,
-        wallet_provider.as_ref(),
-    )
-    .context("failed to initialise state service verification")?;
-    maybe_enable_dbft_consensus(
-        &dbft_settings,
-        &protocol_settings,
-        &system,
-        wallet_provider.as_ref(),
-    )
-    .context("failed to initialise dBFT consensus")?;
     if let Some(server) = rpc_server.as_ref()
         && dbft_settings
             .as_ref()
@@ -326,15 +338,107 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     #[cfg(not(feature = "tee"))]
     let tee_wallet_enabled = false;
 
-    if !hsm_wallet_enabled && !tee_wallet_enabled {
+    let nep6_wallet_enabled = if !hsm_wallet_enabled && !tee_wallet_enabled {
         maybe_open_wallet(
             &cli,
             &node_config,
             &rpc_server,
             wallet_provider.as_ref(),
             &system,
-        )?;
+        )?
+    } else {
+        false
+    };
+
+    let mut active_signer_backend = None;
+    #[cfg(feature = "hsm")]
+    if hsm_wallet_enabled {
+        let security_level = if cli.hsm_device.eq_ignore_ascii_case("simulation")
+            || cli.hsm_device.eq_ignore_ascii_case("sim")
+        {
+            SecurityLevel::Software
+        } else {
+            SecurityLevel::Hsm
+        };
+        active_signer_backend = Some(ActiveSignerBackend {
+            kind: SignerProviderKind::Hsm,
+            security_level,
+        });
     }
+    if tee_wallet_enabled {
+        active_signer_backend = Some(ActiveSignerBackend {
+            kind: SignerProviderKind::HostSealedTee,
+            security_level: SecurityLevel::HostSealed,
+        });
+    } else if nep6_wallet_enabled {
+        active_signer_backend = Some(ActiveSignerBackend {
+            kind: SignerProviderKind::Nep6,
+            security_level: SecurityLevel::Software,
+        });
+    }
+
+    let signer_runtime = initialize_signer_service(
+        node_config.signer_service.as_ref(),
+        protocol_settings.network,
+        wallet_provider.as_ref(),
+        active_signer_backend,
+    )
+    .context("failed to initialize unified signer service")?;
+    if let Some(server) = rpc_server.as_ref() {
+        server
+            .write()
+            .set_signer_runtime(signer_runtime.as_ref().map(|runtime| RpcSignerRuntime {
+                service: runtime.service(),
+                default_provider: runtime.default_provider().to_string(),
+                policy_version: runtime.policy_version().to_string(),
+                request_timeout: runtime.request_timeout(),
+                key_resolver: runtime.key_resolver(),
+                principal: RPC_SIGNING_PRINCIPAL.to_string(),
+                tenant: NODE_SIGNING_TENANT.to_string(),
+            }))
+            .map_err(anyhow::Error::msg)
+            .context("failed to install authenticated RPC signer runtime")?;
+    }
+    let state_signer = signer_runtime
+        .as_ref()
+        .map(|runtime| {
+            runtime.trusted_client(
+                STATE_SIGNING_PRINCIPAL,
+                "node-local-state-service",
+                "sign:state-root",
+            )
+        })
+        .transpose()
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    maybe_enable_state_service_verification(
+        &system,
+        &state_service_settings,
+        wallet_provider.as_ref(),
+        state_signer,
+    )
+    .context("failed to initialise state service verification")?;
+    if let Some(oracle) = oracle_service.as_ref() {
+        let runtime = signer_runtime
+            .as_ref()
+            .context("OracleService requires the unified signer service")?;
+        let client = runtime
+            .trusted_client(
+                ORACLE_SIGNING_PRINCIPAL,
+                "node-local-oracle-service",
+                "sign:oracle-response",
+            )
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        oracle.set_signer_client(client);
+    }
+    maybe_enable_dbft_consensus(
+        &dbft_settings,
+        &protocol_settings,
+        &system,
+        wallet_provider.as_ref(),
+        signer_runtime,
+        Arc::clone(&ai_agent_runtime),
+    )
+    .context("failed to initialise dBFT consensus")?;
 
     let health_state = Arc::new(RwLock::new(crate::health::HealthState::default()));
     let background_tasks = BackgroundTasks::new();
@@ -348,7 +452,14 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
 
     info!(target: "neo", "node running, press Ctrl+C to stop");
 
-    wait_for_shutdown_signal().await;
+    if let Some(stop_height) = live_stop_height {
+        tokio::select! {
+            _ = wait_for_shutdown_signal() => {}
+            _ = wait_for_live_stop_height(system.clone(), stop_height) => {}
+        }
+    } else {
+        wait_for_shutdown_signal().await;
+    }
 
     if !background_tasks
         .shutdown(DEFAULT_BACKGROUND_TASK_SHUTDOWN)
@@ -372,12 +483,18 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     }
 
     let store = system.store();
-    info!(target: "neo", "flushing storage before shutdown");
+    let state_store = system.state_store().ok().flatten();
+    let shutdown_result =
+        tokio::time::timeout(std::time::Duration::from_secs(60), system.shutdown()).await;
+
+    // Flush only after actors have stopped (or the shutdown attempt has ended),
+    // so no block can be persisted between the final flush and process exit.
+    info!(target: "neo", "flushing storage after actor shutdown");
     store.flush();
     // The state service uses a store separate from the chain store; flush it too
     // so computed state roots survive the restart when the WAL is disabled by the
     // high-throughput batch profile.
-    if let Ok(Some(state_store)) = system.state_store() {
+    if let Some(state_store) = state_store {
         state_store.flush();
     }
     if let Some(logs) = _application_logs_service.as_ref() {
@@ -388,12 +505,14 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     }
     info!(target: "neo", "storage flush complete");
 
-    match tokio::time::timeout(std::time::Duration::from_secs(30), system.shutdown()).await {
+    match shutdown_result {
         Ok(Ok(_)) => info!(target: "neo", "system shutdown complete"),
         Ok(Err(e)) => {
             return Err(anyhow::anyhow!(e.to_string())).context("failed to shut down NeoSystem");
         }
-        Err(_) => warn!(target: "neo", "system shutdown timed out after 30s, forcing exit"),
+        Err(_) => {
+            return Err(anyhow::anyhow!("system shutdown timed out after 60s"));
+        }
     }
 
     info!(target: "neo", "shutdown complete");

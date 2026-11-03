@@ -25,6 +25,11 @@ pub trait Store: ReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + An
     /// Flushes pending writes to durable storage when supported.
     fn flush(&self) {}
 
+    /// Returns whether snapshots can force WAL-backed synchronous durability.
+    fn supports_durable_writes(&self) -> bool {
+        false
+    }
+
     /// Downcast support for concrete implementations.
     fn as_any(&self) -> &dyn Any;
 }

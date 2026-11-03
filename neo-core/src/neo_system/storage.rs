@@ -19,10 +19,12 @@ pub(crate) fn init_store(
 ) -> crate::error::CoreResult<(Arc<dyn Store>, StoreCache, Arc<StateStore>)> {
     let store = store_provider.get_store(storage_path.as_deref().unwrap_or(""))?;
     let store_cache_for_hydration = StoreCache::new_from_store(store.clone(), true);
+    let chain_network = settings.network;
 
     let state_store = if let Some(state_settings) = state_service_settings {
         // Use a dedicated store for state roots / MPT nodes (mirrors C# StateService plugin).
         // Witness verification must still consult the *blockchain* store for RoleManagement lookups.
+        let state_settings_network = state_settings.network;
         let state_db = store_provider.get_store(&state_settings.path)?;
         let backend = Arc::new(SnapshotBackedStateStoreBackend::new(state_db));
         let verifier = StateRootVerifier::from_store(store.clone(), settings);
@@ -30,20 +32,40 @@ pub(crate) fn init_store(
         // Load reference state roots for validation when available or required.
         let default_ref_path = "data/reference_stateroots.jsonl";
         let ref_path_override = std::env::var("NEO_REFERENCE_ROOTS_PATH").ok();
+        let require_reference_roots =
+            std::env::var("NEO_REQUIRE_REFERENCE_ROOTS").as_deref() == Ok("1");
+        ss.set_reference_roots_required(require_reference_roots);
+
+        // Reference state roots are network-specific. The ambient default file
+        // may only be adopted when the state service is configured for this
+        // chain's network — mirroring the startup config's network-consistency
+        // gate — so a programmatically built system (unit tests, tools) pairing
+        // fallback protocol settings with unrelated StateServiceSettings cannot
+        // silently import MainNet goldens found in the working directory. An
+        // explicit NEO_REFERENCE_ROOTS_PATH is operator intent and is honored
+        // regardless of the network mismatch.
+        let ambient_eligible =
+            ref_path_override.is_some() || state_settings_network == chain_network;
         let target_ref_path = ref_path_override.as_deref().unwrap_or(default_ref_path);
 
-        if std::path::Path::new(target_ref_path).exists() {
+        if ambient_eligible && std::path::Path::new(target_ref_path).exists() {
             ss.load_reference_roots(target_ref_path).map_err(|e| {
                 crate::error::CoreError::system(format!(
                     "failed to load reference roots from '{target_ref_path}': {e}"
                 ))
             })?;
-        } else if std::env::var("NEO_REQUIRE_REFERENCE_ROOTS").as_deref() == Ok("1")
-            || ref_path_override.is_some()
+        } else if ref_path_override.is_some()
+            || (require_reference_roots && std::env::var_os("NEO_REFERENCE_ROOTS_RPC").is_none())
         {
-            return Err(crate::error::CoreError::system(format!(
-                "reference roots file required but not found: '{target_ref_path}'"
-            )));
+            let reason = if ambient_eligible {
+                format!("reference roots file required but not found: '{target_ref_path}'")
+            } else {
+                format!(
+                    "reference roots required but the state service network {state_settings_network:#010x} \
+                     does not match the chain network {chain_network:#010x}; set NEO_REFERENCE_ROOTS_PATH or NEO_REFERENCE_ROOTS_RPC"
+                )
+            };
+            return Err(crate::error::CoreError::system(reason));
         }
         let ss = Arc::new(ss);
         // Populate the trie with current blockchain storage if the trie is empty.

@@ -323,6 +323,10 @@ impl Store for RocksDbStore {
         self.flush_memtables();
     }
 
+    fn supports_durable_writes(&self) -> bool {
+        true
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -511,6 +515,58 @@ impl RocksDbSnapshot {
         }
         Some(entries)
     }
+
+    fn commit_pending(
+        &mut self,
+        force_durable: bool,
+    ) -> crate::persistence::store_snapshot::SnapshotCommitResult {
+        use crate::persistence::storage::StorageError;
+
+        if !self.has_pending_changes.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        if self.pending_changes.get_mut().is_empty() {
+            self.has_pending_changes.store(false, Ordering::Release);
+            return Ok(());
+        }
+
+        let mut write_opts = WriteOptions::default();
+        if force_durable {
+            write_opts.set_sync(true);
+        } else {
+            let batch_config = self.store.batch_config.read();
+            write_opts.set_sync(batch_config.sync_on_flush);
+            if batch_config.disable_wal {
+                write_opts.disable_wal(true);
+            }
+        }
+
+        if let Some(ref cache) = self.read_cache {
+            for key in self.pending_changes.get_mut().keys() {
+                cache.remove(&StorageKey::from_bytes(key));
+            }
+        }
+
+        let mut batch = WriteBatch::default();
+        for (key, value) in self.pending_changes.get_mut().iter() {
+            match value {
+                Some(val) => batch.put(key, val),
+                None => batch.delete(key),
+            }
+        }
+
+        if let Err(err) = self.db.write_opt(batch, &write_opts) {
+            error!(target: "neo", error = %err, durable = force_durable, "rocksdb snapshot commit failed");
+            return Err(StorageError::CommitFailed(format!(
+                "RocksDB write failed: {}",
+                err
+            )));
+        }
+
+        self.pending_changes.get_mut().clear();
+        self.has_pending_changes.store(false, Ordering::Release);
+        Ok(())
+    }
 }
 
 impl Drop for RocksDbSnapshot {
@@ -685,57 +741,11 @@ impl StoreSnapshot for RocksDbSnapshot {
     }
 
     fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
-        use crate::persistence::storage::StorageError;
+        self.commit_pending(false)
+    }
 
-        if !self.has_pending_changes.load(Ordering::Acquire) {
-            return Ok(());
-        }
-        if self.pending_changes.get_mut().is_empty() {
-            self.has_pending_changes.store(false, Ordering::Release);
-            return Ok(());
-        }
-
-        let mut write_opts = WriteOptions::default();
-        let batch_config = self.store.batch_config.read();
-        write_opts.set_sync(batch_config.sync_on_flush);
-        if batch_config.disable_wal {
-            write_opts.disable_wal(true);
-        }
-        drop(batch_config);
-
-        // M-1 / R10: Evict stale cache entries BEFORE writing to the DB.
-        // If we evicted after the write, a concurrent reader could re-populate
-        // the cache with the *old* value in the window between the DB write and
-        // our eviction, leaving a stale entry. Evicting first closes that
-        // window: any reader that misses the cache after this point will fetch
-        // the freshly written value. If the DB write below fails, the eviction
-        // is harmless — readers will simply miss the cache and re-fetch the
-        // unchanged value from RocksDB.
-        if let Some(ref cache) = self.read_cache {
-            for key in self.pending_changes.get_mut().keys() {
-                cache.remove(&StorageKey::from_bytes(key));
-            }
-        }
-
-        let mut batch = WriteBatch::default();
-        for (key, value) in self.pending_changes.get_mut().iter() {
-            match value {
-                Some(val) => batch.put(key, val),
-                None => batch.delete(key),
-            }
-        }
-
-        if let Err(err) = self.db.write_opt(batch, &write_opts) {
-            error!(target: "neo", error = %err, "rocksdb snapshot commit failed");
-            return Err(StorageError::CommitFailed(format!(
-                "RocksDB write failed: {}",
-                err
-            )));
-        }
-
-        self.pending_changes.get_mut().clear();
-        self.has_pending_changes.store(false, Ordering::Release);
-        Ok(())
+    fn try_commit_durable(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {
+        self.commit_pending(true)
     }
 }
 

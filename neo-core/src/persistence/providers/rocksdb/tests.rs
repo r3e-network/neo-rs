@@ -32,6 +32,41 @@ fn opens_store_and_creates_directory() {
 }
 
 #[test]
+fn durable_snapshot_commit_survives_reopen_with_high_throughput_profile() {
+    let tmp = TempDir::new().expect("tempdir");
+    let db_path = tmp.path().join("rocksdb-durable-consensus");
+    let key = vec![0xF4];
+    let value = vec![0xA5; 128];
+
+    {
+        let provider = RocksDBStoreProvider::new(StorageConfig {
+            path: db_path.clone(),
+            ..Default::default()
+        })
+        .with_batch_config(WriteBatchConfig::high_throughput());
+        let store = provider.get_store("").expect("rocksdb store");
+        assert!(store.supports_durable_writes());
+
+        let mut snapshot = store.snapshot();
+        let snapshot = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
+        snapshot
+            .put_sync(key.clone(), value.clone())
+            .expect("stage state");
+        snapshot.try_commit_durable().expect("durable commit");
+        assert_eq!(store.snapshot().try_get(&key), Some(value.clone()));
+    }
+
+    let reopened = RocksDBStoreProvider::new(StorageConfig {
+        path: db_path,
+        ..Default::default()
+    })
+    .with_batch_config(WriteBatchConfig::high_throughput())
+    .get_store("")
+    .expect("reopen rocksdb store");
+    assert_eq!(reopened.snapshot().try_get(&key), Some(value));
+}
+
+#[test]
 fn returns_error_when_path_is_file() {
     let tmp = TempDir::new().expect("tempdir");
     let file_path = tmp.path().join("not-a-dir");
