@@ -1,4 +1,5 @@
 pub mod data_cache;
+pub mod detached_snapshot;
 pub mod index;
 pub mod providers;
 pub mod read_cache;
@@ -14,6 +15,10 @@ pub mod transaction;
 pub mod write_store;
 
 pub use data_cache::{DataCache, Trackable};
+pub use detached_snapshot::{
+    DetachedSnapshot, DetachedSnapshotEntry, DetachedSnapshotError, DetachedSnapshotLimits,
+    DisposableOverlay,
+};
 pub use read_cache::{
     PrefetchHint, ReadCache, ReadCacheConfig, ReadCacheStats, ReadCacheStatsSnapshot,
     StorageReadCache,

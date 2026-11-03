@@ -7,12 +7,55 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
+use super::context::{
+    TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
+    TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION, TransactionExecutionExceptionCategory,
+    TransactionExecutionObservation, TransactionExecutionStage,
+};
 use super::converters::convert_payload_block;
 
 // Type aliases for complex closure types
 type StorageGetFn = Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync>;
 type StorageFindFn =
     Arc<dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync>;
+
+/// Hard ceiling for diagnostic metadata retained until the canonical commit succeeds.
+///
+/// The configured evidence queue may be much larger, but persistence must never
+/// allocate in proportion to the number of FAULT transactions in a block.
+const MAX_PENDING_FAULT_OBSERVATIONS_PER_BLOCK: usize = 64;
+
+struct PendingFaultObservation {
+    transaction_hash: UInt256,
+    exception_category: TransactionExecutionExceptionCategory,
+    gas_consumed: i64,
+}
+
+struct FaultObservationBuffer {
+    observations: Vec<PendingFaultObservation>,
+    limit: usize,
+    dropped: usize,
+}
+
+impl FaultObservationBuffer {
+    fn for_available_capacity(available_capacity: usize) -> Self {
+        let limit = available_capacity.min(MAX_PENDING_FAULT_OBSERVATIONS_PER_BLOCK);
+        Self {
+            observations: Vec::with_capacity(limit),
+            limit,
+            dropped: 0,
+        }
+    }
+
+    fn push(&mut self, observation: PendingFaultObservation) {
+        if self.observations.len() < self.limit {
+            self.observations.push(observation);
+        } else {
+            self.dropped = self.dropped.saturating_add(1);
+        }
+    }
+}
+
 use super::NeoSystem;
 use crate::UInt256;
 use crate::error::{CoreError, CoreResult};
@@ -53,7 +96,9 @@ struct PersistPerfStats {
     post_persist_engine_ns: AtomicU64,
     post_persist_native_ns: AtomicU64,
     apply_tracked_ns: AtomicU64,
+    committing_ns: AtomicU64,
     commit_ns: AtomicU64,
+    committed_ns: AtomicU64,
 }
 
 fn persist_perf_stats() -> &'static PersistPerfStats {
@@ -150,6 +195,15 @@ fn saturating_ns(duration: std::time::Duration) -> u64 {
     nanos.min(u128::from(u64::MAX)) as u64
 }
 
+fn observation_time_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
+}
+
 struct StorageWatchContextGuard;
 
 impl Drop for StorageWatchContextGuard {
@@ -194,6 +248,11 @@ impl NeoSystem {
         };
 
         let ledger_block = convert_payload_block(&block);
+        let block_hash = ledger_block.hash();
+        let mut fault_observations = FaultObservationBuffer::for_available_capacity(
+            self.context()
+                .transaction_execution_sink_available_capacity(),
+        );
         let _watch_context_guard = StorageWatchContextGuard;
         let tx_count = ledger_block.transactions.len() as u64;
         let persisting_block = Arc::new(ledger_block.clone());
@@ -425,6 +484,16 @@ impl NeoSystem {
                     }
                     VMState::FAULT => {
                         tx_snapshot.reset();
+                        let exception_category = if tx_engine.fault_exception().is_some() {
+                            TransactionExecutionExceptionCategory::CaughtVmException
+                        } else {
+                            TransactionExecutionExceptionCategory::VmFault
+                        };
+                        fault_observations.push(PendingFaultObservation {
+                            transaction_hash: tx_hash,
+                            exception_category,
+                            gas_consumed: tx_engine.fee_consumed(),
+                        });
                         if should_trace_fault(ledger_block.index(), &tx_hash) {
                             warn!(
                                 target: "neo",
@@ -513,12 +582,22 @@ impl NeoSystem {
 
         // State root handlers must always run to keep the state trie up to date.
         // Other expensive handlers (application logs, etc.) are skipped during fast sync.
+        let committing_started = if perf_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
         if let Err(error) = self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed)
         {
             if let Ok(Some(state_store)) = self.state_store() {
                 state_store.discard_staged_local_state_root();
             }
             return Err(error);
+        }
+        if let Some(started) = committing_started {
+            persist_perf_stats()
+                .committing_ns
+                .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
         }
 
         let commit_started = if perf_enabled {
@@ -560,7 +639,42 @@ impl NeoSystem {
         }
 
         // State root committed handler must always run.
+        let committed_started = if perf_enabled {
+            Some(Instant::now())
+        } else {
+            None
+        };
         self.invoke_committed(&ledger_block);
+        if let Some(started) = committed_started {
+            persist_perf_stats()
+                .committed_ns
+                .fetch_add(saturating_ns(started.elapsed()), Ordering::Relaxed);
+        }
+
+        // Observations are exported only after a successful canonical commit. The
+        // wall clock and observer outcome are diagnostic-only and never feed back
+        // into execution, persistence, validity, or replay decisions.
+        let mut dropped_fault_observations = fault_observations.dropped;
+        for observation in fault_observations.observations {
+            let emitted = self.context().try_emit_transaction_execution_observation(
+                TransactionExecutionObservation {
+                    transaction_hash: observation.transaction_hash,
+                    block_height: ledger_block.index(),
+                    block_hash,
+                    execution_stage: TransactionExecutionStage::Application,
+                    vm_state: VMState::FAULT,
+                    exception_category: observation.exception_category,
+                    gas_consumed: observation.gas_consumed,
+                    schema_version: TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION,
+                    rule_version: TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
+                    observed_at_unix_ms: observation_time_unix_ms(),
+                },
+            );
+            dropped_fault_observations =
+                dropped_fault_observations.saturating_add(usize::from(!emitted));
+        }
+        self.context()
+            .record_dropped_transaction_execution_observations(dropped_fault_observations);
 
         // Skip expensive plugin events during fast sync
         if emit_detailed_execution {
@@ -616,8 +730,12 @@ impl NeoSystem {
                     / 1_000_000.0;
                 let apply_tracked_ms =
                     stats.apply_tracked_ns.load(Ordering::Relaxed) as f64 / blocks_f / 1_000_000.0;
+                let committing_ms =
+                    stats.committing_ns.load(Ordering::Relaxed) as f64 / blocks_f / 1_000_000.0;
                 let commit_ms =
                     stats.commit_ns.load(Ordering::Relaxed) as f64 / blocks_f / 1_000_000.0;
+                let committed_ms =
+                    stats.committed_ns.load(Ordering::Relaxed) as f64 / blocks_f / 1_000_000.0;
 
                 info!(
                     target: "neo",
@@ -634,7 +752,9 @@ impl NeoSystem {
                     avg_post_persist_engine_ms = post_persist_engine_ms,
                     avg_post_persist_native_ms = post_persist_native_ms,
                     avg_apply_tracked_ms = apply_tracked_ms,
+                    avg_committing_ms = committing_ms,
                     avg_commit_ms = commit_ms,
+                    avg_committed_ms = committed_ms,
                     "persist pipeline profile"
                 );
             }

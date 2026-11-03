@@ -98,6 +98,7 @@ async fn recovery_request_responds_when_commit_sent() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    service.context.proposed_block_hash = Some(UInt256::from([0x42; 32]));
     service
         .context
         .add_commit(0, 0, vec![0u8; 64])
@@ -126,7 +127,12 @@ async fn recovery_request_responds_when_commit_sent() {
         }
     }
 
-    assert!(recovery_sent.is_some());
+    let recovery_payload = recovery_sent.expect("recovery response");
+    let permit = recovery_payload
+        .commit_persistence
+        .expect("RecoveryMessage carrying the local Commit must carry a persistence permit");
+    assert!(permit.validate().is_ok());
+    assert!(permit.covers_commit(0, 0, 0, &[0u8; 64]));
 }
 
 #[tokio::test]

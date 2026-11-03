@@ -173,6 +173,7 @@ impl ConsensusService {
                         message_type: ConsensusMessageType::ChangeView,
                         data: msg.serialize(),
                         witness: witness.clone(),
+                        commit_persistence: None,
                     };
                     if let Ok(sign_data) = self.dbft_sign_data(&candidate)
                         && self.verify_signature(&sign_data, &candidate.witness, cv.validator_index)
@@ -220,6 +221,7 @@ impl ConsensusService {
                                 message_type: ConsensusMessageType::PrepareRequest,
                                 data: prep_req.serialize(),
                                 witness: signature.to_vec(),
+                                commit_persistence: None,
                             };
                             self.reprocess_recovery_payload(recovered);
                         }
@@ -261,6 +263,7 @@ impl ConsensusService {
                         message_type: ConsensusMessageType::PrepareResponse,
                         data: msg.serialize(),
                         witness: signature.to_vec(),
+                        commit_persistence: None,
                     };
                     self.reprocess_recovery_payload(recovered);
                 }
@@ -290,6 +293,7 @@ impl ConsensusService {
                     message_type: ConsensusMessageType::Commit,
                     data: msg.serialize(),
                     witness: signature.to_vec(),
+                    commit_persistence: None,
                 };
                 self.reprocess_recovery_payload(recovered);
             }

@@ -42,7 +42,11 @@ pub(crate) mod storage;
 pub mod system;
 
 // Re-export everything from core for backward compatibility
-pub use context::NeoSystemContext;
+pub use context::{
+    NeoSystemContext, TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
+    TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION, TransactionExecutionExceptionCategory,
+    TransactionExecutionObservation, TransactionExecutionSink, TransactionExecutionStage,
+};
 pub use core::*;
 
 // Re-export from extracted modules (these override legacy exports)

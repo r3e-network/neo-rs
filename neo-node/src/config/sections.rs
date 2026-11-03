@@ -3,7 +3,9 @@
 //! This module contains all config struct definitions used by the Neo N3 node.
 
 use neo_core::UnhandledExceptionPolicy;
+use neo_core::signing::{SecurityLevel, SignPurpose};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
 /// High-level node configuration derived from the Neo CLI TOML files.
@@ -30,6 +32,10 @@ pub struct NodeConfig {
     pub telemetry: Option<TelemetrySection>,
     /// Mempool configuration section
     pub mempool: Option<MempoolSection>,
+    /// Unified signing service configuration.
+    pub signer_service: Option<SignerServiceSection>,
+    /// Capability-limited node diagnostics configuration.
+    pub diagnostics: Option<DiagnosticsSection>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -368,6 +374,166 @@ pub struct ConsensusSection {
     pub auto_start: Option<bool>,
 }
 
+/// Unified signing service configuration.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SignerServiceSection {
+    /// Enables policy-bound signer registration and production entry points.
+    pub enabled: bool,
+    /// Append-only journal path used for idempotency, quota, and audit state.
+    pub state_path: String,
+    /// Stable policy version bound to every request.
+    pub policy_version: String,
+    /// Maximum provider round-trip time for one request.
+    pub request_timeout_ms: u64,
+    /// Maximum fee units accepted by the node signing policy.
+    pub max_fee_units: u64,
+    /// Maximum signatures in one quota window.
+    pub quota_limit_units: u64,
+    /// Quota window duration in milliseconds.
+    pub quota_window_ms: i64,
+    /// Providers available to this node.
+    pub providers: Vec<SignerProviderSection>,
+    /// Purposes the default provider must explicitly support.
+    pub required_purposes: Vec<SignPurpose>,
+    /// Canonical encodings the default provider must explicitly support.
+    pub required_canonical_encodings: Vec<String>,
+    /// Signature algorithms the default provider must explicitly support.
+    pub required_algorithms: Vec<String>,
+    /// Exact boundary required of the default provider.
+    pub required_security_level: Option<SecurityLevel>,
+}
+
+impl Default for SignerServiceSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            state_path: String::new(),
+            policy_version: "node-signing-v1".to_string(),
+            request_timeout_ms: 5_000,
+            max_fee_units: 0,
+            quota_limit_units: 0,
+            quota_window_ms: 60_000,
+            providers: Vec::new(),
+            required_purposes: Vec::new(),
+            required_canonical_encodings: Vec::new(),
+            required_algorithms: Vec::new(),
+            required_security_level: None,
+        }
+    }
+}
+
+/// Configured signer provider implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignerProviderKind {
+    /// Local NEP-6 software wallet.
+    Nep6,
+    /// Local HSM wallet adapter.
+    Hsm,
+    /// Existing host-sealed TEE wallet adapter.
+    HostSealedTee,
+    /// Locally attested hardware TEE.
+    HardwareTee,
+    /// Dedicated mTLS remote signer without a hardware-attestation claim.
+    Remote,
+    /// Remotely attested hardware TEE signer requiring a production verifier.
+    RemoteTee,
+}
+
+impl Default for SignerProviderKind {
+    fn default() -> Self {
+        Self::Nep6
+    }
+}
+
+/// One explicitly capability-scoped signer provider.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct SignerProviderSection {
+    /// Stable provider identifier used by `KeyRef`.
+    pub id: String,
+    /// Provider implementation type.
+    #[serde(rename = "type")]
+    pub kind: SignerProviderKind,
+    /// Whether this provider is available for registration.
+    pub enabled: bool,
+    /// Whether this is the sole default provider.
+    pub default: bool,
+    /// Accurately declared key protection boundary.
+    pub security_level: Option<SecurityLevel>,
+    /// Explicitly supported purposes.
+    pub purposes: Vec<SignPurpose>,
+    /// Explicitly supported canonical encodings.
+    pub canonical_encodings: Vec<String>,
+    /// Explicitly supported signature algorithms.
+    pub algorithms: Vec<String>,
+    /// Unified immutable account/purpose key mappings for this provider.
+    pub keys: Vec<SignerKeySection>,
+    /// Remote HTTPS endpoint used only by the dedicated signer client.
+    pub endpoint: Option<String>,
+    /// Dedicated mTLS and optional hardware-attestation configuration.
+    pub remote: Option<RemoteSignerSection>,
+}
+
+/// Dedicated remote signer transport configuration.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct RemoteSignerSection {
+    /// DNS name required in the server certificate and endpoint URL.
+    pub server_name: String,
+    /// PEM trust anchor file; platform roots are deliberately disabled.
+    pub ca_certificate_path: String,
+    /// PEM client certificate chain.
+    pub client_certificate_path: String,
+    /// PEM client private key.
+    pub client_private_key_path: String,
+    /// Application identity expected from every remote response.
+    pub service_identity: String,
+    /// Explicit service-identity to local-provider mapping.
+    pub identity_mapping: BTreeMap<String, String>,
+    /// Hardware evidence policy, required only for `remote_tee`.
+    pub attestation: Option<RemoteAttestationPolicySection>,
+}
+
+/// One immutable configured signer key mapping shared by every provider kind.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct SignerKeySection {
+    /// Provider-specific immutable key identifier.
+    pub key_id: String,
+    /// Positive immutable key version.
+    pub version: u64,
+    /// Expected compressed P-256 public key encoded as hex.
+    pub public_key_hex: String,
+    /// Canonical Neo account/script-hash selector bound to this key.
+    pub account: String,
+    /// Explicit purposes for which this account/key mapping is valid.
+    pub purposes: Vec<SignPurpose>,
+}
+
+/// Strict hardware-attestation policy for a remote TEE.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct RemoteAttestationPolicySection {
+    /// Explicit verifier implementation name; there is no permissive default.
+    pub verifier: String,
+    /// Exact accepted enclave/code measurement encoded as hex.
+    pub measurement_hex: String,
+    /// Optional exact accepted signer measurement encoded as hex.
+    pub signer_measurement_hex: Option<String>,
+    /// Exact accepted hardware product identifier.
+    pub product_id: u16,
+    /// Minimum accepted hardware security version.
+    pub minimum_security_version: u16,
+    /// Maximum challenge round-trip age.
+    pub max_challenge_age_ms: u64,
+    /// Maximum accepted positive or negative evidence clock skew.
+    pub max_clock_skew_ms: u64,
+    /// Maximum attested session lifetime.
+    pub max_session_age_ms: u64,
+}
+
 /// Telemetry configuration section
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -386,6 +552,85 @@ pub struct TelemetryMetricsSection {
     pub port: Option<u16>,
     /// Metrics bind address
     pub bind_address: Option<String>,
+}
+
+/// Capability-limited node diagnostics and bounded auto-action settings.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DiagnosticsSection {
+    /// Enables the diagnostic side-channel and worker.
+    pub enabled: bool,
+    /// Emergency switch that disables all operational actions.
+    pub kill_switch: bool,
+    /// Evaluates and audits actions without executing them.
+    pub observe_only: bool,
+    /// Enables structured action and worker audit events.
+    pub audit_enabled: bool,
+    /// Durable hash-chained JSONL audit path. Required when diagnostics are enabled.
+    pub audit_path: String,
+    /// Bounded evidence queue capacity.
+    pub evidence_queue_capacity: usize,
+    /// Base node evidence sampling interval.
+    pub sampling_interval_ms: u64,
+    /// Maximum age considered fresh by health reporting.
+    pub event_freshness_ms: u64,
+    /// Maximum independent mempool quarantine records.
+    pub quarantine_max_entries: usize,
+    /// Maximum quarantine lifetime, capped at 30 seconds.
+    pub quarantine_ttl_ms: u64,
+    /// Explicitly enables bounded local transaction quarantine.
+    pub allow_transaction_quarantine: bool,
+    /// Maximum mempool entries scanned for one local proposal.
+    pub proposal_scan_budget: usize,
+    /// Deterministic quarantine rule version.
+    pub rule_version: String,
+    /// Enables otherwise disabled consensus restart policy evaluation.
+    pub allow_consensus_restart: bool,
+    /// Enables the restricted probe interface. It remains fail-closed without containment.
+    pub restricted_probe_enabled: bool,
+    /// Absolute path to the fixed `neo-probe` worker executable.
+    pub restricted_probe_worker_path: String,
+    /// Maximum number of queued probe requests.
+    pub restricted_probe_queue_capacity: usize,
+    /// Number of probe workers. Only one is permitted.
+    pub restricted_probe_concurrency: usize,
+    /// Maximum duration of one replay.
+    pub restricted_probe_run_timeout_ms: u64,
+    /// Maximum duration of the complete deterministic replay suite.
+    pub restricted_probe_suite_timeout_ms: u64,
+    /// Exact worker process memory ceiling.
+    pub restricted_probe_memory_limit_bytes: u64,
+    /// Maximum request or response frame size.
+    pub restricted_probe_frame_limit_bytes: usize,
+}
+
+impl Default for DiagnosticsSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            kill_switch: false,
+            observe_only: true,
+            audit_enabled: true,
+            audit_path: "data/diagnostics-audit.jsonl".to_string(),
+            evidence_queue_capacity: 1_024,
+            sampling_interval_ms: 1_000,
+            event_freshness_ms: 5_000,
+            quarantine_max_entries: 1_024,
+            quarantine_ttl_ms: 30_000,
+            allow_transaction_quarantine: false,
+            proposal_scan_budget: 2_048,
+            rule_version: "node-diagnostics-v1".to_string(),
+            allow_consensus_restart: false,
+            restricted_probe_enabled: false,
+            restricted_probe_worker_path: "neo-probe".to_string(),
+            restricted_probe_queue_capacity: 16,
+            restricted_probe_concurrency: 1,
+            restricted_probe_run_timeout_ms: 3_000,
+            restricted_probe_suite_timeout_ms: 7_000,
+            restricted_probe_memory_limit_bytes: 256 * 1024 * 1024,
+            restricted_probe_frame_limit_bytes: 512 * 1024,
+        }
+    }
 }
 
 /// Mempool configuration section

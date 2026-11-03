@@ -7,6 +7,9 @@
 //! - Consensus timeout handling
 //! - Concurrent access stress tests
 
+mod common;
+
+use common::TestConsensusSigner;
 use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};
@@ -41,6 +44,7 @@ async fn test_consensus_timeout_triggers_view_change() {
     let validators = create_test_validators(7);
 
     let mut service = ConsensusService::new(0x4E454F, validators, Some(1), vec![15u8; 32], tx);
+    service.set_signer(Some(Arc::new(TestConsensusSigner::new([15u8; 32]))));
 
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
@@ -69,6 +73,7 @@ async fn test_multiple_timeouts_increment_view() {
     let validators = create_test_validators(7);
 
     let mut service = ConsensusService::new(0x4E454F, validators, Some(1), vec![15u8; 32], tx);
+    service.set_signer(Some(Arc::new(TestConsensusSigner::new([15u8; 32]))));
 
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 

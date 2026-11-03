@@ -1,3 +1,4 @@
+use crate::context::CommitPersistencePermit;
 use crate::messages::ConsensusPayload;
 use neo_primitives::UInt256;
 
@@ -20,6 +21,8 @@ pub struct BlockData {
     pub validator_pubkeys: Vec<neo_crypto::ECPoint>,
     /// Required signature count (M in M-of-N multi-sig)
     pub required_signatures: usize,
+    /// Durable authorization required if the block contains our local Commit.
+    pub commit_persistence: Option<CommitPersistencePermit>,
 }
 
 /// Events emitted by the consensus service

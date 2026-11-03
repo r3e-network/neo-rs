@@ -40,6 +40,8 @@ neo-crypto = { path = "../neo-crypto" }
 neo-vm = { workspace = true }
 neo-rpc = { path = "../neo-rpc", features = ["server"] }
 neo-telemetry = { workspace = true }
+neo-ai-agent = { path = "../neo-ai-agent" }
+neo-probe = { workspace = true }
 
 # TEMPORARILY DISABLED: neo-plugins being refactored
 # neo-plugins = { path = "../neo-plugins" }
@@ -61,12 +63,15 @@ zeroize = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+sha2.workspace = true
+reqwest = { workspace = true, features = ["rustls-tls"] }
 toml.workspace = true
+hex.workspace = true
 prometheus = { workspace = true }
 parking_lot = { workspace = true }
 
 # Async runtime
-tokio = { workspace = true, features = ["signal"] }
+tokio = { workspace = true, features = ["process", "signal"] }
 tokio-util = { workspace = true, features = ["rt"] }
 hyper.workspace = true
 
@@ -87,8 +92,17 @@ url = { workspace = true }
 num_cpus = { workspace = true }
 mimalloc = { version = "0.1", default-features = false }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 tempfile.workspace = true
+num-bigint = { workspace = true }
 
 [lints]
 workspace = true

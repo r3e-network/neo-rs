@@ -33,6 +33,7 @@ async fn test_complete_block_assembly_workflow() {
         signatures,
         validator_pubkeys,
         required_signatures: 3,
+        commit_persistence: None,
     };
 
     // Assemble block (simulating validator service logic)

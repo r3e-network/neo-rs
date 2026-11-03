@@ -54,6 +54,30 @@ enabled = false
 port = 9090
 bind_address = "127.0.0.1"
 
+# Capability-limited diagnostics are inert unless explicitly enabled.
+[diagnostics]
+enabled = false
+kill_switch = false
+observe_only = true
+audit_enabled = true
+audit_path = "data/diagnostics-audit.jsonl"
+evidence_queue_capacity = 1024
+sampling_interval_ms = 1000
+event_freshness_ms = 5000
+quarantine_max_entries = 1024
+quarantine_ttl_ms = 30000
+proposal_scan_budget = 2048
+rule_version = "node-diagnostics-v1"
+allow_consensus_restart = false
+restricted_probe_enabled = false
+restricted_probe_worker_path = "neo-probe"
+restricted_probe_queue_capacity = 16
+restricted_probe_concurrency = 1
+restricted_probe_run_timeout_ms = 3000
+restricted_probe_suite_timeout_ms = 7000
+restricted_probe_memory_limit_bytes = 268435456
+restricted_probe_frame_limit_bytes = 524288
+
 [logging]
 level = "info"
 format = "json"

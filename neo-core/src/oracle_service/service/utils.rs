@@ -1,19 +1,10 @@
 use super::{FILTER_MAX_NEST, OracleServiceError};
 use crate::cryptography::ECPoint;
-use crate::network::p2p::helper::get_sign_data_vec;
-use crate::network::p2p::payloads::Transaction;
 use crate::persistence::DataCache;
 use crate::smart_contract::Contract;
 use crate::smart_contract::native::LedgerContract;
-use crate::wallets::{KeyPair, Wallet};
+use crate::wallets::Wallet;
 use neo_json::JToken;
-
-pub(super) fn sign_transaction(tx: &Transaction, key: &KeyPair, network: u32) -> Vec<u8> {
-    let Ok(data) = get_sign_data_vec(tx, network) else {
-        return Vec::new();
-    };
-    key.sign(&data).unwrap_or_default()
-}
 
 pub(super) fn verify_oracle_signature(pubkey: &ECPoint, data: &[u8], signature: &[u8]) -> bool {
     if signature.len() != 64 {
@@ -49,33 +40,20 @@ pub(super) fn ledger_height(snapshot: &DataCache) -> u32 {
 }
 
 pub(super) fn wallet_has_oracle_account(wallet: &dyn Wallet, oracles: &[ECPoint]) -> bool {
-    wallet.get_accounts().iter().any(|account| {
-        if !account.has_key() || account.is_locked() {
-            return false;
-        }
-        let Some(key) = account.get_key() else {
-            return false;
-        };
-        let Ok(pubkey) = key.get_public_key_point() else {
-            return false;
-        };
-        oracles.iter().any(|oracle| oracle == &pubkey)
-    })
+    !select_oracle_accounts(wallet, oracles).is_empty()
 }
 
-pub(super) fn select_oracle_key(wallet: &dyn Wallet, oracles: &[ECPoint]) -> Option<KeyPair> {
-    for oracle in oracles {
-        let script_hash = Contract::create_signature_contract(oracle.clone()).script_hash();
-        let Some(account) = wallet.get_account(&script_hash) else {
-            continue;
-        };
-        if !account.has_key() || account.is_locked() {
-            continue;
-        }
-        let Some(key) = account.get_key() else {
-            continue;
-        };
-        return Some(key);
-    }
-    None
+pub(super) fn select_oracle_accounts(
+    wallet: &dyn Wallet,
+    oracles: &[ECPoint],
+) -> Vec<(crate::UInt160, ECPoint)> {
+    oracles
+        .iter()
+        .filter_map(|oracle| {
+            let script_hash = Contract::create_signature_contract(oracle.clone()).script_hash();
+            wallet.get_account(&script_hash).and_then(|account| {
+                (!account.is_locked() && account.has_key()).then(|| (script_hash, oracle.clone()))
+            })
+        })
+        .collect()
 }

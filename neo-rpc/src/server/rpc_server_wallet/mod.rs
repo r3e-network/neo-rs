@@ -9,12 +9,16 @@ use neo_core::network::p2p::payloads::conflicts::Conflicts;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
+use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::persistence::DataCache;
 use neo_core::prelude::Serializable;
+use neo_core::signing::{
+    FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
+    SignResponse,
+};
 use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::contract_parameters_context::ContractParametersContext;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::native::{
@@ -31,6 +35,7 @@ use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use serde_json::{Map, Value, json};
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
@@ -47,11 +52,44 @@ use crate::server::rpc_helpers::{
     parse_uint160, parse_uint256,
 };
 use crate::server::rpc_relay;
-use crate::server::rpc_server::{RpcHandler, RpcServer};
+use crate::server::rpc_server::{RpcHandler, RpcServer, RpcSignerRuntime};
 
 pub struct RpcServerWallet;
 
 const INVALID_OPERATION_HRESULT: i32 = -2146233079;
+const SIGNATURE_INVOCATION_SCRIPT_LENGTH: usize = 66;
+
+#[derive(Debug)]
+struct PreparedTransaction {
+    transaction: Transaction,
+    unsigned_data: Vec<u8>,
+}
+
+impl PreparedTransaction {
+    fn transaction(&self) -> &Transaction {
+        &self.transaction
+    }
+
+    fn complete(mut self, witnesses: Vec<Witness>) -> Result<Transaction, RpcException> {
+        self.transaction.set_witnesses(witnesses);
+        let current_unsigned_data = self
+            .transaction
+            .try_get_hash_data()
+            .map_err(|err| internal_error(err.to_string()))?;
+        if current_unsigned_data != self.unsigned_data {
+            return Err(internal_error(
+                "Transaction hash fields changed after authorization; signatures were discarded"
+                    .to_string(),
+            ));
+        }
+        Ok(self.transaction)
+    }
+}
+
+enum WalletAuthorization {
+    Signed(Transaction),
+    Pending(Value),
+}
 
 impl RpcServerWallet {
     /// Registers all wallet RPC handlers.
@@ -811,101 +849,30 @@ impl RpcServerWallet {
     fn sign_and_relay(
         server: &RpcServer,
         wallet: &Arc<dyn CoreWallet>,
-        mut tx: Transaction,
+        tx: Transaction,
         snapshot_arc: Arc<DataCache>,
     ) -> Result<Value, RpcException> {
-        let mut sign_data: Option<Vec<u8>> = None;
+        Self::sign_and_relay_with_observers(server, wallet, tx, snapshot_arc, || {}, || {})
+    }
 
-        // Build contract parameter context and add signatures from available keys
-        let mut context = ContractParametersContext::new_with_type(
-            snapshot_arc.clone(),
-            tx.clone(),
-            server.system().settings().network,
-            Some("Neo.Network.P2P.Payloads.Transaction".to_string()),
-        );
-        let signer_accounts: Vec<UInt160> =
-            tx.signers().iter().map(|signer| signer.account).collect();
-        for signer_account in signer_accounts {
-            if let Some(account) = wallet.get_account(&signer_account) {
-                let mut contract_opt = account.contract().cloned();
-                let key_opt = account.get_key();
-                if contract_opt.is_none()
-                    && let Some(ref key) = key_opt
-                {
-                    let pub_point = key
-                        .get_public_key_point()
-                        .ok()
-                        .and_then(|p| ECPoint::from_bytes(&p.to_bytes()).ok());
-                    if let Some(point) = pub_point {
-                        contract_opt = Some(Contract::create_signature_contract(point));
-                    }
-                }
-
-                if let Some(contract) = contract_opt {
-                    context.add_contract(contract.clone());
-                    if let Some(key) = key_opt {
-                        if account.has_key() && !account.is_locked() {
-                            let signature =
-                                Helper::sign(&tx, &key, server.system().settings().network)
-                                    .map_err(internal_error)?;
-                            // Neo N3 uses secp256r1 (NIST P-256) curve
-                            let pub_key =
-                                ECPoint::new(ECCurve::Secp256r1, key.compressed_public_key())
-                                    .map_err(|e| internal_error(e.to_string()))?;
-                            let _ = context.add_signature(contract.clone(), pub_key, signature);
-                        }
-                    } else if account.has_key() && !account.is_locked() {
-                        let sign_data = if let Some(data) = sign_data.as_ref() {
-                            data.clone()
-                        } else {
-                            let data = neo_core::network::p2p::helper::get_sign_data_vec(
-                                &tx,
-                                server.system().settings().network,
-                            )
-                            .map_err(|err| internal_error(err.to_string()))?;
-                            sign_data = Some(data.clone());
-                            data
-                        };
-                        let wallet_clone = Arc::clone(wallet);
-                        let signature = Self::await_wallet_future(Box::pin(async move {
-                            wallet_clone.sign(&sign_data, &signer_account).await
-                        }))?;
-                        if signature.len() != 64 {
-                            return Err(internal_error(
-                                "Invalid signature length from wallet".to_string(),
-                            ));
-                        }
-                        let pub_key_bytes = signature_contract_pubkey(&contract.script)?;
-                        let pub_key = ECPoint::new(ECCurve::Secp256r1, pub_key_bytes)
-                            .map_err(|e| internal_error(e.to_string()))?;
-                        let _ = context.add_signature(contract.clone(), pub_key, signature);
-                    }
-                }
-            }
-        }
-
-        if !context.completed() {
-            return Ok(context.to_json());
-        }
-
-        if let Some(witnesses) = context.witnesses() {
-            tx.set_witnesses(witnesses);
-        }
-
-        // Adjust network fee if necessary (parity with C# min fee calculation)
-        if tx.size() > 1024 {
-            let policy = PolicyContract::new();
-            let fee_per_byte = policy
-                .get_fee_per_byte_snapshot(snapshot_arc.as_ref())
-                .unwrap_or(i64::from(PolicyContract::DEFAULT_FEE_PER_BYTE));
-            let cal_fee = tx.size() as i64 * fee_per_byte + 100_000;
-            if tx.network_fee() < cal_fee {
-                tx.set_network_fee(cal_fee);
-            }
-        }
-        if tx.network_fee() > server.settings().max_fee {
-            return Err(RpcException::from(RpcError::wallet_fee_limit()));
-        }
+    fn sign_and_relay_with_observers(
+        server: &RpcServer,
+        wallet: &Arc<dyn CoreWallet>,
+        tx: Transaction,
+        snapshot_arc: Arc<DataCache>,
+        after_authorize: impl FnOnce(),
+        before_relay: impl FnOnce(),
+    ) -> Result<Value, RpcException> {
+        let prepared = Self::prepare_transaction(server, wallet, tx, snapshot_arc.as_ref())?;
+        let tx = match Self::authorize_transaction(server, wallet, prepared, snapshot_arc.clone())?
+        {
+            WalletAuthorization::Signed(tx) => tx,
+            WalletAuthorization::Pending(context) => return Ok(context),
+        };
+        after_authorize();
+        let current_snapshot = server.system().store_cache();
+        Self::validate_transaction_before_signing(server, &tx, &current_snapshot.data_cache())?;
+        before_relay();
 
         match rpc_relay::with_relay_responder(server, |sender| {
             server
@@ -941,6 +908,298 @@ impl RpcServerWallet {
                 Ok(json)
             }
         }
+    }
+
+    fn prepare_transaction(
+        server: &RpcServer,
+        wallet: &Arc<dyn CoreWallet>,
+        mut tx: Transaction,
+        snapshot: &DataCache,
+    ) -> Result<PreparedTransaction, RpcException> {
+        let projected_size = Self::projected_signed_size(&tx, wallet);
+        if projected_size > 1024 {
+            let fee_per_byte = PolicyContract::new()
+                .get_fee_per_byte_snapshot(snapshot)
+                .unwrap_or(i64::from(PolicyContract::DEFAULT_FEE_PER_BYTE));
+            let projected_size = i64::try_from(projected_size)
+                .map_err(|_| internal_error("Transaction size overflow".to_string()))?;
+            let minimum_fee = projected_size
+                .checked_mul(fee_per_byte)
+                .and_then(|fee| fee.checked_add(100_000))
+                .ok_or_else(|| internal_error("Network fee overflow".to_string()))?;
+            if tx.network_fee() < minimum_fee {
+                tx.set_network_fee(minimum_fee);
+            }
+        }
+
+        Self::validate_transaction_before_signing(server, &tx, snapshot)?;
+        let unsigned_data = tx
+            .try_get_hash_data()
+            .map_err(|err| internal_error(err.to_string()))?;
+        Ok(PreparedTransaction {
+            transaction: tx,
+            unsigned_data,
+        })
+    }
+
+    fn validate_transaction_before_signing(
+        server: &RpcServer,
+        tx: &Transaction,
+        snapshot: &DataCache,
+    ) -> Result<(), RpcException> {
+        if tx.version() != 0 {
+            return Err(invalid_params("Invalid transaction version"));
+        }
+        if tx.signers().is_empty() {
+            return Err(invalid_params("Transaction must have at least one signer"));
+        }
+        if tx.script().is_empty() {
+            return Err(invalid_params("Transaction script cannot be empty"));
+        }
+        neo_core::script_validation::validate_strict_script(tx.script())
+            .map_err(|err| invalid_params(format!("Invalid transaction script: {err}")))?;
+        if tx.system_fee() < 0 {
+            return Err(invalid_params("Invalid system fee"));
+        }
+        if tx.network_fee() < 0 {
+            return Err(invalid_params("Invalid network fee"));
+        }
+        let required_fee = tx
+            .system_fee()
+            .checked_add(tx.network_fee())
+            .ok_or_else(|| invalid_params("Combined transaction fee overflow"))?;
+        if tx.network_fee() > server.settings().max_fee {
+            return Err(RpcException::from(RpcError::wallet_fee_limit()));
+        }
+
+        let current_height = LedgerContract::new()
+            .current_index(snapshot)
+            .map_err(|err| internal_error(err.to_string()))?;
+        let max_increment = PolicyContract::new()
+            .get_max_valid_until_block_increment_snapshot(snapshot, server.system().settings())
+            .unwrap_or(server.system().settings().max_valid_until_block_increment);
+        if tx.valid_until_block() <= current_height
+            || tx.valid_until_block() > current_height.saturating_add(max_increment)
+        {
+            return Err(invalid_params("Invalid valid-until-block"));
+        }
+
+        let sender = tx
+            .sender()
+            .ok_or_else(|| invalid_params("Transaction must have a sender"))?;
+        if GasToken::new().balance_of_snapshot(snapshot, &sender) < BigInt::from(required_fee) {
+            return Err(RpcException::from(RpcError::insufficient_funds_wallet()));
+        }
+
+        let mut validation_tx = tx.clone();
+        validation_tx.set_witnesses(vec![Witness::new(); tx.signers().len()]);
+        let bytes = validation_tx
+            .try_to_bytes()
+            .map_err(|err| invalid_params(format!("Invalid transaction fields: {err}")))?;
+        Transaction::from_bytes(&bytes)
+            .map_err(|err| invalid_params(format!("Invalid signer or witness scope: {err}")))?;
+        Ok(())
+    }
+
+    fn projected_signed_size(tx: &Transaction, wallet: &Arc<dyn CoreWallet>) -> usize {
+        let witnesses = tx
+            .signers()
+            .iter()
+            .map(|signer| {
+                let Some(account) = wallet.get_account(&signer.account) else {
+                    return Witness::new();
+                };
+                let Some(contract) = account.contract().cloned() else {
+                    return Witness::new();
+                };
+                let signature_count = contract
+                    .parameter_list
+                    .iter()
+                    .filter(|parameter| {
+                        **parameter == neo_core::smart_contract::ContractParameterType::Signature
+                    })
+                    .count();
+                Witness::new_with_scripts(
+                    vec![0; signature_count * SIGNATURE_INVOCATION_SCRIPT_LENGTH],
+                    contract.script,
+                )
+            })
+            .collect();
+        let mut projected = tx.clone();
+        projected.set_witnesses(witnesses);
+        projected.size()
+    }
+
+    fn authorize_transaction(
+        server: &RpcServer,
+        wallet: &Arc<dyn CoreWallet>,
+        prepared: PreparedTransaction,
+        snapshot_arc: Arc<DataCache>,
+    ) -> Result<WalletAuthorization, RpcException> {
+        let mut sign_data: Option<Vec<u8>> = None;
+        let tx = prepared.transaction();
+        let mut context = ContractParametersContext::new_with_type(
+            snapshot_arc,
+            tx.clone(),
+            server.system().settings().network,
+            Some("Neo.Network.P2P.Payloads.Transaction".to_string()),
+        );
+        let signer_accounts: Vec<UInt160> =
+            tx.signers().iter().map(|signer| signer.account).collect();
+        for signer_account in signer_accounts {
+            let Some(account) = wallet.get_account(&signer_account) else {
+                continue;
+            };
+            let Some(contract) = account.contract().cloned() else {
+                continue;
+            };
+            context.add_contract(contract.clone());
+            if account.is_locked() || !account.has_key() {
+                continue;
+            }
+
+            let canonical_data = if let Some(data) = sign_data.as_ref() {
+                data.clone()
+            } else {
+                let data = neo_core::network::p2p::helper::get_sign_data_vec(
+                    tx,
+                    server.system().settings().network,
+                )
+                .map_err(|err| internal_error(err.to_string()))?;
+                sign_data = Some(data.clone());
+                data
+            };
+            let signature = if let Some(runtime) = server.signer_runtime() {
+                Self::sign_transaction_with_service(
+                    server,
+                    runtime,
+                    tx,
+                    signer_account,
+                    canonical_data,
+                )?
+            } else {
+                #[cfg(not(test))]
+                {
+                    return Err(internal_error(
+                        "RPC wallet signing requires the unified signer service".to_string(),
+                    ));
+                }
+                #[cfg(test)]
+                {
+                    let wallet_clone = Arc::clone(wallet);
+                    Self::await_wallet_future(Box::pin(async move {
+                        wallet_clone.sign(&canonical_data, &signer_account).await
+                    }))?
+                }
+            };
+            if signature.len() != 64 {
+                return Err(internal_error(
+                    "Invalid signature length from signer service".to_string(),
+                ));
+            }
+            let pub_key_bytes = signature_contract_pubkey(&contract.script)?;
+            let pub_key = ECPoint::new(ECCurve::Secp256r1, pub_key_bytes)
+                .map_err(|err| internal_error(err.to_string()))?;
+            let _ = context.add_signature(contract, pub_key, signature);
+        }
+
+        if !context.completed() {
+            return Ok(WalletAuthorization::Pending(context.to_json()));
+        }
+        let witnesses = context.witnesses().ok_or_else(|| {
+            internal_error("Completed signature context has no witnesses".to_string())
+        })?;
+        Ok(WalletAuthorization::Signed(prepared.complete(witnesses)?))
+    }
+
+    fn sign_transaction_with_service(
+        server: &RpcServer,
+        runtime: &RpcSignerRuntime,
+        tx: &Transaction,
+        signer_account: UInt160,
+        canonical_data: Vec<u8>,
+    ) -> Result<Vec<u8>, RpcException> {
+        let network = server.system().settings().network;
+        let tx_hash = tx.hash().to_string();
+        let account = signer_account.to_string();
+        let request_id = format!("rpc:{network}:{tx_hash}:{account}");
+        let fee_units = tx.system_fee().saturating_add(tx.network_fee()).max(0) as u64;
+        let key_ref = runtime
+            .resolve_key(&account, &SignPurpose::Transaction)
+            .map_err(|error| internal_error(error.to_string()))?;
+        let intent = FrozenSignIntent {
+            schema_version: SIGNING_SCHEMA_VERSION,
+            network,
+            purpose: SignPurpose::Transaction,
+            key_ref,
+            payload: SignPayload::Canonical {
+                encoding: "neo-n3-sign-data-v1".to_string(),
+                bytes: canonical_data,
+            },
+            protocol_context: ProtocolContext {
+                schema_version: SIGNING_SCHEMA_VERSION,
+                protocol: "neo-n3-transaction".to_string(),
+                protocol_version: "1".to_string(),
+                fields: BTreeMap::from([
+                    ("transaction_hash".to_string(), tx_hash),
+                    ("nonce".to_string(), tx.nonce().to_string()),
+                    (
+                        "valid_until_block".to_string(),
+                        tx.valid_until_block().to_string(),
+                    ),
+                    ("signer_account".to_string(), account.clone()),
+                ]),
+            },
+            policy_version: runtime.policy_version.clone(),
+            fee_units,
+            quota_units: 1,
+            account: Some(account),
+            targets: BTreeSet::new(),
+        };
+        let runtime = runtime.clone();
+        Self::await_signer_future(Box::pin(async move {
+            runtime.resume_or_start(&request_id, intent).await
+        }))
+        .map(|response| response.signature)
+    }
+
+    fn await_signer_future(
+        future: Pin<Box<dyn Future<Output = neo_core::signing::SignResult<SignResponse>> + Send>>,
+    ) -> Result<SignResponse, RpcException> {
+        let result = if let Ok(handle) = Handle::try_current() {
+            match handle.runtime_flavor() {
+                RuntimeFlavor::CurrentThread => std::thread::spawn(move || {
+                    RuntimeBuilder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|error| {
+                            neo_core::signing::SignError::new(
+                                neo_core::signing::SignErrorCode::ProviderFailure,
+                                error.to_string(),
+                            )
+                        })?
+                        .block_on(future)
+                })
+                .join()
+                .map_err(|_| internal_error("signer runtime thread panicked".to_string()))?,
+                RuntimeFlavor::MultiThread => {
+                    tokio::task::block_in_place(move || handle.block_on(future))
+                }
+                _ => tokio::task::block_in_place(move || handle.block_on(future)),
+            }
+        } else {
+            RuntimeBuilder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| internal_error(error.to_string()))?
+                .block_on(future)
+        };
+        result.map_err(|error| {
+            internal_error(format!(
+                "signer service rejected transaction authorization ({:?}): {}",
+                error.code, error.message
+            ))
+        })
     }
 }
 

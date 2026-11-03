@@ -251,6 +251,17 @@ async fn view_change_allows_consensus_to_complete() {
     assert_eq!(commit_payload.validator_index, 3);
     assert_eq!(commit_payload.view_number, 1);
     assert_eq!(commit_payload.block_index, prepare_payload.block_index);
+    let permit = commit_payload
+        .commit_persistence
+        .as_ref()
+        .expect("local Commit must carry a persistence permit");
+    assert!(permit.validate().is_ok());
+    assert!(permit.covers_commit(
+        commit_payload.block_index,
+        commit_payload.view_number,
+        commit_payload.validator_index,
+        &commit_payload.data,
+    ));
 
     let block_hash = service.context().proposed_block_hash.expect("block hash");
 

@@ -1,6 +1,5 @@
 use super::super::OracleService;
 use crate::network::p2p::payloads::OracleResponseCode;
-use crate::wallets::KeyPair;
 
 /// Maximum URL length allowed.
 const MAX_URL_LENGTH: usize = 2048;
@@ -10,11 +9,7 @@ const MAX_URL_LENGTH: usize = 2048;
 const MAX_REDIRECTS: u8 = 2;
 
 impl OracleService {
-    pub(in super::super) async fn process_url(
-        &self,
-        url: &str,
-        _oracle_key: Option<&KeyPair>,
-    ) -> (OracleResponseCode, String) {
+    pub(in super::super) async fn process_url(&self, url: &str) -> (OracleResponseCode, String) {
         // Validate URL length
         if url.len() > MAX_URL_LENGTH {
             tracing::warn!(
@@ -36,17 +31,14 @@ impl OracleService {
 
         // Handle NeoFS protocol
         if url.len() >= 6 && url[..6].eq_ignore_ascii_case("neofs:") {
-            #[cfg(feature = "oracle")]
-            {
-                return self.neofs.process(&self.settings, url, _oracle_key).await;
-            }
-            #[cfg(not(feature = "oracle"))]
-            {
-                return (
-                    OracleResponseCode::ProtocolNotSupported,
-                    format!("Invalid Protocol:<{url}>"),
-                );
-            }
+            tracing::warn!(
+                target: "neo::oracle",
+                "NeoFS oracle requests are fail-closed until dedicated signer algorithms are migrated"
+            );
+            return (
+                OracleResponseCode::ProtocolNotSupported,
+                format!("Invalid Protocol:<{url}>"),
+            );
         }
 
         // Parse and validate URL
@@ -90,17 +82,14 @@ impl OracleService {
         }
 
         if scheme.eq_ignore_ascii_case("neofs") {
-            #[cfg(feature = "oracle")]
-            {
-                return self.neofs.process(&self.settings, url, _oracle_key).await;
-            }
-            #[cfg(not(feature = "oracle"))]
-            {
-                return (
-                    OracleResponseCode::ProtocolNotSupported,
-                    format!("Invalid Protocol:<{url}>"),
-                );
-            }
+            tracing::warn!(
+                target: "neo::oracle",
+                "NeoFS oracle requests are fail-closed until dedicated signer algorithms are migrated"
+            );
+            return (
+                OracleResponseCode::ProtocolNotSupported,
+                format!("Invalid Protocol:<{url}>"),
+            );
         }
 
         (

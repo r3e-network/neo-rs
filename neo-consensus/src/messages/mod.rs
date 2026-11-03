@@ -15,6 +15,7 @@ pub use recovery::{
     RecoveryRequestMessage,
 };
 
+use crate::context::CommitPersistencePermit;
 use crate::{ConsensusMessageType, ConsensusResult};
 
 /// Common trait for all consensus messages
@@ -55,6 +56,9 @@ pub struct ConsensusPayload {
     pub data: Vec<u8>,
     /// Witness (signature)
     pub witness: Vec<u8>,
+    /// Out-of-band durable authorization when this payload exposes a local Commit.
+    /// This field is intentionally excluded from the dBFT wire encoding.
+    pub commit_persistence: Option<CommitPersistencePermit>,
 }
 
 impl ConsensusPayload {
@@ -76,6 +80,7 @@ impl ConsensusPayload {
             message_type,
             data,
             witness: Vec::new(),
+            commit_persistence: None,
         }
     }
 
@@ -122,6 +127,7 @@ impl ConsensusPayload {
             message_type,
             data,
             witness,
+            commit_persistence: None,
         })
     }
 

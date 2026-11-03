@@ -12,6 +12,9 @@ use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
 use neo_core::protocol_settings::ProtocolSettings;
+use neo_core::signing::{
+    AuthenticatedContext, KeyRef, SignRequest, SignerService, SigningKeyBinding, SigningKeyResolver,
+};
 use neo_core::smart_contract::helper::Helper as ContractHelper;
 use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::{StorageItem, StorageKey};
@@ -19,8 +22,9 @@ use neo_crypto::Secp256r1Crypto;
 use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use std::fs;
-use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::runtime::{Handle, Runtime};
 
 /// Synthetic passphrase for wallet round-trip tests, composed at runtime so
@@ -33,18 +37,128 @@ fn test_passphrase() -> &'static str {
         .as_str()
 }
 
+struct RecordingSignerService {
+    private_key: [u8; 32],
+    expected_key_ref: KeyRef,
+    requests: Mutex<Vec<(SignRequest, AuthenticatedContext)>>,
+    resume_calls: AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl SignerService for RecordingSignerService {
+    async fn sign(
+        &self,
+        request: SignRequest,
+        context: AuthenticatedContext,
+    ) -> neo_core::signing::SignResult<SignResponse> {
+        let request_digest = request.binding_digest(&context)?;
+        self.requests
+            .lock()
+            .expect("recording signer lock")
+            .push((request.clone(), context));
+        if request.key_ref != self.expected_key_ref {
+            return Err(neo_core::signing::SignError::new(
+                neo_core::signing::SignErrorCode::KeyNotFound,
+                "RPC signer key version is not registered",
+            ));
+        }
+        let signed_digest = request.payload.signing_digest();
+        let bytes = request.payload.canonical_bytes().ok_or_else(|| {
+            neo_core::signing::SignError::new(
+                neo_core::signing::SignErrorCode::InvalidRequest,
+                "test RPC signer requires canonical bytes",
+            )
+        })?;
+        let key_pair = KeyPair::from_private_key(&self.private_key).map_err(|error| {
+            neo_core::signing::SignError::new(
+                neo_core::signing::SignErrorCode::ProviderFailure,
+                error.to_string(),
+            )
+        })?;
+        let signature = key_pair.sign(bytes).map_err(|error| {
+            neo_core::signing::SignError::new(
+                neo_core::signing::SignErrorCode::ProviderFailure,
+                error.to_string(),
+            )
+        })?;
+        Ok(SignResponse {
+            schema_version: SIGNING_SCHEMA_VERSION,
+            request_id: request.request_id,
+            key_ref: request.key_ref,
+            algorithm: neo_core::signing::ALGORITHM_ECDSA_P256_SHA256.to_string(),
+            signature,
+            signed_digest,
+            request_digest,
+            policy_version: request.policy_version,
+            completed_at_unix_ms: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time")
+                .as_millis()
+                .min(i64::MAX as u128) as i64,
+            idempotent_replay: false,
+        })
+    }
+
+    async fn resume_or_start(
+        &self,
+        operation_id: &str,
+        frozen_intent: FrozenSignIntent,
+        context: AuthenticatedContext,
+        request_timeout: Duration,
+    ) -> neo_core::signing::SignResult<SignResponse> {
+        self.resume_calls.fetch_add(1, Ordering::SeqCst);
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| {
+                neo_core::signing::SignError::new(
+                    neo_core::signing::SignErrorCode::ProviderFailure,
+                    error.to_string(),
+                )
+            })?
+            .as_millis()
+            .min(i64::MAX as u128) as i64;
+        let timeout = request_timeout.as_millis().min(i64::MAX as u128) as i64;
+        self.sign(
+            frozen_intent.into_request(operation_id, now.saturating_add(timeout))?,
+            context,
+        )
+        .await
+    }
+}
+
+fn transaction_key_resolver(account: UInt160) -> Arc<SigningKeyResolver> {
+    transaction_key_resolver_for(account, KeyRef::new("rpc-hsm", "rpc-key-v2", 2))
+}
+
+fn transaction_key_resolver_for(account: UInt160, key_ref: KeyRef) -> Arc<SigningKeyResolver> {
+    let key_pair = KeyPair::from_private_key(&[0x11u8; 32]).expect("test keypair");
+    Arc::new(
+        SigningKeyResolver::new([SigningKeyBinding {
+            account: account.to_string(),
+            purpose: SignPurpose::Transaction,
+            key_ref,
+            public_key: key_pair.public_key(),
+        }])
+        .expect("transaction key resolver"),
+    )
+}
+
 fn temp_wallet_path() -> String {
+    static NEXT_PATH_ID: AtomicU64 = AtomicU64::new(0);
+
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("timestamp")
         .as_nanos();
+    let path_id = NEXT_PATH_ID.fetch_add(1, Ordering::Relaxed);
     // Keep fixtures under CWD so openwallet path jail (audit A08) accepts them.
+    // The counter prevents same-clock-tick collisions between parallel tests.
     let dir = std::env::current_dir()
         .expect("cwd")
         .join("target")
         .join("rpc-wallet-tests");
     let _ = std::fs::create_dir_all(&dir);
-    dir.join(format!("rpc_wallet_{nanos}.json"))
+    dir.join(format!("rpc_wallet_{nanos}_{path_id}.json"))
         .to_string_lossy()
         .to_string()
 }
@@ -171,6 +285,38 @@ fn build_signed_transaction_custom(
     tx
 }
 
+fn unsigned_wallet_transaction(
+    server: &RpcServer,
+    signer: UInt160,
+    network_fee: i64,
+    script: Vec<u8>,
+) -> Transaction {
+    let snapshot = server.system().store_cache();
+    let current_height = LedgerContract::new()
+        .current_index(&snapshot)
+        .expect("current height");
+    let mut tx = Transaction::new();
+    tx.set_nonce(0x0102_0304);
+    tx.set_system_fee(0);
+    tx.set_network_fee(network_fee);
+    tx.set_valid_until_block(
+        current_height.saturating_add(server.system().max_valid_until_block_increment()),
+    );
+    tx.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
+    tx.set_script(script);
+    tx
+}
+
+fn seed_ledger_current_index(store: &mut neo_core::persistence::StoreCache, index: u32) {
+    const PREFIX_CURRENT_BLOCK: u8 = 0x0c;
+    let mut bytes = UInt256::zero().to_bytes().to_vec();
+    bytes.extend_from_slice(&index.to_le_bytes());
+    store.add(
+        StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK]),
+        StorageItem::from_bytes(bytes),
+    );
+}
+
 fn persist_transaction_record(store: &mut neo_core::persistence::StoreCache, tx: &Transaction) {
     const PREFIX_TRANSACTION: u8 = 0x0b;
     const RECORD_KIND_TRANSACTION: u8 = 0x01;
@@ -199,6 +345,372 @@ fn signature_contract_pubkey_roundtrip() {
     let script = ContractHelper::signature_redeem_script(&public_key);
     let recovered = signature_contract_pubkey(&script).expect("parse pubkey");
     assert_eq!(recovered, public_key);
+}
+
+#[tokio::test]
+async fn signer_runtime_rejects_missing_rpc_credentials() {
+    let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");
+    let mut server = RpcServer::new(system, RpcServerConfig::default());
+    let signer_service = Arc::new(RecordingSignerService {
+        private_key: [0x11u8; 32],
+        expected_key_ref: KeyRef::new("rpc-hsm", "rpc-key-v2", 2),
+        requests: Mutex::new(Vec::new()),
+        resume_calls: AtomicUsize::new(0),
+    });
+
+    let error = server
+        .set_signer_runtime(Some(RpcSignerRuntime {
+            service: signer_service,
+            default_provider: "wallet".to_string(),
+            policy_version: "rpc-test-policy".to_string(),
+            request_timeout: Duration::from_secs(5),
+            key_resolver: Arc::new(SigningKeyResolver::default()),
+            principal: "rpc-test".to_string(),
+            tenant: "node-test".to_string(),
+        }))
+        .expect_err("unauthenticated server must reject protected signer runtime");
+
+    assert!(error.contains("credentials"));
+    assert!(server.signer_runtime().is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rpc_uses_configured_non_default_key_after_finalizing_fee() {
+    let password = test_passphrase();
+    let (path, keypair, _) = create_wallet_file(password).await;
+    let mut server = make_authenticated_server_with_max_fee(1_000_000_000);
+    let signer_service = Arc::new(RecordingSignerService {
+        private_key: [0x11u8; 32],
+        expected_key_ref: KeyRef::new("rpc-hsm", "rpc-key-v2", 2),
+        requests: Mutex::new(Vec::new()),
+        resume_calls: AtomicUsize::new(0),
+    });
+    server
+        .set_signer_runtime(Some(RpcSignerRuntime {
+            service: signer_service.clone(),
+            default_provider: "software-default".to_string(),
+            policy_version: "rpc-test-policy".to_string(),
+            request_timeout: Duration::from_secs(5),
+            key_resolver: transaction_key_resolver(keypair.get_script_hash()),
+            principal: "rpc-test".to_string(),
+            tenant: "node-test".to_string(),
+        }))
+        .expect("authenticated RPC signer runtime");
+    let handlers = RpcServerWallet::register_handlers();
+    let open_handler = find_handler(&handlers, "openwallet");
+    let close_handler = find_handler(&handlers, "closewallet");
+
+    let mut store = server.system().context().store_snapshot_cache();
+    mint_gas(
+        &mut store,
+        server.system().settings(),
+        keypair.get_script_hash(),
+        BigInt::from(50_0000_0000i64),
+    );
+    store.commit();
+    (open_handler.callback())(
+        &server,
+        &[
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ],
+    )
+    .expect("open wallet");
+
+    let mut script = vec![OpCode::NOP.byte(); 1_100];
+    script.push(OpCode::RET.byte());
+    let tx = unsigned_wallet_transaction(&server, keypair.get_script_hash(), 1, script);
+    let snapshot = server.system().store_cache();
+    let snapshot_arc = Arc::new(snapshot.data_cache().clone());
+    let wallet = server.wallet().expect("wallet");
+    let finalized_fee =
+        RpcServerWallet::prepare_transaction(&server, &wallet, tx.clone(), snapshot_arc.as_ref())
+            .expect("prepare transaction")
+            .transaction()
+            .network_fee();
+    assert!(
+        finalized_fee > 1,
+        "legacy large-transaction fee must be applied"
+    );
+
+    let preverify_calls = Arc::new(AtomicUsize::new(0));
+    let preverify_calls_observer = Arc::clone(&preverify_calls);
+    let error = tokio::task::block_in_place(|| {
+        RpcServerWallet::sign_and_relay_with_observers(
+            &server,
+            &wallet,
+            tx,
+            snapshot_arc,
+            || {},
+            move || {
+                preverify_calls_observer.fetch_add(1, Ordering::SeqCst);
+            },
+        )
+    })
+    .expect_err("the isolated relay actor has no persisted balance");
+    assert!(error.to_string().contains("Insufficient funds for fee"));
+    assert_eq!(preverify_calls.load(Ordering::SeqCst), 1);
+    let recorded = signer_service
+        .requests
+        .lock()
+        .expect("recording signer lock");
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(
+        recorded[0].0.key_ref,
+        KeyRef::new("rpc-hsm", "rpc-key-v2", 2)
+    );
+    assert_eq!(recorded[0].0.purpose, SignPurpose::Transaction);
+    assert_ne!(recorded[0].0.key_ref.provider, "software-default");
+    assert_eq!(recorded[0].0.policy_version, "rpc-test-policy");
+    assert_eq!(
+        recorded[0].1.scopes,
+        BTreeSet::from(["sign:transaction".to_string()])
+    );
+    assert_eq!(
+        recorded[0].0.protocol_context.protocol,
+        "neo-n3-transaction"
+    );
+    drop(recorded);
+    assert_eq!(signer_service.resume_calls.load(Ordering::SeqCst), 1);
+
+    (close_handler.callback())(&server, &[]).expect("close wallet");
+    fs::remove_file(path).ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rpc_rejects_key_version_mismatch_without_default_fallback() {
+    let password = test_passphrase();
+    let (path, keypair, _) = create_wallet_file(password).await;
+    let mut server = make_authenticated_server_with_max_fee(1_000_000_000);
+    let configured = KeyRef::new("rpc-hsm", "rpc-key-v2", 2);
+    let mismatched = KeyRef::new("rpc-hsm", "rpc-key-v2", 3);
+    let signer_service = Arc::new(RecordingSignerService {
+        private_key: [0x11u8; 32],
+        expected_key_ref: configured,
+        requests: Mutex::new(Vec::new()),
+        resume_calls: AtomicUsize::new(0),
+    });
+    server
+        .set_signer_runtime(Some(RpcSignerRuntime {
+            service: signer_service.clone(),
+            default_provider: "software-default".to_string(),
+            policy_version: "rpc-test-policy".to_string(),
+            request_timeout: Duration::from_secs(5),
+            key_resolver: transaction_key_resolver_for(
+                keypair.get_script_hash(),
+                mismatched.clone(),
+            ),
+            principal: "rpc-test".to_string(),
+            tenant: "node-test".to_string(),
+        }))
+        .expect("authenticated RPC signer runtime");
+    let handlers = RpcServerWallet::register_handlers();
+    let open_handler = find_handler(&handlers, "openwallet");
+    let close_handler = find_handler(&handlers, "closewallet");
+    let mut store = server.system().context().store_snapshot_cache();
+    mint_gas(
+        &mut store,
+        server.system().settings(),
+        keypair.get_script_hash(),
+        BigInt::from(50_0000_0000i64),
+    );
+    store.commit();
+    (open_handler.callback())(
+        &server,
+        &[
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ],
+    )
+    .expect("open wallet");
+
+    let tx = unsigned_wallet_transaction(
+        &server,
+        keypair.get_script_hash(),
+        1,
+        vec![OpCode::RET.byte()],
+    );
+    let snapshot = server.system().store_cache();
+    let snapshot_arc = Arc::new(snapshot.data_cache().clone());
+    let wallet = server.wallet().expect("wallet");
+    let error = RpcServerWallet::prepare_transaction(&server, &wallet, tx, snapshot_arc.as_ref())
+        .and_then(|prepared| {
+            RpcServerWallet::authorize_transaction(&server, &wallet, prepared, snapshot_arc)
+        })
+        .err()
+        .expect("version mismatch must fail closed");
+    assert!(error.to_string().contains("not registered"));
+    let recorded = signer_service
+        .requests
+        .lock()
+        .expect("recording signer lock");
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].0.key_ref, mismatched);
+    assert_eq!(recorded[0].0.key_ref.version, 3);
+    assert_ne!(recorded[0].0.key_ref.provider, "software-default");
+    assert_eq!(recorded[0].0.purpose, SignPurpose::Transaction);
+    assert_eq!(recorded[0].0.policy_version, "rpc-test-policy");
+    assert_eq!(
+        recorded[0].1.scopes,
+        BTreeSet::from(["sign:transaction".to_string()])
+    );
+    drop(recorded);
+    assert_eq!(signer_service.resume_calls.load(Ordering::SeqCst), 1);
+
+    (close_handler.callback())(&server, &[]).expect("close wallet");
+    fs::remove_file(path).ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn recovered_signing_result_expired_before_relay_is_not_dispatched() {
+    let password = test_passphrase();
+    let (path, keypair, _) = create_wallet_file(password).await;
+    let mut server = make_authenticated_server_with_max_fee(1_000_000_000);
+    let configured = KeyRef::new("rpc-hsm", "rpc-key-v2", 2);
+    let signer_service = Arc::new(RecordingSignerService {
+        private_key: [0x11u8; 32],
+        expected_key_ref: configured,
+        requests: Mutex::new(Vec::new()),
+        resume_calls: AtomicUsize::new(0),
+    });
+    server
+        .set_signer_runtime(Some(RpcSignerRuntime {
+            service: signer_service.clone(),
+            default_provider: "software-default".to_string(),
+            policy_version: "rpc-test-policy".to_string(),
+            request_timeout: Duration::from_secs(5),
+            key_resolver: transaction_key_resolver(keypair.get_script_hash()),
+            principal: "rpc-test".to_string(),
+            tenant: "node-test".to_string(),
+        }))
+        .expect("authenticated RPC signer runtime");
+    let handlers = RpcServerWallet::register_handlers();
+    let open_handler = find_handler(&handlers, "openwallet");
+    let close_handler = find_handler(&handlers, "closewallet");
+    let mut store = server.system().context().store_snapshot_cache();
+    mint_gas(
+        &mut store,
+        server.system().settings(),
+        keypair.get_script_hash(),
+        BigInt::from(50_0000_0000i64),
+    );
+    store.commit();
+    (open_handler.callback())(
+        &server,
+        &[
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ],
+    )
+    .expect("open wallet");
+
+    let mut tx = unsigned_wallet_transaction(
+        &server,
+        keypair.get_script_hash(),
+        1,
+        vec![OpCode::RET.byte()],
+    );
+    tx.set_valid_until_block(1);
+    let snapshot = server.system().store_cache();
+    let snapshot_arc = Arc::new(snapshot.data_cache().clone());
+    let wallet = server.wallet().expect("wallet");
+    let system = server.system();
+    let relay_calls = Arc::new(AtomicUsize::new(0));
+    let relay_calls_observer = relay_calls.clone();
+    let error = RpcServerWallet::sign_and_relay_with_observers(
+        &server,
+        &wallet,
+        tx,
+        snapshot_arc,
+        move || {
+            let mut current = system.context().store_snapshot_cache();
+            seed_ledger_current_index(&mut current, 1);
+            current.commit();
+        },
+        move || {
+            relay_calls_observer.fetch_add(1, Ordering::SeqCst);
+        },
+    )
+    .expect_err("expired recovered signing result must fail before relay");
+    assert!(error.to_string().contains("Invalid valid-until-block"));
+    assert_eq!(signer_service.resume_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        signer_service
+            .requests
+            .lock()
+            .expect("recording signer lock")
+            .len(),
+        1
+    );
+    assert_eq!(relay_calls.load(Ordering::SeqCst), 0);
+
+    (close_handler.callback())(&server, &[]).expect("close wallet");
+    fs::remove_file(path).ok();
+}
+
+#[test]
+fn prepared_transaction_rejects_hash_field_mutation_before_completion() {
+    let mut tx = Transaction::new();
+    tx.set_nonce(0x0102_0304);
+    tx.set_system_fee(1);
+    tx.set_network_fee(2);
+    tx.set_valid_until_block(3);
+    tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
+    tx.set_script(vec![OpCode::RET.byte()]);
+    let unsigned_data = tx.try_get_hash_data().expect("unsigned transaction");
+    let mut prepared = PreparedTransaction {
+        transaction: tx,
+        unsigned_data,
+    };
+
+    prepared.transaction.set_network_fee(3);
+    let err = prepared
+        .complete(vec![Witness::new()])
+        .expect_err("changed hash field must invalidate authorization");
+    assert!(err.to_string().contains("hash fields changed"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn wallet_fee_limit_is_rejected_during_pre_sign_preparation() {
+    let password = test_passphrase();
+    let (path, keypair, _) = create_wallet_file(password).await;
+    let server = make_authenticated_server_with_max_fee(1);
+    let handlers = RpcServerWallet::register_handlers();
+    let open_handler = find_handler(&handlers, "openwallet");
+    let close_handler = find_handler(&handlers, "closewallet");
+
+    let mut store = server.system().context().store_snapshot_cache();
+    mint_gas(
+        &mut store,
+        server.system().settings(),
+        keypair.get_script_hash(),
+        BigInt::from(50_0000_0000i64),
+    );
+    store.commit();
+    (open_handler.callback())(
+        &server,
+        &[
+            Value::String(path.clone()),
+            Value::String(password.to_string()),
+        ],
+    )
+    .expect("open wallet");
+
+    let tx = unsigned_wallet_transaction(
+        &server,
+        keypair.get_script_hash(),
+        2,
+        vec![OpCode::RET.byte()],
+    );
+    let snapshot = server.system().store_cache();
+    let wallet = server.wallet().expect("wallet");
+    let err = RpcServerWallet::prepare_transaction(&server, &wallet, tx, snapshot.data_cache())
+        .expect_err("fee above MaxFee must fail before authorization");
+    let rpc_error: RpcError = err.into();
+    assert_eq!(rpc_error.code(), RpcError::wallet_fee_limit().code());
+
+    (close_handler.callback())(&server, &[]).expect("close wallet");
+    fs::remove_file(path).ok();
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -4,6 +4,7 @@ use super::PoolItem;
 use crate::UInt256;
 use crate::network::p2p::payloads::Transaction;
 use std::collections::{BTreeSet, HashMap};
+use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -54,6 +55,20 @@ impl PoolIndex {
 
     pub(super) fn by_priority_descending(&self) -> impl Iterator<Item = &PoolItem> {
         self.sorted.iter().rev()
+    }
+
+    pub(super) fn by_priority_descending_before<'a>(
+        &'a self,
+        cursor: &'a PoolItem,
+    ) -> impl Iterator<Item = &'a PoolItem> {
+        self.sorted.range((Unbounded, Excluded(cursor))).rev()
+    }
+
+    pub(super) fn by_priority_descending_from<'a>(
+        &'a self,
+        cursor: &'a PoolItem,
+    ) -> impl Iterator<Item = &'a PoolItem> {
+        self.sorted.range((Included(cursor), Unbounded)).rev()
     }
 
     pub(super) fn lowest(&self) -> Option<&PoolItem> {

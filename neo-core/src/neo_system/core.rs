@@ -309,6 +309,8 @@ impl NeoSystem {
             system: RwLock::new(None),
             committing_handlers: Arc::new(RwLock::new(Vec::new())),
             committed_handlers: Arc::new(RwLock::new(Vec::new())),
+            transaction_execution_sink: std::sync::OnceLock::new(),
+            dropped_transaction_execution_observations: std::sync::atomic::AtomicU64::new(0),
             fast_sync_mode: Arc::new(AtomicBool::new(false)),
         });
 

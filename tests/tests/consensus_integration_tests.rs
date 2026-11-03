@@ -9,12 +9,16 @@
 //! - Recovery message processing
 //! - Signature verification
 
+mod common;
+
+use common::TestConsensusSigner;
 use neo_consensus::{
     ConsensusContext, ConsensusEvent, ConsensusMessageType, ConsensusPayload, ConsensusService,
     ValidatorInfo, messages::RecoveryMessage,
 };
 use neo_crypto::{ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 // ============================================================================
@@ -39,13 +43,14 @@ fn create_consensus_service(
     let validators = create_test_validators(validator_count);
     let private_key = vec![15u8; 32]; // Valid test key (payload signing is fail-closed)
 
-    let service = ConsensusService::new(
+    let mut service = ConsensusService::new(
         0x4E454F, // NEO network magic
         validators,
         validator_index,
         private_key,
         tx,
     );
+    service.set_signer(Some(Arc::new(TestConsensusSigner::new([15u8; 32]))));
 
     (service, rx)
 }

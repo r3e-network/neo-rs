@@ -256,6 +256,9 @@ pub mod state_service;
 /// Service trait definitions for dependency injection.
 pub mod services;
 
+/// Unified policy-bound signing service, provider, and persistence contracts.
+pub mod signing;
+
 // ============================================================================
 // Runtime Components (requires `runtime` feature)
 // ============================================================================

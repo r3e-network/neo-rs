@@ -1,7 +1,7 @@
 use super::super::ConsensusService;
 use super::time::current_timestamp;
 use crate::messages::CommitMessage;
-use crate::{ConsensusError, ConsensusMessageType, ConsensusResult};
+use crate::{ConsensusError, ConsensusMessageType, ConsensusResult, ConsensusSignContext};
 use neo_crypto::Crypto;
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::OpCode;
@@ -42,10 +42,14 @@ impl ConsensusService {
     }
 
     /// Signs data with the private key using secp256r1 ECDSA
-    pub(in crate::service) fn sign(&self, data: &[u8]) -> ConsensusResult<Vec<u8>> {
+    pub(in crate::service) fn sign(
+        &self,
+        data: &[u8],
+        sign_context: &ConsensusSignContext,
+    ) -> ConsensusResult<Vec<u8>> {
         if let Some(signer) = &self.signer {
             let script_hash = self.my_script_hash()?;
-            let signature = signer.sign(data, &script_hash)?;
+            let signature = signer.sign(data, &script_hash, sign_context)?;
             if signature.len() != 64 {
                 return Err(ConsensusError::InvalidSignatureLength {
                     expected: 64,
@@ -55,24 +59,32 @@ impl ConsensusService {
             return Ok(signature);
         }
 
-        use neo_crypto::Secp256r1Crypto;
-        use zeroize::Zeroizing;
+        #[cfg(test)]
+        {
+            use neo_crypto::Secp256r1Crypto;
+            use zeroize::Zeroizing;
 
-        if self.private_key.len() != 32 {
-            return Err(ConsensusError::state_error(
-                "Consensus signing key not available",
-            ));
+            if self.private_key.len() != 32 {
+                return Err(ConsensusError::state_error(
+                    "Consensus signing key not available",
+                ));
+            }
+
+            let mut key_bytes = Zeroizing::new([0u8; 32]);
+            key_bytes.copy_from_slice(&self.private_key);
+
+            return Secp256r1Crypto::sign_prehash(&Crypto::sha256(data), &key_bytes)
+                .map(|sig| sig.to_vec())
+                .map_err(|e| {
+                    warn!(error = %e, "ECDSA signing failed");
+                    ConsensusError::state_error(format!("ECDSA signing failed: {e}"))
+                });
         }
 
-        let mut key_bytes = Zeroizing::new([0u8; 32]);
-        key_bytes.copy_from_slice(&self.private_key);
-
-        Secp256r1Crypto::sign_prehash(&Crypto::sha256(data), &key_bytes)
-            .map(|sig| sig.to_vec())
-            .map_err(|e| {
-                warn!(error = %e, "ECDSA signing failed");
-                ConsensusError::state_error(format!("ECDSA signing failed: {e}"))
-            })
+        #[cfg(not(test))]
+        Err(ConsensusError::state_error(
+            "Consensus signing requires an external ConsensusSigner in production",
+        ))
     }
 
     /// Signs a block hash
@@ -80,7 +92,16 @@ impl ConsensusService {
         let mut sign_data = Vec::with_capacity(4 + 32);
         sign_data.extend_from_slice(&self.network.to_le_bytes());
         sign_data.extend_from_slice(&hash.as_bytes());
-        self.sign(&sign_data)
+        self.sign(
+            &sign_data,
+            &ConsensusSignContext {
+                block_index: self.context.block_index,
+                view_number: self.context.view_number,
+                message_type: ConsensusMessageType::Commit,
+                proposal_digest: Some(*hash),
+                commit_block_hash: true,
+            },
+        )
     }
 
     /// Broadcast this validator's Commit for the locally verified proposal.
@@ -129,15 +150,18 @@ impl ConsensusService {
         let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
         let commit_witness = payload.witness.clone();
         let commit_invocation = invocation_script_from_signature(&commit_witness);
-        self.broadcast(payload)?;
+
+        // Record the exact local signature before any event can expose it. The
+        // broadcast helper derives its permit from this post-signing state.
+        self.context
+            .add_commit(my_index, self.context.view_number, signature)?;
         if !commit_witness.is_empty() {
             self.context
                 .commit_invocations
                 .insert(my_index, commit_invocation);
         }
-
-        self.context
-            .add_commit(my_index, self.context.view_number, signature)?;
+        self.context.seal_commit_persistence_permit()?;
+        self.broadcast(payload)?;
         self.context
             .change_timer(current_timestamp(), self.context.expected_block_time);
         self.check_commits()?;

@@ -7,7 +7,7 @@ use std::any::Any;
 use std::sync::Arc;
 
 use super::NeoSystem;
-use super::context::NeoSystemContext;
+use super::context::{NeoSystemContext, TransactionExecutionSink};
 use crate::error::CoreResult;
 use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
@@ -45,6 +45,14 @@ impl NeoSystem {
         handler: Arc<dyn CommittedHandler + Send + Sync>,
     ) -> CoreResult<()> {
         self.context().register_committed_handler(handler)
+    }
+
+    /// Registers the one-time bounded canonical execution sink.
+    pub fn register_transaction_execution_sink(
+        &self,
+        sink: TransactionExecutionSink,
+    ) -> Result<(), TransactionExecutionSink> {
+        self.context().register_transaction_execution_sink(sink)
     }
 
     /// Registers a handler for wallet provider changes.

@@ -56,6 +56,12 @@ members = [
     # Observability stack
     "neo-telemetry",
 
+    # Isolated AI-assisted diagnostics (no node control capabilities)
+    "neo-ai-agent",
+
+    # Restricted detached-state probe worker
+    "neo-probe",
+
     # === Application Layer ===
     # Node daemon (standalone RPC server)
     "neo-node",
@@ -156,6 +162,8 @@ neo-hsm = { path = "neo-hsm", version = "0.20.0" }
 
 # Telemetry
 neo-telemetry = { path = "neo-telemetry", version = "0.20.0" }
+neo-ai-agent = { path = "neo-ai-agent", version = "0.20.0" }
+neo-probe = { path = "neo-probe", version = "0.20.0" }
 
 # Application layer
 # neo-cli removed: functionality merged into neo-node

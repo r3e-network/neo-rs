@@ -262,15 +262,15 @@ pub mod signer;
 pub use change_view_reason::ChangeViewReason;
 pub use error::{ConsensusError, ConsensusResult};
 pub use message_type::ConsensusMessageType;
-pub use signer::ConsensusSigner;
+pub use signer::{ConsensusSignContext, ConsensusSigner};
 
 // ============================================================================
 // Public Re-exports - Context
 // ============================================================================
 
 pub use context::{
-    BLOCK_TIME_MS, ConsensusContext, ConsensusState, DEFAULT_BLOCK_TIME_MS, MAX_VALIDATORS,
-    ValidatorInfo,
+    BLOCK_TIME_MS, CommitPersistencePermit, ConsensusContext, ConsensusState,
+    DEFAULT_BLOCK_TIME_MS, MAX_VALIDATORS, ValidatorInfo,
 };
 
 // ============================================================================

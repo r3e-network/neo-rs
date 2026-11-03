@@ -73,7 +73,7 @@ impl Default for OracleServiceSettings {
             neofs_bearer_signature_key: None,
             neofs_wallet_connect: false,
             neofs_auto_sign_bearer: false,
-            neofs_use_grpc: cfg!(feature = "neofs-grpc"),
+            neofs_use_grpc: false,
             auto_start: false,
             exception_policy: UnhandledExceptionPolicy::Ignore,
             url_whitelist: Vec::new(),

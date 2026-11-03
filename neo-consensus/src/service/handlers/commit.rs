@@ -349,6 +349,7 @@ impl ConsensusService {
             signatures,
             validator_pubkeys,
             required_signatures: m,
+            commit_persistence: self.context.commit_persistence_permit()?,
         })
     }
 }

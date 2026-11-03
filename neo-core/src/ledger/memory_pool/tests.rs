@@ -1239,3 +1239,510 @@ fn arc_transaction_returns_correct_data() {
     let arc_tx2 = pool.try_get(&tx_hash).expect("transaction should exist");
     assert!(Arc::ptr_eq(&arc_tx, &arc_tx2) || arc_tx.hash() == arc_tx2.hash());
 }
+
+fn quarantine_metadata(hash: UInt256, now: u64) -> QuarantineMetadata {
+    QuarantineMetadata {
+        transaction_hash: hash,
+        evidence_refs: vec!["fixed-probe-rule-1".to_string()],
+        context: "trusted double replay finding".to_string(),
+        created_at_unix_ms: now,
+        expires_at_unix_ms: now + super::quarantine::QUARANTINE_TTL_MS,
+        rule_version: "restricted-probe-result-v1".to_string(),
+        episode: 0,
+        cumulative_active_ms: 0,
+    }
+}
+
+fn enable_quarantine(pool: &mut MemoryPool, max_entries: usize, scan_budget: usize) {
+    pool.configure_quarantine(
+        QuarantineConfig {
+            automatic_enabled: true,
+            max_entries,
+            max_ttl_ms: super::quarantine::QUARANTINE_TTL_MS,
+            selection_scan_budget: scan_budget,
+        },
+        1_000,
+    )
+    .expect("enable quarantine");
+}
+
+fn quarantine_tx(settings: &ProtocolSettings, key: u16, network_fee: i64) -> Transaction {
+    let mut private_key = [0u8; 32];
+    private_key[..2].copy_from_slice(&key.to_le_bytes());
+    build_signed_transaction(settings, private_key, network_fee, 0, Vec::new())
+}
+
+fn add_quarantine_support(
+    pool: &mut MemoryPool,
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    key: u16,
+) {
+    let tx = quarantine_tx(settings, key, 1_0000_0000);
+    add_succeed(pool, tx, snapshot, settings);
+}
+
+#[test]
+fn automatic_quarantine_is_disabled_by_default() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let tx = signed_tx(&settings, 110, 3_0000_0000);
+    let hash = tx.hash();
+    add_succeed(&mut pool, tx, &snapshot, &settings);
+
+    assert_eq!(
+        pool.quarantine_transaction(quarantine_metadata(hash, 1_000), 1_000),
+        Err(QuarantineError::Disabled)
+    );
+    assert_eq!(pool.quarantine_count(1_000), 0);
+}
+
+#[test]
+fn disabled_quarantine_keeps_canonical_proposal_order_and_limit() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let high = signed_tx(&settings, 126, 3_0000_0000);
+    let middle = signed_tx(&settings, 127, 2_0000_0000);
+    let low = signed_tx(&settings, 128, 1_0000_0000);
+    add_succeed(&mut pool, high.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, middle, &snapshot, &settings);
+    add_succeed(&mut pool, low, &snapshot, &settings);
+
+    pool.configure_quarantine(
+        QuarantineConfig {
+            automatic_enabled: false,
+            max_entries: 4,
+            max_ttl_ms: super::quarantine::QUARANTINE_TTL_MS,
+            selection_scan_budget: 1,
+        },
+        1_000,
+    )
+    .expect("disabled config");
+
+    let selected = pool.local_proposal_transactions(2, 1_000);
+    assert_eq!(selected.len(), 2);
+    assert_eq!(
+        selected.iter().map(|tx| tx.hash()).collect::<Vec<_>>(),
+        pool.get_sorted_verified_transactions(2)
+            .iter()
+            .map(|tx| tx.hash())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(selected[0].hash(), high.hash());
+}
+
+#[test]
+fn quarantine_metadata_does_not_replace_transaction_state() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let tx = signed_tx(&settings, 111, 3_0000_0000);
+    let hash = tx.hash();
+    add_succeed(&mut pool, tx, &snapshot, &settings);
+    add_quarantine_support(&mut pool, &snapshot, &settings, 911);
+    enable_quarantine(&mut pool, 4, 2_048);
+
+    pool.quarantine_transaction(quarantine_metadata(hash, 1_000), 1_000)
+        .expect("quarantine");
+
+    assert!(pool.contains_key(&hash));
+    assert_eq!(pool.verified_count(), 2);
+    assert!(pool.try_get(&hash).is_some());
+    assert_eq!(pool.quarantine_count(1_100), 1);
+}
+
+#[test]
+fn local_proposal_filter_backfills_but_external_views_ignore_labels() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let high = signed_tx(&settings, 112, 3_0000_0000);
+    let middle = signed_tx(&settings, 113, 2_0000_0000);
+    let low = signed_tx(&settings, 114, 1_0000_0000);
+    add_succeed(&mut pool, high.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, middle.clone(), &snapshot, &settings);
+    add_succeed(&mut pool, low.clone(), &snapshot, &settings);
+    pool.configure_quarantine(
+        QuarantineConfig {
+            automatic_enabled: true,
+            max_entries: 4,
+            max_ttl_ms: super::quarantine::QUARANTINE_TTL_MS,
+            selection_scan_budget: 3,
+        },
+        1_000,
+    )
+    .expect("config");
+    pool.quarantine_transaction(quarantine_metadata(high.hash(), 1_000), 1_000)
+        .expect("quarantine");
+
+    let local = pool.local_proposal_transactions(2, 1_100);
+    assert_eq!(local.len(), 2);
+    assert!(!local.iter().any(|tx| tx.hash() == high.hash()));
+    assert!(local.iter().any(|tx| tx.hash() == middle.hash()));
+    assert!(local.iter().any(|tx| tx.hash() == low.hash()));
+
+    let external = pool.verified_transactions_vec();
+    assert_eq!(external.len(), 3);
+    assert!(external.iter().any(|tx| tx.hash() == high.hash()));
+    assert!(pool.try_get(&high.hash()).is_some());
+    assert!(pool.contains_key(&high.hash()));
+    assert!(
+        pool.sorted_verified_transactions(3)
+            .iter()
+            .any(|tx| tx.hash() == high.hash())
+    );
+    assert!(
+        pool.all_transactions_vec()
+            .iter()
+            .any(|tx| tx.hash() == high.hash())
+    );
+}
+
+#[test]
+fn quarantine_ttl_expires_automatically_for_local_selection() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let tx = signed_tx(&settings, 115, 3_0000_0000);
+    let hash = tx.hash();
+    add_succeed(&mut pool, tx, &snapshot, &settings);
+    add_quarantine_support(&mut pool, &snapshot, &settings, 915);
+    enable_quarantine(&mut pool, 4, 2_048);
+    pool.quarantine_transaction(quarantine_metadata(hash, 1_000), 1_000)
+        .expect("quarantine");
+
+    assert!(
+        !pool
+            .local_proposal_transactions(2, 30_999)
+            .iter()
+            .any(|transaction| transaction.hash() == hash)
+    );
+    let selected = pool.local_proposal_transactions(2, 31_000);
+    assert!(
+        selected
+            .iter()
+            .any(|transaction| transaction.hash() == hash)
+    );
+    assert_eq!(pool.quarantine_count(31_000), 0);
+}
+
+#[test]
+fn active_quarantine_label_cannot_renew() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let tx = signed_tx(&settings, 116, 3_0000_0000);
+    let hash = tx.hash();
+    add_succeed(&mut pool, tx, &snapshot, &settings);
+    add_quarantine_support(&mut pool, &snapshot, &settings, 916);
+    enable_quarantine(&mut pool, 4, 2_048);
+
+    pool.quarantine_transaction(quarantine_metadata(hash, 1_000), 1_000)
+        .expect("first episode");
+    assert_eq!(
+        pool.quarantine_transaction(quarantine_metadata(hash, 2_000), 2_000),
+        Err(QuarantineError::AlreadyActive)
+    );
+    let metadata = pool.quarantine_metadata(&hash, 2_000).expect("first label");
+    assert_eq!(metadata.expires_at_unix_ms, 31_000);
+    assert_eq!(metadata.episode, 1);
+}
+
+#[test]
+fn quarantine_episode_cap_is_two() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let tx = signed_tx(&settings, 119, 3_0000_0000);
+    let hash = tx.hash();
+    add_succeed(&mut pool, tx, &snapshot, &settings);
+    add_quarantine_support(&mut pool, &snapshot, &settings, 919);
+    enable_quarantine(&mut pool, 4, 2_048);
+
+    let mut first = quarantine_metadata(hash, 1_000);
+    first.expires_at_unix_ms = 16_000;
+    pool.quarantine_transaction(first, 1_000)
+        .expect("first episode");
+    let mut second = quarantine_metadata(hash, 16_000);
+    second.expires_at_unix_ms = 31_000;
+    pool.quarantine_transaction(second, 16_000)
+        .expect("second episode");
+    assert_eq!(
+        pool.quarantine_transaction(quarantine_metadata(hash, 31_000), 31_000),
+        Err(QuarantineError::LifetimeExhausted)
+    );
+}
+
+#[test]
+fn quarantine_cumulative_lifetime_is_capped_at_sixty_seconds() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let tx = signed_tx(&settings, 120, 3_0000_0000);
+    let hash = tx.hash();
+    add_succeed(&mut pool, tx, &snapshot, &settings);
+    add_quarantine_support(&mut pool, &snapshot, &settings, 920);
+    enable_quarantine(&mut pool, 4, 2_048);
+    pool.quarantine_history.insert(
+        hash,
+        super::quarantine::QuarantineHistory {
+            episodes: 1,
+            cumulative_ms: 50_000,
+        },
+    );
+
+    assert_eq!(
+        pool.quarantine_transaction(quarantine_metadata(hash, 1_000), 1_000),
+        Err(QuarantineError::LifetimeExhausted)
+    );
+}
+
+#[test]
+fn context_and_rule_changes_do_not_reset_quarantine_history() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let tx = signed_tx(&settings, 121, 3_0000_0000);
+    let hash = tx.hash();
+    add_succeed(&mut pool, tx, &snapshot, &settings);
+    add_quarantine_support(&mut pool, &snapshot, &settings, 921);
+    enable_quarantine(&mut pool, 4, 2_048);
+
+    pool.quarantine_transaction(quarantine_metadata(hash, 1_000), 1_000)
+        .expect("first episode");
+    assert_eq!(pool.take_quarantine_expiry_reviews(31_000, 1).len(), 1);
+    let mut second = quarantine_metadata(hash, 31_000);
+    second.context = "changed context must not reset lifetime".to_string();
+    second.rule_version = "restricted-probe-result-v2".to_string();
+    pool.quarantine_transaction(second, 31_000)
+        .expect("second episode");
+    let metadata = pool
+        .quarantine_metadata(&hash, 31_000)
+        .expect("second label");
+    assert_eq!(metadata.episode, 2);
+    assert_eq!(metadata.cumulative_active_ms, 60_000);
+}
+
+#[test]
+fn expiry_restores_eligibility_and_schedules_bounded_review() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let tx = signed_tx(&settings, 117, 3_0000_0000);
+    let hash = tx.hash();
+    add_succeed(&mut pool, tx, &snapshot, &settings);
+    add_quarantine_support(&mut pool, &snapshot, &settings, 917);
+    enable_quarantine(&mut pool, 4, 2_048);
+    pool.quarantine_transaction(quarantine_metadata(hash, 1_000), 1_000)
+        .expect("quarantine");
+
+    assert!(
+        !pool
+            .local_proposal_transactions(2, 30_999)
+            .iter()
+            .any(|transaction| transaction.hash() == hash)
+    );
+    assert!(
+        pool.local_proposal_transactions(2, 31_000)
+            .iter()
+            .any(|transaction| transaction.hash() == hash)
+    );
+    let reviews = pool.take_quarantine_expiry_reviews(31_000, 8);
+    assert_eq!(reviews.len(), 1);
+    assert_eq!(reviews[0].transaction_hash, hash);
+    assert_eq!(reviews[0].expired_at_unix_ms, 31_000);
+    assert!(pool.take_quarantine_expiry_reviews(31_000, 8).is_empty());
+}
+
+#[test]
+fn expiry_review_queue_evicts_oldest_at_its_bound() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let transactions = [
+        signed_tx(&settings, 123, 3_0000_0000),
+        signed_tx(&settings, 124, 2_0000_0000),
+        signed_tx(&settings, 125, 1_0000_0000),
+    ];
+    let hashes = transactions.each_ref().map(Transaction::hash);
+    for transaction in transactions {
+        add_succeed(&mut pool, transaction, &snapshot, &settings);
+    }
+    enable_quarantine(&mut pool, 1, 2_048);
+
+    pool.quarantine_transaction(quarantine_metadata(hashes[0], 1_000), 1_000)
+        .expect("first episode");
+    pool.quarantine_transaction(quarantine_metadata(hashes[1], 31_000), 31_000)
+        .expect("second hash");
+    pool.quarantine_transaction(quarantine_metadata(hashes[2], 61_000), 61_000)
+        .expect("third hash");
+    let reviews = pool.take_quarantine_expiry_reviews(91_000, usize::MAX);
+    assert_eq!(reviews.len(), 1);
+    assert_eq!(reviews[0].transaction_hash, hashes[2]);
+}
+
+#[test]
+fn small_pool_cannot_be_fully_quarantined() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let tx = signed_tx(&settings, 122, 3_0000_0000);
+    let hash = tx.hash();
+    add_succeed(&mut pool, tx, &snapshot, &settings);
+    enable_quarantine(&mut pool, 4, 2_048);
+
+    assert_eq!(
+        pool.quarantine_transaction(quarantine_metadata(hash, 1_000), 1_000),
+        Err(QuarantineError::ImpactLimitReached)
+    );
+    assert_eq!(pool.local_proposal_transactions(1, 1_000)[0].hash(), hash);
+}
+
+#[test]
+fn quarantine_impact_is_limited_to_one_percent_of_pool() {
+    let settings = ProtocolSettings {
+        memory_pool_max_transactions: 128,
+        ..ProtocolSettings::default()
+    };
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let mut hashes = Vec::new();
+    for key in 200u16..301 {
+        let tx = quarantine_tx(&settings, key, 100_000_000 + i64::from(key) * 100_000);
+        set_gas_balance(
+            &snapshot,
+            tx.sender().expect("signed transaction sender"),
+            5_000_000_000,
+        );
+        hashes.push(tx.hash());
+        add_succeed(&mut pool, tx, &snapshot, &settings);
+    }
+    assert_eq!(pool.verified_count(), 101);
+    enable_quarantine(&mut pool, 1_024, 2_048);
+    pool.quarantine_transaction(quarantine_metadata(hashes[0], 1_000), 1_000)
+        .expect("one percent allows one");
+    assert_eq!(
+        pool.quarantine_transaction(quarantine_metadata(hashes[1], 1_000), 1_000),
+        Err(QuarantineError::ImpactLimitReached)
+    );
+}
+
+#[test]
+fn quarantine_ttl_is_clamped_to_thirty_seconds() {
+    let settings = ProtocolSettings::default();
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let tx = signed_tx(&settings, 118, 3_0000_0000);
+    let hash = tx.hash();
+    add_succeed(&mut pool, tx, &snapshot, &settings);
+    add_quarantine_support(&mut pool, &snapshot, &settings, 918);
+    enable_quarantine(&mut pool, 4, 2_048);
+    let mut metadata = quarantine_metadata(hash, 1_000);
+    metadata.expires_at_unix_ms = 91_000;
+    pool.quarantine_transaction(metadata, 1_000)
+        .expect("overlong request must be clamped");
+    let stored = pool
+        .quarantine_metadata(&hash, 1_000)
+        .expect("active metadata");
+    assert_eq!(stored.expires_at_unix_ms, 31_000);
+    assert_eq!(stored.cumulative_active_ms, 30_000);
+}
+
+#[test]
+fn local_proposal_scan_is_strictly_budgeted_and_advances_by_inspected_count() {
+    let settings = ProtocolSettings {
+        memory_pool_max_transactions: 512,
+        ..ProtocolSettings::default()
+    };
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    for key in 120u16..420 {
+        let tx = quarantine_tx(&settings, key, 100_000_000 + i64::from(key) * 100_000);
+        set_gas_balance(
+            &snapshot,
+            tx.sender().expect("signed transaction sender"),
+            5_000_000_000,
+        );
+        add_succeed(&mut pool, tx, &snapshot, &settings);
+    }
+    pool.configure_quarantine(
+        QuarantineConfig {
+            automatic_enabled: true,
+            max_entries: 10,
+            max_ttl_ms: super::quarantine::QUARANTINE_TTL_MS,
+            selection_scan_budget: 3,
+        },
+        1_000,
+    )
+    .expect("config");
+    let first_three = pool.get_sorted_verified_transactions(3);
+    let expected_first_cursor = first_three[2].hash();
+    for tx in &first_three {
+        pool.quarantine_transaction(quarantine_metadata(tx.hash(), 1_000), 1_000)
+            .expect("quarantine");
+    }
+
+    assert!(pool.local_proposal_transactions(5, 1_100).is_empty());
+    assert_eq!(pool.proposal_last_scan_count, 3);
+    assert_eq!(
+        pool.proposal_scan_cursor
+            .as_ref()
+            .map(|item| item.transaction.hash()),
+        Some(expected_first_cursor)
+    );
+    let next = pool.local_proposal_transactions(1, 1_100);
+    assert_eq!(next.len(), 1);
+    assert_eq!(pool.proposal_last_scan_count, 1);
+    assert_eq!(
+        pool.proposal_scan_cursor
+            .as_ref()
+            .map(|item| item.transaction.hash()),
+        Some(next[0].hash())
+    );
+}
+
+#[test]
+fn large_pool_rotation_eventually_selects_every_interval() {
+    let settings = ProtocolSettings {
+        memory_pool_max_transactions: 128,
+        ..ProtocolSettings::default()
+    };
+    let mut pool = test_balance_pool(&settings);
+    let snapshot = DataCache::new(false);
+    let mut expected = HashSet::new();
+    for key in 1..=80 {
+        let tx = signed_tx(&settings, key, 100_000_000 + i64::from(key) * 100_000);
+        set_gas_balance(
+            &snapshot,
+            tx.sender().expect("signed transaction sender"),
+            5_000_000_000,
+        );
+        expected.insert(tx.hash());
+        add_succeed(&mut pool, tx, &snapshot, &settings);
+    }
+    assert_eq!(pool.verified_count(), expected.len());
+    pool.configure_quarantine(
+        QuarantineConfig {
+            automatic_enabled: true,
+            max_entries: 8,
+            max_ttl_ms: super::quarantine::QUARANTINE_TTL_MS,
+            selection_scan_budget: 7,
+        },
+        1_000,
+    )
+    .expect("config");
+
+    let mut observed = HashSet::new();
+    for _ in 0..expected.len() {
+        let selected = pool.local_proposal_transactions(1, 1_100);
+        assert_eq!(selected.len(), 1);
+        assert!(pool.proposal_last_scan_count <= 7);
+        observed.insert(selected[0].hash());
+    }
+    assert_eq!(
+        observed, expected,
+        "rotation must cover the entire real pool"
+    );
+}

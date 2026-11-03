@@ -47,6 +47,31 @@ async fn persist_completed_round_emits_block_committed() {
     harness.drive_until_idle(200).await.expect("drive");
 
     assert!(harness.saw_block_committed(1));
+    let block_data = harness
+        .take_events()
+        .into_iter()
+        .find_map(|event| match event {
+            crate::ConsensusEvent::BlockCommitted { block_data, .. } => Some(block_data),
+            _ => None,
+        })
+        .expect("timer-driven round must emit block data");
+    let permit = block_data
+        .commit_persistence
+        .as_ref()
+        .expect("final block containing a local Commit must carry a persistence permit");
+    assert!(permit.validate().is_ok());
+    let signature = block_data
+        .signatures
+        .iter()
+        .find(|(validator, _)| *validator == permit.validator_index)
+        .map(|(_, signature)| signature)
+        .expect("permit validator signature");
+    assert!(permit.covers_commit(
+        block_data.block_index,
+        permit.view_number,
+        permit.validator_index,
+        signature,
+    ));
 }
 
 #[tokio::test]

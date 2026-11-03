@@ -6,7 +6,8 @@ use neo_crypto::ECPoint;
 use neo_primitives::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Write;
 use std::num::NonZeroUsize;
 use std::path::Path;
 
@@ -108,6 +109,66 @@ struct PersistedConsensusState {
     commit_invocations: HashMap<u8, Vec<u8>>,
 }
 
+/// Durable authorization for publishing a locally generated Commit signature.
+///
+/// The recovery bytes are deliberately carried out-of-band and are never part
+/// of the dBFT wire format. An egress layer must validate and durably persist
+/// these exact bytes before exposing the signature.
+#[derive(Debug, Clone)]
+pub struct CommitPersistencePermit {
+    /// Block index bound to the Commit.
+    pub block_index: u32,
+    /// View number bound to the Commit.
+    pub view_number: u8,
+    /// Local validator index that produced the Commit.
+    pub validator_index: u8,
+    /// Verified proposal hash signed by the Commit.
+    pub proposal_hash: UInt256,
+    /// Exact block-hash signature that may be published.
+    pub signature: Vec<u8>,
+    /// Exact recovery record that must be durably persisted.
+    pub recovery_state: Vec<u8>,
+}
+
+impl CommitPersistencePermit {
+    /// Validates that the recovery record contains this exact Commit identity.
+    pub fn validate(&self) -> ConsensusResult<()> {
+        if self.signature.len() != 64 {
+            return Err(ConsensusError::PersistenceError(
+                "commit persistence permit has an invalid signature length".to_string(),
+            ));
+        }
+        let state = ConsensusContext::decode_state(&self.recovery_state)?;
+        let matches = state.block_index == self.block_index
+            && state.view_number == self.view_number
+            && state.proposed_block_hash == Some(self.proposal_hash)
+            && state.commits.get(&self.validator_index) == Some(&self.signature)
+            && state.commit_view_numbers.get(&self.validator_index) == Some(&self.view_number);
+        if !matches {
+            return Err(ConsensusError::PersistenceError(
+                "commit persistence permit does not match its recovery record".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Returns whether this permit authorizes the exact Commit signature.
+    #[must_use]
+    pub fn covers_commit(
+        &self,
+        block_index: u32,
+        view_number: u8,
+        validator_index: u8,
+        signature: &[u8],
+    ) -> bool {
+        self.block_index == block_index
+            && self.view_number == view_number
+            && self.validator_index == validator_index
+            && self.signature == signature
+            && self.validate().is_ok()
+    }
+}
+
 /// Consensus context holding all state for the current consensus round
 #[derive(Debug)]
 pub struct ConsensusContext {
@@ -198,6 +259,9 @@ pub struct ConsensusContext {
     /// Payload hashes for which this node already sent a recovery response.
     /// C# keeps these hashes for the whole block, including stale ChangeView payloads.
     recovery_response_hashes: LruCache<UInt256, ()>,
+    /// Last sealed local Commit permit, retained across view changes so a
+    /// RecoveryMessage cannot expose an earlier-view signature without proof.
+    local_commit_persistence: Option<CommitPersistencePermit>,
 }
 
 impl ConsensusContext {
@@ -256,6 +320,7 @@ impl ConsensusContext {
             last_seen_messages: HashMap::new(),
             seen_message_hashes: Self::new_seen_message_cache(),
             recovery_response_hashes: Self::new_seen_message_cache(),
+            local_commit_persistence: None,
         }
     }
 
@@ -510,6 +575,7 @@ impl ConsensusContext {
         // Clear message hash caches at the block boundary.
         self.seen_message_hashes.clear();
         self.recovery_response_hashes.clear();
+        self.local_commit_persistence = None;
     }
 
     /// Adds a prepare response invocation script
@@ -815,6 +881,132 @@ impl ConsensusContext {
         self.view_changing() && !self.more_than_f_nodes_committed_or_lost()
     }
 
+    fn current_commit_persistence_permit(
+        &self,
+    ) -> ConsensusResult<Option<CommitPersistencePermit>> {
+        let Some(validator_index) = self.my_index else {
+            return Ok(None);
+        };
+        let Some(signature) = self.commits.get(&validator_index) else {
+            return Ok(None);
+        };
+        if self.commit_view_numbers.get(&validator_index).copied() != Some(self.view_number) {
+            return Ok(None);
+        }
+        let Some(proposal_hash) = self.proposed_block_hash else {
+            return Err(ConsensusError::PersistenceError(
+                "local Commit has no verified proposal hash".to_string(),
+            ));
+        };
+        let permit = CommitPersistencePermit {
+            block_index: self.block_index,
+            view_number: self.view_number,
+            validator_index,
+            proposal_hash,
+            signature: signature.clone(),
+            recovery_state: self.to_bytes()?,
+        };
+        permit.validate()?;
+        Ok(Some(permit))
+    }
+
+    /// Seals the exact post-signing recovery record for later egress checks.
+    pub fn seal_commit_persistence_permit(&mut self) -> ConsensusResult<()> {
+        self.local_commit_persistence = self.current_commit_persistence_permit()?;
+        if self.local_commit_persistence.is_none() {
+            return Err(ConsensusError::PersistenceError(
+                "no current-view local Commit is available to seal".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Builds a publication permit for the local Commit. A sealed earlier-view
+    /// permit remains usable for RecoveryMessage relay after a view change.
+    pub fn commit_persistence_permit(&self) -> ConsensusResult<Option<CommitPersistencePermit>> {
+        if let Some(permit) = self.current_commit_persistence_permit()? {
+            return Ok(Some(permit));
+        }
+        if let Some(permit) = self.local_commit_persistence.as_ref() {
+            permit.validate()?;
+            return Ok(Some(permit.clone()));
+        }
+        Ok(None)
+    }
+
+    /// Saves exact recovery bytes durably using a synchronized temporary file.
+    pub fn save_bytes_durable(path: &Path, encoded: &[u8]) -> ConsensusResult<()> {
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent)?;
+        }
+        let temp_path = path.with_extension("tmp");
+        let mut file = File::create(&temp_path)?;
+        file.write_all(encoded)?;
+        file.sync_all()?;
+        drop(file);
+        Self::replace_file_durable(&temp_path, path)?;
+        let persisted = fs::read(path)?;
+        if persisted != encoded {
+            return Err(ConsensusError::PersistenceError(
+                "durable recovery file verification failed".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    fn replace_file_durable(temp_path: &Path, path: &Path) -> std::io::Result<()> {
+        fs::rename(temp_path, path)?;
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            File::open(parent)?.sync_all()?;
+        }
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn replace_file_durable(temp_path: &Path, path: &Path) -> std::io::Result<()> {
+        use std::os::windows::ffi::OsStrExt;
+
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn MoveFileExW(
+                existing_file_name: *const u16,
+                new_file_name: *const u16,
+                flags: u32,
+            ) -> i32;
+        }
+
+        const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+        const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+        let source: Vec<u16> = temp_path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let target: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: both paths are valid, NUL-terminated UTF-16 buffers for the
+        // duration of the call, and the final pointer is not retained.
+        let replaced = unsafe {
+            MoveFileExW(
+                source.as_ptr(),
+                target.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if replaced == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
     /// Saves the consensus state to disk for crash recovery
     ///
     /// Uses atomic write (write to temp file + rename) to prevent corruption.
@@ -850,12 +1042,7 @@ impl ConsensusContext {
 
         let encoded = Self::encode_state(&state)?;
 
-        // Atomic write: write to temp file first
-        let temp_path = path.with_extension("tmp");
-        fs::write(&temp_path, &encoded)?;
-
-        // Rename to final path (atomic on POSIX systems)
-        fs::rename(&temp_path, path)?;
+        Self::save_bytes_durable(path, &encoded)?;
 
         tracing::debug!(
             "Saved consensus state: block={}, view={}, size={} bytes",
@@ -938,6 +1125,20 @@ impl ConsensusContext {
             state.change_views.len()
         );
 
+        let local_commit_persistence = my_index.and_then(|validator_index| {
+            let signature = state.commits.get(&validator_index)?.clone();
+            let view_number = *state.commit_view_numbers.get(&validator_index)?;
+            let proposal_hash = state.proposed_block_hash?;
+            (view_number == state.view_number).then(|| CommitPersistencePermit {
+                block_index: state.block_index,
+                view_number,
+                validator_index,
+                proposal_hash,
+                signature,
+                recovery_state: encoded.to_vec(),
+            })
+        });
+
         // Reconstruct the full context
         Ok(Self {
             block_index: state.block_index,
@@ -977,6 +1178,7 @@ impl ConsensusContext {
             last_seen_messages: HashMap::new(), // Not persisted
             seen_message_hashes: Self::new_seen_message_cache(), // Not persisted
             recovery_response_hashes: Self::new_seen_message_cache(), // Not persisted
+            local_commit_persistence,
         })
     }
 

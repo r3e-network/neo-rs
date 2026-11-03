@@ -1,3 +1,4 @@
+use super::super::utils::select_oracle_accounts;
 use super::super::{OracleService, OracleStatus, REFRESH_INTERVAL};
 use crate::smart_contract::native::OracleContract;
 use std::sync::Arc;
@@ -90,6 +91,7 @@ impl OracleService {
 
             let now = SystemTime::now();
             let mut expired_requests = Vec::new();
+            let mut resend = Vec::new();
             let mut send_tasks = Vec::new();
 
             {
@@ -103,22 +105,12 @@ impl OracleService {
                                 continue;
                             }
                             if span > REFRESH_INTERVAL {
-                                for account in wallet.get_accounts() {
-                                    if !account.has_key() || account.is_locked() {
-                                        continue;
-                                    }
-                                    let Some(key) = account.get_key() else {
-                                        continue;
-                                    };
-                                    let Ok(pubkey) = key.get_public_key_point() else {
-                                        continue;
-                                    };
+                                let oracles: Vec<_> = task.backup_signs.keys().cloned().collect();
+                                for (account, pubkey) in
+                                    select_oracle_accounts(wallet.as_ref(), &oracles)
+                                {
                                     if let Some(sign) = task.backup_signs.get(&pubkey) {
-                                        send_tasks.push(self.send_response_signature(
-                                            *request_id,
-                                            sign.clone(),
-                                            key,
-                                        ));
+                                        resend.push((*request_id, sign.clone(), account, pubkey));
                                     }
                                 }
                             }
@@ -127,6 +119,20 @@ impl OracleService {
                 }
             }
 
+            for (request_id, sign, account, pubkey) in resend {
+                match self
+                    .send_response_signature(request_id, sign, account, pubkey)
+                    .await
+                {
+                    Ok(task) => send_tasks.push(task),
+                    Err(error) => tracing::warn!(
+                        target: "neo::oracle",
+                        request_id,
+                        %error,
+                        "failed to authorize refreshed oracle response signature"
+                    ),
+                }
+            }
             if !send_tasks.is_empty() {
                 futures::future::join_all(send_tasks).await;
             }

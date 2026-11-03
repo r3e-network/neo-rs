@@ -1,5 +1,6 @@
-use super::super::OracleService;
-use crate::wallets::KeyPair;
+use super::super::{OracleService, OracleServiceError};
+use crate::UInt160;
+use crate::cryptography::ECPoint;
 use tokio::task::JoinHandle;
 
 #[cfg(feature = "oracle")]
@@ -13,26 +14,44 @@ use tracing::warn;
 
 impl OracleService {
     #[cfg(feature = "oracle")]
-    pub(in super::super) fn send_response_signature(
+    pub(in super::super) async fn send_response_signature(
         &self,
         request_id: u64,
         tx_sign: Vec<u8>,
-        key: KeyPair,
-    ) -> JoinHandle<()> {
+        account: UInt160,
+        public_key: ECPoint,
+    ) -> Result<JoinHandle<()>, OracleServiceError> {
+        let mut message = Vec::with_capacity(public_key.as_bytes().len() + 8 + tx_sign.len());
+        message.extend_from_slice(public_key.as_bytes());
+        message.extend_from_slice(&request_id.to_le_bytes());
+        message.extend_from_slice(&tx_sign);
+        let operation_id = format!(
+            "oracle-submission:{}:{}:{}:{}",
+            self.settings.network,
+            request_id,
+            account,
+            hex::encode(neo_crypto::Crypto::sha256(&message)),
+        );
+        let sign = self
+            .sign_neo_payload(
+                operation_id,
+                account,
+                message,
+                "neo-n3-oracle-response-submission",
+                std::collections::BTreeMap::from([
+                    ("request_id".to_string(), request_id.to_string()),
+                    (
+                        "oracle_public_key".to_string(),
+                        hex::encode(public_key.as_bytes()),
+                    ),
+                ]),
+            )
+            .await?;
+
         let settings = self.settings.clone();
         let counter = self.counter.fetch_add(1, Ordering::SeqCst);
         let https = self.https.clone();
-        tokio::spawn(async move {
-            let Ok(public_key) = key.get_public_key_point() else {
-                return;
-            };
-            let mut message = Vec::with_capacity(public_key.as_bytes().len() + 8 + tx_sign.len());
-            message.extend_from_slice(public_key.as_bytes());
-            message.extend_from_slice(&request_id.to_le_bytes());
-            message.extend_from_slice(&tx_sign);
-
-            let Ok(sign) = key.sign(&message) else { return };
-
+        Ok(tokio::spawn(async move {
             let payload = serde_json::json!({
                 "id": counter,
                 "jsonrpc": "2.0",
@@ -73,17 +92,18 @@ impl OracleService {
                     }
                 }
             }
-        })
+        }))
     }
 
     #[cfg(not(feature = "oracle"))]
-    pub(in super::super) fn send_response_signature(
+    pub(in super::super) async fn send_response_signature(
         &self,
         request_id: u64,
         tx_sign: Vec<u8>,
-        key: KeyPair,
-    ) -> JoinHandle<()> {
-        let _ = (&self.settings, request_id, tx_sign, key);
-        tokio::spawn(async move {})
+        account: UInt160,
+        public_key: ECPoint,
+    ) -> Result<JoinHandle<()>, OracleServiceError> {
+        let _ = (&self.settings, request_id, tx_sign, account, public_key);
+        Ok(tokio::spawn(async move {}))
     }
 }

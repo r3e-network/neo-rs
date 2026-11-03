@@ -26,6 +26,7 @@ impl OracleService {
             status: AtomicU8::new(OracleStatus::Unstarted.as_u8()),
             self_ref: RwLock::new(Weak::new()),
             wallet: RwLock::new(None),
+            signer: RwLock::new(None),
             pending_queue: Mutex::new(HashMap::new()),
             finished_cache: Mutex::new(ExpiringSet::new(FINISHED_CACHE_TTL)),
             dedup: Mutex::new(OracleDedupState::default()),

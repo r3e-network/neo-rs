@@ -1,7 +1,15 @@
 use futures::stream;
 use hyper::server::accept::from_stream;
 use hyper::service::{Service, make_service_fn, service_fn};
-use neo_core::{neo_system::NeoSystem, services::RpcService, wallets::Wallet};
+use neo_core::{
+    neo_system::NeoSystem,
+    services::RpcService,
+    signing::{
+        AuthenticatedContext, FrozenSignIntent, KeyRef, SIGNING_SCHEMA_VERSION, SignPurpose,
+        SignerService, SigningKeyResolver, TrustedSignerClient,
+    },
+    wallets::Wallet,
+};
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use prometheus::Counter;
 use rustls::ServerConfig;
@@ -41,6 +49,60 @@ pub type RpcCallback =
 
 /// Type alias for wallet change callback to reduce complexity.
 pub type WalletChangeCallback = Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>;
+
+/// Trusted node-local signer configuration used by protected wallet RPC methods.
+#[derive(Clone)]
+pub struct RpcSignerRuntime {
+    /// Policy-enforcing signer service.
+    pub service: Arc<dyn SignerService>,
+    /// Exact provider selected by node configuration.
+    pub default_provider: String,
+    /// Policy version bound to requests.
+    pub policy_version: String,
+    /// Maximum duration of a signing request.
+    pub request_timeout: Duration,
+    /// Configured account/purpose to immutable versioned key bindings.
+    pub key_resolver: Arc<SigningKeyResolver>,
+    /// Authenticated local integration principal.
+    pub principal: String,
+    /// Authenticated local integration tenant.
+    pub tenant: String,
+}
+
+impl RpcSignerRuntime {
+    /// Resumes the exact durable operation or creates its immutable request once.
+    pub async fn resume_or_start(
+        &self,
+        operation_id: &str,
+        frozen_intent: FrozenSignIntent,
+    ) -> neo_core::signing::SignResult<neo_core::signing::SignResponse> {
+        let client = TrustedSignerClient::new(
+            Arc::clone(&self.service),
+            self.default_provider.clone(),
+            self.policy_version.clone(),
+            self.request_timeout,
+            AuthenticatedContext {
+                schema_version: SIGNING_SCHEMA_VERSION,
+                principal: self.principal.clone(),
+                tenant: self.tenant.clone(),
+                authentication_method: "node-local-protected-rpc".to_string(),
+                scopes: std::collections::BTreeSet::from(["sign:transaction".to_string()]),
+                claims: std::collections::BTreeMap::new(),
+            },
+            Arc::clone(&self.key_resolver),
+        )?;
+        client.resume_or_start(operation_id, frozen_intent).await
+    }
+
+    /// Resolves the exact configured key and version for an account and purpose.
+    pub fn resolve_key(
+        &self,
+        account: &str,
+        purpose: &SignPurpose,
+    ) -> neo_core::signing::SignResult<KeyRef> {
+        self.key_resolver.resolve(account, purpose)
+    }
+}
 
 pub struct RpcHandler {
     descriptor: RpcMethodDescriptor,
@@ -109,6 +171,7 @@ pub struct RpcServer {
     started: bool,
     wallet: Arc<RwLock<Option<Arc<dyn Wallet>>>>,
     wallet_change_callback: Option<WalletChangeCallback>,
+    signer_runtime: Option<RpcSignerRuntime>,
     /// Session storage using Mutex instead of `RwLock` to enforce exclusive access.
     ///
     /// # Security Note
@@ -136,6 +199,7 @@ impl RpcServer {
             started: false,
             wallet: Arc::new(RwLock::new(None)),
             wallet_change_callback: None,
+            signer_runtime: None,
             sessions: Arc::new(Mutex::new(HashMap::new())),
             server_task: None,
             shutdown_signal: None,
@@ -581,6 +645,32 @@ impl RpcServer {
 
     pub fn set_wallet_change_callback(&mut self, callback: Option<WalletChangeCallback>) {
         self.wallet_change_callback = callback;
+    }
+
+    /// Installs trusted signer configuration for protected wallet RPC methods.
+    ///
+    /// A signer runtime cannot be installed unless the active RPC server has
+    /// non-blank credentials, because otherwise no authenticated caller exists
+    /// from which to derive a protected signing principal.
+    pub fn set_signer_runtime(
+        &mut self,
+        runtime: Option<RpcSignerRuntime>,
+    ) -> Result<(), &'static str> {
+        if runtime.is_some()
+            && (self.settings.rpc_user.trim().is_empty()
+                || self.settings.rpc_pass.trim().is_empty())
+        {
+            self.signer_runtime = None;
+            return Err("RPC signer runtime requires non-blank RPC credentials");
+        }
+        self.signer_runtime = runtime;
+        Ok(())
+    }
+
+    /// Returns trusted signer configuration, if node startup installed it.
+    #[must_use]
+    pub fn signer_runtime(&self) -> Option<&RpcSignerRuntime> {
+        self.signer_runtime.as_ref()
     }
 
     const fn session_expiration(&self) -> Duration {

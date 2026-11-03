@@ -1,7 +1,7 @@
 use super::super::ConsensusEvent;
 use super::super::ConsensusService;
 use crate::messages::ConsensusPayload;
-use crate::{ConsensusError, ConsensusMessageType, ConsensusResult};
+use crate::{ConsensusError, ConsensusMessageType, ConsensusResult, ConsensusSignContext};
 use tracing::warn;
 
 impl ConsensusService {
@@ -25,7 +25,14 @@ impl ConsensusService {
         // Fail closed: never return an unsigned payload that callers would still
         // broadcast and count toward local quorum (audit A06).
         let sign_data = self.dbft_sign_data(&payload)?;
-        let signature = self.sign(&sign_data).map_err(|err| {
+        let sign_context = ConsensusSignContext {
+            block_index: self.context.block_index,
+            view_number: self.context.view_number,
+            message_type: msg_type,
+            proposal_digest: self.context.proposed_block_hash,
+            commit_block_hash: false,
+        };
+        let signature = self.sign(&sign_data, &sign_context).map_err(|err| {
             warn!(error = %err, "Consensus payload signing failed");
             err
         })?;
@@ -34,8 +41,20 @@ impl ConsensusService {
         Ok(payload)
     }
 
-    /// Broadcasts a consensus payload
-    pub(in crate::service) fn broadcast(&self, payload: ConsensusPayload) -> ConsensusResult<()> {
+    /// Broadcasts a consensus payload.
+    ///
+    /// Any payload that can expose this validator's Commit receives an
+    /// out-of-band permit bound to the exact persisted recovery record.
+    pub(in crate::service) fn broadcast(
+        &self,
+        mut payload: ConsensusPayload,
+    ) -> ConsensusResult<()> {
+        if matches!(
+            payload.message_type,
+            ConsensusMessageType::Commit | ConsensusMessageType::RecoveryMessage
+        ) {
+            payload.commit_persistence = self.context.commit_persistence_permit()?;
+        }
         self.send_event(ConsensusEvent::BroadcastMessage(payload))
     }
 

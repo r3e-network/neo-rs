@@ -818,3 +818,100 @@ fn commit_signing_waits_for_proposed_transactions() {
     ctx.mark_transactions_available();
     assert!(ctx.can_sign_commit());
 }
+
+#[test]
+fn recovered_non_empty_proposal_requires_transaction_revalidation() {
+    let validators = create_test_validators(4);
+    let mut original = ConsensusContext::new(100, validators.clone(), Some(0), None);
+    original.proposed_block_hash = Some(UInt256::from([0x21; 32]));
+    original.preparation_hash = Some(UInt256::from([0x22; 32]));
+    original.proposed_tx_hashes = vec![UInt256::from([0x23; 32])];
+    original.mark_transactions_available();
+
+    let encoded = original.to_bytes().expect("serialize recovery state");
+    let mut recovered =
+        ConsensusContext::from_bytes(&encoded, validators, Some(0)).expect("recover context");
+
+    assert!(!recovered.transactions_available);
+    assert!(!recovered.can_sign_commit());
+    recovered.mark_transactions_available();
+    assert!(recovered.can_sign_commit());
+}
+
+#[test]
+fn recovered_empty_proposal_does_not_require_transaction_revalidation() {
+    let validators = create_test_validators(4);
+    let mut original = ConsensusContext::new(100, validators.clone(), Some(0), None);
+    original.proposed_block_hash = Some(UInt256::from([0x31; 32]));
+    original.preparation_hash = Some(UInt256::from([0x32; 32]));
+
+    let encoded = original.to_bytes().expect("serialize recovery state");
+    let recovered =
+        ConsensusContext::from_bytes(&encoded, validators, Some(0)).expect("recover context");
+
+    assert!(recovered.proposed_tx_hashes.is_empty());
+    assert!(recovered.can_sign_commit());
+}
+
+#[test]
+fn commit_persistence_permit_binds_exact_recovery_record() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+    let proposal_hash = UInt256::from([0x41; 32]);
+    let signature = vec![0x42; 64];
+    ctx.proposed_block_hash = Some(proposal_hash);
+    ctx.add_commit(0, 0, signature.clone())
+        .expect("local commit");
+
+    let permit = ctx
+        .commit_persistence_permit()
+        .expect("build permit")
+        .expect("local permit");
+    assert!(permit.validate().is_ok());
+    assert!(permit.covers_commit(100, 0, 0, &signature));
+    assert!(!permit.covers_commit(100, 1, 0, &signature));
+
+    let mut tampered = permit;
+    tampered.recovery_state[0] ^= 1;
+    assert!(tampered.validate().is_err());
+}
+
+#[test]
+fn sealed_commit_permit_survives_view_change_for_recovery_relay() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
+    let proposal_hash = UInt256::from([0x51; 32]);
+    let signature = vec![0x52; 64];
+    ctx.proposed_block_hash = Some(proposal_hash);
+    ctx.add_commit(0, 0, signature.clone())
+        .expect("local commit");
+    ctx.seal_commit_persistence_permit().expect("seal permit");
+
+    ctx.reset_for_new_view(1, 2_000);
+    let permit = ctx
+        .commit_persistence_permit()
+        .expect("load sealed permit")
+        .expect("earlier-view permit");
+
+    assert!(permit.covers_commit(100, 0, 0, &signature));
+    assert_eq!(permit.proposal_hash, proposal_hash);
+}
+
+#[test]
+fn durable_recovery_write_failure_is_reported() {
+    let path = std::env::temp_dir().join(format!(
+        "neo-consensus-durable-failure-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&path);
+    std::fs::create_dir_all(&path).expect("create blocking directory");
+
+    let result = ConsensusContext::save_bytes_durable(&path, b"recovery-state");
+    assert!(
+        result.is_err(),
+        "a directory cannot become a recovery record"
+    );
+
+    let _ = std::fs::remove_dir_all(&path);
+    let _ = std::fs::remove_file(path.with_extension("tmp"));
+}

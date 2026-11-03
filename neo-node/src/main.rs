@@ -5,6 +5,8 @@
 
 #![warn(missing_docs)]
 
+mod action_store;
+mod ai_agent;
 mod cli;
 mod config;
 mod consensus;
@@ -45,7 +47,11 @@ mod import_acc {
 }
 mod logging;
 mod metrics;
+mod probe_containment;
+mod probe_controller;
+mod remote_signer;
 mod rpc_consensus;
+mod signing_provider;
 mod startup;
 #[cfg(feature = "tee")]
 mod tee_integration;

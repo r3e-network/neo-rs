@@ -52,8 +52,8 @@ impl ConsensusService {
         self.context.prev_timestamp = prev_timestamp_ms;
     }
 
-    /// Updates the private key used for signing consensus messages.
-    /// The key is wrapped in `Zeroizing` so it is wiped from memory on drop.
+    /// Updates the test-only private key used by consensus unit tests.
+    #[cfg(test)]
     pub fn set_private_key(&mut self, private_key: Vec<u8>) {
         self.private_key = zeroize::Zeroizing::new(private_key);
     }

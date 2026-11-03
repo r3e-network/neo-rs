@@ -26,14 +26,19 @@ use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::{LedgerContract, PolicyContract};
 use crate::{UInt160, UInt256};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 mod index;
+mod quarantine;
 mod views;
 
 use index::PoolIndex;
+use quarantine::QuarantineHistory;
+pub use quarantine::{
+    QuarantineConfig, QuarantineError, QuarantineExpiryReview, QuarantineMetadata,
+};
 
 fn unwrap_or_clone_arc<T: Clone>(arc: Arc<T>) -> T {
     Arc::try_unwrap(arc).unwrap_or_else(|arc| (*arc).clone())
@@ -84,6 +89,13 @@ pub struct MemoryPool {
     conflicts: HashMap<UInt256, HashSet<UInt256>>,
 
     verification_context: TransactionVerificationContext,
+    quarantine: HashMap<UInt256, QuarantineMetadata>,
+    quarantine_history: HashMap<UInt256, QuarantineHistory>,
+    quarantine_expiry_reviews: VecDeque<QuarantineExpiryReview>,
+    quarantine_config: QuarantineConfig,
+    proposal_scan_cursor: Option<PoolItem>,
+    #[cfg(test)]
+    proposal_last_scan_count: usize,
 
     /// Maximum number of transactions the pool accepts at once.
     pub capacity: usize,
@@ -112,6 +124,13 @@ impl MemoryPool {
             unverified: PoolIndex::with_capacity(capacity / 4),
             conflicts: HashMap::with_capacity(capacity / 2),
             verification_context: TransactionVerificationContext::new(),
+            quarantine: HashMap::new(),
+            quarantine_history: HashMap::new(),
+            quarantine_expiry_reviews: VecDeque::new(),
+            quarantine_config: QuarantineConfig::default(),
+            proposal_scan_cursor: None,
+            #[cfg(test)]
+            proposal_last_scan_count: 0,
             capacity,
             max_transactions_per_sender: None,
         }

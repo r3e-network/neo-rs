@@ -4,6 +4,7 @@ use crate::context::{ConsensusContext, ValidatorInfo};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+#[cfg(test)]
 use zeroize::Zeroizing;
 
 /// The main consensus service implementing dBFT 2.0
@@ -12,8 +13,9 @@ pub struct ConsensusService {
     pub(super) context: ConsensusContext,
     /// Network magic number
     pub(super) network: u32,
-    /// Private key for signing consensus messages (secp256r1 ECDSA).
-    /// Wrapped in `Zeroizing` so key material is wiped from memory on drop.
+    /// Test-only private key fallback for consensus unit tests.
+    /// Production builds can sign only through `ConsensusSigner`.
+    #[cfg(test)]
     pub(super) private_key: Zeroizing<Vec<u8>>,
     /// Optional signer for consensus messages (wallet/HSM/external signer).
     pub(super) signer: Option<Arc<dyn ConsensusSigner>>,
@@ -42,9 +44,12 @@ impl ConsensusService {
         private_key: Vec<u8>,
         event_tx: mpsc::Sender<ConsensusEvent>,
     ) -> Self {
+        #[cfg(not(test))]
+        let _ = private_key;
         Self {
             context: ConsensusContext::new(0, validators, my_index, None),
             network,
+            #[cfg(test)]
             private_key: Zeroizing::new(private_key),
             signer: None,
             event_tx,
@@ -62,9 +67,12 @@ impl ConsensusService {
         private_key: Vec<u8>,
         event_tx: mpsc::Sender<ConsensusEvent>,
     ) -> Self {
+        #[cfg(not(test))]
+        let _ = private_key;
         Self {
             context,
             network,
+            #[cfg(test)]
             private_key: Zeroizing::new(private_key),
             signer: None,
             event_tx,

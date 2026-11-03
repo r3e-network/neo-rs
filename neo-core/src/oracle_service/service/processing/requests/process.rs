@@ -1,5 +1,6 @@
-use super::super::super::utils::{filter_json, ledger_height, select_oracle_key, sign_transaction};
+use super::super::super::utils::{filter_json, ledger_height, select_oracle_accounts};
 use super::super::super::{OracleService, OracleServiceError};
+use crate::network::p2p::helper::get_sign_data_vec;
 use crate::network::p2p::payloads::{OracleResponse, OracleResponseCode};
 use crate::persistence::DataCache;
 use crate::smart_contract::native::{OracleContract, Role, RoleManagement};
@@ -29,12 +30,7 @@ impl OracleService {
             ));
         }
 
-        let oracle_key = self
-            .wallet
-            .read()
-            .clone()
-            .and_then(|wallet| select_oracle_key(wallet.as_ref(), &oracle_nodes));
-        let (mut code, data) = self.process_url(&request.url, oracle_key.as_ref()).await;
+        let (mut code, data) = self.process_url(&request.url).await;
         let response_pairs = OracleContract::new()
             .get_requests_by_url(snapshot, &request.url)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
@@ -96,24 +92,61 @@ impl OracleService {
             let wallet = self.wallet.read().clone().ok_or_else(|| {
                 OracleServiceError::Processing("wallet not available".to_string())
             })?;
+            let accounts = select_oracle_accounts(wallet.as_ref(), &oracle_nodes);
+            if accounts.is_empty() {
+                return Err(OracleServiceError::Processing(
+                    "wallet has no unlocked designated oracle account".to_string(),
+                ));
+            }
+            let tx_data = get_sign_data_vec(&response_tx, self.system.settings().network)
+                .map_err(|error| OracleServiceError::Processing(error.to_string()))?;
+            let backup_data = get_sign_data_vec(&backup_tx, self.system.settings().network)
+                .map_err(|error| OracleServiceError::Processing(error.to_string()))?;
 
-            for account in wallet.get_accounts() {
-                if !account.has_key() || account.is_locked() {
-                    continue;
-                }
-                let Some(key) = account.get_key() else {
-                    continue;
-                };
-                let Ok(oracle_pub) = key.get_public_key_point() else {
-                    continue;
-                };
-                if !oracle_nodes.iter().any(|p| p == &oracle_pub) {
-                    continue;
-                }
-
-                let tx_sign = sign_transaction(&response_tx, &key, self.system.settings().network);
-                let backup_sign =
-                    sign_transaction(&backup_tx, &key, self.system.settings().network);
+            for (account, oracle_pub) in accounts {
+                let tx_operation = format!(
+                    "oracle-tx:{}:{}:{}:{}",
+                    self.system.settings().network,
+                    pending_id,
+                    account,
+                    response_tx.hash(),
+                );
+                let tx_sign = self
+                    .sign_neo_payload(
+                        tx_operation,
+                        account,
+                        tx_data.clone(),
+                        "neo-n3-oracle-response-transaction",
+                        std::collections::BTreeMap::from([
+                            ("request_id".to_string(), pending_id.to_string()),
+                            (
+                                "transaction_hash".to_string(),
+                                response_tx.hash().to_string(),
+                            ),
+                            ("backup".to_string(), "false".to_string()),
+                        ]),
+                    )
+                    .await?;
+                let backup_operation = format!(
+                    "oracle-tx:{}:{}:{}:{}",
+                    self.system.settings().network,
+                    pending_id,
+                    account,
+                    backup_tx.hash(),
+                );
+                let backup_sign = self
+                    .sign_neo_payload(
+                        backup_operation,
+                        account,
+                        backup_data.clone(),
+                        "neo-n3-oracle-response-transaction",
+                        std::collections::BTreeMap::from([
+                            ("request_id".to_string(), pending_id.to_string()),
+                            ("transaction_hash".to_string(), backup_tx.hash().to_string()),
+                            ("backup".to_string(), "true".to_string()),
+                        ]),
+                    )
+                    .await?;
 
                 self.add_response_tx_sign(
                     snapshot,
@@ -125,7 +158,10 @@ impl OracleService {
                     Some(backup_sign),
                 )?;
 
-                tasks.push(self.send_response_signature(pending_id, tx_sign, key));
+                tasks.push(
+                    self.send_response_signature(pending_id, tx_sign, account, oracle_pub)
+                        .await?,
+                );
             }
         }
 

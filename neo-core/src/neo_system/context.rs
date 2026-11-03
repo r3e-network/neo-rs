@@ -8,11 +8,12 @@
 use parking_lot::{Mutex, RwLock};
 use std::any::Any;
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock, Weak};
 use std::thread;
 
 use crate::runtime::{ActorSystemHandle, EventStreamHandle};
+use tokio::sync::mpsc;
 use tracing::{trace, warn};
 
 use super::actors::TransactionRouterHandle;
@@ -47,8 +48,82 @@ use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::state_service::StateStore;
 use crate::wallets::{Wallet, WalletProvider};
 use neo_primitives::{UInt160, UInt256};
+use neo_vm::VmState;
 
 use super::core::NeoSystem;
+
+/// Schema version of the canonical transaction-execution observation contract.
+pub const TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION: u16 = 1;
+
+/// Version of the fixed canonical transaction-execution classification rule.
+pub const TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION: &str =
+    "canonical-transaction-execution-v1";
+
+/// Canonical execution stage that produced a read-only observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionExecutionStage {
+    /// Transaction application execution during block persistence.
+    Application,
+}
+
+impl TransactionExecutionStage {
+    /// Stable evidence representation for this stage.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Application => "application",
+        }
+    }
+}
+
+/// Coarse, non-authoritative category for a canonical execution anomaly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionExecutionExceptionCategory {
+    /// The VM entered FAULT without exposing a caught exception payload.
+    VmFault,
+    /// The VM safely converted an execution exception into FAULT.
+    CaughtVmException,
+}
+
+impl TransactionExecutionExceptionCategory {
+    /// Stable evidence representation for this category.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::VmFault => "vm_fault",
+            Self::CaughtVmException => "caught_vm_exception",
+        }
+    }
+}
+
+/// Read-only evidence emitted only after the containing block commits successfully.
+///
+/// This record is diagnostic input only. It cannot change transaction execution,
+/// state, block validity, persistence, or replay results.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransactionExecutionObservation {
+    /// Hash of the transaction whose canonical execution faulted.
+    pub transaction_hash: UInt256,
+    /// Height of the successfully committed containing block.
+    pub block_height: u32,
+    /// Hash of the successfully committed containing block.
+    pub block_hash: UInt256,
+    /// Canonical pipeline stage that produced the result.
+    pub execution_stage: TransactionExecutionStage,
+    /// Final VM state observed by canonical persistence.
+    pub vm_state: VmState,
+    /// Coarse category derived from the already-captured VM result.
+    pub exception_category: TransactionExecutionExceptionCategory,
+    /// GAS consumed by the canonical execution.
+    pub gas_consumed: i64,
+    /// Version of the observation payload schema.
+    pub schema_version: u16,
+    /// Version of the fixed classification rule.
+    pub rule_version: &'static str,
+    /// Diagnostic capture time; never used by canonical logic.
+    pub observed_at_unix_ms: u64,
+}
+
+/// Bounded sender used by canonical persistence as a non-blocking diagnostic sink.
+pub type TransactionExecutionSink = mpsc::Sender<TransactionExecutionObservation>;
 
 /// Lightweight handle exposing shared system facilities to actors outside the core module.
 pub struct NeoSystemContext {
@@ -85,6 +160,8 @@ pub struct NeoSystemContext {
     pub(crate) system: RwLock<Option<Weak<NeoSystem>>>,
     pub(crate) committing_handlers: Arc<RwLock<Vec<Arc<dyn CommittingHandler + Send + Sync>>>>,
     pub(crate) committed_handlers: Arc<RwLock<Vec<Arc<dyn CommittedHandler + Send + Sync>>>>,
+    pub(crate) transaction_execution_sink: OnceLock<TransactionExecutionSink>,
+    pub(crate) dropped_transaction_execution_observations: AtomicU64,
     /// Fast sync mode - disables expensive event publishing during initial sync
     pub(crate) fast_sync_mode: Arc<AtomicBool>,
 }
@@ -355,6 +432,50 @@ impl NeoSystemContext {
     ) -> CoreResult<()> {
         self.committed_handlers.write().push(handler);
         Ok(())
+    }
+
+    /// Registers the single bounded sink used for canonical execution observations.
+    ///
+    /// Registration is one-time. Persistence only performs `try_send`; a full or
+    /// closed queue is ignored and can never affect the canonical result.
+    pub fn register_transaction_execution_sink(
+        &self,
+        sink: TransactionExecutionSink,
+    ) -> Result<(), TransactionExecutionSink> {
+        self.transaction_execution_sink.set(sink)
+    }
+
+    /// Returns a lock-free snapshot of capacity currently available to canonical persistence.
+    ///
+    /// A missing, full, or closed sink reports zero so persistence does not allocate
+    /// per-transaction staging for evidence that cannot currently be accepted.
+    pub(crate) fn transaction_execution_sink_available_capacity(&self) -> usize {
+        self.transaction_execution_sink
+            .get()
+            .filter(|sink| !sink.is_closed())
+            .map_or(0, |sink| sink.capacity())
+    }
+
+    /// Attempts to enqueue diagnostic evidence without locks, waits, or callbacks.
+    pub(crate) fn try_emit_transaction_execution_observation(
+        &self,
+        observation: TransactionExecutionObservation,
+    ) -> bool {
+        self.transaction_execution_sink
+            .get()
+            .is_some_and(|sink| sink.try_send(observation).is_ok())
+    }
+
+    /// Returns the number of post-commit observations dropped by the bounded bridge.
+    pub fn dropped_transaction_execution_observation_count(&self) -> u64 {
+        self.dropped_transaction_execution_observations
+            .load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn record_dropped_transaction_execution_observations(&self, dropped: usize) {
+        let dropped = u64::try_from(dropped).unwrap_or(u64::MAX);
+        self.dropped_transaction_execution_observations
+            .fetch_add(dropped, Ordering::Relaxed);
     }
 
     /// Registers a wallet-changed handler and immediately replays the

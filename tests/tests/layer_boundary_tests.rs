@@ -6,7 +6,7 @@
 //! Layer 0 (Foundation): neo-primitives, neo-json, neo-storage, neo-io, neo-config
 //! Layer 1 (Crypto): neo-crypto
 //! Layer 2 (VM/Protocol): neo-vm, neo-core, neo-p2p, neo-consensus
-//! Layer 3 (Services/Infrastructure): neo-rpc, neo-telemetry, neo-tee, neo-hsm
+//! Layer 3 (Services/Infrastructure): neo-rpc, neo-telemetry, neo-tee, neo-hsm, neo-ai-agent
 //! Layer 4 (Application): neo-node
 //! ```
 
@@ -36,7 +36,7 @@ impl Layer {
             // Layer 2: VM and protocol (depends on lower layers)
             "neo-vm" | "neo-p2p" | "neo-consensus" | "neo-core" => Some(Layer::VmProtocol),
             // Layer 3: Services and infrastructure
-            "neo-rpc" | "neo-telemetry" | "neo-tee" | "neo-hsm" => {
+            "neo-rpc" | "neo-telemetry" | "neo-tee" | "neo-hsm" | "neo-ai-agent" | "neo-probe" => {
                 Some(Layer::ServicesInfrastructure)
             }
             // Layer 4: Application

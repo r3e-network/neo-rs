@@ -1,11 +1,13 @@
 //! Service initialization and plugin setup.
 
+use crate::ai_agent::AiAgentRuntime;
 use crate::cli::NodeCli;
 use crate::config::{
     DbftSettings, NodeConfig, resolve_application_logs_store_path,
     resolve_tokens_tracker_store_path,
 };
 use crate::consensus::DbftConsensusController;
+use crate::signing_provider::NodeSignerRuntime;
 use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{Context, Result, bail};
 use neo_core::{
@@ -15,6 +17,7 @@ use neo_core::{
     network::p2p::channels_config::ChannelsConfig,
     oracle_service::OracleService,
     protocol_settings::ProtocolSettings,
+    signing::TrustedSignerClient,
     smart_contract::native::ContractManagement,
     state_service::{state_store::StateServiceSettings, verification::StateServiceVerification},
     tokens_tracker::{TokensTracker, TokensTrackerService},
@@ -357,6 +360,7 @@ pub(crate) fn maybe_enable_state_service_verification(
     system: &Arc<NeoSystem>,
     state_service_settings: &Option<StateServiceSettings>,
     wallet_provider: Option<&Arc<NodeWalletProvider>>,
+    signer: Option<TrustedSignerClient>,
 ) -> Result<()> {
     let Some(settings) = state_service_settings else {
         return Ok(());
@@ -371,16 +375,15 @@ pub(crate) fn maybe_enable_state_service_verification(
     }
 
     if wallet_provider.is_none() {
-        warn!(
-            target: "neo",
-            "state root verification requires wallet provider; skipping"
-        );
-        return Ok(());
+        bail!("state root verification requires a wallet provider");
     }
+    let signer = signer.context("state root verification requires the unified signer service")?;
 
     system
-        .register_wallet_changed_handler(Arc::new(StateServiceVerification::new(system.clone()))
-            as Arc<dyn WalletChangedHandler + Send + Sync>)
+        .register_wallet_changed_handler(Arc::new(StateServiceVerification::new(
+            system.clone(),
+            signer,
+        )) as Arc<dyn WalletChangedHandler + Send + Sync>)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
         .context("failed to register state verification handler")?;
 
@@ -393,10 +396,21 @@ pub(crate) fn maybe_enable_dbft_consensus(
     protocol_settings: &ProtocolSettings,
     system: &Arc<NeoSystem>,
     wallet_provider: Option<&Arc<NodeWalletProvider>>,
+    signer_runtime: Option<Arc<NodeSignerRuntime>>,
+    diagnostics: Arc<AiAgentRuntime>,
 ) -> Result<()> {
     let Some(settings) = dbft_settings else {
         return Ok(());
     };
+    let signer_runtime =
+        signer_runtime.context("dBFT validator mode requires the unified signer service")?;
+
+    if settings.ignore_recovery_logs {
+        bail!("dBFT signer mode requires recovery logs; IgnoreRecoveryLogs is unsafe");
+    }
+    if settings.recovery_logs.trim().is_empty() {
+        bail!("dBFT signer mode requires a non-empty durable recovery path");
+    }
 
     if settings.network != protocol_settings.network {
         warn!(
@@ -421,6 +435,8 @@ pub(crate) fn maybe_enable_dbft_consensus(
             let controller = Arc::new(DbftConsensusController::new(
                 system.clone(),
                 settings.clone(),
+                signer_runtime,
+                diagnostics,
             ));
             system
                 .add_service::<DbftConsensusController, _>(Arc::clone(&controller))
@@ -818,9 +834,9 @@ pub(crate) fn maybe_open_wallet(
     rpc_server: &Option<Arc<ParkingRwLock<RpcServer>>>,
     wallet_provider: Option<&Arc<NodeWalletProvider>>,
     system: &Arc<NeoSystem>,
-) -> Result<()> {
+) -> Result<bool> {
     let Some((wallet_path, password)) = resolve_wallet_config(cli, node_config)? else {
-        return Ok(());
+        return Ok(false);
     };
 
     if rpc_server.is_none() && wallet_provider.is_none() {
@@ -829,7 +845,7 @@ pub(crate) fn maybe_open_wallet(
             path = %wallet_path.display(),
             "wallet configured but neither RPC nor wallet provider is active; skipping wallet load"
         );
-        return Ok(());
+        return Ok(false);
     }
 
     if !wallet_path.exists() {
@@ -866,5 +882,5 @@ pub(crate) fn maybe_open_wallet(
             "wallet opened for local services"
         );
     }
-    Ok(())
+    Ok(true)
 }

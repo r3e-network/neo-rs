@@ -1,0 +1,26 @@
+[package]
+name = "neo-probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Capability-restricted detached transaction prevalidation worker"
+
+[dependencies]
+neo-ai-agent = { workspace = true }
+neo-core = { workspace = true }
+neo-storage = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
