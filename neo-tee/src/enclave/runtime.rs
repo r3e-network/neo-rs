@@ -223,6 +223,72 @@ impl TeeEnclave {
         })?;
         debug!("Successfully loaded monotonic counter");
 
+        // Step 4b: Load / initialize the external rollback floor witness (T43).
+        //
+        // The floor is a small file persisted next to the counter file that
+        // records the highest counter covered by a successful seal. It is an
+        // independent witness of the counter history:
+        // * floor missing + no counter file  -> first boot: record floor = 0;
+        // * floor missing + counter history   -> contradiction (legacy
+        //   pre-floor directory, or the floor was deleted to weaken rollback
+        //   detection) -> fail closed, do not silently adopt 0;
+        // * floor corrupt                     -> fail closed (A04-style);
+        // * floor ahead of the loaded counter -> the sealed-data state was
+        //   rolled back. Initialization is allowed to continue (the counter
+        //   file may legitimately be missing on first boot), but the mismatch
+        //   is logged and every subsequent `SealedKey::unseal` fails closed.
+        let counter_file_existed = self.counter_file_path().exists();
+        let floor_path = crate::enclave::rollback_floor::floor_path(&self.config.sealed_data_path);
+        match crate::enclave::rollback_floor::load(&floor_path) {
+            Ok(None) => {
+                if counter_file_existed {
+                    let context = format!(
+                        "monotonic counter file exists at {:?} but the rollback floor witness {:?} is missing \
+                         (legacy pre-floor directory or deleted floor); refusing to initialize — \
+                         restore the floor file or migrate the sealed-data directory",
+                        self.counter_file_path(),
+                        floor_path
+                    );
+                    self.set_error_state(format!("Rollback floor invalid: {}", context));
+                    return Err(TeeError::enclave_init_error(
+                        EnclaveInitError::RollbackFloorInvalid,
+                        context,
+                    ));
+                }
+                crate::enclave::rollback_floor::store(&floor_path, 0).map_err(|e| {
+                    let context = format!("failed to initialize rollback floor witness: {}", e);
+                    self.set_error_state(context.clone());
+                    TeeError::enclave_init_error(EnclaveInitError::RollbackFloorInvalid, context)
+                })?;
+                info!(
+                    "Initialized rollback floor witness at {:?} (floor = 0)",
+                    floor_path
+                );
+            }
+            Ok(Some(floor_value)) => {
+                let counter_value = *self.monotonic_counter.read();
+                if floor_value > counter_value {
+                    warn!(
+                        "rollback floor witness ({}) is ahead of the loaded monotonic counter ({}): \
+                         the sealed-data state was likely rolled back; unseal operations will fail closed",
+                        floor_value, counter_value
+                    );
+                }
+                debug!("Loaded rollback floor witness: {}", floor_value);
+            }
+            Err(e) => {
+                let context = format!(
+                    "failed to load rollback floor witness {:?}: {}",
+                    floor_path, e
+                );
+                self.set_error_state(context.clone());
+                return Err(TeeError::enclave_init_error(
+                    EnclaveInitError::RollbackFloorInvalid,
+                    context,
+                ));
+            }
+        }
+
         // Step 5: Check hardware attestation availability
         let hw_attestation_available = self.check_hardware_attestation();
 

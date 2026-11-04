@@ -1,6 +1,6 @@
 //! Sealed key storage for TEE wallet
 
-use crate::enclave::{SealedData, TeeEnclave, seal_data, unseal_data};
+use crate::enclave::{SealedData, TeeEnclave, rollback_floor, seal_data, unseal_data};
 use crate::error::{TeeError, TeeResult};
 use neo_crypto::Base58;
 use serde::{Deserialize, Serialize};
@@ -41,6 +41,17 @@ impl SealedKey {
 
         let sealed_data = seal_data(private_key, &sealing_key, &aad, counter)?;
 
+        // T43: raise the EXTERNAL rollback floor before handing out the blob.
+        // The floor is persisted next to the sealed blobs (not inside this
+        // object), so a later rollback of the host-side counter state can be
+        // detected at unseal time. Fail closed: if the floor cannot be loaded
+        // (corrupt) or persisted, the seal is refused.
+        let floor_path = rollback_floor::floor_path(enclave.config().sealed_data_path.as_path());
+        let current_floor = rollback_floor::load(&floor_path)?.unwrap_or(0);
+        if counter > current_floor {
+            rollback_floor::store(&floor_path, counter)?;
+        }
+
         let created_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -59,8 +70,66 @@ impl SealedKey {
     ///
     /// The returned bytes are wrapped in [`Zeroizing`] so the private key
     /// material is automatically zeroed when dropped.
+    ///
+    /// # Rollback protection (T43)
+    ///
+    /// The replay floor is an EXTERNAL witness (`.rollback_floor` in the
+    /// enclave's sealed-data directory), no longer the blob's own counter
+    /// — the previous `min_counter = Some(sealed_data.counter)` was
+    /// self-referential and could never reject (T07-T4). Acceptance requires:
+    ///
+    /// ```text
+    /// blob.counter <= floor <= enclave.current_counter()
+    /// ```
+    ///
+    /// * `floor > enclave counter` — the persisted counter state was rolled
+    ///   back relative to the floor witness (e.g. the counter file was
+    ///   deleted/restored): reject, fail closed.
+    /// * `blob.counter > floor` — the blob is not covered by the floor
+    ///   history (floor file rolled back, or a blob from another directory):
+    ///   reject, fail closed.
+    /// * corrupt floor file — reject, never treat as 0.
+    /// * missing floor file — contradiction while a sealed blob exists:
+    ///   reject. The floor is created on first boot by `TeeEnclave::initialize`
+    ///   and raised by every `seal`, so a missing floor at unseal time means
+    ///   tampering or a pre-T43 blob (migration is rejected conservatively).
+    ///
+    /// In simulation mode this is best-effort, file-level rollback detection;
+    /// a coherent rollback of the whole sealed-data directory cannot be
+    /// caught without SGX hardware monotonic counters (see
+    /// [`crate::enclave::rollback_floor`] for the threat model). On the strict
+    /// SGX hardware path the same file-based floor applies as
+    /// defense-in-depth; hardware monotonic counters are not yet integrated.
     pub fn unseal(&self, enclave: &TeeEnclave) -> TeeResult<Zeroizing<Vec<u8>>> {
         let sealing_key = enclave.sealing_key()?;
+
+        // T43: load the external floor witness and enforce it against both
+        // the blob and the enclave's live counter state.
+        let floor_path = rollback_floor::floor_path(enclave.config().sealed_data_path.as_path());
+        let enclave_counter = enclave.current_counter()?;
+        let floor = rollback_floor::load(&floor_path)?.ok_or_else(|| {
+            TeeError::RollbackProtection(format!(
+                "rollback floor witness {:?} is missing while a sealed blob exists \
+                 (tampering or pre-T43 blob); refusing to unseal (fail-closed)",
+                floor_path
+            ))
+        })?;
+
+        if floor > enclave_counter {
+            return Err(TeeError::RollbackProtection(format!(
+                "sealed-data state was rolled back: rollback floor {} is ahead of the \
+                 enclave monotonic counter {}; refusing to unseal (fail-closed)",
+                floor, enclave_counter
+            )));
+        }
+
+        if self.sealed_data.counter > floor {
+            return Err(TeeError::RollbackProtection(format!(
+                "sealed blob counter {} is ahead of the rollback floor {}; the floor \
+                 witness was rolled back or the blob is foreign; refusing to unseal (fail-closed)",
+                self.sealed_data.counter, floor
+            )));
+        }
 
         // Verify AAD matches
         let mut expected_aad = Vec::new();
@@ -73,17 +142,21 @@ impl SealedKey {
             ));
         }
 
-        // R16: enforce the counter floor recorded in the sealed blob instead
-        // of passing `None`. With the counter now covered by the AEAD tag
-        // (sealing.rs) this check verifies against a tamper-evident value.
-        // Full rollback detection still requires a trusted monotonic counter
-        // source — the host-side counter file alone cannot detect a coherent
-        // rollback of the whole data directory.
-        Ok(Zeroizing::new(unseal_data(
+        // The counter is covered by the AEAD tag (sealing.rs binds it into
+        // the AAD), so a tampered `SealedData::counter` field fails decryption
+        // here instead of weakening replay protection.
+        let plaintext = unseal_data(
             &self.sealed_data,
             &sealing_key,
             Some(self.sealed_data.counter),
-        )?))
+        )?;
+
+        // The acceptance checks above guarantee `blob.counter <= floor`, and
+        // `seal` raises the floor before handing out a blob, so the floor
+        // dominates every counter covered by a sealed key. No post-unseal
+        // write is needed (and writing here would be dead code).
+
+        Ok(Zeroizing::new(plaintext))
     }
 
     /// Save sealed key to file

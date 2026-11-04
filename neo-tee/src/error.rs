@@ -20,6 +20,10 @@ pub enum EnclaveInitError {
     /// Failed to load monotonic counter
     #[error("failed to load monotonic counter")]
     CounterLoadFailed,
+    /// The rollback floor witness (T43) is corrupt, missing, or inconsistent
+    /// with the persisted monotonic-counter history
+    #[error("rollback floor witness is corrupt or inconsistent")]
+    RollbackFloorInvalid,
     /// Invalid configuration
     #[error("invalid enclave configuration")]
     InvalidConfiguration,
@@ -58,6 +62,13 @@ pub enum TeeError {
     /// Failed to unseal data from the enclave
     #[error("Unsealing failed: {0}")]
     UnsealingFailed(String),
+
+    /// Sealed-blob rollback protection (external floor witness) rejected the
+    /// operation — the persisted state was rolled back, the floor file is
+    /// corrupt/missing, or the blob is not covered by the floor history.
+    /// Callers MUST fail closed on this error.
+    #[error("Rollback protection: {0}")]
+    RollbackProtection(String),
 
     /// Remote attestation process failed
     #[error("Attestation failed: {0}")]

@@ -565,6 +565,8 @@ mod tests {
             network_fee: index as i64 * 1000,
             system_fee: (index as i64 + 1) * 5000, // Increased base gas
             sender,
+            content_state: crate::mempool::tee_mempool::ContentState::Resolved,
+            resolved_data: None,
         }
     }
 

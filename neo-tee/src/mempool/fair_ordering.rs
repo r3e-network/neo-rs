@@ -3,6 +3,7 @@
 //! Implements various ordering strategies to prevent front-running and other MEV attacks.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::time::SystemTime;
 
 /// Transaction ordering policy
@@ -145,8 +146,14 @@ pub fn compute_ordering_key(
             }
         }
         FairOrderingPolicy::ThresholdEncryption => {
-            // All transactions have same priority until decrypted
-            // Random ordering after decryption
+            // PRE-DECRYPTION PLACEHOLDER KEY (assigned while the content is
+            // still encrypted). For the encrypted mempool (Phase A) the
+            // definitive ordering key is only assigned AFTER decryption by the
+            // mempool content state machine, via
+            // `compute_threshold_decrypted_ordering_key`: ordering is decided
+            // at intake (hidden from the host) and revealed once the TEE
+            // decrypts the payload. When the policy is used without content
+            // encryption this placeholder ordering is retained as-is.
             OrderingKey {
                 primary: 0,
                 secondary: rand::random(),
@@ -163,6 +170,38 @@ pub fn compute_ordering_key(
                 tx_hash: *tx_hash,
             }
         }
+    }
+}
+
+/// Compute the post-decryption ordering key for the threshold-encryption
+/// policy (Privacy Mode Phase A).
+///
+/// This is the *real* policy key, replacing the pre-decryption placeholder
+/// produced by [`compute_ordering_key`]: it is assigned by the mempool content
+/// state machine only after a transaction has been successfully decrypted and
+/// AEAD-verified (`Encrypted -> Resolved`). Ordering is by enclave arrival
+/// sequence (decided at intake, hidden from the host, revealed at decrypt
+/// time), with a deterministic domain-separated digest as tiebreaker. The key
+/// feeds the same `BTreeMap<OrderingKey, _>` index as every other policy, so
+/// `generate_ordering_proof` keeps working unchanged.
+pub fn compute_threshold_decrypted_ordering_key(
+    timing: &TransactionTiming,
+    tx_hash: &[u8; 32],
+) -> OrderingKey {
+    let mut hasher = Sha256::new();
+    hasher.update(b"neo-tee-threshold-ordering-v1");
+    hasher.update(timing.sequence_number.to_le_bytes());
+    hasher.update(tx_hash);
+    let digest = hasher.finalize();
+
+    OrderingKey {
+        primary: timing.sequence_number,
+        secondary: u64::from_le_bytes(
+            digest[..8]
+                .try_into()
+                .expect("SHA-256 digest always provides 8 bytes"),
+        ),
+        tx_hash: *tx_hash,
     }
 }
 
@@ -209,5 +248,32 @@ mod tests {
         assert_eq!(key1.primary, key2.primary);
         // Different batch should have different primary key
         assert!(key1.primary < key3.primary);
+    }
+
+    #[test]
+    fn test_threshold_decrypted_ordering_preserves_arrival_sequence() {
+        let hash1 = [1u8; 32];
+        let hash2 = [2u8; 32];
+        let hash3 = [3u8; 32];
+
+        let key1 = compute_threshold_decrypted_ordering_key(&TransactionTiming::new(10), &hash1);
+        let key2 = compute_threshold_decrypted_ordering_key(&TransactionTiming::new(20), &hash2);
+        let key3 = compute_threshold_decrypted_ordering_key(&TransactionTiming::new(30), &hash3);
+
+        // Ordering after decryption follows enclave arrival sequence.
+        assert!(key1 < key2);
+        assert!(key2 < key3);
+
+        // The key is deterministic (same inputs -> same key), so ordering
+        // proofs remain reproducible across repeated resolution.
+        let key1_again =
+            compute_threshold_decrypted_ordering_key(&TransactionTiming::new(10), &hash1);
+        assert_eq!(key1, key1_again);
+
+        // Distinct hashes never collide on the full key.
+        assert_ne!(
+            key1,
+            compute_threshold_decrypted_ordering_key(&TransactionTiming::new(10), &hash2)
+        );
     }
 }
