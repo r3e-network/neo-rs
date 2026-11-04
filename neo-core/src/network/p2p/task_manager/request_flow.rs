@@ -3,7 +3,9 @@ use super::scheduling::{
     AvailableInventoryPlan, block_index_window_limit, effective_header_height,
     plan_available_inventory_tasks, plan_block_index_request, plan_header_request,
 };
-use super::{HEADER_TASK_HASH, SessionEntry, TaskManager, request_mempool_once};
+use super::{
+    BLOCK_INDEX_REQUEST_BATCH, HEADER_TASK_HASH, SessionEntry, TaskManager, request_mempool_once,
+};
 use crate::network::p2p::payloads::{
     InventoryType,
     inv_payload::{InvPayload, MAX_HASHES_COUNT},
@@ -140,12 +142,34 @@ impl TaskManager {
             // header fetches so block download is not starved by long header sync.
         }
 
-        if current_height < session.last_block_index {
+        // A full buffer of later blocks must not pin the next height. Drop the
+        // highest retained block so this peer can be asked for the persist
+        // frontier again; otherwise the index tasks time out and are never
+        // replaced.
+        let next_height = current_height.saturating_add(1);
+        let buffer_can_take_next = session.reserve_received_block_slot_for(next_height);
+        // Completed downloads stay in `received_block` until persistence. Count
+        // both sides of that handoff so a fast peer cannot keep replacing its
+        // completed tasks and monopolize the whole global window.
+        let peer_pipeline_len = session
+            .index_tasks
+            .len()
+            .saturating_add(session.received_block.len());
+        let peer_pipeline_remaining =
+            (BLOCK_INDEX_REQUEST_BATCH as usize).saturating_sub(peer_pipeline_len) as u32;
+        if current_height < session.last_block_index
+            && buffer_can_take_next
+            && peer_pipeline_remaining > 0
+        {
             let plan = plan_block_index_request(
                 current_height,
                 session.last_block_index,
                 &self.global_index_tasks,
-            );
+            )
+            .map(|mut plan| {
+                plan.count = plan.count.min(peer_pipeline_remaining);
+                plan
+            });
 
             if self.global_index_tasks.is_empty() {
                 tracing::info!(

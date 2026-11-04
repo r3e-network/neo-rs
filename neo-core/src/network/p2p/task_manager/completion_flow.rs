@@ -8,7 +8,30 @@ use crate::UInt256;
 use crate::ledger::{RelayResult, VerifyResult};
 use crate::network::p2p::payloads::{InventoryType, block::Block};
 use crate::runtime::ActorRef;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{trace, warn};
+
+fn note_received_block_drop(
+    actor: &ActorRef,
+    block_index: u32,
+    retained_blocks: usize,
+    retained_bytes: usize,
+) {
+    static DROPPED: AtomicU64 = AtomicU64::new(0);
+    let dropped = DROPPED.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+    if dropped & 1023 != 1 {
+        return;
+    }
+    warn!(
+        target: "neo",
+        actor = %actor.path(),
+        block_index,
+        retained_blocks,
+        retained_bytes,
+        dropped,
+        "dropping blocks: per-peer received-block budget exceeded"
+    );
+}
 
 impl TaskManager {
     fn remove_available_task_from_all(&mut self, hash: &UInt256) {
@@ -103,13 +126,15 @@ impl TaskManager {
                 ) {
                     IncomingBlockOutcome::Store { index, block } => {
                         if !entry.session.store_received_block(index, block) {
-                            warn!(
-                                target: "neo",
-                                actor = %actor_ref.path(),
-                                block_index = index,
-                                retained_blocks = entry.session.received_block.len(),
-                                retained_bytes = entry.session.received_block_bytes(),
-                                "dropping block: per-peer received-block budget exceeded"
+                            // The index task is already complete. Requesting the
+                            // same height while the buffer is still full is what
+                            // turned one overflow into millions of repeat drops.
+                            should_request = false;
+                            note_received_block_drop(
+                                &actor_ref,
+                                index,
+                                entry.session.received_block.len(),
+                                entry.session.received_block_bytes(),
                             );
                         }
                     }
@@ -177,6 +202,7 @@ impl TaskManager {
 
     pub(super) fn on_persist_completed(&mut self, block: &Block) {
         self.last_seen_persisted_index = block.index();
+        self.last_persisted_at = std::time::Instant::now();
         let index = block.index();
         let hash = match persisted_block_hash(block) {
             Ok(hash) => hash,
@@ -243,6 +269,23 @@ impl TaskManager {
                 this.request_tasks_entry(entry);
             });
         }
+    }
+
+    pub(super) fn on_persist_failed(&mut self, index: u32) {
+        // The payload already passed block verification. A local commit failure
+        // must not be treated as an invalid peer block, but its completed task
+        // and cached payload have to be released so the height can be requested
+        // again instead of pinning the sliding window forever.
+        let session_paths: Vec<String> = self.sessions.keys().cloned().collect();
+        for path in session_paths {
+            self.with_session_mut(&path, |entry, this| {
+                entry.session.remove_received_block(index);
+                if entry.session.complete_index_task(index) {
+                    this.decrement_index_task(index);
+                }
+            });
+        }
+        self.request_tasks_all();
     }
 
     pub(super) fn on_relay_result(&mut self, result: &RelayResult) {

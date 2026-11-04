@@ -29,6 +29,16 @@ pub struct PersistCompleted {
     pub block: Arc<Block>,
 }
 
+/// Notification that a verified block could not be committed locally.
+///
+/// This is not a peer validation failure: transient local dependencies such as
+/// reference-root RPC must be allowed to retry the same height.
+#[derive(Debug, Clone)]
+pub struct PersistFailed {
+    /// The block whose persistence failed.
+    pub block: Arc<Block>,
+}
+
 /// Request to import blocks into the blockchain.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Import {

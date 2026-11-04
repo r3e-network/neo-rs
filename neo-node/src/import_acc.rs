@@ -34,6 +34,118 @@ pub struct ImportSummary {
     pub elapsed_secs: f64,
 }
 
+const ACC_INDEX_MAGIC: &[u8; 8] = b"NEOACCIX";
+const ACC_INDEX_HEADER_LEN: u64 = 32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IndexedResumePosition {
+    first_item: u32,
+    skipped: u64,
+    offset: u64,
+}
+
+fn indexed_resume_position(
+    acc_path: &Path,
+    declared_start: u32,
+    declared_count: u32,
+    local_height: u32,
+) -> Result<Option<IndexedResumePosition>> {
+    let Some(resume_height) = local_height.checked_add(1) else {
+        return Ok(None);
+    };
+    let Some(declared_end) = declared_start.checked_add(declared_count) else {
+        bail!("declared ACC range overflow");
+    };
+    if resume_height < declared_start || resume_height >= declared_end {
+        return Ok(None);
+    }
+
+    let index_path = acc_path.with_file_name(format!(
+        "{}.offsets",
+        acc_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .context("ACC path has no UTF-8 file name")?
+    ));
+    if !index_path.is_file() {
+        return Ok(None);
+    }
+
+    let acc_metadata = acc_path.metadata().context("failed to stat ACC file")?;
+    let modified_ns = acc_metadata
+        .modified()
+        .context("failed to read ACC modification time")?
+        .duration_since(std::time::UNIX_EPOCH)
+        .context("ACC modification time precedes Unix epoch")?
+        .as_nanos();
+    let modified_ns = u64::try_from(modified_ns).context("ACC modification time overflow")?;
+    let index_metadata = index_path
+        .metadata()
+        .context("failed to stat ACC offset index")?;
+    let expected_index_len = ACC_INDEX_HEADER_LEN
+        .checked_add(u64::from(declared_count) * 8)
+        .context("ACC offset index length overflow")?;
+    if index_metadata.len() != expected_index_len {
+        bail!(
+            "invalid ACC offset index length: expected {}, got {}",
+            expected_index_len,
+            index_metadata.len()
+        );
+    }
+
+    let mut index = File::open(&index_path).context("failed to open ACC offset index")?;
+    let mut header = [0u8; ACC_INDEX_HEADER_LEN as usize];
+    index
+        .read_exact(&mut header)
+        .context("failed to read ACC offset index header")?;
+    let read_u32 = |offset: usize| {
+        u32::from_le_bytes(
+            header[offset..offset + 4]
+                .try_into()
+                .expect("four-byte field"),
+        )
+    };
+    let read_u64 = |offset: usize| {
+        u64::from_le_bytes(
+            header[offset..offset + 8]
+                .try_into()
+                .expect("eight-byte field"),
+        )
+    };
+    if &header[..8] != ACC_INDEX_MAGIC
+        || read_u32(8) != declared_start
+        || read_u32(12) != declared_count
+        || read_u64(16) != acc_metadata.len()
+        || read_u64(24) != modified_ns
+    {
+        bail!(
+            "stale or invalid ACC offset index for {}; delete it to rebuild",
+            acc_path.display()
+        );
+    }
+
+    let first_item = resume_height - declared_start;
+    index
+        .seek(SeekFrom::Start(
+            ACC_INDEX_HEADER_LEN + u64::from(first_item) * 8,
+        ))
+        .context("failed to seek within ACC offset index")?;
+    let mut offset_bytes = [0u8; 8];
+    index
+        .read_exact(&mut offset_bytes)
+        .context("failed to read ACC block offset")?;
+    let offset = u64::from_le_bytes(offset_bytes);
+    if offset < 8 || offset.saturating_add(4) > acc_metadata.len() {
+        bail!("ACC offset index contains an out-of-range block offset");
+    }
+
+    Ok(Some(IndexedResumePosition {
+        first_item,
+        skipped: u64::from(first_item),
+        offset,
+    }))
+}
+
 fn import_stop_height_from_env() -> Option<u32> {
     std::env::var("NEO_IMPORT_STOP_HEIGHT")
         .ok()
@@ -289,8 +401,29 @@ pub fn import_acc_file(
         "starting .acc import"
     );
 
+    let first_item = if let Some(resume) =
+        indexed_resume_position(path, declared_start, declared_count, current_height)?
+    {
+        reader
+            .seek(SeekFrom::Start(resume.offset))
+            .context("failed to seek ACC import to the persisted height")?;
+        skipped = resume.skipped;
+        info!(
+            target: "neo",
+            resume_height = current_height.saturating_add(1),
+            first_item = resume.first_item,
+            skipped,
+            offset = resume.offset,
+            seek_elapsed_ms = started_at.elapsed().as_millis(),
+            "acc import offset seek completed"
+        );
+        resume.first_item
+    } else {
+        0
+    };
+
     let result: Result<ImportSummary> = (|| {
-        for i in 0..declared_count {
+        for i in first_item..declared_count {
             reader
                 .read_exact(&mut size_buf)
                 .with_context(|| format!("failed to read block size at item {}", i))?;
@@ -489,5 +622,92 @@ pub fn import_acc_file(
             );
             Err(err)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_acc_and_index() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let acc_path = temp.path().join("chain.0.acc");
+        let index_path = temp.path().join("chain.0.acc.offsets");
+        let payloads: &[&[u8]] = &[&[0x10, 0x11], &[0x20, 0x21, 0x22], &[0x30]];
+
+        let mut offsets = Vec::new();
+        {
+            let mut acc = File::create(&acc_path).expect("create ACC");
+            acc.write_all(&10u32.to_le_bytes()).expect("ACC start");
+            acc.write_all(&3u32.to_le_bytes()).expect("ACC count");
+            for payload in payloads {
+                offsets.push(acc.stream_position().expect("ACC offset"));
+                acc.write_all(&(payload.len() as u32).to_le_bytes())
+                    .expect("block length");
+                acc.write_all(payload).expect("block payload");
+            }
+        }
+
+        let metadata = acc_path.metadata().expect("ACC metadata");
+        let modified_ns = metadata
+            .modified()
+            .expect("ACC modification time")
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("post-epoch timestamp")
+            .as_nanos() as u64;
+        {
+            let mut index = File::create(&index_path).expect("create index");
+            index.write_all(ACC_INDEX_MAGIC).expect("index magic");
+            index.write_all(&10u32.to_le_bytes()).expect("index start");
+            index.write_all(&3u32.to_le_bytes()).expect("index count");
+            index
+                .write_all(&metadata.len().to_le_bytes())
+                .expect("index ACC size");
+            index
+                .write_all(&modified_ns.to_le_bytes())
+                .expect("index ACC modification time");
+            for offset in offsets {
+                index
+                    .write_all(&offset.to_le_bytes())
+                    .expect("block offset");
+            }
+        }
+
+        (temp, acc_path, index_path)
+    }
+
+    #[test]
+    fn offset_index_resumes_at_first_unpersisted_block() {
+        let (_temp, acc_path, _index_path) = write_acc_and_index();
+        let resume = indexed_resume_position(&acc_path, 10, 3, 11)
+            .expect("valid offset index")
+            .expect("indexed resume");
+
+        assert_eq!(resume.first_item, 2);
+        assert_eq!(resume.skipped, 2);
+        let mut acc = File::open(&acc_path).expect("open ACC");
+        acc.seek(SeekFrom::Start(resume.offset))
+            .expect("seek to resume block");
+        let mut size = [0u8; 4];
+        acc.read_exact(&mut size).expect("resume block size");
+        assert_eq!(u32::from_le_bytes(size), 1);
+    }
+
+    #[test]
+    fn stale_offset_index_is_rejected() {
+        let (_temp, acc_path, index_path) = write_acc_and_index();
+        let mut index = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&index_path)
+            .expect("open index");
+        index
+            .seek(SeekFrom::Start(8))
+            .and_then(|_| index.write_all(&99u32.to_le_bytes()))
+            .expect("corrupt index start");
+
+        let error = indexed_resume_position(&acc_path, 10, 3, 11)
+            .expect_err("stale index must not be trusted");
+        assert!(error.to_string().contains("stale or invalid"));
     }
 }

@@ -1,5 +1,10 @@
-use super::{BLOCK_INDEX_WINDOW_MULTIPLIER, MAX_BLOCK_INDEX_BATCH, MAX_CONCURRENT_TASKS};
+use super::{
+    BLOCK_INDEX_REQUEST_BATCH, BLOCK_INDEX_WINDOW_MULTIPLIER, MAX_BLOCK_INDEX_BATCH,
+    MAX_CONCURRENT_TASKS,
+};
 use crate::UInt256;
+#[cfg(test)]
+use crate::network::p2p::payloads::inv_payload::MAX_HASHES_COUNT;
 use std::collections::HashMap;
 use std::hash::Hash;
 
@@ -83,7 +88,11 @@ pub(super) struct AvailableInventoryPlan {
 }
 
 pub(super) fn block_index_window_limit(current_height: u32) -> u32 {
+    // Exclusive end. `current + 1 + lookahead` keeps exactly `lookahead` indexes
+    // in the window; stopping one short used to hide behind the 10-batch cap
+    // and made a 1,000-block window request only 999.
     current_height
+        .saturating_add(1)
         .saturating_add(MAX_BLOCK_INDEX_BATCH.saturating_mul(BLOCK_INDEX_WINDOW_MULTIPLIER))
 }
 
@@ -117,7 +126,7 @@ pub(super) fn plan_block_index_request(
         end_height += 1;
     }
 
-    let count = (end_height - start_height + 1).min(MAX_BLOCK_INDEX_BATCH);
+    let count = (end_height - start_height + 1).min(BLOCK_INDEX_REQUEST_BATCH);
     Some(BlockIndexRequestPlan {
         start_height,
         count,
@@ -218,13 +227,31 @@ mod tests {
     }
 
     #[test]
-    fn block_index_plan_respects_batch_limit() {
+    fn block_index_plan_respects_peer_and_protocol_batch_limits() {
         let in_flight = TaskCounter::with_capacity(0);
 
         let plan = plan_block_index_request(0, 20_000, &in_flight).expect("block request plan");
 
         assert_eq!(plan.start_height, 1);
-        assert_eq!(plan.count, MAX_BLOCK_INDEX_BATCH);
+        assert_eq!(plan.count, BLOCK_INDEX_REQUEST_BATCH);
+        assert!(plan.count <= MAX_BLOCK_INDEX_BATCH);
+        assert!(plan.count <= MAX_HASHES_COUNT as u32);
+        assert!((plan.count as usize) < crate::network::p2p::TaskSession::MAX_RECEIVED_BLOCKS);
+    }
+
+    #[test]
+    fn block_index_plan_leaves_following_range_for_another_peer() {
+        let mut in_flight = TaskCounter::with_capacity(BLOCK_INDEX_REQUEST_BATCH as usize);
+        let first = plan_block_index_request(0, 20_000, &in_flight).expect("first request plan");
+        for index in first.start_height..first.start_height + first.count {
+            assert!(in_flight.try_increment(index));
+        }
+
+        let second = plan_block_index_request(0, 20_000, &in_flight).expect("second request plan");
+
+        assert_eq!(first.start_height, 1);
+        assert_eq!(second.start_height, first.start_height + first.count);
+        assert_eq!(second.count, BLOCK_INDEX_REQUEST_BATCH);
     }
 
     #[test]

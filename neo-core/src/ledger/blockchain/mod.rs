@@ -337,8 +337,11 @@ impl Blockchain {
                     hash = %hash,
                     "failed to persist block via NeoSystem"
                 );
-                // In fast sync mode, we continue even if blocks fail
-                // The block might fail due to gas/balance issues but we can still sync
+                // Let the task manager release this height for a retry. This is
+                // a local commit failure, not evidence that the peer is invalid.
+                context.actor_system.event_stream().publish(PersistFailed {
+                    block: Arc::clone(block),
+                });
                 false
             }
         }
@@ -375,7 +378,7 @@ mod types;
 pub use handle::BlockchainHandle;
 pub use types::{
     BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted, InventoryPayload,
-    PersistCompleted, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
+    PersistCompleted, PersistFailed, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
 };
 
 #[cfg(test)]

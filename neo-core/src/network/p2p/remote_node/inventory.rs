@@ -13,9 +13,29 @@ use crate::network::p2p::payloads::inv_payload::{InvPayload, MAX_HASHES_COUNT};
 use crate::network::p2p::payloads::merkle_block_payload::MerkleBlockPayload;
 use crate::network::p2p::payloads::transaction::{MAX_TRANSACTION_SIZE, Transaction};
 use crate::network::p2p::payloads::{block::Block, extensible_payload::ExtensiblePayload};
+use crate::network::p2p::task_manager::BLOCK_INDEX_LOOKAHEAD;
 use crate::smart_contract::native::ledger_contract::LedgerContract;
 use std::sync::Arc;
 use tracing::{trace, warn};
+
+fn should_reprocess_known_block(block_index: u32, current_height: u32) -> bool {
+    // A previous attempt at exactly this height may have failed local commit
+    // after the payload was accepted. Other known blocks remain deduplicated.
+    block_index == current_height.saturating_add(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_reprocess_known_block;
+
+    #[test]
+    fn known_block_retry_is_limited_to_the_persistence_frontier() {
+        assert!(should_reprocess_known_block(8, 7));
+        assert!(!should_reprocess_known_block(9, 7));
+        assert!(!should_reprocess_known_block(7, 7));
+        assert!(!should_reprocess_known_block(0, u32::MAX));
+    }
+}
 
 impl RemoteNode {
     pub(super) fn on_inv(&mut self, payload: &InvPayload, ctx: &mut crate::runtime::ActorContext) {
@@ -240,20 +260,20 @@ impl RemoteNode {
         };
         let current_height = self.system.current_block_index();
 
-        // Skip blocks already persisted (safe to consume hash — won't be needed)
+        // Already persisted. Release the in-flight index task; do not forward again.
         if block_idx <= current_height {
             self.known_hashes.try_add(hash);
+            self.notify_inventory_completed(hash, None, Some(block_idx), ctx);
             return Ok(());
         }
 
         // Limit how far ahead we forward to the blockchain actor.
-        // Must match TaskManager's global window (MAX_BLOCK_INDEX_BATCH *
-        // BLOCK_INDEX_WINDOW_MULTIPLIER = 10,000) so blocks requested by
+        // Must match TaskManager's global window so blocks requested by
         // multiple sessions are never silently filtered here.
         // DON'T consume known_hashes so the block can be re-processed later
         // when current_height advances and the block falls within the window.
         let max_ahead = if self.system.is_fast_sync_mode() {
-            10_000u32
+            BLOCK_INDEX_LOOKAHEAD
         } else {
             MAX_HASHES_COUNT as u32
         };
@@ -261,7 +281,14 @@ impl RemoteNode {
             return Ok(());
         }
 
-        if !self.known_hashes.try_add(hash) {
+        if !self.known_hashes.try_add(hash)
+            && !should_reprocess_known_block(block_idx, current_height)
+        {
+            // The payload was already forwarded. Still release the index task,
+            // otherwise a re-request sits in the window until the task timeout.
+            // Only the immediate persistence frontier may bypass this dedup:
+            // its previous local commit can have failed after block validation.
+            self.notify_inventory_completed(hash, None, Some(block.index()), ctx);
             return Ok(());
         }
         self.pending_known_hashes.remove(&hash);

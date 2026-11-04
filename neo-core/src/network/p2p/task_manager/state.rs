@@ -1,6 +1,6 @@
 use super::TaskManager;
 use crate::UInt256;
-use crate::ledger::{PersistCompleted, RelayResult};
+use crate::ledger::{PersistCompleted, PersistFailed, RelayResult};
 use crate::neo_system::NeoSystemContext;
 use crate::runtime::ActorContext;
 use std::sync::Arc;
@@ -11,8 +11,11 @@ impl TaskManager {
         trace!(target: "neo", "task manager attached to system context");
         let capacity = context.memory_pool().lock().capacity.max(100);
         self.known_hashes.set_capacity(capacity);
+        self.last_seen_persisted_index = context.ledger().current_height();
+        self.last_persisted_at = std::time::Instant::now();
         let stream = context.event_stream();
         stream.subscribe::<PersistCompleted>(ctx.self_ref());
+        stream.subscribe::<PersistFailed>(ctx.self_ref());
         stream.subscribe::<RelayResult>(ctx.self_ref());
         self.event_stream = Some(stream);
         self.system = Some(context);

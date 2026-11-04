@@ -24,10 +24,14 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::payloads::{VersionPayload, block::Block, inv_payload::InvPayload};
+use super::payloads::{
+    VersionPayload,
+    block::Block,
+    inv_payload::{InvPayload, MAX_HASHES_COUNT},
+};
 use super::task_session::TaskSession;
 use crate::UInt256;
-use crate::ledger::{PersistCompleted, RelayResult};
+use crate::ledger::{PersistCompleted, PersistFailed, RelayResult};
 use crate::neo_system::NeoSystemContext;
 use crate::runtime::{
     Actor, ActorContext, ActorRef, ActorResult, EventStreamHandle, Props, ScheduleHandle,
@@ -56,10 +60,14 @@ use peer_commands::send_mempool;
 
 pub use handle::TaskManagerHandle;
 
-/// Interval for task manager housekeeping.
-const TIMER_INTERVAL: Duration = Duration::from_secs(30);
+/// Interval for task manager housekeeping. A short interval prevents a missing
+/// frontier block from stalling execution for most of the ordinary task timeout.
+const TIMER_INTERVAL: Duration = Duration::from_secs(5);
 /// Timeout applied to in-flight inventory requests.
 const TASK_TIMEOUT: Duration = Duration::from_secs(60);
+/// A healthy persistence pipeline advances many times per second. Reopen only
+/// its exact frontier after ten seconds; other in-flight tasks keep TASK_TIMEOUT.
+const PERSISTENCE_FRONTIER_TIMEOUT: Duration = Duration::from_secs(10);
 /// Maximum concurrent sessions that may share the same inventory hash task.
 /// Matches C# `MaxConCurrentTasks = 3`.  Keeping this low ensures that only
 /// a few peers request headers concurrently; the rest fall through to block
@@ -67,14 +75,27 @@ const TASK_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_CONCURRENT_TASKS: u32 = 3;
 /// Maximum number of sequential block heights requested in a single getblkbyidx round.
 ///
-/// Smaller batches reduce head-of-line blocking when a slow peer gets assigned
-/// the earliest range needed by persistence.
-const MAX_BLOCK_INDEX_BATCH: u32 = 1000;
+/// Neo peers cap this response at `MaxBlocksCount` (`MAX_HASHES_COUNT`, 500).
+/// Requesting more leaves phantom index tasks for blocks the peer will never
+/// send, and can repeatedly pin the sliding window at exactly 500 persisted blocks.
+const MAX_BLOCK_INDEX_BATCH: u32 = MAX_HASHES_COUNT as u32;
+/// Maximum heights assigned to one peer in a single request and pipeline round.
+///
+/// Keeping this below the 256-block receive-cache bound prevents one peer from
+/// owning a response that its own cache cannot retain. Smaller ranges also let
+/// several peers share the global lookahead window instead of idling behind one
+/// slow or lossy connection.
+const BLOCK_INDEX_REQUEST_BATCH: u32 = 100;
 /// Number of batch windows to keep in flight globally.
 ///
-/// This allows multiple peers to download disjoint height ranges concurrently
-/// without giving any single peer an excessively large assignment.
-const BLOCK_INDEX_WINDOW_MULTIPLIER: u32 = 10;
+/// One protocol-sized batch bounds how far downloads run ahead of persistence.
+/// A wider window (previously 10) requested far more blocks than per-peer receive
+/// buffers can hold; dropped heights were completed and then requested again.
+const BLOCK_INDEX_WINDOW_MULTIPLIER: u32 = 1;
+/// How far ahead of the persisted height block downloads and fast-sync
+/// forwarding may run. Remote nodes must use this same span so a requested
+/// block is not discarded as too far ahead.
+pub(crate) const BLOCK_INDEX_LOOKAHEAD: u32 = MAX_BLOCK_INDEX_BATCH * BLOCK_INDEX_WINDOW_MULTIPLIER;
 const HEADER_TASK_HASH: UInt256 = UInt256::zero();
 struct SessionEntry {
     actor: ActorRef,
@@ -105,6 +126,7 @@ pub struct TaskManager {
     known_hashes: HashSetCache<UInt256>,
     event_stream: Option<EventStreamHandle>,
     last_seen_persisted_index: u32,
+    last_persisted_at: std::time::Instant,
     global_inv_tasks: TaskCounter<UInt256>,
     global_index_tasks: TaskCounter<u32>,
     timer_interval: Duration,
@@ -120,6 +142,7 @@ impl TaskManager {
             known_hashes: HashSetCache::new(1024),
             event_stream: None,
             last_seen_persisted_index: 0,
+            last_persisted_at: std::time::Instant::now(),
             global_inv_tasks: TaskCounter::with_capacity(256),
             global_index_tasks: TaskCounter::with_capacity(256),
             timer_interval: TIMER_INTERVAL,
@@ -147,6 +170,7 @@ struct TaskManagerTick;
 enum TaskManagerMessage {
     Command(TaskManagerCommand),
     PersistCompleted(PersistCompleted),
+    PersistFailed(PersistFailed),
     RelayResult(RelayResult),
     Terminated(Terminated),
     TimerTick,
@@ -158,13 +182,16 @@ impl TaskManagerMessage {
             Ok(command) => Ok(Self::Command(*command)),
             Err(envelope) => match envelope.downcast::<PersistCompleted>() {
                 Ok(persist) => Ok(Self::PersistCompleted(*persist)),
-                Err(envelope) => match envelope.downcast::<RelayResult>() {
-                    Ok(result) => Ok(Self::RelayResult(*result)),
-                    Err(envelope) => match envelope.downcast::<Terminated>() {
-                        Ok(terminated) => Ok(Self::Terminated(*terminated)),
-                        Err(envelope) => match envelope.downcast::<TaskManagerTick>() {
-                            Ok(_) => Ok(Self::TimerTick),
-                            Err(envelope) => Err(envelope),
+                Err(envelope) => match envelope.downcast::<PersistFailed>() {
+                    Ok(persist) => Ok(Self::PersistFailed(*persist)),
+                    Err(envelope) => match envelope.downcast::<RelayResult>() {
+                        Ok(result) => Ok(Self::RelayResult(*result)),
+                        Err(envelope) => match envelope.downcast::<Terminated>() {
+                            Ok(terminated) => Ok(Self::Terminated(*terminated)),
+                            Err(envelope) => match envelope.downcast::<TaskManagerTick>() {
+                                Ok(_) => Ok(Self::TimerTick),
+                                Err(envelope) => Err(envelope),
+                            },
                         },
                     },
                 },
@@ -242,6 +269,9 @@ impl TaskManagerActor {
             },
             TaskManagerMessage::PersistCompleted(persist) => {
                 self.state.on_persist_completed(&persist.block);
+            }
+            TaskManagerMessage::PersistFailed(persist) => {
+                self.state.on_persist_failed(persist.block.index());
             }
             TaskManagerMessage::RelayResult(result) => {
                 self.state.on_relay_result(&result);

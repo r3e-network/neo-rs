@@ -126,10 +126,49 @@ impl TaskSession {
         self.available_tasks.extend(hashes);
     }
 
+    /// Returns true when another unverified block must not be retained.
+    #[must_use]
+    pub fn received_block_budget_exhausted(&self) -> bool {
+        self.received_block.len() >= Self::MAX_RECEIVED_BLOCKS
+            || self.received_block_bytes >= Self::MAX_RECEIVED_BLOCK_BYTES
+    }
+
+    /// Frees the receive buffer for `needed` when it is full of later blocks.
+    ///
+    /// Those later blocks cannot be persisted before `needed`. Holding them
+    /// keeps the budget exhausted, so the next request is skipped and the
+    /// frontier never comes back after its task times out.
+    ///
+    /// Returns false when the budget is still exhausted and every retained
+    /// block is at or below `needed`.
+    pub fn reserve_received_block_slot_for(&mut self, needed: u32) -> bool {
+        if self.received_block.contains_key(&needed) {
+            return true;
+        }
+        if self.received_block_budget_exhausted() {
+            let later: Vec<u32> = self
+                .received_block
+                .keys()
+                .copied()
+                .filter(|index| *index > needed)
+                .collect();
+            for index in later {
+                self.remove_received_block(index);
+            }
+        }
+        !self.received_block_budget_exhausted()
+    }
+
     /// Stores a received block for later validation.
     ///
-    /// Returns `false` when the per-peer byte/block budget would be exceeded;
-    /// the caller must not treat such a block as queued for persistence.
+    /// Returns `false` when the per-peer byte/block budget would be exceeded
+    /// and no higher retained index can be evicted. The caller must not treat
+    /// such a block as queued for persistence and must not ask for another
+    /// range while the budget is exhausted.
+    ///
+    /// A block nearer the persist frontier displaces the highest retained
+    /// index so the buffer cannot fill with later heights and stall the next
+    /// block.
     pub fn store_received_block(&mut self, index: u32, block: Block) -> bool {
         let size = block.size();
         let replaced = self.received_block.remove(&index);
@@ -137,13 +176,41 @@ impl TaskSession {
             self.received_block_bytes = self.received_block_bytes.saturating_sub(old.size());
         }
 
-        let over_budget = self.received_block.len() >= Self::MAX_RECEIVED_BLOCKS
-            || self.received_block_bytes.saturating_add(size) > Self::MAX_RECEIVED_BLOCK_BYTES;
+        if !self.received_block_fits(size) {
+            let mut evicted = Vec::new();
+            while !self.received_block_fits(size) {
+                let Some(evict_index) = self
+                    .received_block
+                    .keys()
+                    .copied()
+                    .filter(|candidate| *candidate > index)
+                    .max()
+                else {
+                    break;
+                };
+                let Some(removed) = self.received_block.remove(&evict_index) else {
+                    break;
+                };
+                self.received_block_bytes =
+                    self.received_block_bytes.saturating_sub(removed.size());
+                evicted.push((evict_index, removed));
+            }
 
-        if over_budget {
-            if let Some(old) = replaced {
-                self.received_block.insert(index, old);
+            if self.received_block_fits(size) {
+                self.received_block.insert(index, block);
                 self.received_block_bytes = self.received_block_bytes.saturating_add(size);
+                return true;
+            }
+
+            for (evict_index, removed) in evicted {
+                let removed_size = removed.size();
+                self.received_block.insert(evict_index, removed);
+                self.received_block_bytes = self.received_block_bytes.saturating_add(removed_size);
+            }
+            if let Some(old) = replaced {
+                let old_size = old.size();
+                self.received_block.insert(index, old);
+                self.received_block_bytes = self.received_block_bytes.saturating_add(old_size);
             }
             return false;
         }
@@ -151,6 +218,11 @@ impl TaskSession {
         self.received_block.insert(index, block);
         self.received_block_bytes = self.received_block_bytes.saturating_add(size);
         true
+    }
+
+    fn received_block_fits(&self, size: usize) -> bool {
+        self.received_block.len() < Self::MAX_RECEIVED_BLOCKS
+            && self.received_block_bytes.saturating_add(size) <= Self::MAX_RECEIVED_BLOCK_BYTES
     }
 
     /// Removes a cached received block and updates the byte accounting.
@@ -278,5 +350,50 @@ mod tests {
             ),
             "space freed by persistence/removal must be reusable"
         );
+    }
+
+    #[test]
+    fn full_received_block_cache_keeps_the_lower_index() {
+        let mut session = TaskSession::new(&VersionPayload::default());
+        let start = 1_000u32;
+        for index in start..start + TaskSession::MAX_RECEIVED_BLOCKS as u32 {
+            assert!(session.store_received_block(index, block_at(index)));
+        }
+
+        let bytes_before = session.received_block_bytes();
+        let incoming = start - 1;
+        assert!(
+            session.store_received_block(incoming, block_at(incoming)),
+            "a nearer block must displace the highest retained index"
+        );
+        let highest = start + TaskSession::MAX_RECEIVED_BLOCKS as u32 - 1;
+        assert!(session.received_block.contains_key(&incoming));
+        assert!(!session.received_block.contains_key(&highest));
+        assert_eq!(
+            session.received_block.len(),
+            TaskSession::MAX_RECEIVED_BLOCKS
+        );
+        assert_eq!(session.received_block_bytes(), bytes_before);
+        assert!(session.received_block_budget_exhausted());
+
+        assert!(
+            !session.store_received_block(highest, block_at(highest)),
+            "a higher block must not displace the persist frontier"
+        );
+        assert!(session.received_block.contains_key(&incoming));
+        assert_eq!(session.received_block_bytes(), bytes_before);
+    }
+
+    #[test]
+    fn reserve_slot_drops_highest_block_above_the_needed_height() {
+        let mut session = TaskSession::new(&VersionPayload::default());
+        let start = 5_000u32;
+        for index in start..start + TaskSession::MAX_RECEIVED_BLOCKS as u32 {
+            assert!(session.store_received_block(index, block_at(index)));
+        }
+        assert!(session.reserve_received_block_slot_for(501));
+        assert!(session.received_block.is_empty());
+        assert!(!session.received_block_budget_exhausted());
+        assert_eq!(session.received_block_bytes(), 0);
     }
 }
