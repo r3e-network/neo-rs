@@ -1,6 +1,7 @@
 //! Unified signer providers and node-local signing runtime.
 
 use crate::config::{SignerProviderKind, SignerServiceSection};
+use crate::pkcs11::{HsmSigner, LibPkcs11Backend, Pkcs11Backend};
 use crate::remote_signer::{MtlsRemoteSignerTransport, RemoteSignerProvider};
 use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{Context, Result, bail};
@@ -43,6 +44,16 @@ pub(crate) struct NodeSignerRuntime {
     policy_version: String,
     request_timeout: Duration,
     key_resolver: Arc<SigningKeyResolver>,
+}
+
+impl std::fmt::Debug for NodeSignerRuntime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeSignerRuntime")
+            .field("default_provider", &self.default_provider)
+            .field("policy_version", &self.policy_version)
+            .field("request_timeout", &self.request_timeout)
+            .finish_non_exhaustive()
+    }
 }
 
 impl NodeSignerRuntime {
@@ -275,6 +286,40 @@ pub(crate) fn initialize_signer_service(
     wallet_provider: Option<&Arc<NodeWalletProvider>>,
     active_backend: Option<ActiveSignerBackend>,
 ) -> Result<Option<Arc<NodeSignerRuntime>>> {
+    initialize_signer_service_with_hardware_tee(
+        config,
+        network,
+        wallet_provider,
+        active_backend,
+        default_hardware_tee_signer,
+    )
+}
+
+/// Production factory: loads the configured PKCS#11 module and fails closed.
+fn default_hardware_tee_signer(
+    provider: &crate::config::SignerProviderSection,
+) -> Result<Arc<dyn SignerProvider>> {
+    let backend: Arc<dyn Pkcs11Backend> = Arc::new(
+        LibPkcs11Backend::from_provider_section(provider).with_context(|| {
+            format!(
+                "failed to load the PKCS#11 backend for signer provider '{}'",
+                provider.id
+            )
+        })?,
+    );
+    Ok(Arc::new(HsmSigner::from_env_pin(provider, backend)?))
+}
+
+fn initialize_signer_service_with_hardware_tee<F>(
+    config: Option<&SignerServiceSection>,
+    network: u32,
+    wallet_provider: Option<&Arc<NodeWalletProvider>>,
+    active_backend: Option<ActiveSignerBackend>,
+    hardware_tee_factory: F,
+) -> Result<Option<Arc<NodeSignerRuntime>>>
+where
+    F: Fn(&crate::config::SignerProviderSection) -> Result<Arc<dyn SignerProvider>>,
+{
     let Some(config) = config.filter(|config| config.enabled) else {
         return Ok(None);
     };
@@ -292,7 +337,9 @@ pub(crate) fn initialize_signer_service(
     let has_local = enabled.iter().any(|provider| {
         !matches!(
             provider.kind,
-            SignerProviderKind::Remote | SignerProviderKind::RemoteTee
+            SignerProviderKind::Remote
+                | SignerProviderKind::RemoteTee
+                | SignerProviderKind::HardwareTee
         )
     });
     let wallet = if has_local {
@@ -338,6 +385,17 @@ pub(crate) fn initialize_signer_service(
                     transport,
                     None,
                 )?)
+            }
+            SignerProviderKind::HardwareTee => {
+                // The hardware TEE provider owns its keys inside a PKCS#11
+                // token: it neither requires the node wallet nor an active
+                // wallet-backed backend, and construction fails closed.
+                hardware_tee_factory(provider).with_context(|| {
+                    format!(
+                        "failed to construct the hardware TEE signer provider '{}'",
+                        provider.id
+                    )
+                })?
             }
             _ => {
                 let active_backend = active_backend
@@ -473,7 +531,9 @@ pub(crate) fn initialize_signer_service(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{SignerKeySection, SignerProviderSection};
+    use crate::config::{Pkcs11ProviderSection, SignerKeySection, SignerProviderSection};
+    use crate::pkcs11::Pkcs11Mechanism;
+    use crate::pkcs11::mock::MockP11Backend;
     use neo_core::protocol_settings::ProtocolSettings;
     use neo_core::wallets::{KeyPair, Nep6Wallet, Wallet};
 
@@ -539,6 +599,7 @@ mod tests {
             }],
             endpoint: None,
             remote: None,
+            pkcs11: None,
         };
         let signer = WalletSignerProvider::new(Arc::clone(&startup_wallet_trait), &provider_config)
             .expect("configured wallet signer");
@@ -560,5 +621,187 @@ mod tests {
             info.attributes.get("wallet").map(String::as_str),
             Some("startup")
         );
+    }
+
+    const HARDWARE_TEE_TEST_NETWORK: u32 = 860_833_102;
+
+    fn hardware_tee_service_section(provider: SignerProviderSection) -> SignerServiceSection {
+        SignerServiceSection {
+            enabled: true,
+            state_path: "data/unused-hsm-signing.journal".to_string(),
+            policy_version: "policy-v1".to_string(),
+            request_timeout_ms: 5_000,
+            max_fee_units: 100,
+            quota_limit_units: 100,
+            quota_window_ms: 60_000,
+            providers: vec![provider],
+            required_purposes: Vec::new(),
+            required_canonical_encodings: Vec::new(),
+            required_algorithms: Vec::new(),
+            required_security_level: None,
+        }
+    }
+
+    fn hardware_tee_provider_section(public_key_hex: &str, account: &str) -> SignerProviderSection {
+        SignerProviderSection {
+            id: "hsm-tee".to_string(),
+            kind: SignerProviderKind::HardwareTee,
+            enabled: true,
+            default: true,
+            security_level: Some(SecurityLevel::HardwareTee),
+            purposes: vec![SignPurpose::Consensus],
+            canonical_encodings: vec![NEO_SIGN_DATA_ENCODING.to_string()],
+            algorithms: vec![ALGORITHM_ECDSA_P256_SHA256.to_string()],
+            keys: vec![SignerKeySection {
+                key_id: "validator-key".to_string(),
+                version: 2,
+                public_key_hex: public_key_hex.to_string(),
+                account: account.to_string(),
+                purposes: vec![SignPurpose::Consensus],
+            }],
+            endpoint: None,
+            remote: None,
+            pkcs11: Some(Pkcs11ProviderSection {
+                library_path: "unused-mock-library".to_string(),
+                slot_id: 0,
+                token_label: "TESTTOKEN".to_string(),
+                key_label: "validator-key".to_string(),
+            }),
+        }
+    }
+
+    fn consensus_request(
+        request_id: &str,
+        key_ref: KeyRef,
+        account: &str,
+    ) -> neo_core::signing::SignRequest {
+        neo_core::signing::SignRequest {
+            schema_version: SIGNING_SCHEMA_VERSION,
+            request_id: request_id.to_string(),
+            network: HARDWARE_TEE_TEST_NETWORK,
+            purpose: SignPurpose::Consensus,
+            key_ref,
+            payload: neo_core::signing::SignPayload::Canonical {
+                encoding: NEO_SIGN_DATA_ENCODING.to_string(),
+                bytes: vec![1, 2, 3, 4, 5],
+            },
+            protocol_context: neo_core::signing::ProtocolContext {
+                schema_version: SIGNING_SCHEMA_VERSION,
+                protocol: "neo-n3-consensus".to_string(),
+                protocol_version: "1".to_string(),
+                fields: BTreeMap::new(),
+            },
+            policy_version: "policy-v1".to_string(),
+            deadline_unix_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64
+                + 60_000,
+            idempotency: neo_core::signing::IdempotencyInfo {
+                schema_version: SIGNING_SCHEMA_VERSION,
+                key: format!("idem-{request_id}"),
+                replay_nonce: format!("nonce-{request_id}"),
+            },
+            fee_units: 1,
+            quota_units: 1,
+            account: Some(account.to_string()),
+            targets: BTreeSet::new(),
+        }
+    }
+
+    fn consensus_context() -> AuthenticatedContext {
+        AuthenticatedContext {
+            schema_version: SIGNING_SCHEMA_VERSION,
+            principal: CONSENSUS_SIGNING_PRINCIPAL.to_string(),
+            tenant: NODE_SIGNING_TENANT.to_string(),
+            authentication_method: "node-local-test".to_string(),
+            scopes: BTreeSet::from(["sign:consensus".to_string()]),
+            claims: BTreeMap::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn hardware_tee_signer_provider_constructs_without_wallet_or_active_backend() {
+        let private_key = [0x53; 32];
+        let backend = MockP11Backend::new(0, "TESTTOKEN", "validator-key", &private_key, "4321");
+        let public_key = backend.public_key().to_vec();
+        let script_hash = ContractHelper::signature_redeem_script(&public_key);
+        let account =
+            neo_core::UInt160::from(neo_core::cryptography::Crypto::hash160(&script_hash))
+                .to_string();
+        let section = hardware_tee_provider_section(&hex::encode(&public_key), &account);
+        let mock: Arc<dyn Pkcs11Backend> = Arc::new(backend.clone());
+        let directory = tempfile::tempdir().expect("temporary signing store");
+        let mut service_section = hardware_tee_service_section(section);
+        service_section.state_path = directory
+            .path()
+            .join("signing.journal")
+            .to_string_lossy()
+            .into_owned();
+
+        // No wallet provider and no active wallet-backed backend: the PKCS#11
+        // adapter replaces the historical startup bail.
+        let runtime = initialize_signer_service_with_hardware_tee(
+            Some(&service_section),
+            HARDWARE_TEE_TEST_NETWORK,
+            None,
+            None,
+            |provider: &crate::config::SignerProviderSection| {
+                Ok(Arc::new(HsmSigner::new(
+                    provider,
+                    Arc::clone(&mock),
+                    zeroize::Zeroizing::new("4321".as_bytes().to_vec()),
+                )?))
+            },
+        )
+        .expect("hardware TEE signer service constructs without a wallet")
+        .expect("enabled signer service returns a runtime");
+
+        let request = consensus_request(
+            "hardware-tee-consensus-1",
+            KeyRef::new("hsm-tee", "validator-key", 2),
+            &account,
+        );
+        let response = runtime
+            .service()
+            .sign(request, consensus_context())
+            .await
+            .expect("authorized consensus signing through the PKCS#11 adapter");
+        assert_eq!(response.signature.len(), 64);
+        assert_eq!(backend.recorded_signs().len(), 1);
+        assert_eq!(
+            backend.recorded_signs()[0].mechanism,
+            Pkcs11Mechanism::EcdsaSha256
+        );
+    }
+
+    #[test]
+    fn hardware_tee_signer_service_fails_closed_on_invalid_library_path() {
+        let private_key = [0x53; 32];
+        let backend = MockP11Backend::new(0, "TESTTOKEN", "validator-key", &private_key, "4321");
+        let public_key = backend.public_key().to_vec();
+        let script_hash = ContractHelper::signature_redeem_script(&public_key);
+        let account =
+            neo_core::UInt160::from(neo_core::cryptography::Crypto::hash160(&script_hash))
+                .to_string();
+        let mut section = hardware_tee_provider_section(&hex::encode(&public_key), &account);
+        section
+            .pkcs11
+            .as_mut()
+            .expect("pkcs11 section")
+            .library_path = "Z:\\definitely\\missing\\pkcs11-module.dll".to_string();
+        let service_section = hardware_tee_service_section(section);
+
+        // The production factory must fail closed on an unresolvable PKCS#11
+        // library instead of silently degrading to a software signer.
+        let error = initialize_signer_service(
+            Some(&service_section),
+            HARDWARE_TEE_TEST_NETWORK,
+            None,
+            None,
+        )
+        .expect_err("invalid PKCS#11 library path must fail closed");
+        let chain = format!("{error:#}");
+        assert!(chain.contains("PKCS#11"), "unexpected error: {chain}");
     }
 }

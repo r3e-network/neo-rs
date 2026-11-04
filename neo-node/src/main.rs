@@ -47,6 +47,7 @@ mod import_acc {
 }
 mod logging;
 mod metrics;
+mod pkcs11;
 mod probe_containment;
 mod probe_controller;
 mod remote_signer;

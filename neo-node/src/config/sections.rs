@@ -36,6 +36,8 @@ pub struct NodeConfig {
     pub signer_service: Option<SignerServiceSection>,
     /// Capability-limited node diagnostics configuration.
     pub diagnostics: Option<DiagnosticsSection>,
+    /// Strictly opt-in encrypted-mempool privacy mode configuration.
+    pub privacy: Option<PrivacySection>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -474,6 +476,8 @@ pub struct SignerProviderSection {
     pub endpoint: Option<String>,
     /// Dedicated mTLS and optional hardware-attestation configuration.
     pub remote: Option<RemoteSignerSection>,
+    /// PKCS#11 HSM backend configuration for `hardware_tee` providers.
+    pub pkcs11: Option<Pkcs11ProviderSection>,
 }
 
 /// Dedicated remote signer transport configuration.
@@ -494,6 +498,23 @@ pub struct RemoteSignerSection {
     pub identity_mapping: BTreeMap<String, String>,
     /// Hardware evidence policy, required only for `remote_tee`.
     pub attestation: Option<RemoteAttestationPolicySection>,
+}
+
+/// PKCS#11 backend configuration for a `hardware_tee` signer provider.
+///
+/// The HSM user PIN is deliberately absent: it is only ever read from the
+/// `NEO_HSM_PIN` environment variable so no secret lands in TOML files.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct Pkcs11ProviderSection {
+    /// Path to the PKCS#11 shared library providing `C_GetFunctionList`.
+    pub library_path: String,
+    /// Slot identifier holding the token with the signing key.
+    pub slot_id: u64,
+    /// Token label that must match the discovered token.
+    pub token_label: String,
+    /// `CKA_LABEL` of the EC P-256 private/public key pair.
+    pub key_label: String,
 }
 
 /// One immutable configured signer key mapping shared by every provider kind.
@@ -532,6 +553,38 @@ pub struct RemoteAttestationPolicySection {
     pub max_clock_skew_ms: u64,
     /// Maximum attested session lifetime.
     pub max_session_age_ms: u64,
+}
+
+/// Strictly opt-in encrypted-mempool privacy mode (Phase A).
+///
+/// With `enabled = false` (the default, or when the section is absent) the
+/// node behaves exactly as before: no content-encryption engine is installed,
+/// no privacy RPC endpoint is registered, and consensus keeps its existing
+/// proposal path. There is no auto-enable path.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PrivacySection {
+    /// Master switch for privacy mode. Strictly opt-in; default off.
+    pub enabled: bool,
+    /// Content-encryption key encapsulation mode: `"committee_key"` or
+    /// `"tee_sealed_key"`.
+    pub encryption_mode: String,
+    /// Committee epoch key, hex-encoded (exactly 32 bytes / 64 hex chars).
+    /// Required when `encryption_mode = "committee_key"` and `enabled = true`.
+    pub committee_epoch_key_hex: Option<String>,
+    /// Committee epoch id bound to the configured epoch key. Defaults to 1.
+    pub committee_epoch_id: Option<u64>,
+}
+
+impl Default for PrivacySection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            encryption_mode: "tee_sealed_key".to_string(),
+            committee_epoch_key_hex: None,
+            committee_epoch_id: None,
+        }
+    }
 }
 
 /// Telemetry configuration section

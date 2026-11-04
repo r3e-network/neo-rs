@@ -114,3 +114,61 @@ tier0_capacity = 512              # Larger root branch buffer for mainnet
 tier1_capacity = 100000           # Hot native leaves (NEO/GAS/Policy)
 tier2_max_prefixes = 5000000      # Contract prefixes
 tier3_lru_size_mb = 512           # General fallback (larger memory budget)
+
+# HSM / hardware_tee signer (PKCS#11) - uncomment and adapt to enable.
+# The HSM user PIN is deliberately absent: it is only ever read from the
+# NEO_HSM_PIN environment variable so no secret lands in TOML files.
+#[signer_service]
+#enabled = true
+#state_path = "data/signer-state.jsonl"
+#policy_version = "node-signing-v1"
+#request_timeout_ms = 5000
+#max_fee_units = 1000
+#quota_limit_units = 100
+#quota_window_ms = 60000
+
+# The provider must bind exactly one HSM key (validated fail-closed at
+# startup), and the exported HSM public key must match public_key_hex exactly.
+#[[signer_service.providers]]
+#id = "hsm-primary"
+#type = "hardware_tee"
+#enabled = true
+#default = true
+#security_level = "hardware_tee"
+#purposes = ["consensus", "state_root"]
+#canonical_encodings = ["sha256"]
+#algorithms = ["ecdsa_p256"]
+
+#[signer_service.providers.pkcs11]
+#library_path = "C:\\Windows\\System32\\ykcs11.dll"
+#slot_id = 0
+#token_label = "NEO_SIGNER"
+#key_label = "neo-validator"
+
+# Exactly one key binding; TOML path nests under the provider above.
+#[[signer_service.providers.keys]]
+#key_id = "validator-key"
+#version = 1
+# Expected compressed P-256 public key exported from the HSM key pair:
+# 33 bytes / 66 hex chars starting with 02 or 03. Startup fails closed if
+# this does not byte-match the key the token exports for key_label.
+#public_key_hex = "02<64-hex-chars-of-the-X-coordinate>"
+# Neo script-hash (UInt160, 40 hex chars) of the signature redeem script
+# built from that public key; the account this key is allowed to sign for.
+#account = "<40-hex-char-account-script-hash>"
+#purposes = ["consensus", "state_root"]
+
+# Encrypted-mempool privacy mode (Phase A) - uncomment to enable.
+# Strictly opt-in: with enabled = false (or the section absent) the node
+# behaves exactly as before. Enabling requires running with --tee.
+# encryption_mode:
+#   - "tee_sealed_key": payload keys sealed by the enclave (rollback-floor
+#     guarded); no committee key material in host configuration.
+#   - "committee_key": symmetric committee epoch key; requires
+#     committee_epoch_key_hex (64 hex chars, 32 bytes) and, optionally,
+#     committee_epoch_id (default 1).
+#[privacy]
+#enabled = true
+#encryption_mode = "tee_sealed_key"
+#committee_epoch_key_hex = "0000000000000000000000000000000000000000000000000000000000000001"
+#committee_epoch_id = 1

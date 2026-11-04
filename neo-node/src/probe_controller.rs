@@ -764,73 +764,122 @@ unsafe impl Send for WindowsJob {}
 
 #[cfg(windows)]
 impl WindowsJob {
-    fn assign(
-        child: &tokio::process::Child,
-        memory_limit_bytes: u64,
-        replay_timeout: Duration,
-    ) -> std::io::Result<Self> {
-        use std::mem::size_of;
-        use windows_sys::Win32::System::JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-            JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-            JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOB_OBJECT_LIMIT_PROCESS_TIME,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-            SetInformationJobObject,
-        };
+    /// Creates a private, non-inheritable Job Object and applies the fixed
+    /// containment limit inventory before any process is assigned to it.
+    fn create(memory_limit_bytes: u64, replay_timeout: Duration) -> std::io::Result<Self> {
+        use windows_sys::Win32::System::JobObjects::CreateJobObjectW;
 
-        // SAFETY: Null security attributes and name request a private, non-inheritable job.
+        // SAFETY: Null security attributes and name request a private,
+        // non-inheritable job; breakaway is never granted.
         let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
         if handle.is_null() {
             return Err(std::io::Error::last_os_error());
         }
         let job = Self(handle);
-        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
-            | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION
-            | JOB_OBJECT_LIMIT_PROCESS_MEMORY
-            | JOB_OBJECT_LIMIT_PROCESS_TIME;
-        limits.BasicLimitInformation.ActiveProcessLimit = 1;
-        limits.BasicLimitInformation.PerProcessUserTimeLimit =
-            i64::try_from(replay_timeout.as_millis().saturating_mul(10_000)).unwrap_or(i64::MAX);
-        limits.ProcessMemoryLimit = usize::try_from(memory_limit_bytes).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "memory limit does not fit usize",
-            )
-        })?;
-        // SAFETY: `limits` is initialized for the documented information class.
-        let configured = unsafe {
-            SetInformationJobObject(
-                job.0,
-                JobObjectExtendedLimitInformation,
-                std::ptr::from_ref(&limits).cast(),
-                u32::try_from(size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>())
-                    .unwrap_or(u32::MAX),
-            )
-        };
-        if configured == 0 {
-            return Err(std::io::Error::last_os_error());
-        }
+        job.configure(memory_limit_bytes, replay_timeout)?;
+        Ok(job)
+    }
+
+    /// Applies the exact extended-limit inventory. Every Job API failure is a
+    /// rejection: the caller must refuse to launch rather than degrade.
+    fn configure(&self, memory_limit_bytes: u64, replay_timeout: Duration) -> std::io::Result<()> {
+        set_job_extended_limits(self.0, memory_limit_bytes, replay_timeout)
+    }
+
+    /// Assigns a live tokio child to this job.
+    fn assign(&self, child: &tokio::process::Child) -> std::io::Result<()> {
         let process = child.raw_handle().ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 "worker exited before job assignment",
             )
         })?;
-        // SAFETY: Tokio exposes the live owned process handle for this child.
-        let assigned = unsafe { AssignProcessToJobObject(job.0, process.cast()) };
+        self.assign_process(process.cast())
+    }
+
+    /// Assigns a raw process handle to this job.
+    ///
+    /// The child is blocked reading the frame header from its stdin pipe at
+    /// this point, so the tiny spawn-to-assignment window cannot be used for
+    /// work before the job governs the process.
+    fn assign_process(
+        &self,
+        process: windows_sys::Win32::Foundation::HANDLE,
+    ) -> std::io::Result<()> {
+        use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
+
+        // SAFETY: `self.0` is the live owned job handle and `process` is a live
+        // process handle owned by the caller.
+        let assigned = unsafe { AssignProcessToJobObject(self.0, process) };
         if assigned == 0 {
             return Err(std::io::Error::last_os_error());
         }
-        Ok(job)
+        Ok(())
     }
+}
+
+/// Applies the exact Job Object limit inventory for one restricted worker run.
+///
+/// * `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` - the launcher holds the only job
+///   handle, so dropping it terminates and reaps the whole worker tree,
+///   aligned with the launcher's `kill_on_drop` semantics.
+/// * `JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 1` - no second process can live in
+///   the job, denying sideways process escape.
+/// * `JOB_OBJECT_LIMIT_PROCESS_MEMORY` - exact configured commit ceiling.
+/// * `JOB_OBJECT_LIMIT_PROCESS_TIME` - per-process user-time ceiling derived
+///   from the replay budget; CPU rate control is deliberately not configured
+///   because it only shapes scheduling and cannot stop one fast core.
+/// * `JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION` - a crashing worker dies
+///   instead of surviving as an orphan.
+#[cfg(windows)]
+fn set_job_extended_limits(
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    memory_limit_bytes: u64,
+    replay_timeout: Duration,
+) -> std::io::Result<()> {
+    use std::mem::size_of;
+    use windows_sys::Win32::System::JobObjects::{
+        JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+        JOB_OBJECT_LIMIT_PROCESS_TIME, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JobObjectExtendedLimitInformation, SetInformationJobObject,
+    };
+
+    let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+        | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION
+        | JOB_OBJECT_LIMIT_PROCESS_MEMORY
+        | JOB_OBJECT_LIMIT_PROCESS_TIME;
+    limits.BasicLimitInformation.ActiveProcessLimit = 1;
+    limits.BasicLimitInformation.PerProcessUserTimeLimit =
+        i64::try_from(replay_timeout.as_millis().saturating_mul(10_000)).unwrap_or(i64::MAX);
+    limits.ProcessMemoryLimit = usize::try_from(memory_limit_bytes).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "memory limit does not fit usize",
+        )
+    })?;
+    // SAFETY: `limits` is initialized for the documented information class.
+    let configured = unsafe {
+        SetInformationJobObject(
+            handle,
+            JobObjectExtendedLimitInformation,
+            std::ptr::from_ref(&limits).cast(),
+            u32::try_from(size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>()).unwrap_or(u32::MAX),
+        )
+    };
+    if configured == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
 impl Drop for WindowsJob {
     fn drop(&mut self) {
-        // SAFETY: This type uniquely owns the Job Object handle.
+        // SAFETY: This type uniquely owns the Job Object handle; closing it is
+        // the kill-on-close containment boundary for any worker stragglers.
         unsafe {
             windows_sys::Win32::Foundation::CloseHandle(self.0);
         }
@@ -853,8 +902,19 @@ impl ProcessLauncher for CommandProcessLauncher {
             .spawn()
             .map_err(|_| LaunchError::Spawn)?;
         #[cfg(windows)]
-        let _job = WindowsJob::assign(&child, memory_limit_bytes, replay_timeout)
-            .map_err(|_| LaunchError::Containment)?;
+        // Fail closed: create the governed job first, assign the freshly
+        // spawned worker, and treat every Job API failure as a launch
+        // rejection with the already-spawned child reaped below - the worker
+        // must never keep running outside a fully configured job.
+        let _job = match WindowsJob::create(memory_limit_bytes, replay_timeout)
+            .and_then(|job| job.assign(&child).map(|()| job))
+        {
+            Ok(job) => job,
+            Err(_) => {
+                terminate_and_reap(&mut child).await;
+                return Err(LaunchError::Containment);
+            }
+        };
         #[cfg(not(windows))]
         let _ = memory_limit_bytes;
         let Some(mut child_stdin) = child.stdin.take() else {
@@ -1146,7 +1206,11 @@ mod tests {
         let snapshot = SnapshotInput::from_job(
             &job,
             vec![SnapshotEntry {
-                key: vec![1, 2, 3],
+                // StorageKey-encoded key (i32-LE service id 29 + 3-byte
+                // suffix), mirroring `StorageKey::new(29, vec![1, 2,
+                // 3]).to_array()`: the real worker's `DetachedSnapshot`
+                // rejects raw keys shorter than 4 bytes.
+                key: vec![29, 0, 0, 0, 1, 2, 3],
                 value: vec![4, 5, 6],
                 constant: false,
             }],
@@ -1674,5 +1738,274 @@ mod tests {
         let result = controller.try_submit(request).unwrap().wait().await;
         assert!(matches!(result.verdict, ProbeVerdict::Uncertain(_)));
         assert_eq!(launcher.calls.load(Ordering::SeqCst), 1);
+    }
+
+    // ---------------------------------------------------------------------
+    // Task 44: real Windows Job Object containment. These tests exercise the
+    // actual platform boundary instead of the injected `FakeLauncher`.
+    // ---------------------------------------------------------------------
+
+    #[cfg(windows)]
+    fn cmd_exe() -> PathBuf {
+        let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_owned());
+        PathBuf::from(system_root).join("System32").join("cmd.exe")
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_job_configures_exact_limit_inventory() {
+        use windows_sys::Win32::System::JobObjects::{
+            JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION,
+            JOB_OBJECT_LIMIT_JOB_TIME, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOB_OBJECT_LIMIT_PROCESS_TIME,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+            QueryInformationJobObject,
+        };
+
+        let job = WindowsJob::create(
+            REQUIRED_MEMORY_LIMIT_BYTES,
+            Duration::from_millis(MAX_RUN_TIMEOUT_MS),
+        )
+        .expect("job object with the restricted limit inventory");
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        let mut returned = 0u32;
+        // SAFETY: `info` is initialized for the queried information class and
+        // `job.0` is the live owned job handle.
+        let queried = unsafe {
+            QueryInformationJobObject(
+                job.0,
+                JobObjectExtendedLimitInformation,
+                std::ptr::from_mut(&mut info).cast(),
+                u32::try_from(std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>())
+                    .unwrap_or(u32::MAX),
+                &mut returned,
+            )
+        };
+        assert_eq!(queried, 1, "querying the applied limits must succeed");
+        let flags = info.BasicLimitInformation.LimitFlags;
+        assert!(flags & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE != 0);
+        assert!(flags & JOB_OBJECT_LIMIT_ACTIVE_PROCESS != 0);
+        assert!(flags & JOB_OBJECT_LIMIT_PROCESS_MEMORY != 0);
+        assert!(flags & JOB_OBJECT_LIMIT_PROCESS_TIME != 0);
+        assert!(flags & JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION != 0);
+        assert_eq!(flags & JOB_OBJECT_LIMIT_JOB_TIME, 0);
+        assert_eq!(info.BasicLimitInformation.ActiveProcessLimit, 1);
+        assert_eq!(
+            info.ProcessMemoryLimit,
+            REQUIRED_MEMORY_LIMIT_BYTES as usize
+        );
+        assert_eq!(
+            info.BasicLimitInformation.PerProcessUserTimeLimit,
+            i64::try_from(MAX_RUN_TIMEOUT_MS * 10_000).unwrap()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_job_failure_paths_reject_without_panic() {
+        // An invalid job handle must be rejected by the limit configuration,
+        // never panic and never degrade into an uncontained launch.
+        assert!(
+            set_job_extended_limits(
+                std::ptr::null_mut(),
+                REQUIRED_MEMORY_LIMIT_BYTES,
+                Duration::from_millis(MAX_RUN_TIMEOUT_MS),
+            )
+            .is_err()
+        );
+
+        let job = WindowsJob::create(
+            REQUIRED_MEMORY_LIMIT_BYTES,
+            Duration::from_millis(MAX_RUN_TIMEOUT_MS),
+        )
+        .expect("live job object");
+        // An invalid process handle must be rejected by assignment.
+        assert!(job.assign_process(std::ptr::null_mut()).is_err());
+        // The failure did not poison the job: its limits stay configurable.
+        assert!(
+            job.configure(
+                REQUIRED_MEMORY_LIMIT_BYTES,
+                Duration::from_millis(MAX_RUN_TIMEOUT_MS)
+            )
+            .is_ok()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_job_governs_helper_process_communication_and_exit() {
+        use std::os::windows::io::AsRawHandle;
+
+        let job = WindowsJob::create(
+            REQUIRED_MEMORY_LIMIT_BYTES,
+            Duration::from_millis(MAX_RUN_TIMEOUT_MS),
+        )
+        .expect("job object with the restricted limit inventory");
+        // Harmless smoke helper: `cmd.exe /c ver` prints the Windows version
+        // banner to stdout and exits 0 without touching anything else.
+        let child = std::process::Command::new(cmd_exe())
+            .args(["/c", "ver"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("harmless helper process");
+        job.assign_process(child.as_raw_handle().cast())
+            .expect("helper must be governed by the job before it runs");
+        let output = child.wait_with_output().expect("helper under job");
+        assert!(
+            output.status.success(),
+            "governed helper must run to completion: {}",
+            output.status
+        );
+        assert!(
+            !output.stdout.is_empty(),
+            "governed helper must communicate over the stdout pipe"
+        );
+        // Dropping the job handle after a clean exit must not resurrect or
+        // leak anything; the child was already reaped by `wait_with_output`.
+        drop(job);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_job_close_terminates_governed_process_without_orphan() {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::JobObjects::{
+            JOBOBJECT_BASIC_PROCESS_ID_LIST, JobObjectBasicProcessIdList, QueryInformationJobObject,
+        };
+
+        // Interactive `cmd.exe` with a held-open stdin pipe stays alive until
+        // the job handle is dropped (the kill-on-close boundary).
+        let mut child = std::process::Command::new(cmd_exe())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("harmless helper process");
+        let job = WindowsJob::create(
+            REQUIRED_MEMORY_LIMIT_BYTES,
+            Duration::from_millis(MAX_RUN_TIMEOUT_MS),
+        )
+        .expect("job object with the restricted limit inventory");
+        job.assign_process(child.as_raw_handle().cast())
+            .expect("helper must be governed by the job");
+        // Prove the process really lives inside the job.
+        let mut member_list = JOBOBJECT_BASIC_PROCESS_ID_LIST::default();
+        let mut returned = 0u32;
+        // SAFETY: `member_list` is initialized for the queried class and the
+        // job holds exactly one member.
+        let listed = unsafe {
+            QueryInformationJobObject(
+                job.0,
+                JobObjectBasicProcessIdList,
+                std::ptr::from_mut(&mut member_list).cast(),
+                u32::try_from(std::mem::size_of::<JOBOBJECT_BASIC_PROCESS_ID_LIST>())
+                    .unwrap_or(u32::MAX),
+                &mut returned,
+            )
+        };
+        assert_eq!(listed, 1, "job member query must succeed");
+        assert_eq!(member_list.NumberOfProcessIdsInList, 1);
+        assert_eq!(member_list.ProcessIdList[0], child.id() as usize);
+        // Hold stdin open so the helper stays alive until job close.
+        let _held_stdin = child.stdin.take().expect("held stdin pipe");
+        assert!(
+            child.try_wait().expect("try_wait").is_none(),
+            "governed helper must be alive before the job handle is dropped"
+        );
+        drop(job);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(status) = child.try_wait().expect("try_wait after job close") {
+                // The helper was proven alive with its stdin pipe still held
+                // open right before the only intervening action - closing the
+                // job handle - so any exit here is the kill-on-close boundary
+                // doing the reaping. The exit code Windows assigns to a
+                // job-terminated process is not contractual, so it is not
+                // asserted.
+                assert!(
+                    status.code().is_some(),
+                    "job close must reap the governed process without an explicit kill"
+                );
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "job close must reap the governed process promptly"
+            );
+            std::thread::sleep(Duration::from_millis(25));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_native_capability_opens_startup_gate_for_valid_worker() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("neo-probe.exe");
+        std::fs::write(&executable, b"worker placeholder").unwrap();
+        let mut section = DiagnosticsSection::default();
+        section.restricted_probe_enabled = true;
+        section.restricted_probe_worker_path = executable.to_string_lossy().into_owned();
+        let config = validate_probe_startup(&section, &NativeProbeContainment)
+            .expect("the verified windows job-object launcher must open the gate");
+        assert_eq!(config.executable, executable.canonicalize().unwrap());
+        assert_eq!(config.memory_limit_bytes, REQUIRED_MEMORY_LIMIT_BYTES);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn non_windows_startup_gate_stays_fail_closed() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("neo-probe");
+        std::fs::write(&executable, b"worker placeholder").unwrap();
+        let mut section = DiagnosticsSection::default();
+        section.restricted_probe_enabled = true;
+        section.restricted_probe_worker_path = executable.to_string_lossy().into_owned();
+        assert!(validate_probe_startup(&section, &NativeProbeContainment).is_err());
+    }
+
+    /// Opt-in real-worker smoke: build the worker first
+    /// (`cargo build -p neo-probe`) and run this test with
+    /// `NEO_PROBE_SMOKE_WORKER=<absolute neo-probe.exe path>`. It drives the
+    /// full production path - native capability gate, real job-contained
+    /// worker launches, double replay, and action-store completion - instead
+    /// of the injected `FakeLauncher`.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn windows_real_worker_end_to_end_smoke_when_opted_in() {
+        let Ok(worker) = std::env::var("NEO_PROBE_SMOKE_WORKER") else {
+            return;
+        };
+        let worker = std::fs::canonicalize(worker)
+            .expect("NEO_PROBE_SMOKE_WORKER must be an existing neo-probe.exe");
+        let directory = tempfile::tempdir().unwrap();
+        let mut section = DiagnosticsSection::default();
+        section.restricted_probe_enabled = true;
+        section.restricted_probe_worker_path = worker.to_string_lossy().into_owned();
+        let log = test_log(&directory);
+        let config = validate_probe_startup(&section, &NativeProbeContainment)
+            .expect("native windows containment must validate the real worker");
+        let controller = ProbeController::start(config, log.clone(), matching_context_rechecker())
+            .expect("restricted probe controller with real launches");
+        // The real worker deterministically derives its outcome timestamps
+        // from the job's `requested_at_unix_ms`, and the double-replay
+        // validator enforces result freshness, so the smoke request must
+        // carry a current timestamp exactly like a production job.
+        let mut built = request(31);
+        built.job.context.requested_at_unix_ms = unix_time_ms();
+        let request = ProbeRequestFrame::new(built.job, built.snapshot).unwrap();
+        let operation_id = request.job.operation_id.clone();
+        let result = controller.try_submit(request).unwrap().wait().await;
+        assert!(
+            matches!(result.verdict, ProbeVerdict::Completed(_)),
+            "real job-contained worker double replay must complete, got {:?}",
+            result.verdict
+        );
+        assert_eq!(
+            log.query(&operation_id).unwrap().unwrap().state,
+            crate::action_store::ActionState::Completed
+        );
+        drop(controller);
     }
 }

@@ -280,6 +280,42 @@ pub(crate) fn validate_node_config(
         }
     }
 
+    // Privacy mode is strictly opt-in: a disabled or absent [privacy] section
+    // is never validated beyond parsing, so the default-off behavior stays
+    // byte-identical. An enabled section must be complete and well-formed,
+    // and startup fails closed with a message naming the missing parameter.
+    if let Some(privacy) = node_config.privacy.as_ref()
+        && privacy.enabled
+    {
+        let mode = privacy.encryption_mode.trim();
+        if mode != "committee_key" && mode != "tee_sealed_key" {
+            bail!(
+                "privacy.enabled=true requires privacy.encryption_mode to be \"committee_key\" or \"tee_sealed_key\", got \"{}\"",
+                privacy.encryption_mode
+            );
+        }
+        if mode == "committee_key" {
+            let Some(key_hex) = privacy.committee_epoch_key_hex.as_deref() else {
+                bail!(
+                    "privacy.enabled=true with encryption_mode=\"committee_key\" requires privacy.committee_epoch_key_hex (64 hex characters / 32 bytes)"
+                );
+            };
+            if key_hex.trim().is_empty() {
+                bail!(
+                    "privacy.committee_epoch_key_hex must be a non-blank 64-hex-character (32-byte) key"
+                );
+            }
+            match hex::decode(key_hex.trim()) {
+                Ok(bytes) if bytes.len() == 32 => {}
+                Ok(bytes) => bail!(
+                    "privacy.committee_epoch_key_hex must be exactly 32 bytes (64 hex characters), got {} bytes",
+                    bytes.len()
+                ),
+                Err(_) => bail!("privacy.committee_epoch_key_hex must be valid hex"),
+            }
+        }
+    }
+
     if rpc_hardened
         && (node_config
             .rpc
@@ -530,10 +566,16 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
             SignerProviderKind::HostSealedTee => {
                 declared_level == neo_core::signing::SecurityLevel::HostSealed
             }
-            SignerProviderKind::HardwareTee => bail!(
-                "hardware TEE signer provider '{}' is unavailable until a hardware-attested adapter is implemented",
-                provider.id
-            ),
+            SignerProviderKind::HardwareTee => {
+                if declared_level != neo_core::signing::SecurityLevel::HardwareTee {
+                    bail!(
+                        "hardware TEE signer provider '{}' must declare hardware_tee security",
+                        provider.id
+                    );
+                }
+                validate_hardware_tee_provider_config(provider)?;
+                true
+            }
             SignerProviderKind::Remote => {
                 validate_remote_provider_config(provider)?;
                 if declared_level != neo_core::signing::SecurityLevel::Software {
@@ -730,6 +772,50 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
         }
     }
 
+    Ok(())
+}
+
+/// Fail-closed startup validation for a `hardware_tee` (PKCS#11 HSM) signer.
+///
+/// The provider requires an explicit PKCS#11 section, a readable module file,
+/// a non-blank `NEO_HSM_PIN` environment variable, and exactly one bound key
+/// so the `KeyRef` slot, key label, and version stay unambiguous.
+fn validate_hardware_tee_provider_config(
+    provider: &crate::config::SignerProviderSection,
+) -> Result<()> {
+    let pkcs11 = provider.pkcs11.as_ref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "hardware TEE signer provider '{}' requires a pkcs11 section with library_path, slot_id, token_label, and key_label",
+            provider.id
+        )
+    })?;
+    if pkcs11.library_path.trim().is_empty()
+        || pkcs11.token_label.trim().is_empty()
+        || pkcs11.key_label.trim().is_empty()
+        || !Path::new(&pkcs11.library_path).is_file()
+    {
+        bail!(
+            "hardware TEE signer provider '{}' requires a readable PKCS#11 library_path file and non-blank token_label and key_label",
+            provider.id
+        );
+    }
+    if std::env::var(crate::pkcs11::NEO_HSM_PIN_ENV)
+        .ok()
+        .as_deref()
+        .is_none_or(|value| value.trim().is_empty())
+    {
+        bail!(
+            "hardware TEE signer provider '{}' requires the {} environment variable to carry the HSM user PIN",
+            provider.id,
+            crate::pkcs11::NEO_HSM_PIN_ENV
+        );
+    }
+    if provider.keys.len() != 1 {
+        bail!(
+            "hardware TEE signer provider '{}' must bind exactly one HSM key so the KeyRef slot, key label, and version stay unambiguous",
+            provider.id
+        );
+    }
     Ok(())
 }
 
@@ -1110,9 +1196,116 @@ mod tests {
             }),
             ..Default::default()
         };
-        let error = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
-            .expect_err("native capability must reject unproven hard isolation");
-        assert!(error.to_string().contains("containment is unsupported"));
+        let result = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false);
+        if cfg!(windows) {
+            // Task 44 made the verified Windows Job Object launcher a Supported
+            // native containment capability, so startup validation must open
+            // the probe gate and the Supported verdict must carry the
+            // WINDOWS_JOB_OBJECT_MECHANISM evidence.
+            result.expect("windows job object containment must be a supported native capability");
+            use crate::probe_containment::{
+                NativeProbeContainment, ProbeContainmentCapability,
+                ProbeContainmentCapabilityProvider, ProbeContainmentProfile,
+                WINDOWS_JOB_OBJECT_MECHANISM,
+            };
+            let capability =
+                NativeProbeContainment.capability(&ProbeContainmentProfile::restricted());
+            let ProbeContainmentCapability::Supported(evidence) = capability else {
+                panic!("windows native capability must be Supported, got {capability:?}");
+            };
+            assert!(
+                evidence.is_complete(),
+                "windows job object evidence must prove every required property"
+            );
+            assert_eq!(
+                evidence.mechanism, WINDOWS_JOB_OBJECT_MECHANISM,
+                "windows Supported verdict must carry the job object mechanism evidence"
+            );
+        } else {
+            let error = result.expect_err("native capability must reject unproven hard isolation");
+            assert!(error.to_string().contains("containment is unsupported"));
+        }
+    }
+
+    #[test]
+    fn privacy_section_defaults_to_disabled() {
+        assert!(NodeConfig::default().privacy.is_none());
+        let section = crate::config::PrivacySection::default();
+        assert!(!section.enabled, "privacy must default to disabled");
+        let parsed: NodeConfig = toml::from_str("").expect("empty config parses");
+        assert!(parsed.privacy.is_none());
+    }
+
+    #[test]
+    fn privacy_section_rejects_unknown_fields() {
+        let error = toml::from_str::<NodeConfig>("[privacy]\nenabled = true\nbogus = 1\n")
+            .expect_err("unknown privacy fields must not be accepted");
+        assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn privacy_disabled_section_is_not_validated() {
+        // A disabled section never enters the encrypted path — it must not
+        // trigger fail-closed validation and must not change any behavior.
+        let cfg: NodeConfig =
+            toml::from_str("[privacy]\nenabled = false\nencryption_mode = \"not-a-mode\"\n")
+                .expect("parse disabled privacy section");
+        validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect("disabled privacy section must not fail validation");
+    }
+
+    #[test]
+    fn privacy_rejects_unknown_encryption_mode() {
+        let cfg: NodeConfig =
+            toml::from_str("[privacy]\nenabled = true\nencryption_mode = \"kitchen_sink\"\n")
+                .expect("parse privacy section");
+        let err = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect_err("unknown encryption mode must fail closed");
+        assert!(
+            err.to_string().contains("privacy.encryption_mode"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn privacy_committee_key_without_epoch_key_fails_closed() {
+        let cfg: NodeConfig =
+            toml::from_str("[privacy]\nenabled = true\nencryption_mode = \"committee_key\"\n")
+                .expect("parse privacy section");
+        let err = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect_err("committee_key without epoch key must fail closed");
+        assert!(
+            err.to_string().contains("privacy.committee_epoch_key_hex"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn privacy_committee_key_with_invalid_epoch_key_fails_closed() {
+        for key_hex in ["", "   ", "zz", "0123", &"ab".repeat(31), &"ab".repeat(33)] {
+            let toml_source = format!(
+                "[privacy]\nenabled = true\nencryption_mode = \"committee_key\"\ncommittee_epoch_key_hex = \"{key_hex}\"\n"
+            );
+            let cfg: NodeConfig = toml::from_str(&toml_source).expect("parse privacy section");
+            let err = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+                .expect_err("invalid epoch key must fail closed");
+            assert!(
+                err.to_string().contains("privacy.committee_epoch_key_hex"),
+                "unexpected error for key {key_hex:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn privacy_valid_configurations_pass_validation() {
+        for toml_source in [
+            "[privacy]\nenabled = true\nencryption_mode = \"tee_sealed_key\"\n",
+            "[privacy]\nenabled = true\nencryption_mode = \"committee_key\"\ncommittee_epoch_key_hex = \"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0\"\n",
+        ] {
+            let cfg: NodeConfig = toml::from_str(toml_source).expect("parse privacy section");
+            validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+                .expect("valid enabled privacy section must pass validation");
+        }
     }
 
     #[test]
@@ -1440,5 +1633,182 @@ algorithms = ["ecdsa-p256-sha256"]
             false,
         )
         .expect("bundled production config should pass --check-config validation");
+    }
+
+    fn hardware_tee_provider(
+        public_key_hex: &str,
+        account: &str,
+    ) -> crate::config::SignerProviderSection {
+        crate::config::SignerProviderSection {
+            id: "hsm-tee".to_string(),
+            kind: SignerProviderKind::HardwareTee,
+            enabled: true,
+            default: true,
+            security_level: Some(neo_core::signing::SecurityLevel::HardwareTee),
+            purposes: vec![neo_core::signing::SignPurpose::Consensus],
+            canonical_encodings: vec![NEO_SIGN_DATA_ENCODING.to_string()],
+            algorithms: vec![neo_core::signing::ALGORITHM_ECDSA_P256_SHA256.to_string()],
+            keys: vec![crate::config::SignerKeySection {
+                key_id: "validator-key".to_string(),
+                version: 2,
+                public_key_hex: public_key_hex.to_string(),
+                account: account.to_string(),
+                purposes: vec![neo_core::signing::SignPurpose::Consensus],
+            }],
+            endpoint: None,
+            remote: None,
+            pkcs11: Some(crate::config::Pkcs11ProviderSection {
+                library_path: "unused-mock-library.so".to_string(),
+                slot_id: 0,
+                token_label: "TESTTOKEN".to_string(),
+                key_label: "validator-key".to_string(),
+            }),
+        }
+    }
+
+    fn hardware_tee_node_config(provider: crate::config::SignerProviderSection) -> NodeConfig {
+        let mut cfg = NodeConfig::default();
+        cfg.signer_service = Some(crate::config::SignerServiceSection {
+            enabled: true,
+            state_path: "data/signing.journal".to_string(),
+            policy_version: "node-signing-v1".to_string(),
+            request_timeout_ms: 5_000,
+            max_fee_units: 100,
+            quota_limit_units: 100,
+            quota_window_ms: 60_000,
+            providers: vec![provider],
+            required_purposes: Vec::new(),
+            required_canonical_encodings: Vec::new(),
+            required_algorithms: Vec::new(),
+            required_security_level: None,
+        });
+        cfg
+    }
+
+    fn hardware_tee_key_material() -> (String, String) {
+        let public_key =
+            neo_crypto::Secp256r1Crypto::derive_public_key(&[0x53; 32]).expect("public key");
+        let script = ContractHelper::signature_redeem_script(&public_key);
+        let account = neo_core::UInt160::from(Crypto::hash160(&script)).to_string();
+        (hex::encode(public_key), account)
+    }
+
+    #[test]
+    fn hardware_tee_pkcs11_signer_accepts_complete_configuration() {
+        let (public_key_hex, account) = hardware_tee_key_material();
+        let library = tempfile::NamedTempFile::new().expect("library fixture");
+        let mut provider = hardware_tee_provider(&public_key_hex, &account);
+        provider
+            .pkcs11
+            .as_mut()
+            .expect("pkcs11 section")
+            .library_path = library.path().to_string_lossy().into_owned();
+        let cfg = hardware_tee_node_config(provider);
+
+        let guard = crate::pkcs11::test_env::pin_env_lock();
+        crate::pkcs11::test_env::set_pin(Some("4321"));
+        validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect("complete hardware TEE PKCS#11 configuration must pass startup validation");
+        drop(guard);
+    }
+
+    #[test]
+    fn hardware_tee_pkcs11_signer_requires_pkcs11_section() {
+        let (public_key_hex, account) = hardware_tee_key_material();
+        let mut provider = hardware_tee_provider(&public_key_hex, &account);
+        provider.pkcs11 = None;
+        let cfg = hardware_tee_node_config(provider);
+
+        let error = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect_err("missing pkcs11 section must fail closed");
+        assert!(
+            error.to_string().contains("pkcs11 section"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn hardware_tee_pkcs11_signer_requires_pin_and_library_path() {
+        let (public_key_hex, account) = hardware_tee_key_material();
+        let library = tempfile::NamedTempFile::new().expect("library fixture");
+        let mut provider = hardware_tee_provider(&public_key_hex, &account);
+        provider
+            .pkcs11
+            .as_mut()
+            .expect("pkcs11 section")
+            .library_path = library.path().to_string_lossy().into_owned();
+
+        let guard = crate::pkcs11::test_env::pin_env_lock();
+        // Valid library but no PIN: the PIN check must fail closed.
+        crate::pkcs11::test_env::set_pin(None);
+        let cfg = hardware_tee_node_config(provider.clone());
+        let error = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect_err("missing PIN must fail closed");
+        assert!(
+            error.to_string().contains("NEO_HSM_PIN"),
+            "unexpected error: {error}"
+        );
+
+        // Valid PIN but missing library file: the library check must fail closed.
+        crate::pkcs11::test_env::set_pin(Some("4321"));
+        let cfg = hardware_tee_node_config(hardware_tee_provider(&public_key_hex, &account));
+        let error = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect_err("missing library file must fail closed");
+        assert!(
+            error.to_string().contains("library_path"),
+            "unexpected error: {error}"
+        );
+        drop(guard);
+    }
+
+    #[test]
+    fn hardware_tee_pkcs11_signer_requires_exactly_one_bound_key() {
+        let (public_key_hex, account) = hardware_tee_key_material();
+        let library = tempfile::NamedTempFile::new().expect("library fixture");
+        let mut provider = hardware_tee_provider(&public_key_hex, &account);
+        provider
+            .pkcs11
+            .as_mut()
+            .expect("pkcs11 section")
+            .library_path = library.path().to_string_lossy().into_owned();
+        provider.keys.push({
+            let other_public_key = neo_crypto::Secp256r1Crypto::derive_public_key(&[0x54; 32])
+                .expect("other public key");
+            let other_script = ContractHelper::signature_redeem_script(&other_public_key);
+            let other_account = neo_core::UInt160::from(Crypto::hash160(&other_script)).to_string();
+            crate::config::SignerKeySection {
+                key_id: "backup-key".to_string(),
+                version: 3,
+                public_key_hex: hex::encode(&other_public_key),
+                account: other_account,
+                purposes: vec![neo_core::signing::SignPurpose::Consensus],
+            }
+        });
+        let cfg = hardware_tee_node_config(provider);
+
+        let guard = crate::pkcs11::test_env::pin_env_lock();
+        crate::pkcs11::test_env::set_pin(Some("4321"));
+        let error = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect_err("multiple bound keys must fail closed");
+        assert!(
+            error.to_string().contains("exactly one HSM key"),
+            "unexpected error: {error}"
+        );
+        drop(guard);
+    }
+
+    #[test]
+    fn hardware_tee_pkcs11_signer_rejects_wrong_security_level() {
+        let (public_key_hex, account) = hardware_tee_key_material();
+        let mut provider = hardware_tee_provider(&public_key_hex, &account);
+        provider.security_level = Some(neo_core::signing::SecurityLevel::Software);
+        let cfg = hardware_tee_node_config(provider);
+
+        let error = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)
+            .expect_err("software security claim must fail closed");
+        assert!(
+            error.to_string().contains("hardware_tee security"),
+            "unexpected error: {error}"
+        );
     }
 }

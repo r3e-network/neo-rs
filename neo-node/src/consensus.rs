@@ -1019,6 +1019,28 @@ impl ConsensusActor {
 
         let pool = self.system.mempool();
 
+        // Privacy mode (strictly opt-in): the active TEE runtime has content
+        // encryption enabled. Resolve pending ciphertexts through the TEE
+        // decrypt state machine first — only Encrypted→Resolved entries enter
+        // the candidate ordering; Rejected entries fail closed and are logged
+        // and counted instead. The TEE ordered hash table is then the primary
+        // path, intersected with the local isolation view exactly like the
+        // diagnostics TEE path below.
+        #[cfg(feature = "tee")]
+        if let Some(runtime) = crate::tee_integration::active_runtime()
+            && runtime.privacy_enabled()
+        {
+            let summary = runtime.mempool.resolve_pending();
+            if summary.rejected > 0 {
+                warn!(
+                    target: "neo::consensus",
+                    rejected = summary.rejected,
+                    "privacy mode: rejected encrypted mempool entries are excluded from proposal candidates"
+                );
+            }
+            return Self::tee_ordered_candidates(&runtime, &pool, limit);
+        }
+
         // Disabled diagnostics must retain the original proposal selection path
         // byte-for-byte in behavior, including fee ordering and limit handling.
         if !self.diagnostics.is_enabled() {
@@ -1027,60 +1049,70 @@ impl ConsensusActor {
 
         #[cfg(feature = "tee")]
         if let Some(runtime) = crate::tee_integration::active_runtime() {
-            // Obtain TEE ordering first, but intersect it with the bounded local-only
-            // quarantine view. Network receive and external proposal paths never call this API.
-            let tee_hashes = runtime
-                .mempool
-                .get_ordered_hashes(limit.saturating_mul(4).max(limit));
-            let mut pool_guard = pool.lock();
-            let locally_allowed = pool_guard.local_proposal_transactions(
-                limit.saturating_mul(4).max(limit),
-                Self::current_time_ms(),
-            );
-
-            let mut verified_by_hash = HashMap::new();
-            for tx in &locally_allowed {
-                verified_by_hash.insert(tx.hash(), Arc::clone(tx));
-            }
-
-            let mut candidates = Vec::with_capacity(limit);
-            let mut seen = HashSet::with_capacity(limit.saturating_mul(2));
-
-            for hash_bytes in tee_hashes {
-                if candidates.len() >= limit {
-                    break;
-                }
-
-                let Ok(hash) = UInt256::from_bytes(&hash_bytes) else {
-                    continue;
-                };
-                let Some(tx) = verified_by_hash.get(&hash) else {
-                    continue;
-                };
-
-                let tx_hash = tx.hash();
-                if seen.insert(tx_hash) {
-                    candidates.push(Arc::clone(tx));
-                }
-            }
-
-            if candidates.len() < limit {
-                for tx in locally_allowed {
-                    let tx_hash = tx.hash();
-                    if seen.insert(tx_hash) {
-                        candidates.push(tx);
-                    }
-                    if candidates.len() >= limit {
-                        break;
-                    }
-                }
-            }
-
-            return candidates;
+            return Self::tee_ordered_candidates(&runtime, &pool, limit);
         }
 
         pool.lock()
             .local_proposal_transactions(limit, Self::current_time_ms())
+    }
+
+    /// TEE ordered hash table intersected with the bounded local-only
+    /// isolation view. Network receive and external proposal paths never call
+    /// this API.
+    #[cfg(feature = "tee")]
+    fn tee_ordered_candidates(
+        runtime: &crate::tee_integration::TeeRuntime,
+        pool: &std::sync::Arc<Mutex<neo_core::ledger::MemoryPool>>,
+        limit: usize,
+    ) -> Vec<Arc<Transaction>> {
+        let tee_hashes = runtime
+            .mempool
+            .get_ordered_hashes(limit.saturating_mul(4).max(limit));
+        let mut pool_guard = pool.lock();
+        let locally_allowed = pool_guard.local_proposal_transactions(
+            limit.saturating_mul(4).max(limit),
+            Self::current_time_ms(),
+        );
+
+        let mut verified_by_hash = HashMap::new();
+        for tx in &locally_allowed {
+            verified_by_hash.insert(tx.hash(), Arc::clone(tx));
+        }
+
+        let mut candidates = Vec::with_capacity(limit);
+        let mut seen = HashSet::with_capacity(limit.saturating_mul(2));
+
+        for hash_bytes in tee_hashes {
+            if candidates.len() >= limit {
+                break;
+            }
+
+            let Ok(hash) = UInt256::from_bytes(&hash_bytes) else {
+                continue;
+            };
+            let Some(tx) = verified_by_hash.get(&hash) else {
+                continue;
+            };
+
+            let tx_hash = tx.hash();
+            if seen.insert(tx_hash) {
+                candidates.push(Arc::clone(tx));
+            }
+        }
+
+        if candidates.len() < limit {
+            for tx in locally_allowed {
+                let tx_hash = tx.hash();
+                if seen.insert(tx_hash) {
+                    candidates.push(tx);
+                }
+                if candidates.len() >= limit {
+                    break;
+                }
+            }
+        }
+
+        candidates
     }
 
     fn try_prepare_response(&mut self, now: u64) {
@@ -2182,5 +2214,54 @@ mod tests {
             !authorized,
             "signature egress must be withheld after persistence failure"
         );
+    }
+
+    #[cfg(all(feature = "tee", not(feature = "tee-sgx")))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn tee_ordered_candidates_fail_closed_against_local_view() {
+        // Both the privacy-mode path and the diagnostics TEE path produce
+        // candidates from the TEE ordered hash table strictly intersected
+        // with the bounded local-only isolation view. A hash the TEE ordered
+        // but the local pool never verified must never become a candidate.
+        let system = neo_core::neo_system::NeoSystem::new(ProtocolSettings::default(), None, None)
+            .expect("neo system");
+        let pool = system.mempool();
+
+        let temp = tempfile::tempdir().expect("temp dir");
+        let runtime = crate::tee_integration::TeeRuntime::with_privacy(
+            temp.path().to_path_buf(),
+            "fcfs",
+            1000,
+            crate::tee_integration::PrivacyEncryption::TeeSealedKey,
+        )
+        .expect("privacy runtime");
+
+        let tx_hash = [9u8; 32];
+        runtime
+            .mempool
+            .add_transaction(
+                tx_hash,
+                b"consensus-privacy-candidates".to_vec(),
+                1_000,
+                0,
+                [7u8; 20],
+            )
+            .expect("add encrypted entry");
+        let summary = runtime.mempool.resolve_pending();
+        assert_eq!(summary.resolved, 1);
+        assert_eq!(summary.rejected, 0);
+        // The TEE now has the hash ordered...
+        assert_eq!(runtime.mempool.get_ordered_hashes(10), vec![tx_hash]);
+
+        // ...but the local isolation view never verified it, so the
+        // intersection is empty and no candidate is produced.
+        let candidates = ConsensusActor::tee_ordered_candidates(&runtime, &pool, 10);
+        assert!(
+            candidates.is_empty(),
+            "TEE-ordered hashes must fail closed against the local isolation view"
+        );
+
+        runtime.shutdown().expect("runtime shutdown");
+        system.shutdown().await.expect("system shutdown");
     }
 }

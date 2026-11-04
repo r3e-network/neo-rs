@@ -21,6 +21,7 @@ neo-io = { workspace = true }
 neo-config = { workspace = true, optional = true }
 neo-core = { path = "../neo-core", optional = true, features = ["runtime"] }
 neo-json = { path = "../neo-json", optional = true }
+neo-tee = { workspace = true, optional = true }
 neo-vm = { workspace = true, optional = true }
 # neo-config merged into neo-core
 
@@ -81,6 +82,7 @@ subtle = { version = "2.5", optional = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 mockito = "1.0"
+tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [features]
@@ -90,6 +92,7 @@ server = [
     "dep:neo-config",
     "dep:neo-core",
     "dep:neo-json",
+    "dep:neo-tee",
     "dep:neo-vm",
     "dep:warp",
     "dep:hyper",

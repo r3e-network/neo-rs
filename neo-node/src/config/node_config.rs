@@ -287,8 +287,19 @@ impl NodeConfig {
             return Ok(None);
         }
 
-        if self.rpc.auth_enabled && (self.rpc.rpc_user.is_none() || self.rpc.rpc_pass.is_none()) {
-            bail!("rpc.auth_enabled requires both rpc_user and rpc_pass");
+        if self.rpc.auth_enabled
+            && (self
+                .rpc
+                .rpc_user
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+                || self
+                    .rpc
+                    .rpc_pass
+                    .as_deref()
+                    .is_none_or(|value| value.trim().is_empty()))
+        {
+            bail!("rpc.auth_enabled requires non-blank rpc_user and rpc_pass");
         }
 
         let config_dir = config_directory();

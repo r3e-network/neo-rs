@@ -34,6 +34,7 @@ use std::time::Duration;
 
 use super::routes::{BasicAuth, build_rpc_routes, build_ws_route};
 use super::rpc_error::RpcError;
+use super::rpc_server_privacy::EncryptedTransactionSubmitter;
 use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
 use crate::server::rpc_exception::RpcException;
@@ -172,6 +173,10 @@ pub struct RpcServer {
     wallet: Arc<RwLock<Option<Arc<dyn Wallet>>>>,
     wallet_change_callback: Option<WalletChangeCallback>,
     signer_runtime: Option<RpcSignerRuntime>,
+    /// Host-side encrypted transaction submitter, installed only when privacy
+    /// mode is explicitly enabled in node configuration. While `None` the
+    /// encrypted submission endpoint is not registered at all.
+    privacy_submitter: Option<Arc<dyn EncryptedTransactionSubmitter>>,
     /// Session storage using Mutex instead of `RwLock` to enforce exclusive access.
     ///
     /// # Security Note
@@ -200,6 +205,7 @@ impl RpcServer {
             wallet: Arc::new(RwLock::new(None)),
             wallet_change_callback: None,
             signer_runtime: None,
+            privacy_submitter: None,
             sessions: Arc::new(Mutex::new(HashMap::new())),
             server_task: None,
             shutdown_signal: None,
@@ -673,6 +679,31 @@ impl RpcServer {
         self.signer_runtime.as_ref()
     }
 
+    /// Installs the host-side encrypted transaction submitter used by the
+    /// opt-in `sendrawtransactionencrypted` endpoint.
+    ///
+    /// Installed only when privacy mode is explicitly enabled in node
+    /// configuration; while unset the endpoint is not registered.
+    pub fn set_privacy_submitter(
+        &mut self,
+        submitter: Option<Arc<dyn EncryptedTransactionSubmitter>>,
+    ) {
+        self.privacy_submitter = submitter;
+    }
+
+    /// Returns the encrypted transaction submitter, if privacy mode startup
+    /// installed one.
+    #[must_use]
+    pub fn privacy_submitter(&self) -> Option<Arc<dyn EncryptedTransactionSubmitter>> {
+        self.privacy_submitter.clone()
+    }
+
+    /// Whether privacy-mode encrypted submission is active on this server.
+    #[must_use]
+    pub fn is_privacy_submission_enabled(&self) -> bool {
+        self.privacy_submitter.is_some()
+    }
+
     const fn session_expiration(&self) -> Duration {
         Duration::from_secs(self.settings.session_expiration_time)
     }
@@ -719,6 +750,14 @@ impl RpcServer {
 
     pub(crate) fn handlers_guard(&self) -> RwLockReadGuard<'_, HashMap<String, Arc<RpcHandler>>> {
         self.handler_lookup.read()
+    }
+
+    /// Whether a method with this exact name (case-insensitive) is currently
+    /// registered. Used to assert opt-in endpoints stay absent by default.
+    #[must_use]
+    pub fn is_method_registered(&self, name: &str) -> bool {
+        let key = name.to_ascii_lowercase();
+        self.handler_lookup.read().contains_key(&key)
     }
 }
 

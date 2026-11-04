@@ -91,6 +91,8 @@ rand = { workspace = true }
 url = { workspace = true }
 num_cpus = { workspace = true }
 mimalloc = { version = "0.1", default-features = false }
+# Dynamic loading of real PKCS#11 HSM modules (same pattern as neo-tee's SGX adapter)
+libloading = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

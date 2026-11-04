@@ -176,6 +176,16 @@ impl RpcServerNode {
     }
 
     fn send_raw_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        // Privacy mode (strictly opt-in) keeps the plaintext endpoint available
+        // for compatibility with wallets that cannot encrypt, but warns so
+        // operators notice that this submission bypasses content encryption.
+        if server.is_privacy_submission_enabled() {
+            tracing::warn!(
+                target: "neo::rpc",
+                "sendrawtransaction received a plaintext transaction while privacy mode is enabled; \
+                 prefer sendrawtransactionencrypted"
+            );
+        }
         let raw = expect_base64_param_with_decode_message(
             params,
             0,

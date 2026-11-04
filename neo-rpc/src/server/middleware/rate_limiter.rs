@@ -74,7 +74,7 @@ impl RateLimitTier {
             | "getwalletunclaimedgas" => Self::Expensive,
 
             // Write operations
-            "sendrawtransaction" | "submitblock" => Self::Write,
+            "sendrawtransaction" | "submitblock" | "sendrawtransactionencrypted" => Self::Write,
 
             // Standard operations - everything else
             _ => Self::Standard,
@@ -164,12 +164,8 @@ fn build_tier_limiters(
         .collect()
 }
 
-fn scale_down_non_zero(value: u32, divisor: u32) -> u32 {
-    if value == 0 {
-        0
-    } else {
-        (value / divisor).max(1)
-    }
+fn scale_down(value: u32, divisor: u32) -> u32 {
+    value / divisor
 }
 
 fn resolved_tier_config(
@@ -187,12 +183,12 @@ fn resolved_tier_config(
             },
             RateLimitTier::Standard => default_config.clone(),
             RateLimitTier::Expensive => RateLimitConfig {
-                max_rps: scale_down_non_zero(default_config.max_rps, 5),
-                burst: scale_down_non_zero(default_config.burst, 5),
+                max_rps: scale_down(default_config.max_rps, 5),
+                burst: scale_down(default_config.burst, 5),
             },
             RateLimitTier::Write => RateLimitConfig {
-                max_rps: scale_down_non_zero(default_config.max_rps, 10),
-                burst: scale_down_non_zero(default_config.burst, 10),
+                max_rps: scale_down(default_config.max_rps, 10),
+                burst: scale_down(default_config.burst, 10),
             },
         })
 }
@@ -234,15 +230,15 @@ impl GovernorRateLimiter {
         tier_configs.insert(
             RateLimitTier::Expensive,
             RateLimitConfig {
-                max_rps: scale_down_non_zero(config.max_rps, 5),
-                burst: scale_down_non_zero(config.burst, 5),
+                max_rps: scale_down(config.max_rps, 5),
+                burst: scale_down(config.burst, 5),
             },
         );
         tier_configs.insert(
             RateLimitTier::Write,
             RateLimitConfig {
-                max_rps: scale_down_non_zero(config.max_rps, 10),
-                burst: scale_down_non_zero(config.burst, 10),
+                max_rps: scale_down(config.max_rps, 10),
+                burst: scale_down(config.burst, 10),
             },
         );
 
@@ -251,7 +247,11 @@ impl GovernorRateLimiter {
             tier_configs,
             tier_limiters,
             last_access: DashMap::new(),
-            last_cleanup: parking_lot::Mutex::new(Instant::now()),
+            last_cleanup: parking_lot::Mutex::new(
+                Instant::now()
+                    .checked_sub(Duration::from_secs(60))
+                    .unwrap_or_else(Instant::now),
+            ),
             enabled,
         }
     }
@@ -268,7 +268,11 @@ impl GovernorRateLimiter {
             tier_configs,
             tier_limiters,
             last_access: DashMap::new(),
-            last_cleanup: parking_lot::Mutex::new(Instant::now()),
+            last_cleanup: parking_lot::Mutex::new(
+                Instant::now()
+                    .checked_sub(Duration::from_secs(60))
+                    .unwrap_or_else(Instant::now),
+            ),
             enabled,
         }
     }

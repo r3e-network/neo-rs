@@ -1282,6 +1282,7 @@ mod tests {
                     max_session_age_ms: 10_000,
                 }),
             }),
+            pkcs11: None,
         }
     }
 

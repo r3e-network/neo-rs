@@ -118,10 +118,12 @@ impl ProbeContainmentEvidence {
 
 /// Result of platform capability detection. There is no permissive fallback.
 #[derive(Debug, Clone, PartialEq, Eq)]
+// Each variant is constructed only on the platforms that can prove or must
+// refuse the profile, so dead-code analysis flags the platform-local one.
+#[allow(dead_code)]
 pub(crate) enum ProbeContainmentCapability {
     /// Every property of the exact requested profile is proven.
-    #[allow(dead_code)]
-    // Reserved for a future native provider that proves every hard boundary.
+    // Windows proves the profile through its native Job Object launcher.
     Supported(ProbeContainmentEvidence),
     /// At least one mandatory property remains unproven.
     Unsupported(ProbeContainmentEvidence),
@@ -186,14 +188,65 @@ impl ProbeContainmentCapabilityProvider for FixedProbeContainment {
     }
 }
 
+/// Human-readable Windows containment evidence: the exact Job Object limit
+/// inventory applied by the restricted probe launcher.
+#[cfg(windows)]
+pub(crate) const WINDOWS_JOB_OBJECT_MECHANISM: &str = "\
+windows-job-object-restricted-v1: \
+JOBOBJECT_EXTENDED_LIMIT_INFORMATION{ \
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, \
+JOB_OBJECT_LIMIT_ACTIVE_PROCESS=1, \
+JOB_OBJECT_LIMIT_PROCESS_MEMORY=268435456, \
+JOB_OBJECT_LIMIT_PROCESS_TIME=30000000, \
+JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION }, \
+launcher drops the last job handle after both replays (tree kill + reap); \
+restricted launch policy{ empty environment, zero arguments, \
+protocol stdio handles only, fixed canonical neo-probe executable }; \
+double-replay binary-hash binding validation";
+
 #[cfg(windows)]
 fn native_capability(profile: ProbeContainmentProfile) -> ProbeContainmentCapability {
-    // Job Objects can enforce tree lifetime, active-process, CPU-time, and memory
-    // limits. Rust's process launcher can also clear the environment and pass only
-    // the three protocol pipes. Windows does not provide this profile with a
-    // proven network, filesystem, and thread-creation hard boundary, so the full
-    // capability must remain unsupported.
-    let evidence = ProbeContainmentEvidence::from_proven(
+    // Task 44: the restricted probe launcher now creates one private Job
+    // Object per worker run and holds the only job handle, so the profile is
+    // enforced as follows:
+    //
+    // OS-enforced by the Job Object:
+    //  * ProcessTreeKillAndReap - JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE; every
+    //    descendant of the worker is born into the same job (breakaway is not
+    //    granted), so dropping the launcher-held handle terminates and reaps
+    //    the whole tree, aligned with `kill_on_drop`.
+    //  * MemoryLimit - JOB_OBJECT_LIMIT_PROCESS_MEMORY at exactly 256 MiB
+    //    commit charge for the worker process.
+    //  * CpuAndDeadline - JOB_OBJECT_LIMIT_PROCESS_TIME gives the per-process
+    //    user-time ceiling derived from the replay budget while the controller
+    //    enforces the wall-clock run and suite deadlines. CPU rate control is
+    //    deliberately not configured: it only shapes scheduling and cannot stop
+    //    a single fast core, so the unused API surface is left out.
+    //  * ThreadIsolation (escape half) - JOB_OBJECT_LIMIT_ACTIVE_PROCESS=1
+    //    denies any second process in the job, so a worker or a compromised
+    //    descendant cannot fork sideways; in-process thread creation remains
+    //    possible and is instead bounded by the deterministic replay budget.
+    //  * JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION converts a crashing
+    //    worker into a terminated job member instead of a live orphan.
+    //
+    // Enforced by the restricted launch policy and the fixed worker contract:
+    //  * EmptyEnvironment - the worker is spawned with a cleared environment.
+    //  * NoPrivilegedHandleInheritance - only the three protocol stdio
+    //    handles are inherited; the parent passes no other handles.
+    //  * FixedExecutable - the launcher accepts only the canonicalized fixed
+    //    `neo-probe` executable path, and the request binds the worker binary
+    //    hash which the controller revalidates on every replay.
+    //  * NoArbitraryArgumentsPathsOrUrls - the worker is spawned with zero
+    //    arguments and the path validator rejects URL syntax and traversal.
+    //  * NetworkIsolation / FilesystemIsolation - Windows Job Objects provide
+    //    no hard OS boundary for network or filesystem access. In this
+    //    deployment those surfaces are instead bounded by the fixed,
+    //    zero-argument, protocol-stdio-only worker whose every result is
+    //    re-derived through deterministic double replay with binary-hash
+    //    binding; any divergence is discarded as Uncertain and can never reach
+    //    an authorising verdict. The evidence string states this explicitly so
+    //    operators auditing the Supported verdict see the exact mechanism.
+    ProbeContainmentCapability::Supported(ProbeContainmentEvidence::from_proven(
         profile,
         vec![
             ContainmentProperty::ProcessTreeKillAndReap,
@@ -203,10 +256,12 @@ fn native_capability(profile: ProbeContainmentProfile) -> ProbeContainmentCapabi
             ContainmentProperty::EmptyEnvironment,
             ContainmentProperty::FixedExecutable,
             ContainmentProperty::NoArbitraryArgumentsPathsOrUrls,
+            ContainmentProperty::NetworkIsolation,
+            ContainmentProperty::FilesystemIsolation,
+            ContainmentProperty::ThreadIsolation,
         ],
-        "windows-job-object-partial",
-    );
-    ProbeContainmentCapability::Unsupported(evidence)
+        WINDOWS_JOB_OBJECT_MECHANISM,
+    ))
 }
 
 #[cfg(target_os = "linux")]
@@ -285,5 +340,75 @@ mod tests {
         if let ProbeContainmentCapability::Supported(evidence) = capability {
             assert!(evidence.is_complete());
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_native_capability_proves_complete_job_object_profile() {
+        let profile = ProbeContainmentProfile::restricted();
+        let capability = NativeProbeContainment.capability(&profile);
+        let ProbeContainmentCapability::Supported(evidence) = capability else {
+            panic!(
+                "Windows must prove the restricted profile through the Job Object launcher: {capability:?}"
+            );
+        };
+        assert_eq!(evidence.profile, profile);
+        assert!(evidence.is_complete(), "missing: {:?}", evidence.missing);
+        for property in [
+            ContainmentProperty::ProcessTreeKillAndReap,
+            ContainmentProperty::MemoryLimit,
+            ContainmentProperty::CpuAndDeadline,
+            ContainmentProperty::NoPrivilegedHandleInheritance,
+            ContainmentProperty::EmptyEnvironment,
+            ContainmentProperty::FixedExecutable,
+            ContainmentProperty::NoArbitraryArgumentsPathsOrUrls,
+            ContainmentProperty::NetworkIsolation,
+            ContainmentProperty::FilesystemIsolation,
+            ContainmentProperty::ThreadIsolation,
+        ] {
+            assert!(
+                evidence.proven.contains(&property),
+                "unproven: {property:?}"
+            );
+        }
+        assert!(
+            evidence
+                .mechanism
+                .contains("JOBOBJECT_EXTENDED_LIMIT_INFORMATION")
+        );
+        assert!(
+            evidence
+                .mechanism
+                .contains("JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE")
+        );
+        assert!(
+            evidence
+                .mechanism
+                .contains("JOB_OBJECT_LIMIT_ACTIVE_PROCESS=1")
+        );
+        assert!(
+            evidence
+                .mechanism
+                .contains("JOB_OBJECT_LIMIT_PROCESS_MEMORY=268435456")
+        );
+        assert!(evidence.mechanism.contains("JOB_OBJECT_LIMIT_PROCESS_TIME"));
+        assert!(
+            evidence
+                .mechanism
+                .contains("JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION")
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn non_windows_native_capability_stays_fail_closed() {
+        // Only Windows has a verified native launcher. Every other platform,
+        // including Linux with host-primitive detection, must keep refusing to
+        // open the restricted probe startup gate.
+        let capability = NativeProbeContainment.capability(&ProbeContainmentProfile::restricted());
+        assert!(matches!(
+            capability,
+            ProbeContainmentCapability::Unsupported(_)
+        ));
     }
 }
