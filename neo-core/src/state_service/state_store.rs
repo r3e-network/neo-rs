@@ -67,8 +67,15 @@ use crate::unhandled_exception_policy::UnhandledExceptionPolicy;
 use parking_lot::RwLock;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tracing::{info, warn};
+
+fn state_root_profile_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        crate::smart_contract::env_flags::env_flag_enabled("NEO_PERSIST_PROFILE", false)
+    })
+}
 
 mod backend;
 mod cache_ops;
@@ -818,16 +825,26 @@ impl StateStore {
         mut ops: Vec<(Vec<u8>, i32, Option<Vec<u8>>)>,
         debug_dump: bool,
     ) -> Result<(), String> {
-        // Keep all writes in an isolated overlay until the blockchain transaction commits.
-        // The overlay is applied to the base backend only from update_local_state_root.
-        let staged_backend = Arc::new(StagedStateStoreBackend::new(self.store.clone()));
-        let cached_root = self.cached_trie_root.write().take();
-        let mut snapshot = StateSnapshot::new_with_cached_root(
-            staged_backend,
-            self.settings.clone(),
-            Some(Arc::clone(&self.node_cache)),
-            cached_root,
-        );
+        let profile = state_root_profile_enabled();
+        // Reuse the committed trie between blocks so its hot node cache survives.
+        // A failed block still discards this isolated snapshot and all pending writes.
+        let snapshot_started = profile.then(std::time::Instant::now);
+        let mut state_snap = self.state_snapshot.write();
+        let mut snapshot = if let Some(snapshot) = state_snap.take() {
+            snapshot
+        } else {
+            let staged_backend = Arc::new(StagedStateStoreBackend::new(self.store.clone()));
+            let cached_root = self.cached_trie_root.write().take();
+            StateSnapshot::new_with_cached_root(
+                staged_backend,
+                self.settings.clone(),
+                Some(Arc::clone(&self.node_cache)),
+                cached_root,
+            )
+        };
+        let snapshot_acquire_ms = snapshot_started
+            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
         let root_hash_before = if debug_dump {
             snapshot.trie.root_hash().unwrap_or_else(UInt256::zero)
         } else {
@@ -836,6 +853,7 @@ impl StateStore {
         let mut put_count: u32 = 0;
         let mut del_count: u32 = 0;
 
+        let apply_started = profile.then(std::time::Instant::now);
         // Sort updates by nibble/key prefix to maximize MPT traversal locality.
         ops.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
@@ -859,15 +877,26 @@ impl StateStore {
                 }
             }
         }
+        let apply_ms = apply_started
+            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
 
         // Flush dirty nodes once for the entire block (with parallel subtree hashing)
+        let flush_started = profile.then(std::time::Instant::now);
         snapshot
             .trie
             .flush_dirty()
             .map_err(|e| format!("state root trie flush failed at height {height}: {e}"))?;
+        let flush_ms = flush_started
+            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
 
         // Get new root hash
+        let root_hash_started = profile.then(std::time::Instant::now);
         let root_hash = snapshot.trie.root_hash().unwrap_or_else(UInt256::zero);
+        let root_hash_ms = root_hash_started
+            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
         if debug_dump {
             eprintln!(
                 "[DEBUG_STATE_ROOT h={height}] root_hash_before={root_hash_before} root_hash_after={root_hash} expected={:?}",
@@ -876,7 +905,12 @@ impl StateStore {
         }
 
         // Validate against static or live reference roots (fail-closed).
-        if let Some(expected) = self.reference_root_for(height)? {
+        let reference_started = profile.then(std::time::Instant::now);
+        let expected = self.reference_root_for(height)?;
+        let reference_fetch_ms = reference_started
+            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
+        if let Some(expected) = expected {
             if root_hash == expected {
                 if height.is_multiple_of(5000) {
                     tracing::info!(
@@ -916,24 +950,64 @@ impl StateStore {
         }
 
         // Create and store state root
+        let stage_root_started = profile.then(std::time::Instant::now);
         let state_root = StateRoot::new_current(height, root_hash);
         snapshot
             .add_local_state_root(&state_root)
             .map_err(|e| format!("failed to stage local state root at height {height}: {e}"))?;
+        let stage_root_ms = stage_root_started
+            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
 
-        *self.state_snapshot.write() = Some(snapshot);
+        *state_snap = Some(snapshot);
+        if profile {
+            tracing::info!(
+                target: "neo::state_service",
+                height,
+                put_count,
+                del_count,
+                snapshot_acquire_ms,
+                apply_ms,
+                flush_ms,
+                root_hash_ms,
+                reference_fetch_ms,
+                stage_root_ms,
+                "state root committing profile"
+            );
+        }
         Ok(())
     }
 
     /// Commits the local state root after block persistence.
     pub fn update_local_state_root(&self, height: u32) -> Result<(), String> {
-        // Commit and dispose snapshot
+        let profile = state_root_profile_enabled();
+        let mut stage_commit_ms = 0.0;
+        let mut backend_commit_ms = 0.0;
+        // Commit every block, but retain the hot trie for the next block. Recreate
+        // it periodically to bound the in-memory view just as the old root cache did.
         {
             let mut state_snap = self.state_snapshot.write();
-            if let Some(mut snapshot) = state_snap.take() {
-                if let Err(error) = snapshot.commit() {
+            if let Some(snapshot) = state_snap.as_mut() {
+                let stage_started = profile.then(std::time::Instant::now);
+                let result = snapshot.stage_commit();
+                stage_commit_ms = stage_started
+                    .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+                    .unwrap_or(0.0);
+                if let Err(error) = result {
                     snapshot.discard_pending();
                     self.node_cache.clear();
+                    state_snap.take();
+                    return Err(error);
+                }
+                let backend_started = profile.then(std::time::Instant::now);
+                let result = snapshot.commit_backend();
+                backend_commit_ms = backend_started
+                    .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+                    .unwrap_or(0.0);
+                if let Err(error) = result {
+                    snapshot.discard_pending();
+                    self.node_cache.clear();
+                    state_snap.take();
                     return Err(error);
                 }
                 if let Some(root_hash) = snapshot.trie.root_hash()
@@ -942,15 +1016,27 @@ impl StateStore {
                     let next_root = if height.is_multiple_of(2000) {
                         Node::new_hash(root_hash)
                     } else {
-                        snapshot.trie.take_root()
+                        snapshot.trie.root().clone()
                     };
                     *self.cached_trie_root.write() = Some((root_hash, next_root));
                 }
+            }
+            if height.is_multiple_of(2000) {
+                state_snap.take();
             }
         }
 
         self.update_current_snapshot();
         self.check_validated_state_root(height);
+        if profile {
+            tracing::info!(
+                target: "neo::state_service",
+                height,
+                stage_commit_ms,
+                backend_commit_ms,
+                "state root committed profile"
+            );
+        }
         Ok(())
     }
 

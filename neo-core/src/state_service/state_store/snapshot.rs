@@ -167,12 +167,14 @@ impl StateSnapshot {
         self.store.discard_pending();
     }
 
+    /// Commits staged trie updates and root metadata to the backing store.
+    pub fn commit_backend(&mut self) -> Result<(), String> {
+        self.store.commit()
+    }
+
     /// Commits all pending changes.
     pub fn commit(&mut self) -> Result<(), String> {
         self.stage_commit()?;
-
-        // Flush pending trie updates and any staged root/index updates.
-        self.store.commit()?;
-        Ok(())
+        self.commit_backend()
     }
 }

@@ -145,6 +145,11 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
 
         let start = key_prefix.map(|k| k.as_slice()).unwrap_or(&[]);
         let iterator = self.iterator_from(start, direction);
+        let prefix = key_prefix.cloned();
+        let iterator = iterator.take_while(move |res| match res {
+            Ok((key, _)) => prefix.as_ref().is_none_or(|prefix| key.starts_with(prefix)),
+            Err(_) => true,
+        });
         Box::new(iterator.filter_map(|res| match res {
             Ok((k, v)) => Some((k.to_vec(), v.to_vec())),
             Err(err) => fail_fast_read("iterator", &err),
@@ -212,6 +217,13 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
 
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iter = self.iterator_from(start, direction);
+        let prefix_boundary = prefix_bytes.clone();
+        let iter = iter.take_while(move |res| match res {
+            Ok((key, _)) => prefix_boundary
+                .as_ref()
+                .is_none_or(|prefix| key.starts_with(prefix)),
+            Err(_) => true,
+        });
 
         // Create an iterator that also caches results
         let read_cache = self.read_cache.clone();
@@ -627,6 +639,11 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
             direction,
             &self.read_ahead_config,
         );
+        let prefix = key_prefix.cloned();
+        let iterator = iterator.take_while(move |res| match res {
+            Ok((key, _)) => prefix.as_ref().is_none_or(|prefix| key.starts_with(prefix)),
+            Err(_) => true,
+        });
         Box::new(iterator.filter_map(|res| match res {
             Ok((k, v)) => Some((k.to_vec(), v.to_vec())),
             Err(err) => fail_fast_read("snapshot iterator", &err),
@@ -694,6 +711,13 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
 
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iter = self.iterator_from(start, direction);
+        let prefix_boundary = prefix_bytes.clone();
+        let iter = iter.take_while(move |res| match res {
+            Ok((key, _)) => prefix_boundary
+                .as_ref()
+                .is_none_or(|prefix| key.starts_with(prefix)),
+            Err(_) => true,
+        });
 
         Box::new(iter.filter_map(move |res| {
             let (key, value) = match res {

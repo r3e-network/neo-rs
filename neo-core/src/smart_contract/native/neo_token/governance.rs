@@ -238,10 +238,19 @@ impl NeoToken {
     {
         let prefix = StorageKey::create(Self::ID, Self::PREFIX_CANDIDATE);
         let mut candidates = Vec::new();
+        let profiling =
+            crate::smart_contract::env_flags::env_flag_enabled("NEO_PERSIST_PROFILE", false);
+        let blocked_started = profiling.then(std::time::Instant::now);
         let policy = PolicyContract::new();
         let blocked_accounts = policy.blocked_accounts_snapshot(snapshot);
+        let blocked_ms = blocked_started
+            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
         let has_blocked_accounts = !blocked_accounts.is_empty();
+        let scan_started = profiling.then(std::time::Instant::now);
+        let mut scanned_entries = 0usize;
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
+            scanned_entries += 1;
             if key.id != Self::ID {
                 continue;
             }
@@ -266,6 +275,17 @@ impl NeoToken {
             }
 
             candidates.push((pk, state.votes));
+        }
+        if let Some(started) = scan_started {
+            tracing::info!(
+                target: "neo",
+                blocked_ms,
+                blocked_count = blocked_accounts.len(),
+                scan_ms = started.elapsed().as_secs_f64() * 1_000.0,
+                scanned_entries,
+                registered_candidates = candidates.len(),
+                "neo-token candidate storage scan profile"
+            );
         }
         Ok(candidates)
     }

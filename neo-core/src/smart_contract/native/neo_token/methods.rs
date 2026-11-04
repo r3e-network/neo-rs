@@ -8,7 +8,9 @@ impl NeoToken {
     /// Creates a new NeoToken native contract instance.
     pub fn new() -> Self {
         Self {
-            methods: crate::smart_contract::native::static_native_methods!(NeoToken::native_methods()),
+            methods: crate::smart_contract::native::static_native_methods!(
+                NeoToken::native_methods()
+            ),
         }
     }
 

@@ -169,12 +169,34 @@ impl NeoToken {
 
         let committee_members_count = settings.committee_members_count();
         let turnout_low = &voters_count * BigInt::from(5i64) < BigInt::from(Self::TOTAL_SUPPLY);
+        let profiling =
+            crate::smart_contract::env_flags::env_flag_enabled("NEO_PERSIST_PROFILE", false);
 
         if turnout_low {
-            return self.standby_committee_votes(snapshot, settings);
+            let started = profiling.then(std::time::Instant::now);
+            let result = self.standby_committee_votes(snapshot, settings);
+            if let Some(started) = started {
+                tracing::info!(
+                    target: "neo",
+                    branch = "standby",
+                    elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
+                    "neo-token committee computation profile"
+                );
+            }
+            return result;
         }
 
+        let candidates_started = profiling.then(std::time::Instant::now);
         let candidates = self.get_candidates_internal(snapshot)?;
+        if let Some(started) = candidates_started {
+            tracing::info!(
+                target: "neo",
+                branch = "candidates",
+                candidate_count = candidates.len(),
+                elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
+                "neo-token committee computation profile"
+            );
+        }
         if candidates.len() < committee_members_count {
             let mut candidate_votes: BTreeMap<ECPoint, BigInt> = BTreeMap::new();
             for (pk, votes) in candidates {
@@ -248,13 +270,22 @@ impl NeoToken {
             standby_index.insert(pk.as_bytes().to_vec(), index);
         }
 
+        let profiling =
+            crate::smart_contract::env_flags::env_flag_enabled("NEO_PERSIST_PROFILE", false);
+        let blocked_started = profiling.then(std::time::Instant::now);
         let policy = PolicyContract::new();
         let blocked_accounts = policy.blocked_accounts_snapshot(snapshot);
+        let blocked_ms = blocked_started
+            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
         let has_blocked_accounts = !blocked_accounts.is_empty();
 
+        let scan_started = profiling.then(std::time::Instant::now);
+        let mut scanned_candidates = 0usize;
         let mut votes_by_index = vec![BigInt::zero(); standby.len()];
         let prefix = StorageKey::create(Self::ID, Self::PREFIX_CANDIDATE);
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
+            scanned_candidates += 1;
             if key.id != Self::ID {
                 continue;
             }
@@ -283,6 +314,16 @@ impl NeoToken {
             }
 
             votes_by_index[index] = state.votes;
+        }
+        if let Some(started) = scan_started {
+            tracing::info!(
+                target: "neo",
+                blocked_ms,
+                blocked_count = blocked_accounts.len(),
+                scan_ms = started.elapsed().as_secs_f64() * 1_000.0,
+                scanned_candidates,
+                "neo-token standby committee scan profile"
+            );
         }
 
         Ok(standby

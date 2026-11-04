@@ -226,6 +226,80 @@ fn ledger_storage_is_excluded_from_state_trie() {
 }
 
 #[test]
+fn committed_trie_reuse_preserves_sequential_changes_and_reset_boundary() {
+    fn apply(
+        store: &StateStore,
+        height: u32,
+        changes: impl Iterator<Item = (StorageKey, StorageItem, TrackState)>,
+    ) -> UInt256 {
+        store
+            .update_local_state_root_snapshot(height, changes)
+            .expect("stage sequential root");
+        store
+            .update_local_state_root(height)
+            .expect("commit sequential root");
+        store.get_state_root(height).expect("stored root").root_hash
+    }
+
+    let store = StateStore::new_in_memory();
+    let first = StorageKey::new(123, b"first".to_vec());
+    let second = StorageKey::new(123, b"second".to_vec());
+    let root1 = apply(
+        &store,
+        1,
+        std::iter::once((
+            first.clone(),
+            StorageItem::from_bytes(b"v1".to_vec()),
+            TrackState::Added,
+        )),
+    );
+    let root2 = apply(
+        &store,
+        2,
+        [
+            (
+                first.clone(),
+                StorageItem::from_bytes(b"v2".to_vec()),
+                TrackState::Changed,
+            ),
+            (
+                second.clone(),
+                StorageItem::from_bytes(b"other".to_vec()),
+                TrackState::Added,
+            ),
+        ]
+        .into_iter(),
+    );
+    assert_ne!(root1, root2);
+    let root3 = apply(
+        &store,
+        3,
+        std::iter::once((second.clone(), StorageItem::new(), TrackState::Deleted)),
+    );
+    let root2000 = apply(&store, 2000, std::iter::empty());
+    assert_eq!(root3, root2000);
+    let root2001 = apply(
+        &store,
+        2001,
+        std::iter::once((
+            first.clone(),
+            StorageItem::from_bytes(b"v3".to_vec()),
+            TrackState::Changed,
+        )),
+    );
+
+    let mut trie = store.trie_for_root(root2001);
+    assert_eq!(
+        trie.get(&first.to_array()).expect("read reused trie"),
+        Some(b"v3".to_vec())
+    );
+    assert_eq!(
+        trie.get(&second.to_array()).expect("read deleted key"),
+        None
+    );
+}
+
+#[test]
 fn test_memory_backend() {
     let backend = MemoryStateStoreBackend::new();
 
@@ -489,6 +563,57 @@ fn update_local_state_root_snapshot_rejects_missing_reference_in_active_range() 
             "missing reference state root at height 1 within active reference range [0, 1]"
         )
     );
+}
+
+#[test]
+fn required_reference_root_fails_closed_beyond_static_range() {
+    let mut store = StateStore::new_in_memory();
+    store.set_reference_roots_required(true);
+
+    let err = store
+        .reference_root_for(1)
+        .expect_err("required reference must not be skipped");
+
+    assert!(err.contains("required reference state root unavailable at height 1"));
+}
+
+#[test]
+fn live_reference_root_extends_static_validation_range() {
+    let store = StateStore::new_in_memory();
+    let expected = UInt256::parse(&format!("0x{}", "11".repeat(32))).unwrap();
+    store.set_reference_root_fetcher(Arc::new(move |height| {
+        assert_eq!(height, 42);
+        Ok(expected)
+    }));
+
+    assert_eq!(store.reference_root_for(42), Ok(Some(expected)));
+}
+
+#[test]
+fn live_reference_root_failure_fails_closed() {
+    let store = StateStore::new_in_memory();
+    store.set_reference_root_fetcher(Arc::new(|_| Err("RPC unavailable".to_string())));
+
+    let err = store
+        .reference_root_for(42)
+        .expect_err("live reference failure must not be skipped");
+
+    assert!(err.contains("failed to fetch reference state root at height 42: RPC unavailable"));
+}
+
+#[test]
+fn live_reference_root_mismatch_rejects_staging() {
+    let store = StateStore::new_in_memory();
+    store.set_reference_root_fetcher(Arc::new(|_| {
+        UInt256::parse(&format!("0x{}", "11".repeat(32))).map_err(|error| error.to_string())
+    }));
+
+    let err = store
+        .update_local_state_root_snapshot(1, std::iter::empty())
+        .expect_err("live reference mismatch should fail");
+
+    assert!(err.contains("state root mismatch at height 1"));
+    assert!(store.state_snapshot.read().is_none());
 }
 
 #[test]

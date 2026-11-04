@@ -255,3 +255,80 @@ fn backward_raw_prefix_find_uses_rocksdb_prefix_bounds() {
         .collect();
     assert_eq!(snapshot_keys, expected);
 }
+
+#[test]
+fn forward_prefix_find_stops_at_prefix_boundary_in_all_views() {
+    let tmp = TempDir::new().expect("tempdir");
+    let cfg = StorageConfig {
+        path: tmp.path().join("rocksdb-forward-prefix-bounds"),
+        ..Default::default()
+    };
+    let provider = RocksDBStoreProvider::new(cfg);
+    let store = provider.get_store("").expect("rocksdb store");
+
+    let key_a = StorageKey::new(-5, vec![0x1d, 0x00]);
+    let key_b = StorageKey::new(-5, vec![0x1d, 0xff]);
+    let key_after = StorageKey::new(-5, vec![0x1e, 0x00]);
+    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+    for (key, value) in [(&key_a, 0x01), (&key_b, 0x02), (&key_after, 0x03)] {
+        writer.add(key.clone(), StorageItem::from_bytes(vec![value]));
+    }
+    writer.commit();
+
+    let prefix = StorageKey::create(-5, 0x1d);
+    let expected = vec![key_a.to_array(), key_b.to_array()];
+    let store_keys: Vec<_> = store
+        .find(Some(&prefix), SeekDirection::Forward)
+        .map(|(key, _)| key.to_array())
+        .collect();
+    assert_eq!(store_keys, expected);
+
+    let snapshot = store.snapshot();
+    let raw_prefix = prefix.to_array();
+    let snapshot_keys: Vec<_> = snapshot
+        .find(Some(&raw_prefix), SeekDirection::Forward)
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(snapshot_keys, expected);
+
+    let snapshot_cache = StoreCache::new_from_snapshot(store.snapshot());
+    let cache_keys: Vec<_> = snapshot_cache
+        .data_cache()
+        .find(Some(&prefix), SeekDirection::Forward)
+        .map(|(key, _)| key.to_array())
+        .collect();
+    assert_eq!(cache_keys, expected);
+}
+
+#[test]
+fn forward_raw_prefix_find_stops_at_prefix_boundary_in_store_and_snapshot() {
+    let tmp = TempDir::new().expect("tempdir");
+    let cfg = StorageConfig {
+        path: tmp.path().join("rocksdb-forward-raw-prefix-bounds"),
+        ..Default::default()
+    };
+    let mut store = RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), &None, true, true)
+        .expect("rocksdb store");
+    for (key, value) in [
+        (b"a\x00".to_vec(), vec![0x01]),
+        (b"a\xff".to_vec(), vec![0x02]),
+        (b"b".to_vec(), vec![0x03]),
+    ] {
+        store.put(key, value).expect("put raw row");
+    }
+
+    let prefix = b"a".to_vec();
+    let expected = vec![b"a\x00".to_vec(), b"a\xff".to_vec()];
+    let store_keys: Vec<_> = store
+        .find(Some(&prefix), SeekDirection::Forward)
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(store_keys, expected);
+
+    let snapshot = store.snapshot();
+    let snapshot_keys: Vec<_> = snapshot
+        .find(Some(&prefix), SeekDirection::Forward)
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(snapshot_keys, expected);
+}

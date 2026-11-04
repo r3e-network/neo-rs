@@ -114,13 +114,33 @@ impl NativeContract for NeoToken {
             return Ok(());
         }
 
+        let profiling =
+            crate::smart_contract::env_flags::env_flag_enabled("NEO_PERSIST_PROFILE", false);
         let snapshot = engine.snapshot_cache();
+        let old_committee_started = profiling.then(std::time::Instant::now);
         let old_committee =
             self.committee_from_cache_with_votes(snapshot.as_ref(), engine.protocol_settings())?;
+        let old_committee_ms = old_committee_started
+            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
         let old_keys: Vec<ECPoint> = old_committee.iter().map(|(pk, _)| pk.clone()).collect();
 
+        let compute_started = profiling.then(std::time::Instant::now);
         let new_committee =
             self.compute_committee_members(snapshot.as_ref(), engine.protocol_settings())?;
+        let compute_ms = compute_started
+            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
+        if profiling {
+            tracing::info!(
+                target: "neo",
+                block_index = block.index(),
+                old_committee_ms,
+                compute_ms,
+                candidate_count = new_committee.len(),
+                "neo-token committee refresh profile"
+            );
+        }
 
         let context = engine.get_native_storage_context(&self.hash())?;
         let committee_bytes = Self::encode_committee_with_votes(&new_committee)?;
