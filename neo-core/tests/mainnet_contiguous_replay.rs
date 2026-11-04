@@ -16,7 +16,9 @@
 //! NEO_STATE_ROOT_DB_PATH=data/mainnet-protocol-consistency/StateRoot
 //! cargo test -p neo-core --features rocksdb --test mainnet_contiguous_replay -- --ignored --nocapture
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use neo_core::ledger::Block;
+use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::persistence::data_cache::{DataCache, DataCacheConfig};
 use neo_core::persistence::{
     SeekDirection, StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
@@ -30,7 +32,7 @@ use neo_core::smart_contract::native::LedgerTransactionStates;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
 use neo_core::smart_contract::native::ledger_contract::PersistedTransactionState;
 use neo_core::state_service::state_store::{
-    SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore,
+    SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore, StateStoreBackend,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -155,6 +157,35 @@ fn parse_replay_range(
     Ok((start, end))
 }
 
+fn parse_commit_interval(value: Option<String>) -> Result<u32, String> {
+    value
+        .map(|value| {
+            value
+                .parse::<u32>()
+                .ok()
+                .filter(|interval| *interval > 0)
+                .ok_or_else(|| {
+                    format!("NEO_REPLAY_COMMIT_INTERVAL must be a positive integer, got {value:?}")
+                })
+        })
+        .transpose()
+        .map(|interval| interval.unwrap_or(1))
+}
+
+fn parse_test_crash_after(value: Option<String>) -> Result<Option<u64>, String> {
+    value
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .ok()
+                .filter(|count| *count > 0)
+                .ok_or_else(|| {
+                    format!("NEO_REPLAY_TEST_CRASH_AFTER must be a positive integer, got {value:?}")
+                })
+        })
+        .transpose()
+}
+
 fn resolve_repo_path(
     repo: &Path,
     override_value: Option<String>,
@@ -201,38 +232,194 @@ fn data_directory_available(
     }
 }
 
-fn open_state_store(path: &Path) -> StateStore {
+struct OverlayStateStoreBackend {
+    base: Arc<dyn StateStoreBackend>,
+    overlay: Arc<dyn StateStoreBackend>,
+}
+
+impl StateStoreBackend for OverlayStateStoreBackend {
+    fn try_get(&self, key: &[u8]) -> Option<Vec<u8>> {
+        self.overlay.try_get(key).or_else(|| self.base.try_get(key))
+    }
+
+    fn put(&self, key: Vec<u8>, value: Vec<u8>) {
+        self.overlay.put(key, value);
+    }
+
+    fn delete(&self, key: &[u8]) {
+        self.overlay.delete(key);
+    }
+
+    fn commit(&self) -> Result<(), String> {
+        self.overlay.commit()
+    }
+
+    fn discard_pending(&self) {
+        self.overlay.discard_pending();
+    }
+
+    fn flush(&self) {
+        self.overlay.flush();
+    }
+}
+
+fn open_state_store(
+    path: &Path,
+    output_path: Option<&Path>,
+) -> (StateStore, Option<Arc<dyn StateStoreBackend>>) {
     let provider = RocksDBStoreProvider::new(StorageConfig {
         path: path.to_path_buf(),
         read_only: true,
         ..StorageConfig::default()
     });
     let state_db = provider.get_store("").expect("open state root store");
-    let backend = Arc::new(SnapshotBackedStateStoreBackend::new(state_db));
-    StateStore::new(
-        backend,
-        StateServiceSettings {
-            full_state: true,
-            path: path.to_string_lossy().to_string(),
-            ..StateServiceSettings::default()
-        },
+    let base: Arc<dyn StateStoreBackend> = Arc::new(SnapshotBackedStateStoreBackend::new(state_db));
+    let backend: Arc<dyn StateStoreBackend> = if let Some(output_path) = output_path {
+        assert_ne!(output_path, path, "state output must not overwrite history");
+        let provider = RocksDBStoreProvider::new(StorageConfig {
+            path: output_path.to_path_buf(),
+            read_only: false,
+            ..StorageConfig::default()
+        });
+        let output_db = provider.get_store("").expect("open replay state output");
+        let output_backend = SnapshotBackedStateStoreBackend::new(output_db);
+        // The read-only reference database is a fallback for historical trie
+        // nodes, not the durable progress of this independent output. Initialize
+        // the overlay's own cursor so a new from-genesis replay does not inherit
+        // the reference database's much higher local root index.
+        if output_backend
+            .try_get(neo_core::state_service::Keys::CURRENT_LOCAL_ROOT_INDEX)
+            .is_none()
+        {
+            output_backend.put(
+                neo_core::state_service::Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec(),
+                0u32.to_le_bytes().to_vec(),
+            );
+            output_backend
+                .commit()
+                .expect("initialize replay state output at genesis");
+        }
+        Arc::new(OverlayStateStoreBackend {
+            base,
+            overlay: Arc::new(output_backend),
+        })
+    } else {
+        base
+    };
+    let write_backend = output_path.map(|_| Arc::clone(&backend));
+    (
+        StateStore::new(
+            backend,
+            StateServiceSettings {
+                full_state: true,
+                path: path.to_string_lossy().to_string(),
+                ..StateServiceSettings::default()
+            },
+        ),
+        write_backend,
     )
 }
 
 type StateChanges = Vec<(Vec<u8>, Option<Vec<u8>>)>;
+type ReplayChanges = (neo_core::UInt256, StateChanges, StateChanges);
+
+fn load_raw_block(path_template: &str, height: u32) -> Block {
+    let path = path_template.replace("{height}", &height.to_string());
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .join(path);
+    let encoded = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("read raw block {}: {error}", path.display()));
+    let wire = BASE64
+        .decode(encoded.trim())
+        .expect("decode raw block Base64");
+    let mut reader = MemoryReader::new(&wire);
+    let network_block =
+        <neo_core::network::p2p::payloads::Block as Serializable>::deserialize(&mut reader)
+            .expect("deserialize raw C# block");
+    let header = network_block.header;
+    let header = neo_core::ledger::BlockHeader::new(
+        header.version(),
+        *header.prev_hash(),
+        *header.merkle_root(),
+        header.timestamp(),
+        header.nonce(),
+        header.index(),
+        header.primary_index(),
+        *header.next_consensus(),
+        vec![header.witness.clone()],
+    );
+    Block::new(header, network_block.transactions)
+}
+
+fn persist_trimmed_block(store: &Arc<dyn neo_core::persistence::Store>, block: &Block) {
+    use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
+
+    let trimmed = TrimmedBlock::try_from_block(block).expect("trim historical block");
+    let mut writer = BinaryWriter::new();
+    trimmed
+        .serialize(&mut writer)
+        .expect("serialize historical trimmed block");
+    let mut hash_key = vec![9];
+    hash_key.extend_from_slice(&block.index().to_be_bytes());
+    let mut block_key = vec![5];
+    block_key.extend_from_slice(&block.hash().to_bytes());
+    let mut snapshot = store.snapshot();
+    let snapshot = Arc::get_mut(&mut snapshot).expect("mutable ledger replay snapshot");
+    snapshot
+        .put(
+            StorageKey::new(-4, hash_key).to_array(),
+            block.hash().to_bytes().to_vec(),
+        )
+        .expect("persist historical block index");
+    snapshot
+        .put(
+            StorageKey::new(-4, block_key).to_array(),
+            writer.into_bytes(),
+        )
+        .expect("persist historical trimmed block");
+    snapshot
+        .try_commit()
+        .expect("commit historical trimmed block");
+}
+
+fn persist_ledger_changes(
+    store: &Arc<dyn neo_core::persistence::Store>,
+    changes: &[(Vec<u8>, Option<Vec<u8>>)],
+) {
+    if changes.is_empty() {
+        return;
+    }
+    let mut snapshot = store.snapshot();
+    let snapshot = Arc::get_mut(&mut snapshot).expect("mutable ledger replay snapshot");
+    for (key, value) in changes {
+        match value {
+            Some(value) => snapshot.put(key.clone(), value.clone()),
+            None => snapshot.delete(key.clone()),
+        }
+        .expect("persist replay ledger change");
+    }
+    snapshot.try_commit().expect("commit replay ledger changes");
+}
 
 fn execute_empty_block(
-    state_store: &StateStore,
-    chain_cache: Arc<StoreCache>,
+    trie: Arc<
+        Mutex<
+            neo_core::cryptography::mpt_trie::Trie<
+                neo_core::state_service::state_store::StateStoreSnapshot,
+            >,
+        >,
+    >,
+    ledger_cache: Arc<StoreCache>,
     block: Arc<Block>,
-    root_prev: neo_core::UInt256,
-) -> Option<(neo_core::UInt256, StateChanges)> {
-    let trie = Arc::new(Mutex::new(state_store.trie_for_root(root_prev)));
+) -> Option<ReplayChanges> {
+    let execution_started = Instant::now();
     let ledger_index = block.index().saturating_sub(1);
     let ledger_current_key = StorageKey::new(-4, vec![12]).to_array();
     let store_get = {
         let trie = Arc::clone(&trie);
-        let chain = Arc::clone(&chain_cache);
+        let ledger = Arc::clone(&ledger_cache);
         Arc::new(move |key: &StorageKey| {
             if key.id == -4 {
                 if key.to_array() == ledger_current_key {
@@ -240,7 +427,7 @@ fn execute_empty_block(
                     bytes.extend_from_slice(&ledger_index.to_le_bytes());
                     return Some(neo_core::smart_contract::StorageItem::from_bytes(bytes));
                 }
-                return chain.get(key);
+                return ledger.get(key);
             }
             let mut trie = trie.lock();
             trie.get(&key.to_array())
@@ -250,12 +437,12 @@ fn execute_empty_block(
     };
     let store_find = {
         let trie = Arc::clone(&trie);
-        let chain = Arc::clone(&chain_cache);
+        let ledger = Arc::clone(&ledger_cache);
         Arc::new(move |prefix: Option<&StorageKey>, _dir: SeekDirection| {
             if let Some(key) = prefix
                 && key.id == -4
             {
-                return chain.find(Some(key), SeekDirection::Forward).collect();
+                return ledger.find(Some(key), SeekDirection::Forward).collect();
             }
             let prefix = prefix.map(|key| key.to_array()).unwrap_or_default();
             let mut trie = trie.lock();
@@ -271,7 +458,8 @@ fn execute_empty_block(
                 .collect()
         })
     };
-    let cache_reads = block.transactions.len() > 2;
+    let cache_reads =
+        block.transactions.len() > 2 && std::env::var_os("NEO_REPLAY_DISABLE_READ_CACHE").is_none();
     let base_cache = Arc::new(DataCache::new_with_config(
         false,
         Some(store_get),
@@ -279,7 +467,8 @@ fn execute_empty_block(
         DataCacheConfig {
             track_reads_in_write_cache: true,
             enable_read_cache: cache_reads,
-            enable_prefetching: cache_reads,
+            enable_prefetching: cache_reads
+                && std::env::var_os("NEO_REPLAY_DISABLE_PREFETCH").is_none(),
             ..Default::default()
         },
     ));
@@ -320,6 +509,10 @@ fn execute_empty_block(
     drop(on_persist);
 
     let tx_started = Instant::now();
+    let extra_gas = std::env::var("NEO_REPLAY_EXTRA_GAS")
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0);
     for tx in &block.transactions {
         let tx_store_get = {
             let base = Arc::clone(&base_cache);
@@ -340,7 +533,8 @@ fn execute_empty_block(
             DataCacheConfig {
                 track_reads_in_write_cache: false,
                 enable_read_cache: cache_reads,
-                enable_prefetching: cache_reads,
+                enable_prefetching: cache_reads
+                    && std::env::var_os("NEO_REPLAY_DISABLE_PREFETCH").is_none(),
                 ..Default::default()
             },
         ));
@@ -350,7 +544,7 @@ fn execute_empty_block(
             Arc::clone(&tx_snapshot),
             Some(Arc::clone(&block)),
             ProtocolSettings::mainnet(),
-            tx.system_fee(),
+            tx.system_fee().saturating_add(extra_gas),
             seeded_contracts.clone(),
             Arc::clone(&seeded_native_cache),
             None,
@@ -365,6 +559,24 @@ fn execute_empty_block(
             )
             .expect("load tx script");
         let vm_state = tx_engine.execute_allow_fault();
+        if profile {
+            eprintln!(
+                "profile block={} tx_vm_state={vm_state:?} fault={:?} tracked={} gas_consumed={}",
+                block.index(),
+                tx_engine.fault_exception(),
+                tx_snapshot.tracked_items().len(),
+                tx_engine.gas_consumed(),
+            );
+            for notification in tx_engine.notifications() {
+                eprintln!(
+                    "profile notification block={} contract={} event={} state={:?}",
+                    block.index(),
+                    notification.script_hash,
+                    notification.event_name,
+                    notification.state,
+                );
+            }
+        }
         tx_states = tx_engine
             .take_state::<LedgerTransactionStates>()
             .unwrap_or_else(|| LedgerTransactionStates::new(Vec::new()));
@@ -441,7 +653,31 @@ fn execute_empty_block(
             apply_started.elapsed()
         );
     }
-    Some((root, touched))
+    let ledger_changes = tracked
+        .iter()
+        .filter(|(key, trackable)| {
+            key.id == -4
+                && !matches!(
+                    format!("{:?}", trackable.state).as_str(),
+                    "None" | "NotFound"
+                )
+        })
+        .map(|(key, trackable)| {
+            let value = match format!("{:?}", trackable.state).as_str() {
+                "Deleted" => None,
+                _ => Some(trackable.item.value_bytes().to_vec()),
+            };
+            (key.to_array(), value)
+        })
+        .collect();
+    if profile {
+        eprintln!(
+            "profile block={} execute_total={:?}",
+            block.index(),
+            execution_started.elapsed()
+        );
+    }
+    Some((root, touched, ledger_changes))
 }
 
 #[test]
@@ -455,6 +691,15 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
         start_value.is_some() || end_value.is_some() || legacy_count_value.is_some();
     let (start, end) = parse_replay_range(start_value, end_value, legacy_count_value)
         .unwrap_or_else(|error| panic!("invalid replay range: {error}"));
+    let commit_interval = parse_commit_interval(
+        env_value("NEO_REPLAY_COMMIT_INTERVAL").unwrap_or_else(|error| panic!("{error}")),
+    )
+    .unwrap_or_else(|error| panic!("invalid replay commit interval: {error}"));
+    let test_crash_after = parse_test_crash_after(
+        env_value("NEO_REPLAY_TEST_CRASH_AFTER").unwrap_or_else(|error| panic!("{error}")),
+    )
+    .unwrap_or_else(|error| panic!("invalid replay test crash point: {error}"));
+    let profile = std::env::var_os("NEO_REPLAY_PROFILE").is_some();
 
     let (chain_path, chain_explicit) =
         repo_path("NEO_CHAIN_DB_PATH", "data/mainnet-protocol-consistency")
@@ -483,7 +728,22 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
     let store = provider.get_store("").expect("open chain store");
     let chain_cache = Arc::new(StoreCache::new_from_snapshot(store.snapshot()));
     let ledger = LedgerContract::new();
-    let state_store = open_state_store(&state_path);
+    let state_output_path = env_value("NEO_REPLAY_STATE_OUTPUT_PATH")
+        .unwrap_or_else(|error| panic!("{error}"))
+        .map(|value| {
+            assert!(!value.is_empty(), "NEO_REPLAY_STATE_OUTPUT_PATH is empty");
+            let path = PathBuf::from(value);
+            if path.is_absolute() {
+                path
+            } else {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .parent()
+                    .expect("repo root")
+                    .join(path)
+            }
+        });
+    let (state_store, state_write_backend) =
+        open_state_store(&state_path, state_output_path.as_deref());
 
     let reference_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -496,33 +756,88 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
     let mut current_root =
         require_persisted_starting_root(&state_store, starting_height, roots[&starting_height])
             .unwrap_or_else(|error| panic!("{error}"));
+    let isolated_benchmark = state_output_path
+        .as_deref()
+        .is_some_and(|path| path.join("BENCHMARK_ONLY").is_file());
+    if state_write_backend.is_some() && !isolated_benchmark {
+        let durable_height = state_store
+            .local_root_index()
+            .unwrap_or_else(|| panic!("missing durable replay local root index"));
+        assert_eq!(
+            durable_height,
+            starting_height,
+            "writable replay must resume at durable height + 1; rerun with --start {}",
+            durable_height.saturating_add(1)
+        );
+    }
+    // Trie::commit clears its mutable node cache, so the same in-memory trie can
+    // continue across blocks. Durable backend commits are independently batched.
+    let trie = Arc::new(Mutex::new(state_store.trie_for_root(current_root)));
     let mut checked = 0u64;
+    let mut pending_ledger_changes = Vec::new();
+    let raw_block_path =
+        env_value("NEO_REPLAY_BLOCK_PATH").unwrap_or_else(|error| panic!("{error}"));
+    assert!(
+        raw_block_path
+            .as_deref()
+            .is_none_or(|path| start == end || path.contains("{height}")),
+        "multi-block NEO_REPLAY_BLOCK_PATH must contain the {{height}} placeholder"
+    );
+    let (ledger_path, _) = repo_path("NEO_REPLAY_LEDGER_PATH", "data/replay-ledger-mainnet")
+        .unwrap_or_else(|error| panic!("{error}"));
+    let ledger_provider = RocksDBStoreProvider::new(StorageConfig {
+        path: ledger_path,
+        read_only: false,
+        ..StorageConfig::default()
+    });
+    let ledger_store = ledger_provider
+        .get_store("")
+        .expect("open replay ledger store");
+    let ledger_cache = Arc::new(StoreCache::new_from_store(Arc::clone(&ledger_store), true));
+    if let Some(path) = raw_block_path.as_deref() {
+        for height in start.saturating_sub(2)..start {
+            if ledger
+                .get_block_hash_by_index(ledger_cache.as_ref(), height)
+                .expect("read replay block index")
+                .is_none()
+            {
+                persist_trimmed_block(&ledger_store, &load_raw_block(path, height));
+            }
+        }
+    }
 
+    let replay_loop_started = Instant::now();
     for index in start..=end {
-        let block = ledger
-            .get_block(chain_cache.as_ref(), HashOrIndex::Index(index))
-            .expect("read block")
-            .unwrap_or_else(|| panic!("missing block {index}"));
-        let tx_debug: Vec<String> = block
-            .transactions
-            .iter()
-            .map(|tx| {
-                format!(
-                    "script={} attrs={:?}",
-                    hex::encode(tx.script()),
-                    tx.attributes()
-                )
-            })
-            .collect();
-        let (actual, actual_entries) = execute_empty_block(
-            &state_store,
-            Arc::clone(&chain_cache),
-            Arc::new(block),
-            current_root,
+        let block_started = Instant::now();
+        let block = if let Some(path) = raw_block_path.as_deref() {
+            load_raw_block(path, index)
+        } else {
+            ledger
+                .get_block(chain_cache.as_ref(), HashOrIndex::Index(index))
+                .expect("read block")
+                .unwrap_or_else(|| panic!("missing block {index}"))
+        };
+        assert_eq!(block.index(), index, "raw block height mismatch");
+        let block = Arc::new(block);
+        let (actual, actual_entries, ledger_changes) = execute_empty_block(
+            Arc::clone(&trie),
+            Arc::clone(&ledger_cache),
+            Arc::clone(&block),
         )
         .unwrap_or_else(|| panic!("block {index}: root computation failed"));
         if let Some(expected) = roots.get(&index) {
             if actual != *expected {
+                let tx_debug: Vec<String> = block
+                    .transactions
+                    .iter()
+                    .map(|tx| {
+                        format!(
+                            "script={} attrs={:?}",
+                            hex::encode(tx.script()),
+                            tx.attributes()
+                        )
+                    })
+                    .collect();
                 let stored = state_store
                     .get_state_root(index)
                     .map(|root| root.root_hash.to_string())
@@ -596,7 +911,102 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
         } else {
             panic!("missing reference root at height {index}");
         }
+        if let Some(backend) = state_write_backend.as_ref() {
+            pending_ledger_changes.extend(ledger_changes);
+            let state_root = neo_core::state_service::StateRoot::new_current(index, actual);
+            let mut writer = BinaryWriter::new();
+            state_root
+                .serialize(&mut writer)
+                .expect("serialize state root");
+            backend.put(
+                neo_core::state_service::Keys::state_root(index),
+                writer.into_bytes(),
+            );
+            backend.put(
+                neo_core::state_service::Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec(),
+                index.to_le_bytes().to_vec(),
+            );
+            if checked % u64::from(commit_interval) == 0 || index == end {
+                let commit_started = Instant::now();
+                let mut trie_guard = trie.lock();
+                let flush_started = Instant::now();
+                trie_guard.flush_dirty().expect("flush replay trie nodes");
+                if profile {
+                    eprintln!(
+                        "profile block={index} trie_flush={:?}",
+                        flush_started.elapsed()
+                    );
+                }
+                let cache_commit_started = Instant::now();
+                trie_guard.commit().expect("stage replay trie nodes");
+                if profile {
+                    eprintln!(
+                        "profile block={index} trie_cache_commit={:?}",
+                        cache_commit_started.elapsed()
+                    );
+                    eprintln!(
+                        "profile block={index} trie_commit={:?}",
+                        commit_started.elapsed()
+                    );
+                }
+                drop(trie_guard);
+                let durable_started = Instant::now();
+                let ledger_started = Instant::now();
+                persist_ledger_changes(&ledger_store, &pending_ledger_changes);
+                if profile {
+                    eprintln!(
+                        "profile block={index} ledger_commit={:?}",
+                        ledger_started.elapsed()
+                    );
+                }
+                pending_ledger_changes.clear();
+                let backend_started = Instant::now();
+                backend.commit().expect("persist replay state output");
+                if profile {
+                    eprintln!(
+                        "profile block={index} state_backend_commit={:?}",
+                        backend_started.elapsed()
+                    );
+                    eprintln!(
+                        "profile block={index} durable_commit={:?} commit_interval={commit_interval}",
+                        durable_started.elapsed()
+                    );
+                }
+            }
+            let readback_started = Instant::now();
+            let persisted = state_store
+                .get_state_root(index)
+                .unwrap_or_else(|| panic!("missing replay output root at height {index}"));
+            assert_eq!(persisted.root_hash, actual, "replay output root mismatch");
+            if profile {
+                eprintln!(
+                    "profile block={index} state_root_readback={:?}",
+                    readback_started.elapsed()
+                );
+            }
+        }
         current_root = actual;
+        if profile {
+            eprintln!(
+                "profile block={index} block_total={:?}",
+                block_started.elapsed()
+            );
+        }
+        if test_crash_after == Some(checked) {
+            eprintln!(
+                "replay_test_crash_after={checked} last_height={index} commit_interval={commit_interval}"
+            );
+            std::process::exit(70);
+        }
+    }
+    if let Some(backend) = state_write_backend.as_ref() {
+        backend.flush();
+    }
+    if profile {
+        eprintln!(
+            "profile replay_loop_total={:?} checked={checked} commit_interval={commit_interval}",
+            replay_loop_started.elapsed()
+        );
     }
     let expected_checks = u64::from(end) - u64::from(start) + 1;
     assert_eq!(
@@ -604,6 +1014,64 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
         "replay completed without comparing every requested state root"
     );
     eprintln!("replay_range={start}..={end} checked={checked} reference_gaps=0");
+}
+
+#[test]
+#[ignore = "prints the durable replay height for the configured local state output"]
+fn print_replay_state_height() {
+    let state_path = repo_path(
+        "NEO_STATE_ROOT_DB_PATH",
+        "data/mainnet-protocol-consistency/StateRoot",
+    )
+    .unwrap_or_else(|error| panic!("{error}"))
+    .0;
+    let output_path = repo_path("NEO_REPLAY_STATE_OUTPUT_PATH", "data/replay-state-mainnet")
+        .unwrap_or_else(|error| panic!("{error}"))
+        .0;
+    let (state_store, _) = open_state_store(&state_path, Some(&output_path));
+    let height = state_store
+        .local_root_index()
+        .expect("missing durable replay local root index");
+    println!("replay_local_root_index={height}");
+}
+
+#[test]
+#[ignore = "inspects a historical block in the configured local MainNet chain store"]
+fn print_historical_ledger_block() {
+    let chain_path = repo_path("NEO_CHAIN_DB_PATH", "data/mainnet-protocol-consistency")
+        .unwrap_or_else(|error| panic!("{error}"))
+        .0;
+    let index = env_value("NEO_REPLAY_LEDGER_BLOCK")
+        .unwrap_or_else(|error| panic!("{error}"))
+        .map(|value| parse_height("NEO_REPLAY_LEDGER_BLOCK", value))
+        .transpose()
+        .unwrap_or_else(|error| panic!("{error}"))
+        .unwrap_or_else(|| panic!("NEO_REPLAY_LEDGER_BLOCK is required"));
+    let provider = RocksDBStoreProvider::new(StorageConfig {
+        path: chain_path,
+        read_only: true,
+        ..StorageConfig::default()
+    });
+    let store = provider.get_store("").expect("open chain store");
+    let chain_cache = StoreCache::new_from_snapshot(store.snapshot());
+    let ledger = LedgerContract::new();
+    let hash = ledger
+        .get_block_hash_by_index(&chain_cache, index)
+        .expect("read block hash");
+    let block = ledger
+        .get_block(&chain_cache, HashOrIndex::Index(index))
+        .expect("read block");
+    println!(
+        "index={index} hash={hash:?} block_present={}",
+        block.is_some()
+    );
+    if let Some(block) = block {
+        println!(
+            "block_index={} transactions={}",
+            block.index(),
+            block.transactions.len()
+        );
+    }
 }
 
 #[cfg(test)]
@@ -623,6 +1091,27 @@ mod configuration_tests {
             parse_replay_range(Some("200".to_string()), Some("250".to_string()), None),
             Ok((200, 250))
         );
+    }
+
+    #[test]
+    fn durable_commit_interval_is_positive_and_defaults_to_per_block() {
+        assert_eq!(parse_commit_interval(None), Ok(1));
+        assert_eq!(parse_commit_interval(Some("64".to_string())), Ok(64));
+        for malformed in ["", "0", "abc", "-1", "1.5", "4294967296"] {
+            assert!(parse_commit_interval(Some(malformed.to_string())).is_err());
+        }
+    }
+
+    #[test]
+    fn test_crash_point_is_positive_and_opt_in() {
+        assert_eq!(parse_test_crash_after(None), Ok(None));
+        assert_eq!(
+            parse_test_crash_after(Some("700".to_string())),
+            Ok(Some(700))
+        );
+        for malformed in ["", "0", "abc", "-1", "1.5"] {
+            assert!(parse_test_crash_after(Some(malformed.to_string())).is_err());
+        }
     }
 
     #[test]
