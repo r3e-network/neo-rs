@@ -1,0 +1,74 @@
+[package]
+name = "neo-signer-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Reference mTLS remote TEE signer service for Neo N3 (simulation attestation)"
+
+[[bin]]
+name = "neo-signer-server"
+path = "src/main.rs"
+
+[features]
+default = []
+
+[dependencies]
+neo-core = { workspace = true }
+neo-crypto = { workspace = true }
+neo-tee = { workspace = true }
+
+# HTTP + TLS server (same hyper/rustls stack used by neo-rpc's server TLS)
+hyper = { workspace = true }
+rustls = "0.21"
+rustls-pemfile = "1.0"
+tokio-rustls = "0.24"
+
+tokio = { workspace = true, features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "time",
+    "sync",
+    "signal",
+] }
+
+# CLI
+clap = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+
+# Errors and logging
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Utilities
+parking_lot = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+# Minimal mTLS client for end-to-end tests. neo-node's
+# MtlsRemoteSignerTransport/RemoteSignerProvider are `pub(crate)` and cannot be
+# imported from this crate, so the test harness re-implements the client-side
+# contract on top of the exact neo-core wire types and reqwest (the same rustls
+# stack the node transport uses).
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+rcgen = "0.12"
+tempfile = { workspace = true }
+rand = { workspace = true }
+
+[lints]
+workspace = true

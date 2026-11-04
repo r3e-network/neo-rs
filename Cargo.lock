@@ -2615,6 +2615,7 @@ dependencies = [
  "futures",
  "hex",
  "hyper 0.14.32",
+ "libloading 0.8.9",
  "mimalloc",
  "neo-ai-agent",
  "neo-consensus",
@@ -2721,6 +2722,7 @@ dependencies = [
  "neo-io",
  "neo-json",
  "neo-primitives",
+ "neo-tee",
  "neo-vm",
  "num-bigint",
  "num-traits",
@@ -2738,6 +2740,7 @@ dependencies = [
  "sha1",
  "socket2 0.5.10",
  "subtle",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-rustls 0.24.1",
@@ -2745,6 +2748,35 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "warp",
+ "zeroize",
+]
+
+[[package]]
+name = "neo-signer-server"
+version = "0.20.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "hyper 0.14.32",
+ "neo-core",
+ "neo-crypto",
+ "neo-tee",
+ "parking_lot",
+ "rand 0.8.8",
+ "rcgen",
+ "reqwest",
+ "rustls 0.21.12",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls 0.24.1",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
  "zeroize",
 ]
 
@@ -3102,6 +3134,16 @@ name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b17cddbe7ec3f8bc800887bab5e717348c95ea2ca0b1bf0837fb964dc67099"
+
+[[package]]
+name = "pem"
+version = "3.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d30c53c26bc5b31a98cd02d20f25a7c8567146caf63ed593a9d87b2775291be"
+dependencies = [
+ "base64 0.22.1",
+ "serde_core",
+]
 
 [[package]]
 name = "pem-rfc7468"
@@ -3659,6 +3701,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62c64daa8e9438b84aaae55010a93f396f8e60e3911590fcba770d04643fc1dd"
 dependencies = [
  "cipher",
+]
+
+[[package]]
+name = "rcgen"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48406db8ac1f3cbc7dcdb56ec355343817958a356ff430259bb07baf7607e1e1"
+dependencies = [
+ "pem",
+ "ring",
+ "time",
+ "yasna",
 ]
 
 [[package]]
@@ -5570,6 +5624,9 @@ name = "yasna"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
+dependencies = [
+ "time",
+]
 
 [[package]]
 name = "yoke"

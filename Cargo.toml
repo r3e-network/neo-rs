@@ -66,6 +66,9 @@ members = [
     # Node daemon (standalone RPC server)
     "neo-node",
 
+    # Reference mTLS remote TEE signer service (see neo-signer-server)
+    "neo-signer-server",
+
     # === Integration Tests ===
     "tests",
 
