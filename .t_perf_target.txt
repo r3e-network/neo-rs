@@ -1,2 +1,0 @@
-25G	/d/Git/neo-rs/.claude/worktrees/perf-mpt-cache-rocksdb/target
-3200
