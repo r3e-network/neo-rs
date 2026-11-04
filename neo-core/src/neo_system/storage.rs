@@ -46,6 +46,17 @@ pub(crate) fn init_store(
         // regardless of the network mismatch.
         let ambient_eligible =
             ref_path_override.is_some() || state_settings_network == chain_network;
+        // Observability only: when the state service is configured for a different
+        // network and reference roots are not required, the mismatch previously
+        // passed silently (ambient roots are simply not adopted). Surface it as a
+        // startup warning; behavior is unchanged.
+        if let Some(warning) = network_mismatch_reference_roots_warning(
+            state_settings_network,
+            chain_network,
+            require_reference_roots,
+        ) {
+            tracing::warn!(target: "neo", "{warning}");
+        }
         let target_ref_path = ref_path_override.as_deref().unwrap_or(default_ref_path);
 
         if ambient_eligible && std::path::Path::new(target_ref_path).exists() {
@@ -81,6 +92,26 @@ pub(crate) fn init_store(
     Ok((store, store_cache_for_hydration, state_store))
 }
 
+/// Builds the startup warning emitted when the state service is configured for a
+/// network different from the chain network while reference state roots are *not*
+/// required. Returns `None` when the networks match, or when reference roots are
+/// required (the startup gate then reports a hard error instead of a warning).
+/// Kept pure so the exact condition is unit-testable; `init_store` emits the
+/// resulting message through the crate's logging facility.
+fn network_mismatch_reference_roots_warning(
+    state_settings_network: u32,
+    chain_network: u32,
+    require_reference_roots: bool,
+) -> Option<String> {
+    (state_settings_network != chain_network && !require_reference_roots).then(|| {
+        format!(
+            "state service network {state_settings_network:#010x} does not match the chain \
+             network {chain_network:#010x}; ambient reference state roots are not adopted for a \
+             mismatched network (set NEO_REFERENCE_ROOTS_PATH to load an explicit file)"
+        )
+    })
+}
+
 /// Hydrates ledger and header cache from persistent storage.
 pub(crate) fn hydrate_ledger(
     store_cache_for_hydration: &StoreCache,
@@ -92,4 +123,30 @@ pub(crate) fn hydrate_ledger(
         ledger,
         header_cache,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::network_mismatch_reference_roots_warning;
+
+    #[test]
+    fn network_mismatch_without_required_reference_roots_warns() {
+        let warning = network_mismatch_reference_roots_warning(519_508, 860_833, false).unwrap();
+        // The emitted warning names both networks and points at the remediation.
+        assert!(warning.contains("does not match the chain network"));
+        assert!(warning.contains("NEO_REFERENCE_ROOTS_PATH"));
+        assert!(warning.contains("0x0007ed54"));
+        assert!(warning.contains("0x000d22a1"));
+    }
+
+    #[test]
+    fn matching_networks_do_not_warn() {
+        assert!(network_mismatch_reference_roots_warning(519_508, 519_508, false).is_none());
+    }
+
+    #[test]
+    fn mismatch_with_required_reference_roots_does_not_warn() {
+        // Required roots are handled by the hard-error gate, not the warning.
+        assert!(network_mismatch_reference_roots_warning(519_508, 860_833, true).is_none());
+    }
 }

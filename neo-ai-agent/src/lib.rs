@@ -17,8 +17,9 @@ mod stall;
 
 pub use agent::{AgentError, DiagnosticAgent, DiagnosticReport, ModelFailure};
 pub use audit::{
-    AuditError, AuditEvent, AuditEventKind, AuditInput, AuditLog, FileAuditLog, MemoryAuditLog,
-    verify_audit_chain,
+    AUDIT_MEMORY_WINDOW_DEFAULT, AUDIT_ROTATE_DEFAULT_GENERATIONS, AUDIT_ROTATE_DEFAULT_MAX_BYTES,
+    AUDIT_ROTATE_DEFAULT_MAX_EVENTS, AuditError, AuditEvent, AuditEventKind, AuditInput, AuditLog,
+    FileAuditLog, FileAuditLogOptions, MemoryAuditLog, verify_audit_chain,
 };
 pub use diagnosis::{
     ACTION_CATALOG, ActionId, ActionPolicy, ActionRecommendation, Diagnosis, DiagnosisError,
@@ -27,8 +28,8 @@ pub use diagnosis::{
 pub use durable_actions::{
     ACTION_LOG_SCHEMA_VERSION, ActionAdmissionOutcome, ActionCatalogEntry,
     ActionResourceReservation, ActionTransition, DurableActionBinding, DurableActionError,
-    DurableActionLog, DurableActionSnapshot, DurableActionState, OPERATIONAL_ACTION_CATALOG,
-    ReconciliationDecision,
+    DurableActionLog, DurableActionLogOptions, DurableActionSnapshot, DurableActionState,
+    OPERATIONAL_ACTION_CATALOG, ReconciliationDecision,
 };
 pub use evidence::{
     EVIDENCE_SCHEMA_VERSION, EvidenceAuthority, EvidenceBundle, EvidenceError, EvidenceItem,
