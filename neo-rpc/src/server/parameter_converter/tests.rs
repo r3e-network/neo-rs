@@ -1,6 +1,6 @@
 use super::*;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_wallets::helper::Helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};

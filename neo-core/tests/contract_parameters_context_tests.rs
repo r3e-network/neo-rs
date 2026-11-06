@@ -5,7 +5,7 @@ use neo_core::smart_contract::ContractParameterType;
 use neo_core::smart_contract::ContractParametersContext;
 use neo_core::smart_contract::contract::Contract;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
-use neo_core::wallets::key_pair::KeyPair;
+use neo_wallets::key_pair::KeyPair;
 use neo_core::{Transaction, TransactionExt, UInt160, WitnessScope};
 use neo_vm::OpCode;
 use std::sync::Arc;

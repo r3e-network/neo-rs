@@ -7,7 +7,7 @@ use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::CallFlags;
 use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 use neo_vm::OpCode;
 use std::sync::Arc;
 

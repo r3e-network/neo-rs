@@ -39,6 +39,9 @@ neo-vm = { workspace = true }
 # Internal crates (not yet in workspace.dependencies; registered by task 89)
 neo-ledger = { path = "../neo-ledger" }
 
+# Task D4: neo-system binds wallet primitives directly from neo-wallets.
+neo-wallets = { workspace = true }
+
 # Transitional dependency: the ledger/persistence/services vocabulary, the
 # P2P wire protocol and the smart contract engine still live in `neo-core`; the
 # moved `NeoSystem` orchestration reaches them through it (task W3-C2).

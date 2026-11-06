@@ -577,7 +577,7 @@ mod tests {
     // Privacy mode (strictly opt-in) — default-off and enabled-on behavior
     // ------------------------------------------------------------------
 
-    use neo_core::wallets::KeyPair;
+    use neo_wallets::KeyPair;
     use neo_primitives::UInt256;
     use neo_protocol::ProtocolSettings;
     use neo_protocol::payloads::transaction::Transaction;

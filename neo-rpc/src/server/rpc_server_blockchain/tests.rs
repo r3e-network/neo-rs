@@ -4,7 +4,7 @@ use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_protocol::witness::Witness as LedgerWitness;
 // `TrimmedBlock::from_block` and the RPC converters operate on the execution block
 // representation owned by `neo-protocol`, matching the native `LedgerContract` API.
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 use neo_io::SerializableExtensions as SerializableExt;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_json::JToken;

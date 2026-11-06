@@ -15,7 +15,7 @@ use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
 use neo_core::smart_contract::diagnostic::Diagnostic;
 use neo_core::smart_contract::helper::Helper;
-use neo_core::wallets::key_pair::KeyPair;
+use neo_wallets::key_pair::KeyPair;
 use neo_core::{Transaction, UInt160, WitnessScope};
 use neo_vm::Instruction;
 use neo_vm::OpCode;

@@ -6,7 +6,7 @@ use crate::tokens_tracker::{
     Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey, Nep17Tracker, TokenBalance, find_prefix,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_wallets::helper::Helper as WalletHelper;
 use neo_native_contracts::native::contract_management::ContractManagement;
 use neo_primitives::CallFlags;
 use neo_primitives::TriggerType;

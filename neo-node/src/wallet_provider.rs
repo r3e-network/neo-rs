@@ -1,6 +1,6 @@
 //! Wallet provider for propagating RPC wallet changes into NeoSystem.
 
-use neo_core::wallets::{Wallet, WalletProvider};
+use neo_wallets::{Wallet, WalletProvider};
 use parking_lot::{Mutex, RwLock};
 use std::any::Any;
 use std::sync::{Arc, mpsc};

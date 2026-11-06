@@ -3,7 +3,7 @@
 //! Distributed from `neo-core::services::traits` and `neo-core::services::mod`.
 
 use crate::MemoryPool;
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Mempool operations used across networking and RPC layers.
@@ -14,28 +14,28 @@ pub trait MempoolService: Send + Sync {
     fn count(&self) -> usize;
 }
 
-/// Wrapper that exposes a [`MemoryPool`] protected by a mutex through the [`MempoolService`] trait.
+/// Wrapper that exposes a [`MemoryPool`] protected by a RwLock through the [`MempoolService`] trait.
 #[derive(Clone)]
 pub struct LockedMempoolService {
-    inner: Arc<Mutex<MemoryPool>>,
+    inner: Arc<RwLock<MemoryPool>>,
 }
 
 impl LockedMempoolService {
-    /// Creates a new locked mempool service wrapping a mutex-protected memory pool.
+    /// Creates a new locked mempool service wrapping a RwLock-protected memory pool.
     ///
     /// This wrapper enables thread-safe access to mempool statistics through
     /// the [`MempoolService`] trait interface.
     ///
     /// # Arguments
-    /// * `inner` - Arc-wrapped mutex protecting the underlying [`MemoryPool`]
-    pub fn new(inner: Arc<Mutex<MemoryPool>>) -> Self {
+    /// * `inner` - Arc-wrapped RwLock protecting the underlying [`MemoryPool`]
+    pub fn new(inner: Arc<RwLock<MemoryPool>>) -> Self {
         Self { inner }
     }
 }
 
 impl MempoolService for LockedMempoolService {
     fn count(&self) -> usize {
-        self.inner.lock().count()
+        self.inner.read().count()
     }
 }
 

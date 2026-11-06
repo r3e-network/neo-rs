@@ -8,7 +8,7 @@ use crate::server::rpc_server_blockchain::RpcServerBlockchain;
 use crate::server::rpc_server_node::RpcServerNode;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 use neo_io::BinaryWriter;
 use neo_native_contracts::native::LedgerContract;
 use neo_primitives::WitnessScope;

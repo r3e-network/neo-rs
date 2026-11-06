@@ -1,6 +1,6 @@
 //! Shared wallet witness script helpers.
 
-use neo_core::wallets::{WalletError, WalletResult};
+use neo_wallets::{WalletError, WalletResult};
 use neo_vm::ScriptBuilder;
 
 #[allow(dead_code)]

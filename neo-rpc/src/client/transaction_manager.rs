@@ -11,7 +11,7 @@
 
 use crate::{Nep17Api, RpcClient, RpcError, TransactionManagerFactory};
 use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_wallets::helper::Helper as WalletHelper;
 use neo_core::{KeyPair, VerifiableExt, smart_contract::ContractParametersContext};
 use neo_crypto::ECPoint;
 use neo_native_contracts::native::{GasToken, NativeContract};

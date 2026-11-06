@@ -33,9 +33,9 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
 use neo_core::smart_contract::native::{GasToken, NativeContract, PolicyContract};
-use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::wallets::key_pair::KeyPair;
-use neo_core::wallets::{Nep6Wallet, TransferOutput, Wallet};
+use neo_wallets::helper::Helper as WalletHelper;
+use neo_wallets::key_pair::KeyPair;
+use neo_wallets::{Nep6Wallet, TransferOutput, Wallet};
 use neo_core::{
     HEADER_SIZE, MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute, TransactionAttributeType,
     UInt160, WitnessScope, ledger::TransactionVerificationContext, ledger::VerifyResult,

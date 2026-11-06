@@ -1,8 +1,8 @@
 //! HSM-backed wallet implementation for RPC signing.
 
 use anyhow::{Result, anyhow};
-use neo_core::wallets::wallet_account::WalletAccount;
-use neo_core::wallets::{Version, Wallet, WalletError, WalletResult};
+use neo_wallets::wallet_account::WalletAccount;
+use neo_wallets::{Version, Wallet, WalletError, WalletResult};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_hsm::{HsmKeyInfo, HsmSigner};
 use neo_primitives::ContractParameterType;

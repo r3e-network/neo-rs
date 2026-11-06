@@ -10,7 +10,7 @@ use crate::consensus::DbftConsensusController;
 use crate::signing_provider::NodeSignerRuntime;
 use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{Context, Result, bail};
-use neo_core::wallets::{Nep6Wallet, Wallet as CoreWallet, WalletProvider};
+use neo_wallets::{Nep6Wallet, Wallet as CoreWallet, WalletProvider};
 use neo_native_contracts::native::ContractManagement;
 use neo_p2p::ChannelsConfig;
 use neo_protocol::ProtocolSettings;

@@ -1,6 +1,6 @@
 use neo_core::cryptography::ECPoint;
 use neo_core::smart_contract::Contract;
-use neo_core::wallets::key_pair::KeyPair;
+use neo_wallets::key_pair::KeyPair;
 use neo_vm::OpCode;
 
 fn fixed_keypair(hex_privkey_32: &str) -> KeyPair {

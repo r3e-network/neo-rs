@@ -114,7 +114,7 @@ fn set_env_var<K: AsRef<std::ffi::OsStr>, V: AsRef<std::ffi::OsStr>>(key: K, val
 mod tests {
     use super::*;
     use clap::Parser;
-    use neo_core::wallets::{Wallet as CoreWallet, WalletProvider};
+    use neo_wallets::{Wallet as CoreWallet, WalletProvider};
     use neo_protocol::ProtocolSettings;
     use neo_system::NeoSystem;
     use neo_system::i_event_handlers::WalletChangedHandler;

@@ -66,7 +66,7 @@ impl NeoSystem {
     /// Attaches a wallet provider so wallet-change notifications propagate to handlers.
     pub fn attach_wallet_provider(
         &self,
-        provider: Arc<dyn neo_core::wallets::WalletProvider + Send + Sync>,
+        provider: Arc<dyn neo_wallets::WalletProvider + Send + Sync>,
     ) -> CoreResult<()> {
         NeoSystemContext::attach_wallet_provider(&self.context(), provider)
     }

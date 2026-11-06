@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::network::p2p::{BanList, InboundRateLimiter, PeerReputationTracker};
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]

@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-use neo_core::wallets::Helper as WalletHelper;
+use neo_wallets::Helper as WalletHelper;
 
 use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;

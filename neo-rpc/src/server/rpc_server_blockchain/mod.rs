@@ -12,7 +12,7 @@ use hex;
 use neo_protocol::witness::Witness as LedgerWitness;
 // The native `LedgerContract` hands back the execution block representation, so the RPC
 // converters operate on `neo_protocol::execution` rather than the neo-core ledger projection.
-use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_wallets::helper::Helper as WalletHelper;
 use neo_io::Serializable;
 use neo_native_contracts::native::{
     contract_management::ContractManagement,

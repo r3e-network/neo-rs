@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use neo_config::ProtocolSettings;
-use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_wallets::helper::Helper as WalletHelper;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
 use serde::{Deserialize, Serialize};

@@ -6,7 +6,7 @@ use crate::remote_signer::{MtlsRemoteSignerTransport, RemoteSignerProvider};
 use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
-use neo_core::wallets::WalletProvider;
+use neo_wallets::WalletProvider;
 use neo_primitives::UInt160;
 use neo_signing::{
     ALGORITHM_ECDSA_P256_SHA256, AuthenticatedContext, AuthorizedSignRequest, DefaultSignerService,
@@ -531,7 +531,7 @@ mod tests {
     use crate::config::{Pkcs11ProviderSection, SignerKeySection, SignerProviderSection};
     use crate::pkcs11::Pkcs11Mechanism;
     use crate::pkcs11::mock::MockP11Backend;
-    use neo_core::wallets::{KeyPair, Nep6Wallet, Wallet};
+    use neo_wallets::{KeyPair, Nep6Wallet, Wallet};
     use neo_protocol::ProtocolSettings;
 
     struct UnusedSignerService;

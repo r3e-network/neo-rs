@@ -66,6 +66,8 @@ neo-state-service = { workspace = true }
 # Canonical memory pool (task 179 / C-1): consumers bind to neo-mempool
 # directly instead of the neo-core compatibility re-export.
 neo-mempool = { workspace = true }
+# Wallet primitives (task D4): consumers bind to neo-wallets directly.
+neo-wallets = { workspace = true }
 
 # TEMPORARILY DISABLED: neo-plugins being refactored
 # neo-plugins = { path = "../neo-plugins" }

@@ -19,7 +19,7 @@ use neo_core::smart_contract::manifest::{
     ContractParameterDefinition, ContractPermission, WildCardContainer,
 };
 use neo_core::smart_contract::{StorageItem, StorageKey};
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 use neo_core::{UInt160, UInt256};
 use neo_vm::OpCode;
 use neo_vm::VmState as VMState;

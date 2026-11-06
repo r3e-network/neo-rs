@@ -1,8 +1,8 @@
 //! TEE-backed wallet implementation for RPC and local signing.
 
 use crate::tee_integration::TeeRuntime;
-use neo_core::wallets::wallet_account::WalletAccount;
-use neo_core::wallets::{KeyPair, Version, Wallet, WalletError, WalletResult};
+use neo_wallets::wallet_account::WalletAccount;
+use neo_wallets::{KeyPair, Version, Wallet, WalletError, WalletResult};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};

@@ -16,7 +16,7 @@ use neo_core::network::p2p::payloads::{ExtensiblePayload, TransactionExt};
 use neo_core::network::p2p::{Message, MessageCommand};
 use neo_core::smart_contract::ContractParametersContext;
 use neo_core::time_provider::TimeProvider;
-use neo_core::wallets::Wallet;
+use neo_wallets::Wallet;
 use neo_crypto::Crypto;
 use neo_crypto::MerkleTree;
 use neo_io::MemoryReader;
@@ -1774,7 +1774,7 @@ fn signer_accounts(tx: &Transaction) -> Vec<neo_primitives::UInt160> {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use neo_core::wallets::{KeyPair, Nep6Wallet};
+    use neo_wallets::{KeyPair, Nep6Wallet};
     use neo_protocol::ProtocolSettings;
     use neo_signing::{
         AuthenticatedContext, FrozenSignIntent, IdempotencyInfo, KeyRef, SignError, SignErrorCode,

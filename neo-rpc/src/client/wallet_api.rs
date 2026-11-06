@@ -12,7 +12,7 @@
 use super::models::RpcTransaction;
 use crate::{Nep17Api, RpcClient, RpcError, RpcUtility};
 use neo_core::KeyPair;
-use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_wallets::helper::Helper as WalletHelper;
 use neo_crypto::ECPoint;
 use neo_native_contracts::native::{GasToken, NativeContract, NeoToken};
 use neo_primitives::BigDecimal;

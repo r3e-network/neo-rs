@@ -5,7 +5,7 @@ use crate::tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
 use crate::tokens_tracker::{
     Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService, find_range,
 };
-use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_wallets::helper::Helper as WalletHelper;
 use neo_primitives::CallFlags;
 use neo_primitives::UInt160;
 use neo_smart_contract::application_engine::TEST_MODE_GAS;

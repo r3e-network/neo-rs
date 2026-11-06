@@ -35,7 +35,7 @@ mod tests {
     };
     use neo_core::smart_contract::{StorageItem, StorageKey};
     use neo_core::state_service::state_store::StateServiceSettings;
-    use neo_core::wallets::KeyPair;
+    use neo_wallets::KeyPair;
     use neo_io_crate::BinaryWriter;
     use neo_io_crate::Serializable;
     use neo_primitives::WitnessScope;

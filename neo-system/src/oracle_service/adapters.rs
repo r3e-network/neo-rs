@@ -34,7 +34,7 @@ use neo_core::smart_contract::native::{
     ContractManagement, LedgerContract, OracleContract, PolicyContract, Role, RoleManagement,
 };
 use neo_core::smart_contract::{ApplicationEngine, Contract, TriggerType};
-use neo_core::wallets::Wallet;
+use neo_wallets::Wallet;
 use neo_io_crate::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };

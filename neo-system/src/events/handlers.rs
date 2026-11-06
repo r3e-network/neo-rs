@@ -2,8 +2,8 @@ use neo_core::{
     error::CoreResult,
     ledger::{block::Block, blockchain_application_executed::ApplicationExecuted},
     network::message::Message,
-    wallets::Wallet,
 };
+use neo_wallets::Wallet;
 use std::{any::Any, sync::Arc};
 
 /// Handler of Committed event from Blockchain.

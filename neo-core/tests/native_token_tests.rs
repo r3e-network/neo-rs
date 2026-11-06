@@ -14,7 +14,7 @@ use neo_core::smart_contract::manifest::{
     ContractParameterDefinition,
 };
 use neo_core::smart_contract::native::{ContractManagement, GasToken, NativeContract, NeoToken};
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 use neo_core::witness::Witness;
 use neo_core::{UInt160, Verifiable, WitnessScope};
 use neo_vm::ExecutionEngineLimits;

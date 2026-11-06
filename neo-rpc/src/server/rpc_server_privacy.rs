@@ -120,7 +120,7 @@ mod tests {
     use crate::server::rpc_error::RpcError;
     use crate::server::rpc_server_node::RpcServerNode;
     use crate::server::rpc_server_settings::RpcServerConfig;
-    use neo_core::wallets::KeyPair;
+    use neo_wallets::KeyPair;
     use neo_primitives::{Verifiable, WitnessScope};
     use neo_protocol::ProtocolSettings;
     use neo_protocol::get_sign_data_vec;

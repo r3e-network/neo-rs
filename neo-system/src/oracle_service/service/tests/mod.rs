@@ -6,7 +6,7 @@ mod response_tx;
 
 use super::{OracleService, OracleServiceSettings};
 use async_trait::async_trait;
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_signing::{
     AuthenticatedContext, FrozenSignIntent, KeyRef, SIGNING_SCHEMA_VERSION, SignPurpose,

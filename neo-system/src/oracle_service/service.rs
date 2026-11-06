@@ -18,7 +18,7 @@ use super::adapters::{
 };
 use crate::neo_system::NeoSystem;
 use neo_core::cryptography::ECPoint;
-use neo_core::wallets::Wallet;
+use neo_wallets::Wallet;
 use neo_oracle::service::OracleService as EngineService;
 pub use neo_oracle::{OracleServiceError, OracleStatus};
 use neo_signing::TrustedSignerClient;
@@ -205,7 +205,7 @@ impl crate::i_event_handlers::WalletChangedHandler for OracleService {
 mod task34_signing_tests {
     use super::{OracleService, OracleServiceError, OracleServiceSettings};
     use async_trait::async_trait;
-    use neo_core::wallets::KeyPair;
+    use neo_wallets::KeyPair;
     use neo_protocol::protocol_settings::ProtocolSettings;
     use neo_signing::{
         AuthenticatedContext, FrozenSignIntent, IdempotencyInfo, KeyRef, ProtocolContext,

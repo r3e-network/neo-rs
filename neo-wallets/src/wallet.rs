@@ -1,15 +1,17 @@
 //! Base wallet abstraction, error type, version, and manager.
 //!
 //! Ported from `neo-core`'s `wallets::wallet` and `wallets::version`. The trait
-//! is made synchronous and focused on key/account management: balance queries,
+//! is made async and focused on key/account management: balance queries,
 //! transfer construction and transaction signing require the ledger and
 //! smart-contract engine (forbidden dependencies here) and are therefore left as
 //! task 89 alignment hooks rather than ported.
 
-use crate::account::{Contract, WalletAccount};
+use crate::account::WalletAccount;
 use crate::key_pair::KeyPair;
+use async_trait::async_trait;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::ProtocolSettings;
+use neo_smart_contract::contract::Contract;
 use std::fmt;
 use std::sync::Arc;
 

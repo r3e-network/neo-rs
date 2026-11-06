@@ -19,7 +19,7 @@ use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use std::sync::Arc;
 
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 use std::sync::LazyLock;
 
 static TEST_KEY: LazyLock<KeyPair> =
@@ -242,7 +242,7 @@ fn t5_hash_breaks_final_ties() {
     use neo_core::smart_contract::native::native_contract::NativeContract;
     use neo_core::smart_contract::native::{AccountState, GasToken};
     use neo_core::smart_contract::{BinarySerializer, StorageItem, StorageKey};
-    use neo_core::wallets::KeyPair;
+    use neo_wallets::KeyPair;
     use neo_vm::{ExecutionEngineLimits, OpCode};
     use num_bigint::BigInt;
 

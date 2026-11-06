@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use neo_core::network::payloads::oracle_response_code::OracleResponseCode;
-use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_wallets::helper::Helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
@@ -411,7 +411,7 @@ pub fn jtoken_to_serde(token: &JToken) -> Result<JsonValue, String> {
 mod tests {
     use super::*;
     use neo_config::ProtocolSettings;
-    use neo_core::wallets::helper::Helper as WalletHelper;
+    use neo_wallets::helper::Helper as WalletHelper;
     use neo_json::{JArray, JObject};
     use neo_primitives::UInt160;
 

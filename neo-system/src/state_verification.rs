@@ -22,7 +22,7 @@ use neo_core::smart_contract::native::Role;
 use neo_core::smart_contract::native::role_management::RoleManagement;
 use neo_core::state_service::STATE_SERVICE_CATEGORY;
 use neo_core::state_service::{MessageType, StateRoot, StateStore, ValidatedRootPersisted, Vote};
-use neo_core::wallets::Wallet;
+use neo_wallets::Wallet;
 use neo_io_crate::{BinaryWriter, MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
 use neo_signing::{
@@ -736,7 +736,7 @@ impl WalletChangedHandler for StateServiceVerification {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::wallets::{KeyPair, Nep6Wallet};
+    use neo_wallets::{KeyPair, Nep6Wallet};
     use neo_protocol::protocol_settings::ProtocolSettings;
     use neo_signing::{
         AuthenticatedContext, FrozenSignIntent, KeyRef, SignRequest, SignResponse, SignResult,

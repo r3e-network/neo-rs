@@ -4,8 +4,8 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_core::smart_contract::contract_parameters_context::ContractParametersContext;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
-use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::wallets::{
+use neo_wallets::helper::Helper as WalletHelper;
+use neo_wallets::{
     AssetDescriptor, Helper, KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet,
     WalletAccount, WalletError, WalletResult,
 };

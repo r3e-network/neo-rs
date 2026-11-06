@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use crate::server::rpc_helpers::expect_base64_param_with_decode_message;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::wallets::{Wallet, WalletAccount};
+use neo_wallets::helper::Helper as WalletHelper;
+use neo_wallets::{Wallet, WalletAccount};
 use neo_native_contracts::native::GasToken;
 use neo_primitives::UInt160;
 use neo_protocol::payloads::Signer;

@@ -5,7 +5,7 @@ use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract;
 use neo_core::smart_contract::native::PolicyContract;
-use neo_core::wallets::{helper::Helper, key_pair::KeyPair};
+use neo_wallets::{helper::Helper, key_pair::KeyPair};
 use neo_core::{Transaction, UInt160, WitnessScope};
 
 const SAMPLE_PRIVATE_KEY: [u8; 32] = [1u8; 32];

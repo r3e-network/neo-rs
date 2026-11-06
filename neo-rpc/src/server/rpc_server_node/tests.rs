@@ -3,7 +3,7 @@ use crate::client::models::RpcPeers;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_core::ledger::TransactionVerificationContext;
-use neo_core::wallets::KeyPair;
+use neo_wallets::KeyPair;
 use neo_core::{TransactionExt, WitnessData};
 use neo_io::BinaryWriter;
 use neo_io::SerializableExtensions as SerializableExt;

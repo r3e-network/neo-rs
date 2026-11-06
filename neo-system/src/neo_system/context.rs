@@ -43,7 +43,7 @@ use neo_core::smart_contract::log_event_args::LogEventArgs;
 use neo_core::smart_contract::native::ledger_contract::{HashOrIndex, LedgerContract};
 use neo_core::smart_contract::notify_event_args::NotifyEventArgs;
 use neo_core::state_service::StateStore;
-use neo_core::wallets::{Wallet, WalletProvider};
+use neo_wallets::{Wallet, WalletProvider};
 use neo_primitives::contains_transaction_type::ContainsTransactionType;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::protocol_settings::ProtocolSettings;

@@ -40,6 +40,8 @@ neo-system = { workspace = true, optional = true }
 neo-state-service = { workspace = true, optional = true }
 neo-json = { path = "../neo-json", optional = true }
 neo-tee = { workspace = true, optional = true }
+# Wallet primitives (task D4): server RPC endpoints bind to neo-wallets directly.
+neo-wallets = { workspace = true, optional = true }
 # `application_logs` and `tokens_tracker` are unconditional modules that bind
 # directly to the VM, so neo-vm is a non-optional dependency (task 140).
 neo-vm = { workspace = true }
@@ -121,6 +123,7 @@ server = [
     "dep:neo-state-service",
     "dep:neo-json",
     "dep:neo-tee",
+    "dep:neo-wallets",
     "dep:warp",
     "dep:hyper",
     "dep:uuid",

@@ -1,5 +1,5 @@
 use neo_core::cryptography::{Base58, ECCurve};
-use neo_core::wallets::ExtendedKey;
+use neo_wallets::ExtendedKey;
 
 #[test]
 fn test_vectors() {
