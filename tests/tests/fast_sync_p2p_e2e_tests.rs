@@ -6,10 +6,10 @@
 //! 3. P2P inventory message exchange, block payloads, and Merkle root determinism
 //! 4. Cross-node ledger snapshot consistency after fast-sync completion
 
-use neo_core::ledger::block::Block as LedgerBlock;
-use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
-use neo_core::network::p2p::message::Message;
-use neo_core::network::p2p::message_command::MessageCommand;
+use neo_ledger::block::Block as LedgerBlock;
+use neo_ledger::blockchain_application_executed::ApplicationExecuted;
+use neo_p2p::message::Message;
+use neo_p2p::message_command::MessageCommand;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_p2p::payloads::{InvPayload, PingPayload};
 use neo_primitives::{InventoryType, UInt160, UInt256, WitnessScope};

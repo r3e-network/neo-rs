@@ -6,17 +6,16 @@
 //!
 //! * Ledger-backed operations (balances, unclaimed GAS, transfer/transaction
 //!   building and signing) are not ported — they require forbidden crates.
-//! * The on-chain `Contract` is represented by the lightweight
-//!   [`crate::account::Contract`] placeholder.
 //! * Account handles returned from the [`Wallet`] trait are clones/snapshots;
 //!   mutation flows through the wallet under an internal lock.
 
-use crate::account::{Contract, StandardWalletAccount, WalletAccount};
+use crate::account::{Contract, StandardWalletAccount, WalletAccount, Witness};
 use crate::helper::Helper;
 use crate::key_pair::KeyPair;
 use crate::nep2::ScryptParameters;
 use crate::wallet::{Version, Wallet, WalletError, WalletFactory, WalletResult};
-use neo_primitives::UInt160;
+use async_trait::async_trait;
+use neo_primitives::{ContractParameterType, UInt160};
 use neo_protocol::ProtocolSettings;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -543,11 +542,26 @@ fn build_account(
 fn contract_from_file(file: &Nep6ContractFile) -> WalletResult<Contract> {
     let script = hex::decode(&file.script)
         .map_err(|e| WalletError::Other(format!("bad script hex: {e}")))?;
-    Ok(Contract {
-        script,
-        parameter_names: file.parameters.iter().map(|p| p.name.clone()).collect(),
-        deployed: file.deployed,
-    })
+
+    // Convert NEP-6 parameter names to ContractParameterType
+    let parameter_list = file.parameters.iter().map(|p| {
+        match p.param_type.as_str() {
+            "Signature" => ContractParameterType::Signature,
+            "Boolean" => ContractParameterType::Boolean,
+            "Integer" => ContractParameterType::Integer,
+            "Hash160" => ContractParameterType::Hash160,
+            "Hash256" => ContractParameterType::Hash256,
+            "ByteArray" => ContractParameterType::ByteArray,
+            "PublicKey" => ContractParameterType::PublicKey,
+            "String" => ContractParameterType::String,
+            "Array" => ContractParameterType::Array,
+            "Map" => ContractParameterType::Map,
+            "InteropInterface" => ContractParameterType::InteropInterface,
+            _ => ContractParameterType::Any,
+        }
+    }).collect();
+
+    Ok(Contract::create(parameter_list, script))
 }
 
 fn account_to_file(account: &Nep6Account, version: u8) -> WalletResult<Nep6AccountFile> {
@@ -568,16 +582,32 @@ fn contract_to_file(contract: &Contract) -> Nep6ContractFile {
     Nep6ContractFile {
         script: hex::encode(&contract.script),
         parameters: contract
-            .parameter_names
+            .parameter_list
             .iter()
-            .map(|name| Nep6ContractParameterFile {
-                name: name.clone(),
-                // The concrete parameter type is an 89-alignment item; the
-                // single-signature placeholder uses the Signature type name.
-                param_type: "Signature".to_string(),
+            .enumerate()
+            .map(|(i, param_type)| {
+                let type_name = match param_type {
+                    ContractParameterType::Signature => "Signature",
+                    ContractParameterType::Boolean => "Boolean",
+                    ContractParameterType::Integer => "Integer",
+                    ContractParameterType::Hash160 => "Hash160",
+                    ContractParameterType::Hash256 => "Hash256",
+                    ContractParameterType::ByteArray => "ByteArray",
+                    ContractParameterType::PublicKey => "PublicKey",
+                    ContractParameterType::String => "String",
+                    ContractParameterType::Array => "Array",
+                    ContractParameterType::Map => "Map",
+                    ContractParameterType::InteropInterface => "InteropInterface",
+                    ContractParameterType::Any => "Any",
+                    ContractParameterType::Void => "Void",
+                };
+                Nep6ContractParameterFile {
+                    name: format!("parameter{}", i),
+                    param_type: type_name.to_string(),
+                }
             })
             .collect(),
-        deployed: contract.deployed,
+        deployed: false, // Wallet contracts are typically not deployed
     }
 }
 

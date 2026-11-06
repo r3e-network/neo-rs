@@ -4,7 +4,7 @@
 //! compression) and `NetworkMessage::from_bytes` for a 500-transaction block.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use neo_core::network::p2p::{Message, NetworkMessage, ProtocolMessage};
+use neo_p2p::{Message, NetworkMessage, ProtocolMessage};
 use neo_io::{MemoryReader, Serializable};
 use neo_primitives::UInt160;
 use neo_primitives::WitnessScope;

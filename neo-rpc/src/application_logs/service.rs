@@ -1,7 +1,7 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
-use neo_core::ledger::block::Block as LedgerBlock;
-use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
+use neo_ledger::block::Block as LedgerBlock;
+use neo_ledger::blockchain_application_executed::ApplicationExecuted;
 use neo_primitives::TriggerType;
 use neo_primitives::UInt256;
 use neo_primitives::panic_message;

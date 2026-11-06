@@ -1,6 +1,6 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::smart_contract::helper::Helper as ContractHelper;
+use neo_smart_contract::helper::Helper as ContractHelper;
 use neo_crypto::Secp256r1Crypto;
 use neo_io::BinaryWriter;
 use neo_native_contracts::native::LedgerContract;

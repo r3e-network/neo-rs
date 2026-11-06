@@ -1,7 +1,7 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::smart_contract::StorageItemExt;
-use neo_core::smart_contract::helper::Helper as ContractHelper;
+use neo_smart_contract::StorageItemExt;
+use neo_smart_contract::helper::Helper as ContractHelper;
 use neo_wallets::helper::Helper as WalletHelper;
 use neo_wallets::wallet::{Wallet, WalletError, WalletResult};
 use neo_wallets::{KeyPair, StandardWalletAccount, WalletAccount};

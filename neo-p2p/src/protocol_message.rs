@@ -10,7 +10,7 @@
 //! Only `neo-protocol` canonical payloads (`Block`, `Header`, `Transaction`,
 //! `Extensible`), this crate's own payload types, `neo-io`, and `neo-primitives`.
 
-use crate::message::PAYLOAD_MAX_SIZE;
+use crate::message::Message;
 use crate::message_command::MessageCommand;
 use crate::message_flags::MessageFlags;
 use crate::payloads::{
@@ -19,7 +19,7 @@ use crate::payloads::{
 };
 use crate::payloads::headers_payload::HeadersPayload;
 use crate::payloads::merkle_block_payload::MerkleBlockPayload;
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_protocol::payloads::{Block, Extensible, Transaction};
 
 // ---------------------------------------------------------------------------
@@ -267,74 +267,38 @@ impl NetworkMessage {
     /// `allow_compression` mirrors the C# `Message.ToArray(bool)` behaviour.
     pub fn to_bytes(&self, allow_compression: bool) -> P2PResult<Vec<u8>> {
         let payload_bytes = self.payload.to_bytes()?;
-
-        // Compression is not implemented in the lightweight crate; emit raw.
-        let _ = allow_compression;
-        let flags = MessageFlags::NONE;
-
-        let mut writer = BinaryWriter::with_capacity(
-            1 + 1 + neo_io::var_int::encoded_len(payload_bytes.len() as u64) + payload_bytes.len(),
-        );
-        writer
-            .write_u8(flags.to_byte())
-            .map_err(|e| P2PMessageError::Io(e.to_string()))?;
-        writer
-            .write_u8(self.header.command.to_byte())
-            .map_err(|e| P2PMessageError::Io(e.to_string()))?;
-        writer
-            .write_var_bytes(&payload_bytes)
-            .map_err(|e| P2PMessageError::Io(e.to_string()))?;
-        Ok(writer.into_bytes())
+        let message = Message::create_from_payload_bytes(
+            self.header.command,
+            payload_bytes,
+            allow_compression && self.payload.should_try_compress(),
+        )
+        .map_err(|e| P2PMessageError::InvalidMessage(e.to_string()))?;
+        message
+            .to_bytes(allow_compression)
+            .map_err(|e| P2PMessageError::Io(e.to_string()))
     }
 
     /// Decodes a message from raw wire bytes (flags + command + var payload).
     pub fn from_bytes(bytes: &[u8]) -> P2PResult<Self> {
-        if bytes.len() < 2 {
-            return Err(P2PMessageError::InvalidMessage(
-                "message too short for flags+command".into(),
-            ));
-        }
-
         let mut reader = MemoryReader::new(bytes);
-        let flags_byte = reader
-            .read_u8()
-            .map_err(|e| P2PMessageError::Io(e.to_string()))?;
-        let flags = MessageFlags::from_byte(flags_byte);
-
-        let command_byte = reader
-            .read_u8()
-            .map_err(|e| P2PMessageError::Io(e.to_string()))?;
-        let command = MessageCommand::from_byte(command_byte)
-            .map_err(|_| P2PMessageError::InvalidMessage("invalid command byte".into()))?;
-
-        let wire_payload = reader
-            .read_var_bytes(PAYLOAD_MAX_SIZE)
+        let message: crate::message::Message = neo_io::Serializable::deserialize(&mut reader)
             .map_err(|e| P2PMessageError::Io(e.to_string()))?;
 
         if reader.remaining() != 0 {
             return Err(P2PMessageError::InvalidMessage(
-                "trailing data after payload".into(),
+                "trailing data after message".into(),
             ));
         }
 
-        // For this lightweight crate, assume no compression (decompression is
-        // handled by the full Message type in neo-core when the LZ4 feature is
-        // active). The payload_raw equals wire_payload.
-        let payload_raw = if flags.is_compressed() {
-            // Cannot decompress here without lz4; pass through and let the
-            // integration layer handle it. Store the compressed bytes as-is.
-            wire_payload.clone()
-        } else {
-            wire_payload.clone()
-        };
-
-        let payload = ProtocolMessage::from_bytes(command, &payload_raw)?;
+        let payload = ProtocolMessage::from_bytes(message.command, message.payload())?;
 
         Ok(Self {
-            header: MessageHeader { command },
-            flags,
+            header: MessageHeader {
+                command: message.command,
+            },
+            flags: message.flags,
             payload,
-            wire_payload: Some(wire_payload),
+            wire_payload: Some(message.payload_compressed),
         })
     }
 }
@@ -362,6 +326,16 @@ impl std::fmt::Display for P2PMessageError {
 }
 
 impl std::error::Error for P2PMessageError {}
+
+// Conversion to NetworkError for compatibility with neo-system
+impl From<P2PMessageError> for neo_primitives::NetworkError {
+    fn from(error: P2PMessageError) -> Self {
+        match error {
+            P2PMessageError::InvalidMessage(msg) => neo_primitives::NetworkError::InvalidMessage(msg),
+            P2PMessageError::Io(msg) => neo_primitives::NetworkError::ConnectionError(msg),
+        }
+    }
+}
 
 /// Result alias for protocol message operations.
 pub type P2PResult<T> = Result<T, P2PMessageError>;

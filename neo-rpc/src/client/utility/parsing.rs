@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
-use neo_core::network::payloads::oracle_response_code::OracleResponseCode;
+use neo_p2p::payloads::oracle_response_code::OracleResponseCode;
 use neo_wallets::helper::Helper as WalletHelper;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::{UInt160, UInt256};
@@ -356,7 +356,7 @@ pub fn parse_nonce_token(token: &JToken) -> Result<u64, String> {
 /// Parses an oracle response code supporting string, hex, or numeric values.
 pub fn parse_oracle_response_code(
     token: &JToken,
-) -> Result<neo_core::network::payloads::oracle_response_code::OracleResponseCode, String> {
+) -> Result<neo_p2p::payloads::oracle_response_code::OracleResponseCode, String> {
     if let Some(text) = token.as_string() {
         match text.as_str() {
             "Success" => Ok(OracleResponseCode::Success),

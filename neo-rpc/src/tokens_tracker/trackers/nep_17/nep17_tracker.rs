@@ -7,7 +7,8 @@ use super::super::token_transfer::TokenTransfer;
 use super::super::tracker_base::{Tracker, TrackerBase, TransferRecord};
 use super::nep17_balance_key::Nep17BalanceKey;
 use super::nep17_transfer_key::Nep17TransferKey;
-use neo_core::neo_ledger::{ApplicationExecuted, Block};
+use neo_ledger::blockchain_application_executed::ApplicationExecuted;
+use neo_ledger::block::Block;
 use neo_native_contracts::native::contract_management::ContractManagement;
 use neo_primitives::CallFlags;
 use neo_primitives::UInt160;
@@ -86,7 +87,7 @@ impl Nep17Tracker {
         if let Some(container) = container
             && let Some(tx) = container
                 .as_any()
-                .downcast_ref::<neo_core::network::p2p::payloads::Transaction>()
+                .downcast_ref::<neo_protocol::payloads::Transaction>()
         {
             self.record_transfer_history(&record, &tx.hash(), transfer_index);
         }

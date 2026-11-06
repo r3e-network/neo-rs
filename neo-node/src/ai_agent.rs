@@ -2215,7 +2215,7 @@ mod tests {
         ProbeBuild, ProbeContext, ProbeJob, ProbeOutcome, ProbeOutcomeStatus, ProbeResultValidator,
         ProbeTransaction, RunId, TrustedLocalDiagnosticsIdentity,
     };
-    use neo_core::KeyPair;
+    use neo_wallets::KeyPair;
     use neo_io::BinaryWriter;
     use neo_native_contracts::native::AccountState;
     use neo_native_contracts::native::NativeContract;

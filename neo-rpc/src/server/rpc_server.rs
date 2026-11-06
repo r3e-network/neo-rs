@@ -1,7 +1,8 @@
 use futures::stream;
 use hyper::server::accept::from_stream;
 use hyper::service::{Service, make_service_fn, service_fn};
-use neo_core::{services::RpcService, wallets::Wallet};
+use neo_services::RpcService;
+use neo_wallets::Wallet;
 use neo_signing::{
     AuthenticatedContext, FrozenSignIntent, KeyRef, SIGNING_SCHEMA_VERSION, SignPurpose,
     SignerService, SigningKeyResolver, TrustedSignerClient,

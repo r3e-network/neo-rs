@@ -24,7 +24,6 @@ neo-storage = { workspace = true }
 neo-ledger = { workspace = true }
 neo-protocol = { workspace = true }
 neo-config = { workspace = true, optional = true }
-neo-core = { path = "../neo-core", optional = true, features = ["runtime"] }
 # Task 206: the RPC server actor relay binds directly to neo-actors instead of
 # the neo-core `runtime` compatibility re-export (same types, TypeId-preserving).
 neo-actors = { workspace = true, optional = true }
@@ -114,7 +113,6 @@ default = []
 server = [
     "client",  # Server uses client models for JSON serialization
     "dep:neo-config",
-    "dep:neo-core",
     "dep:neo-actors",
     "dep:neo-smart-contract",
     "dep:neo-native-contracts",
@@ -146,7 +144,6 @@ server = [
 ]
 client = [
     "dep:neo-config",
-    "dep:neo-core",
     "dep:neo-smart-contract",
     "dep:neo-native-contracts",
     "dep:neo-system",

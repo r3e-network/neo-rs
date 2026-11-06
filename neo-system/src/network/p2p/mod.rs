@@ -13,10 +13,9 @@ pub mod remote_node;
 pub mod task_manager;
 pub mod task_session;
 
-// Wire vocabulary re-exported from neo-core.
+// Wire vocabulary re-exported from neo-core (except connection and upnp which moved here).
 pub use neo_core::network::p2p::capabilities;
 pub use neo_core::network::p2p::channels_config;
-pub use neo_core::network::p2p::connection;
 pub use neo_core::network::p2p::framed;
 pub use neo_core::network::p2p::helper;
 pub use neo_core::network::p2p::message;
@@ -25,6 +24,10 @@ pub use neo_core::network::p2p::message_flags;
 pub use neo_core::network::p2p::messages;
 pub use neo_core::network::p2p::payloads;
 pub use neo_core::network::p2p::timeouts;
+
+// connection and upnp modules now live in neo-system (moved from neo-core).
+pub mod connection;
+pub mod upnp;
 
 // Re-export commonly used types (actor layer local, vocabulary via neo-core).
 pub use local_node::{
@@ -49,7 +52,7 @@ pub use neo_p2p::peer_policy::{
 
 // Flat type re-exports mirroring the old neo-core p2p module surface.
 pub use neo_core::network::p2p::channels_config::ChannelsConfig;
-pub use neo_core::network::p2p::connection::PeerConnection;
+pub use connection::PeerConnection;
 pub use neo_core::network::p2p::framed::FrameConfig;
 pub use neo_core::network::p2p::helper::{get_sign_data, get_sign_data_vec};
 pub use neo_core::network::p2p::message::Message;

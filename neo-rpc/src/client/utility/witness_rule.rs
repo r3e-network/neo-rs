@@ -157,7 +157,7 @@ fn parse_group_bytes(value: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::KeyPair;
+    use neo_wallets::KeyPair;
     use neo_json::JToken;
     use neo_primitives::UInt160;
 

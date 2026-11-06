@@ -3,7 +3,7 @@
 //! These tests verify that locks are acquired in the correct order
 //! as documented in `docs/LOCK_ORDERING.md`.
 
-use neo_core::ledger::LedgerContext;
+use neo_ledger::LedgerContext;
 use neo_protocol::payloads::block::Block;
 use neo_protocol::payloads::header::Header;
 use neo_primitives::UInt256;

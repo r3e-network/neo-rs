@@ -1,10 +1,10 @@
 #![cfg(feature = "server")]
 
-use neo_core::ledger::{Block, BlockHeader};
-use neo_core::neo_ledger::ApplicationExecuted;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::witness::Witness;
+use neo_ledger::{Block, BlockHeader};
+use neo_ledger::blockchain_application_executed::ApplicationExecuted;
+use neo_protocol::payloads::signer::Signer;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::witness::Witness;
 use neo_native_contracts::native::{GasToken, NativeContract, NeoToken};
 use neo_primitives::TriggerType;
 use neo_primitives::{UInt160, WitnessScope};

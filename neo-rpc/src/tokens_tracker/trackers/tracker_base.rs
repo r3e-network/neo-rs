@@ -4,7 +4,8 @@
 //! database operations and transfer record extraction.
 
 use super::token_transfer_key::TokenTransferKey;
-use neo_core::neo_ledger::{ApplicationExecuted, Block};
+use neo_ledger::blockchain_application_executed::ApplicationExecuted;
+use neo_ledger::block::Block;
 use neo_io::{MemoryReader, Serializable, SerializableExtensions as SerializableExt};
 use neo_primitives::UInt160;
 use neo_primitives::log_level::LogLevel;

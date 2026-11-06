@@ -21,7 +21,6 @@ neo-crypto = { workspace = true }
 
 # Layer 2 - Protocol
 neo-consensus = { workspace = true }
-neo-core = { workspace = true, features = ["runtime"] }
 neo-native-contracts = { workspace = true }
 neo-p2p = { workspace = true }
 neo-protocol = { workspace = true }
@@ -46,7 +45,6 @@ parking_lot = { workspace = true }
 
 [features]
 default = []
-rocksdb = ["neo-core/rocksdb"]
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }

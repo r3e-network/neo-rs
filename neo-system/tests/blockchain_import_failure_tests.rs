@@ -3,10 +3,11 @@
 //! Moved from `neo-core/tests` (task W3-C2) together with the blockchain actor
 //! it exercises; `BlockchainCommand`/`Import` still come from `neo-core`.
 
-use neo_core::ledger::{BlockchainCommand, Import};
-use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::network::p2p::payloads::{block::Block, header::Header};
-use neo_core::{KeyPair, Signer, Transaction};
+use neo_ledger::{BlockchainCommand, Import};
+use neo_p2p::helper::get_sign_data_vec;
+use neo_p2p::payloads::{block::Block, header::Header};
+use neo_wallets::KeyPair;
+use neo_protocol::payloads::{Signer, Transaction};
 use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_protocol::witness::Witness;

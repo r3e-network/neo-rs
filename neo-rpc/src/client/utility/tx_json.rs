@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use neo_wallets::helper::Helper as WalletHelper;
-use neo_core::{Block, BlockHeader};
+use neo_ledger::{Block, BlockHeader};
 use neo_io::serializable::Serializable;
 use neo_io::serializable::helper::get_var_size;
 use neo_json::{JObject, JToken};

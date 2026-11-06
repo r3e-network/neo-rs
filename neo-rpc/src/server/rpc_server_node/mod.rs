@@ -8,7 +8,7 @@ use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::ledger::BlockchainCommand;
+use neo_ledger::BlockchainCommand;
 use neo_io::{MemoryReader, Serializable};
 use neo_protocol::hardfork::Hardfork;
 use neo_protocol::payloads::{block::Block, transaction::Transaction};

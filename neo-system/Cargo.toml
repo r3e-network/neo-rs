@@ -19,9 +19,8 @@ default = []
 # neo-core::state_service::verification. Enabled by consumers (neo-node) that
 # register the verification service with the unified signer.
 state-verifier = []
-# Task W3-C2: moved P2P peer discovery forwards the `upnp` feature to the
-# `neo-core` UPnP transport it still calls.
-upnp = ["neo-core/upnp"]
+# Task W3-C2: moved P2P peer discovery UPnP transport support.
+upnp = []
 full = ["state-verifier", "upnp"]
 
 [dependencies]
@@ -38,14 +37,12 @@ neo-vm = { workspace = true }
 
 # Internal crates (not yet in workspace.dependencies; registered by task 89)
 neo-ledger = { path = "../neo-ledger" }
+neo-storage = { path = "../neo-storage" }
+neo-crypto = { workspace = true }
 
 # Task D4: neo-system binds wallet primitives directly from neo-wallets.
 neo-wallets = { workspace = true }
 
-# Transitional dependency: the ledger/persistence/services vocabulary, the
-# P2P wire protocol and the smart contract engine still live in `neo-core`; the
-# moved `NeoSystem` orchestration reaches them through it (task W3-C2).
-neo-core = { workspace = true, features = ["runtime"] }
 # Task 230 (D2 phase 1): authoritative CoreError/CoreResult live in
 # neo-smart-contract; neo-system binds them directly instead of through the
 # neo-core error re-export shim.

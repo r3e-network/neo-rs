@@ -12,7 +12,7 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::{RpcContractState, RpcNep17TokenInfo, RpcNep17Transfers};
 use crate::{ContractClient, RpcClient, RpcError, RpcUtility, TransactionManagerFactory};
-use neo_core::KeyPair;
+use neo_wallets::KeyPair;
 use neo_wallets::helper::Helper as WalletHelper;
 use neo_crypto::ECPoint;
 use neo_primitives::CallFlags;

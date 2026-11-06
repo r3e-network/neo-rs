@@ -2,7 +2,7 @@
 //!
 //! Tests for peer-to-peer networking protocol
 
-use neo_core::network::p2p::{
+use neo_p2p::{
     message::Message, message_command::MessageCommand, message_flags::MessageFlags,
 };
 use neo_p2p::payloads::PingPayload;

@@ -1866,15 +1866,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "inventory"
-version = "0.3.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4f0c30c76f2f4ccee3fe55a2435f691ca00c0e4bd87abe4f4a851b1d4dac39b"
-dependencies = [
- "rustversion",
-]
-
-[[package]]
 name = "ipnet"
 version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2395,7 +2386,6 @@ version = "0.20.0"
 dependencies = [
  "criterion",
  "hex",
- "neo-core",
  "neo-crypto",
  "neo-io",
  "neo-native-contracts",
@@ -2437,81 +2427,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "zeroize",
-]
-
-[[package]]
-name = "neo-core"
-version = "0.20.0"
-dependencies = [
- "aes",
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "bip39",
- "bitflags 2.13.2",
- "blst",
- "bs58",
- "byteorder",
- "bytes",
- "cbc",
- "chrono",
- "cipher",
- "criterion",
- "crossbeam-channel",
- "dashmap",
- "dirs",
- "futures",
- "futures-util",
- "hashbrown 0.14.5",
- "hex",
- "inventory",
- "log",
- "lz4_flex",
- "memchr",
- "murmur3",
- "neo-actors",
- "neo-config",
- "neo-crypto",
- "neo-io",
- "neo-json",
- "neo-ledger",
- "neo-mempool",
- "neo-native-contracts",
- "neo-p2p",
- "neo-primitives",
- "neo-protocol",
- "neo-smart-contract",
- "neo-state-service",
- "neo-storage",
- "neo-vm",
- "neo-wallets",
- "num-bigint",
- "num-integer",
- "num-traits",
- "num_cpus",
- "parking_lot",
- "percent-encoding",
- "proptest",
- "quick-xml",
- "rand 0.8.8",
- "reqwest",
- "rocksdb",
- "scrypt",
- "secp256k1",
- "serde",
- "serde_json",
- "subtle",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "toml",
- "tracing",
- "unicode-segmentation",
- "url",
- "uuid",
- "xxhash-rust",
  "zeroize",
 ]
 
@@ -2699,7 +2614,6 @@ dependencies = [
  "neo-actors",
  "neo-ai-agent",
  "neo-consensus",
- "neo-core",
  "neo-crypto",
  "neo-hsm",
  "neo-io",
@@ -2872,7 +2786,6 @@ dependencies = [
  "mockito",
  "neo-actors",
  "neo-config",
- "neo-core",
  "neo-crypto",
  "neo-io",
  "neo-json",
@@ -3048,7 +2961,7 @@ dependencies = [
  "indexmap",
  "lru",
  "neo-actors",
- "neo-core",
+ "neo-crypto",
  "neo-io",
  "neo-ledger",
  "neo-oracle",
@@ -3057,6 +2970,7 @@ dependencies = [
  "neo-protocol",
  "neo-signing",
  "neo-smart-contract",
+ "neo-storage",
  "neo-vm",
  "neo-wallets",
  "num-bigint",
@@ -3127,7 +3041,6 @@ dependencies = [
  "criterion",
  "hex",
  "neo-consensus",
- "neo-core",
  "neo-crypto",
  "neo-io",
  "neo-json",
@@ -3178,6 +3091,7 @@ name = "neo-wallets"
 version = "0.20.0"
 dependencies = [
  "aes",
+ "async-trait",
  "base64 0.22.1",
  "bip39",
  "cbc",
@@ -3197,6 +3111,7 @@ dependencies = [
  "serde_json",
  "subtle",
  "thiserror 2.0.21",
+ "tokio",
  "zeroize",
 ]
 
@@ -3794,16 +3709,6 @@ name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
-
-[[package]]
-name = "quick-xml"
-version = "0.31.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1004a344b30a54e2ee58d66a71b32d2db2feb0a31f9a2d302bf0536f15de2a33"
-dependencies = [
- "memchr",
- "serde",
-]
 
 [[package]]
 name = "quinn"

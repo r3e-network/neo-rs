@@ -57,9 +57,9 @@ Neo-rs follows a **strict layered architecture** with clear dependency boundarie
 │                         SERVICE LAYER (Layer 2)                             │
 │                                                                             │
 │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│   │  neo-core    │  │ neo-config   │  │  neo-tee     │  │  neo-hsm     │    │
-│   │  services    │  │              │  │  (optional)  │  │  (optional)  │    │
-│   │              │  │ Configuration│  │              │  │              │    │
+│   │ neo-system   │  │ neo-config   │  │  neo-tee     │  │  neo-hsm     │    │
+│   │              │  │              │  │  (optional)  │  │  (optional)  │    │
+│   │ Node Runtime │  │ Configuration│  │              │  │              │    │
 │   │ Mempool/State│  │ Protocol     │  │              │  │              │    │
 │   │ /Oracle/Logs │  │              │  │              │  │              │    │
 │   └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
@@ -74,20 +74,20 @@ Neo-rs follows a **strict layered architecture** with clear dependency boundarie
 │                         CORE LAYER (Layer 1)                                │
 │                                                                             │
 │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│   │   neo-core   │  │   neo-vm     │  │   neo-p2p    │  │neo-consensus │   │
+│   │neo-protocol  │  │   neo-vm     │  │   neo-p2p    │  │neo-consensus │   │
 │   │              │  │              │  │              │  │              │    │
 │   │ • Protocol   │  │ • Stack VM   │  │ • Messages   │  │ • dBFT 2.0   │    │
-│   │ • Ledger     │  │ • OpCodes    │  │ • Handshake  │  │ • Consensus  │    │
-│   │ • Contracts  │  │ • Debugging  │  │ • Peers      │  │   state      │    │
-│   │ • Wallets    │  │ • Interop    │  │              │  │              │    │
+│   │ • Network    │  │ • OpCodes    │  │ • Payload    │  │ • Consensus  │    │
+│   │ • Payload    │  │ • Debugging  │  │ • Peers      │  │   state      │    │
+│   │              │  │ • Interop    │  │              │  │              │    │
 │   └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
-│   ┌──────────────┐  ┌──────────────┐                                         │
-│   │   neo-rpc    │  │ neo-storage  │                                         │
-│   │              │  │              │                                         │
-│   │ • JSON-RPC   │  │ • Store API  │                                         │
-│   │ • Client/    │  │ • Providers  │                                         │
-│   │   Server     │  │ • Snapshots  │                                         │
-│   └──────────────┘  └──────────────┘                                         │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│   │  neo-ledger  │  │neo-smart-    │  │ neo-wallets  │  │   neo-rpc    │    │
+│   │              │  │  contract    │  │              │  │              │    │
+│   │ • Block      │  │ • Contract   │  │ • KeyPair    │  │ • JSON-RPC   │    │
+│   │ • Transaction│  │ • Manifest   │  │ • Signing    │  │ • Client/    │    │
+│   │ • Witness    │  │ • Native     │  │ • NEP-6      │  │   Server     │    │
+│   └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
 └─────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
@@ -135,20 +135,22 @@ The core layer implements blockchain protocol logic. It depends only on the Foun
 
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
-| `neo-core` | Protocol implementation | `Block`, `Transaction`, `Witness`, `Contract` |
-| `neo-core::neo_vm` | Virtual machine compatibility façade over in-tree `neo-vm` | `ExecutionEngine`, `StackItem`, `Script` |
-| `neo-vm` | Workspace NeoVM crate (opcodes, interpreter, limits) | `OpCode`, `interop_hash`, `encode_integer` |
+| `neo-protocol` | Protocol types and network payload | `ProtocolSettings`, `Payload`, `NetworkMessage` |
+| `neo-ledger` | Blockchain ledger | `Block`, `Transaction`, `Witness`, `Header` |
+| `neo-smart-contract` | Smart contract types | `Contract`, `ContractManifest`, `NativeContract` |
+| `neo-wallets` | Wallet and key management | `Wallet`, `KeyPair`, `Account`, `NEP6Wallet` |
+| `neo-vm` | Virtual machine (opcodes, interpreter, limits) | `OpCode`, `ExecutionEngine`, `StackItem`, `Script` |
 | `neo-p2p` | P2P networking | `MessageCommand`, `InventoryType`, `VerifyResult` |
 | `neo-consensus` | dBFT consensus | `ConsensusService`, `ConsensusContext`, `ConsensusMessage` |
 | `neo-rpc` | RPC communication | `RpcServer`, `RpcClient`, `RpcErrorCode` |
 
 ### Layer 2: Service Layer
 
-The service layer provides higher-level blockchain services and orchestration. Mempool, state service, oracle, and application-log services live inside `neo-core` as modules rather than separate crates.
+The service layer provides higher-level blockchain services and orchestration. Transaction pool, state service, oracle, and application-log services live inside `neo-system` which provides the node runtime.
 
 | Crate | Purpose | Key Types |
 |-------|---------|-----------|
-| `neo-core` (modules) | Transaction pool, state service, oracle, logs | `MemoryPool`, `StateStore`, `OracleService` |
+| `neo-system` | Node runtime, blockchain orchestration, P2P networking | `NeoSystem`, `Blockchain`, `MemoryPool`, `LocalNode`, `RemoteNode` |
 | `neo-config` | Configuration | `ProtocolSettings`, `NodeConfig` |
 | `neo-telemetry` | Observability | `Metrics`, `HealthCheck`, `Tracing` |
 | `neo-tee` | TEE support | `EnclaveClient` (feature-gated) |
@@ -185,14 +187,14 @@ Layer 0 (Foundation)   ───────────────────
 // ❌ WRONG: Layer 0 depending on Layer 1
 // neo-primitives/Cargo.toml:
 [dependencies]
-neo-core = { path = "../neo-core" }  // FORBIDDEN
+neo-ledger = { path = "../neo-ledger" }  // FORBIDDEN
 
 // ❌ WRONG: Circular dependencies
-// neo-core/Cargo.toml:
+// neo-ledger/Cargo.toml:
 neo-p2p = { path = "../neo-p2p" }
 
 // neo-p2p/Cargo.toml:
-neo-core = { path = "../neo-core" }  // FORBIDDEN - creates cycle
+neo-ledger = { path = "../neo-ledger" }  // FORBIDDEN - creates cycle
 
 // ❌ WRONG: Layer jumping
 // neo-node (Layer 3) directly using neo-primitives (Layer 0)
@@ -208,15 +210,17 @@ neo-core = { path = "../neo-core" }  // FORBIDDEN - creates cycle
 serde = "1.0"  // External crates only
 
 // ✅ CORRECT: Core layer depends on Foundation
-// neo-core/Cargo.toml:
+// neo-ledger/Cargo.toml:
 [dependencies]
 neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }
-neo-vm = { workspace = true }
+neo-io = { path = "../neo-io" }
 
 // ✅ CORRECT: Service layer depends on Core and Foundation
-// neo-config/Cargo.toml:
+// neo-system/Cargo.toml:
 [dependencies]
+neo-ledger = { path = "../neo-ledger" }
+neo-protocol = { path = "../neo-protocol" }
 neo-primitives = { path = "../neo-primitives" }
 ```
 
@@ -279,40 +283,64 @@ pub enum SeekDirection { Forward, Backward }
 
 ### Core Crates
 
-#### neo-core
+#### neo-protocol
 
-Main protocol implementation matching C# Neo project.
+Protocol types and network payload definitions.
 
 ```rust
-// Module structure matches C# namespaces
-pub mod ledger {        // Neo.Ledger
-    pub struct Block { ... }
-    pub struct Transaction { ... }
-}
+// Protocol settings and configuration
+pub struct ProtocolSettings { ... }
 
-pub mod smart_contract { // Neo.SmartContract
-    pub struct Contract { ... }
-    pub struct ContractManifest { ... }
-    pub mod native {       // Native contracts
-        pub struct NeoToken { ... }
-        pub struct GasToken { ... }
-    }
-}
+// Network payload types
+pub enum Payload { ... }
+pub struct NetworkMessage { ... }
+```
 
-pub mod wallets {       // Neo.Wallets
-    pub struct Wallet { ... }
-    pub struct KeyPair { ... }
-}
+#### neo-ledger
 
-pub mod services {      // Service traits
-    pub trait LedgerService { ... }
-    pub trait MempoolService { ... }
+Blockchain ledger primitives.
+
+```rust
+// Core ledger types
+pub struct Block { ... }
+pub struct Transaction { ... }
+pub struct Witness { ... }
+pub struct Header { ... }
+```
+
+#### neo-smart-contract
+
+Smart contract types and native contract definitions.
+
+```rust
+// Contract types
+pub struct Contract { ... }
+pub struct ContractManifest { ... }
+
+// Native contracts
+pub mod native {
+    pub struct NeoToken { ... }
+    pub struct GasToken { ... }
 }
 ```
 
-#### `neo-core::neo_vm`
+#### neo-wallets
 
-Neo Virtual Machine compatibility module. Shared low-level opcode, ABI, and interpreter primitives come from `neo-vm`.
+Wallet and key management.
+
+```rust
+// Wallet types
+pub struct Wallet { ... }
+pub struct KeyPair { ... }
+pub struct Account { ... }
+
+// NEP-6 wallet format
+pub struct NEP6Wallet { ... }
+```
+
+#### neo-vm
+
+Neo Virtual Machine implementation.
 
 ```rust
 // Core VM types
@@ -327,9 +355,73 @@ pub struct ScriptBuilder { ... }
 // VM values
 pub enum StackItem { ... }
 pub enum VMState { HALT, FAULT, BREAK, ... }
+pub enum OpCode { ... }
+```
 
-// Shared opcode definitions are imported directly from neo-vm.
-neo_vm_rs::OpCode
+#### neo-p2p
+
+P2P networking protocol types.
+
+```rust
+// P2P message types
+pub enum MessageCommand { ... }
+pub enum InventoryType { ... }
+pub enum VerifyResult { ... }
+
+// Protocol messages
+pub struct VersionPayload { ... }
+pub struct AddrPayload { ... }
+```
+
+#### neo-consensus
+
+dBFT 2.0 consensus implementation.
+
+```rust
+// Consensus service
+pub struct ConsensusService { ... }
+pub struct ConsensusContext { ... }
+
+// Consensus messages
+pub enum ConsensusMessage { ... }
+```
+
+#### neo-rpc
+
+JSON-RPC client and server.
+
+```rust
+// RPC server
+pub struct RpcServer { ... }
+
+// RPC client
+pub struct RpcClient { ... }
+
+// Error codes
+pub enum RpcErrorCode { ... }
+```
+
+### Service Crates
+
+#### neo-system
+
+Node runtime providing blockchain orchestration, mempool, state management, and P2P networking.
+
+```rust
+// Core system
+pub struct NeoSystem { ... }
+pub struct Blockchain { ... }
+
+// Memory pool
+pub struct MemoryPool { ... }
+
+// P2P networking
+pub struct LocalNode { ... }
+pub struct RemoteNode { ... }
+
+// Services
+pub struct StateService { ... }
+pub struct OracleService { ... }
 ```
 
 ---
@@ -360,7 +452,7 @@ Each crate defines its own error enum using `thiserror`.
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum CoreError {
+pub enum LedgerError {
     #[error("Invalid block: {0}")]
     InvalidBlock(String),
     
@@ -374,26 +466,27 @@ pub enum CoreError {
     Io(#[from] neo_io::IoError),
 }
 
-pub type CoreResult<T> = Result<T, CoreError>;
+pub type LedgerResult<T> = Result<T, LedgerError>;
 ```
 
 ### 3. Feature-Gated Complexity
 
-Keep `neo-core` usable as a protocol-only layer by default.
+Keep protocol crates lightweight and feature-gate heavy dependencies.
 
 ```rust
 // In Cargo.toml
 [features]
 default = []
-runtime = ["tokio", "ractor"]  // Actor runtime
-monitoring = ["prometheus"]      // Metrics
+runtime = ["tokio", "async-trait"]  // Async runtime
+monitoring = ["prometheus"]          // Metrics
+storage = ["rocksdb"]                // Storage backends
 
 // In lib.rs
 #[cfg(feature = "runtime")]
-pub mod actors;
+pub mod async_api;
 
-#[cfg(feature = "runtime")]
-pub mod neo_system;
+#[cfg(feature = "storage")]
+pub mod storage_providers;
 ```
 
 ### 4. Trait-Based Abstractions
@@ -441,11 +534,11 @@ let transaction = TransactionBuilder::new()
 │  Application (neo-node)                                         │
 │  └── NodeError                                                  │
 │                                                                 │
-│  Service (neo-config, neo-tee, neo-hsm)                         │
-│  └── ConfigError, TeeError, HsmError                            │
+│  Service (neo-system, neo-config, neo-tee, neo-hsm)             │
+│  └── SystemError, ConfigError, TeeError, HsmError               │
 │                                                                 │
-│  Core (neo-core, neo-p2p, neo-rpc, neo-consensus)               │
-│  └── CoreError, VmError, P2PError, RpcError, ConsensusError     │
+│  Core (neo-ledger, neo-protocol, neo-p2p, neo-rpc, etc.)        │
+│  └── LedgerError, ProtocolError, VmError, P2PError, RpcError    │
 │                                                                 │
 │  Foundation (neo-primitives, neo-crypto, neo-storage, neo-io)   │
 │  └── PrimitiveError, CryptoError, StorageError, IoError         │
@@ -456,18 +549,18 @@ let transaction = TransactionBuilder::new()
 
 ```rust
 // At layer boundaries, convert errors explicitly
-impl From<CryptoError> for CoreError {
+impl From<CryptoError> for LedgerError {
     fn from(err: CryptoError) -> Self {
-        CoreError::Crypto(err)
+        LedgerError::Crypto(err)
     }
 }
 
 // RPC layer maps to JSON-RPC error codes
-impl From<CoreError> for RpcError {
-    fn from(err: CoreError) -> Self {
+impl From<LedgerError> for RpcError {
+    fn from(err: LedgerError) -> Self {
         match err {
-            CoreError::InvalidBlock(_) => RpcError::invalid_params(),
-            CoreError::VerificationFailed(_) => RpcError::internal_error(),
+            LedgerError::InvalidBlock(_) => RpcError::invalid_params(),
+            LedgerError::VerificationFailed(_) => RpcError::internal_error(),
             _ => RpcError::internal_error(),
         }
     }
@@ -481,7 +574,7 @@ impl From<CoreError> for RpcError {
 return Err("something went wrong".into());
 
 // ✅ GOOD: Structured error
-return Err(CoreError::VerificationFailed {
+return Err(LedgerError::VerificationFailed {
     hash: block_hash,
     reason: VerificationFailureReason::InvalidWitness,
 });
@@ -545,7 +638,7 @@ pub mod contracts {
 //! ## Examples
 //!
 //! ```rust
-//! use neo_core::ledger::Block;
+//! use neo_ledger::Block;
 //!
 //! let block = Block::new(...);
 //! ```
@@ -576,17 +669,20 @@ pub fn my_function() -> Result<(), Error> { ... }
 
 | C# Namespace | Rust Crate | Rust Module |
 |--------------|------------|-------------|
-| `Neo` | `neo-core` | `neo_core` |
+| `Neo` | `neo-protocol` | `neo_protocol` |
 | `Neo.Cryptography` | `neo-crypto` | `neo_crypto` |
 | `Neo.IO` | `neo-io` | `neo_io` |
 | `Neo.Json` | `neo-json` | `neo_json` |
-| `Neo.Ledger` | `neo-core` | `neo_core::ledger` |
+| `Neo.Ledger` | `neo-ledger` | `neo_ledger` |
 | `Neo.Network.P2P` | `neo-p2p` | `neo_p2p` |
-| `Neo.SmartContract` | `neo-core` | `neo_core::smart_contract` |
-| `Neo.VM` | `neo-core` | `neo_core::neo_vm` |
-| `Neo.Wallets` | `neo-core` | `neo_core::wallets` |
+| `Neo.Network.P2P.Payloads` | `neo-protocol` | `neo_protocol::payloads` |
+| `Neo.SmartContract` | `neo-smart-contract` | `neo_smart_contract` |
+| `Neo.SmartContract.Native` | `neo-smart-contract` | `neo_smart_contract::native` |
+| `Neo.VM` | `neo-vm` | `neo_vm` |
+| `Neo.Wallets` | `neo-wallets` | `neo_wallets` |
 | `Neo.Plugins.RpcServer` | `neo-rpc` | `neo_rpc::server` |
 | `Neo.Plugins.DBFTPlugin` | `neo-consensus` | `neo_consensus` |
+| `Neo` (node runtime) | `neo-system` | `neo_system` |
 
 ### Type Name Conversions
 
@@ -616,7 +712,7 @@ Goldens: `tests/fixtures/protocol_consistency/csharp_stateroot_goldens.jsonl`
 ### Test Organization
 
 ```
-neo-core/
+neo-ledger/
 ├── src/
 │   └── ...
 └── tests/

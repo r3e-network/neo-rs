@@ -5,7 +5,7 @@
 
 //! Integration tests for the Neo Core module.
 
-use neo_core::builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
+use neo_protocol::builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
 use neo_primitives::BigDecimal;
 use neo_primitives::ContainsTransactionType;
 use neo_primitives::{UINT160_SIZE, UINT256_SIZE, UInt160, UInt256};
@@ -18,9 +18,9 @@ use neo_system::events::{EventHandler, EventManager};
 // use neo_system::network::p2p::payloads::{Block, Header, Transaction};
 // use neo_system::network::p2p::local_node::BroadcastEvent;
 // use neo_system::network::p2p::RelayInventory;
-// use neo_core::smart_contract::native::LedgerContract;
-// use neo_core::smart_contract::TriggerType;
-// use neo_core::state_service::StateRoot;
+// use neo_smart_contract::native::LedgerContract;
+// use neo_smart_contract::TriggerType;
+// use neo_state_service::StateRoot;
 // use neo_primitives::WitnessScope;
 // use neo_vm::OpCode;
 // use std::net::SocketAddr;

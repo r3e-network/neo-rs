@@ -31,6 +31,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
+# Async support
+async-trait = { workspace = true }
+tokio = { workspace = true }
+
 # Transaction / fee construction helpers
 num-bigint = { workspace = true }
 rand = { workspace = true }

@@ -1,6 +1,5 @@
 //! Four-layer architecture guard using Cargo's complete dependency declarations.
 //! L0: foundations; L1: protocol/execution; L2: services; L3: assembly.
-//! neo-core is a temporary migration container, NOT a fifth layer.
 //! Numeric layer order never grants an edge. Every production edge is reviewed.
 
 use serde_json::Value;
@@ -20,7 +19,6 @@ enum Layer {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MemberKind {
     Production(Layer),
-    MigrationContainer,
     Tests,
     Tool,
     Bench,
@@ -29,7 +27,7 @@ enum MemberKind {
 
 impl MemberKind {
     fn is_production(self) -> bool {
-        matches!(self, Self::Production(_) | Self::MigrationContainer)
+        matches!(self, Self::Production(_))
     }
 }
 
@@ -55,9 +53,6 @@ fn classify(name: &str, relative_manifest: &Path, package: &Value) -> Result<Mem
     };
     if let Some(layer) = production {
         return Ok(MemberKind::Production(layer));
-    }
-    if name == "neo-core" {
-        return Ok(MemberKind::MigrationContainer);
     }
     // Nonproduction exceptions are exact identities AND workspace-relative paths.
     // No directory-prefix, publish=false, or unknown-name fallback is sufficient.
@@ -205,8 +200,6 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // Decomposed service crates, same metadata-verified review.
     ("neo-signing", "neo-crypto"),
     ("neo-signing", "neo-primitives"),
-    // neo-mempool -> neo-core is a production caller edge covered by the
-    // frozen TRANSITION_EDGES list, not by this table.
     ("neo-mempool", "neo-primitives"),
     // Test-only edge (kind dev): mempool tests build VM scripts directly.
     ("neo-mempool", "neo-vm"),
@@ -271,42 +264,6 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // neo-smart-contract; neo-system binds them directly instead of the
     // neo-core error re-export shim.
     ("neo-system", "neo-smart-contract"),
-];
-
-// Frozen migration exceptions: remove entries as implementations really move.
-// Neither the container nor its callers receive a wildcard architecture waiver.
-const TRANSITION_EDGES: &[(&str, &str)] = &[
-    ("neo-core", "neo-config"),
-    ("neo-core", "neo-crypto"),
-    ("neo-core", "neo-io"),
-    ("neo-core", "neo-json"),
-    ("neo-core", "neo-p2p"),
-    ("neo-core", "neo-primitives"),
-    ("neo-core", "neo-protocol"),
-    ("neo-core", "neo-storage"),
-    ("neo-core", "neo-vm"),
-    ("neo-rpc", "neo-core"),
-    ("neo-probe", "neo-core"),
-    ("neo-node", "neo-core"),
-    ("neo-signer-server", "neo-core"),
-    // Production caller edge: neo-system still composes neo-core services.
-    // Must be removed once the assembly wiring moves to its decomposed home.
-    ("neo-system", "neo-core"),
-    // Sole additional preapproved P2a compatibility edge; telemetry stays L2.
-    ("neo-core", "neo-telemetry"),
-    // Wave B/C migration: neo-core re-exports from authoritative crates.
-    // Each edge removed when the corresponding neo-core module is fully deleted.
-    ("neo-core", "neo-native-contracts"),
-    ("neo-core", "neo-smart-contract"),
-    ("neo-core", "neo-wallets"),
-    ("neo-core", "neo-state-service"),
-    ("neo-core", "neo-mempool"),
-    // Task 193 (Wave 1 cleanup): neo-core/src/ledger re-exports validation and
-    // ledger_context from the authoritative neo-ledger crate.
-    ("neo-core", "neo-ledger"),
-    // Task 194: neo-core/src/actors was removed; `pub use neo_actors as actors`
-    // re-exports the authoritative generic actor runtime under `runtime`.
-    ("neo-core", "neo-actors"),
 ];
 
 // Policy edges that exist ONLY as Cargo dev-dependencies (test-only). Cargo
@@ -513,7 +470,6 @@ impl WorkspaceGraph {
     fn validate_edges(
         &self,
         allowed: &[(&str, &str)],
-        transition: &[(&str, &str)],
     ) -> Result<(), String> {
         for edge in &self.edges {
             let from = &self.members[&edge.from];
@@ -521,7 +477,7 @@ impl WorkspaceGraph {
             let pair = (from.name.as_str(), to.name.as_str());
             if from.kind.is_production()
                 && (!to.kind.is_production()
-                    || (!allowed.contains(&pair) && !transition.contains(&pair)))
+                    || !allowed.contains(&pair))
             {
                 return Err(format!(
                     "Forbidden dependency {} -> {} (alias {}, kind {}, optional {}, target {:?})",
@@ -638,18 +594,17 @@ fn test_storage_to_io_is_an_exact_one_way_neutral_edge() {
         fixture_dependency("neo-io", "neo-io"),
     );
     graph
-        .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+        .validate_edges(ALLOWED_EDGES)
         .unwrap();
     for (from, to) in [
         ("neo-io", "neo-storage"),
         ("neo-storage", "neo-crypto"),
-        ("neo-storage", "neo-core"),
         ("neo-storage", "neo-vm"),
     ] {
         let graph = fixture_pair(from, to, fixture_dependency(to, to));
         assert!(
             graph
-                .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+                .validate_edges(ALLOWED_EDGES)
                 .is_err()
         );
     }
@@ -737,8 +692,8 @@ fn test_rocksdb_features_are_opt_in_and_core_forwards_to_the_storage_owner() {
 #[cfg(feature = "rocksdb")]
 #[test]
 fn test_core_rocksdb_forwarding_compiles_the_real_storage_types_and_legacy_signatures() {
-    use neo_core::persistence::providers::rocksdb::{RocksDbSnapshot, RocksDbStore};
-    use neo_core::persistence::write_batch_buffer::{AutoFlushBatchBuffer, WriteBatchBuffer};
+    use neo_storage::providers::rocksdb::{RocksDbSnapshot, RocksDbStore};
+    use neo_storage::write_batch_buffer::{AutoFlushBatchBuffer, WriteBatchBuffer};
     use neo_storage::persistence::providers::rocksdb as raw;
     use neo_storage::persistence::write_batch_buffer as raw_batch;
     use std::any::TypeId;
@@ -794,7 +749,7 @@ fn test_no_upward_dependencies() {
     // Preserves the original guard's intent, strengthened to explicit edges,
     // exact member classification, all declarations, and no missing-crate skips.
     workspace_graph()
-        .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+        .validate_edges(ALLOWED_EDGES)
         .unwrap();
 }
 
@@ -855,14 +810,14 @@ fn test_metadata_alias_uses_package_identity_not_dependency_key() {
     assert_eq!(graph.dependencies("neo-vm"), ["neo-io"]);
     assert_eq!(graph.edges[0].alias, "neo_io_crate");
     graph
-        .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+        .validate_edges(ALLOWED_EDGES)
         .unwrap();
     let mut illegal = fixture_dependency("neo-node", "neo-node");
     illegal["rename"] = serde_json::json!("innocent_alias");
     let graph = fixture_pair("neo-vm", "neo-node", illegal);
     assert!(
         graph
-            .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+            .validate_edges(ALLOWED_EDGES)
             .unwrap_err()
             .contains("innocent_alias")
     );
@@ -878,7 +833,7 @@ fn test_metadata_normal_dependency_is_checked() {
     assert_eq!(graph.edges.len(), 1);
     assert!(
         graph
-            .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+            .validate_edges(ALLOWED_EDGES)
             .unwrap_err()
             .contains("kind normal")
     );
@@ -891,7 +846,7 @@ fn test_metadata_build_dependency_is_checked() {
     let graph = fixture_pair("neo-vm", "neo-node", dep);
     assert!(
         graph
-            .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+            .validate_edges(ALLOWED_EDGES)
             .unwrap_err()
             .contains("kind build")
     );
@@ -904,7 +859,7 @@ fn test_metadata_target_dependency_is_checked_without_host_filtering() {
     let graph = fixture_pair("neo-storage", "neo-node", dep);
     assert!(
         graph
-            .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+            .validate_edges(ALLOWED_EDGES)
             .unwrap_err()
             .contains("fixture-non-host")
     );
@@ -917,7 +872,7 @@ fn test_metadata_disabled_optional_dependency_is_checked_without_resolve() {
     let graph = fixture_pair("neo-vm", "neo-node", dep);
     assert!(
         graph
-            .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+            .validate_edges(ALLOWED_EDGES)
             .unwrap_err()
             .contains("optional true")
     );
@@ -925,12 +880,12 @@ fn test_metadata_disabled_optional_dependency_is_checked_without_resolve() {
 
 #[test]
 fn test_metadata_dev_dependency_cannot_hide_a_production_reverse_edge() {
-    let mut dep = fixture_dependency("neo-core", "neo-core");
+    let mut dep = fixture_dependency("neo-vm", "neo-vm");
     dep["kind"] = serde_json::json!("dev");
-    let graph = fixture_pair("neo-storage", "neo-core", dep);
+    let graph = fixture_pair("neo-storage", "neo-vm", dep);
     assert!(
         graph
-            .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+            .validate_edges(ALLOWED_EDGES)
             .unwrap_err()
             .contains("kind dev")
     );
@@ -946,7 +901,7 @@ fn test_metadata_combined_alias_build_optional_target_declaration_is_retained() 
     let graph = fixture_pair("neo-vm", "neo-node", dep);
     assert_eq!(graph.edges.len(), 1);
     let error = graph
-        .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+        .validate_edges(ALLOWED_EDGES)
         .unwrap_err();
     for detail in ["hidden_node", "kind build", "optional true", "cfg(any())"] {
         assert!(error.contains(detail));
@@ -958,11 +913,11 @@ fn test_metadata_nested_members_and_signer_server_are_classified() {
     let mut tool = fixture_package("validation-diff", "tools/validation-diff");
     tool["publish"] = Value::Null;
     tool["dependencies"] =
-        serde_json::json!([fixture_dependency("neo-core", "relocated/container")]);
+        serde_json::json!([fixture_dependency("neo-primitives", "primitives")]);
     let graph = WorkspaceGraph::from_metadata(&fixture_metadata(vec![
         tool,
         fixture_package("state-root-diff", "tools/state-root-diff"),
-        fixture_package("neo-core", "relocated/container"),
+        fixture_package("neo-primitives", "primitives"),
         fixture_package("neo-signer-server", "apps/signer"),
     ]))
     .unwrap();
@@ -975,9 +930,9 @@ fn test_metadata_nested_members_and_signer_server_are_classified() {
         graph.members["opaque-package-id:neo-signer-server"].kind,
         MemberKind::Production(Layer::Assembly)
     );
-    assert_eq!(graph.dependencies("validation-diff"), ["neo-core"]);
+    assert_eq!(graph.dependencies("validation-diff"), ["neo-primitives"]);
     graph
-        .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+        .validate_edges(ALLOWED_EDGES)
         .unwrap();
 }
 
@@ -1074,7 +1029,7 @@ fn test_metadata_registry_dependencies_may_omit_path_but_local_paths_cannot() {
     let graph = WorkspaceGraph::from_metadata(&fixture_metadata(vec![package.clone()])).unwrap();
     assert!(graph.edges.is_empty());
     graph
-        .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+        .validate_edges(ALLOWED_EDGES)
         .unwrap();
     package["dependencies"][0]["source"] = Value::Null;
     assert!(WorkspaceGraph::from_metadata(&fixture_metadata(vec![package])).is_err());
@@ -1146,7 +1101,7 @@ fn test_illegal_same_layer_edge_is_not_granted_by_layer_order() {
     );
     assert!(
         graph
-            .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+            .validate_edges(ALLOWED_EDGES)
             .unwrap_err()
             .contains("Forbidden dependency")
     );
@@ -1156,7 +1111,7 @@ fn test_illegal_same_layer_edge_is_not_granted_by_layer_order() {
         fixture_dependency("neo-io", "neo-io"),
     );
     allowed
-        .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+        .validate_edges(ALLOWED_EDGES)
         .unwrap();
 }
 
@@ -1173,48 +1128,10 @@ fn test_same_layer_cycle_fails_even_when_individual_edges_are_permitted() {
     crypto["dependencies"] = serde_json::json!([hidden]);
     let graph = WorkspaceGraph::from_metadata(&fixture_metadata(vec![io, crypto])).unwrap();
     let error = graph
-        .validate_edges(&[("neo-io", "neo-crypto"), ("neo-crypto", "neo-io")], &[])
+        .validate_edges(&[("neo-io", "neo-crypto"), ("neo-crypto", "neo-io")])
         .unwrap_err();
     assert!(error.contains("Circular dependency"));
     assert!(error.contains("neo-io") && error.contains("neo-crypto"));
-}
-
-#[test]
-fn test_core_to_telemetry_is_the_explicit_temporary_compatibility_edge() {
-    let graph = fixture_pair(
-        "neo-core",
-        "neo-telemetry",
-        fixture_dependency("neo-telemetry", "neo-telemetry"),
-    );
-    assert_eq!(
-        graph.members["opaque-package-id:neo-core"].kind,
-        MemberKind::MigrationContainer
-    );
-    assert_eq!(
-        graph.members["opaque-package-id:neo-telemetry"].kind,
-        MemberKind::Production(Layer::Services)
-    );
-    assert!(graph.validate_edges(ALLOWED_EDGES, &[]).is_err());
-    graph
-        .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
-        .unwrap();
-}
-
-#[test]
-fn test_core_additional_edges_and_reverse_telemetry_edge_are_forbidden() {
-    for (from, to) in [
-        ("neo-core", "neo-tee"),
-        ("neo-core", "neo-consensus"),
-        ("neo-telemetry", "neo-core"),
-    ] {
-        let graph = fixture_pair(from, to, fixture_dependency(to, to));
-        assert!(
-            graph
-                .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
-                .unwrap_err()
-                .contains("Forbidden dependency")
-        );
-    }
 }
 
 #[test]
@@ -1225,7 +1142,7 @@ fn test_native_to_smart_contract_is_one_way_and_other_reverse_edges_fail() {
         fixture_dependency("neo-smart-contract", "neo-smart-contract"),
     );
     graph
-        .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+        .validate_edges(ALLOWED_EDGES)
         .unwrap();
     for (from, to) in [
         ("neo-smart-contract", "neo-native-contracts"),
@@ -1238,7 +1155,7 @@ fn test_native_to_smart_contract_is_one_way_and_other_reverse_edges_fail() {
         let graph = fixture_pair(from, to, fixture_dependency(to, to));
         assert!(
             graph
-                .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+                .validate_edges(ALLOWED_EDGES)
                 .is_err(),
             "Reverse edge escaped: {from} -> {to}"
         );
@@ -1256,16 +1173,16 @@ fn test_production_cannot_depend_on_nonproduction_members() {
     .unwrap();
     assert!(
         graph
-            .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+            .validate_edges(ALLOWED_EDGES)
             .is_err()
     );
 }
 
 #[test]
-fn test_static_policy_is_acyclic_and_only_core_edges_are_temporary() {
+fn test_static_policy_is_acyclic() {
     let mut packages = BTreeMap::new();
     let mut pairs = BTreeSet::new();
-    for &(from, to) in ALLOWED_EDGES.iter().chain(TRANSITION_EDGES) {
+    for &(from, to) in ALLOWED_EDGES.iter() {
         assert!(
             pairs.insert((from, to)),
             "Duplicate policy edge {from} -> {to}"
@@ -1290,21 +1207,13 @@ fn test_static_policy_is_acyclic_and_only_core_edges_are_temporary() {
     for &(from, to) in DEV_ONLY_EDGES {
         assert!(
             pairs.contains(&(from, to)),
-            "Stale dev-only edge {from} -> {to} is not an allowed/transition edge"
+            "Stale dev-only edge {from} -> {to} is not an allowed edge"
         );
     }
-    for &(from, to) in TRANSITION_EDGES {
-        assert!(from == "neo-core" || to == "neo-core");
-    }
-    assert!(
-        ALLOWED_EDGES
-            .iter()
-            .all(|&(from, to)| from != "neo-core" && to != "neo-core")
-    );
     let graph =
         WorkspaceGraph::from_metadata(&fixture_metadata(packages.into_values().collect())).unwrap();
     graph
-        .validate_edges(ALLOWED_EDGES, TRANSITION_EDGES)
+        .validate_edges(ALLOWED_EDGES)
         .unwrap();
 }
 

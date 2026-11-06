@@ -23,82 +23,20 @@
 use crate::helper::Helper;
 use crate::key_pair::KeyPair;
 use crate::wallet::{WalletError, WalletResult};
+use async_trait::async_trait;
 use neo_primitives::UInt160;
 use neo_protocol::ProtocolSettings;
 use std::sync::Arc;
 
+// Re-export types from their canonical locations
+pub use neo_protocol::witness::Witness;
+pub use neo_smart_contract::contract::Contract;
+
 /// `PUSHDATA1` opcode byte (matches `neo_vm::OpCode::PUSHDATA1`).
 const OP_PUSHDATA1: u8 = 0x0C;
 
-/// Placeholder for the canonical `neo-smart-contract` `Contract`.
-///
-/// Holds the verification script and the metadata required by wallet accounts
-/// and the NEP-6 file format. See the module docs for the task 89 alignment note.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Contract {
-    /// The verification (redeem) script of the contract.
-    pub script: Vec<u8>,
-    /// Names of the verification script parameters (e.g. `["signature"]`).
-    pub parameter_names: Vec<String>,
-    /// Whether the contract has been deployed on chain.
-    pub deployed: bool,
-}
-
-impl Contract {
-    /// Creates a standard single-signature contract for a compressed public key.
-    #[must_use]
-    pub fn create_signature_contract(public_key: &[u8]) -> Self {
-        Self {
-            script: Helper::signature_redeem_script(public_key),
-            parameter_names: vec!["signature".to_string()],
-            deployed: false,
-        }
-    }
-
-    /// Computes the script hash of the verification script.
-    #[must_use]
-    pub fn script_hash(&self) -> UInt160 {
-        UInt160::from_script(&self.script)
-    }
-}
-
-/// A concrete witness: the invocation and verification scripts authorizing an operation.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Witness {
-    /// Invocation script (contains signatures / parameters).
-    pub invocation_script: Vec<u8>,
-    /// Verification script (contains public keys / conditions).
-    pub verification_script: Vec<u8>,
-}
-
-impl Witness {
-    /// Creates a witness from the supplied invocation and verification scripts.
-    #[must_use]
-    pub fn new_with_scripts(invocation_script: Vec<u8>, verification_script: Vec<u8>) -> Self {
-        Self {
-            invocation_script,
-            verification_script,
-        }
-    }
-
-    /// Computes the script hash of the verification script.
-    #[must_use]
-    pub fn script_hash(&self) -> UInt160 {
-        UInt160::from_script(&self.verification_script)
-    }
-}
-
-impl neo_primitives::Witness for Witness {
-    fn invocation_script(&self) -> &[u8] {
-        &self.invocation_script
-    }
-
-    fn verification_script(&self) -> &[u8] {
-        &self.verification_script
-    }
-}
-
 /// Common interface shared by all wallet-backed accounts.
+#[async_trait]
 pub trait WalletAccount: Send + Sync {
     /// Script hash identifying the account on chain.
     fn script_hash(&self) -> UInt160;
@@ -454,7 +392,7 @@ mod tests {
     #[test]
     fn signature_contract_script_hash_matches_key() {
         let key = KeyPair::generate().unwrap();
-        let contract = Contract::create_signature_contract(&key.compressed_public_key());
+        let contract = Contract::create_signature_contract(key.public_key());
         assert_eq!(contract.script_hash(), key.get_script_hash());
     }
 }

@@ -11,7 +11,7 @@
 
 use super::super::utility::insert_optional_string;
 use neo_config::ProtocolSettings;
-use neo_core::Block;
+use neo_ledger::Block;
 use neo_json::JObject;
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};

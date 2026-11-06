@@ -24,9 +24,6 @@ members = [
     # NeoVM runtime (execution engine, stack items, jump tables)
     "neo-vm",
 
-    # Core (matches C# Neo.csproj)
-    "neo-core",
-
     # Protocol settings and signing data
     "neo-protocol",
 
@@ -112,7 +109,6 @@ default-members = [
     "neo-io",
     "neo-json",
     "neo-vm",
-    "neo-core",
     "neo-protocol",
     "neo-p2p",
     "neo-rpc",

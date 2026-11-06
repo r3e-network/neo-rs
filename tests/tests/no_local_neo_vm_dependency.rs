@@ -5415,11 +5415,11 @@ fn protocol_and_framing_have_single_real_owners() {
         TypeId::of::<neo_primitives::Hardfork>()
     );
     assert_eq!(
-        TypeId::of::<neo_core::network::p2p::framed::FrameConfig>(),
+        TypeId::of::<neo_p2p::FrameConfig>(),
         TypeId::of::<neo_p2p::FrameConfig>()
     );
     assert_eq!(
-        TypeId::of::<neo_core::network::p2p::framed::NeoMessageCodec>(),
+        TypeId::of::<neo_p2p::NeoMessageCodec>(),
         TypeId::of::<neo_p2p::NeoMessageCodec>()
     );
 }
@@ -5529,9 +5529,9 @@ fn witness_access_contract_does_not_execute_the_engine() {
         read_source(workspace.join("neo-core/src/smart_contract/contract_parameters_context.rs"));
     assert!(context.contains("verifiable.script_hashes_for_verifying(snapshot_cache.as_ref())"));
     fn requires_witness_data<T: neo_core::WitnessData>() {}
-    requires_witness_data::<neo_core::network::p2p::payloads::Header>();
-    requires_witness_data::<neo_core::network::p2p::payloads::Block>();
-    requires_witness_data::<neo_core::network::p2p::payloads::ExtensiblePayload>();
+    requires_witness_data::<neo_p2p::payloads::Header>();
+    requires_witness_data::<neo_p2p::payloads::Block>();
+    requires_witness_data::<neo_p2p::payloads::ExtensiblePayload>();
     requires_witness_data::<Transaction>();
 }
 
@@ -5573,7 +5573,7 @@ fn signing_preimage_implementation_is_protocol_owned_with_explicit_core_mapping(
     let _: fn(&dyn neo_primitives::Verifiable, u32) -> neo_primitives::PrimitiveResult<[u8; 36]> =
         neo_protocol::get_sign_data::<dyn neo_primitives::Verifiable>;
     let _: fn(&dyn neo_primitives::Verifiable, u32) -> neo_core::CoreResult<[u8; 36]> =
-        neo_core::network::p2p::get_sign_data::<dyn neo_primitives::Verifiable>;
+        neo_p2p::get_sign_data::<dyn neo_primitives::Verifiable>;
     let _: fn(&dyn neo_primitives::Verifiable, u32) -> neo_primitives::PrimitiveResult<Vec<u8>> =
         neo_protocol::get_sign_data_vec::<dyn neo_primitives::Verifiable>;
     assert_eq!(neo_protocol::SIGN_DATA_LENGTH, 36);

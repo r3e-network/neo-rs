@@ -1,6 +1,6 @@
-use neo_core::ledger::block::Block as LedgerBlock;
-use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
-use neo_core::persistence::DataCache;
+use neo_ledger::block::Block as LedgerBlock;
+use neo_ledger::blockchain_application_executed::ApplicationExecuted;
+use neo_storage::DataCache;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::error::{CoreError, CoreResult};

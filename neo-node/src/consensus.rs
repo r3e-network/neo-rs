@@ -11,11 +11,11 @@ use neo_consensus::{
     BlockData, ChangeViewReason, CommitPersistencePermit, ConsensusContext, ConsensusEvent,
     ConsensusMessageType, ConsensusPayload, ConsensusService, ConsensusSigner, ValidatorInfo,
 };
-use neo_core::ledger::{PersistCompleted, RelayResult, TransactionVerificationContext};
-use neo_core::network::p2p::payloads::{ExtensiblePayload, TransactionExt};
-use neo_core::network::p2p::{Message, MessageCommand};
-use neo_core::smart_contract::ContractParametersContext;
-use neo_core::time_provider::TimeProvider;
+use neo_ledger::{PersistCompleted, RelayResult, TransactionVerificationContext};
+use neo_p2p::payloads::{ExtensiblePayload, TransactionExt};
+use neo_p2p::{Message, MessageCommand};
+use neo_smart_contract::ContractParametersContext;
+use neo_primitives::time_provider::TimeProvider;
 use neo_wallets::Wallet;
 use neo_crypto::Crypto;
 use neo_crypto::MerkleTree;

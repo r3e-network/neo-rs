@@ -198,6 +198,9 @@ pub mod message_command;
 /// Message header flags.
 pub mod message_flags;
 
+/// Protocol message types (NetworkMessage, ProtocolMessage).
+pub mod protocol_message;
+
 /// Node capability type enumeration.
 pub mod node_capability_type;
 
@@ -260,10 +263,11 @@ pub use events::{MessageReceivedHandler, NetworkMessageRef};
 pub use framed::{FrameConfig, WriteBuffer};
 pub use framed_codec::NeoMessageCodec;
 pub use inventory_type::InventoryType;
-pub use message::PAYLOAD_MAX_SIZE;
+pub use message::{Message, PAYLOAD_MAX_SIZE};
 pub use message_command::MessageCommand;
 pub use message_flags::MessageFlags;
 pub use node_capability_type::NodeCapabilityType;
+pub use protocol_message::{MessageHeader, NetworkMessage, ProtocolMessage};
 pub use oracle_response_code::OracleResponseCode;
 pub use peer_policy::{
     BanEntry, BanList, DEFAULT_BAN_DURATION, DEFAULT_INBOUND_CONNECTION_BURST,

@@ -19,7 +19,7 @@ path = "src/main.rs"
 
 [features]
 default = []
-full = ["neo-core/full"]
+full = []
 # Enable TEE (Trusted Execution Environment) support
 tee = ["neo-tee"]
 # Enable TEE with SGX hardware
@@ -32,8 +32,6 @@ hsm-ledger = ["hsm", "neo-hsm/ledger"]
 hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
 
 [dependencies]
-# Enable full neo-core features for production node (rocksdb, upnp, monitoring, parallel)
-neo-core = { path = "../neo-core", features = ["runtime"] }
 # Task 206: consensus binds directly to neo-actors instead of the neo-core
 # `runtime` compatibility re-export (same types, TypeId-preserving).
 neo-actors = { workspace = true }

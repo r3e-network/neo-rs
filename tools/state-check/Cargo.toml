@@ -13,7 +13,6 @@ license = "MIT"
 [workspace]
 
 [dependencies]
-neo-core = { path = "../../neo-core", features = ["rocksdb"] }
 neo-crypto = { path = "../../neo-crypto" }
 neo-primitives = { path = "../../neo-primitives" }
 

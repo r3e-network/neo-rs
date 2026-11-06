@@ -9,7 +9,7 @@
 //! - Concurrent operation errors
 //! - State inconsistency detection
 
-use neo_core::error::CoreError;
+use neo_smart_contract::error::CoreError;
 use neo_crypto::{Crypto, ECCurve, ECPoint};
 use neo_primitives::{UInt160, UInt256};
 

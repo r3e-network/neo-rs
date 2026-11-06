@@ -7,7 +7,7 @@
 //! 4. Large block test - blocks with 1000+ transactions
 //! 5. Network stress test - high message volume and concurrent connections
 
-use neo_core::ledger::{Block, BlockHeader};
+use neo_ledger::{Block, BlockHeader};
 use neo_primitives::{UInt160, WitnessScope};
 use neo_protocol::builders::TransactionBuilder;
 use neo_protocol::payloads::transaction::Transaction;

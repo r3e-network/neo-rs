@@ -12,7 +12,7 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::RpcInvokeResult;
 use crate::{RpcClient, RpcError};
-use neo_core::KeyPair;
+use neo_wallets::KeyPair;
 use neo_native_contracts::native::ContractManagement;
 use neo_primitives::{CallFlags, UInt160, WitnessScope};
 use neo_protocol::payloads::{Signer, Transaction};
@@ -121,7 +121,7 @@ mod tests {
     use base64::{Engine as _, engine::general_purpose};
     use mockito::{Matcher, Server};
     use neo_config::ProtocolSettings;
-    use neo_core::KeyPair;
+    use neo_wallets::KeyPair;
     use neo_json::{JArray, JObject, JToken};
     use neo_native_contracts::native::{GasToken, NativeContract};
     use neo_primitives::UInt160;

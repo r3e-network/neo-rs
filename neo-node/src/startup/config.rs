@@ -7,7 +7,7 @@ use crate::probe_controller::validate_probe_startup;
 use crate::remote_signer::{MAX_ATTESTATION_CLOCK_SKEW_MS, validate_remote_provider_config};
 use crate::signing_provider::NEO_SIGN_DATA_ENCODING;
 use anyhow::{Context, Result, bail};
-use neo_core::smart_contract::helper::Helper as ContractHelper;
+use neo_smart_contract::helper::Helper as ContractHelper;
 use neo_crypto::{Crypto, ECCurve, ECPoint};
 use neo_primitives::UnhandledExceptionPolicy;
 use neo_protocol::ProtocolSettings;

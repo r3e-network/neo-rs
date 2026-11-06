@@ -5,11 +5,10 @@ edition = "2024"
 license = "MIT"
 
 [features]
-rocksdb = ["neo-core/rocksdb"]
+rocksdb = []
 
 [dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
-neo-core = { workspace = true, features = ["runtime"] }
 neo-native-contracts = { workspace = true }
 neo-smart-contract = { workspace = true }
 neo-crypto = { workspace = true }

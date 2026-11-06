@@ -1,5 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
+use neo_smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
 use neo_json::JToken;
 use neo_primitives::CallFlags;
 use neo_primitives::UInt160;
