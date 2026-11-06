@@ -267,6 +267,10 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // actor runtime instead of the neo-core `runtime` compatibility re-export
     // (same types, TypeId-preserving).
     ("neo-system", "neo-actors"),
+    // Task 230 (D2 phase 1): authoritative CoreError/CoreResult live in
+    // neo-smart-contract; neo-system binds them directly instead of the
+    // neo-core error re-export shim.
+    ("neo-system", "neo-smart-contract"),
 ];
 
 // Frozen migration exceptions: remove entries as implementations really move.

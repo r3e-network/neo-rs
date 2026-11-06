@@ -6,12 +6,12 @@ pub use neo_storage::persistence::storage::{
 };
 
 /// Legacy core result alias; raw storage APIs use `neo_storage::StorageResult`.
-pub type StorageResult<T> = crate::error::CoreResult<T>;
+pub type StorageResult<T> = neo_smart_contract::error::CoreResult<T>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::CoreError;
+    use neo_smart_contract::error::CoreError;
 
     #[test]
     fn storage_error_converts_to_core_error() {

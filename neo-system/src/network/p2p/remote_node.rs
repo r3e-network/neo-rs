@@ -26,11 +26,11 @@ use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::inv_payload::InvPayload;
 use async_trait::async_trait;
 use neo_actors::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
-use neo_core::CoreResult;
 use neo_core::network::error::NetworkError;
 use neo_io_crate::HashSetCache;
 use neo_primitives::UInt256;
 use neo_protocol::protocol_settings::ProtocolSettings;
+use neo_smart_contract::error::CoreResult;
 use std::net::SocketAddr;
 use std::sync::{
     Arc,
@@ -96,13 +96,15 @@ impl RemoteNode {
 
     fn try_relay_inventory_hash(inventory: &mut super::RelayInventory) -> CoreResult<UInt256> {
         match inventory {
-            super::RelayInventory::Block(block) => {
-                block.try_hash().map_err(neo_core::error::CoreError::from)
-            }
-            super::RelayInventory::Transaction(tx) => {
-                tx.try_hash().map_err(neo_core::error::CoreError::from)
-            }
-            super::RelayInventory::Extensible(ext) => ext.try_hash(),
+            super::RelayInventory::Block(block) => block
+                .try_hash()
+                .map_err(neo_smart_contract::error::CoreError::from),
+            super::RelayInventory::Transaction(tx) => tx
+                .try_hash()
+                .map_err(neo_smart_contract::error::CoreError::from),
+            super::RelayInventory::Extensible(ext) => ext
+                .try_hash()
+                .map_err(neo_smart_contract::error::CoreError::from),
         }
     }
 

@@ -1,11 +1,11 @@
 //! Compatibility regressions only; backend behavior tests live in neo-storage.
 
 use super::*;
-use crate::error::CoreResult;
 use crate::persistence::{
     read_only_store::ReadOnlyStoreGeneric, storage::StorageConfig, store::Store,
     store_provider::StoreProvider, write_batch_buffer::WriteBatchConfig, write_store::WriteStore,
 };
+use neo_smart_contract::error::CoreResult;
 use neo_storage::{StorageError, StorageItem, StorageKey, StorageResult};
 use std::sync::{
     Arc,

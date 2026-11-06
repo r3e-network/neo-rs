@@ -72,7 +72,6 @@ use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::network::p2p::{
     LocalNode, LocalNodeHandle, TaskManager, TaskManagerHandle, payloads::block::Block, timeouts,
 };
-use neo_core::error::{CoreError, CoreResult};
 use neo_core::extensions::log_level::LogLevel;
 use neo_core::extensions::utility::ExtensionsUtility;
 use neo_core::ledger::{HeaderCache, LedgerContext, MemoryPool};
@@ -86,6 +85,7 @@ use neo_core::state_service::StateStore;
 use neo_primitives::UInt256;
 use neo_protocol::hardfork::Hardfork;
 pub use neo_protocol::protocol_settings::ProtocolSettings;
+use neo_smart_contract::error::{CoreError, CoreResult};
 #[cfg(test)]
 use std::sync::LazyLock;
 

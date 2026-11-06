@@ -5,7 +5,6 @@
 
 use crate::UInt160;
 use crate::cryptography::{Base58, CryptoError, ECC, ECCurve, ECDsa, Secp256r1Crypto};
-use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_config::HASH_SIZE;
 use crate::smart_contract::helper::Helper;
 use crate::wallets::helper::Helper as WalletHelper;
@@ -15,6 +14,7 @@ use cbc::{
     Decryptor, Encryptor,
     cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
 };
+use neo_smart_contract::error::{CoreError as Error, CoreResult as Result};
 use neo_vm::OpCode;
 use scrypt::Params;
 use std::fmt;

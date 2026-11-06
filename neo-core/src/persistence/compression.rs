@@ -2,8 +2,8 @@
 //!
 //! This module provides data compression and decompression capabilities.
 
-use crate::error::CoreError;
 use neo_io_crate::codec_error::CodecError;
+use neo_smart_contract::error::CoreError;
 
 pub use neo_io_crate::compression::{
     CompressionAlgorithm, estimate_compressed_size, get_compression_ratio,

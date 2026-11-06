@@ -10,7 +10,7 @@ use super::NeoSystem;
 use super::context::{NeoSystemContext, TransactionExecutionSink};
 use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
-use neo_core::error::CoreResult;
+use neo_smart_contract::error::CoreResult;
 
 impl NeoSystem {
     /// Registers an arbitrary service instance for later retrieval (parity with C# `NeoSystem.AddService`).

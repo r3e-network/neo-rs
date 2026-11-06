@@ -57,7 +57,7 @@ pub enum WalletError {
 
     /// An underlying core error.
     #[error("Core error: {0}")]
-    Core(#[from] crate::error::CoreError),
+    Core(#[from] neo_smart_contract::error::CoreError),
 
     /// An I/O error occurred during a wallet operation.
     #[error("IO error: {0}")]

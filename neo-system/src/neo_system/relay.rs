@@ -4,9 +4,9 @@
 //! during network relay operations.
 
 use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
-use neo_core::CoreResult;
 use neo_io_crate::{InventoryHash, RelayCache};
 use neo_primitives::UInt256;
+use neo_smart_contract::error::CoreResult;
 
 /// Default capacity for the relay extensible cache.
 pub(crate) const RELAY_CACHE_CAPACITY: usize = 100;

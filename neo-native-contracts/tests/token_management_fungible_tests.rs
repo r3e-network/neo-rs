@@ -1,17 +1,25 @@
-use neo_core::ScriptBuilder;
-use neo_core::UInt160;
-use neo_core::hardfork::Hardfork;
-use neo_core::neo_vm::StackItem;
-use neo_core::network::p2p::payloads::Witness;
-use neo_core::network::p2p::payloads::block::Block;
-use neo_core::persistence::DataCache;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::native::NativeContract;
-use neo_core::smart_contract::native::token_management::TokenManagement;
+//
+// Migrated from neo-core/tests/token_management_fungible_tests.rs (Task #228 wave 1).
+// Test names and bodies preserved verbatim; import roots repointed to their
+// owning crates (neo-native-contracts / neo-smart-contract / neo-protocol /
+// neo-storage / neo-primitives / neo-vm / neo-crypto / neo-wallets).
+// create_genesis_block here returns neo_protocol::payloads::Block directly, so the
+// former genesis.to_payload_block() calls became genesis.clone().
+//
+use neo_native_contracts::NativeContract;
+use neo_native_contracts::token_management::TokenManagement;
+use neo_primitives::CallFlags;
+use neo_primitives::UInt160;
+use neo_primitives::trigger_type::TriggerType;
+use neo_protocol::Hardfork;
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Block;
+use neo_protocol::payloads::Witness;
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_storage::persistence::DataCache;
 use neo_vm::OpCode;
+use neo_vm::ScriptBuilder;
+use neo_vm::StackItem;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -29,17 +37,17 @@ fn protocol_settings_with_faun() -> ProtocolSettings {
 
 fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
     let snapshot = Arc::new(DataCache::new(false));
-    let genesis = neo_core::ledger::create_genesis_block(settings);
+    let genesis = neo_native_contracts::create_genesis_block(settings);
 
     let mut on_persist = ApplicationEngine::new(
         TriggerType::OnPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis.to_payload_block()),
+        Some(genesis.clone()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist.register_native_contract(std::sync::Arc::new(TokenManagement::new()));
@@ -49,11 +57,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         TriggerType::PostPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis.to_payload_block()),
+        Some(genesis.clone()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist.register_native_contract(std::sync::Arc::new(TokenManagement::new()));
@@ -118,7 +126,7 @@ impl FungibleFixture {
             settings,
             TEST_GAS_LIMIT,
             None,
-            neo_core::smart_contract::native::composition::default_native_services(),
+            neo_native_contracts::composition::default_native_services(),
         )
         .expect("engine");
         // TokenManagement is no longer part of the standard native registry

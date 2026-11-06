@@ -10,7 +10,7 @@ use super::NeoSystem;
 use super::helpers::to_core_error;
 use crate::network::p2p::local_node::RelayInventory;
 use crate::network::p2p::{ChannelsConfig, LocalNode, RemoteNodeSnapshot};
-use neo_core::error::CoreResult;
+use neo_smart_contract::error::CoreResult;
 
 impl NeoSystem {
     /// Starts the local node actor with the supplied networking configuration.

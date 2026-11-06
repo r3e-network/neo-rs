@@ -24,7 +24,6 @@ mod tests {
             witness::Witness,
         },
     };
-    use neo_core::error::{CoreError, CoreResult};
     use neo_core::ledger::LedgerContext;
     use neo_core::persistence::StoreCache;
     use neo_core::smart_contract::BinarySerializer;
@@ -42,6 +41,7 @@ mod tests {
     use neo_primitives::WitnessScope;
     use neo_primitives::{UInt160, UInt256};
     use neo_protocol::protocol_settings::ProtocolSettings;
+    use neo_smart_contract::error::{CoreError, CoreResult};
     use neo_vm::ExecutionEngineLimits;
     use neo_vm::OpCode;
     use num_bigint::BigInt;

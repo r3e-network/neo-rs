@@ -2,7 +2,7 @@
 //!
 //! Delegates to `neo-io` for the actual compression, converting error types.
 
-use crate::error::CoreError;
+use neo_smart_contract::error::CoreError;
 
 /// Minimum size in bytes for data to be considered for compression.
 pub const COMPRESSION_MIN_SIZE: usize = neo_io_crate::COMPRESSION_MIN_SIZE;

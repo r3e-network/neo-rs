@@ -1,5 +1,5 @@
 use super::Transaction;
-use crate::error::{CoreError, CoreResult};
+use neo_smart_contract::error::{CoreError, CoreResult};
 use neo_vm::{StackItem, StackValue, VmError};
 
 /// Converts the transaction to a neo-vm-rs stack value (matches C# `Transaction.ToStackItem` layout).

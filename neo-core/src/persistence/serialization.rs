@@ -69,9 +69,9 @@ pub fn decompress_data(compressed_data: &[u8]) -> crate::Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::CoreError;
     use crate::neo_io::{IoError, IoResult, MemoryReader};
     use neo_primitives::UInt160;
+    use neo_smart_contract::error::CoreError;
 
     struct RejectSerialize;
 

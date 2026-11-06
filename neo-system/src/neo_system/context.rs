@@ -32,7 +32,6 @@ use crate::network::p2p::{
     },
 };
 use crate::services::SystemContext;
-use neo_core::error::{CoreError, CoreResult};
 use neo_core::extensions::log_level::LogLevel;
 use neo_core::ledger::{HeaderCache, LedgerContext, MemoryPool};
 use neo_core::persistence::{StoreCache, store::Store, store_provider::StoreProvider};
@@ -48,6 +47,7 @@ use neo_core::wallets::{Wallet, WalletProvider};
 use neo_primitives::contains_transaction_type::ContainsTransactionType;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::protocol_settings::ProtocolSettings;
+use neo_smart_contract::error::{CoreError, CoreResult};
 use neo_vm::VmState;
 
 use super::core::NeoSystem;
@@ -804,7 +804,10 @@ impl NeoSystemContext {
     }
 
     /// Adds a transaction to the in-memory pool and returns its hash.
-    pub fn record_transaction(&self, transaction: Transaction) -> neo_core::CoreResult<UInt256> {
+    pub fn record_transaction(
+        &self,
+        transaction: Transaction,
+    ) -> neo_smart_contract::error::CoreResult<UInt256> {
         self.ledger.insert_transaction(transaction)
     }
 
@@ -814,12 +817,15 @@ impl NeoSystemContext {
     }
 
     /// Registers a block with the in-memory ledger cache and returns its hash.
-    pub fn record_block(&self, block: Block) -> neo_core::CoreResult<UInt256> {
+    pub fn record_block(&self, block: Block) -> neo_smart_contract::error::CoreResult<UInt256> {
         self.ledger.insert_block(block)
     }
 
     /// Registers an extensible payload with the in-memory ledger cache.
-    pub fn record_extensible(&self, payload: ExtensiblePayload) -> neo_core::CoreResult<UInt256> {
+    pub fn record_extensible(
+        &self,
+        payload: ExtensiblePayload,
+    ) -> neo_smart_contract::error::CoreResult<UInt256> {
         let entry = RelayExtensibleEntry::try_new(payload.clone())?;
         let hash = entry.hash();
         self.relay_cache.add(entry);

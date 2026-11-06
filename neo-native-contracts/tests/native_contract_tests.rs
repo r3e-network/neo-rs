@@ -1,23 +1,31 @@
-use neo_core::ScriptBuilder;
-use neo_core::UInt160;
-use neo_core::hardfork::{Hardfork, HardforkManager};
-use neo_core::ledger::create_genesis_block;
-use neo_core::network::p2p::payloads::Witness;
-use neo_core::network::p2p::payloads::block::Block;
-use neo_core::persistence::DataCache;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::ContractParameterType;
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::contract_state::ContractState;
-use neo_core::smart_contract::interoperable::Interoperable;
-use neo_core::smart_contract::native::{
+//
+// Migrated from neo-core/tests/native_contract_tests.rs (Task #228 wave 1).
+// Test names and bodies preserved verbatim; import roots repointed to their
+// owning crates (neo-native-contracts / neo-smart-contract / neo-protocol /
+// neo-storage / neo-primitives / neo-vm / neo-crypto / neo-wallets).
+// create_genesis_block here returns neo_protocol::payloads::Block directly, so the
+// former genesis.to_payload_block() calls became genesis.clone().
+//
+use neo_native_contracts::create_genesis_block;
+use neo_native_contracts::{
     ContractManagement, CryptoLib, FungibleToken, GasToken, HardforkActivable, LedgerContract,
     NativeContract, NeoToken, Notary, OracleContract, PolicyContract, RoleManagement, StdLib,
     TreasuryContract, composition::standard_registry, is_active_for,
 };
+use neo_primitives::CallFlags;
+use neo_primitives::ContractParameterType;
+use neo_primitives::UInt160;
+use neo_primitives::trigger_type::TriggerType;
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Block;
+use neo_protocol::payloads::Witness;
+use neo_protocol::{Hardfork, HardforkManager};
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::contract_state::ContractState;
+use neo_storage::persistence::DataCache;
+use neo_vm::Interoperable;
 use neo_vm::OpCode;
+use neo_vm::ScriptBuilder;
 use neo_vm::VmState as VMState;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -43,11 +51,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         TriggerType::OnPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis.to_payload_block()),
+        Some(genesis.clone()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist.native_on_persist().expect("native on persist");
@@ -56,11 +64,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         TriggerType::PostPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis.to_payload_block()),
+        Some(genesis.clone()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist
@@ -104,7 +112,7 @@ fn call_get_contract(
         settings,
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -836,7 +844,7 @@ fn test_neo_token_metadata_hardforks() {
     );
 }
 
-fn assert_nep17_helper_raw_metadata(methods: &[neo_core::smart_contract::native::NativeMethod]) {
+fn assert_nep17_helper_raw_metadata(methods: &[neo_native_contracts::NativeMethod]) {
     assert_eq!(methods.len(), 5);
 
     for method in methods {
@@ -880,7 +888,7 @@ fn neo_token_metadata_settings() -> ProtocolSettings {
 }
 
 fn assert_event_descriptors(
-    events: &[neo_core::smart_contract::manifest::ContractEventDescriptor],
+    events: &[neo_smart_contract::manifest::ContractEventDescriptor],
     expected: &[(&str, &[(&str, ContractParameterType)])],
 ) {
     assert_eq!(events.len(), expected.len());

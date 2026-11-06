@@ -32,7 +32,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use neo_core::error::CoreResult;
+use neo_smart_contract::error::CoreResult;
 
 /// Attempts to downcast a service Arc to a concrete type.
 fn downcast_service<T>(service: &Arc<dyn Any + Send + Sync>) -> Option<Arc<T>>

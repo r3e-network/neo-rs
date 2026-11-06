@@ -6,7 +6,6 @@ use super::witness_verification::{
     StandardWitnessVerification, verify_standard_witness, verify_transaction_witness,
 };
 use super::{MAX_TRANSACTION_SIZE, Transaction, transaction_to_stack_value};
-use crate::error::CoreResult;
 use crate::hardfork::Hardfork;
 use crate::ledger::VerifyResult;
 use crate::network::p2p::helper;
@@ -18,6 +17,7 @@ use crate::smart_contract::native::{LedgerContract, PolicyContract};
 use crate::witness::Witness;
 use neo_io_crate::Serializable;
 use neo_primitives::UInt160;
+use neo_smart_contract::error::CoreResult;
 use neo_vm::StackValue;
 
 /// Snapshot / VM dependent transaction operations that neo-core adds on top of

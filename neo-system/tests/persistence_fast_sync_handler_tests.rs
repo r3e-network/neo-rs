@@ -1,9 +1,9 @@
-use neo_core::error::{CoreError, CoreResult};
 use neo_core::ledger::block::Block as LedgerBlock;
 use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
 use neo_core::persistence::DataCache;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::protocol_settings::ProtocolSettings;
+use neo_smart_contract::error::{CoreError, CoreResult};
 use neo_system::i_event_handlers::CommittingHandler;
 use neo_system::neo_system::{
     NeoSystem, TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,

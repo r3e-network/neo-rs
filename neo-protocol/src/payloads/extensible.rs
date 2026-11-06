@@ -261,6 +261,13 @@ mod tests {
     use neo_io::SerializableExtensions;
 
     // ---- Preserved from neo-core extensible_payload.rs `mod tests` ----
+    //
+    // NOTE: `SerializablePayload` is imported at the top of this file, so a
+    // plain `.hash()` call would resolve to its default trait method (double
+    // SHA-256) instead of the inherent fail-soft single-SHA-256 accessor
+    // (`&self` trait methods win the autoref stages over `&mut self`
+    // inherent methods). These tests disambiguate explicitly via
+    // `ensure_hash` / `Extensible::hash` to keep testing the legacy hash.
 
     #[test]
     fn try_hash_matches_legacy_hash_for_valid_payload() {
@@ -270,7 +277,8 @@ mod tests {
         payload.valid_block_end = 2;
         payload.data = vec![1, 2, 3];
 
-        let expected = payload.clone().hash();
+        let mut legacy = payload.clone();
+        let expected = legacy.ensure_hash();
 
         assert_eq!(payload.try_hash().expect("try hash"), expected);
     }
@@ -281,7 +289,7 @@ mod tests {
         payload.category = "x".repeat(MAX_CATEGORY_LENGTH + 1);
 
         assert!(payload.try_hash().is_err());
-        assert_eq!(payload.hash(), UInt256::zero());
+        assert_eq!(Extensible::hash(&mut payload), UInt256::zero());
         assert!(payload._hash.is_none());
     }
 

@@ -1,6 +1,5 @@
 //! Core compatibility facade; all raw RocksDB state and snapshots belong to storage.
 
-use crate::error::CoreResult;
 use crate::persistence::{
     read_cache::{ReadCacheConfig, ReadCacheStatsSnapshot},
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
@@ -10,6 +9,7 @@ use crate::persistence::{
     write_batch_buffer::{WriteBatchStatsSnapshot, map_storage_flush_error},
     write_store::WriteStore,
 };
+use neo_smart_contract::error::CoreResult;
 use neo_storage::StorageResult;
 use neo_storage::persistence::providers::rocksdb::store as raw;
 use neo_storage::{StorageItem, StorageKey};

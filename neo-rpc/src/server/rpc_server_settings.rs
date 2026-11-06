@@ -4,7 +4,7 @@
 // RpcServersSettings. Provides JSON configuration deserialisation for the RPC
 // server plugin.
 
-use neo_core::CoreResult;
+use neo_smart_contract::error::CoreResult;
 use parking_lot::RwLock;
 use serde::Deserialize;
 use serde::de::{self, Deserializer};

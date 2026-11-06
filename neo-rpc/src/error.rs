@@ -75,7 +75,7 @@ pub enum RpcError {
     /// Core domain error.
     #[cfg(feature = "client")]
     #[error("Core error: {0}")]
-    Core(#[from] neo_core::CoreError),
+    Core(#[from] neo_smart_contract::error::CoreError),
 
     /// Generic error for domain-specific validation failures.
     #[error("{0}")]

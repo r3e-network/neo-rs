@@ -13,7 +13,6 @@
 //! here, so this module keeps its own `Helper` type and only the witness-verification
 //! logic is genuinely local.
 
-use crate::error::{CoreError, CoreResult};
 use crate::network::p2p::payloads::Witness;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
@@ -25,6 +24,7 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::native::contract_management::ContractManagement;
 use crate::{UInt160, UInt256, Verifiable, VerifiableExt, WitnessData};
+use neo_smart_contract::error::{CoreError, CoreResult};
 use neo_smart_contract::helper::Helper as ContractHelperPrimitives;
 use neo_vm::VmState as VMState;
 use std::any::Any;

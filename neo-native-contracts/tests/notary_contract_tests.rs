@@ -1,29 +1,40 @@
+//
+// Migrated from neo-core/tests/notary_contract_tests.rs (Task #228 wave 1).
+// Test names and bodies preserved verbatim; import roots repointed to their
+// owning crates (neo-native-contracts / neo-smart-contract / neo-protocol /
+// neo-storage / neo-primitives / neo-vm / neo-crypto / neo-wallets).
+// create_genesis_block here returns neo_protocol::payloads::Block directly, so the
+// former genesis.to_payload_block() calls became genesis.clone().
+//
 //! Notary native contract unit tests matching C# UT_Notary
 //!
 //! Tests for Neo.SmartContract.Native.Notary functionality.
 
-use neo_core::hardfork::HardforkManager;
-use neo_core::ledger::create_genesis_block;
-use neo_core::neo_vm::StackItem;
-use neo_core::network::p2p::payloads::block::Block;
-use neo_core::network::p2p::payloads::{NotaryAssisted, Signer, Transaction, TransactionAttribute};
-use neo_core::persistence::DataCache;
-use neo_core::persistence::ReadOnlyStoreGeneric;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::BinarySerializer;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::native::notary::{Deposit, Notary};
-use neo_core::smart_contract::native::{
+use neo_native_contracts::create_genesis_block;
+use neo_native_contracts::notary::{Deposit, Notary};
+use neo_native_contracts::{
     GasToken, LedgerContract, NativeContract, NativeHelpers, NeoToken, PolicyContract, Role,
     RoleManagement,
 };
-use neo_core::smart_contract::{Contract, ContractParameterType, StorageItem, StorageKey};
-use neo_core::wallets::KeyPair;
-use neo_core::{Result as CoreResult, UInt160, UInt256, Verifiable, WitnessScope};
+use neo_primitives::CallFlags;
+use neo_primitives::ContractParameterType;
+use neo_primitives::trigger_type::TriggerType;
+use neo_primitives::{UInt160, UInt256, Verifiable, WitnessScope};
+use neo_protocol::HardforkManager;
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Block;
+use neo_protocol::payloads::{NotaryAssisted, Signer, Transaction, TransactionAttribute};
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::contract::Contract;
+use neo_smart_contract::error::CoreResult;
+use neo_storage::persistence::DataCache;
+use neo_storage::persistence::ReadOnlyStoreGeneric;
+use neo_storage::{StorageItem, StorageKey};
+use neo_vm::BinarySerializer;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::OpCode;
+use neo_vm::StackItem;
+use neo_wallets::KeyPair;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::collections::HashMap;
@@ -51,11 +62,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         TriggerType::OnPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis.to_payload_block()),
+        Some(genesis.clone()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist.native_on_persist().expect("native on persist");
@@ -64,11 +75,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         TriggerType::PostPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis.to_payload_block()),
+        Some(genesis.clone()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist
@@ -93,7 +104,7 @@ fn set_ledger_current_index(snapshot: &Arc<DataCache>, index: u32) {
 fn make_persisting_block(index: u32, transactions: Vec<Transaction>) -> Block {
     let mut block = Block::new();
     block.header.set_index(index);
-    block.header.witness = neo_core::Witness::empty();
+    block.header.witness = neo_protocol::payloads::Witness::empty();
     block.transactions = transactions;
     block
 }
@@ -143,7 +154,7 @@ fn try_token_transfer(
         settings,
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )?;
     engine
         .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
@@ -165,7 +176,7 @@ fn designate_notary_nodes(
     snapshot: Arc<DataCache>,
     settings: ProtocolSettings,
     persisting_index: u32,
-    public_keys: Vec<neo_core::cryptography::ECPoint>,
+    public_keys: Vec<neo_crypto::ECPoint>,
 ) -> CoreResult<()> {
     let committee_address = NativeHelpers::committee_address(&settings, Some(snapshot.as_ref()));
     let tx = make_tx_with_signer(committee_address);
@@ -177,7 +188,7 @@ fn designate_notary_nodes(
         settings,
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )?;
     engine.set_current_script_hash(Some(RoleManagement::new().hash()));
 
@@ -212,7 +223,7 @@ fn call_notary_int(
         settings,
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("engine");
     engine
@@ -242,7 +253,7 @@ fn call_notary_bool(
         settings,
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("engine");
     engine
@@ -1039,7 +1050,7 @@ fn check_balance_of() {
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("engine");
     on_persist.native_on_persist().expect("on persist");
@@ -1202,7 +1213,7 @@ fn check_set_max_not_valid_before_delta() {
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -1258,7 +1269,7 @@ fn check_on_persist_fee_per_key_update() {
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("engine");
     on_persist.native_on_persist().expect("on persist");
@@ -1275,12 +1286,12 @@ fn check_on_persist_fee_per_key_update() {
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("engine");
     let args = vec![
         bigint_to_bytes(&BigInt::from(
-            neo_core::network::p2p::payloads::TransactionAttributeType::NotaryAssisted as u8,
+            neo_protocol::payloads::TransactionAttributeType::NotaryAssisted as u8,
         )),
         bigint_to_bytes(&BigInt::from(5_0000_0000i64)),
     ];
@@ -1355,7 +1366,7 @@ fn check_on_persist_notary_rewards() {
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
-        neo_core::smart_contract::native::composition::default_native_services(),
+        neo_native_contracts::composition::default_native_services(),
     )
     .expect("engine");
     on_persist.native_on_persist().expect("on persist");

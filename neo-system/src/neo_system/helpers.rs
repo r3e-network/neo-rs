@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tracing::info;
 
 use crate::events::{PluginEvent, broadcast_plugin_event};
-use neo_core::error::{CoreError, CoreResult};
+use neo_smart_contract::error::{CoreError, CoreResult};
 
 use super::NeoSystem;
 

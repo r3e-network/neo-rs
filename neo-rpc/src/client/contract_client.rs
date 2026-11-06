@@ -88,12 +88,10 @@ impl ContractClient {
         manifest: &ContractManifest,
         call_flags: CallFlags,
     ) -> Result<Vec<u8>, RpcError> {
-        // `ContractManifest::to_json` now reports the authoritative
-        // `neo_smart_contract::error::CoreError`, which has no direct `RpcError` conversion.
-        let manifest_json = manifest
-            .to_json()
-            .map_err(|err| RpcError::from(err.to_string()))?
-            .to_string();
+        // `ContractManifest::to_json` reports the authoritative
+        // `neo_smart_contract::error::CoreError`, which converts into `RpcError`
+        // directly via `#[from]`.
+        let manifest_json = manifest.to_json()?.to_string();
 
         let mut sb = ScriptBuilder::new();
         // C# parity: ScriptBuilderExtensions.EmitDynamicCall(ContractManagement.Hash, "deploy", nef, manifestJson)

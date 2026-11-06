@@ -59,7 +59,6 @@ impl FaultObservationBuffer {
 use super::NeoSystem;
 use crate::events::PluginEvent;
 use crate::network::p2p::payloads::block::Block;
-use neo_core::error::{CoreError, CoreResult};
 use neo_core::ledger::block::Block as LedgerBlock;
 use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
 use neo_core::persistence::StoreTransaction;
@@ -77,6 +76,7 @@ use neo_core::smart_contract::native::ledger_contract::{
 use neo_core::smart_contract::trigger_type::TriggerType;
 use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_primitives::UInt256;
+use neo_smart_contract::error::{CoreError, CoreResult};
 use neo_vm::StackItem;
 use neo_vm::VmState as VMState;
 use tracing::{debug, info, warn};

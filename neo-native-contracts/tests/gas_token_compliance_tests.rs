@@ -1,10 +1,18 @@
+//
+// Migrated from neo-core/tests/gas_token_compliance_tests.rs (Task #228 wave 1).
+// Test names and bodies preserved verbatim; import roots repointed to their
+// owning crates (neo-native-contracts / neo-smart-contract / neo-protocol /
+// neo-storage / neo-primitives / neo-vm / neo-crypto / neo-wallets).
+// create_genesis_block here returns neo_protocol::payloads::Block directly, so the
+// former genesis.to_payload_block() calls became genesis.clone().
+//
 //! GasToken C# compliance tests
 
 #[cfg(test)]
 mod tests {
-    use neo_core::UInt160;
-    use neo_core::persistence::DataCache;
-    use neo_core::smart_contract::native::{GasToken, NativeContract};
+    use neo_native_contracts::{GasToken, NativeContract};
+    use neo_primitives::UInt160;
+    use neo_storage::persistence::DataCache;
     use num_bigint::BigInt;
     use std::sync::Arc;
 

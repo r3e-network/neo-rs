@@ -11,10 +11,11 @@
 //!
 //! See `docs/LOCK_ORDERING.md` for the global lock hierarchy.
 
+use crate::UInt256;
 use crate::network::p2p::payloads::{
     block::Block, extensible_payload::ExtensiblePayload, header::Header, transaction::Transaction,
 };
-use crate::{CoreResult, UInt256};
+use neo_smart_contract::error::CoreResult;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -124,7 +125,10 @@ impl LedgerContext {
     }
 
     /// Stores an extensible payload in the cache.
-    pub fn insert_extensible(&self, mut payload: ExtensiblePayload) -> crate::CoreResult<UInt256> {
+    pub fn insert_extensible(
+        &self,
+        mut payload: ExtensiblePayload,
+    ) -> neo_smart_contract::error::CoreResult<UInt256> {
         let hash = payload.try_hash()?;
         self.extensibles_by_hash.write().insert(hash, payload);
         Ok(hash)

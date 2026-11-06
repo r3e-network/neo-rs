@@ -1,3 +1,11 @@
+//
+// Migrated from neo-core/tests/neotoken_parity_tests.rs (Task #228 wave 1).
+// Test names and bodies preserved verbatim; import roots repointed to their
+// owning crates (neo-native-contracts / neo-smart-contract / neo-protocol /
+// neo-storage / neo-primitives / neo-vm / neo-crypto / neo-wallets).
+// create_genesis_block here returns neo_protocol::payloads::Block directly, so the
+// former genesis.to_payload_block() calls became genesis.clone().
+//
 // NeoToken parity tests against C# Neo v3.10.1.
 // These smoke checks are supplemented by the state-root and native-contract
 // suites; mainnet replay fixtures remain an explicit follow-up.

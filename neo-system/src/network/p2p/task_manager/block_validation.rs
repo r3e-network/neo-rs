@@ -1,6 +1,6 @@
 use crate::network::p2p::payloads::block::Block;
-use neo_core::CoreError;
 use neo_primitives::UInt256;
+use neo_smart_contract::error::CoreError;
 
 // `Store` carries the whole block while the other variants are cheap
 // outcomes; the enum is constructed once per incoming block, so boxing the

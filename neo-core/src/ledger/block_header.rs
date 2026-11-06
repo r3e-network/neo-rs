@@ -6,7 +6,8 @@ use crate::cryptography::Crypto;
 use crate::ledger::header_wire::UnsignedHeader;
 use crate::neo_io::serializable::helper::{deserialize_array, get_var_size, serialize_array};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::{CoreResult, UInt160, UInt256, Witness};
+use crate::{UInt160, UInt256, Witness};
+use neo_smart_contract::error::CoreResult;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 

@@ -1,0 +1,24 @@
+[package]
+name = "state-check-tools"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+# Standalone diagnostics crate (Task #228 wave 1): the state-check examples moved
+# out of neo-core/examples live here as bins. Not a root workspace member on
+# purpose — these tools pin to the neo-core facade and must be re-pointed during
+# the later decomposition waves (D3/D4) when the facade's local modules migrate.
+
+[workspace]
+
+[dependencies]
+neo-core = { path = "../../neo-core", features = ["rocksdb"] }
+neo-crypto = { path = "../../neo-crypto" }
+neo-primitives = { path = "../../neo-primitives" }
+
+[features]
+default = ["rocksdb"]
+# Kept as a named feature because the moved sources gate themselves with
+# `#[cfg(feature = "rocksdb")]` / `#![cfg(feature = "rocksdb")]`.
+rocksdb = []

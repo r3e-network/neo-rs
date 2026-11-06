@@ -12,7 +12,7 @@ use neo_protocol::signing_data::SIGN_DATA_LENGTH;
 pub fn get_sign_data<V>(
     verifiable: &V,
     network: u32,
-) -> crate::error::CoreResult<[u8; SIGN_DATA_LENGTH]>
+) -> neo_smart_contract::error::CoreResult<[u8; SIGN_DATA_LENGTH]>
 where
     V: crate::Verifiable + ?Sized,
 {
@@ -21,7 +21,10 @@ where
 }
 
 /// Convenience wrapper returning the signing data as a `Vec<u8>`.
-pub fn get_sign_data_vec<V>(verifiable: &V, network: u32) -> crate::error::CoreResult<Vec<u8>>
+pub fn get_sign_data_vec<V>(
+    verifiable: &V,
+    network: u32,
+) -> neo_smart_contract::error::CoreResult<Vec<u8>>
 where
     V: crate::Verifiable + ?Sized,
 {

@@ -3054,6 +3054,7 @@ dependencies = [
  "neo-primitives",
  "neo-protocol",
  "neo-signing",
+ "neo-smart-contract",
  "neo-vm",
  "num-bigint",
  "parking_lot",

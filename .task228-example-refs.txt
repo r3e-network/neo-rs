@@ -1,0 +1,32 @@
+﻿no-ref: build_trie_from_hex_pairs
+REFERENCED: check_local_roots :: scripts\validate_stored_roots.sh
+no-ref: check_unclaimed_gas
+no-ref: count_state_at_root
+REFERENCED: disassemble_contract_script :: tests\tests\no_local_neo_vm_dependency.rs
+REFERENCED: disassemble_tx :: tests\tests\no_local_neo_vm_dependency.rs
+no-ref: dump_block_header
+no-ref: dump_block_txs
+no-ref: dump_genesis_trie
+no-ref: dump_state_root
+no-ref: dump_tx_full
+no-ref: dump_tx_raw
+no-ref: find_txs_by_script_hex
+no-ref: find_txs_by_script_text
+no-ref: gas_balance_at_root
+no-ref: get_state_at_root
+no-ref: inspect_contract_by_id
+REFERENCED: inspect_contract_state :: tests\tests\no_local_neo_vm_dependency.rs
+no-ref: inspect_gas_balance
+REFERENCED: inspect_neo_account_state :: tests\tests\no_local_neo_vm_dependency.rs
+no-ref: list_raw_prefix
+no-ref: list_storage_prefix
+REFERENCED: print_height :: scripts\restore-checkpoint.sh | scripts\verify-testnet-storage-parity.sh | scripts\wait-import-and-verify-testnet.sh
+REFERENCED: print_storage_key :: scripts\verify-testnet-storage-parity.sh | tests\tests\no_local_neo_vm_dependency.rs
+no-ref: print_tx_state
+no-ref: rebuild_trie_4410
+REFERENCED: replay_tx_once :: tests\tests\no_local_neo_vm_dependency.rs
+no-ref: scan_sender_txs
+REFERENCED: serialization_diff_runner :: tools\csharp-serialization-runner\Program.cs
+no-ref: signature_verify_diff_runner
+REFERENCED: vm_syscall_runner :: scripts\gen-syscall-vectors.py | tools\csharp-app-runner\Program.cs
+no-ref: witness_verify_diff_runner

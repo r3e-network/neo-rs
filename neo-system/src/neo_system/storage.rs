@@ -16,7 +16,7 @@ pub(crate) fn init_store(
     storage_path: Option<String>,
     settings: Arc<ProtocolSettings>,
     state_service_settings: Option<StateServiceSettings>,
-) -> neo_core::error::CoreResult<(Arc<dyn Store>, StoreCache, Arc<StateStore>)> {
+) -> neo_smart_contract::error::CoreResult<(Arc<dyn Store>, StoreCache, Arc<StateStore>)> {
     let store = store_provider.get_store(storage_path.as_deref().unwrap_or(""))?;
     let store_cache_for_hydration = StoreCache::new_from_store(store.clone(), true);
     let chain_network = settings.network;
@@ -61,7 +61,7 @@ pub(crate) fn init_store(
 
         if ambient_eligible && std::path::Path::new(target_ref_path).exists() {
             ss.load_reference_roots(target_ref_path).map_err(|e| {
-                neo_core::error::CoreError::system(format!(
+                neo_smart_contract::error::CoreError::system(format!(
                     "failed to load reference roots from '{target_ref_path}': {e}"
                 ))
             })?;
@@ -76,7 +76,7 @@ pub(crate) fn init_store(
                      does not match the chain network {chain_network:#010x}; set NEO_REFERENCE_ROOTS_PATH or NEO_REFERENCE_ROOTS_RPC"
                 )
             };
-            return Err(neo_core::error::CoreError::system(reason));
+            return Err(neo_smart_contract::error::CoreError::system(reason));
         }
         let ss = Arc::new(ss);
         // Populate the trie with current blockchain storage if the trie is empty.

@@ -5,7 +5,7 @@ pub use neo_storage::persistence::write_batch_buffer::{
 };
 
 #[cfg(feature = "rocksdb")]
-use crate::error::{CoreError, CoreResult};
+use neo_smart_contract::error::{CoreError, CoreResult};
 #[cfg(feature = "rocksdb")]
 use neo_storage::StorageError;
 #[cfg(feature = "rocksdb")]

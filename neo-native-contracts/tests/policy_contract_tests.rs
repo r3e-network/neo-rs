@@ -1,13 +1,21 @@
+//
+// Migrated from neo-core/tests/policy_contract_tests.rs (Task #228 wave 1).
+// Test names and bodies preserved verbatim; import roots repointed to their
+// owning crates (neo-native-contracts / neo-smart-contract / neo-protocol /
+// neo-storage / neo-primitives / neo-vm / neo-crypto / neo-wallets).
+// create_genesis_block here returns neo_protocol::payloads::Block directly, so the
+// former genesis.to_payload_block() calls became genesis.clone().
+//
 //! PolicyContract unit tests matching C# UT_PolicyContract
 //!
 //! Tests for Neo.SmartContract.Native.PolicyContract functionality.
 
-use neo_core::hardfork::Hardfork;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::ContractParameterType;
-use neo_core::smart_contract::native::NativeContract;
-use neo_core::smart_contract::native::policy_contract::PolicyContract;
+use neo_native_contracts::NativeContract;
+use neo_native_contracts::policy_contract::PolicyContract;
+use neo_primitives::CallFlags;
+use neo_primitives::ContractParameterType;
+use neo_protocol::Hardfork;
+use neo_protocol::ProtocolSettings;
 use std::collections::HashMap;
 
 /// Tests that PolicyContract has correct contract ID (-7)
@@ -564,7 +572,7 @@ fn policy_event_settings() -> ProtocolSettings {
 }
 
 fn assert_event_descriptors(
-    events: &[neo_core::smart_contract::manifest::ContractEventDescriptor],
+    events: &[neo_smart_contract::manifest::ContractEventDescriptor],
     expected: &[(&str, &[(&str, ContractParameterType)])],
 ) {
     assert_eq!(events.len(), expected.len());

@@ -10,11 +10,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler};
-use neo_core::error::{CoreError, CoreResult};
 use neo_core::ledger::{block::Block, blockchain_application_executed::ApplicationExecuted};
 use neo_core::persistence::data_cache::DataCache;
 use neo_core::state_service::StateStore;
 use neo_primitives::{UnhandledExceptionPolicy, panic_message};
+use neo_smart_contract::error::{CoreError, CoreResult};
 use tracing::error;
 
 /// Handlers for wiring state root calculation into block persistence.
