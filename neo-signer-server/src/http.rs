@@ -135,20 +135,18 @@ async fn route(service: Arc<SignerService>, request: Request<Body>) -> Response<
         return error_response(StatusCode::METHOD_NOT_ALLOWED, "only POST is supported");
     }
     match path.as_str() {
-        "/v1/signer/key-info" => {
-            match serde_json::from_slice::<neo_core::signing::KeyRef>(&body_bytes) {
-                Ok(key_ref) => match service.key_info(&key_ref) {
-                    Ok(response) => json_response(StatusCode::OK, &response),
-                    Err(error) => error_response(StatusCode::NOT_FOUND, error.to_string()),
-                },
-                Err(error) => error_response(
-                    StatusCode::BAD_REQUEST,
-                    format!("invalid key-info request: {error}"),
-                ),
-            }
-        }
+        "/v1/signer/key-info" => match serde_json::from_slice::<neo_signing::KeyRef>(&body_bytes) {
+            Ok(key_ref) => match service.key_info(&key_ref) {
+                Ok(response) => json_response(StatusCode::OK, &response),
+                Err(error) => error_response(StatusCode::NOT_FOUND, error.to_string()),
+            },
+            Err(error) => error_response(
+                StatusCode::BAD_REQUEST,
+                format!("invalid key-info request: {error}"),
+            ),
+        },
         "/v1/signer/attest" => {
-            match serde_json::from_slice::<neo_core::signing::AttestationChallenge>(&body_bytes) {
+            match serde_json::from_slice::<neo_signing::AttestationChallenge>(&body_bytes) {
                 Ok(challenge) => match service.attest(&challenge).await {
                     Ok(evidence) => json_response(StatusCode::OK, &evidence),
                     Err(error) => error_response(StatusCode::BAD_REQUEST, error.to_string()),
@@ -161,7 +159,7 @@ async fn route(service: Arc<SignerService>, request: Request<Body>) -> Response<
         }
         "/v1/signer/sign" => {
             let Ok(sign_request) =
-                serde_json::from_slice::<neo_core::signing::RemoteSignRequest>(&body_bytes)
+                serde_json::from_slice::<neo_signing::RemoteSignRequest>(&body_bytes)
             else {
                 return error_response(StatusCode::BAD_REQUEST, "invalid sign request");
             };
@@ -179,7 +177,7 @@ async fn route(service: Arc<SignerService>, request: Request<Body>) -> Response<
         }
         "/v1/signer/query" => {
             let Ok(query) =
-                serde_json::from_slice::<neo_core::signing::RemoteOperationQuery>(&body_bytes)
+                serde_json::from_slice::<neo_signing::RemoteOperationQuery>(&body_bytes)
             else {
                 return error_response(StatusCode::BAD_REQUEST, "invalid query request");
             };

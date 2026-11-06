@@ -11,9 +11,9 @@
 
 use super::vm_state_utils::{vm_state_from_str, vm_state_to_string};
 use neo_config::ProtocolSettings;
-use neo_core::Transaction;
 use neo_json::JObject;
 use neo_primitives::UInt256;
+use neo_protocol::payloads::Transaction;
 use neo_vm::VmState;
 
 /// RPC transaction information matching C# `RpcTransaction`

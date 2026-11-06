@@ -237,7 +237,7 @@ mod execution_engine_tests {
         // Adding more gas should fail
         let result = engine.add_gas_consumed(1);
         assert!(result.is_err());
-        std::assert_matches!(result.unwrap_err(), VmError::GasExhausted { .. });
+        assert!(matches!(result.unwrap_err(), VmError::GasExhausted { .. }));
     }
 
     #[test]
@@ -302,5 +302,70 @@ mod execution_engine_tests {
             .load_script(Script::new_relaxed(script_bytes), -1, 0)
             .expect("load script");
         assert_eq!(engine.execute(), VMState::FAULT);
+    }
+
+    #[test]
+    fn nested_syscall_reaches_the_inner_handler() {
+        struct Host {
+            outer: u32,
+            inner: u32,
+            inner_calls: u32,
+        }
+        impl InteropHost for Host {
+            fn invoke_syscall(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
+                if hash == self.outer {
+                    engine.on_syscall(self.inner)
+                } else if hash == self.inner {
+                    self.inner_calls = self.inner_calls.saturating_add(1);
+                    Ok(())
+                } else {
+                    Err(VmError::invalid_operation_msg(format!(
+                        "unexpected syscall {hash}"
+                    )))
+                }
+            }
+        }
+
+        let mut engine = ExecutionEngine::new(None);
+        let outer = engine
+            .interop_service_mut()
+            .expect("interop service")
+            .register_host_descriptor("Test.Outer", 0, CallFlags::NONE)
+            .expect("register outer");
+        let inner = engine
+            .interop_service_mut()
+            .expect("interop service")
+            .register_host_descriptor("Test.Inner", 0, CallFlags::NONE)
+            .expect("register inner");
+        let mut host = Host {
+            outer,
+            inner,
+            inner_calls: 0,
+        };
+        let host_ptr = &mut host as *mut Host as *mut dyn InteropHost;
+        unsafe {
+            engine.set_interop_host(host_ptr);
+        }
+        let mut script_bytes = vec![OpCode::SYSCALL.byte()];
+        script_bytes.extend_from_slice(&outer.to_le_bytes());
+        script_bytes.push(OpCode::RET.byte());
+        engine
+            .load_script(Script::new_relaxed(script_bytes), -1, 0)
+            .expect("load script");
+        assert_eq!(engine.execute(), VMState::HALT);
+        engine.clear_interop_host();
+        assert_eq!(host.inner_calls, 1);
+    }
+
+    #[test]
+    fn uncaught_throw_preserves_the_exception_object() {
+        let mut engine = ExecutionEngine::new(None);
+        let exception = StackItem::from_byte_string(b"BidToken NEP17 Transfer failed".to_vec());
+
+        let result = engine.execute_throw(Some(exception.clone()));
+
+        assert_eq!(result, Err(VmError::UnhandledException(exception.clone())));
+        assert_eq!(engine.state(), VMState::FAULT);
+        assert_eq!(engine.uncaught_exception(), Some(&exception));
     }
 }

@@ -3,26 +3,26 @@
 //! # What this is
 //!
 //! `neo-signer-server` implements the server side of the wire protocol defined
-//! in [`neo_core::signing::remote`] exactly as the node-side
+//! in [`neo_signing::remote`] exactly as the node-side
 //! `neo-node` remote signer transport and provider expect it:
 //!
 //! * `POST /v1/signer/key-info` — authenticated key metadata
-//!   ([`neo_core::signing::RemoteKeyInfoResponse`]).
+//!   ([`neo_signing::RemoteKeyInfoResponse`]).
 //! * `POST /v1/signer/attest` — challenge-bound attestation evidence
-//!   ([`neo_core::signing::AttestationEvidence`]) generated with the
+//!   ([`neo_signing::AttestationEvidence`]) generated with the
 //!   [`neo_tee`] `AttestationService` in **simulation** mode, binding the
 //!   challenge nonce, the per-session P-256 public key, the service identity,
-//!   the policy version and the [`neo_core::signing::KeyRef`] via
+//!   the policy version and the [`neo_signing::KeyRef`] via
 //!   [`AttestationEvidence::binding_digest`].
 //! * `POST /v1/signer/sign` — authorized signing. Success responds `200` with
-//!   an authenticated [`neo_core::signing::RemoteSignResponse`]; a permanent
+//!   an authenticated [`neo_signing::RemoteSignResponse`]; a permanent
 //!   policy denial responds with a 4xx status carrying an authenticated
-//!   [`neo_core::signing::RemoteSignRejection`]; anything ambiguous (the
+//!   [`neo_signing::RemoteSignRejection`]; anything ambiguous (the
 //!   operation may or may not have completed) responds with a 5xx/429 status
 //!   so the node classifies it as `ResultUnknown` and recovers through the
 //!   query endpoint.
 //! * `POST /v1/signer/query` — idempotent recovery of a previously dispatched
-//!   operation ([`neo_core::signing::RemoteOperationStatus`]). Requests are
+//!   operation ([`neo_signing::RemoteOperationStatus`]). Requests are
 //!   journaled by request id: a completed request is replayed byte-for-byte
 //!   and is never re-signed.
 //!

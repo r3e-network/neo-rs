@@ -17,7 +17,7 @@
 
 use neo_core::cryptography::{Crypto, Secp256r1Crypto};
 use neo_core::smart_contract::helper::Helper;
-use neo_core::{UInt160, Witness};
+use neo_core::{UInt160, Witness, WitnessExt};
 use neo_vm::OpCode;
 
 /// Test data: Sample compressed public key format

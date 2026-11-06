@@ -40,6 +40,7 @@ pub mod contract_basic_method;
 pub mod contract_parameter_type;
 pub mod contract_task;
 pub mod error;
+pub mod extensions;
 pub mod find_options;
 pub mod hardfork;
 pub mod inventory;
@@ -56,6 +57,7 @@ pub mod oracle_response_code;
 pub mod rpc_exception;
 pub mod serializable_payload;
 pub mod storage;
+pub mod time_provider;
 pub mod transaction_attribute_type;
 pub mod transaction_removal_reason;
 pub mod trigger_type;
@@ -112,6 +114,8 @@ pub use blockchain::{
     BlockLike, BlockchainProvider, HeaderLike, NetworkMessage, PeerId, PeerInfo, PeerRegistry,
     RelayError, RelayResult, SendError, SendResult, TransactionLike,
 };
+pub use extensions::ExtensionsUtility;
+pub use macros::{OptionExt, ValidateLength};
 pub use serializable_payload::SerializablePayload;
 pub use storage::{StorageValue, StorageValueError, StorageValueResult};
 pub use unhandled_exception_policy::{UnhandledExceptionPolicy, panic_message};

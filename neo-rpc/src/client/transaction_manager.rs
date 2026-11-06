@@ -11,14 +11,15 @@
 
 use crate::{Nep17Api, RpcClient, RpcError, TransactionManagerFactory};
 use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::persistence::DataCache;
-use neo_core::smart_contract::native::GasToken;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::{
-    Contract, ECPoint, KeyPair, NativeContract, Signer, Transaction, TransactionAttribute,
-    VerifiableExt, Witness, smart_contract::ContractParametersContext,
-};
+use neo_core::{KeyPair, VerifiableExt, smart_contract::ContractParametersContext};
+use neo_crypto::ECPoint;
+use neo_native_contracts::native::{GasToken, NativeContract};
 use neo_primitives::UInt160;
+use neo_protocol::payloads::{Signer, Transaction, TransactionAttribute};
+use neo_protocol::witness::Witness;
+use neo_smart_contract::contract::Contract;
+use neo_storage::persistence::DataCache;
 use num_bigint::BigInt;
 use std::sync::Arc;
 
@@ -51,7 +52,7 @@ impl TransactionManager {
     /// `TransactionManager` Constructor
     /// Matches C# constructor
     pub fn new(tx: Transaction, rpc_client: Arc<RpcClient>) -> Self {
-        let snapshot = std::sync::Arc::new(neo_core::persistence::DataCache::new(true));
+        let snapshot = std::sync::Arc::new(neo_storage::persistence::DataCache::new(true));
         let context = ContractParametersContext::new(
             snapshot,
             tx.clone(),
@@ -436,10 +437,10 @@ mod tests {
         .expect("manager");
 
         assert_eq!(manager.tx().attributes().len(), 1);
-        std::assert_matches!(
+        assert!(matches!(
             manager.tx().attributes()[0],
             TransactionAttribute::HighPriority
-        );
+        ));
     }
 
     #[tokio::test]

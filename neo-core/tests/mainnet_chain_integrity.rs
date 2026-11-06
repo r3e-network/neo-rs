@@ -11,6 +11,7 @@
 //!   NEO_CHAIN_DB_PATH=data/mainnet-protocol-consistency \
 //!     cargo test -p neo-core --features rocksdb --test mainnet_chain_integrity -- --ignored --nocapture
 
+use ::neo_ledger::validation::rules::validate_merkle_root;
 use neo_core::UInt256;
 use neo_core::persistence::data_cache::DataCacheConfig;
 use neo_core::persistence::{
@@ -18,7 +19,6 @@ use neo_core::persistence::{
 };
 use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
-use neo_core::validation::validate_merkle_root;
 use std::path::Path;
 
 #[test]

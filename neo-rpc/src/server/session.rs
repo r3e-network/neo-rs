@@ -5,21 +5,21 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use neo_core::Verifiable;
-use neo_core::neo_system::NeoSystem;
-use neo_core::neo_vm::StackItem;
-use neo_core::neo_vm::stack_item::InteropInterface as VmInteropInterface;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::persistence::StoreCache;
-use neo_core::smart_contract::ApplicationEngine;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::iterators::iterator::StorageIterator as _;
-use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
-use neo_core::smart_contract::native::ledger_contract::LedgerContract;
+use neo_native_contracts::native::ledger_contract::LedgerContract;
+use neo_primitives::CallFlags;
+use neo_primitives::TriggerType;
+use neo_primitives::Verifiable;
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
+use neo_protocol::witness::Witness;
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::iterators::iterator::StorageIterator as _;
+use neo_smart_contract::iterators::{IteratorInterop, StorageIterator};
+use neo_storage::persistence::StoreCache;
+use neo_system::NeoSystem;
+use neo_vm::StackItem;
+use neo_vm::stack_item::InteropInterface as VmInteropInterface;
 use rand::random;
 use uuid::Uuid;
 
@@ -126,9 +126,9 @@ impl Session {
             Arc::new(tx) as Arc<dyn Verifiable>
         });
 
-        let diagnostic_box = diagnostic.clone().map(|diag| {
-            Box::new(diag) as Box<dyn neo_core::smart_contract::diagnostic::Diagnostic>
-        });
+        let diagnostic_box = diagnostic
+            .clone()
+            .map(|diag| Box::new(diag) as Box<dyn neo_smart_contract::diagnostic::Diagnostic>);
 
         let mut engine = ApplicationEngine::new(
             TriggerType::Application,
@@ -138,6 +138,7 @@ impl Session {
             system.settings().clone(),
             gas_limit,
             diagnostic_box,
+            neo_native_contracts::native::composition::default_native_services(),
         )
         .map_err(|err| err.to_string())?;
 
@@ -249,9 +250,10 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::persistence::{StorageItem, StorageKey};
-    use neo_core::smart_contract::FindOptions;
-    use neo_core::{NeoSystem, ProtocolSettings};
+    use neo_primitives::FindOptions;
+    use neo_protocol::ProtocolSettings;
+    use neo_storage::{StorageItem, StorageKey};
+    use neo_system::NeoSystem;
     use neo_vm::OpCode;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -300,7 +302,7 @@ mod tests {
             .traverse_iterator(&uuid_first, 10)
             .expect("traverse iterator");
         assert_eq!(values.len(), 2);
-        std::assert_matches!(values[0], StackItem::Struct(_));
+        assert!(matches!(values[0], StackItem::Struct(_)));
 
         let tail = session
             .traverse_iterator(&uuid_first, 10)

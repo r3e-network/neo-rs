@@ -9,23 +9,22 @@ use crate::server::rpc_helpers::{internal_error, serialize_to_base64};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
-use neo_core::ledger::{
-    block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
-};
-use neo_core::neo_io::Serializable;
-use neo_core::network::p2p::payloads::{
-    block::Block, header::Header, witness::Witness as PayloadWitness,
-};
-use neo_core::persistence::SeekDirection;
-use neo_core::smart_contract::StorageKey;
-use neo_core::smart_contract::contract_state::ContractState;
-use neo_core::smart_contract::native::{
-    NativeRegistry,
+use neo_protocol::witness::Witness as LedgerWitness;
+// The native `LedgerContract` hands back the execution block representation, so the RPC
+// converters operate on `neo_protocol::execution` rather than the neo-core ledger projection.
+use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_io::Serializable;
+use neo_native_contracts::native::{
     contract_management::ContractManagement,
     ledger_contract::{HashOrIndex, LedgerContract},
 };
-use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::{UInt160, UInt256, Witness as LedgerWitness};
+use neo_primitives::{UInt160, UInt256};
+use neo_protocol::execution::{Block as LedgerBlock, BlockHeader as LedgerBlockHeader};
+use neo_protocol::payloads::witness::Witness as PayloadWitness;
+use neo_protocol::payloads::{block::Block, header::Header};
+use neo_smart_contract::contract_state::ContractState;
+use neo_storage::StorageKey;
+use neo_storage::persistence::SeekDirection;
 use num_traits::ToPrimitive;
 use serde_json::{Map, Value, json};
 use std::str::FromStr;
@@ -168,7 +167,7 @@ impl RpcServerBlockchain {
         let system_fee: i64 = block
             .transactions
             .iter()
-            .map(neo_core::Transaction::system_fee)
+            .map(neo_protocol::payloads::Transaction::system_fee)
             .sum();
         Ok(Value::String(system_fee.to_string()))
     }
@@ -388,7 +387,7 @@ impl RpcServerBlockchain {
         let ledger = LedgerContract::new();
         let block_height = ledger.current_index(&store).map_err(internal_error)?;
 
-        let registry = NativeRegistry::new();
+        let registry = neo_native_contracts::native::composition::standard_registry();
         let mut contract_states = Vec::new();
 
         for contract in registry.contracts() {
@@ -416,7 +415,7 @@ impl RpcServerBlockchain {
         let settings = system.settings();
         let store = system.store_cache();
         let snapshot = store.data_cache().clone();
-        let neo = neo_core::smart_contract::native::neo_token::NeoToken::new();
+        let neo = neo_native_contracts::native::neo_token::NeoToken::new();
         let validators = neo
             .get_next_block_validators_snapshot(
                 &snapshot,
@@ -447,7 +446,7 @@ impl RpcServerBlockchain {
         let settings = system.settings();
         let store = system.store_cache();
         let snapshot = store.data_cache().clone();
-        let neo = neo_core::smart_contract::native::neo_token::NeoToken::new();
+        let neo = neo_native_contracts::native::neo_token::NeoToken::new();
         let candidates = neo.get_candidates_snapshot(&snapshot).map_err(|_| {
             RpcException::from(RpcError::internal_server_error().with_data("Can't get candidates."))
         })?;
@@ -490,7 +489,7 @@ impl RpcServerBlockchain {
     fn get_committee(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         let store = server.system().store_cache();
         let snapshot = store.data_cache();
-        let neo = neo_core::smart_contract::native::neo_token::NeoToken::new();
+        let neo = neo_native_contracts::native::neo_token::NeoToken::new();
         let committee = neo.committee_from_snapshot(snapshot).ok_or_else(|| {
             RpcException::from(
                 RpcError::internal_server_error().with_data("committee not available"),
@@ -557,7 +556,7 @@ impl RpcServerBlockchain {
 
     fn fetch_payload_block(
         ledger: &LedgerContract,
-        store: &neo_core::persistence::StoreCache,
+        store: &neo_storage::persistence::StoreCache,
         identifier: &RpcBlockHashOrIndex,
     ) -> Result<Block, RpcException> {
         let selector = match identifier {
@@ -757,7 +756,7 @@ impl RpcServerBlockchain {
     }
 
     fn load_contract_state(
-        store: &neo_core::persistence::StoreCache,
+        store: &neo_storage::persistence::StoreCache,
         identifier: &ContractNameOrHashOrId,
     ) -> Result<Option<ContractState>, RpcException> {
         match identifier {
@@ -778,7 +777,7 @@ impl RpcServerBlockchain {
     }
 
     fn contract_name_to_hash(name: &str) -> Result<UInt160, RpcException> {
-        let registry = NativeRegistry::new();
+        let registry = neo_native_contracts::native::composition::standard_registry();
         if let Some(contract) = registry.get_by_name(name) {
             return Ok(contract.hash());
         }
@@ -791,7 +790,7 @@ impl RpcServerBlockchain {
     }
 
     fn resolve_contract_id(
-        store: &neo_core::persistence::StoreCache,
+        store: &neo_storage::persistence::StoreCache,
         identifier: &ContractNameOrHashOrId,
     ) -> Result<i32, RpcException> {
         if let ContractNameOrHashOrId::Id(id) = identifier {

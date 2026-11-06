@@ -8,13 +8,12 @@
 //!   - serialized `Block` payload bytes
 
 use anyhow::{Context, Result, bail};
-use neo_core::{
-    neo_io::{MemoryReader, Serializable},
-    neo_system::NeoSystem,
-    network::p2p::payloads::block::Block,
-    persistence::{StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider},
-    smart_contract::native::LedgerContract,
-};
+use neo_io::{MemoryReader, Serializable};
+use neo_native_contracts::native::LedgerContract;
+use neo_protocol::payloads::block::Block;
+use neo_storage::persistence::providers::RocksDBStoreProvider;
+use neo_storage::persistence::{StoreCache, StoreProvider, storage::StorageConfig};
+use neo_system::NeoSystem;
 use std::{
     fs::File,
     io::{BufReader, Read, Seek, SeekFrom},
@@ -263,12 +262,11 @@ fn flush_and_verify_checkpoint(
     // Application logs live in their own store. The import profile disables the
     // write-ahead log, so leave them unflushed and a restart has no behaviour oracle.
     if let Ok(Some(logs)) =
-        system.get_service::<neo_core::application_logs::ApplicationLogsService>()
+        system.get_service::<neo_rpc::application_logs::ApplicationLogsService>()
     {
         logs.flush();
     }
-    if let Ok(Some(tracker)) =
-        system.get_service::<neo_core::tokens_tracker::TokensTrackerService>()
+    if let Ok(Some(tracker)) = system.get_service::<neo_rpc::tokens_tracker::TokensTrackerService>()
     {
         tracker.flush();
     }
@@ -607,12 +605,12 @@ pub fn import_acc_file(
                 state_store.flush();
             }
             if let Ok(Some(logs)) =
-                system.get_service::<neo_core::application_logs::ApplicationLogsService>()
+                system.get_service::<neo_rpc::application_logs::ApplicationLogsService>()
             {
                 logs.flush();
             }
             if let Ok(Some(tracker)) =
-                system.get_service::<neo_core::tokens_tracker::TokensTrackerService>()
+                system.get_service::<neo_rpc::tokens_tracker::TokensTrackerService>()
             {
                 tracker.flush();
             }

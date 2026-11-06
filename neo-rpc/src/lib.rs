@@ -212,6 +212,14 @@ pub mod error;
 /// JSON-RPC error codes.
 pub mod error_code;
 
+/// RPC-owned Application Logs subsystem (parity with Neo.Plugins.ApplicationLogs).
+#[cfg(feature = "server")]
+pub mod application_logs;
+
+/// RPC-owned NEP-11/NEP-17 token tracker.
+#[cfg(feature = "server")]
+pub mod tokens_tracker;
+
 #[cfg(any(feature = "client", feature = "server"))]
 mod serialization;
 

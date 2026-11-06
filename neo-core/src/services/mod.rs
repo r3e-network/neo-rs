@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 pub use traits::{
-    LedgerService, MempoolService, PeerManagerService, RpcService, StateStoreService, SystemContext,
+    LedgerService, MempoolService, PeerManagerService, RpcService, StateStoreService,
 };
 
 impl LedgerService for LedgerContext {

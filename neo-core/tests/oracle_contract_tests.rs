@@ -4,8 +4,12 @@ use neo_core::ledger::{block::Block, block_header::BlockHeader};
 use neo_core::neo_io::BinaryWriter;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::{
-    oracle_response::OracleResponse, oracle_response_code::OracleResponseCode, signer::Signer,
-    transaction::Transaction, transaction_attribute::TransactionAttribute,
+    oracle_response::OracleResponse,
+    oracle_response::OracleResponseExt,
+    oracle_response_code::OracleResponseCode,
+    signer::Signer,
+    transaction::Transaction,
+    transaction_attribute::{TransactionAttribute, TransactionAttributeExt},
 };
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
@@ -184,10 +188,11 @@ fn setup_post_persist_engine(snapshot: Arc<DataCache>, block: Block) -> Applicat
         TriggerType::PostPersist,
         Some(script_container),
         snapshot,
-        Some(block),
+        Some(block.to_payload_block()),
         ProtocolSettings::default_settings(),
         200_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine")
 }
@@ -321,6 +326,7 @@ fn make_request_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
         ProtocolSettings::default_settings(),
         2_000_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine
@@ -351,6 +357,7 @@ fn make_response_engine(snapshot: Arc<DataCache>, tx: Transaction) -> Applicatio
         ProtocolSettings::default_settings(),
         2_000_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine
@@ -368,6 +375,7 @@ fn make_engine_without_container(snapshot: Arc<DataCache>) -> ApplicationEngine 
         ProtocolSettings::default_settings(),
         2_000_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine")
 }

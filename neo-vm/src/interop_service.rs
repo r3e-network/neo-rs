@@ -16,6 +16,16 @@ use std::str;
 /// Function pointer used for interop handlers that execute within the VM itself.
 pub type InteropCallback = fn(&mut ExecutionEngine) -> VmResult<()>;
 
+/// Borrow-free view of a dynamically registered syscall.
+///
+/// Dispatch copies this out before invoking the handler so a nested syscall
+/// still sees the installed [`InteropService`].
+pub(crate) struct DynamicDispatch {
+    pub handler: Option<InteropCallback>,
+    pub required_call_flags: CallFlags,
+    pub name: String,
+}
+
 /// Descriptor for a syscall registered with the interop service. Mirrors the shape of
 /// `Neo.SmartContract.InteropDescriptor` while keeping Rust ergonomics.
 #[derive(Clone)]
@@ -198,6 +208,15 @@ impl InteropService {
     ) -> VmResult<()> {
         let hash = instruction.token_u32();
         self.invoke_by_hash(engine, hash)
+    }
+
+    /// Copies the dynamic registration for `hash`, if one exists.
+    pub(crate) fn dynamic_dispatch(&self, hash: u32) -> Option<DynamicDispatch> {
+        self.descriptors.get(&hash).map(|entry| DynamicDispatch {
+            handler: entry.descriptor.handler,
+            required_call_flags: entry.descriptor.required_call_flags,
+            name: entry.descriptor.name.clone(),
+        })
     }
 
     /// Invokes a syscall by its 32-bit hash identifier.

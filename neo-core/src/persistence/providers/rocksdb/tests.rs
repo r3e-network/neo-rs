@@ -1,334 +1,176 @@
+//! Compatibility regressions only; backend behavior tests live in neo-storage.
+
 use super::*;
-use crate::persistence::StoreCache;
-use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
-use crate::persistence::seek_direction::SeekDirection;
-use crate::persistence::storage::StorageConfig;
-use crate::persistence::store::Store;
-use crate::persistence::store_provider::StoreProvider;
-use crate::persistence::write_batch_buffer::WriteBatchConfig;
-use crate::persistence::write_store::WriteStore;
-use crate::smart_contract::{StorageItem, StorageKey};
-use std::fs;
-use std::sync::Arc;
+use crate::error::CoreResult;
+use crate::persistence::{
+    read_only_store::ReadOnlyStoreGeneric, storage::StorageConfig, store::Store,
+    store_provider::StoreProvider, write_batch_buffer::WriteBatchConfig, write_store::WriteStore,
+};
+use neo_storage::{StorageError, StorageItem, StorageKey, StorageResult};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 use tempfile::TempDir;
 
 #[test]
-fn opens_store_and_creates_directory() {
-    let tmp = TempDir::new().expect("tempdir");
-    let db_path = tmp.path().join("rocksdb");
-    let cfg = StorageConfig {
-        path: db_path.clone(),
+fn facade_provider_downcast_and_callback_identity_remain_core_owned() {
+    let tmp = TempDir::new().unwrap();
+    let provider = RocksDBStoreProvider::new(StorageConfig {
+        path: tmp.path().join("provider-downcast-compat"),
         ..Default::default()
-    };
+    });
+    assert_eq!(provider.name(), "RocksDBStore");
+    let store = provider.get_store("").unwrap();
+    assert!(store.as_any().is::<RocksDbStore>());
+    assert!(
+        !store
+            .as_any()
+            .is::<neo_storage::persistence::providers::rocksdb::RocksDbStore>()
+    );
 
-    let provider = RocksDBStoreProvider::new(cfg);
-    let store = provider
-        .get_store(db_path.to_str().unwrap())
-        .expect("rocksdb store");
-    assert!(db_path.exists(), "db path should be created");
-
-    // basic snapshot call to ensure the store is usable
-    let _snapshot = store.snapshot();
+    let callbacks = Arc::new(AtomicUsize::new(0));
+    let callbacks_inner = Arc::clone(&callbacks);
+    store.on_new_snapshot(Box::new(move |callback_store, snapshot| {
+        assert!(callback_store.as_any().is::<RocksDbStore>());
+        assert!(snapshot.store().as_any().is::<RocksDbStore>());
+        callbacks_inner.fetch_add(1, Ordering::Relaxed);
+    }));
+    let mut snapshot = store.snapshot();
+    assert_eq!(callbacks.load(Ordering::Relaxed), 1);
+    // No intermediate snapshot wrapper: the callback sees this same exclusive snapshot.
+    assert!(Arc::get_mut(&mut snapshot).is_some());
+    let first = snapshot.store();
+    let second = snapshot.store();
+    assert!(Arc::ptr_eq(&first, &second));
 }
 
 #[test]
-fn durable_snapshot_commit_survives_reopen_with_high_throughput_profile() {
-    let tmp = TempDir::new().expect("tempdir");
-    let db_path = tmp.path().join("rocksdb-durable-consensus");
-    let key = vec![0xF4];
-    let value = vec![0xA5; 128];
+fn facade_flush_retains_core_result_without_batching_direct_writes() {
+    let tmp = TempDir::new().unwrap();
+    let provider = RocksDBStoreProvider::new(StorageConfig {
+        path: tmp.path().join("store-flush-compat"),
+        ..Default::default()
+    });
+    let store = provider.get_store("").unwrap();
+    let facade = store.as_any().downcast_ref::<RocksDbStore>().unwrap();
+    let mut cloned = facade.clone();
+    cloned.put(b"key".to_vec(), b"value".to_vec()).unwrap();
+    assert_eq!(facade.try_get(&b"key".to_vec()), Some(b"value".to_vec()));
+    assert_eq!(facade.batch_commit_stats().operations_written, 0);
+    let result: CoreResult<()> = facade.flush_batch_writes();
+    result.unwrap();
+    let result: CoreResult<()> = cloned.flush_batch_writes();
+    result.unwrap();
+    assert_eq!(facade.batch_commit_stats().operations_written, 0);
+    cloned.enable_read_cache(Default::default());
+    assert!(cloned.read_cache_stats().is_some());
+    cloned.disable_read_cache();
+    assert!(cloned.read_cache_stats().is_none());
+}
 
-    {
-        let provider = RocksDBStoreProvider::new(StorageConfig {
-            path: db_path.clone(),
-            ..Default::default()
-        })
-        .with_batch_config(WriteBatchConfig::high_throughput());
-        let store = provider.get_store("").expect("rocksdb store");
-        assert!(store.supports_durable_writes());
-
-        let mut snapshot = store.snapshot();
-        let snapshot = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
-        snapshot
-            .put_sync(key.clone(), value.clone())
-            .expect("stage state");
-        snapshot.try_commit_durable().expect("durable commit");
-        assert_eq!(store.snapshot().try_get(&key), Some(value.clone()));
-    }
-
-    let reopened = RocksDBStoreProvider::new(StorageConfig {
-        path: db_path,
+#[test]
+fn facade_public_errors_preserve_storage_io_and_commit_failed_messages() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("not-a-directory");
+    std::fs::write(&file, b"file").unwrap();
+    let error = RocksDBStoreProvider::new(StorageConfig {
+        path: file.clone(),
         ..Default::default()
     })
-    .with_batch_config(WriteBatchConfig::high_throughput())
     .get_store("")
-    .expect("reopen rocksdb store");
-    assert_eq!(reopened.snapshot().try_get(&key), Some(value));
-}
-
-#[test]
-fn returns_error_when_path_is_file() {
-    let tmp = TempDir::new().expect("tempdir");
-    let file_path = tmp.path().join("not-a-dir");
-    fs::write(&file_path, b"content").expect("write file");
-
-    let cfg = StorageConfig {
-        path: file_path.clone(),
-        ..Default::default()
-    };
-    let provider = RocksDBStoreProvider::new(cfg);
-
-    let result = provider.get_store(file_path.to_str().unwrap());
-    match result {
-        Ok(_) => panic!("expected failure when path is a file"),
-        Err(err) => {
-            assert!(
-                err.to_string()
-                    .to_ascii_lowercase()
-                    .contains("failed to open rocksdb store"),
-                "unexpected error: {err}"
-            );
-        }
+    .err()
+    .expect("opening a file must fail");
+    match &error {
+        StorageError::Io { message } => assert!(message.starts_with(&format!(
+            "failed to open RocksDB store at {}: ",
+            file.display()
+        ))),
+        other => panic!("unexpected provider error: {other}"),
     }
-}
 
-#[test]
-fn snapshot_commit_invalidates_read_cache_for_updated_keys() {
-    let tmp = TempDir::new().expect("tempdir");
-    let db_path = tmp.path().join("rocksdb-cache");
-    let cfg = StorageConfig {
-        path: db_path.clone(),
+    let path = tmp.path().join("read-only-compat");
+    drop(
+        RocksDBStoreProvider::new(StorageConfig {
+            path: path.clone(),
+            ..Default::default()
+        })
+        .get_store("")
+        .unwrap(),
+    );
+    let store = RocksDBStoreProvider::new(StorageConfig {
+        path,
+        read_only: true,
         ..Default::default()
-    };
-
-    let provider = RocksDBStoreProvider::new(cfg);
-    let store = provider
-        .get_store(db_path.to_str().unwrap())
-        .expect("rocksdb store");
-
-    let key = StorageKey::new(1, vec![0x42]);
-    let value1 = StorageItem::from_bytes(vec![0x01]);
-    let value2 = StorageItem::from_bytes(vec![0x02]);
-
-    let mut writer = StoreCache::new_from_store(store.clone(), false);
-    writer.add(key.clone(), value1.clone());
-    writer.commit();
-
-    let reader = StoreCache::new_from_store(store.clone(), false);
-    assert_eq!(
-        reader
-            .get(&key)
-            .expect("value must exist after first write")
-            .to_value(),
-        value1.to_value()
-    );
-
-    let mut writer2 = StoreCache::new_from_store(store.clone(), false);
-    writer2.update(key.clone(), value2.clone());
-    writer2.commit();
-
-    let reader2 = StoreCache::new_from_store(store, false);
-    assert_eq!(
-        reader2
-            .get(&key)
-            .expect("updated value must be visible")
-            .to_value(),
-        value2.to_value()
-    );
-}
-
-#[test]
-fn snapshot_reads_overlay_pending_writes_and_deletes() {
-    let tmp = TempDir::new().expect("tempdir");
-    let db_path = tmp.path().join("rocksdb-snapshot-overlay");
-    let cfg = StorageConfig {
-        path: db_path.clone(),
-        ..Default::default()
-    };
-
-    let provider = RocksDBStoreProvider::new(cfg);
-    let store = provider
-        .get_store(db_path.to_str().unwrap())
-        .expect("rocksdb store");
-
-    let existing_key = StorageKey::new(7, vec![0x01]).to_array();
-    let added_key = StorageKey::new(7, vec![0x02]).to_array();
-
-    let mut writer = StoreCache::new_from_store(store.clone(), false);
-    writer.add(
-        StorageKey::from_bytes(&existing_key),
-        StorageItem::from_bytes(vec![0xAA]),
-    );
-    writer.commit();
-
+    })
+    .get_store("")
+    .unwrap();
+    let mut facade = store
+        .as_any()
+        .downcast_ref::<RocksDbStore>()
+        .unwrap()
+        .clone();
+    let result: StorageResult<()> = facade.put(b"key".to_vec(), b"value".to_vec());
+    match result.unwrap_err() {
+        StorageError::Io { message } => assert!(message.starts_with("RocksDB put failed: ")),
+        other => panic!("unexpected direct-write error: {other}"),
+    }
     let mut snapshot = store.snapshot();
-    let snapshot_mut = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
-    snapshot_mut.delete(existing_key.clone()).unwrap();
-    snapshot_mut.put(added_key.clone(), vec![0xBB]).unwrap();
+    let snapshot = Arc::get_mut(&mut snapshot).unwrap();
+    snapshot.put(b"key".to_vec(), b"value".to_vec()).unwrap();
+    let result: StorageResult<()> = snapshot.try_commit_durable();
+    match result.unwrap_err() {
+        StorageError::CommitFailed(message) => {
+            assert!(message.starts_with("RocksDB write failed: "))
+        }
+        other => panic!("unexpected snapshot error: {other}"),
+    }
+}
 
-    assert_eq!(snapshot.try_get(&existing_key), None);
-    assert_eq!(snapshot.try_get(&added_key), Some(vec![0xBB]));
+#[test]
+fn facade_clone_shared_snapshot_preserves_history_and_durable_commit() {
+    let tmp = TempDir::new().unwrap();
+    let provider = RocksDBStoreProvider::new(StorageConfig {
+        path: tmp.path().join("shared-snapshot-compat"),
+        ..Default::default()
+    })
+    .with_batch_config(WriteBatchConfig::high_throughput());
+    let store = provider.get_store("").unwrap();
+    let facade = store.as_any().downcast_ref::<RocksDbStore>().unwrap();
+    let mut cloned = facade.clone();
+    let key = StorageKey::new(7, vec![0x42]);
+    let raw_key = key.to_array();
+    cloned.put_sync(raw_key.clone(), vec![0x01]).unwrap();
+    let historical = facade.snapshot();
+    cloned.put(raw_key.clone(), vec![0x02]).unwrap();
+    assert_eq!(facade.try_get(&key).unwrap().to_value(), vec![0x02]);
+    assert_eq!(historical.try_get(&raw_key), Some(vec![0x01]));
 
-    let entries: Vec<_> = snapshot
-        .find(
-            Some(&StorageKey::new(7, vec![]).to_array()),
-            SeekDirection::Forward,
+    let mut snapshot = cloned.snapshot();
+    let exposed = snapshot.store();
+    assert!(exposed.as_any().is::<RocksDbStore>());
+    assert!(Arc::ptr_eq(&exposed, &snapshot.store()));
+    let writer = Arc::get_mut(&mut snapshot).unwrap();
+    writer
+        .put(
+            raw_key.clone(),
+            StorageItem::from_bytes(vec![0x03]).to_value(),
         )
-        .collect();
-    assert_eq!(entries, vec![(added_key, vec![0xBB])]);
-}
-
-#[test]
-fn backward_prefix_find_returns_expected_rows_in_store_and_snapshot_views() {
-    let tmp = TempDir::new().expect("tempdir");
-    let db_path = tmp.path().join("rocksdb-backward-prefix");
-    let cfg = StorageConfig {
-        path: db_path.clone(),
-        ..Default::default()
-    };
-
-    let provider = RocksDBStoreProvider::new(cfg);
-    let store = provider
-        .get_store(db_path.to_str().unwrap())
-        .expect("rocksdb store");
-
-    let key_a = StorageKey::new(-5, vec![0x1d, 0x00, 0x00, 0x00, 0x00]);
-    let key_b = StorageKey::new(-5, vec![0x1d, 0x00, 0x00, 0x00, 0x05]);
-    let key_other = StorageKey::new(-5, vec![0x1e, 0x00, 0x00, 0x00, 0x00]);
-
-    let mut writer = StoreCache::new_from_store(store.clone(), false);
-    writer.add(key_a.clone(), StorageItem::from_bytes(vec![0x01]));
-    writer.add(key_b.clone(), StorageItem::from_bytes(vec![0x02]));
-    writer.add(key_other, StorageItem::from_bytes(vec![0x03]));
-    writer.commit();
-
-    let prefix = StorageKey::create(-5, 0x1d);
-    let expected = vec![key_b.to_array(), key_a.to_array()];
-
-    let store_keys: Vec<Vec<u8>> = store
-        .find(Some(&prefix), SeekDirection::Backward)
-        .map(|(k, _)| k.to_array())
-        .collect();
-    assert_eq!(store_keys, expected);
-
-    let snapshot_cache = StoreCache::new_from_snapshot(store.snapshot());
-    let snapshot_keys: Vec<Vec<u8>> = snapshot_cache
-        .data_cache()
-        .find(Some(&prefix), SeekDirection::Backward)
-        .map(|(k, _)| k.to_array())
-        .collect();
-    assert_eq!(snapshot_keys, expected);
-}
-
-#[test]
-fn backward_raw_prefix_find_uses_rocksdb_prefix_bounds() {
-    let tmp = TempDir::new().expect("tempdir");
-    let cfg = StorageConfig {
-        path: tmp.path().join("rocksdb-raw-prefix-bounds"),
-        ..Default::default()
-    };
-
-    let mut store = RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), &None, true, true)
-        .expect("rocksdb store");
-
-    for (key, value) in [
-        (b"a\x00".to_vec(), vec![0x01]),
-        (b"a\xff".to_vec(), vec![0x02]),
-        (b"b".to_vec(), vec![0x03]),
-    ] {
-        store.put(key, value).expect("put raw row");
-    }
-
-    let prefix = b"a".to_vec();
-    let expected = vec![b"a\xff".to_vec(), b"a\x00".to_vec()];
-
-    let store_keys: Vec<_> = store
-        .find(Some(&prefix), SeekDirection::Backward)
-        .map(|(key, _)| key)
-        .collect();
-    assert_eq!(store_keys, expected);
-
-    let snapshot = store.snapshot();
-    let snapshot_keys: Vec<_> = snapshot
-        .find(Some(&prefix), SeekDirection::Backward)
-        .map(|(key, _)| key)
-        .collect();
-    assert_eq!(snapshot_keys, expected);
-}
-
-#[test]
-fn forward_prefix_find_stops_at_prefix_boundary_in_all_views() {
-    let tmp = TempDir::new().expect("tempdir");
-    let cfg = StorageConfig {
-        path: tmp.path().join("rocksdb-forward-prefix-bounds"),
-        ..Default::default()
-    };
-    let provider = RocksDBStoreProvider::new(cfg);
-    let store = provider.get_store("").expect("rocksdb store");
-
-    let key_a = StorageKey::new(-5, vec![0x1d, 0x00]);
-    let key_b = StorageKey::new(-5, vec![0x1d, 0xff]);
-    let key_after = StorageKey::new(-5, vec![0x1e, 0x00]);
-    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
-    for (key, value) in [(&key_a, 0x01), (&key_b, 0x02), (&key_after, 0x03)] {
-        writer.add(key.clone(), StorageItem::from_bytes(vec![value]));
-    }
-    writer.commit();
-
-    let prefix = StorageKey::create(-5, 0x1d);
-    let expected = vec![key_a.to_array(), key_b.to_array()];
-    let store_keys: Vec<_> = store
-        .find(Some(&prefix), SeekDirection::Forward)
-        .map(|(key, _)| key.to_array())
-        .collect();
-    assert_eq!(store_keys, expected);
-
-    let snapshot = store.snapshot();
-    let raw_prefix = prefix.to_array();
-    let snapshot_keys: Vec<_> = snapshot
-        .find(Some(&raw_prefix), SeekDirection::Forward)
-        .map(|(key, _)| key)
-        .collect();
-    assert_eq!(snapshot_keys, expected);
-
-    let snapshot_cache = StoreCache::new_from_snapshot(store.snapshot());
-    let cache_keys: Vec<_> = snapshot_cache
-        .data_cache()
-        .find(Some(&prefix), SeekDirection::Forward)
-        .map(|(key, _)| key.to_array())
-        .collect();
-    assert_eq!(cache_keys, expected);
-}
-
-#[test]
-fn forward_raw_prefix_find_stops_at_prefix_boundary_in_store_and_snapshot() {
-    let tmp = TempDir::new().expect("tempdir");
-    let cfg = StorageConfig {
-        path: tmp.path().join("rocksdb-forward-raw-prefix-bounds"),
-        ..Default::default()
-    };
-    let mut store = RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), &None, true, true)
-        .expect("rocksdb store");
-    for (key, value) in [
-        (b"a\x00".to_vec(), vec![0x01]),
-        (b"a\xff".to_vec(), vec![0x02]),
-        (b"b".to_vec(), vec![0x03]),
-    ] {
-        store.put(key, value).expect("put raw row");
-    }
-
-    let prefix = b"a".to_vec();
-    let expected = vec![b"a\x00".to_vec(), b"a\xff".to_vec()];
-    let store_keys: Vec<_> = store
-        .find(Some(&prefix), SeekDirection::Forward)
-        .map(|(key, _)| key)
-        .collect();
-    assert_eq!(store_keys, expected);
-
-    let snapshot = store.snapshot();
-    let snapshot_keys: Vec<_> = snapshot
-        .find(Some(&prefix), SeekDirection::Forward)
-        .map(|(key, _)| key)
-        .collect();
-    assert_eq!(snapshot_keys, expected);
+        .unwrap();
+    let result: StorageResult<()> = writer.try_commit_durable();
+    result.unwrap();
+    assert_eq!(facade.try_get(&key).unwrap().to_value(), vec![0x03]);
+    assert_eq!(exposed.try_get(&key).unwrap().to_value(), vec![0x03]);
+    assert_eq!(historical.try_get(&raw_key), Some(vec![0x01]));
+    assert!(facade.supports_durable_writes());
+    drop(exposed);
+    drop(snapshot);
+    drop(cloned);
+    drop(store);
+    assert_eq!(historical.try_get(&raw_key), Some(vec![0x01]));
+    // The snapshot's store retains the same raw DB handle after the original facade drops.
+    assert_eq!(
+        historical.store().try_get(&key).unwrap().to_value(),
+        vec![0x03]
+    );
 }

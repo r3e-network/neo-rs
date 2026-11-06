@@ -1,12 +1,12 @@
 use super::*;
-use neo_core::neo_io::BinaryWriter;
-use neo_core::persistence::StorageItem;
-use neo_core::smart_contract::ContractState;
-use neo_core::smart_contract::manifest::ContractManifest;
-use neo_core::smart_contract::native::NativeRegistry;
-use neo_core::state_service::state_store::MemoryStateStoreBackend;
-use neo_core::state_service::state_store::StateServiceSettings;
-use neo_core::{NeoSystem, ProtocolSettings};
+use neo_io::BinaryWriter;
+use neo_protocol::ProtocolSettings;
+use neo_smart_contract::contract_state::ContractState;
+use neo_smart_contract::manifest::ContractManifest;
+use neo_state_service::state_store::MemoryStateStoreBackend;
+use neo_state_service::state_store::StateServiceSettings;
+use neo_storage::StorageItem;
+use neo_system::NeoSystem;
 
 fn make_server_with_state(full_state: bool) -> (Arc<NeoSystem>, Arc<StateStore>, RpcServer) {
     let settings = ProtocolSettings::default();
@@ -39,13 +39,13 @@ fn make_server_with_state(full_state: bool) -> (Arc<NeoSystem>, Arc<StateStore>,
 }
 
 fn store_contract_state(
-    store: &mut neo_core::persistence::StoreCache,
+    store: &mut neo_storage::persistence::StoreCache,
     contract: &ContractState,
 ) -> (StorageKey, Vec<u8>) {
     const PREFIX_CONTRACT: u8 = 0x08;
     const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 
-    let contract_mgmt_id = NativeRegistry::new()
+    let contract_mgmt_id = neo_native_contracts::native::composition::standard_registry()
         .get_by_name("ContractManagement")
         .expect("contract management")
         .id();
@@ -263,7 +263,7 @@ async fn get_state_returns_value_from_trie() {
     let contract = ContractState::new(
         1,
         script_hash,
-        neo_core::smart_contract::NefFile::new("test".to_string(), vec![0x01]),
+        neo_smart_contract::contract_state::NefFile::new("test".to_string(), vec![0x01]),
         ContractManifest::default(),
     );
     let mut store = system.context().store_snapshot_cache();
@@ -298,7 +298,7 @@ async fn find_states_returns_results() {
     let contract = ContractState::new(
         1,
         script_hash,
-        neo_core::smart_contract::NefFile::new("test".to_string(), vec![0x01]),
+        neo_smart_contract::contract_state::NefFile::new("test".to_string(), vec![0x01]),
         ContractManifest::default(),
     );
     let mut store = system.context().store_snapshot_cache();

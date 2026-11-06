@@ -9,9 +9,9 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::Witness;
 use neo_json::{JArray, JObject, JToken};
 use neo_primitives::UInt256;
+use neo_protocol::witness::Witness;
 use serde::{Deserialize, Serialize};
 
 /// State root information matching C# `RpcStateRoot`

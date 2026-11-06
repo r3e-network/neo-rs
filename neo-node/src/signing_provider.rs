@@ -6,16 +6,16 @@ use crate::remote_signer::{MtlsRemoteSignerTransport, RemoteSignerProvider};
 use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
-use neo_core::UInt160;
-use neo_core::signing::{
+use neo_core::wallets::WalletProvider;
+use neo_primitives::UInt160;
+use neo_signing::{
     ALGORITHM_ECDSA_P256_SHA256, AuthenticatedContext, AuthorizedSignRequest, DefaultSignerService,
     DurableSigningStore, KeyInfo, KeyRef, PolicyLimits, ProviderCapabilities,
     ProviderOutcomeProvenance, ProviderSignature, SIGNING_SCHEMA_VERSION, SecurityLevel, SignError,
     SignErrorCode, SignPayload, SignPurpose, SignerProvider, SignerProviderRegistry, SignerService,
     SigningKeyBinding, SigningKeyResolver, SigningPolicy, SigningStore, TrustedSignerClient,
 };
-use neo_core::smart_contract::helper::Helper as ContractHelper;
-use neo_core::wallets::WalletProvider;
+use neo_smart_contract::helper::Helper as ContractHelper;
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -77,7 +77,7 @@ impl NodeSignerRuntime {
         &self,
         account: &str,
         purpose: &SignPurpose,
-    ) -> neo_core::signing::SignResult<KeyRef> {
+    ) -> neo_signing::SignResult<KeyRef> {
         self.key_resolver.resolve(account, purpose)
     }
 
@@ -107,7 +107,7 @@ impl NodeSignerRuntime {
         principal: &str,
         authentication_method: &str,
         scope: &str,
-    ) -> neo_core::signing::SignResult<TrustedSignerClient> {
+    ) -> neo_signing::SignResult<TrustedSignerClient> {
         TrustedSignerClient::new(
             self.service(),
             self.default_provider.clone(),
@@ -172,10 +172,7 @@ impl WalletSignerProvider {
         })
     }
 
-    fn configured_key(
-        &self,
-        key_ref: &KeyRef,
-    ) -> neo_core::signing::SignResult<(UInt160, Vec<u8>)> {
+    fn configured_key(&self, key_ref: &KeyRef) -> neo_signing::SignResult<(UInt160, Vec<u8>)> {
         self.keys.get(key_ref).cloned().ok_or_else(|| {
             SignError::new(
                 SignErrorCode::KeyNotFound,
@@ -191,7 +188,7 @@ impl WalletSignerProvider {
     fn public_key_for(
         &self,
         key_ref: &KeyRef,
-    ) -> neo_core::signing::SignResult<(Arc<dyn neo_core::wallets::Wallet>, UInt160, Vec<u8>)> {
+    ) -> neo_signing::SignResult<(Arc<dyn neo_core::wallets::Wallet>, UInt160, Vec<u8>)> {
         let (script_hash, configured_public_key) = self.configured_key(key_ref)?;
         let wallet = self.wallet();
         let account = wallet.get_account(&script_hash).ok_or_else(|| {
@@ -232,7 +229,7 @@ impl SignerProvider for WalletSignerProvider {
         self.capabilities.clone()
     }
 
-    async fn key_info(&self, key_ref: &KeyRef) -> neo_core::signing::SignResult<KeyInfo> {
+    async fn key_info(&self, key_ref: &KeyRef) -> neo_signing::SignResult<KeyInfo> {
         let (wallet, _, public_key) = self.public_key_for(key_ref)?;
         Ok(KeyInfo {
             schema_version: SIGNING_SCHEMA_VERSION,
@@ -248,7 +245,7 @@ impl SignerProvider for WalletSignerProvider {
     async fn sign_authorized(
         &self,
         request: &AuthorizedSignRequest,
-    ) -> neo_core::signing::SignResult<ProviderSignature> {
+    ) -> neo_signing::SignResult<ProviderSignature> {
         let bytes = match request.payload() {
             SignPayload::Canonical { encoding, bytes } if encoding == NEO_SIGN_DATA_ENCODING => {
                 bytes
@@ -371,7 +368,7 @@ where
     for provider in &enabled {
         let registered: Arc<dyn SignerProvider> = match provider.kind {
             SignerProviderKind::Remote | SignerProviderKind::RemoteTee => {
-                let transport: Arc<dyn neo_core::signing::RemoteSignerTransport> = Arc::new(
+                let transport: Arc<dyn neo_signing::RemoteSignerTransport> = Arc::new(
                     MtlsRemoteSignerTransport::from_config(provider).with_context(|| {
                         format!(
                             "failed to configure remote signer provider '{}'",
@@ -534,8 +531,8 @@ mod tests {
     use crate::config::{Pkcs11ProviderSection, SignerKeySection, SignerProviderSection};
     use crate::pkcs11::Pkcs11Mechanism;
     use crate::pkcs11::mock::MockP11Backend;
-    use neo_core::protocol_settings::ProtocolSettings;
     use neo_core::wallets::{KeyPair, Nep6Wallet, Wallet};
+    use neo_protocol::ProtocolSettings;
 
     struct UnusedSignerService;
 
@@ -543,9 +540,9 @@ mod tests {
     impl SignerService for UnusedSignerService {
         async fn sign(
             &self,
-            _request: neo_core::signing::SignRequest,
+            _request: neo_signing::SignRequest,
             _context: AuthenticatedContext,
-        ) -> neo_core::signing::SignResult<neo_core::signing::SignResponse> {
+        ) -> neo_signing::SignResult<neo_signing::SignResponse> {
             Err(SignError::new(
                 SignErrorCode::ProviderFailure,
                 "unused test signer service",
@@ -555,10 +552,10 @@ mod tests {
         async fn resume_or_start(
             &self,
             _operation_id: &str,
-            _frozen_intent: neo_core::signing::FrozenSignIntent,
+            _frozen_intent: neo_signing::FrozenSignIntent,
             _context: AuthenticatedContext,
             _request_timeout: Duration,
-        ) -> neo_core::signing::SignResult<neo_core::signing::SignResponse> {
+        ) -> neo_signing::SignResult<neo_signing::SignResponse> {
             Err(SignError::new(
                 SignErrorCode::ProviderFailure,
                 "unused test signer service",
@@ -587,7 +584,7 @@ mod tests {
             enabled: true,
             default: true,
             security_level: Some(SecurityLevel::Software),
-            purposes: vec![neo_core::signing::SignPurpose::Transaction],
+            purposes: vec![neo_signing::SignPurpose::Transaction],
             canonical_encodings: vec![NEO_SIGN_DATA_ENCODING.to_string()],
             algorithms: vec![ALGORITHM_ECDSA_P256_SHA256.to_string()],
             keys: vec![SignerKeySection {
@@ -674,18 +671,18 @@ mod tests {
         request_id: &str,
         key_ref: KeyRef,
         account: &str,
-    ) -> neo_core::signing::SignRequest {
-        neo_core::signing::SignRequest {
+    ) -> neo_signing::SignRequest {
+        neo_signing::SignRequest {
             schema_version: SIGNING_SCHEMA_VERSION,
             request_id: request_id.to_string(),
             network: HARDWARE_TEE_TEST_NETWORK,
             purpose: SignPurpose::Consensus,
             key_ref,
-            payload: neo_core::signing::SignPayload::Canonical {
+            payload: neo_signing::SignPayload::Canonical {
                 encoding: NEO_SIGN_DATA_ENCODING.to_string(),
                 bytes: vec![1, 2, 3, 4, 5],
             },
-            protocol_context: neo_core::signing::ProtocolContext {
+            protocol_context: neo_signing::ProtocolContext {
                 schema_version: SIGNING_SCHEMA_VERSION,
                 protocol: "neo-n3-consensus".to_string(),
                 protocol_version: "1".to_string(),
@@ -697,7 +694,7 @@ mod tests {
                 .unwrap_or_default()
                 .as_millis() as i64
                 + 60_000,
-            idempotency: neo_core::signing::IdempotencyInfo {
+            idempotency: neo_signing::IdempotencyInfo {
                 schema_version: SIGNING_SCHEMA_VERSION,
                 key: format!("idem-{request_id}"),
                 replay_nonce: format!("nonce-{request_id}"),
@@ -727,8 +724,7 @@ mod tests {
         let public_key = backend.public_key().to_vec();
         let script_hash = ContractHelper::signature_redeem_script(&public_key);
         let account =
-            neo_core::UInt160::from(neo_core::cryptography::Crypto::hash160(&script_hash))
-                .to_string();
+            neo_primitives::UInt160::from(neo_crypto::Crypto::hash160(&script_hash)).to_string();
         let section = hardware_tee_provider_section(&hex::encode(&public_key), &account);
         let mock: Arc<dyn Pkcs11Backend> = Arc::new(backend.clone());
         let directory = tempfile::tempdir().expect("temporary signing store");
@@ -782,8 +778,7 @@ mod tests {
         let public_key = backend.public_key().to_vec();
         let script_hash = ContractHelper::signature_redeem_script(&public_key);
         let account =
-            neo_core::UInt160::from(neo_core::cryptography::Crypto::hash160(&script_hash))
-                .to_string();
+            neo_primitives::UInt160::from(neo_crypto::Crypto::hash160(&script_hash)).to_string();
         let mut section = hardware_tee_provider_section(&hex::encode(&public_key), &account);
         section
             .pkcs11

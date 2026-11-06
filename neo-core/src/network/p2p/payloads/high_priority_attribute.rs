@@ -9,24 +9,38 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+//! High priority transaction attribute.
+//!
+//! The canonical `HighPriorityAttribute` payload is owned by `neo-protocol` and
+//! re-exported here for backward compatibility (R2 leaf-type unification). All
+//! structural API (`new`, `Default`, and wire `Serializable`) is provided by
+//! `neo-protocol`.
+//!
+//! neo-core keeps only the snapshot-aware verification helper, exposed via the
+//! [`HighPriorityAttributeExt`] extension trait because it cannot be an
+//! inherent method on a foreign type (orphan rule).
+
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::helpers::NativeHelpers;
-use serde::{Deserialize, Serialize};
 
-/// Indicates that the transaction is of high priority.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HighPriorityAttribute;
+/// Canonical high priority transaction attribute, owned by `neo-protocol`.
+pub use neo_protocol::payloads::high_priority_attribute::HighPriorityAttribute;
 
-impl HighPriorityAttribute {
-    /// Creates a new high priority attribute.
-    pub fn new() -> Self {
-        Self
-    }
-
+/// neo-core-specific verification helper for [`HighPriorityAttribute`].
+pub trait HighPriorityAttributeExt {
     /// Verify the high priority attribute.
-    pub fn verify(
+    /// Matches C# Verify method.
+    fn verify(
+        &self,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        tx: &super::transaction::Transaction,
+    ) -> bool;
+}
+
+impl HighPriorityAttributeExt for HighPriorityAttribute {
+    fn verify(
         &self,
         settings: &ProtocolSettings,
         snapshot: &DataCache,
@@ -38,27 +52,5 @@ impl HighPriorityAttribute {
 
         let address = NativeHelpers::committee_address(settings, Some(snapshot));
         tx.signers().iter().any(|signer| signer.account == address)
-    }
-
-    /// Serialize without type byte.
-    pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        <Self as Serializable>::serialize(self, writer)
-    }
-}
-
-// Use macro to reduce boilerplate
-crate::impl_default_via_new!(HighPriorityAttribute);
-
-impl Serializable for HighPriorityAttribute {
-    fn size(&self) -> usize {
-        0 // No additional data
-    }
-
-    fn serialize(&self, _writer: &mut BinaryWriter) -> IoResult<()> {
-        Ok(()) // No data to serialize
-    }
-
-    fn deserialize(_reader: &mut MemoryReader) -> IoResult<Self> {
-        Ok(Self) // No data to deserialize
     }
 }

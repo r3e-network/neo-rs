@@ -1,8 +1,8 @@
 use neo_core::ScriptBuilder;
 use neo_core::hardfork::Hardfork;
-use neo_core::ledger::{Block, BlockHeader};
 use neo_core::neo_vm::stack_item::{Array, Pointer};
 use neo_core::neo_vm::{Script, StackItem};
+use neo_core::network::p2p::payloads::block::Block;
 use neo_core::network::p2p::payloads::signer::Signer;
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::persistence::DataCache;
@@ -49,11 +49,9 @@ fn make_test_transaction(sender: UInt160) -> Transaction {
 }
 
 fn make_persisting_block(nonce: u64) -> Block {
-    let header = BlockHeader {
-        nonce,
-        ..Default::default()
-    };
-    Block::new(header, Vec::new())
+    let mut block = Block::new();
+    block.header.set_nonce(nonce);
+    block
 }
 
 fn build_get_random_script(count: usize) -> Vec<u8> {
@@ -109,7 +107,7 @@ fn install_notify_contract(engine: &mut ApplicationEngine, param_type: ContractP
     let contract = ContractState::new(1, hash, nef, manifest);
 
     let state = engine.current_execution_state().expect("execution state");
-    state.lock().contract = Some(contract);
+    state.lock().contract = Some(Arc::new(contract));
 }
 
 fn push_notify_args(engine: &mut ApplicationEngine, event_name: &str, state: StackItem) {
@@ -146,6 +144,7 @@ fn runtime_get_random_same_block_matches_csharp() {
         settings.clone(),
         1100_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     let mut engine_2 = ApplicationEngine::new(
@@ -156,6 +155,7 @@ fn runtime_get_random_same_block_matches_csharp() {
         settings,
         1100_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -186,6 +186,7 @@ fn runtime_get_random_different_transactions_diverge() {
         settings.clone(),
         1100_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     let mut engine_2 = ApplicationEngine::new(
@@ -196,6 +197,7 @@ fn runtime_get_random_different_transactions_diverge() {
         settings,
         1100_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -219,6 +221,7 @@ fn runtime_log_rejects_invalid_utf8() {
         settings,
         1100_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine
@@ -249,6 +252,7 @@ fn runtime_notify_rejects_circular_state() {
         settings,
         1100_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine
@@ -279,6 +283,7 @@ fn runtime_notify_coerces_buffer_to_byte_string() {
         settings,
         1100_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine
@@ -312,6 +317,7 @@ fn runtime_notify_rejects_pointer_argument() {
         settings,
         1100_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine
@@ -341,6 +347,7 @@ fn runtime_notify_rejects_interop_interface_argument() {
         settings,
         1100_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine

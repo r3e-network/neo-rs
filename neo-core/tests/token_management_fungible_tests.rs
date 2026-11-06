@@ -1,9 +1,9 @@
 use neo_core::ScriptBuilder;
+use neo_core::UInt160;
 use neo_core::hardfork::Hardfork;
-use neo_core::ledger::Block;
-use neo_core::ledger::block_header::BlockHeader;
 use neo_core::neo_vm::StackItem;
 use neo_core::network::p2p::payloads::Witness;
+use neo_core::network::p2p::payloads::block::Block;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::CallFlags;
@@ -11,7 +11,6 @@ use neo_core::smart_contract::TriggerType;
 use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::native::NativeContract;
 use neo_core::smart_contract::native::token_management::TokenManagement;
-use neo_core::{UInt160, UInt256};
 use neo_vm::OpCode;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -36,10 +35,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         TriggerType::OnPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis.clone()),
+        Some(genesis.to_payload_block()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist.register_native_contract(std::sync::Arc::new(TokenManagement::new()));
@@ -49,10 +49,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         TriggerType::PostPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis),
+        Some(genesis.to_payload_block()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist.register_native_contract(std::sync::Arc::new(TokenManagement::new()));
@@ -64,18 +65,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
 }
 
 fn make_block(index: u32) -> Block {
-    let header = BlockHeader {
-        index,
-        previous_hash: UInt256::zero(),
-        merkle_root: UInt256::zero(),
-        timestamp: 1,
-        nonce: 0,
-        primary_index: 0,
-        next_consensus: UInt160::zero(),
-        witnesses: vec![Witness::empty()],
-        ..Default::default()
-    };
-    Block::new(header, Vec::new())
+    let mut block = Block::new();
+    block.header.set_index(index);
+    block.header.set_timestamp(1);
+    block.header.witness = Witness::empty();
+    block
 }
 
 fn sample_account(tag: u8) -> UInt160 {
@@ -124,6 +118,7 @@ impl FungibleFixture {
             settings,
             TEST_GAS_LIMIT,
             None,
+            neo_core::smart_contract::native::composition::default_native_services(),
         )
         .expect("engine");
         // TokenManagement is no longer part of the standard native registry

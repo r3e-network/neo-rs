@@ -6,9 +6,9 @@
 //! replay harness with real state.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use neo_core::Transaction;
-use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_core::network::p2p::payloads::Header;
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_protocol::payloads::header::Header;
+use neo_protocol::payloads::transaction::Transaction;
 
 /// Create a sample header with deterministic data for benchmarking.
 fn make_sample_header() -> Header {

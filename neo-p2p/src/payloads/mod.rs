@@ -15,8 +15,12 @@ pub mod filter_load_payload;
 pub mod get_block_by_index_payload;
 /// Get blocks request payload.
 pub mod get_blocks_payload;
+/// Headers response payload for `GetHeaders`.
+pub mod headers_payload;
 /// Inventory payload for announcements.
 pub mod inv_payload;
+/// Merkle block payload for filtered block responses.
+pub mod merkle_block_payload;
 /// Network address with timestamp.
 pub mod network_address_with_time;
 /// Node capability descriptors.
@@ -32,7 +36,9 @@ pub use filter_add_payload::FilterAddPayload;
 pub use filter_load_payload::FilterLoadPayload;
 pub use get_block_by_index_payload::GetBlockByIndexPayload;
 pub use get_blocks_payload::GetBlocksPayload;
+pub use headers_payload::HeadersPayload;
 pub use inv_payload::InvPayload;
+pub use merkle_block_payload::MerkleBlockPayload;
 pub use network_address_with_time::NetworkAddressWithTime;
 pub use node_capability::NodeCapability;
 pub use ping_payload::PingPayload;

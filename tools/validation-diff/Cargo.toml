@@ -5,7 +5,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-neo-core = { path = "../../neo-core" }
+neo-protocol = { path = "../../neo-protocol" }
 neo-primitives = { path = "../../neo-primitives" }
 neo-io = { path = "../../neo-io" }
 hex = "0.4"

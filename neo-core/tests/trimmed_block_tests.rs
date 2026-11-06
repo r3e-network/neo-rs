@@ -2,11 +2,11 @@ use chrono::{TimeZone, Utc};
 use neo_core::UInt160;
 use neo_core::UInt256;
 use neo_core::Witness;
-use neo_core::ledger::Block;
-use neo_core::ledger::block_header::BlockHeader;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::transaction::Transaction;
 use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
+use neo_protocol::execution::Block;
+use neo_protocol::execution::BlockHeader;
 
 fn sample_timestamp() -> u64 {
     Utc.with_ymd_and_hms(1988, 6, 1, 0, 0, 0)

@@ -3,8 +3,8 @@
 //! This module consolidates common helper functions used across RPC server modules
 //! to eliminate code duplication.
 
-use neo_core::{UInt160, UInt256};
 use neo_io::Serializable;
+use neo_primitives::{UInt160, UInt256};
 use serde_json::Value;
 use std::str::FromStr;
 

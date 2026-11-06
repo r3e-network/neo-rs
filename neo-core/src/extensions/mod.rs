@@ -6,13 +6,13 @@
 //! implementation.
 
 /// Byte and byte-array extension helpers (e.g. LZ4 compression).
+///
+/// Kept local to neo-core: the compression methods return the historical
+/// `CoreError`-wrapped `CompressionResult` contract asserted by core tests,
+/// so this trait is not interchangeable with the `IoError`-flavored
+/// `neo_io_crate::ByteLz4Extensions`.
 pub mod byte;
-pub mod error;
 
-/// Read-only memory extension helpers.
-pub mod memory;
-/// Span extension helpers.
-pub mod span;
 /// General-purpose extension utilities.
 pub mod utility;
 
@@ -25,10 +25,9 @@ pub mod log_level {
 }
 
 pub use byte::ByteLz4Extensions;
-pub use error::ExtensionResult;
 
-pub use memory::ReadOnlyMemoryExtensions;
-pub use span::SpanExtensions;
+pub use neo_io_crate::ReadOnlyMemoryExtensions;
+pub use neo_io_crate::SpanExtensions;
 pub use utility::ExtensionsUtility;
 
 pub use io::BinaryReaderExtensions;

@@ -80,6 +80,12 @@ impl ExecutionEngine {
     }
 
     /// Handles system calls. Delegates to the configured interop service when available.
+    ///
+    /// The service stays installed for the whole call. `System.Contract.Call`
+    /// runs the callee before it returns, and that callee issues its own
+    /// syscalls. Removing the service for the outer call made the inner
+    /// `System.Storage.GetContext` fail with "not supported" and aborted the
+    /// MainNet Proxy deploy at block 10550.
     pub fn on_syscall(&mut self, descriptor: u32) -> VmResult<()> {
         if self.interop_service.is_none() {
             return Err(VmError::invalid_operation_msg(format!(
@@ -87,12 +93,37 @@ impl ExecutionEngine {
             )));
         }
 
-        let mut service = self
+        if crate::syscalls::get_syscall_entry_by_u32(descriptor).is_some()
+            && let Some(result) = self.invoke_host_syscall(descriptor)
+        {
+            return result;
+        }
+
+        let prepared = self
             .interop_service
-            .take()
-            .expect("interop service should exist");
-        let result = service.invoke_by_hash(self, descriptor);
-        self.interop_service = Some(service);
-        result
+            .as_ref()
+            .and_then(|service| service.dynamic_dispatch(descriptor));
+        let Some(prepared) = prepared else {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Syscall 0x{descriptor:08x} not registered"
+            )));
+        };
+        if !self.has_call_flags(prepared.required_call_flags) {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Missing required call flags: {:?}",
+                prepared.required_call_flags
+            )));
+        }
+        if let Some(callback) = prepared.handler {
+            return callback(self);
+        }
+        if let Some(result) = self.invoke_host_syscall(descriptor) {
+            result
+        } else {
+            Err(VmError::invalid_operation_msg(format!(
+                "Syscall {} requires an interop host",
+                prepared.name
+            )))
+        }
     }
 }

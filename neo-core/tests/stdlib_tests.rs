@@ -46,6 +46,7 @@ fn make_engine_with_settings(settings: ProtocolSettings) -> ApplicationEngine {
         settings,
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine")
 }
@@ -67,10 +68,11 @@ fn make_engine_with_height(height: Option<u32>) -> ApplicationEngine {
         TriggerType::Application,
         Some(script_container),
         Arc::new(DataCache::new(false)),
-        persisting_block,
+        persisting_block.map(|block| block.to_payload_block()),
         stdlib_test_settings(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine")
 }

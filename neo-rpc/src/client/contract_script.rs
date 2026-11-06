@@ -1,8 +1,8 @@
 use crate::RpcError;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::CallFlags;
+use neo_primitives::CallFlags;
 use neo_primitives::UInt160;
 use neo_vm::OpCode;
+use neo_vm::ScriptBuilder;
 
 pub(crate) fn build_dynamic_call_script(
     script_hash: &UInt160,

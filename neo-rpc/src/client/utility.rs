@@ -47,11 +47,15 @@ pub use witness::{
 pub use witness_rule::rule_from_json;
 
 use neo_config::ProtocolSettings;
-use neo_core::smart_contract::native::NativeRegistry;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::{Block, BlockHeader, Contract, ECCurve, ECPoint, KeyPair, Transaction, Witness};
+use neo_core::{Block, BlockHeader, KeyPair};
+use neo_crypto::{ECCurve, ECPoint};
 use neo_json::{JObject, JToken};
+use neo_native_contracts::native::NativeRegistry;
 use neo_primitives::{UInt160, UInt256};
+use neo_protocol::payloads::Transaction;
+use neo_protocol::witness::Witness;
+use neo_smart_contract::contract::Contract;
 use neo_vm::StackValue;
 use num_bigint::BigInt;
 use std::sync::OnceLock;
@@ -63,7 +67,7 @@ pub struct RpcUtility;
 impl RpcUtility {
     fn native_registry() -> &'static NativeRegistry {
         static REGISTRY: OnceLock<NativeRegistry> = OnceLock::new();
-        REGISTRY.get_or_init(NativeRegistry::new)
+        REGISTRY.get_or_init(neo_native_contracts::native::composition::standard_registry)
     }
 
     /// Converts a `JToken` to a script hash
@@ -299,7 +303,7 @@ impl RpcUtility {
     pub fn rule_from_json(
         json: &JObject,
         protocol_settings: &ProtocolSettings,
-    ) -> Result<neo_core::WitnessRule, String> {
+    ) -> Result<neo_io::witness_rule::WitnessRule, String> {
         witness_rule::rule_from_json(json, protocol_settings)
     }
 }
@@ -344,10 +348,12 @@ mod tests {
     use super::*;
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
-    use neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode;
-    use neo_core::{Signer, TransactionAttribute, WitnessCondition};
+    use neo_io::witness_rule::WitnessCondition;
     use neo_json::JArray;
     use neo_primitives::{ADDRESS_SIZE, UInt256, WitnessScope};
+    use neo_protocol::payloads::Signer;
+    use neo_protocol::payloads::TransactionAttribute;
+    use neo_protocol::payloads::oracle_response_code::OracleResponseCode;
 
     #[test]
     fn to_script_hash_accepts_address() {
@@ -434,7 +440,7 @@ mod tests {
 
     #[test]
     fn as_script_hash_maps_native_contract_name_and_id() {
-        let registry = NativeRegistry::new();
+        let registry = neo_native_contracts::native::composition::standard_registry();
         let contract = registry.get_by_name("NeoToken").expect("NeoToken contract");
         let expected_hash = contract.hash().to_string();
         let name = contract.name().to_string();
@@ -470,7 +476,7 @@ mod tests {
         obj.insert("value".to_string(), JToken::Boolean(true));
 
         let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
-        std::assert_matches!(item, StackValue::Boolean(true));
+        assert!(matches!(item, StackValue::Boolean(true)));
     }
 
     #[test]
@@ -483,7 +489,7 @@ mod tests {
         obj.insert("id".to_string(), JToken::String("iter-1".to_string()));
 
         let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
-        std::assert_matches!(item, StackValue::Interop(0));
+        assert!(matches!(item, StackValue::Interop(0)));
     }
 
     #[test]
@@ -511,12 +517,12 @@ mod tests {
         pointer.insert("value".to_string(), JToken::String("7".to_string()));
 
         let item = RpcUtility::stack_item_from_json(&pointer).expect("pointer");
-        std::assert_matches!(item, StackValue::Pointer(7));
+        assert!(matches!(item, StackValue::Pointer(7)));
 
         let mut any = JObject::new();
         any.insert("type".to_string(), JToken::String("Any".to_string()));
         let item = RpcUtility::stack_item_from_json(&any).expect("any");
-        std::assert_matches!(item, StackValue::Null);
+        assert!(matches!(item, StackValue::Null));
     }
 
     #[test]
@@ -540,13 +546,13 @@ mod tests {
         let mut empty = JObject::new();
         empty.insert("type".to_string(), JToken::String("Unknown".to_string()));
         let item = RpcUtility::stack_item_from_json(&empty).expect("fallback null");
-        std::assert_matches!(item, StackValue::Null);
+        assert!(matches!(item, StackValue::Null));
     }
 
     #[test]
     fn transaction_roundtrip_json() {
-        use neo_core::network::p2p::payloads::witness::Witness as PayloadWitness;
         use neo_primitives::WitnessScope;
+        use neo_protocol::witness::Witness as PayloadWitness;
 
         let mut tx = Transaction::new();
         tx.set_version(1);
@@ -666,7 +672,7 @@ mod tests {
 
     #[test]
     fn transaction_roundtrip_with_custom_signer() {
-        use neo_core::witness_rule::WitnessRuleAction;
+        use neo_io::witness_rule::WitnessRuleAction;
 
         let mut tx = Transaction::new();
         tx.set_nonce(999);
@@ -681,7 +687,7 @@ mod tests {
         let key = KeyPair::generate().unwrap();
         let group_point = ECPoint::from_bytes(&key.compressed_public_key()).unwrap();
         signer.allowed_groups.push(group_point);
-        signer.rules.push(neo_core::WitnessRule::new(
+        signer.rules.push(neo_io::witness_rule::WitnessRule::new(
             WitnessRuleAction::Deny,
             WitnessCondition::CalledByEntry,
         ));
@@ -708,11 +714,11 @@ mod tests {
 
     #[test]
     fn transaction_roundtrip_preserves_attributes() {
-        use neo_core::network::p2p::payloads::conflicts::Conflicts;
-        use neo_core::network::p2p::payloads::not_valid_before::NotValidBefore;
-        use neo_core::network::p2p::payloads::notary_assisted::NotaryAssisted;
-        use neo_core::network::p2p::payloads::oracle_response::OracleResponse;
-        use neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode;
+        use neo_protocol::payloads::conflicts::Conflicts;
+        use neo_protocol::payloads::not_valid_before::NotValidBefore;
+        use neo_protocol::payloads::notary_assisted::NotaryAssisted;
+        use neo_protocol::payloads::oracle_response::OracleResponse;
+        use neo_protocol::payloads::oracle_response_code::OracleResponseCode;
 
         let mut tx = Transaction::new();
         tx.set_nonce(1);
@@ -738,7 +744,10 @@ mod tests {
 
         assert_eq!(parsed.attributes().len(), attributes.len());
         // Check representative attributes for correctness
-        std::assert_matches!(parsed.attributes()[0], TransactionAttribute::HighPriority);
+        assert!(matches!(
+            parsed.attributes()[0],
+            TransactionAttribute::HighPriority
+        ));
         if let TransactionAttribute::NotValidBefore(nvb) = &parsed.attributes()[1] {
             assert_eq!(nvb.height, 42);
         } else {
@@ -773,7 +782,7 @@ mod tests {
             obj
         };
         let conflicts = attribute_from_json(&conflicts_json).unwrap();
-        std::assert_matches!(conflicts, TransactionAttribute::Conflicts(_));
+        assert!(matches!(conflicts, TransactionAttribute::Conflicts(_)));
 
         let mut nvb = JObject::new();
         nvb.insert(
@@ -782,7 +791,7 @@ mod tests {
         );
         nvb.insert("height".to_string(), JToken::Number(5f64));
         let nvb_attr = attribute_from_json(&nvb).unwrap();
-        std::assert_matches!(nvb_attr, TransactionAttribute::NotValidBefore(_));
+        assert!(matches!(nvb_attr, TransactionAttribute::NotValidBefore(_)));
 
         let mut notary = JObject::new();
         notary.insert(
@@ -791,7 +800,10 @@ mod tests {
         );
         notary.insert("nkeys".to_string(), JToken::Number(2f64));
         let notary_attr = attribute_from_json(&notary).unwrap();
-        std::assert_matches!(notary_attr, TransactionAttribute::NotaryAssisted(_));
+        assert!(matches!(
+            notary_attr,
+            TransactionAttribute::NotaryAssisted(_)
+        ));
 
         let mut oracle = JObject::new();
         oracle.insert(
@@ -805,7 +817,10 @@ mod tests {
             JToken::String(BASE64.encode(b"hello")),
         );
         let oracle_attr = attribute_from_json(&oracle).unwrap();
-        std::assert_matches!(oracle_attr, TransactionAttribute::OracleResponse(_));
+        assert!(matches!(
+            oracle_attr,
+            TransactionAttribute::OracleResponse(_)
+        ));
     }
 
     #[test]

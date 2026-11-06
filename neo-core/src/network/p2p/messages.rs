@@ -447,16 +447,18 @@ mod tests {
             other => panic!("expected ping payload, got {other:?}"),
         }
 
-        std::assert_matches!(
+        assert!(matches!(
             ProtocolMessage::from_bytes(MessageCommand::Verack, &[]).unwrap(),
             ProtocolMessage::Verack
-        );
+        ));
 
         let alert = ProtocolMessage::from_bytes(MessageCommand::Alert, &[0xA1, 0xA2]).unwrap();
-        std::assert_matches!(alert, ProtocolMessage::Alert(bytes) if bytes == [0xA1, 0xA2]);
+        assert!(matches!(alert, ProtocolMessage::Alert(bytes) if bytes == [0xA1, 0xA2]));
 
         let unknown = ProtocolMessage::from_bytes(MessageCommand::Unknown(0xFE), &[0xB1]).unwrap();
-        std::assert_matches!(unknown, ProtocolMessage::Unknown { command: MessageCommand::Unknown(0xFE), bytes } if bytes == [0xB1]
+        assert!(
+            matches!(unknown, ProtocolMessage::Unknown { command: MessageCommand::Unknown(0xFE), bytes } if bytes == [0xB1]
+            )
         );
     }
 
@@ -464,7 +466,9 @@ mod tests {
     fn protocol_message_rejects_non_empty_empty_payloads() {
         let error = ProtocolMessage::from_bytes(MessageCommand::FilterClear, &[0x01]).unwrap_err();
 
-        std::assert_matches!(error, NetworkError::InvalidMessage(message) if message.contains("does not carry a payload")
+        assert!(
+            matches!(error, NetworkError::InvalidMessage(message) if message.contains("does not carry a payload")
+            )
         );
     }
 
@@ -476,7 +480,9 @@ mod tests {
 
         let error = ProtocolMessage::from_bytes(MessageCommand::Ping, &ping_bytes).unwrap_err();
 
-        std::assert_matches!(error, NetworkError::InvalidMessage(message) if message.contains("Trailing bytes present")
+        assert!(
+            matches!(error, NetworkError::InvalidMessage(message) if message.contains("Trailing bytes present")
+            )
         );
     }
 }

@@ -12,12 +12,15 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::{RpcContractState, RpcNep17TokenInfo, RpcNep17Transfers};
 use crate::{ContractClient, RpcClient, RpcError, RpcUtility, TransactionManagerFactory};
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::CallFlags;
+use neo_core::KeyPair;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::{Contract, ECPoint, KeyPair, Signer, Transaction};
+use neo_crypto::ECPoint;
+use neo_primitives::CallFlags;
 use neo_primitives::{UInt160, WitnessScope};
+use neo_protocol::payloads::{Signer, Transaction};
+use neo_smart_contract::contract::Contract;
 use neo_vm::OpCode;
+use neo_vm::ScriptBuilder;
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;

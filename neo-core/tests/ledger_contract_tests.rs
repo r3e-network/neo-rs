@@ -81,10 +81,11 @@ fn persist_block(snapshot: &Arc<DataCache>, block: &Block, settings: ProtocolSet
         TriggerType::OnPersist,
         None,
         Arc::clone(snapshot),
-        Some(block.clone()),
+        Some(block.to_payload_block()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist.native_on_persist().expect("native on persist");
@@ -93,10 +94,11 @@ fn persist_block(snapshot: &Arc<DataCache>, block: &Block, settings: ProtocolSet
         TriggerType::PostPersist,
         None,
         Arc::clone(snapshot),
-        Some(block.clone()),
+        Some(block.to_payload_block()),
         settings,
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist
@@ -113,6 +115,7 @@ fn application_engine(snapshot: &Arc<DataCache>) -> ApplicationEngine {
         ProtocolSettings::default(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("application engine")
 }
@@ -347,7 +350,7 @@ fn ledger_get_block_reconstructs_from_trimmed_block_and_states() {
         StorageItem::from_bytes(serialize_transaction_state_record(1, VMState::NONE, &tx2)),
     );
 
-    let header = BlockHeader::new(
+    let header = neo_protocol::execution::BlockHeader::new(
         0,
         UInt256::parse("0xa400ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff01")
             .unwrap(),
@@ -541,7 +544,8 @@ fn ledger_invoke_read_methods_keep_result_shapes() {
     let current_index = ledger
         .invoke(&mut engine, "currentIndex", &[])
         .expect("currentIndex");
-    assert_eq!(current_index, 0_u32.to_le_bytes());
+    // Native Integer results use signed little-endian VM encoding, not fixed-width u32.
+    assert_eq!(current_index, vec![0]);
 
     let block_item = deserialize_ledger_item(
         &ledger

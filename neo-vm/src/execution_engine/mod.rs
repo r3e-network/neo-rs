@@ -238,6 +238,9 @@ pub struct ExecutionEngine {
     /// The VM object representing the uncaught exception
     pub(crate) uncaught_exception: Option<StackItem>,
 
+    /// Whether the terminal fault was a VMUnhandledException rather than a host fault.
+    pub(crate) unhandled_vm_exception: bool,
+
     /// Number of instructions executed during this execution session.
     pub instructions_executed: u64,
 

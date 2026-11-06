@@ -163,7 +163,7 @@ fn replay_block_1268131_assert_csharp_root() {
         u160("0x682cca3ebdc66210e5847d7f8115846586079d4a"),
         vec![],
     );
-    let block = Arc::new(Block::new(header, vec![tx.clone()]));
+    let block = Arc::new(Block::new(header, vec![tx.clone()]).to_payload_block());
 
     // OnPersist
     let mut on_persist_engine = ApplicationEngine::new_with_shared_block(
@@ -174,6 +174,7 @@ fn replay_block_1268131_assert_csharp_root() {
         ProtocolSettings::mainnet(),
         neo_core::smart_contract::application_engine::TEST_MODE_GAS,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist_engine.native_on_persist().expect("on persist");
@@ -221,6 +222,7 @@ fn replay_block_1268131_assert_csharp_root() {
         seeded_contracts.clone(),
         Arc::clone(&seeded_native_cache),
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("tx engine");
     tx_engine.set_state(tx_states);
@@ -267,6 +269,7 @@ fn replay_block_1268131_assert_csharp_root() {
         seeded_contracts,
         seeded_native_cache,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist_engine.set_state(tx_states);

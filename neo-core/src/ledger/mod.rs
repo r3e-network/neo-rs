@@ -31,11 +31,14 @@ pub(crate) mod header_wire;
 /// Ledger context for operations.
 pub mod ledger_context;
 /// Transaction memory pool.
-pub mod memory_pool;
+///
+/// Canonical implementation re-exported from the `neo-mempool` crate
+/// (task 179 / C-1). The former local copy under `neo-core/src/ledger/memory_pool`
+/// was removed; `neo-mempool` shares the same protocol/storage/primitives types,
+/// so `crate::ledger::MemoryPool` and `crate::ledger::memory_pool::*` still resolve.
+pub use neo_mempool::memory_pool;
 /// New transaction event arguments.
 pub mod new_transaction_event_args;
-/// Pool item wrapper for transactions.
-pub mod pool_item;
 /// Transaction removal reasons.
 pub mod transaction_removal_reason;
 /// Transaction removed event arguments.
@@ -51,9 +54,8 @@ pub use block::Block;
 pub use block_header::BlockHeader;
 #[cfg(feature = "runtime")]
 pub use blockchain::{
-    Blockchain, BlockchainCommand, BlockchainHandle, FillCompleted, FillMemoryPool, Import,
-    ImportCompleted, PersistCompleted, PersistFailed, PreverifyCompleted, RelayResult, Reverify,
-    ReverifyItem,
+    BlockchainCommand, BlockchainHandle, FillCompleted, FillMemoryPool, Import, ImportCompleted,
+    PersistCompleted, PersistFailed, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
 };
 pub use blockchain_application_executed::ApplicationExecuted;
 pub use genesis::create_genesis_block;
@@ -61,11 +63,10 @@ pub use header_cache::HeaderCache;
 pub use ledger_context::LedgerContext;
 pub use memory_pool::MemoryPool;
 pub use new_transaction_event_args::NewTransactionEventArgs;
-pub use pool_item::PoolItem;
 pub use transaction_removal_reason::TransactionRemovalReason;
 pub use transaction_removed_event_args::TransactionRemovedEventArgs;
 pub use transaction_router::TransactionRouter;
-pub use transaction_verification_context::TransactionVerificationContext;
+pub use transaction_verification_context::{Payer, TransactionVerificationContext};
 pub use verify_result::VerifyResult;
 
 // Compatibility types for callers that referenced the old `neo-core::ledger` surface.

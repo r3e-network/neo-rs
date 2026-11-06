@@ -7,7 +7,6 @@
 use crate::network::p2p::payloads::{transaction::Transaction, witness::Witness};
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::contract::Contract;
-use crate::smart_contract::contract_parameter_type::ContractParameterType;
 use crate::wallets::helper::Helper;
 use crate::wallets::key_pair::KeyPair;
 use crate::wallets::version::Version;
@@ -15,6 +14,7 @@ use crate::wallets::wallet::{Wallet, WalletError, WalletResult};
 use crate::wallets::wallet_account::{StandardWalletAccount, WalletAccount};
 use crate::{UInt160, UInt256};
 use async_trait::async_trait;
+use neo_primitives::ContractParameterType;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -856,5 +856,113 @@ fn default_parameter_names(contract: &Contract) -> Vec<String> {
             .enumerate()
             .map(|(index, _)| format!("parameter{index}"))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn contract_parameter_types_round_trip_through_nep6_json() {
+        use neo_primitives::ContractParameterType as ParameterType;
+
+        let cases = [
+            ("Any", ParameterType::Any),
+            ("Boolean", ParameterType::Boolean),
+            ("Integer", ParameterType::Integer),
+            ("ByteArray", ParameterType::ByteArray),
+            ("String", ParameterType::String),
+            ("Hash160", ParameterType::Hash160),
+            ("Hash256", ParameterType::Hash256),
+            ("PublicKey", ParameterType::PublicKey),
+            ("Signature", ParameterType::Signature),
+            ("Array", ParameterType::Array),
+            ("Map", ParameterType::Map),
+            ("InteropInterface", ParameterType::InteropInterface),
+            ("Void", ParameterType::Void),
+        ];
+        let names: Vec<String> = cases
+            .iter()
+            .map(|(name, _)| format!("argument{name}"))
+            .collect();
+        let parameters: Vec<Value> = cases
+            .iter()
+            .zip(&names)
+            .map(|((name, _), parameter_name)| json!({"name": parameter_name, "type": name}))
+            .collect();
+        let expected = json!({"script": "010203", "parameters": parameters, "deployed": false});
+        let json = serde_json::to_string(&expected).unwrap();
+        let file: Nep6ContractFile = serde_json::from_str(&json).unwrap();
+        let decoded = Nep6Contract::from_file(&file).expect("NEP-6 contract decoding");
+        let expected_types: Vec<ParameterType> = cases.iter().map(|(_, kind)| *kind).collect();
+        let actual_types: &[ParameterType] = &decoded.contract.parameter_list;
+
+        assert_eq!(actual_types, expected_types.as_slice());
+        assert_eq!(decoded.parameter_names, names);
+        assert_eq!(decoded.contract.script, vec![1, 2, 3]);
+        assert!(!decoded.deployed);
+        let encoded = Nep6Contract::to_file(&decoded.contract, &decoded.parameter_names);
+        assert_eq!(serde_json::to_value(encoded).unwrap(), expected);
+
+        let authoritative_contract = Contract::create(expected_types, vec![1, 2, 3]);
+        let encoded = Nep6Contract::to_file(&authoritative_contract, &names);
+        assert_eq!(serde_json::to_value(encoded).unwrap(), expected);
+    }
+
+    #[test]
+    fn contract_parameter_type_json_rejects_aliases_and_noncanonical_names() {
+        for name in ["boolean", "bool", "int", "bytes", "17", "Unknown", ""] {
+            let json = json!({
+                "script": "01",
+                "parameters": [{"name": "argument", "type": name}],
+                "deployed": false
+            });
+            let file: Nep6ContractFile = serde_json::from_str(&json.to_string()).unwrap();
+            let err =
+                Nep6Contract::from_file(&file).expect_err("NEP-6 names remain case-sensitive");
+            match err {
+                WalletError::Other(message) => assert_eq!(
+                    message,
+                    format!("Unsupported contract parameter type: {name}")
+                ),
+                other => panic!("unexpected NEP-6 error: {other}"),
+            }
+        }
+    }
+
+    #[test]
+    fn contract_parameter_names_and_deployed_serialization_remain_unchanged() {
+        let json = json!({
+            "script": "01",
+            "parameters": [{"name": "customSignature", "type": "Signature"}],
+            "deployed": true
+        });
+        let file: Nep6ContractFile = serde_json::from_str(&json.to_string()).unwrap();
+        let decoded = Nep6Contract::from_file(&file).unwrap();
+        assert!(decoded.deployed);
+        assert_eq!(
+            default_parameter_names(&decoded.contract),
+            vec!["signature"]
+        );
+
+        let encoded = Nep6Contract::to_file(&decoded.contract, &decoded.parameter_names);
+        assert_eq!(encoded.parameters[0].name, "customSignature");
+        assert_eq!(encoded.parameters[0].param_type, "Signature");
+        assert!(!encoded.deployed);
+
+        let contract = Contract::create(
+            vec![neo_primitives::ContractParameterType::Integer; 2],
+            vec![1],
+        );
+        assert_eq!(
+            default_parameter_names(&contract),
+            vec!["parameter0", "parameter1"]
+        );
+        let encoded = Nep6Contract::to_file(&contract, &["amount".to_string()]);
+        assert_eq!(encoded.parameters[0].name, "amount");
+        assert_eq!(encoded.parameters[1].name, "parameter1");
+        assert_eq!(encoded.parameters[1].param_type, "Integer");
     }
 }

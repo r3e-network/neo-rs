@@ -1,0 +1,31 @@
+[package]
+name = "neo-actors"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Generic asynchronous actor runtime (Actor, ActorRef, ActorSystem, Mailbox, Scheduler, EventStream)"
+
+[dependencies]
+# Deliberately NO neo-* dependencies: the actor framework is a generic runtime.
+# Every message payload is `Box<dyn Any + Send>`, so protocol types stay in
+# their owning crates and are supplied by callers through `Props`.
+async-trait = { workspace = true }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+# `rt` provides `tokio_util::task::TaskTracker` used for supervised actor tasks;
+# `tokio_util::sync::{CancellationToken, DropGuard}` are always available.
+tokio-util = { workspace = true, features = ["rt"] }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

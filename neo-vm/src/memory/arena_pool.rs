@@ -89,11 +89,11 @@ impl ArenaMemoryPool {
     /// Creates a new arena memory pool with default capacity.
     #[must_use]
     pub fn new() -> Self {
-        let inner = Box::into_non_null(Box::new(UnsafeArena {
+        let inner = NonNull::from(Box::leak(Box::new(UnsafeArena {
             arena: bumpalo::Bump::new(),
             capacity_bytes: Self::DEFAULT_CAPACITY,
             used_bytes: std::cell::Cell::new(0),
-        }));
+        })));
 
         Self {
             inner: Cell::new(inner),
@@ -112,11 +112,11 @@ impl ArenaMemoryPool {
     /// let arena = ArenaMemoryPool::with_capacity(2 * 1024 * 1024); // 2MB
     /// ```
     pub fn with_capacity(capacity: usize) -> Self {
-        let inner = Box::into_non_null(Box::new(UnsafeArena {
+        let inner = NonNull::from(Box::leak(Box::new(UnsafeArena {
             arena: bumpalo::Bump::with_capacity(capacity),
             capacity_bytes: capacity,
             used_bytes: std::cell::Cell::new(0),
-        }));
+        })));
 
         Self {
             inner: Cell::new(inner),
@@ -124,7 +124,7 @@ impl ArenaMemoryPool {
     }
 
     fn arena(&self) -> &UnsafeArena {
-        // SAFETY: `inner` comes from `Box::into_non_null` and is never freed.
+        // SAFETY: `inner` comes from a leaked `Box` and is never freed.
         // Clones alias the same allocation.
         unsafe { self.inner.get().as_ref() }
     }

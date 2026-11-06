@@ -1,0 +1,39 @@
+[package]
+name = "neo-mempool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Memory pool for Neo blockchain transaction management"
+publish = false
+
+[dependencies]
+# Internal crates - consume decomposed protocol/ledger/storage/native APIs and
+# neo-primitives types. No dependency on neo-core.
+neo-ledger = { workspace = true }
+neo-native-contracts = { workspace = true }
+neo-primitives = { workspace = true }
+neo-protocol = { workspace = true }
+neo-storage = { workspace = true }
+
+# External dependencies
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+neo-vm = { workspace = true }
+neo-wallets = { workspace = true }
+
+[lints]
+workspace = true

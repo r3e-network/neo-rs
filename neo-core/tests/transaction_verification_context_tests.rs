@@ -1,14 +1,18 @@
+use neo_core::TransactionExt;
 use neo_core::UInt160;
 use neo_core::WitnessScope;
-use neo_core::ledger::TransactionVerificationContext;
+use neo_core::ledger::{TransactionVerificationContext, VerifyResult};
 use neo_core::network::p2p::payloads::{
-    notary_assisted::NotaryAssisted, oracle_response::OracleResponse,
+    block::Block, notary_assisted::NotaryAssisted, oracle_response::OracleResponse,
     oracle_response_code::OracleResponseCode, signer::Signer, transaction::Transaction,
     transaction_attribute::TransactionAttribute,
 };
 use neo_core::persistence::DataCache;
+use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::native::notary::Deposit;
-use neo_core::smart_contract::native::{NativeContract, Notary};
+use neo_core::smart_contract::native::{LedgerContract, NativeContract, Notary};
+use neo_core::{UInt256, Witness};
+use neo_vm::OpCode;
 use num_bigint::BigInt;
 use num_traits::Zero;
 
@@ -47,6 +51,151 @@ fn build_sponsored_transaction(
         NotaryAssisted::new(1),
     )]);
     tx
+}
+
+fn build_inclusion_block() -> Block {
+    let mut block = Block::new();
+    block.header.set_index(100);
+    let witness =
+        Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSHT.byte(), OpCode::RET.byte()]);
+    let mut tx = Transaction::new();
+    tx.set_nonce(100);
+    tx.set_system_fee(0);
+    tx.set_network_fee(100_000_000);
+    tx.set_valid_until_block(block.index());
+    tx.set_script(vec![OpCode::PUSHT.byte(), OpCode::RET.byte()]);
+    tx.set_signers(vec![Signer::new(witness.script_hash(), WitnessScope::NONE)]);
+    tx.set_witnesses(vec![witness]);
+    block.transactions.push(tx);
+    block
+}
+
+#[test]
+fn inclusion_predecessor_height_accepts_transaction_expired_at_snapshot_height() {
+    let snapshot = DataCache::new(false);
+    let ledger = LedgerContract::new();
+    let snapshot_hash = UInt256::from([0x81; 32]);
+    ledger
+        .set_current_block_state(&snapshot, &snapshot_hash, 100)
+        .expect("persist snapshot height");
+    let snapshot_height = ledger
+        .current_index(&snapshot)
+        .expect("read snapshot height");
+    assert_eq!(snapshot_height, 100);
+    assert_eq!(
+        ledger.current_hash(&snapshot).expect("read snapshot hash"),
+        snapshot_hash
+    );
+
+    let block = build_inclusion_block();
+    let previous_height = block.index() - 1;
+    let tx = &block.transactions[0];
+    let mut settings = ProtocolSettings::default_settings();
+    settings.max_valid_until_block_increment = 10;
+    assert_eq!(previous_height, 99);
+    assert_ne!(previous_height, snapshot_height);
+    assert_eq!(tx.valid_until_block(), block.index());
+    assert_eq!(
+        tx.verify_state_independent(&settings),
+        VerifyResult::Succeed
+    );
+
+    assert_eq!(
+        tx.verify_state_dependent_at_height(&settings, &snapshot, previous_height, None, &[]),
+        VerifyResult::Succeed
+    );
+    assert_eq!(
+        tx.verify_state_dependent_at_height(&settings, &snapshot, block.index(), None, &[]),
+        VerifyResult::Expired
+    );
+    assert_eq!(
+        tx.verify_state_dependent(&settings, &snapshot, None, &[]),
+        VerifyResult::Expired
+    );
+    assert_eq!(
+        ledger
+            .current_index(&snapshot)
+            .expect("unchanged snapshot height"),
+        100
+    );
+
+    ledger
+        .set_current_block_state(&snapshot, &snapshot_hash, previous_height)
+        .expect("update snapshot height");
+    assert_eq!(
+        ledger
+            .current_index(&snapshot)
+            .expect("updated snapshot height"),
+        99
+    );
+    assert_eq!(
+        tx.verify_state_dependent(&settings, &snapshot, None, &[]),
+        VerifyResult::Succeed
+    );
+}
+
+#[test]
+fn inclusion_predecessor_height_accepts_transaction_beyond_snapshot_validity_window() {
+    let snapshot = DataCache::new(false);
+    let ledger = LedgerContract::new();
+    let snapshot_hash = UInt256::from([0x82; 32]);
+    ledger
+        .set_current_block_state(&snapshot, &snapshot_hash, 10)
+        .expect("persist snapshot height");
+    let snapshot_height = ledger
+        .current_index(&snapshot)
+        .expect("read snapshot height");
+    assert_eq!(snapshot_height, 10);
+    assert_eq!(
+        ledger.current_hash(&snapshot).expect("read snapshot hash"),
+        snapshot_hash
+    );
+
+    let block = build_inclusion_block();
+    let previous_height = block.index() - 1;
+    let tx = &block.transactions[0];
+    let mut settings = ProtocolSettings::default_settings();
+    settings.max_valid_until_block_increment = 10;
+    assert_eq!(previous_height, 99);
+    assert_ne!(previous_height, snapshot_height);
+    assert_eq!(tx.valid_until_block(), 100);
+    assert_eq!(
+        tx.verify_state_independent(&settings),
+        VerifyResult::Succeed
+    );
+
+    assert_eq!(
+        tx.verify_state_dependent_at_height(&settings, &snapshot, previous_height, None, &[]),
+        VerifyResult::Succeed
+    );
+    assert_eq!(
+        tx.verify_state_dependent_at_height(&settings, &snapshot, snapshot_height, None, &[]),
+        VerifyResult::NotYetValid
+    );
+    assert_eq!(
+        tx.verify_state_dependent(&settings, &snapshot, None, &[]),
+        VerifyResult::NotYetValid
+    );
+    assert_eq!(
+        ledger
+            .current_index(&snapshot)
+            .expect("unchanged snapshot height"),
+        10
+    );
+
+    ledger
+        .set_current_block_state(&snapshot, &snapshot_hash, previous_height)
+        .expect("update snapshot height");
+    assert_eq!(
+        ledger
+            .current_index(&snapshot)
+            .expect("updated snapshot height"),
+        99
+    );
+    assert_eq!(
+        tx.verify_state_dependent(&settings, &snapshot, None, &[]),
+        VerifyResult::Succeed
+    );
 }
 
 #[test]

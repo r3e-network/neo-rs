@@ -27,6 +27,9 @@ members = [
     # Core (matches C# Neo.csproj)
     "neo-core",
 
+    # Protocol settings and signing data
+    "neo-protocol",
+
     # P2P networking
     "neo-p2p",
 
@@ -35,6 +38,28 @@ members = [
 
     # dBFT consensus
     "neo-consensus",
+
+    # === neo-core decomposition crates (task 89) ===
+    # Generic async actor runtime (task 189); depends on no other neo-* crate
+    "neo-actors",
+    # Ledger persistence and block/transaction validation
+    "neo-ledger",
+    # Unified, policy-bound signing service contracts
+    "neo-signing",
+    # Smart contract application engine, manifests, and storage
+    "neo-smart-contract",
+    # Actor runtime and system adapters
+    "neo-system",
+    # Wallet primitives (BIP-32 / BIP-39)
+    "neo-wallets",
+    # Native contract definitions and metadata
+    "neo-native-contracts",
+    # Memory pool for transaction management
+    "neo-mempool",
+    # Oracle service implementation
+    "neo-oracle",
+    # Canonical state root computation / verification service
+    "neo-state-service",
 
     # Extensions (matches C# Neo.Extensions)
 
@@ -88,6 +113,7 @@ default-members = [
     "neo-json",
     "neo-vm",
     "neo-core",
+    "neo-protocol",
     "neo-p2p",
     "neo-rpc",
     "neo-consensus",
@@ -155,9 +181,27 @@ neo-json = { path = "neo-json", version = "0.20.0" }
 # Core layer
 neo-vm = { path = "neo-vm", version = "0.20.0" }
 neo-core = { path = "neo-core", version = "0.20.0" }
+neo-protocol = { path = "neo-protocol", version = "0.20.0" }
 neo-p2p = { path = "neo-p2p", version = "0.20.0" }
 neo-rpc = { path = "neo-rpc", version = "0.20.0" }
 neo-consensus = { path = "neo-consensus", version = "0.20.0" }
+
+# Generic actor runtime extracted from neo-core (task 189). It has no neo-*
+# dependency, so it carries the workspace version like the core layer above.
+neo-actors = { path = "neo-actors", version = "0.20.0" }
+
+# neo-core decomposition crates (task 89).
+# Path-only entries: neo-oracle currently pins its own package version (0.1.0),
+# so no workspace version constraint is imposed on these new crates.
+neo-ledger = { path = "neo-ledger" }
+neo-signing = { path = "neo-signing" }
+neo-smart-contract = { path = "neo-smart-contract" }
+neo-system = { path = "neo-system" }
+neo-wallets = { path = "neo-wallets" }
+neo-native-contracts = { path = "neo-native-contracts" }
+neo-mempool = { path = "neo-mempool" }
+neo-oracle = { path = "neo-oracle" }
+neo-state-service = { path = "neo-state-service" }
 
 # Infrastructure layer
 neo-tee = { path = "neo-tee", version = "0.20.0" }

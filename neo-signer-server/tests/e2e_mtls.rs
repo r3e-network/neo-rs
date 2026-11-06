@@ -22,18 +22,18 @@ mod common;
 
 use common::client::MtlsSignerClient;
 use common::{client_policy, start_signer, start_signer_with};
-use neo_core::signing::{
+use neo_crypto::Secp256r1Crypto;
+use neo_signer_server::FaultPolicy;
+use neo_signing::{
     REMOTE_SIGNER_PROTOCOL_VERSION, RemoteOperationStatus, RemoteSignDispatchResult, SignErrorCode,
     SignPurpose,
 };
-use neo_crypto::Secp256r1Crypto;
-use neo_signer_server::FaultPolicy;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const NETWORK: u32 = 860_833_102;
 
 /// Extracts a 64-byte provider signature from a sign response.
-fn signature_bytes(response: &neo_core::signing::RemoteSignResponse) -> [u8; 64] {
+fn signature_bytes(response: &neo_signing::RemoteSignResponse) -> [u8; 64] {
     response
         .provider_signature
         .signature
@@ -44,7 +44,7 @@ fn signature_bytes(response: &neo_core::signing::RemoteSignResponse) -> [u8; 64]
 
 /// Verifies a consensus digest signature against the server's sealed key.
 fn verify_provider_signature(
-    response: &neo_core::signing::RemoteSignResponse,
+    response: &neo_signing::RemoteSignResponse,
     digest: [u8; 32],
     public_key: &[u8],
 ) -> bool {

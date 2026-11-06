@@ -41,6 +41,7 @@ impl ExecutionEngine {
             result_stack,
             reference_counter,
             uncaught_exception: None,
+            unhandled_vm_exception: false,
             instructions_executed: 0,
             gas_consumed: 0,
             gas_limit: DEFAULT_GAS_LIMIT,
@@ -71,6 +72,7 @@ impl ExecutionEngine {
     pub(crate) fn on_fault(&mut self, err: VmError) {
         #[cfg(debug_assertions)]
         println!("ExecutionEngine fault: {err:?}");
+        self.unhandled_vm_exception = matches!(&err, VmError::UnhandledException(_));
         if self.uncaught_exception.is_none() {
             let message = match err {
                 VmError::CatchableException { message } => message,
@@ -169,10 +171,18 @@ impl ExecutionEngine {
         self.uncaught_exception.as_ref()
     }
 
+    /// Returns whether the terminal fault represents an unhandled VM `THROW`.
+    #[inline]
+    #[must_use]
+    pub const fn has_unhandled_vm_exception(&self) -> bool {
+        self.unhandled_vm_exception
+    }
+
     /// Sets the uncaught exception.
     #[inline]
     pub fn set_uncaught_exception(&mut self, exception: Option<StackItem>) {
         self.uncaught_exception = exception;
+        self.unhandled_vm_exception = false;
     }
 
     /// Gets the uncaught exception (matches C# `UncaughtException` property exactly).

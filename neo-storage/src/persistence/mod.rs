@@ -5,6 +5,8 @@ pub mod providers;
 pub mod read_cache;
 pub mod read_only_store;
 pub mod seek_direction;
+pub mod serialization;
+pub mod storage;
 pub mod store;
 pub mod store_cache;
 pub mod store_factory;
@@ -12,6 +14,7 @@ pub mod store_provider;
 pub mod store_snapshot;
 pub mod track_state;
 pub mod transaction;
+pub mod write_batch_buffer;
 pub mod write_store;
 
 pub use data_cache::{DataCache, Trackable};

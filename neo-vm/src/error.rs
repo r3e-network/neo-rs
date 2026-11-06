@@ -26,7 +26,7 @@
 //! ## Example
 //!
 //! ```ignore
-//! use neo_core::neo_vm::error::VmError;
+//! use neo_vm::error::VmError;
 //!
 //! // Create a stack underflow error
 //! let err = VmError::stack_underflow(2, 1);
@@ -743,7 +743,7 @@ mod tests {
     #[test]
     fn test_error_creation() {
         let error = VmError::parse("test message");
-        std::assert_matches!(error, VmError::Parse { .. });
+        assert!(matches!(error, VmError::Parse { .. }));
         assert_eq!(error.to_string(), "Parse error: test message");
     }
 

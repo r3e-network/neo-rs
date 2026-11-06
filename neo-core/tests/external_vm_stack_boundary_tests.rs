@@ -54,10 +54,11 @@ fn gorgon_engine() -> ApplicationEngine {
         TriggerType::Application,
         Some(container),
         Arc::new(DataCache::new(false)),
-        Some(block),
+        Some(block.to_payload_block()),
         gorgon_settings(),
         10_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine")
 }

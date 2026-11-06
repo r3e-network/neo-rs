@@ -196,9 +196,9 @@ impl ProtocolSettings {
         Self {
             network: 860833102,
             address_version: 0x35,
-            // Live MainNet nodes (Neo 3.10.1) run 3-second blocks and cap
-            // blocks at 200 transactions.
-            ms_per_block: 3000,
+            // MainNet uses 15-second blocks. At HF_Echidna this value is also
+            // persisted in PolicyContract and therefore affects the state root.
+            ms_per_block: 15_000,
             max_valid_until_block_increment: 5760,
             validators_count: 7,
             max_transactions_per_block: 200,
@@ -383,6 +383,7 @@ mod tests {
         assert_eq!(settings.network, 860833102);
         assert_eq!(settings.validators_count, 7);
         assert_eq!(settings.standby_validators.len(), 21);
+        assert_eq!(settings.ms_per_block, 15_000);
     }
 
     #[test]

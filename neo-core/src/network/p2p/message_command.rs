@@ -42,13 +42,16 @@ impl MessageCommand {
         Self::Mempool,
     ];
 
+    /// Whether this command shares a single dedicated outbound queue slot
+    /// (peer expects no pipelining for it).
     #[cfg(any(feature = "runtime", test))]
-    pub(crate) fn is_single_queued(self) -> bool {
+    pub fn is_single_queued(self) -> bool {
         Self::SINGLE_QUEUED_COMMANDS.contains(&self)
     }
 
+    /// Whether this command is dispatched through the high-priority queue.
     #[cfg(any(feature = "runtime", test))]
-    pub(crate) fn is_high_priority_queue(self) -> bool {
+    pub fn is_high_priority_queue(self) -> bool {
         Self::HIGH_PRIORITY_COMMANDS.contains(&self)
     }
 }

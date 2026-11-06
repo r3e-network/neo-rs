@@ -10,23 +10,21 @@ use crate::consensus::DbftConsensusController;
 use crate::signing_provider::NodeSignerRuntime;
 use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{Context, Result, bail};
-use neo_core::{
-    application_logs::ApplicationLogsService,
-    i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler},
-    neo_system::NeoSystem,
-    network::p2p::channels_config::ChannelsConfig,
-    oracle_service::OracleService,
-    protocol_settings::ProtocolSettings,
-    signing::TrustedSignerClient,
-    smart_contract::native::ContractManagement,
-    state_service::{state_store::StateServiceSettings, verification::StateServiceVerification},
-    tokens_tracker::{TokensTracker, TokensTrackerService},
-    wallets::{Nep6Wallet, Wallet as CoreWallet, WalletProvider},
-};
+use neo_core::wallets::{Nep6Wallet, Wallet as CoreWallet, WalletProvider};
+use neo_native_contracts::native::ContractManagement;
+use neo_p2p::ChannelsConfig;
+use neo_protocol::ProtocolSettings;
+use neo_rpc::application_logs::ApplicationLogsService;
 use neo_rpc::server::{
     RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode, RpcServerOracle,
     RpcServerSettings, RpcServerSmartContract, RpcServerState, RpcServerUtilities, RpcServerWallet,
 };
+use neo_rpc::tokens_tracker::{TokensTracker, TokensTrackerService};
+use neo_signing::TrustedSignerClient;
+use neo_state_service::state_store::StateServiceSettings;
+use neo_system::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
+use neo_system::oracle_service::OracleService;
+use neo_system::{NeoSystem, StateServiceVerification};
 use parking_lot::RwLock as ParkingRwLock;
 use serde_json::Value;
 use std::{fs, path::PathBuf, sync::Arc};

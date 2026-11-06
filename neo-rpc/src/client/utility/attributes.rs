@@ -1,13 +1,12 @@
 use super::parsing::{
     parse_base64_token, parse_oracle_response_code, parse_u32_token, parse_u64_token,
 };
-use neo_core::TransactionAttribute;
-use neo_core::network::p2p::payloads::{
-    conflicts::Conflicts, not_valid_before::NotValidBefore, notary_assisted::NotaryAssisted,
-    oracle_response::OracleResponse,
-};
 use neo_json::JObject;
 use neo_primitives::UInt256;
+use neo_protocol::payloads::{
+    TransactionAttribute, conflicts::Conflicts, not_valid_before::NotValidBefore,
+    notary_assisted::NotaryAssisted, oracle_response::OracleResponse,
+};
 
 /// Parses a transaction attribute from RPC JSON.
 pub fn attribute_from_json(json: &JObject) -> Result<TransactionAttribute, String> {

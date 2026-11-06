@@ -3,7 +3,7 @@
 //! These tests verify that the parallel producer-consumer pipeline works correctly
 //! and achieves the expected performance improvements over serial processing.
 
-use neo_core::state_service::prefetch_pipeline::{
+use neo_state_service::prefetch_pipeline::{
     PrefetchPipeline, 
     BlockRequest, 
     PipelineState,

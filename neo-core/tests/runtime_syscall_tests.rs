@@ -5,6 +5,7 @@ use neo_core::ledger::Block;
 use neo_core::ledger::block_header::BlockHeader;
 use neo_core::neo_io::BinaryWriter;
 use neo_core::neo_vm::StackItem;
+use neo_core::network::p2p::payloads::oracle_response::OracleResponseExt;
 use neo_core::network::p2p::payloads::{Signer, Transaction, WitnessScope};
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
@@ -42,6 +43,7 @@ fn runtime_load_script_passes_args_in_reverse_order() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -95,6 +97,7 @@ fn runtime_current_signers_returns_transaction_signers() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -158,6 +161,7 @@ fn runtime_current_signers_returns_null_without_container() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -192,6 +196,7 @@ fn runtime_get_script_container_returns_stack_item() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -229,6 +234,7 @@ fn runtime_get_script_container_faults_without_container() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -256,6 +262,7 @@ fn runtime_get_trigger_returns_application() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -299,10 +306,11 @@ fn runtime_get_time_returns_block_timestamp() {
         TriggerType::Application,
         None,
         snapshot,
-        Some(block),
+        Some(block.to_payload_block()),
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -341,6 +349,7 @@ fn runtime_log_emits_event() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -370,6 +379,7 @@ fn runtime_log_syscall_allows_notify() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -400,6 +410,7 @@ fn runtime_platform_returns_neo() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -432,6 +443,7 @@ fn runtime_get_network_returns_protocol_setting() {
         settings,
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -469,6 +481,7 @@ fn runtime_get_address_version_returns_protocol_setting() {
         settings,
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -504,6 +517,7 @@ fn runtime_get_invocation_counter_returns_one() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -539,6 +553,7 @@ fn runtime_check_witness_returns_false_without_container() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -586,6 +601,7 @@ fn runtime_check_witness_accepts_valid_signer() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -641,6 +657,7 @@ fn runtime_check_witness_returns_false_without_matching_signer() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -854,6 +871,7 @@ fn make_runtime_engine(snapshot: Arc<DataCache>, tx: Transaction) -> Application
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine")
 }
@@ -1008,6 +1026,7 @@ fn make_engine_with_sign_data() -> (ApplicationEngine, Vec<u8>) {
         settings,
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -1033,6 +1052,7 @@ fn runtime_get_calling_script_hash_returns_null_for_entry_context() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -1062,6 +1082,7 @@ fn contract_create_standard_account_matches_csharp() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -1087,6 +1108,7 @@ fn runtime_get_executing_and_entry_script_hash_match_entry() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -1159,6 +1181,7 @@ fn runtime_get_calling_script_hash_matches_dynamic_caller() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -1221,6 +1244,7 @@ fn runtime_dynamic_void_call_with_initialize_leaves_null_placeholder() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -1257,6 +1281,7 @@ fn runtime_check_witness_rejects_invalid_length() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -1346,6 +1371,7 @@ fn runtime_get_notifications_reports_all_and_filtered() {
         legacy_test_settings(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -1359,7 +1385,7 @@ fn runtime_get_notifications_reports_all_and_filtered() {
     let entry_hash = ContractState::calculate_hash(&UInt160::zero(), entry_nef.checksum, "entry");
     let entry_contract = ContractState::new(7, entry_hash, entry_nef, entry_manifest);
     let state_arc = engine.current_execution_state().expect("execution context");
-    state_arc.lock().contract = Some(entry_contract);
+    state_arc.lock().contract = Some(Arc::new(entry_contract));
 
     engine.execute().expect("execute");
 

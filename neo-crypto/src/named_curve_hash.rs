@@ -13,9 +13,9 @@ protocol_enum! {
         /// secp256r1 with SHA256.
         Secp256r1SHA256 = 0x17 => "secp256r1SHA256",
         /// secp256k1 with Keccak256.
-        Secp256k1Keccak256 = 0x18 => "secp256k1Keccak256",
+        Secp256k1Keccak256 = 0x7a => "secp256k1Keccak256",
         /// secp256r1 with Keccak256.
-        Secp256r1Keccak256 = 0x19 => "secp256r1Keccak256",
+        Secp256r1Keccak256 = 0x7b => "secp256r1Keccak256",
     }
 }
 
@@ -47,8 +47,8 @@ mod tests {
     fn test_named_curve_hash_values() {
         assert_eq!(NamedCurveHash::Secp256k1SHA256.to_byte(), 0x16);
         assert_eq!(NamedCurveHash::Secp256r1SHA256.to_byte(), 0x17);
-        assert_eq!(NamedCurveHash::Secp256k1Keccak256.to_byte(), 0x18);
-        assert_eq!(NamedCurveHash::Secp256r1Keccak256.to_byte(), 0x19);
+        assert_eq!(NamedCurveHash::Secp256k1Keccak256.to_byte(), 0x7a);
+        assert_eq!(NamedCurveHash::Secp256r1Keccak256.to_byte(), 0x7b);
     }
 
     #[test]
@@ -62,13 +62,15 @@ mod tests {
             Some(NamedCurveHash::Secp256r1SHA256)
         );
         assert_eq!(
-            NamedCurveHash::from_byte(0x18),
+            NamedCurveHash::from_byte(0x7a),
             Some(NamedCurveHash::Secp256k1Keccak256)
         );
         assert_eq!(
-            NamedCurveHash::from_byte(0x19),
+            NamedCurveHash::from_byte(0x7b),
             Some(NamedCurveHash::Secp256r1Keccak256)
         );
+        assert_eq!(NamedCurveHash::from_byte(0x18), None);
+        assert_eq!(NamedCurveHash::from_byte(0x19), None);
         assert_eq!(NamedCurveHash::from_byte(0x00), None);
     }
 
@@ -143,10 +145,10 @@ mod tests {
     #[test]
     fn test_named_curve_hash_serde_uses_protocol_byte() {
         let serialized = serde_json::to_string(&NamedCurveHash::Secp256r1Keccak256).unwrap();
-        assert_eq!(serialized, "25");
+        assert_eq!(serialized, "123");
 
         let deserialized: NamedCurveHash = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized, NamedCurveHash::Secp256r1Keccak256);
-        assert!(serde_json::from_str::<NamedCurveHash>("21").is_err());
+        assert!(serde_json::from_str::<NamedCurveHash>("25").is_err());
     }
 }

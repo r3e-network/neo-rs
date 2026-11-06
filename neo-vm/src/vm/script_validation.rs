@@ -224,19 +224,17 @@ fn validate_try_targets(
 }
 
 fn jump_target(instruction: &ScriptInstruction, offset: i64) -> ValidationResult<usize> {
-    let next_ip = instruction
-        .pointer()
-        .checked_add(instruction.size())
-        .ok_or_else(|| format!("next instruction overflow at {}", instruction.pointer()))?;
-    let target = next_ip as i64 + offset;
-    if target < 0 {
-        return Err(format!(
-            "negative jump target at position {}: {:?}",
+    // NeoVM relative offsets are based on the current instruction pointer, not
+    // the pointer of the following instruction (Script.cs: ip + TokenI8/I32).
+    let target = (instruction.pointer() as i64).checked_add(offset);
+    match target {
+        Some(target) if target >= 0 => Ok(target as usize),
+        _ => Err(format!(
+            "invalid jump target at position {}: {:?}",
             instruction.pointer(),
             instruction.opcode()
-        ));
+        )),
     }
-    Ok(target as usize)
 }
 
 fn read_u8(instruction: &ScriptInstruction, offset: usize) -> ValidationResult<u8> {
@@ -264,4 +262,99 @@ fn read_i32(instruction: &ScriptInstruction, offset: usize) -> ValidationResult<
 
 fn is_valid_stack_item_type(type_byte: u8) -> bool {
     StackItemType::from_byte(type_byte).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        OpCode, instruction_jump_target, parse_script_instructions, validate_script,
+        validate_strict_script,
+    };
+
+    #[test]
+    fn accepts_empty_and_simple_scripts() {
+        assert!(validate_strict_script(&[]).is_ok());
+        assert!(validate_strict_script(&[OpCode::PUSH1.byte(), OpCode::RET.byte()]).is_ok());
+    }
+
+    #[test]
+    fn rejects_unknown_opcodes() {
+        assert!(validate_strict_script(&[0xff]).is_err());
+    }
+
+    #[test]
+    fn rejects_truncated_pushdata() {
+        assert!(validate_strict_script(&[OpCode::PUSHDATA1.byte(), 2, 1]).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_jump_targets() {
+        assert!(validate_strict_script(&[OpCode::JMP.byte(), 10, OpCode::RET.byte()]).is_err());
+    }
+
+    #[test]
+    fn strict_validation_resolves_jumps_from_the_current_instruction() {
+        // MainNet block 4,125,644 deploys a contract whose CALL_L at offset
+        // 247 has a +2215 displacement and lands at 2462, not 2467.
+        let script = [
+            OpCode::PUSH1.byte(),
+            OpCode::CALL_L.byte(),
+            5,
+            0,
+            0,
+            0,
+            OpCode::RET.byte(),
+            OpCode::NOP.byte(),
+        ];
+        let validated = validate_script(&script, true).unwrap();
+        assert!(validated.has_instruction_at(6));
+
+        let instructions = parse_script_instructions(&script).unwrap();
+        assert_eq!(instruction_jump_target(&instructions[1]).unwrap(), 6);
+    }
+
+    #[test]
+    fn relaxed_validation_parses_offsets_without_strict_jump_checks() {
+        let script = validate_script(&[OpCode::JMP.byte(), 10, OpCode::RET.byte()], false).unwrap();
+        assert!(script.has_instruction_at(0));
+        assert!(script.has_instruction_at(2));
+        assert!(!script.has_instruction_at(1));
+    }
+
+    #[test]
+    fn rejects_any_type_for_convert() {
+        assert!(
+            validate_strict_script(&[
+                OpCode::CONVERT.byte(),
+                crate::NEOVM_STACK_ITEM_TYPE_ANY,
+                OpCode::RET.byte()
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn exposes_instruction_metadata_for_disassembly_tools() {
+        let script = [
+            OpCode::PUSHDATA1.byte(),
+            3,
+            b'n',
+            b'e',
+            b'o',
+            OpCode::SYSCALL.byte(),
+            1,
+            2,
+            3,
+            4,
+            OpCode::RET.byte(),
+        ];
+
+        let instructions = parse_script_instructions(&script).unwrap();
+        assert_eq!(instructions.len(), 3);
+        assert_eq!(instructions[0].pointer(), 0);
+        assert_eq!(instructions[0].opcode(), OpCode::PUSHDATA1);
+        assert_eq!(instructions[0].operand(), b"neo");
+        assert_eq!(instructions[0].size(), 5);
+        assert_eq!(instructions[1].token_u32(), 0x0403_0201);
+    }
 }

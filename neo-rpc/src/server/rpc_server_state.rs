@@ -8,13 +8,13 @@ use crate::server::rpc_helpers::{
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use neo_core::neo_system::STATE_STORE_SERVICE;
-use neo_core::smart_contract::StorageItem;
-use neo_core::smart_contract::StorageKey;
-use neo_core::smart_contract::native::NativeContract;
-use neo_core::smart_contract::native::contract_management::ContractManagement;
-use neo_core::state_service::{StateRoot, StateStore};
-use neo_core::{UInt160, UInt256};
+use neo_native_contracts::native::NativeContract;
+use neo_native_contracts::native::contract_management::ContractManagement;
+use neo_primitives::{UInt160, UInt256};
+use neo_state_service::{StateRoot, StateStore};
+use neo_storage::StorageItem;
+use neo_storage::StorageKey;
+use neo_system::STATE_STORE_SERVICE;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
 

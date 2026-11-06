@@ -12,8 +12,8 @@
 use super::super::utility::{object_array, parse_object_array_lossy};
 use super::RpcMethodToken;
 use base64::{Engine as _, engine::general_purpose};
-use neo_core::smart_contract::NefFile;
 use neo_json::{JObject, JToken};
+use neo_smart_contract::contract_state::NefFile;
 
 /// RPC NEF file helper matching C# `RpcNefFile`
 pub struct RpcNefFile {
@@ -107,7 +107,7 @@ impl RpcNefFile {
 mod tests {
     use super::super::test_fixtures::rpc_case_result;
     use super::*;
-    use neo_core::smart_contract::MethodToken;
+    use neo_io::MethodToken;
 
     fn sample_nef() -> NefFile {
         NefFile {

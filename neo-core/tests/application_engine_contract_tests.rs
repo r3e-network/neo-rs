@@ -34,6 +34,7 @@ fn contract_create_standard_account_matches_redeem_script_hash() {
         settings,
         1100_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -84,6 +85,7 @@ fn contract_create_multisig_account_matches_redeem_script_hash() {
         settings,
         1100_00000000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 

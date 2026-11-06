@@ -29,6 +29,7 @@ fn make_engine(tx: Transaction, settings: ProtocolSettings) -> ApplicationEngine
         settings,
         200_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine

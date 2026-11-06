@@ -1,0 +1,48 @@
+[package]
+name = "neo-native-contracts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Native contract definitions and metadata for neo-rs"
+
+[dependencies]
+# Internal crates (registered in workspace.dependencies)
+neo-config = { workspace = true }
+neo-crypto = { workspace = true }
+neo-io = { workspace = true }
+neo-primitives = { workspace = true }
+neo-protocol = { workspace = true }
+neo-storage = { workspace = true }
+neo-vm = { workspace = true }
+
+# Internal crates (not yet in workspace.dependencies; registered by task 89)
+neo-smart-contract = { path = "../neo-smart-contract" }
+
+# Third-party
+blst = { workspace = true }
+hex = { workspace = true }
+memchr = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+unicode-segmentation = "1.10"
+
+[dev-dependencies]
+# Test-only: contract-management tests build witnesses from `neo_wallets::KeyPair`.
+# `neo-core` was dropped here once `create_genesis_block` moved into this crate
+# (`src/genesis.rs`), retiring the last TRANSITION_EDGE dev-dep on neo-core.
+neo-wallets = { workspace = true }
+
+[lints]
+workspace = true

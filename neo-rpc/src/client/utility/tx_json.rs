@@ -1,10 +1,11 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::{Block, BlockHeader, Signer, Transaction};
+use neo_core::{Block, BlockHeader};
 use neo_io::serializable::Serializable;
 use neo_io::serializable::helper::get_var_size;
 use neo_json::{JObject, JToken};
+use neo_protocol::payloads::{Signer, Transaction};
 
 use super::attributes::attribute_from_json;
 use super::parsing::{
@@ -252,7 +253,10 @@ pub fn transaction_from_json(
     Ok(tx)
 }
 
-fn signer_to_json(signer: &neo_core::Signer, _protocol_settings: &ProtocolSettings) -> JObject {
+fn signer_to_json(
+    signer: &neo_protocol::payloads::Signer,
+    _protocol_settings: &ProtocolSettings,
+) -> JObject {
     let mut json = JObject::new();
     json.insert(
         "account".to_string(),
@@ -291,14 +295,14 @@ fn signer_to_json(signer: &neo_core::Signer, _protocol_settings: &ProtocolSettin
     json
 }
 
-fn attribute_to_json(attr: &neo_core::TransactionAttribute) -> JObject {
+fn attribute_to_json(attr: &neo_protocol::payloads::TransactionAttribute) -> JObject {
     let mut json = JObject::new();
     json.insert(
         "type".to_string(),
         JToken::String(attr.type_id().to_string()),
     );
     // Add attribute-specific data based on type
-    use neo_core::TransactionAttribute as TA;
+    use neo_protocol::payloads::TransactionAttribute as TA;
     match attr {
         TA::HighPriority => {}
         TA::NotValidBefore(not_valid_before) => {
@@ -331,7 +335,7 @@ fn attribute_to_json(attr: &neo_core::TransactionAttribute) -> JObject {
     json
 }
 
-fn rule_to_json(rule: &neo_core::WitnessRule) -> JObject {
+fn rule_to_json(rule: &neo_io::witness_rule::WitnessRule) -> JObject {
     let mut json = JObject::new();
     json.insert(
         "action".to_string(),
@@ -344,8 +348,8 @@ fn rule_to_json(rule: &neo_core::WitnessRule) -> JObject {
     json
 }
 
-fn condition_to_json(condition: &neo_core::WitnessCondition) -> JObject {
-    use neo_core::WitnessCondition as WC;
+fn condition_to_json(condition: &neo_io::witness_rule::WitnessCondition) -> JObject {
+    use neo_io::witness_rule::WitnessCondition as WC;
 
     let mut json = JObject::new();
     json.insert(

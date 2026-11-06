@@ -2,19 +2,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use neo_core::neo_vm::{ExecutionEngine, Script, StackItem};
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::persistence::DataCache;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::script_builder::ScriptBuilder;
-use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::trigger_type::TriggerType;
-use neo_core::{UInt160, WitnessScope};
+use neo_primitives::CallFlags;
+use neo_primitives::TriggerType;
+use neo_primitives::{UInt160, WitnessScope};
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::signer::Signer;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
+use neo_storage::persistence::DataCache;
 use neo_vm::{
-    ExceptionHandlingContext, ExceptionHandlingState, ExecutionEngineLimits, Instruction, OpCode,
-    StackValue, VmOrderedDictionary, VmState as VMState,
+    ExceptionHandlingContext, ExceptionHandlingState, ExecutionEngine, ExecutionEngineLimits,
+    Instruction, OpCode, Script, ScriptBuilder, StackItem, StackValue, VmOrderedDictionary,
+    VmState as VMState,
 };
 use num_bigint::BigInt;
 
@@ -53,9 +52,9 @@ fn workspace_vendors_neo_vm_as_the_canonical_local_crate() {
 fn production_script_helpers_use_shared_opcode_enum() {
     let workspace = workspace_root();
     for relative_path in [
-        "neo-core/src/witness.rs",
-        "neo-core/src/smart_contract/helper.rs",
-        "neo-core/src/smart_contract/contract_state.rs",
+        "neo-smart-contract/src/witness_verification.rs",
+        "neo-smart-contract/src/helper.rs",
+        "neo-smart-contract/src/contract_state.rs",
         "neo-core/src/wallets/key_pair.rs",
     ] {
         let source = read_source(workspace.join(relative_path));
@@ -86,11 +85,10 @@ fn production_script_helpers_use_shared_opcode_enum() {
 fn application_engine_executes_syscall_free_scripts_through_neo_vm_rs() {
     let workspace = workspace_root();
     let load_execute = read_source(
-        workspace.join("neo-core/src/smart_contract/application_engine/load_execute_storage.rs"),
+        workspace.join("neo-smart-contract/src/application_engine/load_execute_storage.rs"),
     );
-    let external_vm = read_source(
-        workspace.join("neo-core/src/smart_contract/application_engine/external_vm.rs"),
-    );
+    let external_vm =
+        read_source(workspace.join("neo-smart-contract/src/application_engine/external_vm.rs"));
 
     assert!(
         load_execute.contains("try_execute_with_external_vm()"),
@@ -122,6 +120,7 @@ fn application_engine_executes_syscall_free_scripts_through_neo_vm_rs() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .expect("application engine");
     engine
@@ -138,9 +137,8 @@ fn application_engine_executes_syscall_free_scripts_through_neo_vm_rs() {
 #[test]
 fn application_engine_routes_simple_runtime_syscalls_through_neo_vm_rs() {
     let workspace = workspace_root();
-    let external_vm = read_source(
-        workspace.join("neo-core/src/smart_contract/application_engine/external_vm.rs"),
-    );
+    let external_vm =
+        read_source(workspace.join("neo-smart-contract/src/application_engine/external_vm.rs"));
 
     assert!(
         external_vm.contains("handle_runtime_syscall"),
@@ -220,6 +218,7 @@ fn application_engine_routes_simple_runtime_syscalls_through_neo_vm_rs() {
         settings.clone(),
         TEST_MODE_GAS,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .expect("application engine");
     engine
@@ -261,13 +260,14 @@ fn application_engine_routes_simple_runtime_syscalls_through_neo_vm_rs() {
 #[test]
 fn application_engine_routes_script_container_through_neo_vm_rs() {
     let workspace = workspace_root();
-    let external_vm = read_source(
-        workspace.join("neo-core/src/smart_contract/application_engine/external_vm.rs"),
-    );
+    let external_vm =
+        read_source(workspace.join("neo-smart-contract/src/application_engine/external_vm.rs"));
     assert!(
         external_vm.contains("System.Runtime.GetScriptContainer")
-            && external_vm.contains("to_stack_value()"),
-        "script container projection should be handled directly through neo-vm-rs StackValue"
+            && external_vm.contains("signer_to_stack_value(signer)")
+            && external_vm.contains("transaction_to_stack_value(transaction)"),
+        "script container projection should flow through the protocol_projection \
+         StackValue adapters"
     );
 
     let mut transaction = Transaction::new();
@@ -290,6 +290,7 @@ fn application_engine_routes_script_container_through_neo_vm_rs() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .expect("application engine");
     engine
@@ -308,9 +309,8 @@ fn application_engine_routes_script_container_through_neo_vm_rs() {
 #[test]
 fn application_engine_routes_runtime_log_through_neo_vm_rs() {
     let workspace = workspace_root();
-    let external_vm = read_source(
-        workspace.join("neo-core/src/smart_contract/application_engine/external_vm.rs"),
-    );
+    let external_vm =
+        read_source(workspace.join("neo-smart-contract/src/application_engine/external_vm.rs"));
     assert!(
         external_vm.contains("System.Runtime.Log") && external_vm.contains("emit_log_event"),
         "Runtime.Log should be handled directly by the neo-vm-rs syscall host"
@@ -338,6 +338,7 @@ fn application_engine_routes_runtime_log_through_neo_vm_rs() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .expect("application engine");
     engine
@@ -433,9 +434,15 @@ fn neo_core_ordered_dictionary_facade_is_removed() {
     let vm_module = read_source(workspace.join("neo-vm/src/lib.rs"));
     let stack_item_source = read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
     let helper_source =
-        read_source(workspace.join("neo-core/src/smart_contract/application_engine/helper.rs"));
-    let serializer_source =
-        read_source(workspace.join("neo-core/src/smart_contract/binary_serializer.rs"));
+        read_source(workspace.join("neo-smart-contract/src/application_engine/helper.rs"));
+    let serializer_source = read_source(workspace.join("neo-vm/src/binary_serializer.rs"));
+    let contract_module = read_source(workspace.join("neo-core/src/smart_contract/mod.rs"));
+    assert!(
+        !workspace
+            .join("neo-core/src/smart_contract/binary_serializer.rs")
+            .exists()
+    );
+    assert!(contract_module.contains("pub use ::neo_vm::binary_serializer;"));
 
     let mut dictionary = VmOrderedDictionary::new();
     dictionary.insert(3, 30);
@@ -462,14 +469,19 @@ fn neo_core_ordered_dictionary_facade_is_removed() {
     );
     assert!(
         !helper_source.contains("OrderedDictionary")
-            && !serializer_source.contains("OrderedDictionary"),
-        "smart-contract helpers should not reference any ordered-dictionary copy"
+            && !serializer_source
+                .replace("VmOrderedDictionary", "")
+                .contains("OrderedDictionary")
+            && serializer_source.contains("crate::VmOrderedDictionary::new()"),
+        "helpers and serializer must not keep a legacy OrderedDictionary; VM fixtures \
+         must use the crate-owned VmOrderedDictionary"
     );
-    // The neo-core facade must stay a pure glob re-export of the neo-vm crate.
-    let facade = read_source(workspace.join("neo-core/src/neo_vm.rs"));
+    let core_root = read_source(workspace.join("neo-core/src/lib.rs"));
     assert!(
-        facade.contains("pub use neo_vm::*;") && !facade.contains("struct OrderedDictionary"),
-        "neo_core::neo_vm facade must not define a local ordered-dictionary copy"
+        !workspace.join("neo-core/src/neo_vm.rs").exists()
+            && core_root.contains("pub use ::neo_vm;")
+            && !core_root.contains("struct OrderedDictionary"),
+        "the historical VM path must alias the authority without a forwarding file"
     );
 }
 
@@ -500,7 +512,7 @@ fn neo_core_does_not_reexport_opcode_through_vm_facade() {
 #[test]
 fn neo_core_vm_internals_import_opcode_from_neo_vm_rs() {
     let workspace = workspace_root();
-    // The local VM implementation tree is gone; only the glob facade remains.
+    // The local VM implementation tree is gone; the root aliases the real crate.
     let vm_dir = workspace.join("neo-core/src/neo_vm");
     assert!(
         !vm_dir.exists(),
@@ -508,7 +520,9 @@ fn neo_core_vm_internals_import_opcode_from_neo_vm_rs() {
          crate is the single VM source"
     );
 
-    let facade = read_source(workspace.join("neo-core/src/neo_vm.rs"));
+    let facade = read_source(workspace.join("neo-core/src/lib.rs"));
+    assert!(!workspace.join("neo-core/src/neo_vm.rs").exists());
+    assert!(facade.contains("pub use ::neo_vm;"));
     assert!(
         !facade.contains("op_code::OpCode"),
         "the neo_core::neo_vm facade must not route OpCode through a legacy \
@@ -540,38 +554,28 @@ fn neo_core_sources_do_not_use_legacy_opcode_module_path() {
 }
 
 #[test]
-fn neo_core_vm_facade_is_a_pure_glob_reexport() {
+fn neo_core_vm_facade_is_a_direct_crate_alias() {
     let workspace = workspace_root();
-    let facade = read_source(workspace.join("neo-core/src/neo_vm.rs"));
-
-    // The compatibility facade must stay a pure glob re-export of the
-    // self-contained neo-vm crate — no hand-written wrappers or shims.
-    assert!(
-        facade.contains("pub use neo_vm::*;"),
-        "neo_core::neo_vm facade must glob re-export the neo-vm crate"
+    let root = read_source(workspace.join("neo-core/src/lib.rs"));
+    assert!(!workspace.join("neo-core/src/neo_vm.rs").exists());
+    assert!(root.contains("pub use ::neo_vm;"));
+    assert!(!root.contains("pub mod neo_vm") && !root.contains("pub use neo_vm::*;"));
+    assert!(read_source(workspace.join("neo-vm/src/lib.rs")).contains("pub mod execution_engine;"));
+    assert_eq!(
+        std::any::TypeId::of::<ExecutionEngine>(),
+        std::any::TypeId::of::<neo_vm::ExecutionEngine>()
     );
-    for forbidden in [
-        "pub struct ",
-        "pub enum ",
-        "pub trait ",
-        "pub fn ",
-        "pub mod ",
-        "pub use op_code",
-        "pub use crate::neo_vm::op_code",
-    ] {
-        assert!(
-            !facade.contains(forbidden),
-            "neo_core::neo_vm facade must not hand-define anything ({forbidden}); \
-             the neo-vm crate is the single source of truth"
-        );
-    }
+    assert_eq!(
+        std::any::TypeId::of::<StackItem>(),
+        std::any::TypeId::of::<neo_vm::StackItem>()
+    );
 }
 
 #[test]
 fn native_contract_static_syscall_hash_uses_neo_vm_rs_directly() {
     let workspace = workspace_root();
     let native_contract =
-        read_source(workspace.join("neo-core/src/smart_contract/native/native_contract.rs"));
+        read_source(workspace.join("neo-smart-contract/src/application_engine/native_contract.rs"));
 
     assert!(
         native_contract.contains("neo_vm::interop_hash(\"System.Contract.CallNative\")"),
@@ -603,7 +607,7 @@ fn interop_service_hashes_syscalls_with_neo_vm_rs_directly() {
 #[test]
 fn smart_contract_helper_hashes_syscalls_with_neo_vm_rs_directly() {
     let workspace = workspace_root();
-    let helper = read_source(workspace.join("neo-core/src/smart_contract/helper.rs"));
+    let helper = read_source(workspace.join("neo-smart-contract/src/helper.rs"));
 
     assert!(
         helper.contains("neo_vm::interop_hash(name).to_le_bytes()"),
@@ -618,8 +622,7 @@ fn smart_contract_helper_hashes_syscalls_with_neo_vm_rs_directly() {
 #[test]
 fn interop_descriptor_hashes_syscalls_with_neo_vm_rs_directly() {
     let workspace = workspace_root();
-    let descriptor =
-        read_source(workspace.join("neo-core/src/smart_contract/interop_descriptor.rs"));
+    let descriptor = read_source(workspace.join("neo-smart-contract/src/interop_descriptor.rs"));
 
     assert!(
         descriptor.contains("neo_vm::interop_hash(&self.name)"),
@@ -635,7 +638,7 @@ fn interop_descriptor_hashes_syscalls_with_neo_vm_rs_directly() {
 fn script_builder_reuses_neo_vm_rs_integer_encoding_for_i64_pushes() {
     let workspace = workspace_root();
     // The real ScriptBuilder implementation lives in the neo-vm crate;
-    // neo-core/src/script_builder.rs is only a re-export shim.
+    // The core root exports the authoritative module without a forwarding file.
     let script_builder = read_source(workspace.join("neo-vm/src/script_builder.rs"));
 
     assert!(
@@ -696,9 +699,9 @@ fn script_builder_derives_opcode_bytes_from_neo_vm_rs_metadata() {
 fn smart_contract_script_helpers_use_neo_vm_rs_opcode_byte_metadata() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/smart_contract/helper.rs",
+        "neo-smart-contract/src/helper.rs",
         "neo-core/src/wallets/helper.rs",
-        "neo-core/src/smart_contract/application_engine/interop_host.rs",
+        "neo-smart-contract/src/application_engine/interop_host.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative))
             .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
@@ -733,11 +736,12 @@ fn witness_and_rpc_script_bytes_use_neo_vm_rs_opcode_metadata() {
     let workspace = workspace_root();
     for relative in [
         "neo-core/src/network/p2p/payloads/transaction/verification.rs",
+        "neo-core/src/network/p2p/payloads/transaction/witness_verification.rs",
         "neo-consensus/src/service/helpers/signatures.rs",
         "neo-node/src/consensus.rs",
-        "neo-core/src/state_service/state_root.rs",
-        "neo-core/src/state_service/state_store.rs",
-        "neo-core/src/state_service/verification.rs",
+        "neo-state-service/src/state_root.rs",
+        "neo-state-service/src/state_store.rs",
+        "neo-system/src/state_verification.rs",
         "neo-node/src/hsm_wallet.rs",
         "neo-node/src/tee_wallet.rs",
         "neo-rpc/src/server/rpc_server_node/mod.rs",
@@ -768,7 +772,7 @@ fn remaining_production_script_bytes_use_neo_vm_rs_opcode_metadata() {
     let workspace = workspace_root();
     for relative in [
         "benches-package/benches/vm_execution.rs",
-        "neo-core/src/builders/mod.rs",
+        "neo-protocol/src/builders/mod.rs",
         "neo-core/src/ledger/genesis.rs",
         "neo-core/src/wallets/wallet_account.rs",
         "neo-rpc/src/server/session.rs",
@@ -855,10 +859,10 @@ fn vm_state_byte_serialization_uses_neo_vm_rs_mapping() {
     );
 
     for relative in [
-        "neo-core/src/smart_contract/native/ledger_contract/state.rs",
-        "neo-core/src/smart_contract/native/transaction_state.rs",
+        "neo-native-contracts/src/native/ledger_contract/state.rs",
+        "neo-native-contracts/src/native/transaction_state.rs",
         "neo-rpc/src/server/rpc_server_node/mod.rs",
-        "neo-core/src/oracle_service/service/tests/response_tx.rs",
+        "neo-system/src/oracle_service/service/tests/response_tx.rs",
         "neo-core/tests/ledger_contract_tests.rs",
         "neo-core/tests/p2p_payloads_csharp_tests.rs",
         "neo-core/tests/runtime_syscall_tests.rs",
@@ -1039,7 +1043,17 @@ fn script_builder_emit_syscall_hashes_with_neo_vm_rs_directly() {
 #[test]
 fn script_builder_does_not_accept_local_stackitem_bridge() {
     let workspace = workspace_root();
-    let script_builder = read_source(workspace.join("neo-core/src/script_builder.rs"));
+    let script_builder = read_source(workspace.join("neo-vm/src/script_builder.rs"));
+    assert!(!workspace.join("neo-core/src/script_builder.rs").exists());
+    assert!(
+        read_source(workspace.join("neo-core/src/lib.rs"))
+            .contains("pub use ::neo_vm::script_builder;")
+    );
+    assert!(script_builder.contains("pub fn emit_push_stack_value"));
+    assert_eq!(
+        std::any::TypeId::of::<ScriptBuilder>(),
+        std::any::TypeId::of::<neo_vm::ScriptBuilder>()
+    );
 
     assert!(
         !script_builder.contains("use crate::neo_vm::stack_item::StackItem")
@@ -1083,25 +1097,19 @@ fn script_builder_does_not_accept_local_stackitem_bridge() {
 #[test]
 fn witness_rules_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    let mut witness_sources = vec![read_source(workspace.join("neo-core/src/witness_rule.rs"))];
-    let mut witness_module_files = Vec::new();
-    collect_rs_files(
-        &workspace.join("neo-core/src/witness_rule"),
-        &mut witness_module_files,
-    );
-    witness_module_files.sort();
-    for path in witness_module_files {
-        if path.file_name().and_then(|name| name.to_str()) == Some("tests.rs") {
-            continue;
-        }
-        witness_sources.push(read_source(path));
-    }
-    let witness_rule = witness_sources.join("\n");
+    // The witness-rule stack projection moved out of neo-core: the canonical
+    // trait projection lives in neo-vm and the mirror copy in the
+    // neo-smart-contract authority crate; guard both so the projection stays
+    // StackValue-first.
+    let witness_rule = [
+        read_source(workspace.join("neo-vm/src/stack_projection.rs")),
+        read_source(workspace.join("neo-smart-contract/src/protocol_projection/witness_rule.rs")),
+    ]
+    .join("\n");
 
     assert!(
         witness_rule.contains("use neo_vm::StackValue;")
-            || witness_rule.contains("use crate::neo_vm::{StackItem, StackValue};")
-            || witness_rule.contains("use crate::neo_vm::StackValue;"),
+            || witness_rule.contains("use neo_vm::{StackItem, StackValue};"),
         "witness rules should import StackValue through the neo-vm boundary for their \
          data projection"
     );
@@ -1123,6 +1131,23 @@ fn witness_rules_project_through_neo_vm_rs_stack_value() {
         "WitnessCondition::to_stack_item and WitnessRule::to_stack_item should adapt \
          from the direct StackValue projection"
     );
+    for required in [
+        "pub fn witness_condition_to_stack_value(condition: &WitnessCondition) -> StackValue",
+        "pub fn witness_rule_to_stack_value(rule: &WitnessRule) -> StackValue",
+        "condition.condition_type().to_byte()",
+        "items.push(StackValue::Boolean(*value))",
+        "items.push(witness_condition_to_stack_value(condition))",
+        ".map(witness_condition_to_stack_value)",
+        "StackValue::ByteString(hash.to_bytes())",
+        "StackValue::ByteString(group.clone())",
+        "StackValue::Integer(i64::from(rule.action.to_byte()))",
+        "witness_condition_to_stack_value(&rule.condition)",
+    ] {
+        assert!(
+            witness_rule.contains(required),
+            "missing recursive rule projection: {required}"
+        );
+    }
     for local_builder in [
         "StackItem::from_array",
         "StackItem::from_int",
@@ -1140,18 +1165,37 @@ fn witness_rules_project_through_neo_vm_rs_stack_value() {
 #[test]
 fn signer_stack_projection_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    let signer = read_source(workspace.join("neo-core/src/network/p2p/payloads/signer.rs"));
+    // The free-function projection stays in neo-core for its P2P paths; the
+    // Interoperable adapter moved to the neo-smart-contract authority crate.
+    let signer = [
+        read_source(workspace.join("neo-core/src/network/p2p/payloads/signer/stack_projection.rs")),
+        read_source(workspace.join("neo-smart-contract/src/protocol_projection/signer.rs")),
+    ]
+    .join("\n");
+    let compact: String = signer.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("StackValue::Array(vec![StackValue::ByteString(signer.account.to_bytes()),StackValue::Integer(i64::from(signer.scopes.bits())),StackValue::Array(allowed_contracts),StackValue::Array(allowed_groups),StackValue::Array(rules),])"));
+    for scope in ["CUSTOM_CONTRACTS", "CUSTOM_GROUPS", "WITNESS_RULES"] {
+        assert!(signer.contains(&format!("signer.scopes.contains(WitnessScope::{scope})")));
+    }
+    assert!(signer.contains(".map(WitnessRule::to_stack_value)"));
+    assert!(signer.contains("pub fn signer_to_stack_value(signer: &Signer) -> StackValue"));
+    assert!(
+        signer
+            .contains("pub fn signer_to_stack_item(signer: &Signer) -> Result<StackItem, VmError>")
+    );
 
     assert!(
-        signer.contains("use neo_vm::StackValue;"),
+        signer.contains("use neo_vm::{Interoperable, StackItem, StackValue, VmError};"),
         "Signer should import neo_vm::StackValue directly for its data projection boundary"
     );
     assert!(
-        signer.contains("pub fn to_stack_value(&self) -> StackValue"),
-        "Signer should expose a direct StackValue projection for RPC/native data callers"
+        signer.contains("impl Interoperable for SignerInterop")
+            && signer.contains("fn to_stack_item(&self) -> Result<StackItem, VmError>"),
+        "Signer should expose a VM interop adapter over the direct StackValue projection"
     );
     assert!(
-        signer.contains("StackItem::try_from(self.to_stack_value())"),
+        signer.contains("StackItem::try_from(signer_to_stack_value(signer))")
+            && signer.contains("signer_to_stack_item(&self.0)"),
         "Signer::to_stack_item should adapt from the direct neo-vm-rs StackValue projection"
     );
     assert!(
@@ -1175,18 +1219,41 @@ fn signer_stack_projection_uses_neo_vm_rs_stack_value() {
 #[test]
 fn transaction_stack_projection_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    let transaction = fs::read_to_string(
-        workspace.join("neo-core/src/network/p2p/payloads/transaction/traits.rs"),
-    )
-    .unwrap();
+    // The free-function projection stays in neo-core for its P2P paths; the
+    // Interoperable adapter moved to the neo-smart-contract authority crate.
+    let transaction = [
+        read_source(
+            workspace.join("neo-core/src/network/p2p/payloads/transaction/stack_projection.rs"),
+        ),
+        read_source(workspace.join("neo-smart-contract/src/protocol_projection/transaction.rs")),
+    ]
+    .join("\n");
+    let compact: String = transaction.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(compact.contains("Ok(StackValue::Array(vec![StackValue::ByteString(transaction.try_hash()?.to_bytes()),StackValue::Integer(i64::from(transaction.version())),StackValue::Integer(i64::from(transaction.nonce())),StackValue::ByteString(sender),StackValue::Integer(transaction.system_fee()),StackValue::Integer(transaction.network_fee()),StackValue::Integer(i64::from(transaction.valid_until_block())),StackValue::ByteString(transaction.script().to_vec()),]))"));
+    assert!(
+        transaction
+            .find("Sender is not specified in the transaction")
+            .unwrap()
+            < transaction.find("transaction.try_hash()?").unwrap()
+    );
+    assert!(transaction.contains(
+        "pub fn transaction_to_stack_value(transaction: &Transaction) -> CoreResult<StackValue>"
+    ));
+    assert!(transaction.contains(
+        "pub fn transaction_to_stack_item(transaction: &Transaction) -> Result<StackItem, VmError>"
+    ));
+    assert!(
+        transaction.contains("impl Interoperable for TransactionInterop")
+            && transaction.contains("transaction_to_stack_item(&self.0)")
+    );
 
     assert!(
-        transaction.contains("use neo_vm::StackValue;"),
+        transaction.contains("use neo_vm::{Interoperable, StackItem, StackValue, VmError};"),
         "Transaction should import neo_vm::StackValue directly for its data projection boundary"
     );
     assert!(
-        transaction.contains("pub fn to_stack_value(&self) -> Result<StackValue, CoreError>"),
-        "Transaction should expose a direct StackValue projection for native/RPC data callers"
+        transaction.contains("let sv = transaction_to_stack_value(transaction)"),
+        "Transaction::to_stack_item should adapt from the direct StackValue projection"
     );
     assert!(
         transaction.contains("StackItem::try_from(self.to_stack_value()?)")
@@ -1210,7 +1277,7 @@ fn transaction_stack_projection_uses_neo_vm_rs_stack_value() {
 fn contract_parameter_definition_projection_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let parameter_definition = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/manifest/contract_parameter_definition.rs"),
+        workspace.join("neo-smart-contract/src/manifest/contract_parameter_definition.rs"),
     )
     .unwrap();
 
@@ -1257,7 +1324,7 @@ fn contract_parameter_definition_projection_uses_neo_vm_rs_stack_value() {
 fn wild_card_container_projection_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let wild_card_container = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/manifest/wild_card_container.rs"),
+        workspace.join("neo-smart-contract/src/manifest/wild_card_container.rs"),
     )
     .unwrap();
 
@@ -1299,11 +1366,11 @@ fn wild_card_container_projection_uses_neo_vm_rs_stack_value() {
 fn manifest_event_and_method_descriptors_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let event_descriptor = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/manifest/contract_event_descriptor.rs"),
+        workspace.join("neo-smart-contract/src/manifest/contract_event_descriptor.rs"),
     )
     .unwrap();
     let method_descriptor = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/manifest/contract_method_descriptor.rs"),
+        workspace.join("neo-smart-contract/src/manifest/contract_method_descriptor.rs"),
     )
     .unwrap();
 
@@ -1352,11 +1419,11 @@ fn manifest_event_and_method_descriptors_project_through_neo_vm_rs_stack_value()
 fn manifest_permissions_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let permission_descriptor = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/manifest/contract_permission_descriptor.rs"),
+        workspace.join("neo-smart-contract/src/manifest/contract_permission_descriptor.rs"),
     )
     .unwrap();
     let permission = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/manifest/contract_permission.rs"),
+        workspace.join("neo-smart-contract/src/manifest/contract_permission.rs"),
     )
     .unwrap();
 
@@ -1422,10 +1489,9 @@ fn manifest_permissions_project_through_neo_vm_rs_stack_value() {
 #[test]
 fn contract_group_projects_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    let contract_group = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/manifest/contract_group.rs"),
-    )
-    .unwrap();
+    let contract_group =
+        fs::read_to_string(workspace.join("neo-smart-contract/src/manifest/contract_group.rs"))
+            .unwrap();
 
     assert!(
         contract_group.contains("use neo_vm::StackValue;"),
@@ -1471,7 +1537,7 @@ fn contract_group_projects_through_neo_vm_rs_stack_value() {
 fn contract_abi_projects_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let contract_abi =
-        read_source(workspace.join("neo-core/src/smart_contract/manifest/contract_abi.rs"));
+        read_source(workspace.join("neo-smart-contract/src/manifest/contract_abi.rs"));
 
     assert!(
         contract_abi.contains("use neo_vm::StackValue;"),
@@ -1511,12 +1577,10 @@ fn contract_abi_projects_through_neo_vm_rs_stack_value() {
 #[test]
 fn contract_manifest_and_state_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    let manifest = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/manifest/contract_manifest.rs"),
-    )
-    .unwrap();
-    let contract_state =
-        read_source(workspace.join("neo-core/src/smart_contract/contract_state.rs"));
+    let manifest =
+        fs::read_to_string(workspace.join("neo-smart-contract/src/manifest/contract_manifest.rs"))
+            .unwrap();
+    let contract_state = read_source(workspace.join("neo-smart-contract/src/contract_state.rs"));
 
     assert!(
         manifest.contains("use neo_vm::StackValue;"),
@@ -1594,7 +1658,7 @@ fn contract_manifest_and_state_project_through_neo_vm_rs_stack_value() {
 fn contract_management_persisted_contract_state_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let source = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/contract_management/mod.rs"),
+        workspace.join("neo-native-contracts/src/native/contract_management/mod.rs"),
     )
     .unwrap();
     let storage_write_section = source
@@ -1640,7 +1704,7 @@ fn contract_management_persisted_contract_state_uses_neo_vm_rs_stack_value() {
 fn contract_management_manifest_validation_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let source = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/contract_management/validation.rs"),
+        workspace.join("neo-native-contracts/src/native/contract_management/validation.rs"),
     )
     .unwrap();
     let validation_section = source
@@ -1668,10 +1732,9 @@ fn contract_management_manifest_validation_uses_neo_vm_rs_stack_value() {
 fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
 
-    let transaction_state = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/transaction_state.rs"),
-    )
-    .unwrap();
+    let transaction_state =
+        fs::read_to_string(workspace.join("neo-native-contracts/src/native/transaction_state.rs"))
+            .unwrap();
     assert!(
         transaction_state.contains("use neo_vm::StackValue;")
             || transaction_state.contains("use neo_vm::{StackValue, VmState as VMState};"),
@@ -1711,9 +1774,9 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     }
 
     let oracle_request =
-        read_source(workspace.join("neo-core/src/smart_contract/native/oracle_request.rs"));
+        read_source(workspace.join("neo-native-contracts/src/native/oracle_request.rs"));
     let oracle_storage = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/oracle_contract/storage.rs"),
+        workspace.join("neo-native-contracts/src/native/oracle_contract/storage.rs"),
     )
     .unwrap();
     assert!(
@@ -1773,7 +1836,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     );
 
     let trimmed_block =
-        read_source(workspace.join("neo-core/src/smart_contract/native/trimmed_block.rs"));
+        read_source(workspace.join("neo-native-contracts/src/native/trimmed_block.rs"));
     assert!(
         trimmed_block.contains("use neo_vm::StackValue;"),
         "TrimmedBlock should import neo_vm::StackValue directly for native data projection"
@@ -1799,7 +1862,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     }
 
     let deposit_section =
-        read_source(workspace.join("neo-core/src/smart_contract/native/notary/deposit.rs"));
+        read_source(workspace.join("neo-native-contracts/src/native/notary/deposit.rs"));
     assert!(
         deposit_section.contains("use neo_vm::StackValue;"),
         "Notary Deposit should import neo_vm::StackValue directly for native data projection"
@@ -1818,10 +1881,9 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
          adapters"
     );
 
-    let hash_index_state = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/hash_index_state.rs"),
-    )
-    .unwrap();
+    let hash_index_state =
+        fs::read_to_string(workspace.join("neo-native-contracts/src/native/hash_index_state.rs"))
+            .unwrap();
     assert!(
         hash_index_state.contains("use neo_vm::StackValue;"),
         "HashIndexState should import neo_vm::StackValue directly for native data projection"
@@ -1840,9 +1902,8 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     );
 
     let account_state =
-        read_source(workspace.join("neo-core/src/smart_contract/native/account_state.rs"));
-    let gas_token =
-        read_source(workspace.join("neo-core/src/smart_contract/native/gas_token/mod.rs"));
+        read_source(workspace.join("neo-native-contracts/src/native/account_state.rs"));
+    let gas_token = read_source(workspace.join("neo-native-contracts/src/native/gas_token/mod.rs"));
     assert!(
         account_state.contains("use neo_vm::StackValue;"),
         "native AccountState should import neo_vm::StackValue directly for native data \
@@ -1876,7 +1937,7 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
     );
 
     let policy_contract = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/policy_contract/mod.rs"),
+        workspace.join("neo-native-contracts/src/native/policy_contract/mod.rs"),
     )
     .unwrap();
     let policy_whitelist_section = policy_contract
@@ -1926,15 +1987,15 @@ fn native_pure_data_states_project_through_neo_vm_rs_stack_value() {
 fn policy_whitelist_storage_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let policy_contract = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/policy_contract/mod.rs"),
+        workspace.join("neo-native-contracts/src/native/policy_contract/mod.rs"),
     )
     .unwrap();
     let setters = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/policy_contract/setters.rs"),
+        workspace.join("neo-native-contracts/src/native/policy_contract/setters.rs"),
     )
     .unwrap();
     let snapshot = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/policy_contract/snapshot.rs"),
+        workspace.join("neo-native-contracts/src/native/policy_contract/snapshot.rs"),
     )
     .unwrap();
     let set_section = setters
@@ -1990,18 +2051,16 @@ fn policy_whitelist_storage_uses_neo_vm_rs_stack_value() {
 #[test]
 fn neo_token_states_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
-    let types =
-        read_source(workspace.join("neo-core/src/smart_contract/native/neo_token/types.rs"));
+    let types = read_source(workspace.join("neo-native-contracts/src/native/neo_token/types.rs"));
     let native_impl = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/neo_token/native_impl.rs"),
+        workspace.join("neo-native-contracts/src/native/neo_token/native_impl.rs"),
     )
     .unwrap();
     let governance = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/neo_token/governance.rs"),
+        workspace.join("neo-native-contracts/src/native/neo_token/governance.rs"),
     )
     .unwrap();
-    let nep17 =
-        read_source(workspace.join("neo-core/src/smart_contract/native/neo_token/nep17.rs"));
+    let nep17 = read_source(workspace.join("neo-native-contracts/src/native/neo_token/nep17.rs"));
     let native_account_projection = native_impl
         .split("impl NativeContract for NeoToken")
         .next()
@@ -2075,9 +2134,9 @@ fn neo_token_states_project_through_neo_vm_rs_stack_value() {
 fn neo_token_committee_payloads_use_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let committee =
-        read_source(workspace.join("neo-core/src/smart_contract/native/neo_token/committee.rs"));
+        read_source(workspace.join("neo-native-contracts/src/native/neo_token/committee.rs"));
     let governance =
-        read_source(workspace.join("neo-core/src/smart_contract/native/neo_token/governance.rs"));
+        read_source(workspace.join("neo-native-contracts/src/native/neo_token/governance.rs"));
 
     assert!(
         committee.contains("BinarySerializer::deserialize_stack_value(&bytes)")
@@ -2141,10 +2200,9 @@ fn neo_token_committee_payloads_use_neo_vm_rs_stack_value() {
 fn token_management_states_project_through_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let source =
-        read_source(workspace.join("neo-core/src/smart_contract/native/token_management/state.rs"));
-    let storage = read_source(
-        workspace.join("neo-core/src/smart_contract/native/token_management/storage.rs"),
-    );
+        read_source(workspace.join("neo-native-contracts/src/native/token_management/state.rs"));
+    let storage =
+        read_source(workspace.join("neo-native-contracts/src/native/token_management/storage.rs"));
     let state_section = source.as_str();
 
     assert!(
@@ -2219,7 +2277,7 @@ fn token_management_states_project_through_neo_vm_rs_stack_value() {
 fn role_management_designated_nodes_storage_uses_neo_vm_rs_stack_value() {
     let workspace = workspace_root();
     let source = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/role_management/storage.rs"),
+        workspace.join("neo-native-contracts/src/native/role_management/storage.rs"),
     )
     .unwrap();
     let serialization_section = source
@@ -2265,7 +2323,9 @@ fn role_management_designated_nodes_storage_uses_neo_vm_rs_stack_value() {
 #[test]
 fn script_builder_does_not_return_local_script_objects() {
     let workspace = workspace_root();
-    let script_builder = read_source(workspace.join("neo-core/src/script_builder.rs"));
+    let script_builder = read_source(workspace.join("neo-vm/src/script_builder.rs"));
+    assert!(!workspace.join("neo-core/src/script_builder.rs").exists());
+    assert!(script_builder.contains("pub fn to_array(&self) -> Vec<u8>"));
 
     assert!(
         !script_builder.contains("use crate::neo_vm::script::Script")
@@ -2277,34 +2337,37 @@ fn script_builder_does_not_return_local_script_objects() {
 }
 
 #[test]
-fn script_builder_does_not_use_local_vm_error_types() {
+fn script_builder_uses_authoritative_vm_errors_without_a_core_adapter() {
     let workspace = workspace_root();
-    let script_builder = read_source(workspace.join("neo-core/src/script_builder.rs"));
-
+    let script_builder = read_source(workspace.join("neo-vm/src/script_builder.rs"));
+    assert!(!workspace.join("neo-core/src/script_builder.rs").exists());
+    assert!(script_builder.contains("use crate::error::{VmError, VmResult};"));
     assert!(
-        !script_builder.contains("VmError")
-            && !script_builder.contains("VmResult")
-            && !script_builder.contains("crate::neo_vm::error"),
-        "ScriptBuilder is a script-byte construction helper, so fallible builder APIs \
-         should use core errors instead of local VM runtime errors"
+        !script_builder.contains("crate::neo_vm::error") && !script_builder.contains("neo_core")
     );
+    let mut builder = ScriptBuilder::new();
+    let result: neo_vm::VmResult<&mut ScriptBuilder> =
+        builder.emit_push_stack_value(&StackValue::Null);
+    result.unwrap();
 }
 
 #[test]
 fn local_vm_docs_do_not_advertise_deleted_neo_vm_crate() {
     let workspace = workspace_root();
-    // The local VM implementation tree is gone; only the facade file remains.
+    // The local VM implementation tree and its forwarding file are both gone.
     let vm_dir = workspace.join("neo-core/src/neo_vm");
     assert!(
         !vm_dir.exists(),
         "neo-core must not keep a local neo_vm implementation tree"
     );
 
-    let facade = read_source(workspace.join("neo-core/src/neo_vm.rs"));
+    let root = read_source(workspace.join("neo-core/src/lib.rs"));
+    assert!(!workspace.join("neo-core/src/neo_vm.rs").exists());
+    assert!(root.contains("pub use ::neo_vm;") && !root.contains("YOU ARE HERE"));
     assert!(
-        !facade.contains("neo_vm::VmResult") && !facade.contains("YOU ARE HERE"),
-        "the neo_core::neo_vm facade must stay a pure glob re-export with no \
-         legacy standalone-crate documentation"
+        workspace
+            .join("neo-vm/src/execution_engine/mod.rs")
+            .exists()
     );
 }
 
@@ -2392,9 +2455,17 @@ fn p2p_validation_uses_direct_neo_vm_rs_script_validation() {
         );
     }
 
-    let validator = read_source(workspace.join("neo-core/src/script_validation.rs"));
+    assert!(!workspace.join("neo-core/src/script_validation.rs").exists());
+    let root = read_source(workspace.join("neo-core/src/lib.rs"));
+    let validator = root
+        .split_once("pub mod script_validation {")
+        .unwrap()
+        .1
+        .split_once("\n}")
+        .unwrap()
+        .0;
     assert!(
-        validator.contains("pub use neo_vm::{")
+        validator.contains("pub use ::neo_vm::{")
             && validator.contains("parse_script_instructions")
             && validator.contains("validate_script")
             && validator.contains("validate_strict_script")
@@ -2412,9 +2483,9 @@ fn p2p_validation_uses_direct_neo_vm_rs_script_validation() {
 fn contract_management_uses_direct_script_validation_for_nef_abi_checks() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/smart_contract/native/contract_management/deploy.rs",
-        "neo-core/src/smart_contract/native/contract_management/update.rs",
-        "neo-core/src/smart_contract/native/contract_management/validation.rs",
+        "neo-native-contracts/src/native/contract_management/deploy.rs",
+        "neo-native-contracts/src/native/contract_management/update.rs",
+        "neo-native-contracts/src/native/contract_management/validation.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
@@ -2620,8 +2691,16 @@ fn stack_item_type_facade_is_removed_and_byte_tags_use_neo_vm_rs() {
     let stack_item_type_path = workspace.join("neo-core/src/neo_vm/stack_item/stack_item_type.rs");
     let stack_item_mod = read_source(workspace.join("neo-vm/src/stack_item/mod.rs"));
     let neo_vm_mod = read_source(workspace.join("neo-vm/src/lib.rs"));
-    let serializer =
-        read_source(workspace.join("neo-core/src/smart_contract/binary_serializer.rs"));
+    let serializer = read_source(workspace.join("neo-vm/src/binary_serializer.rs"));
+    assert!(
+        !workspace
+            .join("neo-core/src/smart_contract/binary_serializer.rs")
+            .exists()
+    );
+    assert!(
+        read_source(workspace.join("neo-core/src/smart_contract/mod.rs"))
+            .contains("pub use ::neo_vm::binary_serializer;")
+    );
     let stack_item = read_source(workspace.join("neo-vm/src/stack_item/stack_item.rs"));
 
     assert!(
@@ -3613,33 +3692,29 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     let workspace = workspace_root();
     let root_manifest = fs::read_to_string(workspace.join("Cargo.toml")).unwrap();
     let compound = read_source(workspace.join("neo-vm/src/jump_table/compound.rs"));
-    let manifest = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/manifest/contract_manifest.rs"),
-    )
-    .unwrap();
+    let manifest =
+        fs::read_to_string(workspace.join("neo-smart-contract/src/manifest/contract_manifest.rs"))
+            .unwrap();
     let oracle_contract =
-        read_source(workspace.join("neo-core/src/smart_contract/native/oracle_contract/mod.rs"));
-    let oracle_storage = read_source(
-        workspace.join("neo-core/src/smart_contract/native/oracle_contract/storage.rs"),
-    );
+        read_source(workspace.join("neo-native-contracts/src/native/oracle_contract/mod.rs"));
+    let oracle_storage =
+        read_source(workspace.join("neo-native-contracts/src/native/oracle_contract/storage.rs"));
     let oracle_post_persist = read_source(
-        workspace.join("neo-core/src/smart_contract/native/oracle_contract/post_persist.rs"),
+        workspace.join("neo-native-contracts/src/native/oracle_contract/post_persist.rs"),
     );
-    let oracle_pricing = read_source(
-        workspace.join("neo-core/src/smart_contract/native/oracle_contract/pricing.rs"),
-    );
-    let oracle_request = read_source(
-        workspace.join("neo-core/src/smart_contract/native/oracle_contract/request.rs"),
-    );
+    let oracle_pricing =
+        read_source(workspace.join("neo-native-contracts/src/native/oracle_contract/pricing.rs"));
+    let oracle_request =
+        read_source(workspace.join("neo-native-contracts/src/native/oracle_contract/request.rs"));
     let oracle_contract_sources = format!(
         "{oracle_contract}\n{oracle_storage}\n{oracle_post_persist}\n{oracle_pricing}\n{oracle_request}"
     );
-    let notary = read_source(workspace.join("neo-core/src/smart_contract/native/notary/mod.rs"));
+    let notary = read_source(workspace.join("neo-native-contracts/src/native/notary/mod.rs"));
     let notary_native_impl =
-        read_source(workspace.join("neo-core/src/smart_contract/native/notary/native_impl.rs"));
+        read_source(workspace.join("neo-native-contracts/src/native/notary/native_impl.rs"));
     let notary_sources = format!("{notary}\n{notary_native_impl}");
     let contract_update = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/native/contract_management/update.rs"),
+        workspace.join("neo-native-contracts/src/native/contract_management/update.rs"),
     )
     .unwrap();
     let json_serializer = read_source(workspace.join("neo-vm/src/json_serializer.rs"));
@@ -3873,9 +3948,13 @@ fn historical_vm_bug_fixes_stay_guarded_at_neo_vm_rs_boundary() {
     // non-height entry delegating to it, and by (c) block verification not
     // reintroducing any non-height state-dependent verification.
     assert!(
-        transaction_verification.contains("pub fn verify_state_dependent_at_height(")
-            && transaction_verification.contains("self.verify_state_dependent_at_height(")
-            && !block_verification.contains("verify_state_dependent("),
+        transaction_verification.contains("pub fn verify_transaction_state_dependent_at_height(")
+            && transaction_verification.contains("verify_transaction_state_dependent_at_height(\n        transaction,\n        settings,\n        snapshot,\n        height,")
+            && transaction_verification.contains("let height = current_height;")
+            && transaction_verification.contains("transaction.valid_until_block() <= height")
+            && transaction_verification.contains("height.saturating_add(max_increment)")
+            && !block_verification.contains("verify_state_dependent(")
+            && !block_verification.contains("verify_transaction_state_dependent("),
         "State-dependent transaction verification must route through the explicit-height API \
          only; block verification delegates to Header.Verify (C# parity) and must not \
          reintroduce current_index-based expiry checks (current_index=0 fast-sync regressions)"
@@ -4019,11 +4098,13 @@ fn workspace_tests_and_benches_do_not_import_local_vm_runtime() {
 fn smart_contract_support_modules_use_vm_runtime_boundary() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/smart_contract/diagnostic.rs",
-        "neo-core/src/smart_contract/execution_context_state.rs",
-        "neo-core/src/smart_contract/application_engine/iterator.rs",
-        "neo-core/src/smart_contract/iterators/iterator_interop.rs",
-        "neo-core/src/smart_contract/iterators/storage_iterator.rs",
+        "neo-smart-contract/src/diagnostic.rs",
+        "neo-smart-contract/src/execution_context_state.rs",
+        // iterator.rs pulls VM runtime types via `use super::*;`; the parent
+        // module owns the direct neo-vm boundary imports for that submodule.
+        "neo-smart-contract/src/application_engine/mod.rs",
+        "neo-smart-contract/src/iterators/iterator_interop.rs",
+        "neo-smart-contract/src/iterators/storage_iterator.rs",
         "neo-core/src/smart_contract/storage_context.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
@@ -4067,18 +4148,28 @@ fn imports_stack_item_via_neo_vm(source: &str) -> bool {
 fn protocol_data_modules_use_vm_runtime_stack_items() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/application_logs/service.rs",
+        "neo-rpc/src/application_logs/service.rs",
         "neo-core/src/ledger/blockchain_application_executed.rs",
-        "neo-core/src/network/p2p/payloads/signer.rs",
-        "neo-core/src/network/p2p/payloads/transaction/mod.rs",
-        "neo-core/src/tokens_tracker/trackers/tracker_base.rs",
-        "neo-core/src/tokens_tracker/trackers/nep_17/nep17_tracker.rs",
-        "neo-core/src/tokens_tracker/trackers/nep_11/nep11_tracker.rs",
+        "neo-core/src/network/p2p/payloads/signer/stack_projection.rs",
+        "neo-core/src/network/p2p/payloads/transaction/stack_projection.rs",
+        "neo-rpc/src/tokens_tracker/trackers/tracker_base.rs",
+        "neo-rpc/src/tokens_tracker/trackers/nep_17/nep17_tracker.rs",
+        "neo-rpc/src/tokens_tracker/trackers/nep_11/nep11_tracker.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
             imports_stack_item_via_neo_vm(&source),
             "{relative} should import StackItem through neo_vm"
+        );
+    }
+    for relative in [
+        "neo-core/src/network/p2p/payloads/signer.rs",
+        "neo-core/src/network/p2p/payloads/transaction/mod.rs",
+    ] {
+        let source = fs::read_to_string(workspace.join(relative)).unwrap();
+        assert!(
+            !source.contains("neo_vm::"),
+            "{relative} must keep VM imports in its stack_projection module"
         );
     }
 }
@@ -4087,15 +4178,15 @@ fn protocol_data_modules_use_vm_runtime_stack_items() {
 fn manifest_modules_use_vm_runtime_stack_items() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/smart_contract/manifest/contract_abi.rs",
-        "neo-core/src/smart_contract/manifest/contract_event_descriptor.rs",
-        "neo-core/src/smart_contract/manifest/contract_group.rs",
-        "neo-core/src/smart_contract/manifest/contract_manifest.rs",
-        "neo-core/src/smart_contract/manifest/contract_method_descriptor.rs",
-        "neo-core/src/smart_contract/manifest/contract_parameter_definition.rs",
-        "neo-core/src/smart_contract/manifest/contract_permission.rs",
-        "neo-core/src/smart_contract/manifest/contract_permission_descriptor.rs",
-        "neo-core/src/smart_contract/manifest/wild_card_container.rs",
+        "neo-smart-contract/src/manifest/contract_abi.rs",
+        "neo-smart-contract/src/manifest/contract_event_descriptor.rs",
+        "neo-smart-contract/src/manifest/contract_group.rs",
+        "neo-smart-contract/src/manifest/contract_manifest.rs",
+        "neo-smart-contract/src/manifest/contract_method_descriptor.rs",
+        "neo-smart-contract/src/manifest/contract_parameter_definition.rs",
+        "neo-smart-contract/src/manifest/contract_permission.rs",
+        "neo-smart-contract/src/manifest/contract_permission_descriptor.rs",
+        "neo-smart-contract/src/manifest/wild_card_container.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
@@ -4109,12 +4200,12 @@ fn manifest_modules_use_vm_runtime_stack_items() {
 fn native_event_and_data_modules_use_vm_runtime_stack_items() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/smart_contract/contract_state.rs",
-        "neo-core/src/smart_contract/native/oracle_contract/events.rs",
-        "neo-core/src/smart_contract/native/token_management/events.rs",
-        "neo-core/src/smart_contract/native/token_management/stack_value.rs",
-        "neo-core/src/smart_contract/native/token_management/state.rs",
-        "neo-core/src/smart_contract/native/trimmed_block.rs",
+        "neo-smart-contract/src/contract_state.rs",
+        "neo-native-contracts/src/native/oracle_contract/events.rs",
+        "neo-native-contracts/src/native/token_management/events.rs",
+        "neo-native-contracts/src/native/token_management/stack_value.rs",
+        "neo-native-contracts/src/native/token_management/state.rs",
+        "neo-native-contracts/src/native/trimmed_block.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
@@ -4129,8 +4220,8 @@ fn host_adapter_modules_use_vm_runtime_stack_items() {
     let workspace = workspace_root();
     for relative in [
         "neo-core/src/smart_contract/interoperable.rs",
-        "neo-core/src/witness_rule/stack_projection.rs",
-        "neo-core/src/neo_system/persistence.rs",
+        "neo-smart-contract/src/protocol_projection/witness_rule.rs",
+        "neo-system/src/neo_system/persistence.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
@@ -4144,21 +4235,21 @@ fn host_adapter_modules_use_vm_runtime_stack_items() {
 fn native_contract_modules_use_vm_runtime_stack_items() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/smart_contract/native/contract_management/mod.rs",
-        "neo-core/src/smart_contract/native/contract_management/tests.rs",
-        "neo-core/src/smart_contract/native/fungible_token.rs",
-        "neo-core/src/smart_contract/native/gas_token/mod.rs",
-        "neo-core/src/smart_contract/native/interoperable_list.rs",
-        "neo-core/src/smart_contract/native/ledger_contract/native_impl.rs",
-        "neo-core/src/smart_contract/native/neo_token/mod.rs",
-        "neo-core/src/smart_contract/native/notary/mod.rs",
-        "neo-core/src/smart_contract/native/oracle_contract/response.rs",
-        "neo-core/src/smart_contract/native/oracle_contract/storage.rs",
-        "neo-core/src/smart_contract/native/policy_contract/mod.rs",
-        "neo-core/src/smart_contract/native/policy_contract/tests.rs",
-        "neo-core/src/smart_contract/native/role_management/mod.rs",
-        "neo-core/src/smart_contract/native/std_lib/helpers.rs",
-        "neo-core/src/smart_contract/native/std_lib/strings.rs",
+        "neo-native-contracts/src/native/contract_management/mod.rs",
+        "neo-native-contracts/src/native/contract_management/tests.rs",
+        "neo-native-contracts/src/native/fungible_token.rs",
+        "neo-native-contracts/src/native/gas_token/mod.rs",
+        "neo-native-contracts/src/native/interoperable_list.rs",
+        "neo-native-contracts/src/native/ledger_contract/native_impl.rs",
+        "neo-native-contracts/src/native/neo_token/mod.rs",
+        "neo-native-contracts/src/native/notary/mod.rs",
+        "neo-native-contracts/src/native/oracle_contract/response.rs",
+        "neo-native-contracts/src/native/oracle_contract/storage.rs",
+        "neo-native-contracts/src/native/policy_contract/mod.rs",
+        "neo-native-contracts/src/native/policy_contract/tests.rs",
+        "neo-native-contracts/src/native/role_management/mod.rs",
+        "neo-native-contracts/src/native/std_lib/helpers.rs",
+        "neo-native-contracts/src/native/std_lib/strings.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
@@ -4174,13 +4265,16 @@ fn fuzz_script_parser_uses_direct_script_validation() {
     let target = read_source(workspace.join("fuzz/fuzz_targets/fuzz_script_parse.rs"));
 
     assert!(
-        target.contains("neo_core::script_validation::validate_script"),
+        target.contains("use neo_vm::validate_script;")
+            && target.contains("validate_script(data, false)")
+            && target.contains("validate_script(data, true)")
+            && target.contains("script.has_instruction_at(0)"),
         "script parsing fuzz target should exercise the direct neo-vm-rs-backed bytecode \
          validator"
     );
     assert!(
         !target.contains("neo_core::neo_vm::Script")
-            && !target.contains("use neo_vm::")
+            && !target.contains("neo_core::script_validation")
             && !target.contains("Script::new")
             && !target.contains("Script::new_relaxed"),
         "script parsing fuzz target should not construct the local neo_vm::Script"
@@ -4188,17 +4282,18 @@ fn fuzz_script_parser_uses_direct_script_validation() {
 }
 
 #[test]
-fn fuzz_docs_describe_direct_script_validation_target() {
+fn fuzz_manifest_and_source_use_direct_vm_authority() {
     let workspace = workspace_root();
-    let readme = fs::read_to_string(workspace.join("fuzz/README.md")).unwrap();
-
+    let manifest = read_source(workspace.join("fuzz/Cargo.toml"));
+    let target = read_source(workspace.join("fuzz/fuzz_targets/fuzz_script_parse.rs"));
+    assert!(manifest.contains("neo-vm = { path = \"../neo-vm\", version = \"0.20.0\" }"));
+    assert!(manifest.contains("path = \"fuzz_targets/fuzz_script_parse.rs\""));
+    assert!(target.contains("use neo_vm::validate_script;") && !target.contains("neo_core::"));
+    let probe = read_source(workspace.join("neo-probe/Cargo.toml"));
     assert!(
-        readme.contains("neo_core::script_validation::validate_script"),
-        "fuzz README should document the direct neo-vm-rs-backed script validation target"
-    );
-    assert!(
-        !readme.contains("neo_vm::Script"),
-        "fuzz README should not advertise the deleted standalone neo_vm::Script target"
+        probe.contains("neo-vm = { workspace = true }")
+            && probe.contains("neo-smart-contract = { workspace = true }")
+            && !probe.contains("neo-core")
     );
 }
 
@@ -4286,9 +4381,9 @@ fn replay_debug_example_uses_direct_script_validation_for_instruction_windows() 
 fn primitive_interop_validation_uses_stackvalue_directly() {
     let workspace = workspace_root();
     for relative in [
-        "neo-core/src/smart_contract/validator_attribute.rs",
-        "neo-core/src/smart_contract/max_length_attribute.rs",
-        "neo-core/src/smart_contract/interop_parameter_descriptor.rs",
+        "neo-smart-contract/src/validator_attribute.rs",
+        "neo-smart-contract/src/max_length_attribute.rs",
+        "neo-smart-contract/src/interop_parameter_descriptor.rs",
     ] {
         let source = fs::read_to_string(workspace.join(relative)).unwrap();
         assert!(
@@ -4302,8 +4397,7 @@ fn primitive_interop_validation_uses_stackvalue_directly() {
         );
     }
 
-    let max_length =
-        read_source(workspace.join("neo-core/src/smart_contract/max_length_attribute.rs"));
+    let max_length = read_source(workspace.join("neo-smart-contract/src/max_length_attribute.rs"));
     assert!(
         max_length.contains("to_byte_string_bytes()"),
         "MaxLengthAttribute should use neo-vm-rs byte-string conversion rules for \
@@ -4311,7 +4405,7 @@ fn primitive_interop_validation_uses_stackvalue_directly() {
     );
 
     let interop = fs::read_to_string(
-        workspace.join("neo-core/src/smart_contract/interop_parameter_descriptor.rs"),
+        workspace.join("neo-smart-contract/src/interop_parameter_descriptor.rs"),
     )
     .unwrap();
     assert!(
@@ -4369,10 +4463,10 @@ fn script_building_callers_do_not_import_builder_from_neo_vm_facade() {
 fn script_builder_implementation_lives_in_the_neo_vm_crate() {
     let workspace = workspace_root();
     let vm_module = read_source(workspace.join("neo-vm/src/lib.rs"));
-    let core_shim = read_source(workspace.join("neo-core/src/script_builder.rs"));
+    let core_root = read_source(workspace.join("neo-core/src/lib.rs"));
+    assert!(!workspace.join("neo-core/src/script_builder.rs").exists());
 
-    // The implementation lives in the neo-vm crate; neo-core keeps only a
-    // thin re-export shim for compatibility.
+    // The root preserves the module path without an extra forwarding file.
     assert!(
         workspace.join("neo-vm/src/script_builder.rs").exists(),
         "ScriptBuilder implementation should live in the neo-vm crate"
@@ -4382,9 +4476,9 @@ fn script_builder_implementation_lives_in_the_neo_vm_crate() {
         "the neo-vm crate should expose ScriptBuilder as a public module"
     );
     assert!(
-        core_shim.contains("pub use crate::neo_vm::script_builder::*;"),
-        "neo-core/src/script_builder.rs should stay a thin re-export shim of the \
-         neo-vm implementation"
+        core_root.contains("pub use ::neo_vm::script_builder;")
+            && core_root.contains("pub use neo_vm::{ScriptBuilder, rpc_json};"),
+        "core should expose the canonical module and root ScriptBuilder type"
     );
 }
 
@@ -4616,13 +4710,13 @@ fn nep11_token_ordering_does_not_use_local_bytestring_wrapper() {
     let workspace = workspace_root();
     let stack_item_module = read_source(workspace.join("neo-vm/src/stack_item/mod.rs"));
     let balance_key = read_source(
-        workspace.join("neo-core/src/tokens_tracker/trackers/nep_11/nep11_balance_key.rs"),
+        workspace.join("neo-rpc/src/tokens_tracker/trackers/nep_11/nep11_balance_key.rs"),
     );
     let transfer_key = read_source(
-        workspace.join("neo-core/src/tokens_tracker/trackers/nep_11/nep11_transfer_key.rs"),
+        workspace.join("neo-rpc/src/tokens_tracker/trackers/nep_11/nep11_transfer_key.rs"),
     );
     let nep11_module =
-        read_source(workspace.join("neo-core/src/tokens_tracker/trackers/nep_11/mod.rs"));
+        read_source(workspace.join("neo-rpc/src/tokens_tracker/trackers/nep_11/mod.rs"));
 
     assert!(
         !workspace
@@ -4859,29 +4953,75 @@ fn rpc_client_stack_models_use_neo_vm_rs_stackvalue_directly() {
 }
 
 #[test]
-fn rpc_server_imports_host_runtime_through_neo_vm_boundary() {
-    // `neo_core::vm_runtime` was removed as part of the VM facade simplification;
-    // `neo_core::neo_vm` is now the single glob re-export boundary that keeps
-    // neo-core's VM surface in sync with the self-contained `neo-vm` crate.
+fn rpc_server_imports_host_runtime_directly_from_neo_vm() {
     let workspace = workspace_root();
-    for relative in [
-        "neo-rpc/src/server/diagnostic.rs",
-        "neo-rpc/src/server/session.rs",
-        "neo-rpc/src/server/rpc_server_tokens_tracker/mod.rs",
-        "neo-rpc/src/server/smart_contract/helpers.rs",
-        "neo-rpc/src/server/smart_contract/invocation.rs",
-        "neo-rpc/src/server/smart_contract/tests.rs",
+    for (relative, symbols) in [
+        (
+            "neo-rpc/src/server/diagnostic.rs",
+            &["ExecutionContext", "Instruction"][..],
+        ),
+        (
+            "neo-rpc/src/server/session.rs",
+            &["StackItem", "InteropInterface"][..],
+        ),
+        (
+            "neo-rpc/src/server/rpc_server_tokens_tracker/mod.rs",
+            &["ScriptBuilder", "StackItem"][..],
+        ),
+        (
+            "neo-rpc/src/server/smart_contract/helpers.rs",
+            &[
+                "NotifyEventArgs",
+                "ScriptBuilder",
+                "StackItem",
+                "StackValue",
+                "VmState",
+                "stack_item_rpc_json_deferred_size_check",
+            ][..],
+        ),
+        (
+            "neo-rpc/src/server/smart_contract/invocation.rs",
+            &["StackItem", "VmState"][..],
+        ),
+        (
+            "neo-rpc/src/server/smart_contract/tests.rs",
+            &[
+                "InteropInterface",
+                "BinarySerializer",
+                "ExecutionEngineLimits",
+                "Interoperable",
+                "OpCode",
+                "ScriptBuilder",
+            ][..],
+        ),
     ] {
-        let source = fs::read_to_string(workspace.join(relative)).unwrap();
-        assert!(
-            source.contains("neo_core::neo_vm"),
-            "{relative} should import host-runtime-only local VM types through the \
-             neo_vm boundary"
-        );
-        assert!(
-            !source.contains("neo_core::vm_runtime"),
-            "{relative} should not import through the removed vm_runtime facade"
-        );
+        let source = read_source(workspace.join(relative));
+        for forbidden in [
+            "neo_core::neo_vm",
+            "neo_core::vm_runtime",
+            "neo_core::script_builder",
+            "neo_core::smart_contract::binary_serializer",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{relative} must not use a core VM facade: {forbidden}"
+            );
+        }
+        let direct_imports = source
+            .split(';')
+            .filter_map(|statement| {
+                statement
+                    .find("use neo_vm::")
+                    .map(|start| &statement[start..])
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        for symbol in symbols {
+            assert!(
+                direct_imports.contains(symbol),
+                "{relative} must import {symbol} directly from neo_vm"
+            );
+        }
     }
 }
 
@@ -4936,6 +5076,507 @@ fn rpc_server_invoke_arguments_push_neo_vm_rs_stackvalue_directly() {
         "contract verification script construction should share the direct StackValue \
          push path"
     );
+}
+
+#[test]
+fn approved_forwarding_and_orphan_files_are_absent_with_single_authorities() {
+    let workspace = workspace_root();
+    for relative in [
+        "neo-core/src/big_decimal.rs",
+        "neo-core/src/smart_contract/contract_parameter_type.rs",
+        "neo-core/src/unhandled_exception_policy.rs",
+        "neo-core/src/neo_vm.rs",
+        "neo-core/src/script_builder.rs",
+        "neo-core/src/smart_contract/binary_serializer.rs",
+        "neo-core/src/script_validation.rs",
+        "neo-core/src/memory/mod.rs",
+        "neo-core/src/memory/vm_object_manager.rs",
+        "neo-vm/src/application_engine_pooled.rs",
+    ] {
+        assert!(
+            !workspace.join(relative).exists(),
+            "removed shim/orphan returned: {relative}"
+        );
+    }
+    let root = read_source(workspace.join("neo-core/src/lib.rs"));
+    let contract_root = read_source(workspace.join("neo-core/src/smart_contract/mod.rs"));
+    assert!(
+        root.contains("pub use ::neo_vm;") && root.contains("pub use ::neo_vm::script_builder;")
+    );
+    assert!(contract_root.contains("pub use ::neo_vm::binary_serializer;"));
+    for declaration in [
+        "pub mod big_decimal;",
+        "pub mod unhandled_exception_policy;",
+        "pub mod memory;",
+    ] {
+        assert!(!root.contains(declaration));
+    }
+    assert!(!contract_root.contains("pub mod contract_parameter_type;"));
+    assert!(
+        contract_root.contains("pub mod contract_parameter;")
+            && contract_root.contains("pub use neo_smart_contract::application_engine;")
+    );
+    assert!(read_source(workspace.join("neo-vm/src/lib.rs")).contains("pub mod memory;"));
+    assert!(workspace.join("neo-vm/src/memory/arena_pool.rs").exists());
+
+    let validation = root
+        .split_once("pub mod script_validation {")
+        .unwrap()
+        .1
+        .split_once("\n}")
+        .unwrap()
+        .0;
+    let exported = validation
+        .split_once("pub use ::neo_vm::{")
+        .unwrap()
+        .1
+        .split_once("};")
+        .unwrap()
+        .0
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        exported,
+        std::collections::BTreeSet::from([
+            "ScriptInstruction",
+            "ValidatedScript",
+            "ValidationResult",
+            "parse_script_instructions",
+            "validate_script",
+            "validate_strict_script",
+        ])
+    );
+    let mut files = Vec::new();
+    for crate_name in [
+        "neo-primitives",
+        "neo-io",
+        "neo-storage",
+        "neo-vm",
+        "neo-core",
+    ] {
+        collect_rs_files(&workspace.join(crate_name).join("src"), &mut files);
+    }
+    let sources: Vec<_> = files.iter().map(|path| (path, read_source(path))).collect();
+    for (declaration, authority) in [
+        ("pub struct BigDecimal", "neo-primitives/src/big_decimal.rs"),
+        (
+            "pub enum ContractParameterType",
+            "neo-primitives/src/contract_parameter_type.rs",
+        ),
+        (
+            "pub enum UnhandledExceptionPolicy",
+            "neo-primitives/src/unhandled_exception_policy.rs",
+        ),
+        ("pub struct ScriptBuilder", "neo-vm/src/script_builder.rs"),
+        (
+            "pub struct VmOrderedDictionary",
+            "neo-vm/src/vm/ordered_dictionary.rs",
+        ),
+        (
+            "pub struct BinarySerializer",
+            "neo-vm/src/binary_serializer.rs",
+        ),
+        (
+            "pub fn parse_script_instructions(",
+            "neo-vm/src/vm/script_validation.rs",
+        ),
+        ("pub enum CompressionAlgorithm", "neo-io/src/compression.rs"),
+        ("pub enum CodecError", "neo-io/src/codec_error.rs"),
+        (
+            "pub struct StorageConfig",
+            "neo-storage/src/persistence/storage.rs",
+        ),
+        (
+            "pub struct RocksDbSnapshot",
+            "neo-storage/src/persistence/providers/rocksdb/store.rs",
+        ),
+    ] {
+        let owners: Vec<_> = sources
+            .iter()
+            .filter(|(_, source)| {
+                source.lines().any(|line| {
+                    let line = line.trim_start();
+                    line.starts_with(declaration)
+                        || (declaration == "pub enum ContractParameterType"
+                            && line.starts_with("pub ContractParameterType {"))
+                })
+            })
+            .map(|(path, _)| (*path).clone())
+            .collect();
+        assert_eq!(
+            owners,
+            [workspace.join(authority)],
+            "single authority violated: {declaration}"
+        );
+    }
+    use std::any::TypeId;
+    assert_eq!(
+        TypeId::of::<neo_core::BigDecimal>(),
+        TypeId::of::<neo_primitives::BigDecimal>()
+    );
+    assert_eq!(
+        TypeId::of::<neo_core::UnhandledExceptionPolicy>(),
+        TypeId::of::<neo_primitives::UnhandledExceptionPolicy>()
+    );
+    assert_eq!(
+        TypeId::of::<neo_core::ContractParameterType>(),
+        TypeId::of::<neo_primitives::ContractParameterType>()
+    );
+    assert_eq!(
+        TypeId::of::<neo_core::smart_contract::binary_serializer::BinarySerializer>(),
+        TypeId::of::<neo_vm::BinarySerializer>()
+    );
+    assert_eq!(
+        TypeId::of::<neo_core::script_validation::ValidatedScript>(),
+        TypeId::of::<neo_vm::ValidatedScript>()
+    );
+    assert_eq!(
+        TypeId::of::<neo_core::persistence::StorageConfig>(),
+        TypeId::of::<neo_storage::persistence::storage::StorageConfig>()
+    );
+    assert_eq!(
+        TypeId::of::<neo_core::persistence::compression::CompressionAlgorithm>(),
+        TypeId::of::<neo_io::compression::CompressionAlgorithm>()
+    );
+    assert_ne!(TypeId::of::<StackItem>(), TypeId::of::<StackValue>());
+    assert_eq!(
+        TypeId::of::<DataCache>(),
+        TypeId::of::<neo_storage::persistence::DataCache>()
+    );
+    assert_ne!(
+        TypeId::of::<DataCache>(),
+        TypeId::of::<neo_storage::cache::DataCache>()
+    );
+}
+
+#[test]
+fn protocol_and_framing_have_single_real_owners() {
+    let workspace = workspace_root();
+    for removed in [
+        "neo-core/src/protocol_settings.rs",
+        "neo-core/src/hardfork.rs",
+        "neo-core/src/network/p2p/framed.rs",
+        "neo-core/src/network/p2p/framed_codec.rs",
+        "neo-core/tests/protocol_settings_source_tests.rs",
+    ] {
+        assert!(
+            !workspace.join(removed).exists(),
+            "pure shim/relocated source returned: {removed}"
+        );
+    }
+    let root = read_source(workspace.join("neo-core/src/lib.rs"));
+    assert!(
+        root.contains("pub use neo_protocol::protocol_settings;")
+            && root.contains("pub use neo_protocol::hardfork;")
+    );
+    let network = read_source(workspace.join("neo-core/src/network/p2p/mod.rs"));
+    assert!(
+        network.contains("pub use neo_p2p::framed;")
+            && network.contains("pub use framed::FrameConfig;")
+    );
+    let mut files = Vec::new();
+    for member in [
+        "neo-primitives",
+        "neo-config",
+        "neo-crypto",
+        "neo-io",
+        "neo-json",
+        "neo-storage",
+        "neo-vm",
+        "neo-core",
+        "neo-protocol",
+        "neo-p2p",
+        "neo-consensus",
+        "neo-rpc",
+        "neo-node",
+        "neo-probe",
+        "neo-telemetry",
+        "neo-ai-agent",
+        "neo-tee",
+        "neo-hsm",
+        "neo-signer-server",
+    ] {
+        collect_rs_files(&workspace.join(member).join("src"), &mut files);
+    }
+    for (declaration, authority) in [
+        ("pub struct HardforkManager", "neo-protocol/src/hardfork.rs"),
+        ("pub Hardfork {", "neo-primitives/src/hardfork.rs"),
+        ("pub const PAYLOAD_MAX_SIZE:", "neo-p2p/src/message.rs"),
+        ("pub struct NeoMessageCodec", "neo-p2p/src/framed_codec.rs"),
+        ("pub struct FrameReader", "neo-p2p/src/framed.rs"),
+        (
+            "pub fn signer_to_stack_value(",
+            "neo-core/src/network/p2p/payloads/signer/stack_projection.rs",
+        ),
+        (
+            "pub fn transaction_to_stack_value(",
+            "neo-core/src/network/p2p/payloads/transaction/stack_projection.rs",
+        ),
+    ] {
+        let owners: Vec<_> = files
+            .iter()
+            .filter(|path| {
+                read_source(path)
+                    .lines()
+                    .any(|line| line.trim_start().starts_with(declaration))
+            })
+            .cloned()
+            .collect();
+        assert_eq!(
+            owners,
+            [workspace.join(authority)],
+            "single implementation owner: {declaration}"
+        );
+    }
+    // `WitnessData` is mirrored across the neo-protocol payload side and the
+    // neo-core facade: a content-identical duplicate pair pending consolidation,
+    // so exactly these two owners must exist.
+    let witness_data_owners: Vec<_> = files
+        .iter()
+        .filter(|path| {
+            read_source(path)
+                .lines()
+                .any(|line| line.trim_start().starts_with("pub trait WitnessData:"))
+        })
+        .cloned()
+        .collect();
+    assert_eq!(
+        witness_data_owners.len(),
+        2,
+        "WitnessData duplicate pair must stay exactly two until consolidation"
+    );
+    assert!(witness_data_owners.contains(&workspace.join("neo-core/src/witness.rs")));
+    assert!(witness_data_owners.contains(&workspace.join("neo-protocol/src/witness.rs")));
+    let settings = read_source(workspace.join("neo-protocol/src/protocol_settings.rs"));
+    assert!(settings.contains("Self::from_config(neo_config::ProtocolSettings::mainnet())"));
+    assert!(settings.contains("Self::from_config(neo_config::ProtocolSettings::testnet())"));
+    assert!(
+        settings.contains("network: 0,")
+            && settings.contains("Self::ensure_omitted_hardforks(HashMap::new())")
+    );
+    let hardfork = read_source(workspace.join("neo-protocol/src/hardfork.rs"));
+    assert!(hardfork.contains("pub use neo_primitives::{Hardfork, HardforkParseError};"));
+    assert!(
+        hardfork.contains("None => false")
+            && hardfork
+                .contains("Self::from_heights(&neo_config::ProtocolSettings::mainnet().hardforks)")
+    );
+    for (fork, field) in [
+        ("Aspidochelone", "aspidochelone"),
+        ("Basilisk", "basilisk"),
+        ("Cockatrice", "cockatrice"),
+        ("Domovoi", "domovoi"),
+        ("Echidna", "echidna"),
+        ("Faun", "faun"),
+        ("Gorgon", "gorgon"),
+        ("Huyao", "huyao"),
+    ] {
+        assert!(hardfork.contains(&format!("Hardfork::Hf{fork} => heights.hf_{field}")));
+    }
+    let message = read_source(workspace.join("neo-core/src/network/p2p/message.rs"));
+    assert!(message.contains("pub use neo_p2p::message::PAYLOAD_MAX_SIZE;"));
+    let codec = read_source(workspace.join("neo-p2p/src/framed_codec.rs"));
+    for required in [
+        "use crate::message::PAYLOAD_MAX_SIZE;",
+        "Self::new(PAYLOAD_MAX_SIZE)",
+        "read_var_int_prefix",
+        ".checked_add(varint_len)",
+        "src.len() < frame_len",
+        "write_var_int(payload_length as u64, &mut message)",
+    ] {
+        assert!(
+            codec.contains(required),
+            "missing framing invariant: {required}"
+        );
+    }
+    let source_tests =
+        read_source(workspace.join("neo-protocol/tests/protocol_settings_source_tests.rs"));
+    assert_eq!(source_tests.matches("#[test]").count(), 3);
+    let parity = read_source(workspace.join("neo-core/tests/framed_codec_parity_tests.rs"));
+    assert_eq!(parity.matches("#[tokio::test]").count(), 2);
+    assert!(
+        parity.contains("read_one_framed_frame")
+            && parity.contains("NetworkMessage::new")
+            && parity.contains("assert_eq!(actual, expected)")
+    );
+    use std::any::TypeId;
+    assert_eq!(
+        TypeId::of::<neo_core::ProtocolSettings>(),
+        TypeId::of::<neo_protocol::ProtocolSettings>()
+    );
+    assert_eq!(
+        TypeId::of::<neo_core::hardfork::HardforkManager>(),
+        TypeId::of::<neo_protocol::HardforkManager>()
+    );
+    assert_eq!(
+        TypeId::of::<neo_protocol::Hardfork>(),
+        TypeId::of::<neo_primitives::Hardfork>()
+    );
+    assert_eq!(
+        TypeId::of::<neo_core::network::p2p::framed::FrameConfig>(),
+        TypeId::of::<neo_p2p::FrameConfig>()
+    );
+    assert_eq!(
+        TypeId::of::<neo_core::network::p2p::framed::NeoMessageCodec>(),
+        TypeId::of::<neo_p2p::NeoMessageCodec>()
+    );
+}
+
+#[test]
+fn witness_access_contract_does_not_execute_the_engine() {
+    let workspace = workspace_root();
+    let root = read_source(workspace.join("neo-core/src/lib.rs"));
+    let extension = root
+        .split_once("pub trait VerifiableExt: WitnessData {")
+        .unwrap()
+        .1
+        .split_once("\n}")
+        .unwrap()
+        .0;
+    assert!(
+        !extension.contains("fn witnesses")
+            && !extension.contains("verify_witnesses")
+            && !extension.contains("ApplicationEngine")
+    );
+    assert!(
+        extension.contains("script_hashes_for_verifying") && extension.contains("as_transaction")
+    );
+    assert!(root.contains("pub use witness::{Witness, WitnessData, WitnessExt};"));
+    let witness = read_source(workspace.join("neo-core/src/witness.rs"));
+    let data = witness
+        .split_once("pub trait WitnessData: neo_primitives::Verifiable {")
+        .unwrap()
+        .1
+        .split_once("\n}")
+        .unwrap()
+        .0;
+    assert!(data.contains("fn witnesses(&self)") && data.contains("fn witnesses_mut(&mut self)"));
+    for forbidden in [
+        "DataCache",
+        "ProtocolSettings",
+        "verify_witnesses",
+        "ApplicationEngine",
+    ] {
+        assert!(!data.contains(forbidden));
+    }
+    for (path, implementor) in [
+        ("network/p2p/payloads/header.rs", "Header"),
+        ("network/p2p/payloads/block.rs", "Block"),
+        (
+            "network/p2p/payloads/extensible_payload.rs",
+            "ExtensiblePayload",
+        ),
+    ] {
+        assert!(
+            read_source(workspace.join("neo-core/src").join(path))
+                .contains(&format!("impl crate::WitnessData for {implementor}"))
+        );
+    }
+    // The StateRoot WitnessData bridge lives in the state_service re-export
+    // module (state_service/state_root.rs moved to neo-state-service).
+    assert!(
+        read_source(workspace.join("neo-core/src/state_service/mod.rs"))
+            .contains("impl WitnessData for StateRoot")
+    );
+    let header = read_source(workspace.join("neo-core/src/network/p2p/payloads/header.rs"));
+    for required in [
+        "if *self.prev_hash() == UInt256::default()",
+        "return vec![self.witness.script_hash()]",
+        "ledger.get_trimmed_block(snapshot, self.prev_hash())",
+        "vec![prev.header.next_consensus]",
+    ] {
+        assert!(header.contains(required));
+    }
+    assert_eq!(header.matches("return Vec::new();").count(), 2);
+    let block = read_source(workspace.join("neo-core/src/network/p2p/payloads/block.rs"));
+    assert!(block.contains("self.header.script_hashes_for_verifying(snapshot)"));
+    assert!(
+        block.contains("crate::WitnessData::witnesses(&self.header)")
+            && block.contains("crate::WitnessData::witnesses_mut(&mut self.header)")
+    );
+    let helper = read_source(workspace.join("neo-core/src/smart_contract/helper.rs"));
+    assert!(
+        helper.contains("pub fn verify_witnesses<V: VerifiableExt>")
+            && helper.contains("WitnessData::witnesses(verifiable)")
+    );
+    assert!(helper.contains("impl WitnessData for VerifiableHashContainer"));
+    let extensible =
+        read_source(workspace.join("neo-core/src/network/p2p/payloads/extensible_payload.rs"));
+    assert!(extensible.contains("crate::smart_contract::helper::Helper::verify_witnesses("));
+    let header_validation =
+        read_source(workspace.join("neo-core/src/network/p2p/payloads/header/verification.rs"));
+    assert_eq!(
+        header_validation
+            .matches("let verified = self.verify_witness_against_hash(")
+            .count(),
+        2
+    );
+    let adapter = read_source(
+        workspace.join("neo-core/src/network/p2p/payloads/transaction/ledger_adapter.rs"),
+    );
+    assert!(adapter.contains("self.signer_accounts()") && !adapter.contains("fn witnesses"));
+    assert!(
+        read_source(workspace.join("neo-core/src/network/p2p/payloads/transaction/traits.rs"))
+            .contains("impl WitnessData for Transaction")
+    );
+    assert!(
+        read_source(workspace.join("neo-core/tests/verify_witnesses_tests.rs"))
+            .contains("impl neo_core::WitnessData for ManualWitness")
+    );
+    let context =
+        read_source(workspace.join("neo-core/src/smart_contract/contract_parameters_context.rs"));
+    assert!(context.contains("verifiable.script_hashes_for_verifying(snapshot_cache.as_ref())"));
+    fn requires_witness_data<T: neo_core::WitnessData>() {}
+    requires_witness_data::<neo_core::network::p2p::payloads::Header>();
+    requires_witness_data::<neo_core::network::p2p::payloads::Block>();
+    requires_witness_data::<neo_core::network::p2p::payloads::ExtensiblePayload>();
+    requires_witness_data::<Transaction>();
+}
+
+#[test]
+fn signing_preimage_implementation_is_protocol_owned_with_explicit_core_mapping() {
+    let workspace = workspace_root();
+    let signing = read_source(workspace.join("neo-protocol/src/signing_data.rs"));
+    for required in [
+        "PrimitiveResult<[u8; SIGN_DATA_LENGTH]>",
+        "V: Verifiable + ?Sized",
+        "let hash = verifiable.hash()?;",
+        "std::mem::size_of::<u32>() + UINT256_SIZE",
+        "buffer[..4].copy_from_slice(&network.to_le_bytes())",
+        "buffer[4..].copy_from_slice(&hash.as_bytes())",
+        "Ok(get_sign_data(verifiable, network)?.to_vec())",
+    ] {
+        assert!(
+            signing.contains(required),
+            "missing signing contract: {required}"
+        );
+    }
+    let helper = read_source(workspace.join("neo-core/src/network/p2p/helper.rs"));
+    assert!(
+        !helper.contains("to_le_bytes")
+            && !helper.contains(".hash()")
+            && !helper.contains("copy_from_slice")
+    );
+    assert!(
+        helper.contains("neo_protocol::signing_data::get_sign_data(verifiable, network)")
+            && helper
+                .contains("neo_protocol::signing_data::get_sign_data_vec(verifiable, network)")
+    );
+    assert_eq!(
+        helper
+            .matches("CoreError::invalid_operation(e.to_string())")
+            .count(),
+        2
+    );
+    let _: fn(&dyn neo_primitives::Verifiable, u32) -> neo_primitives::PrimitiveResult<[u8; 36]> =
+        neo_protocol::get_sign_data::<dyn neo_primitives::Verifiable>;
+    let _: fn(&dyn neo_primitives::Verifiable, u32) -> neo_core::CoreResult<[u8; 36]> =
+        neo_core::network::p2p::get_sign_data::<dyn neo_primitives::Verifiable>;
+    let _: fn(&dyn neo_primitives::Verifiable, u32) -> neo_primitives::PrimitiveResult<Vec<u8>> =
+        neo_protocol::get_sign_data_vec::<dyn neo_primitives::Verifiable>;
+    assert_eq!(neo_protocol::SIGN_DATA_LENGTH, 36);
 }
 
 fn workspace_root() -> PathBuf {

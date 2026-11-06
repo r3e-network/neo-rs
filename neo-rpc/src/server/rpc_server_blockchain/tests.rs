@@ -1,27 +1,33 @@
 use super::*;
 use crate::client::models::RpcRawMemPool;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::ledger::VerifyResult;
-use neo_core::ledger::block::Block as LedgerBlock;
-use neo_core::ledger::block_header::BlockHeader as LedgerBlockHeader;
-use neo_core::neo_io::SerializableExt;
-use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::network::p2p::payloads::block::Block;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::native::GasToken;
-use neo_core::smart_contract::native::LedgerContract;
-use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
-use neo_core::smart_contract::{BinarySerializer, ContractManifest, ContractState, NefFile};
-use neo_core::smart_contract::{StorageItem, StorageKey};
+use neo_protocol::witness::Witness as LedgerWitness;
+// `TrimmedBlock::from_block` and the RPC converters operate on the execution block
+// representation owned by `neo-protocol`, matching the native `LedgerContract` API.
 use neo_core::wallets::KeyPair;
-use neo_core::{NeoSystem, UInt160, UInt256, Verifiable, Witness as LedgerWitness, WitnessScope};
+use neo_io::SerializableExtensions as SerializableExt;
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_json::JToken;
+use neo_native_contracts::native::GasToken;
+use neo_native_contracts::native::LedgerContract;
+use neo_native_contracts::native::trimmed_block::TrimmedBlock;
+use neo_primitives::TriggerType;
+use neo_primitives::VerifyResult;
+use neo_primitives::{UInt160, UInt256, Verifiable, WitnessScope};
+use neo_protocol::ProtocolSettings;
+use neo_protocol::execution::Block as LedgerBlock;
+use neo_protocol::execution::BlockHeader as LedgerBlockHeader;
+use neo_protocol::get_sign_data_vec;
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::block::Block;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::witness::Witness;
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::contract_state::{ContractState, NefFile};
+use neo_smart_contract::manifest::ContractManifest;
+use neo_storage::{StorageItem, StorageKey};
+use neo_system::NeoSystem;
+use neo_vm::BinarySerializer;
 use neo_vm::{ExecutionEngineLimits, VmState as VMState};
 use neo_vm::{OpCode, StackValue};
 use num_bigint::BigInt;
@@ -72,7 +78,7 @@ fn build_signed_transaction(
 }
 
 fn mint_gas(
-    store: &mut neo_core::persistence::StoreCache,
+    store: &mut neo_storage::persistence::StoreCache,
     settings: &ProtocolSettings,
     account: UInt160,
     amount: BigInt,
@@ -90,6 +96,7 @@ fn mint_gas(
         settings.clone(),
         400_000_000,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -114,7 +121,7 @@ fn make_transaction(nonce: u32) -> Transaction {
 }
 
 fn make_ledger_block(
-    store: &neo_core::persistence::StoreCache,
+    store: &neo_storage::persistence::StoreCache,
     index: u32,
     transactions: Vec<Transaction>,
 ) -> LedgerBlock {
@@ -125,25 +132,25 @@ fn make_ledger_block(
         UInt256::zero()
     } else {
         let hashes: Vec<UInt256> = transactions.iter().map(|tx| tx.hash()).collect();
-        neo_core::cryptography::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
+        neo_crypto::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
     };
 
-    let header = LedgerBlockHeader {
-        index,
-        previous_hash: prev_hash,
-        merkle_root,
-        timestamp: 1,
-        nonce: 0,
-        primary_index: 0,
-        next_consensus: UInt160::zero(),
-        witnesses: vec![LedgerWitness::empty()],
-        ..Default::default()
-    };
+    let header = LedgerBlockHeader::new(
+        0,               // version
+        prev_hash,       // previous_hash
+        merkle_root,     // merkle_root
+        1,               // timestamp
+        0,               // nonce
+        index,           // index
+        0,               // primary_index
+        UInt160::zero(), // next_consensus
+        vec![LedgerWitness::empty()],
+    );
 
     LedgerBlock::new(header, transactions)
 }
 
-fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBlock) {
+fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerBlock) {
     const PREFIX_BLOCK: u8 = 0x05;
     const PREFIX_BLOCK_HASH: u8 = 0x09;
     const PREFIX_TRANSACTION: u8 = 0x0b;
@@ -194,11 +201,14 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
     store.commit();
 }
 
-fn store_contract_state(store: &mut neo_core::persistence::StoreCache, contract: &ContractState) {
+fn store_contract_state(
+    store: &mut neo_storage::persistence::StoreCache,
+    contract: &ContractState,
+) {
     const PREFIX_CONTRACT: u8 = 0x08;
     const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 
-    let contract_mgmt_id = NativeRegistry::new()
+    let contract_mgmt_id = neo_native_contracts::native::composition::standard_registry()
         .get_by_name("ContractManagement")
         .expect("contract management")
         .id();
@@ -234,7 +244,7 @@ fn store_contract_state(store: &mut neo_core::persistence::StoreCache, contract:
 }
 
 fn store_storage_item(
-    store: &mut neo_core::persistence::StoreCache,
+    store: &mut neo_storage::persistence::StoreCache,
     contract_id: i32,
     key: &[u8],
     value: &[u8],
@@ -250,11 +260,11 @@ fn serialize_test_stack_value(value: &StackValue) -> Vec<u8> {
 }
 
 fn store_committee(
-    store: &mut neo_core::persistence::StoreCache,
-    committee: &[neo_core::cryptography::ECPoint],
+    store: &mut neo_storage::persistence::StoreCache,
+    committee: &[neo_crypto::ECPoint],
 ) {
     const PREFIX_COMMITTEE: u8 = 0x0e;
-    let neo_token_id = NativeRegistry::new()
+    let neo_token_id = neo_native_contracts::native::composition::standard_registry()
         .get_by_name("NeoToken")
         .expect("neo token")
         .id();
@@ -275,8 +285,8 @@ fn store_committee(
 }
 
 fn store_candidate_state(
-    store: &mut neo_core::persistence::StoreCache,
-    candidate: &neo_core::cryptography::ECPoint,
+    store: &mut neo_storage::persistence::StoreCache,
+    candidate: &neo_crypto::ECPoint,
     registered: bool,
     votes: BigInt,
 ) {
@@ -289,12 +299,12 @@ fn store_candidate_state(
 }
 
 fn store_candidate_state_raw(
-    store: &mut neo_core::persistence::StoreCache,
-    candidate: &neo_core::cryptography::ECPoint,
+    store: &mut neo_storage::persistence::StoreCache,
+    candidate: &neo_crypto::ECPoint,
     bytes: Vec<u8>,
 ) {
     const PREFIX_CANDIDATE: u8 = 0x21;
-    let neo_token_id = NativeRegistry::new()
+    let neo_token_id = neo_native_contracts::native::composition::standard_registry()
         .get_by_name("NeoToken")
         .expect("neo token")
         .id();
@@ -306,9 +316,9 @@ fn store_candidate_state_raw(
     store.commit();
 }
 
-fn store_blocked_account(store: &mut neo_core::persistence::StoreCache, account: &UInt160) {
+fn store_blocked_account(store: &mut neo_storage::persistence::StoreCache, account: &UInt160) {
     const PREFIX_BLOCKED_ACCOUNT: u8 = 0x0f;
-    let policy_id = NativeRegistry::new()
+    let policy_id = neo_native_contracts::native::composition::standard_registry()
         .get_by_name("PolicyContract")
         .expect("policy")
         .id();
@@ -785,7 +795,7 @@ async fn get_contract_state_roundtrips_native_name_and_id() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getcontractstate");
 
-    let registry = NativeRegistry::new();
+    let registry = neo_native_contracts::native::composition::standard_registry();
     let contract = registry
         .get_by_name("ContractManagement")
         .expect("contract management");
@@ -811,7 +821,7 @@ async fn get_contract_state_resolves_native_case_insensitive() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getcontractstate");
 
-    let registry = NativeRegistry::new();
+    let registry = neo_native_contracts::native::composition::standard_registry();
     let gas_contract = registry.get_by_name("GasToken").expect("gas token");
     let gas_state = gas_contract
         .contract_state(system.settings(), 0)
@@ -1032,7 +1042,7 @@ async fn get_storage_accepts_native_contract_name() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getstorage");
 
-    let registry = NativeRegistry::new();
+    let registry = neo_native_contracts::native::composition::standard_registry();
     let gas_contract = registry.get_by_name("GasToken").expect("gas token");
     let gas_state = gas_contract
         .contract_state(system.settings(), 0)
@@ -1061,7 +1071,7 @@ async fn find_storage_accepts_native_contract_name() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "findstorage");
 
-    let registry = NativeRegistry::new();
+    let registry = neo_native_contracts::native::composition::standard_registry();
     let gas_contract = registry.get_by_name("GasToken").expect("gas token");
     let gas_state = gas_contract
         .contract_state(system.settings(), 0)
@@ -1562,9 +1572,10 @@ async fn get_candidates_skips_blocked_and_unregistered() {
         .expect("candidate")
         .clone();
 
-    let blocked_account =
-        neo_core::smart_contract::Contract::create_signature_contract(candidate_blocked.clone())
-            .script_hash();
+    let blocked_account = neo_smart_contract::contract::Contract::create_signature_contract(
+        candidate_blocked.clone(),
+    )
+    .script_hash();
     let mut store = system.context().store_snapshot_cache();
     store_candidate_state(&mut store, &candidate_active, true, BigInt::from(7));
     store_candidate_state(&mut store, &candidate_blocked, true, BigInt::from(9));
@@ -1640,7 +1651,7 @@ async fn get_native_contracts_includes_gas_token() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getnativecontracts");
 
-    let registry = NativeRegistry::new();
+    let registry = neo_native_contracts::native::composition::standard_registry();
     let gas_contract = registry.get_by_name("GasToken").expect("gas token");
     let gas_state = gas_contract
         .contract_state(&settings, 0)
@@ -1670,7 +1681,7 @@ async fn get_native_contracts_returns_all_registered_states() {
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getnativecontracts");
 
-    let registry = NativeRegistry::new();
+    let registry = neo_native_contracts::native::composition::standard_registry();
     let store = system.context().store_cache();
     let mut expected = Vec::new();
     for contract in registry.contracts() {

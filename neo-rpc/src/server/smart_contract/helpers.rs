@@ -1,15 +1,13 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::UInt160;
-use neo_core::neo_vm::StackItem;
-use neo_core::neo_vm::rpc_json::stack_item_rpc_json_deferred_size_check;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::smart_contract::ApplicationEngine;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::NotifyEventArgs;
 use neo_core::smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
 use neo_json::JToken;
-use neo_vm::{StackValue, VmState};
+use neo_primitives::CallFlags;
+use neo_primitives::UInt160;
+use neo_protocol::payloads::Signer;
+use neo_protocol::witness::Witness;
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_vm::rpc_json::stack_item_rpc_json_deferred_size_check;
+use neo_vm::{NotifyEventArgs, ScriptBuilder, StackItem, StackValue, VmState};
 use num_traits::ToPrimitive;
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -82,7 +80,7 @@ pub(super) fn build_dynamic_call_script(
         .iter()
         .map(contract_parameter_to_stack_value)
         .collect::<Result<Vec<_>, _>>()?;
-    let mut builder = neo_core::ScriptBuilder::new();
+    let mut builder = ScriptBuilder::new();
 
     if args.is_empty() {
         builder.emit_opcode(neo_vm::OpCode::NEWARRAY0);

@@ -26,7 +26,7 @@ mod common;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use neo_core::ledger::{Block, BlockHeader};
 use neo_core::network::p2p::payloads::{
-    signer::Signer, transaction::Transaction, witness::Witness,
+    block::Block as PayloadBlock, signer::Signer, transaction::Transaction, witness::Witness,
 };
 use neo_core::persistence::data_cache::{DataCache, DataCacheConfig};
 use neo_core::persistence::{SeekDirection, StorageConfig};
@@ -129,7 +129,7 @@ fn build_tx1() -> Transaction {
 
 fn run_tx_engine(
     tx: &Transaction,
-    block: Arc<Block>,
+    block: Arc<PayloadBlock>,
     base_cache: Arc<DataCache>,
     tx_states: LedgerTransactionStates,
     seeded_contracts: std::collections::HashMap<UInt160, neo_core::smart_contract::ContractState>,
@@ -170,6 +170,7 @@ fn run_tx_engine(
         seeded_contracts,
         seeded_native_cache,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("tx engine");
     tx_engine.set_state(tx_states);
@@ -287,7 +288,7 @@ fn replay_block_1465790_assert_csharp_root() {
         u160_from_address("NSiVJYZej4XsxG5CUpdwn7VRQk8iiiDMPM"),
         vec![],
     );
-    let block = Arc::new(Block::new(header, vec![tx0.clone(), tx1.clone()]));
+    let block = Arc::new(Block::new(header, vec![tx0.clone(), tx1.clone()]).to_payload_block());
 
     // Seed LedgerContract.current_block with prev block's hash+index.
     // State trie excludes LedgerContract (id=-4), so on_persist's read of
@@ -316,6 +317,7 @@ fn replay_block_1465790_assert_csharp_root() {
         ProtocolSettings::mainnet(),
         neo_core::smart_contract::application_engine::TEST_MODE_GAS,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist_engine.native_on_persist().expect("on persist");
@@ -361,6 +363,7 @@ fn replay_block_1465790_assert_csharp_root() {
         seeded_contracts,
         seeded_native_cache,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist_engine.set_state(tx_states);

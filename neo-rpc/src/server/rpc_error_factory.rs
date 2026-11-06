@@ -3,7 +3,7 @@
 // Rust port of Neo.Plugins.RpcServer.RpcErrorFactory providing helper
 // constructors for specialised `RpcError` instances.
 
-use neo_core::UInt160;
+use neo_primitives::UInt160;
 
 use super::rpc_error::RpcError;
 

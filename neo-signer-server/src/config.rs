@@ -1,6 +1,6 @@
 //! Server configuration for the reference remote signer.
 
-use neo_core::signing::{KeyRef, SignPurpose};
+use neo_signing::{KeyRef, SignPurpose};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 

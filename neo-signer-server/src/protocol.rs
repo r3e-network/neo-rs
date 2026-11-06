@@ -16,13 +16,13 @@
 
 use crate::config::SignerServerConfig;
 use crate::keys::SealedSigningKey;
-use neo_core::signing::{
+use neo_crypto::Secp256r1Crypto;
+use neo_signing::{
     ALGORITHM_ECDSA_P256_SHA256, AttestationChallenge, AttestationEvidence, KeyInfo, KeyRef,
     ProviderSignature, REMOTE_SIGNER_PROTOCOL_VERSION, RemoteKeyInfoResponse, RemoteOperationQuery,
     RemoteOperationStatus, RemoteSignRejection, RemoteSignRequest, RemoteSignResponse,
     SecurityLevel, SignError, SignErrorCode, SignResult, validate_remote_schema,
 };
-use neo_crypto::Secp256r1Crypto;
 use neo_tee::attestation::AttestationConfig;
 use neo_tee::{AttestationService, TeeEnclave};
 use parking_lot::{Mutex, MutexGuard};
@@ -581,7 +581,7 @@ impl SignerService {
 mod tests {
     use super::*;
     use crate::config::{FaultPolicy, TlsPaths};
-    use neo_core::signing::{DigestAlgorithm, SignPayload, SignPurpose};
+    use neo_signing::{DigestAlgorithm, SignPayload, SignPurpose};
 
     fn service_dir(tag: &str) -> (tempfile::TempDir, SignerServerConfig) {
         let dir = tempfile::tempdir().expect("tempdir");

@@ -4,6 +4,8 @@
 
 /// In-memory cache structures used by the network and storage layers.
 pub mod caching;
+/// Owned errors for general serialization and compression codecs.
+pub mod codec_error;
 /// Compression helpers for network payloads.
 pub mod compression;
 /// Extension traits for readers and writers.
@@ -17,6 +19,8 @@ mod binary_writer;
 // Core interfaces
 mod memory_reader;
 pub mod serializable;
+/// General binary, JSON, and Neo-native serialization codecs.
+pub mod serialization;
 pub mod var_int;
 
 pub use binary_writer::BinaryWriter;
@@ -27,8 +31,12 @@ pub use serializable::Serializable;
 pub use extensions::{
     binary_reader::BinaryReaderExtensions,
     binary_writer::BinaryWriterExtensions,
+    byte::ByteLz4Extensions,
+    memory::ReadOnlyMemoryExtensions,
     memory_reader::MemoryReaderExtensions,
     serializable::{SerializableCollectionExtensions, SerializableExtensions},
+    span::SpanExtensions,
+    validation::{OptionExt, ValidateLength},
 };
 
 // Re-export compression types

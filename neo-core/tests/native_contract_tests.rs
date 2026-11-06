@@ -1,7 +1,9 @@
 use neo_core::ScriptBuilder;
+use neo_core::UInt160;
 use neo_core::hardfork::{Hardfork, HardforkManager};
-use neo_core::ledger::{Block, BlockHeader, create_genesis_block};
+use neo_core::ledger::create_genesis_block;
 use neo_core::network::p2p::payloads::Witness;
+use neo_core::network::p2p::payloads::block::Block;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::CallFlags;
@@ -12,10 +14,9 @@ use neo_core::smart_contract::contract_state::ContractState;
 use neo_core::smart_contract::interoperable::Interoperable;
 use neo_core::smart_contract::native::{
     ContractManagement, CryptoLib, FungibleToken, GasToken, HardforkActivable, LedgerContract,
-    NativeContract, NativeRegistry, NeoToken, Notary, OracleContract, PolicyContract,
-    RoleManagement, StdLib, TreasuryContract, is_active_for,
+    NativeContract, NeoToken, Notary, OracleContract, PolicyContract, RoleManagement, StdLib,
+    TreasuryContract, composition::standard_registry, is_active_for,
 };
-use neo_core::{UInt160, UInt256};
 use neo_vm::OpCode;
 use neo_vm::VmState as VMState;
 use serde_json::Value;
@@ -42,10 +43,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         TriggerType::OnPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis.clone()),
+        Some(genesis.to_payload_block()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist.native_on_persist().expect("native on persist");
@@ -54,10 +56,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         TriggerType::PostPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis),
+        Some(genesis.to_payload_block()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist
@@ -101,6 +104,7 @@ fn call_get_contract(
         settings,
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -127,18 +131,10 @@ fn call_get_contract(
 }
 
 fn make_block(index: u32) -> Block {
-    let header = BlockHeader::new(
-        0,
-        UInt256::zero(),
-        UInt256::zero(),
-        0,
-        0,
-        index,
-        0,
-        UInt160::zero(),
-        vec![Witness::empty()],
-    );
-    Block::new(header, Vec::new())
+    let mut block = Block::new();
+    block.header.set_index(index);
+    block.header.witness = Witness::empty();
+    block
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -295,7 +291,7 @@ fn test_role_management_method_metadata_matches_protocol() {
 
 #[test]
 fn test_get_contract() {
-    let registry = NativeRegistry::new();
+    let registry = standard_registry();
     let neo = NeoToken::new();
     let contract = registry.get(&neo.hash()).expect("contract");
     assert_eq!(contract.hash(), neo.hash());
@@ -325,6 +321,33 @@ fn test_is_initialize_block() {
     let (is_init, hardforks) = crypto.is_initialize_block(&settings, 20);
     assert!(is_init);
     assert_eq!(hardforks, vec![Hardfork::HfCockatrice]);
+}
+
+#[test]
+fn contract_management_destroy_refreshes_native_state_at_gorgon() {
+    let settings = ProtocolSettings {
+        hardforks: HashMap::from([(Hardfork::HfGorgon, 12_020_000)]),
+        ..ProtocolSettings::default()
+    };
+    let management = ContractManagement::new();
+
+    let (is_init, hardforks) = management.is_initialize_block(&settings, 12_020_000);
+    assert!(is_init);
+    assert_eq!(hardforks, vec![Hardfork::HfGorgon]);
+
+    for height in [12_019_999, 12_020_000] {
+        let state = management
+            .contract_state(&settings, height)
+            .expect("ContractManagement state");
+        let destroy_methods = state
+            .manifest
+            .abi
+            .methods
+            .iter()
+            .filter(|method| method.name == "destroy")
+            .count();
+        assert_eq!(destroy_methods, 1, "height {height}");
+    }
 }
 
 #[test]
@@ -426,7 +449,7 @@ fn test_genesis_native_state() {
     let block = make_block(1);
 
     for (name, expected) in expected_native_states() {
-        let registry = NativeRegistry::new();
+        let registry = standard_registry();
         let contract = registry
             .get_by_name(name)
             .unwrap_or_else(|| panic!("missing native contract {name}"));

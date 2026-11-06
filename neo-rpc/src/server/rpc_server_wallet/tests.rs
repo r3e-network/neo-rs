@@ -1,24 +1,24 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::NeoSystem;
-use neo_core::UInt256;
-use neo_core::Verifiable;
-use neo_core::Witness;
-use neo_core::ledger::VerifyResult;
-use neo_core::neo_io::BinaryWriter;
-use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::network::p2p::payloads::conflicts::Conflicts;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::signing::{
+use neo_core::smart_contract::helper::Helper as ContractHelper;
+use neo_crypto::Secp256r1Crypto;
+use neo_io::BinaryWriter;
+use neo_native_contracts::native::LedgerContract;
+use neo_primitives::UInt256;
+use neo_primitives::Verifiable;
+use neo_primitives::VerifyResult;
+use neo_protocol::ProtocolSettings;
+use neo_protocol::get_sign_data_vec;
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::conflicts::Conflicts;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
+use neo_protocol::witness::Witness;
+use neo_signing::{
     AuthenticatedContext, KeyRef, SignRequest, SignerService, SigningKeyBinding, SigningKeyResolver,
 };
-use neo_core::smart_contract::helper::Helper as ContractHelper;
-use neo_core::smart_contract::native::LedgerContract;
-use neo_core::smart_contract::{StorageItem, StorageKey};
-use neo_crypto::Secp256r1Crypto;
+use neo_storage::{StorageItem, StorageKey};
+use neo_system::NeoSystem;
 use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use std::fs;
@@ -50,34 +50,34 @@ impl SignerService for RecordingSignerService {
         &self,
         request: SignRequest,
         context: AuthenticatedContext,
-    ) -> neo_core::signing::SignResult<SignResponse> {
+    ) -> neo_signing::SignResult<SignResponse> {
         let request_digest = request.binding_digest(&context)?;
         self.requests
             .lock()
             .expect("recording signer lock")
             .push((request.clone(), context));
         if request.key_ref != self.expected_key_ref {
-            return Err(neo_core::signing::SignError::new(
-                neo_core::signing::SignErrorCode::KeyNotFound,
+            return Err(neo_signing::SignError::new(
+                neo_signing::SignErrorCode::KeyNotFound,
                 "RPC signer key version is not registered",
             ));
         }
         let signed_digest = request.payload.signing_digest();
         let bytes = request.payload.canonical_bytes().ok_or_else(|| {
-            neo_core::signing::SignError::new(
-                neo_core::signing::SignErrorCode::InvalidRequest,
+            neo_signing::SignError::new(
+                neo_signing::SignErrorCode::InvalidRequest,
                 "test RPC signer requires canonical bytes",
             )
         })?;
         let key_pair = KeyPair::from_private_key(&self.private_key).map_err(|error| {
-            neo_core::signing::SignError::new(
-                neo_core::signing::SignErrorCode::ProviderFailure,
+            neo_signing::SignError::new(
+                neo_signing::SignErrorCode::ProviderFailure,
                 error.to_string(),
             )
         })?;
         let signature = key_pair.sign(bytes).map_err(|error| {
-            neo_core::signing::SignError::new(
-                neo_core::signing::SignErrorCode::ProviderFailure,
+            neo_signing::SignError::new(
+                neo_signing::SignErrorCode::ProviderFailure,
                 error.to_string(),
             )
         })?;
@@ -85,7 +85,7 @@ impl SignerService for RecordingSignerService {
             schema_version: SIGNING_SCHEMA_VERSION,
             request_id: request.request_id,
             key_ref: request.key_ref,
-            algorithm: neo_core::signing::ALGORITHM_ECDSA_P256_SHA256.to_string(),
+            algorithm: neo_signing::ALGORITHM_ECDSA_P256_SHA256.to_string(),
             signature,
             signed_digest,
             request_digest,
@@ -105,13 +105,13 @@ impl SignerService for RecordingSignerService {
         frozen_intent: FrozenSignIntent,
         context: AuthenticatedContext,
         request_timeout: Duration,
-    ) -> neo_core::signing::SignResult<SignResponse> {
+    ) -> neo_signing::SignResult<SignResponse> {
         self.resume_calls.fetch_add(1, Ordering::SeqCst);
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|error| {
-                neo_core::signing::SignError::new(
-                    neo_core::signing::SignErrorCode::ProviderFailure,
+                neo_signing::SignError::new(
+                    neo_signing::SignErrorCode::ProviderFailure,
                     error.to_string(),
                 )
             })?
@@ -226,7 +226,7 @@ fn make_authenticated_server_with_max_fee(max_fee: i64) -> RpcServer {
 }
 
 fn mint_gas(
-    store: &mut neo_core::persistence::StoreCache,
+    store: &mut neo_storage::persistence::StoreCache,
     settings: &ProtocolSettings,
     account: UInt160,
     amount: BigInt,
@@ -244,6 +244,7 @@ fn mint_gas(
         settings.clone(),
         400_000_000,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -307,7 +308,7 @@ fn unsigned_wallet_transaction(
     tx
 }
 
-fn seed_ledger_current_index(store: &mut neo_core::persistence::StoreCache, index: u32) {
+fn seed_ledger_current_index(store: &mut neo_storage::persistence::StoreCache, index: u32) {
     const PREFIX_CURRENT_BLOCK: u8 = 0x0c;
     let mut bytes = UInt256::zero().to_bytes().to_vec();
     bytes.extend_from_slice(&index.to_le_bytes());
@@ -317,7 +318,7 @@ fn seed_ledger_current_index(store: &mut neo_core::persistence::StoreCache, inde
     );
 }
 
-fn persist_transaction_record(store: &mut neo_core::persistence::StoreCache, tx: &Transaction) {
+fn persist_transaction_record(store: &mut neo_storage::persistence::StoreCache, tx: &Transaction) {
     const PREFIX_TRANSACTION: u8 = 0x0b;
     const RECORD_KIND_TRANSACTION: u8 = 0x01;
 

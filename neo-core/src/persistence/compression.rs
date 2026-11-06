@@ -2,24 +2,16 @@
 //!
 //! This module provides data compression and decompression capabilities.
 
-use crate::compression::{compress_lz4, decompress_lz4};
 use crate::error::CoreError;
-use crate::persistence::storage::CompressionAlgorithm;
-use std::io::Cursor;
+use neo_io_crate::codec_error::CodecError;
 
-// Compression is always compiled in; the previous feature gate is removed to keep
-// behaviour deterministic across builds.
-
-const MAX_PERSISTENCE_LZ4_OUTPUT_SIZE: usize = u32::MAX as usize;
+pub use neo_io_crate::compression::{
+    CompressionAlgorithm, estimate_compressed_size, get_compression_ratio,
+};
 
 /// Compresses data using the specified algorithm (production-ready implementation)
 pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<Vec<u8>> {
-    match algorithm {
-        CompressionAlgorithm::None => Ok(Vec::from(data)),
-        CompressionAlgorithm::Lz4 => compress_lz4(data),
-        CompressionAlgorithm::Zstd => zstd::stream::encode_all(Cursor::new(data), 0)
-            .map_err(|e| CoreError::io(format!("ZSTD compression failed: {e}"))),
-    }
+    neo_io_crate::compression::compress(data, algorithm).map_err(codec_error_to_core)
 }
 
 /// Decompresses data using the specified algorithm (production-ready implementation)
@@ -27,44 +19,15 @@ pub fn decompress(
     compressed_data: &[u8],
     algorithm: CompressionAlgorithm,
 ) -> crate::Result<Vec<u8>> {
-    match algorithm {
-        CompressionAlgorithm::None => Ok(Vec::from(compressed_data)),
-        CompressionAlgorithm::Lz4 => {
-            decompress_lz4(compressed_data, MAX_PERSISTENCE_LZ4_OUTPUT_SIZE)
-        }
-        CompressionAlgorithm::Zstd => zstd::stream::decode_all(Cursor::new(compressed_data))
-            .map_err(|e| CoreError::io(format!("ZSTD decompression failed: {e}"))),
-    }
+    neo_io_crate::compression::decompress(compressed_data, algorithm).map_err(codec_error_to_core)
 }
 
-/// Gets the compression ratio for the given algorithm and data
-pub fn get_compression_ratio(original_size: usize, compressed_size: usize) -> f64 {
-    if original_size == 0 {
-        return 0.0;
-    }
-    compressed_size as f64 / original_size as f64
-}
-
-/// Estimates the compressed size for the given algorithm and data
-pub fn estimate_compressed_size(data: &[u8], algorithm: CompressionAlgorithm) -> usize {
-    match algorithm {
-        CompressionAlgorithm::None => data.len(),
-        CompressionAlgorithm::Lz4 => {
-            // Based on empirical data from Neo blockchain compression analysis
-            // LZ4 typically achieves 1.8-2.2:1 compression ratio on blockchain data
-            let base_ratio = 0.5; // Conservative 2:1 ratio
-            let blockchain_adjustment = 0.1; // Blockchain data compresses slightly better
-            let estimated_ratio = base_ratio - blockchain_adjustment;
-            (data.len() as f64 * estimated_ratio) as usize + 4 // +4 for LZ4 length prefix
-        }
-        CompressionAlgorithm::Zstd => {
-            // Based on empirical data from Neo blockchain compression analysis
-            // Zstd typically achieves 2.8-3.5:1 compression ratio on blockchain data
-            let base_ratio = 0.33; // Conservative 3:1 ratio
-            let blockchain_adjustment = 0.05; // Blockchain data benefits from Zstd's dictionary compression
-            let estimated_ratio = base_ratio - blockchain_adjustment;
-            (data.len() as f64 * estimated_ratio) as usize + 4 // +4 for our prefix
-        }
+pub(super) fn codec_error_to_core(error: CodecError) -> CoreError {
+    match error {
+        CodecError::Serialization { message } => CoreError::serialization(message),
+        CodecError::Deserialization { message } => CoreError::deserialization(message),
+        CodecError::Compression { message } => CoreError::compression(message),
+        CodecError::Io { message } => CoreError::io(message),
     }
 }
 
@@ -72,126 +35,96 @@ pub fn estimate_compressed_size(data: &[u8], algorithm: CompressionAlgorithm) ->
 mod tests {
     use super::*;
 
-    // ============================================================================
-    // Compress/Decompress Tests
-    // ============================================================================
-
     #[test]
-    fn compress_none_returns_original_data() {
-        let data = vec![1, 2, 3, 4, 5];
-        let compressed = compress(&data, CompressionAlgorithm::None).unwrap();
-        assert_eq!(compressed, data);
+    fn core_codec_adapter_preserves_all_error_categories_and_messages() {
+        for (error, expected, category, retryable) in [
+            (
+                CodecError::serialization("encode"),
+                CoreError::serialization("encode"),
+                "serialization",
+                false,
+            ),
+            (
+                CodecError::deserialization("decode"),
+                CoreError::deserialization("decode"),
+                "serialization",
+                false,
+            ),
+            (
+                CodecError::compression("lz4"),
+                CoreError::compression("lz4"),
+                "compression",
+                false,
+            ),
+            (
+                CodecError::io("stream"),
+                CoreError::io("stream"),
+                "io",
+                true,
+            ),
+        ] {
+            let actual = codec_error_to_core(error);
+            assert_eq!(actual, expected);
+            assert_eq!(actual.to_string(), expected.to_string());
+            assert_eq!(actual.category(), category);
+            assert_eq!(actual.is_retryable(), retryable);
+        }
     }
 
     #[test]
-    fn decompress_none_returns_original_data() {
-        let data = vec![1, 2, 3, 4, 5];
-        let decompressed = decompress(&data, CompressionAlgorithm::None).unwrap();
-        assert_eq!(decompressed, data);
-    }
-
-    #[test]
-    fn compress_lz4_roundtrip() {
-        let data = b"Hello, Neo blockchain! This is test data for compression.".to_vec();
-        let compressed = compress(&data, CompressionAlgorithm::Lz4).unwrap();
-        let decompressed = decompress(&compressed, CompressionAlgorithm::Lz4).unwrap();
-        assert_eq!(decompressed, data);
-    }
-
-    #[test]
-    fn compress_lz4_empty_data() {
-        let data: Vec<u8> = vec![];
-        let compressed = compress(&data, CompressionAlgorithm::Lz4).unwrap();
-        let decompressed = decompress(&compressed, CompressionAlgorithm::Lz4).unwrap();
-        assert_eq!(decompressed, data);
-    }
-
-    #[test]
-    fn compress_lz4_large_data() {
-        let data: Vec<u8> = (0..10000).map(|i| (i % 256) as u8).collect();
-        let compressed = compress(&data, CompressionAlgorithm::Lz4).unwrap();
-        let decompressed = decompress(&compressed, CompressionAlgorithm::Lz4).unwrap();
-        assert_eq!(decompressed, data);
-    }
-
-    #[test]
-    fn decompress_lz4_missing_length_prefix_fails() {
-        let err = decompress(&[1, 2, 3], CompressionAlgorithm::Lz4).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("compressed data missing length prefix")
+    fn legacy_lz4_failure_remains_compression() {
+        let error = decompress(&[1, 2, 3], CompressionAlgorithm::Lz4).unwrap_err();
+        assert_eq!(
+            error,
+            CoreError::compression("invalid data: compressed data missing length prefix")
         );
+        assert_eq!(
+            error.to_string(),
+            "Compression error: invalid data: compressed data missing length prefix"
+        );
+        assert!(!error.is_retryable());
     }
 
     #[test]
-    fn compress_zstd_roundtrip() {
-        let data = b"Hello, Neo blockchain! This is test data for zstd.".to_vec();
-        let compressed = compress(&data, CompressionAlgorithm::Zstd).unwrap();
-        let decompressed = decompress(&compressed, CompressionAlgorithm::Zstd).unwrap();
-        assert_eq!(decompressed, data);
+    fn legacy_zstd_failure_remains_retryable_io() {
+        let invalid = [1, 2, 3];
+        let io_error = neo_io_crate::compression::decompress(&invalid, CompressionAlgorithm::Zstd)
+            .unwrap_err();
+        assert!(matches!(io_error, CodecError::Io { .. }));
+        assert!(
+            io_error
+                .to_string()
+                .starts_with("ZSTD decompression failed: ")
+        );
+        let error = decompress(&invalid, CompressionAlgorithm::Zstd).unwrap_err();
+        let expected = CoreError::io(io_error.to_string());
+        assert_eq!(error, expected);
+        assert_eq!(error.to_string(), expected.to_string());
+        assert_eq!(error.category(), "io");
+        assert!(error.is_retryable());
     }
 
     #[test]
-    fn compress_zstd_empty_data() {
-        let data: Vec<u8> = vec![];
-        let compressed = compress(&data, CompressionAlgorithm::Zstd).unwrap();
-        let decompressed = decompress(&compressed, CompressionAlgorithm::Zstd).unwrap();
-        assert_eq!(decompressed, data);
-    }
-
-    // ============================================================================
-    // Compression Ratio Tests
-    // ============================================================================
-
-    #[test]
-    fn get_compression_ratio_zero_original_size() {
-        let ratio = get_compression_ratio(0, 100);
-        assert_eq!(ratio, 0.0);
-    }
-
-    #[test]
-    fn get_compression_ratio_calculates_correctly() {
-        let ratio = get_compression_ratio(100, 50);
-        assert!((ratio - 0.5).abs() < 0.001);
-    }
-
-    #[test]
-    fn get_compression_ratio_no_compression() {
-        let ratio = get_compression_ratio(100, 100);
-        assert!((ratio - 1.0).abs() < 0.001);
-    }
-
-    // ============================================================================
-    // Estimate Compressed Size Tests
-    // ============================================================================
-
-    #[test]
-    fn estimate_compressed_size_none_returns_original_length() {
-        let data = vec![1, 2, 3, 4, 5];
-        let estimated = estimate_compressed_size(&data, CompressionAlgorithm::None);
-        assert_eq!(estimated, data.len());
-    }
-
-    #[test]
-    fn estimate_compressed_size_lz4_returns_smaller_estimate() {
-        let data: Vec<u8> = vec![0; 1000];
-        let estimated = estimate_compressed_size(&data, CompressionAlgorithm::Lz4);
-        assert!(estimated < data.len());
-    }
-
-    #[test]
-    fn estimate_compressed_size_zstd_returns_smaller_estimate() {
-        let data: Vec<u8> = vec![0; 1000];
-        let estimated = estimate_compressed_size(&data, CompressionAlgorithm::Zstd);
-        assert!(estimated < data.len());
-    }
-
-    #[test]
-    fn estimate_compressed_size_empty_data() {
-        let data: Vec<u8> = vec![];
-        let estimated_none = estimate_compressed_size(&data, CompressionAlgorithm::None);
-        let estimated_lz4 = estimate_compressed_size(&data, CompressionAlgorithm::Lz4);
-        assert_eq!(estimated_none, 0);
-        assert_eq!(estimated_lz4, 4); // +4 for LZ4 length prefix
+    fn legacy_compression_api_uses_io_authority() {
+        for algorithm in [
+            CompressionAlgorithm::None,
+            CompressionAlgorithm::Lz4,
+            CompressionAlgorithm::Zstd,
+        ] {
+            let io_algorithm: neo_io_crate::compression::CompressionAlgorithm = algorithm;
+            let data = b"legacy storage bytes";
+            let compressed: crate::Result<Vec<u8>> = compress(data, algorithm);
+            let compressed = compressed.unwrap();
+            assert_eq!(
+                compressed,
+                neo_io_crate::compression::compress(data, io_algorithm).unwrap()
+            );
+            assert_eq!(decompress(&compressed, algorithm).unwrap(), data);
+            assert_eq!(
+                estimate_compressed_size(data, algorithm),
+                neo_io_crate::compression::estimate_compressed_size(data, io_algorithm)
+            );
+        }
+        assert_eq!(get_compression_ratio(4, 8), 2.0);
     }
 }

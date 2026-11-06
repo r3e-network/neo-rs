@@ -1,0 +1,100 @@
+[package]
+name = "neo-state-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Canonical state root computation and verification service for neo-rs"
+
+[dependencies]
+# ---------------------------------------------------------------------------
+# Internal crates (registered in workspace.dependencies)
+#
+# Foundation layer (L0) and protocol-execution layer (L1) only. This crate is
+# an L2 service and must never depend on `neo-core` / `neo-system`.
+# ---------------------------------------------------------------------------
+neo-crypto = { workspace = true }
+neo-io = { workspace = true }
+neo-native-contracts = { workspace = true }
+neo-primitives = { workspace = true }
+neo-protocol = { workspace = true }
+neo-smart-contract = { workspace = true }
+neo-storage = { workspace = true }
+neo-vm = { workspace = true }
+
+# The `CommitParticipant` trait and `VerifiableExt` are owned by neo-ledger (an
+# L1 crate). It is an optional downward edge, disabled by default so this crate
+# builds ledger-free.
+neo-ledger = { path = "../neo-ledger", optional = true }
+
+# ---------------------------------------------------------------------------
+# Third-party — always required by the state-store / state-root core.
+# ---------------------------------------------------------------------------
+base64 = { workspace = true }
+hex = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+# `crossbeam-channel` is pinned directly (as in neo-core) because it is not
+# registered in `workspace.dependencies`.
+crossbeam-channel = "0.5"
+
+# ---------------------------------------------------------------------------
+# Third-party — only used by the optimistic / parallel execution lane, which is
+# gated behind the `runtime` feature (mirrors `neo-core`'s `runtime` gate).
+# ---------------------------------------------------------------------------
+anyhow = { workspace = true, optional = true }
+num_cpus = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["sync"], optional = true }
+
+# `prefetch_background` logs through the `log` facade (as it did inside
+# neo-core, which pins `log = "0.4"`). Pinned directly because `log` is not
+# registered in `workspace.dependencies`.
+log = { version = "0.4", optional = true }
+
+[dev-dependencies]
+# `state_root` / `state_store` witness tests build signing key pairs from
+# `neo_wallets::KeyPair`; dev-only so the library keeps its acyclic L2->L1/L0
+# decomposition edges (same precedent as neo-native-contracts).
+neo-wallets = { workspace = true }
+tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[features]
+default = []
+
+# Enables the `impl CommitParticipant` and `impl VerifiableExt` blocks, which
+# pull in the optional `neo-ledger` edge.
+ledger-participant = ["dep:neo-ledger"]
+
+# Optimistic / parallel execution lane: `conflict_detector`,
+# `optimistic_executor`, `parallel_execution_integration`, `prefetch_pipeline`.
+# Gated exactly as it was inside `neo-core::state_service`.
+runtime = ["dep:anyhow", "dep:num_cpus", "dep:thiserror", "dep:tokio"]
+
+# Account/block prefetch subsystem: `prefetch_background`, `prefetch_worker`.
+# Implies `runtime`, mirroring `neo-core`'s `prefetch = ["runtime"]`.
+prefetch = ["runtime", "dep:log"]
+
+# RocksDB-backed store provider. Kept out of `full` on purpose: it drags in the
+# native `rocksdb` C++ build, which is not needed to prove this crate compiles.
+rocksdb = ["neo-storage/rocksdb"]
+
+# Aggregate alias so the workspace-wide `--features full` acceptance flag
+# resolves against this crate (mirrors neo-core/neo-node `full`). It compiles
+# every migrated module, including the `runtime` and `prefetch` lanes.
+full = ["ledger-participant", "runtime", "prefetch"]
+
+[lints]
+workspace = true

@@ -22,12 +22,17 @@ neo-crypto = { workspace = true }
 # Layer 2 - Protocol
 neo-consensus = { workspace = true }
 neo-core = { workspace = true, features = ["runtime"] }
+neo-native-contracts = { workspace = true }
 neo-p2p = { workspace = true }
+neo-protocol = { workspace = true }
+neo-smart-contract = { workspace = true }
 
 # Layer 4 - Services
 neo-rpc = { workspace = true }
 neo-telemetry = { workspace = true }
 neo-vm = { workspace = true }
+neo-system = { workspace = true }
+neo-state-service = { workspace = true, features = ["runtime"] }
 
 # Utilities
 num-bigint = { workspace = true }
@@ -38,6 +43,10 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 parking_lot = { workspace = true }
+
+[features]
+default = []
+rocksdb = ["neo-core/rocksdb"]
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }

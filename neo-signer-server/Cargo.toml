@@ -21,7 +21,8 @@ path = "src/main.rs"
 default = []
 
 [dependencies]
-neo-core = { workspace = true }
+# Signing authority (task 142): the wire types come from neo-signing, not neo-core::signing.
+neo-signing = { workspace = true }
 neo-crypto = { workspace = true }
 neo-tee = { workspace = true }
 

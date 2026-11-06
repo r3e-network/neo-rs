@@ -5,41 +5,37 @@ use crate::config::DbftSettings;
 use crate::signing_provider::{
     CONSENSUS_SIGNING_PRINCIPAL, NEO_SIGN_DATA_ENCODING, NodeSignerRuntime,
 };
+use neo_actors::{Actor, ActorContext, ActorRef, ActorResult, Props, ScheduleHandle};
 use neo_ai_agent::{EvidenceKind, EvidenceSource};
 use neo_consensus::{
     BlockData, ChangeViewReason, CommitPersistencePermit, ConsensusContext, ConsensusEvent,
     ConsensusMessageType, ConsensusPayload, ConsensusService, ConsensusSigner, ValidatorInfo,
 };
-use neo_core::ScriptBuilder;
-use neo_core::cryptography::MerkleTree;
-use neo_core::i_event_handlers::MessageReceivedHandler;
-use neo_core::ledger::{
-    PersistCompleted, RelayResult, TransactionVerificationContext, VerifyResult,
-};
-use neo_core::neo_io::MemoryReader;
-use neo_core::network::p2p::local_node::RelayInventory;
-use neo_core::network::p2p::payloads::{
-    Block, ExtensiblePayload, Header, InvPayload, InventoryType, Transaction, TransactionAttribute,
-    Witness,
-};
-use neo_core::network::p2p::{
-    Message, MessageCommand, MessageHandlerSubscription, register_message_received_handler,
-};
-use neo_core::persistence::Store;
-use neo_core::prelude::Serializable;
-use neo_core::runtime::{Actor, ActorContext, ActorRef, ActorResult, Props, ScheduleHandle};
-use neo_core::signing::{
-    FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
-};
+use neo_core::ledger::{PersistCompleted, RelayResult, TransactionVerificationContext};
+use neo_core::network::p2p::payloads::{ExtensiblePayload, TransactionExt};
+use neo_core::network::p2p::{Message, MessageCommand};
 use neo_core::smart_contract::ContractParametersContext;
-use neo_core::smart_contract::contract::Contract;
-use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
-use neo_core::smart_contract::native::{LedgerContract, NeoToken, helpers::NativeHelpers};
 use neo_core::time_provider::TimeProvider;
 use neo_core::wallets::Wallet;
-use neo_core::{ContainsTransactionType, UInt160, UInt256};
 use neo_crypto::Crypto;
+use neo_crypto::MerkleTree;
+use neo_io::MemoryReader;
+use neo_io::Serializable;
+use neo_native_contracts::native::ledger_contract::HashOrIndex;
+use neo_native_contracts::native::{LedgerContract, NeoToken, helpers::NativeHelpers};
+use neo_p2p::payloads::InvPayload;
+use neo_primitives::{ContainsTransactionType, InventoryType, UInt160, UInt256, VerifyResult};
+use neo_protocol::payloads::{Block, Header, Transaction, TransactionAttribute, Witness};
+use neo_signing::{
+    FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
+};
+use neo_smart_contract::contract::Contract;
+use neo_storage::persistence::Store;
+use neo_system::i_event_handlers::MessageReceivedHandler;
+use neo_system::network::p2p::local_node::RelayInventory;
+use neo_system::network::p2p::{MessageHandlerSubscription, register_message_received_handler};
 use neo_vm::OpCode;
+use neo_vm::ScriptBuilder;
 use parking_lot::Mutex;
 use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -143,7 +139,7 @@ fn authorize_block_commit_egress(
 
 /// Wallet-changed handler that starts/stops the consensus actor.
 pub struct DbftConsensusController {
-    system: Arc<neo_core::neo_system::NeoSystem>,
+    system: Arc<neo_system::NeoSystem>,
     settings: DbftSettings,
     signer_runtime: Arc<NodeSignerRuntime>,
     diagnostics: Arc<AiAgentRuntime>,
@@ -153,7 +149,7 @@ pub struct DbftConsensusController {
 
 impl DbftConsensusController {
     pub fn new(
-        system: Arc<neo_core::neo_system::NeoSystem>,
+        system: Arc<neo_system::NeoSystem>,
         settings: DbftSettings,
         signer_runtime: Arc<NodeSignerRuntime>,
         diagnostics: Arc<AiAgentRuntime>,
@@ -216,7 +212,7 @@ impl DbftConsensusController {
     }
 }
 
-impl neo_core::i_event_handlers::WalletChangedHandler for DbftConsensusController {
+impl neo_system::i_event_handlers::WalletChangedHandler for DbftConsensusController {
     fn wallet_provider_wallet_changed_handler(
         &self,
         _sender: &dyn std::any::Any,
@@ -260,10 +256,7 @@ impl MessageReceivedHandler for DbftMessageFilter {
     }
 }
 
-fn install_mempool_filter(
-    system: &Arc<neo_core::neo_system::NeoSystem>,
-    max_block_system_fee: i64,
-) {
+fn install_mempool_filter(system: &Arc<neo_system::NeoSystem>, max_block_system_fee: i64) {
     let mempool = system.mempool();
     let mut guard = mempool.lock();
     let existing = guard.new_transaction.take();
@@ -280,7 +273,7 @@ fn install_mempool_filter(
 struct WalletConsensusSigner {
     wallet: Arc<dyn Wallet>,
     runtime: Arc<NodeSignerRuntime>,
-    signer: neo_core::signing::TrustedSignerClient,
+    signer: neo_signing::TrustedSignerClient,
     network: u32,
 }
 
@@ -289,7 +282,7 @@ impl WalletConsensusSigner {
         wallet: Arc<dyn Wallet>,
         runtime: Arc<NodeSignerRuntime>,
         network: u32,
-    ) -> neo_core::signing::SignResult<Self> {
+    ) -> neo_signing::SignResult<Self> {
         let signer = runtime.trusted_client(
             CONSENSUS_SIGNING_PRINCIPAL,
             "node-local-consensus",
@@ -409,7 +402,7 @@ enum ConsensusActorMessage {
 }
 
 struct ConsensusActor {
-    system: Arc<neo_core::neo_system::NeoSystem>,
+    system: Arc<neo_system::NeoSystem>,
     settings: DbftSettings,
     wallet: Arc<dyn Wallet>,
     signer_runtime: Arc<NodeSignerRuntime>,
@@ -423,7 +416,7 @@ struct ConsensusActor {
     current_block_index: Option<u32>,
     current_prev_hash: Option<UInt256>,
     prev_timestamp: Option<u64>,
-    validators: Vec<neo_core::cryptography::ECPoint>,
+    validators: Vec<neo_crypto::ECPoint>,
     validator_infos: Vec<ValidatorInfo>,
     my_index: Option<u8>,
     recovery_path: PathBuf,
@@ -433,7 +426,7 @@ struct ConsensusActor {
 
 impl ConsensusActor {
     fn new(
-        system: Arc<neo_core::neo_system::NeoSystem>,
+        system: Arc<neo_system::NeoSystem>,
         settings: DbftSettings,
         wallet: Arc<dyn Wallet>,
         signer_runtime: Arc<NodeSignerRuntime>,
@@ -466,7 +459,7 @@ impl ConsensusActor {
     }
 
     fn props(
-        system: Arc<neo_core::neo_system::NeoSystem>,
+        system: Arc<neo_system::NeoSystem>,
         settings: DbftSettings,
         wallet: Arc<dyn Wallet>,
         signer_runtime: Arc<NodeSignerRuntime>,
@@ -569,7 +562,7 @@ impl ConsensusActor {
         let _ = self.diagnostics.try_export_consensus_snapshot(fields);
     }
 
-    fn load_validators(&self, next_index: u32) -> Vec<neo_core::cryptography::ECPoint> {
+    fn load_validators(&self, next_index: u32) -> Vec<neo_crypto::ECPoint> {
         let store_cache = self.system.store_cache();
         let snapshot = store_cache.data_cache();
         let settings = self.system.settings();
@@ -586,7 +579,7 @@ impl ConsensusActor {
         result.unwrap_or_else(|_| settings.standby_validators())
     }
 
-    fn build_validator_infos(validators: &[neo_core::cryptography::ECPoint]) -> Vec<ValidatorInfo> {
+    fn build_validator_infos(validators: &[neo_crypto::ECPoint]) -> Vec<ValidatorInfo> {
         validators
             .iter()
             .enumerate()
@@ -598,7 +591,7 @@ impl ConsensusActor {
             .collect()
     }
 
-    fn find_signing_key(&self, validators: &[neo_core::cryptography::ECPoint]) -> Option<u8> {
+    fn find_signing_key(&self, validators: &[neo_crypto::ECPoint]) -> Option<u8> {
         for (idx, pubkey) in validators.iter().enumerate() {
             let contract = Contract::create_signature_contract(pubkey.clone());
             let script_hash = contract.script_hash();
@@ -1062,7 +1055,7 @@ impl ConsensusActor {
     #[cfg(feature = "tee")]
     fn tee_ordered_candidates(
         runtime: &crate::tee_integration::TeeRuntime,
-        pool: &std::sync::Arc<Mutex<neo_core::ledger::MemoryPool>>,
+        pool: &std::sync::Arc<Mutex<neo_mempool::memory_pool::MemoryPool>>,
         limit: usize,
     ) -> Vec<Arc<Transaction>> {
         let tee_hashes = runtime
@@ -1248,7 +1241,13 @@ impl ConsensusActor {
                     return;
                 }
 
-                let result = tx.verify(settings, snapshot, Some(&verification_context), &[]);
+                let result = TransactionExt::verify(
+                    tx,
+                    settings,
+                    snapshot,
+                    Some(&verification_context),
+                    &[],
+                );
                 if result != VerifyResult::Succeed {
                     let _ = diagnostics.try_export(
                         EvidenceKind::TransactionValidation,
@@ -1667,7 +1666,7 @@ fn resolve_recovery_path(value: &str) -> PathBuf {
 }
 
 fn open_recovery_store(
-    system: &neo_core::neo_system::NeoSystem,
+    system: &neo_system::NeoSystem,
     settings: &DbftSettings,
 ) -> Option<Arc<dyn Store>> {
     if settings.ignore_recovery_logs {
@@ -1690,7 +1689,7 @@ fn open_recovery_store(
     }
 }
 
-fn fetch_block_timestamp(system: &neo_core::neo_system::NeoSystem, index: u32) -> Option<u64> {
+fn fetch_block_timestamp(system: &neo_system::NeoSystem, index: u32) -> Option<u64> {
     let store_cache = system.store_cache();
     let ledger = LedgerContract::new();
     ledger
@@ -1719,7 +1718,7 @@ fn consensus_m_threshold(n: usize) -> usize {
     n - f
 }
 
-fn estimate_header_size(validators: &[neo_core::cryptography::ECPoint], m: usize) -> usize {
+fn estimate_header_size(validators: &[neo_crypto::ECPoint], m: usize) -> usize {
     if validators.is_empty() || m == 0 {
         return 0;
     }
@@ -1738,7 +1737,7 @@ fn estimate_header_size(validators: &[neo_core::cryptography::ECPoint], m: usize
 }
 
 fn var_size(count: u64) -> usize {
-    neo_core::neo_io::serializable::helper::get_var_size(count)
+    neo_io::serializable::helper::get_var_size(count)
 }
 
 fn conflicts_with_context(tx: &Transaction, existing: &HashMap<UInt256, Transaction>) -> bool {
@@ -1767,7 +1766,7 @@ fn conflict_hashes(tx: &Transaction) -> Vec<UInt256> {
         .collect()
 }
 
-fn signer_accounts(tx: &Transaction) -> Vec<neo_core::UInt160> {
+fn signer_accounts(tx: &Transaction) -> Vec<neo_primitives::UInt160> {
     tx.signers().iter().map(|signer| signer.account).collect()
 }
 
@@ -1775,13 +1774,13 @@ fn signer_accounts(tx: &Transaction) -> Vec<neo_core::UInt160> {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use neo_core::protocol_settings::ProtocolSettings;
-    use neo_core::signing::{
+    use neo_core::wallets::{KeyPair, Nep6Wallet};
+    use neo_protocol::ProtocolSettings;
+    use neo_signing::{
         AuthenticatedContext, FrozenSignIntent, IdempotencyInfo, KeyRef, SignError, SignErrorCode,
         SignRequest, SignResponse, SignResult, SignerService, SigningKeyBinding,
         SigningKeyResolver,
     };
-    use neo_core::wallets::{KeyPair, Nep6Wallet};
     use std::sync::Mutex as StdMutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
@@ -1814,7 +1813,7 @@ mod tests {
                 schema_version: SIGNING_SCHEMA_VERSION,
                 request_id: request.request_id.clone(),
                 key_ref: request.key_ref.clone(),
-                algorithm: neo_core::signing::ALGORITHM_ECDSA_P256_SHA256.to_string(),
+                algorithm: neo_signing::ALGORITHM_ECDSA_P256_SHA256.to_string(),
                 signature: vec![0x5A; 64],
                 signed_digest: request.payload.signing_digest(),
                 request_digest,
@@ -2223,7 +2222,7 @@ mod tests {
         // candidates from the TEE ordered hash table strictly intersected
         // with the bounded local-only isolation view. A hash the TEE ordered
         // but the local pool never verified must never become a candidate.
-        let system = neo_core::neo_system::NeoSystem::new(ProtocolSettings::default(), None, None)
+        let system = neo_system::NeoSystem::new(ProtocolSettings::default(), None, None)
             .expect("neo system");
         let pool = system.mempool();
 

@@ -514,6 +514,12 @@ where
         let mut keys_for_bloom = Vec::with_capacity(count);
 
         for (key, value, size_bytes) in items {
+            // Prefetch results are speculative and may have been read before a
+            // newer value reached this cache. They may fill misses, but must
+            // never replace an existing (and potentially fresher) entry.
+            if data.peek(&key).is_some() {
+                continue;
+            }
             let entry = CacheEntry::new(value, size_bytes);
             let key_for_bloom = key.clone();
             if self.push_cache_entry(&mut data, key, entry) {

@@ -80,14 +80,9 @@ impl BinarySerializer {
     ) -> Result<StackItem, String> {
         let mut pending: Vec<PendingItem> = Vec::new();
         let mut remaining = 1usize;
-        let mut total_items = 0usize;
 
         while remaining > 0 {
             remaining -= 1;
-            if total_items >= max_items as usize {
-                return Err("Too many items".to_string());
-            }
-
             let item_type_byte = reader.read_byte().map_err(Self::io_error_to_string)?;
             let item_type = StackItemType::from_byte(item_type_byte)
                 .ok_or_else(|| format!("Unknown stack item type: 0x{item_type_byte:02x}"))?;
@@ -95,12 +90,10 @@ impl BinarySerializer {
             match item_type {
                 StackItemType::Any => {
                     pending.push(PendingItem::Value(StackItem::null()));
-                    total_items += 1;
                 }
                 StackItemType::Boolean => {
                     let value = reader.read_boolean().map_err(Self::io_error_to_string)?;
                     pending.push(PendingItem::Value(StackItem::from_bool(value)));
-                    total_items += 1;
                 }
                 StackItemType::Integer => {
                     let bytes = reader
@@ -112,14 +105,12 @@ impl BinarySerializer {
                         BigInt::from_signed_bytes_le(&bytes)
                     };
                     pending.push(PendingItem::Value(StackItem::from_int(value)));
-                    total_items += 1;
                 }
                 StackItemType::ByteString => {
                     let bytes = reader
                         .read_var_bytes(max_size as usize)
                         .map_err(Self::io_error_to_string)?;
                     pending.push(PendingItem::Value(StackItem::from_byte_string(bytes)));
-                    total_items += 1;
                 }
                 StackItemType::Buffer => {
                     let bytes = reader
@@ -127,41 +118,34 @@ impl BinarySerializer {
                         .map_err(Self::io_error_to_string)?;
                     let buffer = bytes.to_vec();
                     pending.push(PendingItem::Value(StackItem::from_buffer(buffer)));
-                    total_items += 1;
                 }
                 StackItemType::Array | StackItemType::Struct => {
                     let count = reader
                         .read_var_int(max_items as u64)
                         .map_err(Self::io_error_to_string)?
                         as usize;
-                    if count > (max_items as usize).saturating_sub(total_items) {
-                        return Err("Too many items".to_string());
-                    }
                     pending.push(PendingItem::Container(ContainerDescriptor {
                         item_type,
                         element_count: count,
                     }));
                     remaining += count;
-                    total_items += count + 1;
                 }
                 StackItemType::Map => {
                     let count = reader
                         .read_var_int(max_items as u64)
                         .map_err(Self::io_error_to_string)?
                         as usize;
-                    if count > (max_items as usize).saturating_sub(total_items) {
-                        return Err("Too many items".to_string());
-                    }
                     pending.push(PendingItem::Container(ContainerDescriptor {
                         item_type,
                         element_count: count,
                     }));
                     remaining += count * 2;
-                    total_items += count * 2 + 1;
                 }
                 _ => return Err("Unsupported stack item type".to_string()),
             }
 
+            // C# checks deserialized.Count, i.e. only the pending stack depth.
+            // Container children must not also be counted before they are read.
             if pending.len() > max_items as usize {
                 return Err("Too many items".to_string());
             }
@@ -238,15 +222,9 @@ impl BinarySerializer {
         let mut reader = MemoryReader::new(data);
         let mut pending: Vec<PendingStackValue> = Vec::new();
         let mut remaining = 1usize;
-        let mut total_items = 0usize;
 
         while remaining > 0 {
             remaining -= 1;
-            if total_items >= max_items {
-                return Err("Too many items".to_string());
-            }
-            total_items += 1;
-
             let item_type = reader.read_byte().map_err(Self::io_error_to_string)?;
             match item_type {
                 crate::NEOVM_STACK_ITEM_TYPE_ANY => {
@@ -279,9 +257,6 @@ impl BinarySerializer {
                         .read_var_int(max_items as u64)
                         .map_err(Self::io_error_to_string)?
                         as usize;
-                    if count > max_items.saturating_sub(total_items) {
-                        return Err("Too many items".to_string());
-                    }
                     let kind = if item_type == crate::NEOVM_STACK_ITEM_TYPE_ARRAY {
                         StackValueContainerKind::Array
                     } else {
@@ -305,9 +280,6 @@ impl BinarySerializer {
                     let child_count = count
                         .checked_mul(2)
                         .ok_or_else(|| "Too many items".to_string())?;
-                    if child_count > max_items.saturating_sub(total_items) {
-                        return Err("Too many items".to_string());
-                    }
                     pending.push(PendingStackValue::Container(
                         StackValueContainerDescriptor {
                             kind: StackValueContainerKind::Map,
@@ -538,6 +510,40 @@ mod tests {
         } else {
             panic!("Expected Map");
         }
+    }
+
+    #[test]
+    fn deserialize_large_map_does_not_double_count_children() {
+        // Mainnet block 2,655,903 serializes a 673-entry GhostMarket map.
+        // Counting its 1,346 children both at the container and at each child
+        // incorrectly exceeded the default 2,048 pending-item limit.
+        let limits = ExecutionEngineLimits::default();
+        let entries = (0u16..673)
+            .map(|index| {
+                let bytes = index.to_le_bytes().to_vec();
+                (
+                    StackItem::from_byte_string(bytes.clone()),
+                    StackItem::from_byte_string(bytes),
+                )
+            })
+            .collect::<Vec<_>>();
+        let serialized =
+            BinarySerializer::serialize(&StackItem::from_map(entries.clone()), &limits)
+                .expect("serialize large map");
+
+        let deserialized = BinarySerializer::deserialize(&serialized, &limits, None)
+            .expect("deserialize large map");
+        let StackItem::Map(map) = deserialized else {
+            panic!("Expected Map");
+        };
+        assert_eq!(map.len(), 673);
+
+        let value = BinarySerializer::deserialize_stack_value(&serialized)
+            .expect("deserialize large map as stack value");
+        let StackValue::Map(entries) = value else {
+            panic!("Expected Map stack value");
+        };
+        assert_eq!(entries.len(), 673);
     }
 
     #[test]

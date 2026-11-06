@@ -9,297 +9,50 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::{
-    InventoryType, header::Header, inventory::Inventory, transaction::Transaction, witness::Witness,
-};
-use crate::neo_io::Serializable;
+//! P2P payload block — re-exported from neo-protocol with neo-core extension
+//! traits for verification.
+
+pub use neo_protocol::payloads::block::Block;
+
+use super::witness::Witness;
+use crate::UInt160;
 use crate::persistence::DataCache;
-use crate::{CoreResult, UInt160, UInt256};
-use neo_primitives::error::PrimitiveResult;
-use serde::{Deserialize, Serialize};
-use std::any::Any;
 
-mod serialization;
 mod verification;
+pub use verification::BlockExt;
 
-/// Represents a block.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Block {
-    /// The header of the block.
-    pub header: Header,
-
-    /// The transaction list of the block.
-    pub transactions: Vec<Transaction>,
-}
-
-impl Block {
-    /// Creates a new block.
-    pub fn new() -> Self {
-        Self {
-            header: Header::new(),
-            transactions: Vec::new(),
-        }
-    }
-
-    /// Gets the hash of the block.
-    pub fn hash(&mut self) -> UInt256 {
-        Header::hash(&mut self.header)
-    }
-
-    /// Gets the hash of the block, failing closed if the header cannot be
-    /// serialized.
-    pub fn try_hash(&mut self) -> CoreResult<UInt256> {
-        self.header.try_hash()
-    }
-
-    /// Returns the unsigned header serialization used for block hashing.
-    pub fn try_get_hash_data(&self) -> CoreResult<Vec<u8>> {
-        self.header.try_get_hash_data()
-    }
-
-    /// Gets the version of the block.
-    pub fn version(&self) -> u32 {
-        self.header.version()
-    }
-
-    /// Gets the hash of the previous block.
-    pub fn prev_hash(&self) -> &UInt256 {
-        self.header.prev_hash()
-    }
-
-    /// Gets the merkle root of the transactions.
-    pub fn merkle_root(&self) -> &UInt256 {
-        self.header.merkle_root()
-    }
-
-    /// Gets the timestamp of the block.
-    pub fn timestamp(&self) -> u64 {
-        self.header.timestamp()
-    }
-
-    /// Gets the nonce of the block.
-    pub fn nonce(&self) -> u64 {
-        self.header.nonce()
-    }
-
-    /// Gets the index of the block.
-    pub fn index(&self) -> u32 {
-        self.header.index()
-    }
-
-    /// Gets the primary index of the consensus node.
-    pub fn primary_index(&self) -> u8 {
-        self.header.primary_index()
-    }
-
-    /// Gets the next consensus address.
-    pub fn next_consensus(&self) -> &UInt160 {
-        self.header.next_consensus()
-    }
-
-    /// Gets the witness of the block.
-    pub fn witness(&self) -> &Witness {
-        &self.header.witness
-    }
-
-    /// Calculates the network fee for the block.
-    pub fn calculate_network_fee(&self, _snapshot: &DataCache) -> i64 {
-        // Sum of all transaction network fees
-        self.transactions.iter().map(|tx| tx.network_fee()).sum()
-    }
-
-    /// Rebuilds the merkle root.
-    pub fn rebuild_merkle_root(&mut self) {
-        if let Err(error) = self.try_rebuild_merkle_root() {
-            tracing::error!(
-                target: "neo::block",
-                error = %error,
-                "Failed to rebuild block merkle root"
-            );
-        }
-    }
-
-    /// Rebuilds the merkle root, failing closed if any transaction hash cannot
-    /// be represented on the wire.
-    pub fn try_rebuild_merkle_root(&mut self) -> CoreResult<()> {
-        if self.transactions.is_empty() {
-            self.header.set_merkle_root(UInt256::default());
-            return Ok(());
-        }
-        let payload_hashes = self.transaction_hashes()?;
-        if let Some(root) = crate::cryptography::MerkleTree::compute_root(&payload_hashes) {
-            self.header.set_merkle_root(root);
-        }
-        Ok(())
-    }
-}
-
-impl neo_primitives::BlockLike for Block {
-    type Transaction = Transaction;
-
-    fn hash(&self) -> UInt256 {
-        let mut clone = self.clone();
-        clone
-            .try_hash()
-            .unwrap_or_else(|err| panic!("Block hash serialization failed (fail-closed): {err}"))
-    }
-
-    fn index(&self) -> u32 {
-        self.header.index()
-    }
-
-    fn timestamp(&self) -> u64 {
-        self.header.timestamp()
-    }
-
-    fn prev_hash(&self) -> UInt256 {
-        *self.header.prev_hash()
-    }
-
-    fn merkle_root(&self) -> UInt256 {
-        *self.header.merkle_root()
-    }
-
-    fn transaction_count(&self) -> usize {
-        self.transactions.len()
-    }
-
-    fn size(&self) -> usize {
-        <Self as Serializable>::size(self)
-    }
-}
-
-impl Inventory for Block {
-    fn inventory_type(&self) -> InventoryType {
-        InventoryType::Block
-    }
-}
-
-impl neo_primitives::Verifiable for Block {
-    /// Performs basic structural validation of the block.
-    ///
-    /// # Security Note
-    /// This method performs basic structural checks only. For full cryptographic
-    /// verification including witness validation and consensus checks, use the
-    /// `verify()` method on the Block struct directly.
-    ///
-    /// # Checks Performed
-    /// - Block has a valid header
-    /// - Merkle root matches transactions
-    /// - No duplicate transactions
-    fn verify(&self) -> bool {
-        // Basic structural validation (state-independent checks only)
-        // Note: Full header verification requires ProtocolSettings and StoreCache,
-        // which is done via Header::verify() separately.
-
-        // 1. Basic header structural checks
-        if self.header.version() > 0 {
-            // Currently only version 0 is supported
-            return false;
-        }
-
-        // 2. Verify merkle root matches transactions
-        if !self.verify_merkle_root() {
-            return false;
-        }
-
-        // 3. Verify no duplicate transactions
-        if !self.verify_no_duplicate_transactions() {
-            return false;
-        }
-
-        true
-    }
-
-    fn hash(&self) -> PrimitiveResult<UInt256> {
-        let mut clone = self.clone();
-        clone
-            .try_hash()
-            .map_err(|e| neo_primitives::error::PrimitiveError::invalid_data(e.to_string()))
-    }
-
-    fn hash_data(&self) -> Vec<u8> {
-        self.header.hash_data()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
+// ─── Local trait impls (neo-core specific) ──────────────────────────────────
 
 impl crate::VerifiableExt for Block {
     fn script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
         self.header.script_hashes_for_verifying(snapshot)
     }
+}
 
+impl crate::WitnessData for Block {
     fn witnesses(&self) -> Vec<&Witness> {
-        self.header.witnesses()
+        crate::WitnessData::witnesses(&self.header)
     }
 
     fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
-        self.header.witnesses_mut()
+        crate::WitnessData::witnesses_mut(&mut self.header)
     }
 }
-
-impl neo_primitives::SerializablePayload for Block {
-    fn hash_data(&self) -> Vec<u8> {
-        self.header.hash_data()
-    }
-
-    fn witness_count(&self) -> usize {
-        // Header witness + all transaction witnesses
-        1 + self
-            .transactions
-            .iter()
-            .map(|t| t.witness_count())
-            .sum::<usize>()
-    }
-
-    fn invocation_script(&self, index: usize) -> &[u8] {
-        if index == 0 {
-            return self.header.invocation_script(0);
-        }
-        let mut offset = 1;
-        for tx in &self.transactions {
-            let tx_count = tx.witness_count();
-            if index < offset + tx_count {
-                return tx.invocation_script(index - offset);
-            }
-            offset += tx_count;
-        }
-        &[]
-    }
-
-    fn verification_script(&self, index: usize) -> &[u8] {
-        if index == 0 {
-            return self.header.verification_script(0);
-        }
-        let mut offset = 1;
-        for tx in &self.transactions {
-            let tx_count = tx.witness_count();
-            if index < offset + tx_count {
-                return tx.verification_script(index - offset);
-            }
-            offset += tx_count;
-        }
-        &[]
-    }
-}
-
-// Use macro to reduce boilerplate
-crate::impl_default_via_new!(Block);
 
 #[cfg(test)]
 mod tests {
+    use super::super::header::{Header, HeaderExt};
     use super::super::signer::Signer;
+    use super::super::transaction::Transaction;
     use super::*;
+    use crate::UInt256;
     use crate::WitnessScope;
     use crate::ledger::HeaderCache;
     use crate::persistence::StoreCache;
     use crate::persistence::providers::memory_store::MemoryStore;
     use crate::persistence::store::Store;
     use crate::protocol_settings::ProtocolSettings;
-    use crate::validation::MIN_TIMESTAMP_MS;
+    use ::neo_ledger::validation::rules::MIN_TIMESTAMP_MS;
     use neo_vm::OpCode;
     use std::sync::Arc;
 

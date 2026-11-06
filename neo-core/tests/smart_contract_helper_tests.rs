@@ -3,6 +3,7 @@
 //! and C# Neo.UnitTests.SmartContract.UT_Helper.cs
 
 use neo_core::ScriptBuilder;
+use neo_core::TransactionExt;
 use neo_core::neo_vm::execution_context::ExecutionContext;
 use neo_core::network::p2p::helper::get_sign_data_vec;
 use neo_core::network::p2p::payloads::signer::Signer;
@@ -364,6 +365,7 @@ fn test_signature_contract_engine_fee_consumed() {
         settings,
         TEST_MODE_GAS,
         Some(Box::new(diagnostic)),
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine
@@ -481,6 +483,7 @@ fn test_multi_signature_contract_engine_fee_consumed() {
         settings,
         TEST_MODE_GAS,
         Some(Box::new(diagnostic)),
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine

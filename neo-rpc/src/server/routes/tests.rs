@@ -8,17 +8,17 @@ use crate::server::rpc_server_blockchain::RpcServerBlockchain;
 use crate::server::rpc_server_node::RpcServerNode;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::WitnessScope;
-use neo_core::neo_io::BinaryWriter;
-use neo_core::neo_system::NeoSystem;
-use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::native::LedgerContract;
-use neo_core::smart_contract::{StorageItem, StorageKey};
 use neo_core::wallets::KeyPair;
+use neo_io::BinaryWriter;
+use neo_native_contracts::native::LedgerContract;
+use neo_primitives::WitnessScope;
+use neo_protocol::ProtocolSettings;
+use neo_protocol::get_sign_data_vec;
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::witness::Witness;
+use neo_storage::{StorageItem, StorageKey};
+use neo_system::NeoSystem;
 use neo_vm::OpCode;
 use neo_vm::VmState as VMState;
 use parking_lot::RwLock;
@@ -403,7 +403,7 @@ fn build_signed_transaction(
 }
 
 fn persist_transaction_record(
-    store: &mut neo_core::persistence::StoreCache,
+    store: &mut neo_storage::persistence::StoreCache,
     tx: &Transaction,
     block_index: u32,
 ) {

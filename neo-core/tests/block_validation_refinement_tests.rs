@@ -257,7 +257,7 @@ fn test_invalid_block_version_rejection() {
 
     // While our implementation doesn't reject immediately during construction,
     // the validation module would catch this
-    use neo_core::validation::{BlockValidationError, validate_block_version};
+    use ::neo_ledger::validation::rules::{BlockValidationError, validate_block_version};
 
     match validate_block_version(invalid_header.version) {
         Err(BlockValidationError::UnsupportedVersion { version }) => {
@@ -273,7 +273,7 @@ fn test_invalid_block_version_rejection() {
 fn test_primary_index_bounds_checking() {
     // Test: Primary index validation respects validator count
 
-    use neo_core::validation::{BlockValidationError, validate_primary_index};
+    use ::neo_ledger::validation::rules::{BlockValidationError, validate_primary_index};
 
     // Valid case: index 0 with 5 validators
     assert!(validate_primary_index(0, 5).is_ok());
@@ -282,16 +282,16 @@ fn test_primary_index_bounds_checking() {
     assert!(validate_primary_index(4, 5).is_ok());
 
     // Invalid case: index 5 with 5 validators (exceeds max)
-    std::assert_matches!(
+    assert!(matches!(
         validate_primary_index(5, 5),
         Err(BlockValidationError::InvalidPrimaryIndex { index: 5, max: 5 })
-    );
+    ));
 
     // Invalid case: index 10 with 3 validators
-    std::assert_matches!(
+    assert!(matches!(
         validate_primary_index(10, 3),
         Err(BlockValidationError::InvalidPrimaryIndex { index: 10, max: 3 })
-    );
+    ));
 
     println!("✅ test_primary_index_bounds_checking passed");
 }
@@ -351,7 +351,7 @@ fn test_header_hash_independence_of_witnesses() {
 fn test_timestamp_range_validation() {
     // Test: Timestamp boundaries using existing Rust validation functions
 
-    use neo_core::validation::{BlockValidationError, validate_timestamp_bounds};
+    use ::neo_ledger::validation::rules::{BlockValidationError, validate_timestamp_bounds};
 
     const MIN_TIMESTAMP_MS: u64 = 1_468_595_301_000;
     let current_time = MIN_TIMESTAMP_MS + 1_000_000; // slightly in future
@@ -363,10 +363,10 @@ fn test_timestamp_range_validation() {
     assert!(validate_timestamp_bounds(current_time).is_ok());
 
     // Invalid: too far in past
-    std::assert_matches!(
+    assert!(matches!(
         validate_timestamp_bounds(0),
         Err(BlockValidationError::TimestampTooOld { .. })
-    );
+    ));
 
     println!("✅ test_timestamp_range_validation passed");
 }

@@ -48,8 +48,14 @@ fn csharp_ut_witness_condition_from_json_1() {
         panic!("expected OrCondition");
     };
     assert_eq!(conditions.len(), 2);
-    std::assert_matches!(conditions[0], WitnessCondition::CalledByContract { .. });
-    std::assert_matches!(conditions[1], WitnessCondition::CalledByGroup { .. });
+    assert!(matches!(
+        conditions[0],
+        WitnessCondition::CalledByContract { .. }
+    ));
+    assert!(matches!(
+        conditions[1],
+        WitnessCondition::CalledByGroup { .. }
+    ));
 
     let WitnessCondition::CalledByContract { hash: parsed_hash } = &conditions[0] else {
         unreachable!();

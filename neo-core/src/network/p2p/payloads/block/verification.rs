@@ -1,86 +1,58 @@
 use super::Block;
 use crate::ledger::HeaderCache;
-use crate::persistence::StoreCache;
+use crate::network::p2p::payloads::header::HeaderExt;
+use crate::persistence::{DataCache, StoreCache};
 use crate::protocol_settings::ProtocolSettings;
-use crate::{CoreResult, UInt256};
 
-impl Block {
+/// Extension trait providing verification methods for [`Block`].
+pub trait BlockExt {
     /// Verifies the block using persisted state.
     ///
     /// Matches C# Block.Verify, which delegates entirely to Header.Verify.
     /// Transaction Merkle-root and duplicate checks are performed while
     /// deserializing a block, not by this method.
-    pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
-        self.header.verify(settings, store_cache)
-    }
+    fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool;
 
     /// Verifies that the merkle root in the header matches the computed merkle root of transactions.
     /// This prevents transaction list tampering attacks.
     ///
-    /// Performance: Uses cached transaction hashes via interior mutability (Mutex) to avoid
-    /// redundant hash computations. No cloning required.
-    pub(super) fn verify_merkle_root(&self) -> bool {
-        // Empty transactions should have zero merkle root
-        if self.transactions.is_empty() {
-            return *self.header.merkle_root() == UInt256::default();
-        }
-
-        // Compute merkle root from transaction hashes.
-        // Transaction::hash() uses interior mutability (Mutex) to cache the hash,
-        // so we can call it on &self without cloning.
-        let tx_hashes = match self.transaction_hashes() {
-            Ok(hashes) => hashes,
-            Err(error) => {
-                tracing::warn!(
-                    target: "neo::block",
-                    block_index = self.header.index(),
-                    error = %error,
-                    "Failed to compute transaction hashes for merkle root"
-                );
-                return false;
-            }
-        };
-
-        match crate::cryptography::MerkleTree::compute_root(&tx_hashes) {
-            Some(computed_root) => computed_root == *self.header.merkle_root(),
-            None => false, // Should not happen with non-empty transactions
-        }
-    }
-
-    /// Verifies that there are no duplicate transaction hashes in the block.
+    /// Returns `true` if:
+    /// - The block has no transactions and merkle root is zero
+    /// - The computed merkle root matches the header's merkle root
     ///
-    /// Performance: Uses cached transaction hashes via interior mutability (Mutex).
-    /// No cloning required.
-    pub(super) fn verify_no_duplicate_transactions(&self) -> bool {
-        let mut seen = std::collections::HashSet::with_capacity(self.transactions.len());
-        for tx in &self.transactions {
-            let hash = match tx.try_hash() {
-                Ok(hash) => hash,
-                Err(error) => {
-                    tracing::warn!(
-                        target: "neo::block",
-                        block_index = self.header.index(),
-                        error = %error,
-                        "Failed to compute transaction hash for duplicate check"
-                    );
-                    return false;
-                }
-            };
-            if !seen.insert(hash) {
-                return false; // Duplicate transaction found
-            }
-        }
-        true
-    }
+    /// Returns `false` if:
+    /// - Any transaction hash cannot be computed (fail-closed)
+    /// - The computed root doesn't match the header's root
+    fn verify_merkle_root_consistency(&self) -> bool;
 
-    pub(super) fn transaction_hashes(&self) -> CoreResult<Vec<UInt256>> {
-        self.transactions.iter().map(|tx| tx.try_hash()).collect()
-    }
+    /// Calculates the total network fee for all transactions in the block.
+    fn calculate_network_fee(&self, snapshot: &DataCache) -> i64;
 
     /// Verifies the block using persisted state and cached headers.
     ///
     /// Matches C# Block.Verify's cached overload by delegating to Header.Verify.
-    pub fn verify_with_cache(
+    fn verify_with_cache(
+        &self,
+        settings: &ProtocolSettings,
+        store_cache: &StoreCache,
+        header_cache: &HeaderCache,
+    ) -> bool;
+}
+
+impl BlockExt for Block {
+    fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
+        self.header.verify(settings, store_cache)
+    }
+
+    fn verify_merkle_root_consistency(&self) -> bool {
+        self.verify_merkle_root()
+    }
+
+    fn calculate_network_fee(&self, _snapshot: &DataCache) -> i64 {
+        self.transactions.iter().map(|tx| tx.network_fee()).sum()
+    }
+
+    fn verify_with_cache(
         &self,
         settings: &ProtocolSettings,
         store_cache: &StoreCache,

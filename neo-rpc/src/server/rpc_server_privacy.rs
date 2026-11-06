@@ -26,8 +26,8 @@ use crate::server::rpc_helpers::{
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::UInt256;
-use neo_core::network::p2p::payloads::transaction::Transaction;
+use neo_primitives::UInt256;
+use neo_protocol::payloads::transaction::Transaction;
 use neo_tee::mempool::MempoolCiphertext;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -120,13 +120,13 @@ mod tests {
     use crate::server::rpc_error::RpcError;
     use crate::server::rpc_server_node::RpcServerNode;
     use crate::server::rpc_server_settings::RpcServerConfig;
-    use neo_core::NeoSystem;
-    use neo_core::network::p2p::helper::get_sign_data_vec;
-    use neo_core::network::p2p::payloads::signer::Signer;
-    use neo_core::network::p2p::payloads::witness::Witness;
-    use neo_core::protocol_settings::ProtocolSettings;
     use neo_core::wallets::KeyPair;
-    use neo_core::{Verifiable, WitnessScope};
+    use neo_primitives::{Verifiable, WitnessScope};
+    use neo_protocol::ProtocolSettings;
+    use neo_protocol::get_sign_data_vec;
+    use neo_protocol::payloads::Signer;
+    use neo_protocol::witness::Witness;
+    use neo_system::NeoSystem;
     use neo_tee::attestation::{AttestationReport, AttestationService};
     use neo_tee::enclave::{EnclaveConfig, TeeEnclave};
     use neo_tee::mempool::{CommitteeEpochKey, ContentCipher, KeyEncapsulation};
@@ -226,15 +226,15 @@ mod tests {
     }
 
     fn mint_gas(
-        store: &mut neo_core::persistence::StoreCache,
+        store: &mut neo_storage::persistence::StoreCache,
         settings: &ProtocolSettings,
-        account: neo_core::UInt160,
+        account: neo_primitives::UInt160,
         amount: BigInt,
     ) {
-        use neo_core::persistence::apply_tracked_items;
-        use neo_core::smart_contract::TriggerType;
-        use neo_core::smart_contract::application_engine::ApplicationEngine;
-        use neo_core::smart_contract::native::GasToken;
+        use neo_native_contracts::native::GasToken;
+        use neo_primitives::TriggerType;
+        use neo_smart_contract::application_engine::ApplicationEngine;
+        use neo_storage::persistence::transaction::apply_tracked_items;
 
         let snapshot = Arc::new(store.data_cache().clone());
         let mut container = Transaction::new();
@@ -249,6 +249,7 @@ mod tests {
             settings.clone(),
             400_000_000,
             None,
+            neo_native_contracts::native::composition::default_native_services(),
         )
         .expect("engine");
 

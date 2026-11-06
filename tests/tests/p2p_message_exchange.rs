@@ -4,8 +4,8 @@
 
 use neo_core::network::p2p::{
     message::Message, message_command::MessageCommand, message_flags::MessageFlags,
-    payloads::PingPayload,
 };
+use neo_p2p::payloads::PingPayload;
 
 use neo_p2p::VerifyResult;
 

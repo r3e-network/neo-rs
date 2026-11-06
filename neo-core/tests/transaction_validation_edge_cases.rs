@@ -9,6 +9,7 @@ use base64::{Engine as _, engine::general_purpose};
 use common::{test_byte_array as get_test_byte_array, test_transaction as create_test_transaction};
 use neo_core::BigDecimal;
 use neo_core::ScriptBuilder;
+use neo_core::TransactionExt;
 use neo_core::neo_io::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
 };
@@ -1160,6 +1161,7 @@ mod tests {
             settings.clone(),
             TEST_MODE_GAS,
             None,
+            neo_core::smart_contract::native::composition::default_native_services(),
         )
         .expect("engine");
         engine

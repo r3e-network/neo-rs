@@ -8,11 +8,11 @@ use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::hardfork::Hardfork;
 use neo_core::ledger::BlockchainCommand;
-use neo_core::neo_io::{MemoryReader, Serializable};
-use neo_core::network::p2p::local_node::LocalNode;
-use neo_core::network::p2p::payloads::{block::Block, transaction::Transaction};
+use neo_io::{MemoryReader, Serializable};
+use neo_protocol::hardfork::Hardfork;
+use neo_protocol::payloads::{block::Block, transaction::Transaction};
+use neo_system::network::p2p::local_node::LocalNode;
 use serde_json::{Map, Value, json};
 use std::net::SocketAddr;
 use std::sync::Arc;

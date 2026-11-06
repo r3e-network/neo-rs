@@ -26,25 +26,27 @@
 //! let inv = InventoryType::Transaction;
 //! ```
 //!
-//! ### 2. Full Networking (neo-core)
+//! ### 2. Full Networking (neo-node)
 //!
-//! For full P2P node functionality, use `neo_core::network::p2p`:
+//! For full P2P node functionality, assemble the networking stack in `neo-node`,
+//! which builds on the protocol types exported here:
 //!
 //! ```rust,ignore
-//! use neo_core::network::p2p::LocalNode;
+//! use neo_p2p::{MessageCommand, InventoryType};
 //!
-//! // Full P2P node with connection management
-//! let node = LocalNode::new(config);
+//! // neo-node wires these message types into a full P2P node
+//! // with connection management and synchronization.
+//! let cmd = MessageCommand::GetBlocks;
 //! ```
 //!
 //! ## Layer Position
 //!
-//! This crate is **Layer 2 (VM and protocol)**. The full node protocol lives
-//! in `neo-core::network`; this crate is the small message vocabulary that
-//! `neo-core` and `neo-node` can share without a cycle.
+//! This crate is **Layer 2 (VM and protocol)**. The full node assembly lives
+//! in `neo-node`; this crate is the small message vocabulary that
+//! `neo-node` and other consumers can share without a cycle.
 //!
 //! ```text
-//! Layer 2 (VM and protocol): neo-p2p, neo-core
+//! Layer 2 (VM and protocol): neo-p2p, neo-protocol
 //!            │
 //!            ▼
 //! Layer 1 (Crypto): neo-crypto
@@ -62,7 +64,7 @@
 //! - Witness conditions
 //! - **Minimal dependencies** (only `neo-primitives`)
 //!
-//! Use `neo_core::network::p2p` when you need:
+//! Use the `neo-node` networking stack when you need:
 //! - Full P2P node implementation
 //! - Connection management
 //! - Block/transaction synchronization
@@ -180,6 +182,13 @@ pub mod contains_transaction_type;
 /// Error types and result handling.
 pub mod error;
 
+/// P2P event handler types.
+pub mod events;
+
+pub mod framed;
+pub mod framed_codec;
+pub mod message;
+
 /// Inventory type enumeration (Block, Transaction, etc.).
 pub mod inventory_type;
 
@@ -200,6 +209,9 @@ pub mod oracle_response_code {
 /// P2P trait definitions.
 pub mod traits;
 
+/// Service trait definitions for P2P observability.
+pub mod services;
+
 /// Shared timeout counters for P2P operations.
 pub mod timeouts;
 
@@ -210,6 +222,18 @@ pub mod transaction_removal_reason {
 
 /// Simple P2P payload types (serialization-only, no neo-core dependencies).
 pub mod payloads;
+
+/// Peer policy primitives (rate limiting, reputation, bans, endpoint validation).
+pub mod peer_policy;
+
+/// Typed P2P ports (hexagonal boundary for the network/session layer).
+pub mod ports;
+
+/// P2P actor runtime (blockchain, remote node, task manager).
+pub mod actors;
+
+/// P2P session state machines.
+pub mod sessions;
 
 /// Verification result enumeration.
 pub mod verify_result;
@@ -232,11 +256,20 @@ pub mod witness_rule_action {
 pub use channels_config::ChannelsConfig;
 pub use contains_transaction_type::ContainsTransactionType;
 pub use error::{P2PError, P2PResult};
+pub use events::{MessageReceivedHandler, NetworkMessageRef};
+pub use framed::{FrameConfig, WriteBuffer};
+pub use framed_codec::NeoMessageCodec;
 pub use inventory_type::InventoryType;
+pub use message::PAYLOAD_MAX_SIZE;
 pub use message_command::MessageCommand;
 pub use message_flags::MessageFlags;
 pub use node_capability_type::NodeCapabilityType;
 pub use oracle_response_code::OracleResponseCode;
+pub use peer_policy::{
+    BanEntry, BanList, DEFAULT_BAN_DURATION, DEFAULT_INBOUND_CONNECTION_BURST,
+    DEFAULT_INBOUND_CONNECTION_RATE, DEFAULT_REPUTATION_THRESHOLD, InboundRateLimiter,
+    PeerReputation, PeerReputationTracker, validate_peer_endpoint,
+};
 pub use transaction_removal_reason::TransactionRemovalReason;
 pub use verify_result::VerifyResult;
 pub use witness_condition_type::WitnessConditionType;
@@ -246,6 +279,7 @@ pub use witness_rule_action::WitnessRuleAction;
 pub use neo_primitives::{InvalidWitnessScopeError, TransactionAttributeType, WitnessScope};
 
 // P2P traits for implementing network services
+pub use services::PeerManagerService;
 pub use traits::{
     Broadcaster, DataRequester, P2PConfig, P2PEvent, P2PEventSubscriber, P2PService, PeerInfo,
     PeerManager,

@@ -5,10 +5,7 @@
 //! signing payloads or inspecting hashes.  This module mirrors that behaviour so
 //! ported components can rely on identical semantics.
 
-use crate::neo_config::HASH_SIZE;
-
-/// Helper utilities for working with `Verifiable` payloads.
-const SIGN_DATA_LENGTH: usize = std::mem::size_of::<u32>() + HASH_SIZE;
+use neo_protocol::signing_data::SIGN_DATA_LENGTH;
 
 /// Produces the byte buffer used for signing (network magic + payload hash),
 /// mirroring `Neo.Network.P2P.Helper`.
@@ -19,13 +16,8 @@ pub fn get_sign_data<V>(
 where
     V: crate::Verifiable + ?Sized,
 {
-    let hash = verifiable
-        .hash()
-        .map_err(|e| crate::error::CoreError::invalid_operation(e.to_string()))?;
-    let mut buffer = [0u8; SIGN_DATA_LENGTH];
-    buffer[..4].copy_from_slice(&network.to_le_bytes());
-    buffer[4..].copy_from_slice(&hash.as_bytes());
-    Ok(buffer)
+    neo_protocol::signing_data::get_sign_data(verifiable, network)
+        .map_err(|e| crate::error::CoreError::invalid_operation(e.to_string()))
 }
 
 /// Convenience wrapper returning the signing data as a `Vec<u8>`.
@@ -33,5 +25,6 @@ pub fn get_sign_data_vec<V>(verifiable: &V, network: u32) -> crate::error::CoreR
 where
     V: crate::Verifiable + ?Sized,
 {
-    Ok(get_sign_data(verifiable, network)?.to_vec())
+    neo_protocol::signing_data::get_sign_data_vec(verifiable, network)
+        .map_err(|e| crate::error::CoreError::invalid_operation(e.to_string()))
 }

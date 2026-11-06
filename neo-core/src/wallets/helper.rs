@@ -16,6 +16,7 @@ use crate::neo_io::serializable::helper::{
 };
 use crate::network::p2p::payloads::signer::Signer;
 use crate::network::p2p::payloads::transaction::HEADER_SIZE;
+use crate::network::p2p::payloads::transaction_attribute::TransactionAttributeExt;
 use crate::script_builder::ScriptBuilder;
 use crate::{
     Transaction, UInt160,
@@ -150,7 +151,7 @@ impl Helper {
         from: Option<UInt160>,
         cosigners: Option<&[Signer]>,
         settings: &ProtocolSettings,
-        persisting_block: Option<&crate::ledger::Block>,
+        persisting_block: Option<&neo_protocol::payloads::Block>,
         max_gas: i64,
     ) -> Result<Transaction, WalletError> {
         let accounts: Vec<UInt160> = if let Some(sender) = from {
@@ -204,6 +205,7 @@ impl Helper {
                     settings.clone(),
                     max_gas,
                     None,
+                    crate::smart_contract::native::composition::default_native_services(),
                 )
                 .map_err(|e| WalletError::Other(e.to_string()))?;
                 engine
@@ -308,6 +310,7 @@ impl Helper {
             settings.clone(),
             max_gas,
             None,
+            crate::smart_contract::native::composition::default_native_services(),
         )
         .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
         engine
@@ -353,7 +356,7 @@ impl Helper {
         cosigners: Option<&[Signer]>,
         attributes: Option<&[p2p::payloads::transaction_attribute::TransactionAttribute]>,
         settings: &ProtocolSettings,
-        persisting_block: Option<&crate::ledger::Block>,
+        persisting_block: Option<&neo_protocol::payloads::Block>,
         max_gas: i64,
     ) -> Result<Transaction, WalletError> {
         let accounts: Vec<UInt160> = if let Some(sender) = sender {
@@ -418,6 +421,7 @@ impl Helper {
                 settings.clone(),
                 max_gas,
                 None,
+                crate::smart_contract::native::composition::default_native_services(),
             )
             .map_err(|e| WalletError::TransactionCreationFailed(e.to_string()))?;
             engine
@@ -576,6 +580,7 @@ fn calculate_network_fee_impl(
                 settings.clone(),
                 remaining_execution_cost,
                 None,
+                crate::smart_contract::native::composition::default_native_services(),
             )
             .map_err(|e| e.to_string())?;
 

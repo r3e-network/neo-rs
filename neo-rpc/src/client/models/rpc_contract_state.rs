@@ -10,9 +10,10 @@
 // modifications are permitted.
 
 use super::RpcNefFile;
-use neo_core::{ContractManifest, ContractState};
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
+use neo_smart_contract::contract_state::ContractState;
+use neo_smart_contract::manifest::ContractManifest;
 use serde_json::{Number as JsonNumber, Value as JsonValue};
 
 /// RPC contract state information matching C# `RpcContractState`
@@ -144,9 +145,9 @@ mod tests {
     use super::super::test_fixtures::rpc_case_result;
     use super::*;
     use base64::{Engine as _, engine::general_purpose};
-    use neo_core::smart_contract::NefFile;
-    use neo_core::smart_contract::manifest::ContractManifest;
     use neo_json::{JArray, JToken};
+    use neo_smart_contract::contract_state::NefFile;
+    use neo_smart_contract::manifest::ContractManifest;
 
     #[test]
     fn rpc_contract_state_parses_minimal_contract() {
@@ -198,7 +199,7 @@ mod tests {
         let nef = NefFile {
             compiler: "neo".into(),
             source: "src".into(),
-            tokens: vec![neo_core::smart_contract::MethodToken::default()],
+            tokens: vec![neo_io::MethodToken::default()],
             script: vec![1, 2, 3],
             checksum: 321,
         };

@@ -20,8 +20,8 @@ use super::vm_state_utils::{
 use std::str::FromStr;
 
 use neo_config::ProtocolSettings;
-use neo_core::smart_contract::TriggerType;
 use neo_json::{JObject, JToken};
+use neo_primitives::TriggerType;
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::StackValue;
 use neo_vm::VmState;

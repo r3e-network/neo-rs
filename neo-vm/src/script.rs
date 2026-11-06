@@ -18,7 +18,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use neo_core::neo_vm::Script;
+//! use neo_vm::Script;
 //! use crate::OpCode;
 //!
 //! // Create a script from bytecode
@@ -343,16 +343,16 @@ impl Script {
     ///
     /// # Arguments
     ///
-    /// * `next_position` - The position after the jump instruction (where offset is relative to)
-    /// * `offset` - The jump offset from the next instruction
+    /// * `current_position` - The position of the jump instruction
+    /// * `offset` - The jump offset from the current instruction
     ///
     /// # Returns
     ///
     /// The absolute position after the jump
-    pub fn get_jump_offset(&self, next_position: usize, offset: i32) -> VmResult<usize> {
-        let new_position = next_position as i32 + offset;
+    pub fn get_jump_offset(&self, current_position: usize, offset: i32) -> VmResult<usize> {
+        let new_position = (current_position as i64) + i64::from(offset);
 
-        if new_position < 0 || new_position >= self.script.len() as i32 {
+        if new_position < 0 || new_position >= self.script.len() as i64 {
             return Err(VmError::invalid_script_msg("Jump offset out of bounds"));
         }
 
@@ -538,7 +538,7 @@ mod tests {
         let script_bytes = vec![
             OpCode::PUSH1.byte(),
             OpCode::JMP.byte(),
-            0x00, // 1: Jump to position 3 (offset from next instruction)
+            0x02, // At position 1: jump to position 3 (offset from current instruction)
             OpCode::PUSH2.byte(),
             OpCode::ADD.byte(),
             OpCode::RET.byte(),

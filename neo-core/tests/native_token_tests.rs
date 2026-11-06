@@ -175,6 +175,7 @@ fn make_engine(snapshot: Arc<DataCache>, signer: UInt160) -> ApplicationEngine {
         settings,
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine")
 }
@@ -382,6 +383,7 @@ fn gas_transfer_triggers_on_nep17_payment_with_native_caller() {
         Default::default(),
         50_000_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -512,6 +514,7 @@ fn gas_transfer_passes_raw_any_payload_into_on_nep17_payment() {
         Default::default(),
         50_000_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -632,6 +635,7 @@ fn system_contract_call_gas_transfer_passes_raw_any_payload_into_on_nep17_paymen
         Default::default(),
         50_000_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -745,6 +749,7 @@ fn neo_get_candidate_vote_returns_negative_one_for_missing_candidate() {
         Default::default(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 

@@ -2,7 +2,7 @@
 //!
 //! `neo-node::remote_signer::MtlsRemoteSignerTransport` and
 //! `RemoteSignerProvider` are `pub(crate)`, so this module re-implements the
-//! client behavior against the exact `neo_core::signing::remote` wire types:
+//! client behavior against the exact `neo_signing::remote` wire types:
 //!
 //! * transport semantics: HTTP 200 for success, 5xx/429 after dispatch as
 //!   `ResultUnknown` (retryable), other 4xx decoded as a permanent rejection;
@@ -15,7 +15,8 @@
 //! caught because the server must satisfy both.
 
 use super::Pki;
-use neo_core::signing::{
+use neo_crypto::{Crypto, Secp256r1Crypto};
+use neo_signing::{
     ALGORITHM_ECDSA_P256_SHA256, AttestationChallenge, AttestationEvidence,
     AttestationExpectations, CollateralStatus, DigestAlgorithm, KeyRef,
     REMOTE_SIGNER_PROTOCOL_VERSION, RemoteAttestationVerifier, RemoteKeyInfoResponse,
@@ -23,7 +24,6 @@ use neo_core::signing::{
     RemoteSignRequest, RemoteSignResponse, SecurityLevel, SignError, SignErrorCode, SignPayload,
     SignPurpose, SignResult, TcbStatus, VerifiedAttestation, validate_remote_schema,
 };
-use neo_crypto::{Crypto, Secp256r1Crypto};
 use neo_tee::attestation::AttestationConfig;
 use neo_tee::{AttestationReport, AttestationService, EnclaveConfig, TeeEnclave};
 use rand::{RngCore, rngs::OsRng};

@@ -3,7 +3,7 @@
 //! This module provides the TransactionRouter functionality exactly matching C# Neo TransactionRouter.
 
 use super::VerifyResult;
-use crate::network::p2p::payloads::Transaction;
+use crate::network::p2p::payloads::{Transaction, TransactionExt};
 use crate::protocol_settings::ProtocolSettings;
 use serde::{Deserialize, Serialize};
 

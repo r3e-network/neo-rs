@@ -29,6 +29,7 @@ fn storage_find_values_only_returns_payload() {
         ProtocolSettings::default(),
         200_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -63,6 +64,7 @@ fn storage_find_keys_only_can_remove_prefix() {
         ProtocolSettings::default(),
         200_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -105,6 +107,7 @@ fn storage_find_backwards_orders_descending() {
         ProtocolSettings::default(),
         200_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -154,6 +157,7 @@ fn storage_find_deserialize_values_pick_field0() {
         ProtocolSettings::default(),
         200_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 

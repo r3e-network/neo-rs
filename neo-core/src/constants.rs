@@ -26,11 +26,9 @@ pub use neo_primitives::constants::*;
 
 // === neo-core-specific constants ===
 
-/// Wire-format upper bound for transaction count in a serialised block
-/// (matches C# `Block.MaxTransactionsPerBlock = 0xFFFF`).
-/// Used only during block deserialization; consensus validation uses
-/// [`MAX_TRANSACTIONS_PER_BLOCK`] (or the runtime protocol setting).
-pub const BLOCK_MAX_TX_WIRE_LIMIT: usize = 65_535; // u16::MAX
+// `BLOCK_MAX_TX_WIRE_LIMIT` now lives in `neo_primitives::constants` (single
+// source of truth) and is re-exported explicitly here for a stable path.
+pub use neo_primitives::constants::BLOCK_MAX_TX_WIRE_LIMIT;
 
 #[cfg(test)]
 mod tests {

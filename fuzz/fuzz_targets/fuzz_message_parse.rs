@@ -13,8 +13,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use neo_io::{MemoryReader, Serializable};
 use neo_core::network::p2p::message::Message;
+use neo_io::{MemoryReader, Serializable};
 
 fuzz_target!(|data: &[u8]| {
     // Fuzz P2P message deserialization
@@ -22,7 +22,7 @@ fuzz_target!(|data: &[u8]| {
     // - flags (1 byte): compression flags
     // - command (1 byte): message type
     // - payload: variable-length byte array (potentially compressed)
-    
+
     // Minimum size for a valid message header:
     // - 1 byte flags
     // - 1 byte command
@@ -30,16 +30,16 @@ fuzz_target!(|data: &[u8]| {
     if data.len() < 3 {
         return;
     }
-    
+
     let mut reader = MemoryReader::new(data);
-    
+
     // Attempt to deserialize a message from fuzzed input
     // This exercises:
     // - Message header parsing
     // - Compression/decompression (LZ4)
     // - Payload length validation
     let result = <Message as Serializable>::deserialize(&mut reader);
-    
+
     match result {
         Ok(message) => {
             // If we successfully parsed a message, try to access its properties
@@ -47,7 +47,7 @@ fuzz_target!(|data: &[u8]| {
             let _ = message.is_compressed();
             let _ = message.payload();
             let _ = message.to_protocol_message();
-            
+
             // Try to serialize it back
             let _ = message.to_bytes(false);
         }

@@ -2,9 +2,9 @@
 //!
 //! Production observability stack for Neo N3 blockchain node.
 //!
-//! **IMPORTANT**: This crate provides the **production deployment** telemetry stack.
-//! For internal metrics collection within neo-core components (without external dependencies),
-//! use `neo_core::telemetry` instead.
+//! This crate provides the **production deployment** telemetry stack and a
+//! lightweight [`collector`] for in-process metrics. Using the collector does not
+//! initialize HTTP endpoints or background system monitoring.
 //!
 //! ## When to use this crate
 //!
@@ -13,10 +13,10 @@
 //! - **Health checks**: Liveness and readiness probes for Kubernetes
 //! - **Logging configuration**: Structured logging with JSON or text output
 //!
-//! ## When to use neo-core::telemetry
+//! ## When to use the collector
 //!
-//! - **Internal metrics**: Recording blockchain metrics within neo-core components
-//! - **No external dependencies**: When you need lightweight metric collection
+//! - **Internal metrics**: Recording blockchain metrics within node components
+//! - **Lightweight collection**: When you only need in-process metric collection
 //! - **Snapshot export**: Getting point-in-time metric snapshots
 //! - **Timer utilities**: Measuring operation durations
 //!
@@ -35,11 +35,14 @@
 //! }
 //! ```
 
+pub mod collector;
 mod config;
 mod error;
 mod health;
 mod logging;
 mod metrics;
+#[cfg(feature = "monitoring")]
+pub mod monitoring;
 mod node_health;
 mod node_logging;
 mod node_metrics;

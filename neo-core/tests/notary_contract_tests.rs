@@ -3,8 +3,9 @@
 //! Tests for Neo.SmartContract.Native.Notary functionality.
 
 use neo_core::hardfork::HardforkManager;
-use neo_core::ledger::{Block, BlockHeader, create_genesis_block};
+use neo_core::ledger::create_genesis_block;
 use neo_core::neo_vm::StackItem;
+use neo_core::network::p2p::payloads::block::Block;
 use neo_core::network::p2p::payloads::{NotaryAssisted, Signer, Transaction, TransactionAttribute};
 use neo_core::persistence::DataCache;
 use neo_core::persistence::ReadOnlyStoreGeneric;
@@ -50,10 +51,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         TriggerType::OnPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis.clone()),
+        Some(genesis.to_payload_block()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist.native_on_persist().expect("native on persist");
@@ -62,10 +64,11 @@ fn make_snapshot_with_genesis(settings: &ProtocolSettings) -> Arc<DataCache> {
         TriggerType::PostPersist,
         None,
         Arc::clone(&snapshot),
-        Some(genesis),
+        Some(genesis.to_payload_block()),
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist
@@ -88,18 +91,11 @@ fn set_ledger_current_index(snapshot: &Arc<DataCache>, index: u32) {
 }
 
 fn make_persisting_block(index: u32, transactions: Vec<Transaction>) -> Block {
-    let header = BlockHeader::new(
-        0,
-        UInt256::zero(),
-        UInt256::zero(),
-        0,
-        0,
-        index,
-        0,
-        UInt160::zero(),
-        vec![neo_core::Witness::empty()],
-    );
-    Block::new(header, transactions)
+    let mut block = Block::new();
+    block.header.set_index(index);
+    block.header.witness = neo_core::Witness::empty();
+    block.transactions = transactions;
+    block
 }
 
 fn make_tx_with_signer(account: UInt160) -> Transaction {
@@ -147,6 +143,7 @@ fn try_token_transfer(
         settings,
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )?;
     engine
         .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
@@ -180,6 +177,7 @@ fn designate_notary_nodes(
         settings,
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )?;
     engine.set_current_script_hash(Some(RoleManagement::new().hash()));
 
@@ -214,6 +212,7 @@ fn call_notary_int(
         settings,
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine
@@ -243,6 +242,7 @@ fn call_notary_bool(
         settings,
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     engine
@@ -439,7 +439,7 @@ fn test_deposit_stack_value_roundtrip() {
 
     let original = Deposit::new(BigInt::from(500), 100);
     let stack_value = original.to_stack_value();
-    std::assert_matches!(stack_value, StackValue::Struct(_));
+    assert!(matches!(stack_value, StackValue::Struct(_)));
 
     let mut recovered = Deposit::default();
     recovered.from_stack_value(stack_value).unwrap();
@@ -785,7 +785,7 @@ fn check_expiration_of() {
     assert_eq!(expiration.to_u32().unwrap(), expected_till);
 
     // Withdraw own deposit after expiration.
-    persisting_block.header.index = till + 1;
+    persisting_block.header.set_index(till + 1);
     set_ledger_current_index(&snapshot, persisting_block.index());
     let ok = call_notary_bool(
         Arc::clone(&snapshot),
@@ -1039,6 +1039,7 @@ fn check_balance_of() {
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     on_persist.native_on_persist().expect("on persist");
@@ -1054,7 +1055,7 @@ fn check_balance_of() {
     );
     assert_eq!(balance, expected_balance);
 
-    persisting_block.header.index = till + 1;
+    persisting_block.header.set_index(till + 1);
     set_ledger_current_index(&snapshot, persisting_block.index());
     let ok = call_notary_bool(
         Arc::clone(&snapshot),
@@ -1144,7 +1145,7 @@ fn check_withdraw() {
     assert!(!ok);
 
     // Good withdrawal after expiration.
-    persisting_block.header.index = till + 1;
+    persisting_block.header.set_index(till + 1);
     set_ledger_current_index(&snapshot, persisting_block.index());
     let ok = call_notary_bool(
         Arc::clone(&snapshot),
@@ -1201,6 +1202,7 @@ fn check_set_max_not_valid_before_delta() {
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -1256,6 +1258,7 @@ fn check_on_persist_fee_per_key_update() {
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     on_persist.native_on_persist().expect("on persist");
@@ -1272,6 +1275,7 @@ fn check_on_persist_fee_per_key_update() {
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     let args = vec![
@@ -1351,6 +1355,7 @@ fn check_on_persist_notary_rewards() {
         settings.clone(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
     on_persist.native_on_persist().expect("on persist");

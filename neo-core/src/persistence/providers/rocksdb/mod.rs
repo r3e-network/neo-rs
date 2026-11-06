@@ -1,6 +1,6 @@
-/// RocksDB store provider: connection options, batching, and read tuning.
+/// Core provider compatibility facade over the storage-owned backend.
 pub mod provider;
-/// RocksDB-backed [`crate::persistence::store::Store`] and snapshot types.
+/// Core store compatibility facade and the storage-owned snapshot export.
 pub mod store;
 #[cfg(test)]
 mod tests;

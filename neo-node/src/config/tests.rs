@@ -1,5 +1,5 @@
 use super::*;
-use neo_core::protocol_settings::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use std::sync::Mutex;
 use std::{env, fs};
 use tempfile::TempDir;

@@ -88,7 +88,7 @@ impl JsonSerializer {
         out.push(b'"');
         for c in s.chars() {
             match c {
-                '"' => out.extend_from_slice(b"\\\""),
+                '"' => out.extend_from_slice(b"\\u0022"),
                 '\\' => out.extend_from_slice(b"\\\\"),
                 '\u{0008}' => out.extend_from_slice(b"\\b"),
                 '\u{000C}' => out.extend_from_slice(b"\\f"),
@@ -324,6 +324,20 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn csharp_encoding_escapes_quotes_inside_strings_as_unicode() {
+        let value = serde_json::json!({
+            "Deployment": "{\"p\":\"neoz-20\",\"op\":\"deploy\"}"
+        });
+
+        let encoded = JsonSerializer::encode_value_csharp_compatible(&value);
+
+        assert_eq!(
+            encoded,
+            br#"{"Deployment":"{\u0022p\u0022:\u0022neoz-20\u0022,\u0022op\u0022:\u0022deploy\u0022}"}"#
+        );
     }
 
     #[test]

@@ -1,28 +1,30 @@
 use super::*;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::persistence::apply_tracked_items;
-use neo_core::smart_contract::BinarySerializer;
+use neo_core::smart_contract::StorageItemExt;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
-use neo_core::smart_contract::iterators::{IteratorInterop, StorageIterator};
-use neo_core::smart_contract::manifest::{
-    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
-};
-use neo_core::smart_contract::native::{ContractManagement, CryptoLib, NativeContract, NeoToken};
-use neo_core::smart_contract::{
-    ApplicationEngine, Contract, ContractParameterType, ContractState, FindOptions, Interoperable,
-    NefFile, StorageItem, StorageItemExt, StorageKey, TriggerType,
-};
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::wallets::wallet::{Wallet, WalletError, WalletResult};
 use neo_core::wallets::{KeyPair, StandardWalletAccount, WalletAccount};
-use neo_core::{NeoSystem, ProtocolSettings, UInt160, WitnessScope};
+use neo_native_contracts::native::{ContractManagement, CryptoLib, NativeContract, NeoToken};
+use neo_primitives::{ContractParameterType, FindOptions, TriggerType, UInt160, WitnessScope};
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::witness::Witness;
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::contract::Contract;
+use neo_smart_contract::contract_state::{ContractState, NefFile};
+use neo_smart_contract::iterators::{IteratorInterop, StorageIterator};
+use neo_smart_contract::manifest::{
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
+};
+use neo_storage::persistence::transaction::apply_tracked_items;
+use neo_storage::{StorageItem, StorageKey};
+use neo_system::NeoSystem;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::neo_vm::stack_item::InteropInterface as VmInteropInterface;
-use neo_vm::{ExecutionEngineLimits, OpCode};
+use neo_vm::stack_item::InteropInterface as VmInteropInterface;
+use neo_vm::{BinarySerializer, ExecutionEngineLimits, Interoperable, OpCode, ScriptBuilder};
 use num_bigint::BigInt;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -117,7 +119,10 @@ impl Wallet for TestWallet {
         vec![Arc::clone(&self.account)]
     }
 
-    async fn get_available_balance(&self, _asset_id: &neo_core::UInt256) -> WalletResult<i64> {
+    async fn get_available_balance(
+        &self,
+        _asset_id: &neo_primitives::UInt256,
+    ) -> WalletResult<i64> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
@@ -141,7 +146,10 @@ impl Wallet for TestWallet {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    async fn sign_transaction(&self, _transaction: &mut neo_core::Transaction) -> WalletResult<()> {
+    async fn sign_transaction(
+        &self,
+        _transaction: &mut neo_protocol::payloads::Transaction,
+    ) -> WalletResult<()> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
@@ -175,13 +183,13 @@ fn signature_contract_for_keypair(key_pair: &KeyPair) -> Contract {
 
 fn fund_gas(system: &Arc<NeoSystem>, account: UInt160, amount: i64) {
     let mut store = system.context().store_snapshot_cache();
-    let gas_id = neo_core::smart_contract::native::NativeRegistry::new()
+    let gas_id = neo_native_contracts::native::composition::standard_registry()
         .get_by_name("GasToken")
         .expect("gas token")
         .id();
     let key = StorageKey::create_with_uint160(
         gas_id,
-        neo_core::smart_contract::native::fungible_token::PREFIX_ACCOUNT,
+        neo_native_contracts::native::fungible_token::PREFIX_ACCOUNT,
         &account,
     );
     store.add(key, StorageItem::from_bigint(BigInt::from(amount)));
@@ -192,7 +200,7 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
     let mut store_cache = system.context().store_snapshot_cache();
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
-    let mut builder = neo_core::ScriptBuilder::new();
+    let mut builder = ScriptBuilder::new();
     builder.emit_push_bool(true);
     builder.emit_opcode(OpCode::RET);
     let nef = NefFile::new("test".to_string(), builder.to_array());
@@ -225,6 +233,7 @@ fn deploy_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
         system.settings().clone(),
         50_000_000_000,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -253,7 +262,7 @@ fn deploy_no_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
     let mut store_cache = system.context().store_snapshot_cache();
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
-    let mut builder = neo_core::ScriptBuilder::new();
+    let mut builder = ScriptBuilder::new();
     builder.emit_push_bool(true);
     builder.emit_opcode(OpCode::RET);
     let nef = NefFile::new("test_noverify".to_string(), builder.to_array());
@@ -286,6 +295,7 @@ fn deploy_no_verify_contract(system: &Arc<NeoSystem>) -> UInt160 {
         system.settings().clone(),
         50_000_000_000,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -662,7 +672,7 @@ async fn invokescript_faults_when_gas_limit_exceeded() {
     let handlers = RpcServerSmartContract::register_handlers();
     let invokescript = find_handler(&handlers, "invokescript");
 
-    let mut builder = neo_core::ScriptBuilder::new();
+    let mut builder = ScriptBuilder::new();
     builder.emit_jump(OpCode::JMP_L, 0).expect("jump loop");
     let script = builder.to_array();
 

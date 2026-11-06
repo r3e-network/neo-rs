@@ -1,5 +1,5 @@
 use hex::{decode as hex_decode, encode as hex_encode};
-use neo_core::VerifiableExt;
+use neo_core::WitnessData;
 use neo_core::cryptography::bloom_filter::BloomFilter;
 use neo_core::cryptography::{Crypto, ECCurve, ECPoint};
 use neo_core::ledger::create_genesis_block;
@@ -11,9 +11,10 @@ use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_core::network::p2p::payloads::{
     AddrPayload, Block, Conflicts, ExtensiblePayload, FilterAddPayload, FilterLoadPayload,
     GetBlockByIndexPayload, GetBlocksPayload, Header, HeadersPayload, InvPayload, InventoryType,
-    MerkleBlockPayload, NetworkAddressWithTime, NotValidBefore, NotaryAssisted, OracleResponse,
-    OracleResponseCode, Signer, Transaction, TransactionAttribute, TransactionAttributeType,
-    VersionPayload, Witness, WitnessCondition, WitnessScope,
+    MerkleBlockPayload, NetworkAddressWithTime, NotValidBefore, NotValidBeforeExt, NotaryAssisted,
+    NotaryAssistedExt, OracleResponse, OracleResponseCode, Signer, Transaction,
+    TransactionAttribute, TransactionAttributeExt, TransactionAttributeType, VersionPayload,
+    Witness, WitnessCondition, WitnessScope,
 };
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
@@ -464,15 +465,15 @@ fn csharp_ut_inv_payload_size_group_and_invalid_type() {
 #[test]
 fn csharp_ut_merkle_block_payload_size_and_roundtrip() {
     let settings = ProtocolSettings::default_settings();
-    let mut block = create_payload_genesis_block(&settings);
+    let block = create_payload_genesis_block(&settings);
 
-    let payload = MerkleBlockPayload::create(&mut block, vec![false; 1024]);
+    let payload = MerkleBlockPayload::create(&block, vec![false; 1024]);
     assert_eq!(payload.size(), 247);
 
-    let payload = MerkleBlockPayload::create(&mut block, Vec::new());
+    let payload = MerkleBlockPayload::create(&block, Vec::new());
     assert_eq!(payload.size(), 119);
 
-    let payload = MerkleBlockPayload::create(&mut block, vec![false; 2]);
+    let payload = MerkleBlockPayload::create(&block, vec![false; 2]);
     let bytes = payload.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
     let clone =
@@ -1069,7 +1070,7 @@ fn csharp_ut_high_priority_attribute_parity() {
     let bytes = attr.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
     let clone = TransactionAttribute::deserialize_from(&mut reader).expect("deserialize");
-    std::assert_matches!(clone, TransactionAttribute::HighPriority);
+    assert!(matches!(clone, TransactionAttribute::HighPriority));
 
     let mut invalid = bytes.clone();
     invalid[0] = 0xff;
@@ -1145,7 +1146,7 @@ fn csharp_ut_not_valid_before_attribute_parity() {
     let bytes = attr.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
     let clone = TransactionAttribute::deserialize_from(&mut reader).expect("deserialize");
-    std::assert_matches!(clone, TransactionAttribute::NotValidBefore(_));
+    assert!(matches!(clone, TransactionAttribute::NotValidBefore(_)));
 
     let mut invalid = bytes.clone();
     invalid[0] = 0xff;
@@ -1180,7 +1181,7 @@ fn csharp_ut_conflicts_attribute_parity() {
     let bytes = attr.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
     let clone = TransactionAttribute::deserialize_from(&mut reader).expect("deserialize");
-    std::assert_matches!(clone, TransactionAttribute::Conflicts(_));
+    assert!(matches!(clone, TransactionAttribute::Conflicts(_)));
 
     let mut invalid = bytes.clone();
     invalid[0] = 0xff;
@@ -1226,7 +1227,7 @@ fn csharp_ut_notary_assisted_attribute_parity() {
     let bytes = attr.to_array().expect("serialize");
     let mut reader = MemoryReader::new(&bytes);
     let clone = TransactionAttribute::deserialize_from(&mut reader).expect("deserialize");
-    std::assert_matches!(clone, TransactionAttribute::NotaryAssisted(_));
+    assert!(matches!(clone, TransactionAttribute::NotaryAssisted(_)));
 
     let mut invalid = bytes.clone();
     invalid[0] = 0xff;

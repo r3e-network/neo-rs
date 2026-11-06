@@ -4,13 +4,13 @@
 //! compression) and `NetworkMessage::from_bytes` for a 500-transaction block.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use neo_core::UInt160;
-use neo_core::WitnessScope;
-use neo_core::neo_io::{MemoryReader, Serializable};
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::network::p2p::payloads::{Block, Transaction};
 use neo_core::network::p2p::{Message, NetworkMessage, ProtocolMessage};
+use neo_io::{MemoryReader, Serializable};
+use neo_primitives::UInt160;
+use neo_primitives::WitnessScope;
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::{block::Block, transaction::Transaction};
+use neo_protocol::witness::Witness;
 
 fn block_message(transaction_count: usize) -> NetworkMessage {
     let mut block = Block::new();
@@ -24,7 +24,7 @@ fn block_message(transaction_count: usize) -> NetworkMessage {
         })
         .collect();
     let hashes: Vec<_> = transactions.iter_mut().map(|tx| tx.hash()).collect();
-    if let Some(root) = neo_core::cryptography::MerkleTree::compute_root(&hashes) {
+    if let Some(root) = neo_crypto::MerkleTree::compute_root(&hashes) {
         block.header.set_merkle_root(root);
     }
     block.transactions = transactions;

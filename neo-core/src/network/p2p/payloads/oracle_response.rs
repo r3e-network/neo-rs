@@ -9,12 +9,19 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::oracle_response_code::OracleResponseCode;
+//! Oracle response transaction attribute.
+//!
+//! The canonical `OracleResponse` payload (and `MAX_RESULT_SIZE`) is owned by
+//! `neo-protocol` and re-exported here for backward compatibility (R2 leaf-type
+//! unification). All structural API (`new`, the `id`/`code`/`result` fields,
+//! and wire `Serializable`) is provided by `neo-protocol`.
+//!
+//! neo-core keeps only the VM/native-contract aware helpers (`get_fixed_script`
+//! and `verify`), exposed via the [`OracleResponseExt`] extension trait because
+//! they cannot be inherent methods on a foreign type (orphan rule).
+
 use crate::ScriptBuilder;
 use crate::WitnessScope;
-use crate::macros::{OptionExt, ValidateLength};
-use crate::neo_io::serializable::helper::get_var_size_bytes;
-use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::CallFlags;
@@ -23,33 +30,30 @@ use crate::smart_contract::native::{
     oracle_contract::OracleContract,
 };
 use neo_vm::OpCode;
-use serde::{Deserialize, Serialize};
 use tracing::error;
 
-/// Indicates the maximum size of the Result field.
-pub const MAX_RESULT_SIZE: usize = u16::MAX as usize;
+/// Maximum size of the oracle response result field, owned by `neo-protocol`.
+pub use neo_protocol::payloads::oracle_response::MAX_RESULT_SIZE;
+/// Canonical oracle response transaction attribute, owned by `neo-protocol`.
+pub use neo_protocol::payloads::oracle_response::OracleResponse;
 
-/// Indicates that the transaction is an oracle response.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OracleResponse {
-    /// The ID of the oracle request.
-    pub id: u64,
+/// neo-core-specific VM/native helpers for [`OracleResponse`].
+pub trait OracleResponseExt {
+    /// Get the fixed script for oracle response transactions.
+    fn get_fixed_script() -> Vec<u8>;
 
-    /// The response code for the oracle request.
-    pub code: OracleResponseCode,
-
-    /// The result for the oracle request.
-    pub result: Vec<u8>,
+    /// Verify the oracle response attribute.
+    /// Matches C# Verify method.
+    fn verify(
+        &self,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        tx: &super::transaction::Transaction,
+    ) -> bool;
 }
 
-impl OracleResponse {
-    /// Creates a new oracle response attribute.
-    pub fn new(id: u64, code: OracleResponseCode, result: Vec<u8>) -> Self {
-        Self { id, code, result }
-    }
-
-    /// Get the fixed script for oracle response transactions.
-    pub fn get_fixed_script() -> Vec<u8> {
+impl OracleResponseExt for OracleResponse {
+    fn get_fixed_script() -> Vec<u8> {
         static ORACLE_FINISH_SCRIPT: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
         ORACLE_FINISH_SCRIPT
             .get_or_init(|| {
@@ -68,8 +72,7 @@ impl OracleResponse {
             .clone()
     }
 
-    /// Verify the oracle response attribute.
-    pub fn verify(
+    fn verify(
         &self,
         _settings: &ProtocolSettings,
         _snapshot: &DataCache,
@@ -114,50 +117,5 @@ impl OracleResponse {
         };
         let oracle_account = NativeHelpers::get_bft_address(&designated);
         tx.signers().iter().any(|s| s.account == oracle_account)
-    }
-
-    /// Serialize without type byte.
-    pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        <Self as Serializable>::serialize(self, writer)
-    }
-}
-
-impl Serializable for OracleResponse {
-    fn size(&self) -> usize {
-        8 + // Id (u64)
-        1 + // Code (u8)
-        get_var_size_bytes(&self.result) // Result with var length prefix
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_u64(self.id)?;
-        writer.write_u8(self.code as u8)?;
-        // Use ValidateLength trait to reduce boilerplate
-        self.result.validate_max_length(MAX_RESULT_SIZE, "Result")?;
-        writer.write_var_bytes(&self.result)?;
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let id = reader.read_u64()?;
-
-        let code_byte = reader.read_u8()?;
-        // Use OptionExt trait to reduce boilerplate
-        let code =
-            OracleResponseCode::from_byte(code_byte).ok_or_invalid_data("Invalid response code")?;
-
-        let result = if code == OracleResponseCode::Success {
-            reader.read_var_bytes(MAX_RESULT_SIZE)?
-        } else {
-            let bytes = reader.read_var_bytes(MAX_RESULT_SIZE)?;
-            if !bytes.is_empty() {
-                return Err(IoError::invalid_data(
-                    "Non-success response cannot have result",
-                ));
-            }
-            bytes
-        };
-
-        Ok(Self { id, code, result })
     }
 }

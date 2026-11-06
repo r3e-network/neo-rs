@@ -18,11 +18,16 @@ description = "P2P networking for Neo blockchain"
 neo-primitives = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
+neo-protocol = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
+# Inbound connection rate limiting (task 199: peer policy moved from neo-core).
+governor = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
+bytes = { workspace = true }
+tokio-util = { workspace = true, features = ["codec"] }
 
 # Serialization
 serde = { workspace = true }

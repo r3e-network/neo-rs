@@ -1,51 +1,86 @@
-//! Block validation protocol compliance tests
+//! Block validation protocol compliance tests using real MainNet wire payloads.
 //!
-//! These tests require real test vectors generated from a C# Neo node.
-//! They remain explicitly ignored until the v3.10.1 C# vector artifact is
-//! provisioned. They are not counted as protocol coverage while the fixture is
-//! empty. To enable them, provide `block_vectors.json` and the genesis block
-//! hex generated from a pinned Neo v3.10.1 node.
+//! `block_vectors.json` is captured from a Neo v3.10.2 RPC node. The vectors
+//! cover genesis, early transaction execution, a historical state-root repro,
+//! and the Faun/Gorgon activation blocks.
 
 #[cfg(test)]
 mod tests {
+    use ::neo_ledger::validation::rules::{
+        validate_block_size_raw, validate_merkle_root, validate_transaction_count_raw,
+    };
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    use neo_core::UInt256;
+    use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
+    use neo_core::network::p2p::payloads::Block;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct Fixture {
+        useragent: String,
+        blocks: Vec<BlockVector>,
+    }
+
+    #[derive(Deserialize)]
+    struct BlockVector {
+        height: u32,
+        hash: String,
+        #[serde(rename = "hex")]
+        base64: String,
+    }
+
+    fn fixture() -> Fixture {
+        let fixture: Fixture = serde_json::from_str(include_str!("../../block_vectors.json"))
+            .expect("valid C# block fixture");
+        assert_eq!(fixture.useragent, "/Neo:3.10.2/");
+        assert!(
+            !fixture.blocks.is_empty(),
+            "block fixture must not be empty"
+        );
+        fixture
+    }
+
+    fn decode_and_validate(vector: &BlockVector) -> Block {
+        let wire = BASE64
+            .decode(&vector.base64)
+            .expect("valid Base64 block payload");
+        let mut reader = MemoryReader::new(&wire);
+        let mut block =
+            <Block as Serializable>::deserialize(&mut reader).expect("C# block must deserialize");
+
+        assert_eq!(block.index(), vector.height);
+        assert_eq!(block.hash(), UInt256::parse(&vector.hash).expect("hash"));
+        assert_eq!(Serializable::size(&block), wire.len());
+        validate_block_size_raw(wire.len()).expect("valid wire size");
+        validate_transaction_count_raw(block.transactions.len()).expect("valid tx count");
+        validate_merkle_root(block.merkle_root(), &block.transactions)
+            .expect("valid transaction Merkle root");
+
+        let mut writer = BinaryWriter::new();
+        block.serialize(&mut writer).expect("serialize block");
+        assert_eq!(writer.into_bytes(), wire, "wire round-trip must be exact");
+        block
+    }
 
     #[test]
-    #[ignore = "v3.10.1 C# block_vectors.json fixture is not provisioned"]
     fn test_block_validation_vectors() {
-        // Load test vectors generated from C# node
-        let vectors_json = include_str!("../../block_vectors.json");
-
-        assert!(
-            vectors_json.trim() != "[]" && !vectors_json.is_empty(),
-            "Test vectors not populated - block_vectors.json is empty. \
-             Generate vectors from C# node before running this test."
-        );
-
-        // Parse and validate each block vector
-        let vectors: Vec<serde_json::Value> =
-            serde_json::from_str(vectors_json).expect("Failed to parse test vectors");
-
-        for (i, vector) in vectors.iter().enumerate() {
-            println!("Validating block vector {}", i);
-            // Full validation runs once the v3.10.1 vector decoder is wired up.
-            assert!(vector.is_object(), "Vector {} should be an object", i);
+        for vector in &fixture().blocks {
+            decode_and_validate(vector);
         }
     }
 
     #[test]
-    #[ignore = "v3.10.1 C# genesis block fixture is not provisioned"]
     fn test_genesis_block_validation() {
-        // Genesis-hex fixture from a v3.10.1 C# node is not provisioned yet;
-        // the full deserialization assertion is enabled once that fixture exists.
-        let genesis_hex = ""; // Provided by the v3.10.1 C# genesis fixture.
-
-        assert!(
-            !genesis_hex.is_empty(),
-            "Genesis block hex not populated. \
-             Export genesis block from C# node before running this test."
-        );
-
-        let _bytes = hex::decode(genesis_hex).expect("Invalid hex");
-        // Decode via Block::deserialize and assert index/hash once fixture is wired.
+        let fixture = fixture();
+        let genesis = fixture
+            .blocks
+            .iter()
+            .find(|vector| vector.height == 0)
+            .expect("genesis fixture");
+        let block = decode_and_validate(genesis);
+        assert_eq!(block.header.version(), 0);
+        assert_eq!(block.header.prev_hash(), &UInt256::zero());
+        assert!(block.transactions.is_empty());
+        assert_eq!(block.merkle_root(), &UInt256::zero());
     }
 }

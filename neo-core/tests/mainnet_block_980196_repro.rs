@@ -208,7 +208,7 @@ fn replay_block_980196_debug() {
         UInt160::from_address("NSiVJYZej4XsxG5CUpdwn7VRQk8iiiDMPM").expect("nextconsensus"),
         vec![],
     );
-    let block = Arc::new(Block::new(header, vec![tx0.clone(), tx1.clone()]));
+    let block = Arc::new(Block::new(header, vec![tx0.clone(), tx1.clone()]).to_payload_block());
 
     let mut on_persist_engine = ApplicationEngine::new_with_shared_block(
         TriggerType::OnPersist,
@@ -218,6 +218,7 @@ fn replay_block_980196_debug() {
         ProtocolSettings::mainnet(),
         neo_core::smart_contract::application_engine::TEST_MODE_GAS,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist_engine.native_on_persist().expect("on persist");
@@ -269,6 +270,7 @@ fn replay_block_980196_debug() {
             seeded_contracts.clone(),
             Arc::clone(&seeded_native_cache),
             None,
+            neo_core::smart_contract::native::composition::default_native_services(),
         )
         .expect("tx engine");
         tx_engine.set_state(tx_states);
@@ -319,6 +321,7 @@ fn replay_block_980196_debug() {
         seeded_contracts,
         seeded_native_cache,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist_engine.set_state(tx_states);

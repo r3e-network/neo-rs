@@ -6,12 +6,12 @@ use crate::pkcs11::hsm_pin_from_env;
 use crate::signing_provider::NEO_SIGN_DATA_ENCODING;
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
-use neo_core::signing::{
+use neo_crypto::Crypto;
+use neo_signing::{
     ALGORITHM_ECDSA_P256_SHA256, AuthorizedSignRequest, KeyInfo, KeyRef, ProviderCapabilities,
     ProviderOutcomeProvenance, ProviderSignature, SIGNING_SCHEMA_VERSION, SignError, SignErrorCode,
     SignPayload, SignPurpose, SignerProvider,
 };
-use neo_crypto::Crypto;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
@@ -142,7 +142,7 @@ impl HsmSigner {
         Self::new(provider, backend, pin)
     }
 
-    fn key_binding(&self, key_ref: &KeyRef) -> neo_core::signing::SignResult<&HsmKeyBinding> {
+    fn key_binding(&self, key_ref: &KeyRef) -> neo_signing::SignResult<&HsmKeyBinding> {
         self.keys.get(key_ref).ok_or_else(|| {
             SignError::new(
                 SignErrorCode::KeyNotFound,
@@ -175,7 +175,7 @@ impl SignerProvider for HsmSigner {
         self.capabilities.clone()
     }
 
-    async fn key_info(&self, key_ref: &KeyRef) -> neo_core::signing::SignResult<KeyInfo> {
+    async fn key_info(&self, key_ref: &KeyRef) -> neo_signing::SignResult<KeyInfo> {
         let binding = self.key_binding(key_ref)?;
         Ok(KeyInfo {
             schema_version: SIGNING_SCHEMA_VERSION,
@@ -197,7 +197,7 @@ impl SignerProvider for HsmSigner {
     async fn sign_authorized(
         &self,
         request: &AuthorizedSignRequest,
-    ) -> neo_core::signing::SignResult<ProviderSignature> {
+    ) -> neo_signing::SignResult<ProviderSignature> {
         let bytes = match request.payload() {
             SignPayload::Canonical { encoding, bytes } if encoding == NEO_SIGN_DATA_ENCODING => {
                 bytes
@@ -265,14 +265,14 @@ mod tests {
     use crate::config::{Pkcs11ProviderSection, SignerKeySection};
     use crate::pkcs11::mock::MockP11Backend;
     use crate::pkcs11::test_env::{pin_env_lock, set_pin};
-    use neo_core::cryptography::Crypto;
-    use neo_core::signing::{
+    use neo_crypto::Crypto;
+    use neo_crypto::Secp256r1Crypto;
+    use neo_signing::{
         AuthenticatedContext, DefaultSignerService, DurableSigningStore, IdempotencyInfo,
         PolicyLimits, ProtocolContext, SignerService, SigningKeyBinding, SigningPolicy,
         SigningStore,
     };
-    use neo_core::smart_contract::helper::Helper as ContractHelper;
-    use neo_crypto::Secp256r1Crypto;
+    use neo_smart_contract::helper::Helper as ContractHelper;
     use std::collections::{BTreeMap, BTreeSet};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -289,7 +289,7 @@ mod tests {
 
     fn account_for(public_key: &[u8]) -> String {
         let script = ContractHelper::signature_redeem_script(public_key);
-        neo_core::UInt160::from(Crypto::hash160(&script)).to_string()
+        neo_primitives::UInt160::from(Crypto::hash160(&script)).to_string()
     }
 
     fn provider_section(
@@ -302,7 +302,7 @@ mod tests {
             kind: crate::config::SignerProviderKind::HardwareTee,
             enabled: true,
             default: true,
-            security_level: Some(neo_core::signing::SecurityLevel::HardwareTee),
+            security_level: Some(neo_signing::SecurityLevel::HardwareTee),
             purposes: purposes.to_vec(),
             canonical_encodings: vec![NEO_SIGN_DATA_ENCODING.to_string()],
             algorithms: vec![ALGORITHM_ECDSA_P256_SHA256.to_string()],
@@ -471,8 +471,8 @@ mod tests {
         request_id: &str,
         key_ref: KeyRef,
         purpose: SignPurpose,
-    ) -> neo_core::signing::SignRequest {
-        neo_core::signing::SignRequest {
+    ) -> neo_signing::SignRequest {
+        neo_signing::SignRequest {
             schema_version: SIGNING_SCHEMA_VERSION,
             request_id: request_id.to_string(),
             network: TEST_NETWORK,
@@ -505,7 +505,7 @@ mod tests {
     fn signing_policy(key_ref: KeyRef, key_public: Vec<u8>) -> SigningPolicy {
         let mut policy = SigningPolicy {
             version: "policy-v1".to_string(),
-            key_resolver: neo_core::signing::SigningKeyResolver::new([SigningKeyBinding {
+            key_resolver: neo_signing::SigningKeyResolver::new([SigningKeyBinding {
                 account: "account-a".to_string(),
                 purpose: SignPurpose::Consensus,
                 key_ref: key_ref.clone(),
@@ -538,7 +538,7 @@ mod tests {
         policy
             .security_levels
             .allow
-            .insert(neo_core::signing::SecurityLevel::HardwareTee);
+            .insert(neo_signing::SecurityLevel::HardwareTee);
         policy.accounts.allow.insert("account-a".to_string());
         policy
     }
@@ -702,7 +702,7 @@ mod tests {
             !capabilities.supports(
                 &SignPurpose::Consensus,
                 &SignPayload::Digest {
-                    algorithm: neo_core::signing::DigestAlgorithm::Sha256,
+                    algorithm: neo_signing::DigestAlgorithm::Sha256,
                     digest: [7; 32],
                 },
                 ALGORITHM_ECDSA_P256_SHA256,

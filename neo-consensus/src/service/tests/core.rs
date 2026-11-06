@@ -36,7 +36,7 @@ async fn test_consensus_not_validator() {
     let mut service = ConsensusService::new(0x4E454F, validators, None, vec![], tx);
 
     let result = service.start(100, 1000, UInt256::zero(), 0);
-    std::assert_matches!(result, Err(ConsensusError::NotValidator));
+    assert!(matches!(result, Err(ConsensusError::NotValidator)));
 }
 
 #[tokio::test]
@@ -140,7 +140,7 @@ async fn test_message_cache_cleared_on_new_block() {
         .expect("consensus service should start");
 
     let result = service.process_message(payload);
-    std::assert_matches!(result, Err(ConsensusError::WrongBlock { .. }));
+    assert!(matches!(result, Err(ConsensusError::WrongBlock { .. })));
 }
 
 #[tokio::test]
@@ -201,7 +201,10 @@ async fn invalid_validator_index_rejected() {
     );
 
     let result = service.process_message(payload);
-    std::assert_matches!(result, Err(ConsensusError::InvalidValidatorIndex(_)));
+    assert!(matches!(
+        result,
+        Err(ConsensusError::InvalidValidatorIndex(_))
+    ));
 }
 
 #[tokio::test]

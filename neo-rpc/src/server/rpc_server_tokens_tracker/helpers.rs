@@ -1,16 +1,16 @@
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
-use neo_core::ScriptBuilder;
-use neo_core::UInt160;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::application_engine::TEST_MODE_GAS;
-use neo_core::tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
-use neo_core::tokens_tracker::{
+use crate::tokens_tracker::trackers::tracker_base::TokenTransferKeyView;
+use crate::tokens_tracker::{
     Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService, find_range,
 };
 use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_primitives::CallFlags;
+use neo_primitives::UInt160;
+use neo_smart_contract::application_engine::TEST_MODE_GAS;
 use neo_vm::OpCode;
+use neo_vm::ScriptBuilder;
 use neo_vm::VmState as VMState;
 use num_traits::ToPrimitive;
 use serde_json::{Value, json};
@@ -87,7 +87,7 @@ pub(super) fn parse_token_id_param(
 }
 
 pub(super) fn collect_transfers(
-    store: &dyn neo_core::persistence::Store,
+    store: &dyn neo_storage::persistence::Store,
     prefix: u8,
     script_hash: &UInt160,
     start: u64,
@@ -143,7 +143,7 @@ pub(super) fn collect_transfers(
 }
 
 pub(super) fn collect_nep11_transfers(
-    store: &dyn neo_core::persistence::Store,
+    store: &dyn neo_storage::persistence::Store,
     prefix: u8,
     script_hash: &UInt160,
     start: u64,
@@ -200,22 +200,23 @@ pub(super) fn collect_nep11_transfers(
 }
 
 pub(super) fn query_asset_metadata(
-    snapshot: &neo_core::persistence::DataCache,
-    settings: &neo_core::protocol_settings::ProtocolSettings,
+    snapshot: &neo_storage::persistence::DataCache,
+    settings: &neo_protocol::ProtocolSettings,
     asset: &UInt160,
 ) -> Option<(String, u32)> {
     let mut script = ScriptBuilder::new();
     emit_contract_call(&mut script, asset, "decimals").ok()?;
     emit_contract_call(&mut script, asset, "symbol").ok()?;
 
-    let mut engine = neo_core::smart_contract::ApplicationEngine::new(
-        neo_core::smart_contract::TriggerType::Application,
+    let mut engine = neo_smart_contract::application_engine::ApplicationEngine::new(
+        neo_primitives::TriggerType::Application,
         None,
         Arc::new(snapshot.clone()),
         None,
         settings.clone(),
         TEST_MODE_GAS,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .ok()?;
     engine

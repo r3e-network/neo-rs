@@ -18,14 +18,14 @@ use neo_ai_agent::{
     ProbeBudget, ProbeBuild, ProbeContext, ProbeDeterministicRule, ProbeJob, ProbeResult,
     ProbeRuleFindingKind, ProbeTransaction, ProviderError, RunId, StallDetector, StallPolicy,
 };
-use neo_core::UInt256;
-use neo_core::ledger::memory_pool::{QuarantineConfig, QuarantineMetadata};
-use neo_core::neo_io::BinaryWriter;
-use neo_core::neo_system::{
+use neo_io::BinaryWriter;
+use neo_mempool::memory_pool::{QuarantineConfig, QuarantineMetadata};
+use neo_primitives::UInt256;
+use neo_probe::{ProbeRequestFrame, SnapshotInput};
+use neo_system::{
     NeoSystem, TRANSACTION_EXECUTION_OBSERVATION_RULE_VERSION,
     TRANSACTION_EXECUTION_OBSERVATION_SCHEMA_VERSION, TransactionExecutionObservation,
 };
-use neo_probe::{ProbeRequestFrame, SnapshotInput};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -2216,20 +2216,23 @@ mod tests {
         ProbeTransaction, RunId, TrustedLocalDiagnosticsIdentity,
     };
     use neo_core::KeyPair;
-    use neo_core::neo_io::BinaryWriter;
-    use neo_core::neo_ledger::VerifyResult;
-    use neo_core::neo_system::{TransactionExecutionExceptionCategory, TransactionExecutionStage};
-    use neo_core::network::p2p::helper::get_sign_data_vec;
-    use neo_core::network::p2p::payloads::{Block, Header};
-    use neo_core::persistence::DataCache;
-    use neo_core::protocol_settings::ProtocolSettings;
-    use neo_core::smart_contract::BinarySerializer;
-    use neo_core::smart_contract::native::AccountState;
-    use neo_core::smart_contract::native::NativeContract;
-    use neo_core::smart_contract::native::fungible_token::PREFIX_ACCOUNT;
-    use neo_core::smart_contract::native::gas_token::GasToken;
-    use neo_core::state_service::state_store::StateServiceSettings;
-    use neo_core::{Signer, StorageItem, StorageKey, Transaction, UInt160, Witness, WitnessScope};
+    use neo_io::BinaryWriter;
+    use neo_native_contracts::native::AccountState;
+    use neo_native_contracts::native::NativeContract;
+    use neo_native_contracts::native::fungible_token::PREFIX_ACCOUNT;
+    use neo_native_contracts::native::gas_token::GasToken;
+    use neo_primitives::VerifyResult;
+    use neo_primitives::{UInt160, WitnessScope};
+    use neo_protocol::ProtocolSettings;
+    use neo_protocol::get_sign_data_vec;
+    use neo_protocol::payloads::Signer;
+    use neo_protocol::payloads::{Block, Header, Transaction};
+    use neo_protocol::witness::Witness;
+    use neo_state_service::state_store::StateServiceSettings;
+    use neo_storage::persistence::DataCache;
+    use neo_storage::{StorageItem, StorageKey};
+    use neo_system::{TransactionExecutionExceptionCategory, TransactionExecutionStage};
+    use neo_vm::BinarySerializer;
     use neo_vm::{ExecutionEngineLimits, OpCode, VmState};
     use num_bigint::BigInt;
     use std::sync::atomic::AtomicUsize;

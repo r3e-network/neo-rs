@@ -23,7 +23,7 @@
 
 use neo_core::cryptography::{Crypto, Secp256r1Crypto};
 use neo_core::smart_contract::helper::Helper;
-use neo_core::{UInt160, Witness};
+use neo_core::{UInt160, Witness, WitnessExt};
 
 /// Helper: Create n key pairs and return sorted by public key
 fn create_sorted_key_pairs(n: usize) -> Vec<(Vec<u8>, [u8; 32])> {

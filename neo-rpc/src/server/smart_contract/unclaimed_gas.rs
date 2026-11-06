@@ -1,9 +1,9 @@
 use std::str::FromStr;
 
-use neo_core::BigDecimal;
-use neo_core::UInt160;
-use neo_core::smart_contract::native::{NeoToken, ledger_contract::LedgerContract};
 use neo_core::wallets::helper::Helper as WalletHelper;
+use neo_native_contracts::native::{NeoToken, ledger_contract::LedgerContract};
+use neo_primitives::BigDecimal;
+use neo_primitives::UInt160;
 use serde_json::{Value, json};
 
 use crate::server::rpc_exception::RpcException;

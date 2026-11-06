@@ -10,12 +10,12 @@
 
 pub mod client;
 
-use neo_core::signing::KeyRef;
 use neo_signer_server::{
     FaultPolicy, SignerServerConfig, TlsPaths,
     config::{DEFAULT_SESSION_LIFETIME_MS, MAX_ATTESTATION_CLOCK_SKEW_MS},
     spawn_signer_server,
 };
+use neo_signing::KeyRef;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -146,7 +146,7 @@ pub async fn start_signer_with(
         service_identity: "signer.prod".to_string(),
         policy_version: "policy-v1".to_string(),
         key_ref: key_ref.clone(),
-        allowed_purposes: vec![neo_core::signing::SignPurpose::Consensus],
+        allowed_purposes: vec![neo_signing::SignPurpose::Consensus],
         session_lifetime_ms: DEFAULT_SESSION_LIFETIME_MS,
         max_challenge_age_ms: MAX_ATTESTATION_CLOCK_SKEW_MS,
         faults,

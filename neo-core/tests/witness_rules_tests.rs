@@ -28,6 +28,7 @@ fn make_engine_with_signer(signer: Signer) -> ApplicationEngine {
         Default::default(),
         TEST_GAS_LIMIT,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine")
 }

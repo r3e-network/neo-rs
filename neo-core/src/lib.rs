@@ -52,8 +52,8 @@
 //!
 //! ## Features
 //!
-//! - `runtime`: Enables actor-based runtime components (`NeoSystem`, actors)
-//! - `monitoring`: Enables metrics collection and monitoring
+//! - `runtime`: re-exports the [`neo_actors`] crate as [`actors`] and [`runtime`]
+//!   for the actor-based node components living in `neo-system`
 //!
 //! ## Example
 //!
@@ -94,11 +94,20 @@ pub extern crate neo_config as neo_config_crate;
 extern crate self as neo_core;
 
 // ============================================================================
-// Declarative Macros (must be declared before other modules)
+// Declarative Macros & Validation Extension Traits (re-exported)
 // ============================================================================
 
-#[macro_use]
-pub mod macros;
+// The declarative boilerplate macros moved to `neo-primitives` and the
+// `OptionExt`/`ValidateLength` extension traits moved to `neo-io` (they are
+// defined in terms of `IoError`/`IoResult`, which that crate owns).
+// Re-exported here for backward compatibility with the historical
+// `neo_core::` paths (e.g. `crate::impl_error_from!`,
+// `neo_core::impl_ord_by_fields!`, `crate::macros::ValidateLength`).
+pub use ::neo_io_crate::extensions::validation::{OptionExt, ValidateLength};
+pub use ::neo_primitives::{
+    impl_default_via_new, impl_error_from, impl_from_bytes, impl_hash_for_fields,
+    impl_ord_by_fields,
+};
 
 // ============================================================================
 // Foundation Modules
@@ -107,10 +116,17 @@ pub mod macros;
 /// Builder pattern implementations for complex types.
 ///
 /// Contains builders for `Transaction`, `Signer`, `Witness`, and witness conditions.
-pub mod builders;
+/// The authoritative implementation lives in `neo-protocol`; re-exported here for
+/// backward compatibility with the historical `neo_core::builders` path.
+pub use neo_protocol::builders;
 
 /// Script bytecode validation helpers backed by external NeoVM metadata.
-pub mod script_validation;
+pub mod script_validation {
+    pub use ::neo_vm::{
+        ScriptInstruction, ValidatedScript, ValidationResult, parse_script_instructions,
+        validate_script, validate_strict_script,
+    };
+}
 
 /// System-wide protocol constants.
 ///
@@ -147,7 +163,7 @@ pub mod cryptography;
 /// Blockchain hardfork management.
 ///
 /// Tracks protocol upgrades (Aspidochelone, Basilisk, etc.).
-pub mod hardfork;
+pub use neo_protocol::hardfork;
 
 /// Commonly used type re-exports.
 pub mod prelude;
@@ -155,7 +171,7 @@ pub mod prelude;
 /// Protocol settings and network configuration.
 ///
 /// Matches C# `ProtocolSettings` class.
-pub mod protocol_settings;
+pub use neo_protocol::protocol_settings;
 
 /// Witness verification system.
 ///
@@ -165,26 +181,9 @@ pub mod witness;
 /// Witness rule evaluation for conditional verification.
 pub mod witness_rule;
 
-/// Common utility functions shared across modules.
-///
-/// Provides reusable helpers for string conversion, validation, and error handling
-/// to reduce code duplication.
-pub mod utils;
-
 // ============================================================================
 // Optional Features
 // ============================================================================
-
-/// Monitoring and metrics (requires `monitoring` feature).
-#[cfg(feature = "monitoring")]
-pub mod monitoring;
-
-/// Telemetry infrastructure for logging and tracing.
-pub mod telemetry;
-
-/// Application logs plugin support (requires `runtime` feature).
-#[cfg(feature = "runtime")]
-pub mod application_logs;
 
 // ============================================================================
 // C# Neo Project Modules
@@ -215,40 +214,32 @@ pub mod persistence;
 /// Matches C# `Neo.Wallets` namespace.
 pub mod wallets;
 
-/// Event handler interfaces (consolidated in events::handlers).
-///
-/// Matches C# `Neo.IEventHandlers` namespace.
-pub mod i_event_handlers {
-    pub use crate::events::handlers::{
-        CommittedHandler, CommittingHandler, MessageReceivedHandler, WalletChangedHandler,
-    };
-}
-
 /// Extension methods and utilities.
 ///
 /// Matches C# `Neo.Extensions` namespace.
 pub mod extensions;
 
-/// Event system for blockchain notifications.
-///
-/// Matches C# `Neo.Events` namespace.
-pub mod events;
+// The `events` module (event manager + plugin broadcast) and the consolidated
+// `i_event_handlers` trait aliases moved to `neo-system` (task W3-C2) together
+// with the `NeoSystem` runtime; consumers now use `neo_system::events` and
+// `neo_system::i_event_handlers`. This crate cannot re-export them because
+// `neo-system` depends on `neo-core`.
 
-/// RPC models and utilities.
-pub mod rpc;
+/// RPC exception type (re-exported from `neo_primitives`).
+///
+/// The former `rpc/` module was a 5-line shim; the type is now re-exported
+/// directly at the crate root and under a `rpc` namespace alias for path compat.
+pub mod rpc {
+    pub use neo_primitives::RpcException;
+}
 
 /// Time provider abstraction for testability.
-pub mod time_provider;
-
-/// Block and transaction validation utilities.
 ///
-/// Provides comprehensive security checks for blocks including:
-/// - Size limits (4 MB max)
-/// - Transaction count limits (65535 max)
-/// - Timestamp bounds (within 15 minutes of current time)
-/// - Merkle root verification
-/// - Witness script validation
-pub mod validation;
+/// Re-exported from [`neo_primitives`], the single source of truth for the
+/// pluggable time source (`TimeProvider` / `TimeSource`).
+pub mod time_provider {
+    pub use neo_primitives::time_provider::*;
+}
 
 /// State service for world state management.
 pub mod state_service;
@@ -256,32 +247,26 @@ pub mod state_service;
 /// Service trait definitions for dependency injection.
 pub mod services;
 
-/// Unified policy-bound signing service, provider, and persistence contracts.
-pub mod signing;
-
 // ============================================================================
 // Runtime Components (requires `runtime` feature)
 // ============================================================================
 
 /// Actor runtime for async components (requires `runtime` feature).
+///
+/// Task 194: the local `actors/` module was removed. This is now a re-export of
+/// the protocol-agnostic [`neo_actors`] crate, which exposes a public
+/// `ActorRef::new` construction seam (used by `neo-system`'s P2P actor tests).
 #[cfg(feature = "runtime")]
-pub mod actors;
+pub use neo_actors as actors;
 
 /// Neutral actor runtime facade for async node components (requires `runtime` feature).
+///
+/// Task W3-C2: the system orchestration (`neo_system`), the blockchain actor
+/// implementation, the P2P actors, the oracle service and the event system moved
+/// to `neo-system`; this facade stays because `neo-system` reaches the actor
+/// runtime through `neo_core::runtime` so both crates share one `TypeId`.
 #[cfg(feature = "runtime")]
-pub use actors as runtime;
-
-/// System management and orchestration (requires `runtime` feature).
-#[cfg(feature = "runtime")]
-pub mod neo_system;
-
-/// Oracle service implementation (requires `runtime` feature).
-#[cfg(feature = "runtime")]
-pub mod oracle_service;
-
-/// Token tracking service (requires `runtime` feature).
-#[cfg(feature = "runtime")]
-pub mod tokens_tracker;
+pub use neo_actors as runtime;
 
 // ============================================================================
 // Public Re-exports
@@ -294,9 +279,9 @@ pub use builders::{
 };
 pub use cryptography::{ECCurve, ECPoint};
 pub use error::{CoreError, CoreResult, Result};
-pub use events::{EventHandler, EventManager};
 pub use hardfork::Hardfork;
 pub use ledger::{Block, BlockHeader};
+pub use neo_primitives::RpcException;
 pub use neo_primitives::{
     BigDecimal, ContainsTransactionType, UnhandledExceptionPolicy, panic_message,
 };
@@ -305,24 +290,20 @@ pub use neo_primitives::{
 };
 pub use neo_vm::{ScriptBuilder, rpc_json};
 pub use network::p2p::payloads::{
-    HEADER_SIZE, InventoryType, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
-    OracleResponseCode, Signer, Transaction, TransactionAttribute, TransactionAttributeType,
+    BlockExt, HEADER_SIZE, HeaderExt, InventoryType, MAX_TRANSACTION_ATTRIBUTES,
+    MAX_TRANSACTION_SIZE, OracleResponseCode, Signer, Transaction, TransactionAttribute,
+    TransactionAttributeType, TransactionExt,
 };
 pub use protocol_settings::ProtocolSettings;
-pub use rpc::RpcException;
 pub use smart_contract::native::NativeContract;
 pub use smart_contract::{Contract, ContractManifest, ContractParameterType, ContractState};
 pub use time_provider::TimeProvider;
 
 pub use wallets::{KeyPair, Wallet};
-pub use witness::Witness;
+pub use witness::{Witness, WitnessData, WitnessExt};
 pub use witness_rule::{
     ToStackItem, WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction,
 };
-
-// Runtime types (requires `runtime` feature)
-#[cfg(feature = "runtime")]
-pub use neo_system::NeoSystem;
 
 // ============================================================================
 // Configuration Re-export
@@ -362,11 +343,9 @@ pub mod neo_io {
 // VM Compatibility Surface
 // ============================================================================
 
-pub mod big_decimal;
 /// Neo VM compatibility types used by core and downstream crates.
-pub mod neo_vm;
-pub mod script_builder;
-pub mod unhandled_exception_policy;
+pub use ::neo_vm;
+pub use ::neo_vm::script_builder;
 
 // ============================================================================
 // Ledger Re-export
@@ -406,29 +385,10 @@ pub use neo_primitives::Verifiable;
 /// - [`Block`]
 /// - [`Transaction`]
 /// - [`Header`](ledger::BlockHeader)
-pub trait VerifiableExt: Verifiable {
+pub trait VerifiableExt: WitnessData {
     /// Gets the script hashes that should be verified for this container.
     fn script_hashes_for_verifying(&self, snapshot: &crate::persistence::DataCache)
     -> Vec<UInt160>;
-
-    /// Gets the witnesses associated with this container.
-    fn witnesses(&self) -> Vec<&Witness>;
-
-    /// Gets mutable access to the witnesses associated with this container.
-    fn witnesses_mut(&mut self) -> Vec<&mut Witness>;
-
-    /// Verifies the witnesses with the supplied gas limit.
-    fn verify_witnesses(
-        &self,
-        settings: &ProtocolSettings,
-        snapshot: &crate::persistence::DataCache,
-        max_gas: i64,
-    ) -> bool
-    where
-        Self: Sized,
-    {
-        crate::smart_contract::helper::Helper::verify_witnesses(self, settings, snapshot, max_gas)
-    }
 
     /// Attempts to view this verifiable container as a transaction.
     fn as_transaction(&self) -> Option<&crate::network::p2p::payloads::Transaction> {

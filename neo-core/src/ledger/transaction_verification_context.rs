@@ -9,7 +9,11 @@ use num_traits::Zero;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-type Payer = (UInt160, Option<UInt160>);
+/// Payer tuple used for fee tracking: `(primary_sender, notary_secondary)`.
+///
+/// Publicly exported so downstream crates (e.g. `neo-mempool`) can consume the
+/// return type of [`TransactionVerificationContext::payer`] (task 89 alignment).
+pub type Payer = (UInt160, Option<UInt160>);
 type BalanceProvider = Arc<dyn Fn(&DataCache, &UInt160) -> BigInt + Send + Sync>;
 
 /// Context used by the memory pool to track per-payer fees and oracle responses.
@@ -46,7 +50,7 @@ impl TransactionVerificationContext {
 
     /// Returns the payer tuple used for fee tracking. Notary-sponsored
     /// transactions charge the second signer against its Notary deposit.
-    pub(crate) fn payer(tx: &Transaction) -> Option<Payer> {
+    pub fn payer(tx: &Transaction) -> Option<Payer> {
         let primary = tx.sender()?;
         if primary == Notary::new().hash() && tx.signers().len() >= 2 {
             Some((primary, Some(tx.signers()[1].account)))

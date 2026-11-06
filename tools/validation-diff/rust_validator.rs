@@ -2,7 +2,7 @@
 //!
 //! 简化版本：基于十六进制进行基本格式验证，不依赖完整反序列化
 
-use neo_core::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

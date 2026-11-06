@@ -78,7 +78,7 @@
 //! ## Quick Start
 //!
 //! ```rust,ignore
-//! use neo_core::neo_vm::{ExecutionEngine, Script, VmResult};
+//! use neo_vm::{ExecutionEngine, Script, VmResult};
 //! use neo_vm::VmState as VMState;
 //! use neo_vm::OpCode;
 //!
@@ -127,7 +127,7 @@
 //! All fallible operations return [`VmResult`]:
 //!
 //! ```rust,ignore
-//! use neo_core::neo_vm::{VmError, VmResult};
+//! use neo_vm::{VmError, VmResult};
 //!
 //! fn may_fail() -> VmResult<i64> {
 //!     // Returns Err(VmError::StackUnderflow) if stack is empty
@@ -224,6 +224,10 @@ pub mod syscalls;
 /// conversion helpers (e.g. `true_value`, `from_i64`, `as_int`).
 pub mod stack_item;
 
+/// Witness-rule stack projection (`ToStackItem` / `ToStackValue` for
+/// `neo-io`'s `WitnessCondition` / `WitnessRule`).
+pub mod stack_projection;
+
 // ============================================================================
 // Vendored VM Modules (formerly the external the vendored VM core crate)
 //
@@ -312,6 +316,7 @@ pub use script::Script;
 pub use script_builder::ScriptBuilder;
 pub use slot::Slot;
 pub use stack_item::{StackItem, StackItemExt};
+pub use stack_projection::{ToStackItem, ToStackValue};
 pub use storage_context::StorageContext;
 pub use syscalls::{
     GasCost, NUM_BUILTINS, SyscallEntry, SyscallHash, get_syscall_entry,

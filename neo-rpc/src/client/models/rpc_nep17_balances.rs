@@ -13,7 +13,7 @@ use super::super::utility::{
     NepBalanceFieldRefs, balance_list_to_json, insert_nep_balance_fields, parse_balance_list,
     parse_nep_balance_fields, required_script_hash_or_address,
 };
-use neo_core::config::ProtocolSettings;
+use neo_config::ProtocolSettings;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
 use num_bigint::BigInt;

@@ -2,18 +2,18 @@ use neo_ai_agent::{
     EvidenceAuthority, PROBE_SCHEMA_VERSION, ProbeAction, ProbeContractError, ProbeJob,
     ProbeOutcome, ProbeOutcomeStatus,
 };
-use neo_core::ProtocolSettings;
-use neo_core::Transaction;
-use neo_core::Verifiable;
-use neo_core::neo_vm::{ExecutionContext, Instruction, VmState};
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::trigger_type::TriggerType;
-use neo_core::smart_contract::{ApplicationEngine, Diagnostic};
+use neo_native_contracts::native::composition::default_native_services;
+use neo_primitives::{CallFlags, TriggerType, Verifiable};
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Transaction;
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::diagnostic::Diagnostic;
 use neo_storage::persistence::data_cache::DataCache;
 use neo_storage::persistence::{
     DetachedSnapshot, DetachedSnapshotEntry, DetachedSnapshotError, DetachedSnapshotLimits,
 };
 use neo_storage::{StorageItem, StorageKey};
+use neo_vm::{ExecutionContext, Instruction, VmState};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -398,9 +398,9 @@ fn valid_hash(hash: &str) -> bool {
 // Deterministic sandbox pre-execution (task 39)
 // ============================================================================
 //
-// Execution entry: `neo_core::smart_contract::ApplicationEngine` — the same
-// public engine the block-persistence pipeline uses — driven through its
-// public API (`new`, `load_script`, `execute_allow_fault`). No neo-core file
+// Execution entry: `neo_smart_contract::application_engine::ApplicationEngine`
+// — the same public engine the block-persistence pipeline uses — driven through
+// its public API (`new`, `load_script`, `execute_allow_fault`). No neo-core file
 // was modified. The engine reads from an isolated, memory-only `DataCache`
 // seeded from the detached snapshot entries (no live store is reachable,
 // since `DataCache::new_with_config`'s backing-store closure types are
@@ -639,6 +639,7 @@ fn sandbox_preexecute(job: &ProbeJob, entries: &[SnapshotEntry]) -> VmProbeRepor
         Some(Box::new(InstructionCounter {
             executed: Arc::clone(&instructions_executed),
         })),
+        default_native_services(),
     ) {
         Ok(engine) => engine,
         Err(error) => {
@@ -714,8 +715,10 @@ mod tests {
         AuthorizerMetadata, EvidenceAuthority, OperationId, ProbeBudget, ProbeBuild, ProbeContext,
         ProbeTransaction, RunId,
     };
-    use neo_core::neo_vm::{OpCode, interop_hash};
-    use neo_core::{Signer, UInt160, Witness, WitnessScope};
+    use neo_primitives::{UInt160, WitnessScope};
+    use neo_protocol::payloads::Signer;
+    use neo_protocol::witness::Witness;
+    use neo_vm::{OpCode, interop_hash};
     use std::io::Cursor;
 
     fn sha256(bytes: &[u8]) -> String {

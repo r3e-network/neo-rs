@@ -3,33 +3,39 @@
 //! This module provides smart contract functionality matching the C# Neo.SmartContract namespace.
 
 // Main modules (matching C# files)
-pub mod application_engine;
-// Compatibility aliases for the historical flat module paths. Implementations
-// live under the application_engine directory.
+/// Application engine — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::application_engine;
+// Compatibility aliases for the historical flat module paths.
+pub use ::neo_vm::binary_serializer;
 pub use application_engine::{
     contract as application_engine_contract, crypto as application_engine_crypto,
     helper as application_engine_helper, iterator as application_engine_iterator,
     op_code_prices as application_engine_op_code_prices, runtime as application_engine_runtime,
     storage as application_engine_storage,
 };
-pub mod binary_serializer;
 pub mod call_flags;
-pub mod contract;
+/// Contract — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::contract;
 pub mod contract_parameter;
-pub mod contract_parameter_type;
 pub mod contract_parameters_context;
-pub mod contract_state;
+/// Contract state — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::contract_state;
 pub mod deployed_contract;
-pub mod diagnostic;
-pub(crate) mod env_flags;
-pub mod execution_context_state;
+/// Diagnostics — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::diagnostic;
+/// Execution context state — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::execution_context_state;
 pub mod find_options;
 pub mod helper;
-pub mod interop_descriptor;
-pub mod interop_parameter_descriptor;
+/// Interop descriptor — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::interop_descriptor;
+/// Interop parameter descriptor — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::interop_parameter_descriptor;
 pub mod interoperable;
-pub mod iterators;
-pub mod key_builder;
+/// Contract iterators — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::iterators;
+/// Key builder — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::key_builder;
 
 /// Compatibility module for the historical flat contract helper paths.
 pub mod contract_basic_method {
@@ -44,14 +50,18 @@ pub mod notify_event_args {
     pub use neo_vm::NotifyEventArgs;
 }
 
-pub mod manifest;
-pub mod max_length_attribute;
-pub mod native;
+/// Native contracts — re-exported from the authoritative `neo-native-contracts` crate.
+pub use neo_native_contracts::native;
+/// Contract manifest — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::manifest;
+/// Max-length attribute — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::max_length_attribute;
 pub mod storage_context;
 pub mod storage_item;
 pub mod storage_key;
 pub mod trigger_type;
-pub mod validator_attribute;
+/// Validator attribute — re-exported from the authoritative `neo-smart-contract` crate.
+pub use neo_smart_contract::validator_attribute;
 
 // Re-export commonly used types
 pub use application_engine::ApplicationEngine;

@@ -2,35 +2,35 @@
 
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::BigDecimal;
-use neo_core::ScriptBuilder;
-use neo_core::cryptography::{ECCurve, ECPoint};
-use neo_core::network::p2p::payloads::conflicts::Conflicts;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::persistence::DataCache;
-use neo_core::prelude::Serializable;
-use neo_core::signing::{
-    FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
-    SignResponse,
-};
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
 use neo_core::smart_contract::contract_parameters_context::ContractParametersContext;
 use neo_core::smart_contract::helper::Helper as ContractHelper;
-use neo_core::smart_contract::native::{
-    GasToken, LedgerContract, NativeContract, NeoToken, PolicyContract,
-};
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::wallets::{
     AssetDescriptor, Helper, KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet,
     WalletAccount, WalletError, WalletResult,
 };
-use neo_core::{UInt160, WitnessScope};
+use neo_crypto::{ECCurve, ECPoint};
+use neo_io::Serializable;
+use neo_native_contracts::native::{
+    GasToken, LedgerContract, NativeContract, NeoToken, PolicyContract,
+};
+use neo_primitives::BigDecimal;
+use neo_primitives::CallFlags;
+use neo_primitives::TriggerType;
+use neo_primitives::{UInt160, WitnessScope};
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::conflicts::Conflicts;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
+use neo_protocol::witness::Witness;
+use neo_signing::{
+    FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
+    SignResponse,
+};
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_storage::persistence::DataCache;
 use neo_vm::OpCode;
+use neo_vm::ScriptBuilder;
 use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
@@ -708,6 +708,7 @@ impl RpcServerWallet {
             server.system().settings().clone(),
             server.settings().max_gas_invoke,
             None,
+            neo_native_contracts::native::composition::default_native_services(),
         )
         .map_err(|err| internal_error(err.to_string()))?;
         engine
@@ -956,7 +957,7 @@ impl RpcServerWallet {
         if tx.script().is_empty() {
             return Err(invalid_params("Transaction script cannot be empty"));
         }
-        neo_core::script_validation::validate_strict_script(tx.script())
+        neo_vm::validate_strict_script(tx.script())
             .map_err(|err| invalid_params(format!("Invalid transaction script: {err}")))?;
         if tx.system_fee() < 0 {
             return Err(invalid_params("Invalid system fee"));
@@ -1016,7 +1017,7 @@ impl RpcServerWallet {
                     .parameter_list
                     .iter()
                     .filter(|parameter| {
-                        **parameter == neo_core::smart_contract::ContractParameterType::Signature
+                        **parameter == neo_primitives::ContractParameterType::Signature
                     })
                     .count();
                 Witness::new_with_scripts(
@@ -1061,11 +1062,8 @@ impl RpcServerWallet {
             let canonical_data = if let Some(data) = sign_data.as_ref() {
                 data.clone()
             } else {
-                let data = neo_core::network::p2p::helper::get_sign_data_vec(
-                    tx,
-                    server.system().settings().network,
-                )
-                .map_err(|err| internal_error(err.to_string()))?;
+                let data = neo_protocol::get_sign_data_vec(tx, server.system().settings().network)
+                    .map_err(|err| internal_error(err.to_string()))?;
                 sign_data = Some(data.clone());
                 data
             };
@@ -1164,7 +1162,7 @@ impl RpcServerWallet {
     }
 
     fn await_signer_future(
-        future: Pin<Box<dyn Future<Output = neo_core::signing::SignResult<SignResponse>> + Send>>,
+        future: Pin<Box<dyn Future<Output = neo_signing::SignResult<SignResponse>> + Send>>,
     ) -> Result<SignResponse, RpcException> {
         let result = if let Ok(handle) = Handle::try_current() {
             match handle.runtime_flavor() {
@@ -1173,8 +1171,8 @@ impl RpcServerWallet {
                         .enable_all()
                         .build()
                         .map_err(|error| {
-                            neo_core::signing::SignError::new(
-                                neo_core::signing::SignErrorCode::ProviderFailure,
+                            neo_signing::SignError::new(
+                                neo_signing::SignErrorCode::ProviderFailure,
                                 error.to_string(),
                             )
                         })?

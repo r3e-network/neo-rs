@@ -3,7 +3,8 @@
 use crate::config::{RemoteAttestationPolicySection, SignerProviderKind, SignerProviderSection};
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
-use neo_core::signing::{
+use neo_crypto::Secp256r1Crypto;
+use neo_signing::{
     ALGORITHM_ECDSA_P256_SHA256, AttestationChallenge, AttestationEvidence,
     AttestationExpectations, AuthorizedSignRequest, CollateralStatus, KeyInfo, KeyRef,
     ProviderCapabilities, ProviderOperationStatus, ProviderOutcomeProvenance, ProviderSignature,
@@ -12,7 +13,6 @@ use neo_core::signing::{
     RemoteSignRequest, RemoteSignResponse, RemoteSignerTransport, SignError, SignErrorCode,
     SignResult, SignerProvider, TcbStatus, VerifiedAttestation, validate_remote_schema,
 };
-use neo_crypto::Secp256r1Crypto;
 use parking_lot::RwLock;
 use rand::{RngCore, rngs::OsRng};
 use reqwest::{Certificate, Client, Identity, StatusCode, Url, redirect::Policy};
@@ -771,9 +771,9 @@ impl RemoteSignerProvider {
             request_id: request_id.to_string(),
             key_ref: key_ref.clone(),
             network: 0,
-            purpose: neo_core::signing::SignPurpose::Custom("query".to_string()),
-            payload: neo_core::signing::SignPayload::Digest {
-                algorithm: neo_core::signing::DigestAlgorithm::Sha256,
+            purpose: neo_signing::SignPurpose::Custom("query".to_string()),
+            payload: neo_signing::SignPayload::Digest {
+                algorithm: neo_signing::DigestAlgorithm::Sha256,
                 digest: [0; 32],
             },
             request_digest,
@@ -895,7 +895,7 @@ mod tests {
     use crate::config::{RemoteSignerSection, SignerKeySection};
     use hyper::service::{make_service_fn, service_fn};
     use hyper::{Body, Request as HttpRequest, Response as HttpResponse, Server};
-    use neo_core::signing::{
+    use neo_signing::{
         AuthenticatedContext, DefaultSignerService, DurableSigningStore, IdempotencyInfo,
         PolicyLimits, ProtocolContext, SIGNING_SCHEMA_VERSION, SecurityLevel, SignPayload,
         SignPurpose, SignRequest, SignerService, SigningKeyBinding, SigningKeyResolver,
@@ -2208,8 +2208,8 @@ mod tests {
             key_ref: key_ref.clone(),
             network: 1,
             purpose: SignPurpose::Transaction,
-            payload: neo_core::signing::SignPayload::Digest {
-                algorithm: neo_core::signing::DigestAlgorithm::Sha256,
+            payload: neo_signing::SignPayload::Digest {
+                algorithm: neo_signing::DigestAlgorithm::Sha256,
                 digest: [3; 32],
             },
             request_digest: [4; 32],

@@ -5,6 +5,7 @@
 use hex::decode as hex_decode;
 use hex::encode as hex_encode;
 use neo_core::ScriptBuilder;
+use neo_core::TransactionExt;
 use neo_core::UInt160;
 use neo_core::cryptography::{
     Bls12381Crypto, Crypto, Ed25519Crypto, NamedCurveHash, Secp256k1Crypto, Secp256r1Crypto,
@@ -762,6 +763,7 @@ fn make_engine(settings: ProtocolSettings) -> ApplicationEngine {
         settings,
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine")
 }
@@ -1018,12 +1020,7 @@ fn crypto_lib_verify_with_ecdsa_named_curve_hash_keccak() {
         .call_native_contract(
             crypto.hash(),
             "verifyWithECDsa",
-            &[
-                message.to_vec(),
-                pub_r1,
-                sig_r1.to_vec(),
-                curve_hash_bytes(NamedCurveHash::Secp256r1Keccak256),
-            ],
+            &[message.to_vec(), pub_r1, sig_r1.to_vec(), vec![0x7b]],
         )
         .expect("verify r1 keccak");
     assert_eq!(result, vec![1]);
@@ -1043,12 +1040,7 @@ fn crypto_lib_verify_with_ecdsa_named_curve_hash_keccak() {
         .call_native_contract(
             crypto.hash(),
             "verifyWithECDsa",
-            &[
-                message.to_vec(),
-                pub_k1,
-                sig_k1.to_vec(),
-                curve_hash_bytes(NamedCurveHash::Secp256k1Keccak256),
-            ],
+            &[message.to_vec(), pub_k1, sig_k1.to_vec(), vec![0x7a]],
         )
         .expect("verify k1 keccak");
     assert_eq!(result, vec![1]);

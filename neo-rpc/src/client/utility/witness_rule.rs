@@ -1,5 +1,6 @@
 use neo_config::ProtocolSettings;
-use neo_core::{ECCurve, ECPoint, WitnessCondition, WitnessRule, WitnessRuleAction};
+use neo_crypto::{ECCurve, ECPoint};
+use neo_io::witness_rule::{WitnessCondition, WitnessRule, WitnessRuleAction};
 use neo_json::{JArray, JObject};
 
 pub fn rule_from_json(
@@ -156,8 +157,9 @@ fn parse_group_bytes(value: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::{KeyPair, UInt160};
+    use neo_core::KeyPair;
     use neo_json::JToken;
+    use neo_primitives::UInt160;
 
     fn assert_rule_roundtrip(rule: WitnessRule) {
         let json = rule.to_json();

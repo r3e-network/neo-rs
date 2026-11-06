@@ -1,8 +1,8 @@
 //! End-to-End Transaction Flow Integration Tests
 
-use neo_core::network::p2p::payloads::{Signer, Transaction, TransactionAttribute, WitnessScope};
+use neo_protocol::payloads::{Signer, TransactionAttribute, transaction::Transaction};
 
-use neo_core::UInt160;
+use neo_primitives::{UInt160, WitnessScope};
 use neo_tests::mempool::{Mempool, MempoolConfig};
 use neo_tests::state::{
     AccountState, MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState,
@@ -75,7 +75,7 @@ fn test_transaction_hash_unique() {
 
 #[test]
 fn test_transaction_serialization_roundtrip() {
-    use neo_core::network::p2p::payloads::Witness;
+    use neo_protocol::witness::Witness;
 
     let (sender, _) = create_test_account(1000, 10000);
     let script = vec![

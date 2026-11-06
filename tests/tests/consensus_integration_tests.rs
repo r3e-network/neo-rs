@@ -410,7 +410,7 @@ async fn test_consensus_single_validator_network() {
 
     // Should request transactions
     let event = rx.recv().await.expect("event");
-    std::assert_matches!(event, ConsensusEvent::RequestTransactions { .. });
+    assert!(matches!(event, ConsensusEvent::RequestTransactions { .. }));
 }
 
 #[tokio::test]

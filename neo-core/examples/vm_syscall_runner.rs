@@ -21,9 +21,8 @@
 use std::fs;
 use std::sync::Arc;
 
-use neo_core::ledger::Block;
-use neo_core::ledger::block_header::BlockHeader;
 use neo_core::network::p2p::payloads::Transaction;
+use neo_core::network::p2p::payloads::block::Block;
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::CallFlags;
@@ -186,18 +185,10 @@ fn stringify(s: &str) -> String {
 fn build_engine(signer: Option<[u8; 20]>) -> Result<ApplicationEngine, String> {
     let snapshot = Arc::new(DataCache::new(false));
 
-    let header = BlockHeader::new(
-        1,                      // index
-        Default::default(),     // prev_hash
-        Default::default(),     // merkle_root
-        PINNED_BLOCK_TIMESTAMP, // timestamp
-        0,
-        0,
-        0,
-        neo_core::UInt160::zero(),
-        Vec::new(),
-    );
-    let block = Block::new(header, Vec::new());
+    let mut block = Block::new();
+    block.header.set_index(1);
+    block.header.set_timestamp(PINNED_BLOCK_TIMESTAMP);
+    block.header.set_next_consensus(neo_core::UInt160::zero());
 
     let mut tx = Transaction::new();
     if let Some(account_bytes) = signer {
@@ -217,6 +208,7 @@ fn build_engine(signer: Option<[u8; 20]>) -> Result<ApplicationEngine, String> {
         ProtocolSettings::default(),
         20_000_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .map_err(|e| e.to_string())
 }

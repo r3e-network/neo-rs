@@ -221,7 +221,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let base_snapshot = Arc::new(target_cache.data_cache().clone());
     let protocol = replay_protocol_settings();
-    let block_ref = Arc::new(block);
+    let block_ref = Arc::new(block.to_payload_block());
 
     let mut tx_states = LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new());
     if !skip_on_persist {
@@ -233,6 +233,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             protocol.clone(),
             TEST_MODE_GAS,
             None,
+            neo_core::smart_contract::native::composition::default_native_services(),
         )?;
         on_persist_engine.native_on_persist()?;
         tx_states = on_persist_engine
@@ -277,6 +278,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         protocol,
         tx.system_fee(),
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )?;
     tx_engine.set_state(tx_states);
     tx_engine.load_script(tx.script().to_vec(), CallFlags::ALL, None)?;

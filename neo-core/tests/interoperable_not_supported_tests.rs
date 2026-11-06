@@ -1,20 +1,9 @@
 use neo_core::UInt160;
-use neo_core::ledger::BlockHeader;
 use neo_core::neo_vm::StackItem;
-use neo_core::network::p2p::payloads::{Signer, WitnessScope};
 use neo_core::smart_contract::Interoperable;
 use neo_core::smart_contract::NotifyEventArgs;
 use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
-
-#[test]
-fn signer_from_stack_item_returns_error() {
-    let mut signer = Signer::new(UInt160::zero(), WitnessScope::NONE);
-    let result = signer.from_stack_item(StackItem::null());
-    assert!(
-        result.is_err(),
-        "Signer::from_stack_item should return Err for unsupported operation"
-    );
-}
+use neo_protocol::execution::BlockHeader;
 
 #[test]
 fn notify_event_args_from_stack_item_returns_error() {

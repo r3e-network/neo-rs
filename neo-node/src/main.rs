@@ -21,7 +21,7 @@ mod import_acc;
 #[allow(missing_docs)]
 mod import_acc {
     use anyhow::{Result, bail};
-    use neo_core::neo_system::NeoSystem;
+    use neo_system::NeoSystem;
     use std::{path::Path, sync::Arc};
 
     #[derive(Debug, Clone, Copy)]
@@ -114,12 +114,10 @@ fn set_env_var<K: AsRef<std::ffi::OsStr>, V: AsRef<std::ffi::OsStr>>(key: K, val
 mod tests {
     use super::*;
     use clap::Parser;
-    use neo_core::{
-        i_event_handlers::WalletChangedHandler,
-        neo_system::NeoSystem,
-        protocol_settings::ProtocolSettings,
-        wallets::{Wallet as CoreWallet, WalletProvider},
-    };
+    use neo_core::wallets::{Wallet as CoreWallet, WalletProvider};
+    use neo_protocol::ProtocolSettings;
+    use neo_system::NeoSystem;
+    use neo_system::i_event_handlers::WalletChangedHandler;
     use std::any::Any;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};

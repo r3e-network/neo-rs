@@ -1,26 +1,25 @@
 use super::*;
 use crate::server::rpc_server::RpcHandler;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::NativeContract;
-use neo_core::UInt256;
-use neo_core::neo_io::{Serializable, SerializableExt};
-use neo_core::neo_system::NeoSystem;
-use neo_core::persistence::Store;
-use neo_core::persistence::StoreProvider;
-use neo_core::persistence::providers::MemoryStoreProvider;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::manifest::{
-    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
-};
-use neo_core::smart_contract::native::GasToken;
-use neo_core::smart_contract::native::NativeRegistry;
-use neo_core::smart_contract::{
-    ContractParameterType, ContractState, NefFile, StorageItem, StorageKey,
-};
-use neo_core::tokens_tracker::{
+use crate::tokens_tracker::{
     Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService, TokensTrackerSettings,
     find_range,
 };
+use neo_io::{Serializable, SerializableExtensions as SerializableExt};
+use neo_native_contracts::NativeContract;
+use neo_native_contracts::native::GasToken;
+use neo_primitives::ContractParameterType;
+use neo_primitives::UInt256;
+use neo_protocol::ProtocolSettings;
+use neo_smart_contract::contract_state::{ContractState, NefFile};
+use neo_smart_contract::manifest::{
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
+};
+use neo_storage::persistence::Store;
+use neo_storage::persistence::StoreProvider;
+use neo_storage::persistence::providers::MemoryStoreProvider;
+use neo_storage::{StorageItem, StorageKey};
+use neo_system::NeoSystem;
 use neo_vm::OpCode;
 use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
@@ -82,12 +81,12 @@ fn store_contract_state(system: &Arc<NeoSystem>, contract: &ContractState) {
     const PREFIX_CONTRACT: u8 = 0x08;
     const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 
-    let contract_mgmt_id = NativeRegistry::new()
+    let contract_mgmt_id = neo_native_contracts::native::composition::standard_registry()
         .get_by_name("ContractManagement")
         .expect("contract management")
         .id();
 
-    let mut writer = neo_core::neo_io::BinaryWriter::new();
+    let mut writer = neo_io::BinaryWriter::new();
     contract.serialize(&mut writer).expect("serialize contract");
 
     let mut store_cache = system.context().store_snapshot_cache();
@@ -202,6 +201,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
         system.settings().clone(),
         TEST_MODE_GAS,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .expect("engine");
     engine

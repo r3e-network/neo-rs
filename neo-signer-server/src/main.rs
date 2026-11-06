@@ -7,9 +7,9 @@
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use neo_core::signing::{KeyRef, SignPurpose};
 use neo_signer_server::config::{DEFAULT_SESSION_LIFETIME_MS, MAX_ATTESTATION_CLOCK_SKEW_MS};
 use neo_signer_server::{FaultPolicy, SignerServerConfig, TlsPaths, spawn_signer_server};
+use neo_signing::{KeyRef, SignPurpose};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 

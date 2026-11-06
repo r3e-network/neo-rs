@@ -6,22 +6,22 @@
 //! 3. P2P inventory message exchange, block payloads, and Merkle root determinism
 //! 4. Cross-node ledger snapshot consistency after fast-sync completion
 
-use neo_core::i_event_handlers::CommittingHandler;
 use neo_core::ledger::block::Block as LedgerBlock;
 use neo_core::ledger::blockchain_application_executed::ApplicationExecuted;
-use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_core::neo_system::NeoSystem;
 use neo_core::network::p2p::message::Message;
 use neo_core::network::p2p::message_command::MessageCommand;
-use neo_core::network::p2p::payloads::block::Block as PayloadBlock;
-use neo_core::network::p2p::payloads::header::Header;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::network::p2p::payloads::{InvPayload, InventoryType, PingPayload};
-use neo_core::persistence::DataCache;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::{UInt160, UInt256, WitnessScope};
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_p2p::payloads::{InvPayload, PingPayload};
+use neo_primitives::{InventoryType, UInt160, UInt256, WitnessScope};
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::block::Block as PayloadBlock;
+use neo_protocol::payloads::header::Header;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::witness::Witness;
+use neo_storage::persistence::DataCache;
+use neo_system::NeoSystem;
+use neo_system::i_event_handlers::CommittingHandler;
 use neo_vm::OpCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

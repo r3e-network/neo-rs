@@ -11,11 +11,14 @@
 
 use super::models::RpcTransaction;
 use crate::{Nep17Api, RpcClient, RpcError, RpcUtility};
-use neo_core::BigDecimal;
-use neo_core::smart_contract::native::{GasToken, NeoToken};
+use neo_core::KeyPair;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::{Contract, ECPoint, KeyPair, NativeContract, Transaction};
+use neo_crypto::ECPoint;
+use neo_native_contracts::native::{GasToken, NativeContract, NeoToken};
+use neo_primitives::BigDecimal;
 use neo_primitives::UInt160;
+use neo_protocol::payloads::Transaction;
+use neo_smart_contract::contract::Contract;
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;

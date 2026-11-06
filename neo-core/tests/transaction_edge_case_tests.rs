@@ -14,7 +14,8 @@ use neo_core::network::p2p::payloads::{InventoryType, signer::Signer, witness::W
 use neo_core::persistence::DataCache;
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::{
-    HEADER_SIZE, MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute, UInt160, WitnessScope,
+    HEADER_SIZE, MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute, TransactionExt, UInt160,
+    WitnessScope,
 };
 use neo_vm::OpCode;
 
@@ -26,7 +27,7 @@ use neo_vm::OpCode;
 mod tests {
     use super::*;
     use neo_core::network::p2p::payloads::inventory::Inventory;
-    use neo_core::smart_contract::Interoperable;
+    use neo_core::network::p2p::payloads::transaction::transaction_to_stack_item;
     use neo_vm::StackValue;
     use num_traits::ToPrimitive;
     use std::str::FromStr;
@@ -121,7 +122,7 @@ mod tests {
             WitnessScope::CALLED_BY_ENTRY,
         )]);
 
-        let item = tx.to_stack_item().unwrap();
+        let item = transaction_to_stack_item(&tx).unwrap();
         assert!(!item.is_null());
 
         let array = item.as_array().expect("array");
@@ -188,28 +189,17 @@ mod tests {
         )]);
 
         let expected = StackItem::try_from(tx.to_stack_value().unwrap()).unwrap();
-        assert_eq!(tx.to_stack_item().unwrap(), expected);
+        assert_eq!(transaction_to_stack_item(&tx).unwrap(), expected);
     }
 
     /// Test ToStackItem returns error when sender is missing (matches C# ArgumentException).
     #[test]
     fn test_to_stack_item_requires_sender() {
         let tx = Transaction::new();
-        let result = tx.to_stack_item();
+        let result = transaction_to_stack_item(&tx);
         assert!(
             result.is_err(),
             "to_stack_item should return Err when sender is missing"
-        );
-    }
-
-    /// Test FromStackItem returns error (matches C# NotSupportedException).
-    #[test]
-    fn test_from_stack_item_not_supported() {
-        let mut tx = Transaction::new();
-        let result = tx.from_stack_item(StackItem::null());
-        assert!(
-            result.is_err(),
-            "Transaction::from_stack_item should return Err for unsupported operation"
         );
     }
 

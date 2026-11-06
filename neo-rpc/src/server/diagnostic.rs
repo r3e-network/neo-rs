@@ -1,9 +1,8 @@
-use neo_core::UInt160;
-use neo_core::neo_vm::ExecutionContext;
-use neo_core::smart_contract::ApplicationEngine;
-use neo_core::smart_contract::diagnostic::Diagnostic as EngineDiagnostic;
-use neo_core::smart_contract::execution_context_state::ExecutionContextState;
-use neo_vm::Instruction;
+use neo_primitives::UInt160;
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::diagnostic::Diagnostic as EngineDiagnostic;
+use neo_smart_contract::execution_context_state::ExecutionContextState;
+use neo_vm::{ExecutionContext, Instruction};
 use parking_lot::Mutex;
 use std::fmt;
 use std::sync::Arc;

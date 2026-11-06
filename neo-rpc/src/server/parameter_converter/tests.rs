@@ -1,11 +1,11 @@
 use super::*;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::ContractParameterType;
 use neo_core::wallets::helper::Helper as WalletHelper;
-use neo_core::{UInt160, UInt256};
 use neo_json::{JArray, JObject, JToken};
+use neo_primitives::ContractParameterType;
+use neo_primitives::{UInt160, UInt256};
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 
 fn ctx() -> ConversionContext {
     ConversionContext::new(ProtocolSettings::default().address_version)

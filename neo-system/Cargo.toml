@@ -1,0 +1,83 @@
+[package]
+name = "neo-system"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Actor runtime and system adapters for neo-rs"
+
+[features]
+default = []
+# Task 208: state root verification actor + wallet-changed handler moved from
+# neo-core::state_service::verification. Enabled by consumers (neo-node) that
+# register the verification service with the unified signer.
+state-verifier = []
+# Task W3-C2: moved P2P peer discovery forwards the `upnp` feature to the
+# `neo-core` UPnP transport it still calls.
+upnp = ["neo-core/upnp"]
+full = ["state-verifier", "upnp"]
+
+[dependencies]
+# Internal crates (registered in workspace.dependencies)
+neo-p2p = { workspace = true }
+neo-primitives = { workspace = true }
+# Task 208: state verification signs state roots through the unified signing
+# service (key bindings, trusted signer client) — same direct binding the
+# module used while it lived in neo-core.
+neo-signing = { workspace = true }
+# Task 208: state verification builds extensible-payload witness invocation
+# scripts with VM opcodes (PUSHDATA1).
+neo-vm = { workspace = true }
+
+# Internal crates (not yet in workspace.dependencies; registered by task 89)
+neo-ledger = { path = "../neo-ledger" }
+
+# Transitional dependency: the ledger/persistence/services vocabulary, the
+# P2P wire protocol and the smart contract engine still live in `neo-core`; the
+# moved `NeoSystem` orchestration reaches them through it (task W3-C2).
+neo-core = { workspace = true, features = ["runtime"] }
+# Wave D1-L1 (task 215): the moved node actors bind directly to the generic
+# actor runtime instead of the neo-core `runtime` compatibility re-export
+# (same types, TypeId-preserving).
+neo-actors = { workspace = true }
+
+# Oracle engine + response pipeline ports used by `oracle_service`.
+neo-oracle = { workspace = true }
+# Shared caches (HashSetCache/RelayCache) used by the P2P actors. Bound under
+# the historical `neo_io_crate` alias used throughout the moved code.
+neo_io_crate = { path = "../neo-io", package = "neo-io" }
+# Execution payload types used by the moved converters and unit tests.
+neo-protocol = { workspace = true }
+
+# Third-party
+async-trait = { workspace = true }
+bitvec = { workspace = true }
+dashmap = { workspace = true }
+governor = { workspace = true }
+hex = { workspace = true }
+if-addrs = "0.10"
+indexmap = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true, features = ["rt"] }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+num-bigint = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[lints]
+workspace = true

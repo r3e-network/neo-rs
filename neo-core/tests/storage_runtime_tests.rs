@@ -74,6 +74,7 @@ fn make_engine(snapshot: Arc<DataCache>) -> ApplicationEngine {
         Default::default(),
         200_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine")
 }

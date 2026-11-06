@@ -1,7 +1,8 @@
 //! Live state-root references for validation beyond the static JSONL range.
 
 use anyhow::{Context, Result, bail};
-use neo_core::{UInt256, neo_system::NeoSystem};
+use neo_primitives::UInt256;
+use neo_system::NeoSystem;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,

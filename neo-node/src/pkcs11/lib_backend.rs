@@ -11,7 +11,7 @@ use super::backend::{Pkcs11Backend, Pkcs11KeyQuery, Pkcs11Mechanism, Pkcs11SignC
 use crate::config::SignerProviderSection;
 use anyhow::{Context, Result, bail};
 use libloading::{Library, Symbol};
-use neo_core::cryptography::{ECCurve, ECPoint};
+use neo_crypto::{ECCurve, ECPoint};
 use std::ffi::c_void;
 use std::path::Path;
 use std::ptr;

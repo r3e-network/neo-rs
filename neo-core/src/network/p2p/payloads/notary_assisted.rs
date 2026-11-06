@@ -9,39 +9,58 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+//! Notary-assisted transaction attribute.
+//!
+//! The canonical `NotaryAssisted` payload is owned by `neo-protocol` and
+//! re-exported here for backward compatibility (R2 leaf-type unification). All
+//! structural API (`new`, the `nkeys` field, and wire `Serializable`) is
+//! provided by `neo-protocol`.
+//!
+//! neo-core keeps only the snapshot-aware verification and fee helpers, exposed
+//! via the [`NotaryAssistedExt`] extension trait because they cannot be
+//! inherent methods on a foreign type (orphan rule).
+
 use crate::UInt160;
-use crate::neo_io::{BinaryWriter, IoResult, Serializable, impl_serializable};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::Helper;
-use serde::{Deserialize, Serialize};
 
-/// Represents a notary-assisted transaction attribute.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NotaryAssisted {
-    /// Indicates the number of keys participating in the transaction (main or fallback) signing process.
-    pub nkeys: u8,
+/// Canonical notary-assisted transaction attribute, owned by `neo-protocol`.
+pub use neo_protocol::payloads::notary_assisted::NotaryAssisted;
+
+/// Get the notary contract hash.
+fn get_notary_hash() -> UInt160 {
+    Helper::get_contract_hash(&UInt160::zero(), 0, "Notary")
 }
 
-impl NotaryAssisted {
-    /// Creates a new notary-assisted attribute.
-    pub fn new(nkeys: u8) -> Self {
-        Self { nkeys }
-    }
-
-    /// Get the notary contract hash.
-    fn get_notary_hash() -> UInt160 {
-        Helper::get_contract_hash(&UInt160::zero(), 0, "Notary")
-    }
-
+/// neo-core-specific verification and fee helpers for [`NotaryAssisted`].
+pub trait NotaryAssistedExt {
     /// Verify the notary-assisted attribute.
-    pub fn verify(
+    /// Matches C# Verify method.
+    fn verify(
+        &self,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        tx: &super::transaction::Transaction,
+    ) -> bool;
+
+    /// Calculate network fee for this attribute.
+    ///
+    /// Network fee consists of the base Notary service fee per key multiplied by
+    /// the expected number of transactions that should be collected by the
+    /// service to complete Notary request increased by one (for Notary node
+    /// witness itself).
+    fn calculate_network_fee(&self, base_fee: i64, tx: &super::transaction::Transaction) -> i64;
+}
+
+impl NotaryAssistedExt for NotaryAssisted {
+    fn verify(
         &self,
         _settings: &ProtocolSettings,
         _snapshot: &DataCache,
         tx: &super::transaction::Transaction,
     ) -> bool {
-        let notary_hash = Self::get_notary_hash();
+        let notary_hash = get_notary_hash();
 
         if tx.sender() == Some(notary_hash) {
             // Payer is in the second position
@@ -51,26 +70,7 @@ impl NotaryAssisted {
         tx.signers().iter().any(|s| s.account == notary_hash)
     }
 
-    /// Calculate network fee for this attribute.
-    /// Network fee consists of the base Notary service fee per key multiplied by the expected
-    /// number of transactions that should be collected by the service to complete Notary request
-    /// increased by one (for Notary node witness itself).
-    pub fn calculate_network_fee(
-        &self,
-        base_fee: i64,
-        _tx: &super::transaction::Transaction,
-    ) -> i64 {
+    fn calculate_network_fee(&self, base_fee: i64, _tx: &super::transaction::Transaction) -> i64 {
         (self.nkeys as i64 + 1) * base_fee
-    }
-
-    /// Serialize without type byte.
-    pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        <Self as Serializable>::serialize(self, writer)
-    }
-}
-
-impl_serializable! {
-    struct NotaryAssisted {
-        nkeys: u8,
     }
 }

@@ -1,0 +1,212 @@
+use crate::network::p2p::payloads::block::Block;
+use neo_core::CoreError;
+use neo_primitives::UInt256;
+
+// `Store` carries the whole block while the other variants are cheap
+// outcomes; the enum is constructed once per incoming block, so boxing the
+// payload would add allocation/indirection for no benefit. Lint consciously
+// suppressed.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone)]
+pub(super) enum IncomingBlockOutcome {
+    Store {
+        index: u32,
+        block: Block,
+    },
+    KeepExisting,
+    Disconnect {
+        index: u32,
+        reason: IncomingBlockDisconnect,
+        hash_error: Option<CoreError>,
+        remove_cached: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum IncomingBlockDisconnect {
+    InvalidIncomingHash,
+    ConflictingBlock,
+    InvalidCachedHash,
+}
+
+impl IncomingBlockDisconnect {
+    pub(super) fn reason(self) -> &'static str {
+        match self {
+            Self::InvalidIncomingHash => "invalid block hash",
+            Self::ConflictingBlock => "conflicting block received",
+            Self::InvalidCachedHash => "invalid cached block hash",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum PersistedBlockMatch {
+    Matches,
+    Mismatch,
+    Unhashable(CoreError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum BlockHashMatch {
+    Matches,
+    DoesNotMatch,
+    Unhashable(CoreError),
+}
+
+pub(super) fn validate_incoming_block(
+    mut block: Block,
+    existing: Option<&Block>,
+) -> IncomingBlockOutcome {
+    let index = block.index();
+    let incoming_hash = match block.try_hash() {
+        Ok(hash) => hash,
+        Err(error) => {
+            return IncomingBlockOutcome::Disconnect {
+                index,
+                reason: IncomingBlockDisconnect::InvalidIncomingHash,
+                hash_error: Some(error.into()),
+                remove_cached: false,
+            };
+        }
+    };
+
+    let Some(existing) = existing else {
+        return IncomingBlockOutcome::Store { index, block };
+    };
+
+    // Clone required: `existing` is `&Block` (shared reference), but
+    // `try_hash` requires `&mut self`. Changing the parameter to
+    // `Option<&mut Block>` would ripple through all callers; a targeted
+    // clone here is the least-invasive safe approach.
+    let mut existing = existing.clone();
+    match existing.try_hash() {
+        Ok(existing_hash) if existing_hash == incoming_hash => IncomingBlockOutcome::KeepExisting,
+        Ok(_) => IncomingBlockOutcome::Disconnect {
+            index,
+            reason: IncomingBlockDisconnect::ConflictingBlock,
+            hash_error: None,
+            remove_cached: false,
+        },
+        Err(error) => IncomingBlockOutcome::Disconnect {
+            index,
+            reason: IncomingBlockDisconnect::InvalidCachedHash,
+            hash_error: Some(error.into()),
+            remove_cached: true,
+        },
+    }
+}
+
+pub(super) fn persisted_block_hash(block: &Block) -> Result<UInt256, CoreError> {
+    // Clone required: `try_hash` requires `&mut self` but callers hold `&Block`.
+    // Changing to `&mut Block` would require all call sites to hold a mutable
+    // reference, which is not always convenient at the call site.
+    let mut block = block.clone();
+    block.try_hash().map_err(CoreError::from)
+}
+
+pub(super) fn match_persisted_block(
+    mut stored: Block,
+    persisted_hash: &UInt256,
+) -> PersistedBlockMatch {
+    match stored.try_hash() {
+        Ok(stored_hash) if stored_hash == *persisted_hash => PersistedBlockMatch::Matches,
+        Ok(_) => PersistedBlockMatch::Mismatch,
+        Err(error) => PersistedBlockMatch::Unhashable(error.into()),
+    }
+}
+
+pub(super) fn block_matches_hash(block: &Block, expected_hash: &UInt256) -> BlockHashMatch {
+    // Clone required: `try_hash` requires `&mut self` but callers hold `&Block`.
+    let mut candidate = block.clone();
+    match candidate.try_hash() {
+        Ok(candidate_hash) if candidate_hash == *expected_hash => BlockHashMatch::Matches,
+        Ok(_) => BlockHashMatch::DoesNotMatch,
+        Err(error) => BlockHashMatch::Unhashable(error.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn block_with_index_and_nonce(index: u32, nonce: u64) -> Block {
+        let mut block = Block::new();
+        block.header.set_index(index);
+        block.header.set_nonce(nonce);
+        block
+    }
+
+    fn block_hash(block: &Block) -> UInt256 {
+        let mut block = block.clone();
+        block.try_hash().expect("block hash")
+    }
+
+    #[test]
+    fn incoming_block_without_cached_copy_is_stored() {
+        let block = block_with_index_and_nonce(7, 1);
+
+        let outcome = validate_incoming_block(block, None);
+
+        assert!(matches!(
+            outcome,
+            IncomingBlockOutcome::Store { index: 7, .. }
+        ));
+    }
+
+    #[test]
+    fn incoming_block_matching_cached_copy_is_kept() {
+        let block = block_with_index_and_nonce(7, 1);
+        let cached = block.clone();
+
+        let outcome = validate_incoming_block(block, Some(&cached));
+
+        assert!(matches!(outcome, IncomingBlockOutcome::KeepExisting));
+    }
+
+    #[test]
+    fn incoming_block_conflicting_with_cached_copy_disconnects() {
+        let block = block_with_index_and_nonce(7, 1);
+        let cached = block_with_index_and_nonce(7, 2);
+
+        let outcome = validate_incoming_block(block, Some(&cached));
+
+        assert!(matches!(
+            outcome,
+            IncomingBlockOutcome::Disconnect {
+                index: 7,
+                reason: IncomingBlockDisconnect::ConflictingBlock,
+                hash_error: None,
+                remove_cached: false
+            }
+        ));
+    }
+
+    #[test]
+    fn persisted_block_match_compares_hashes() {
+        let block = block_with_index_and_nonce(7, 1);
+        let hash = block_hash(&block);
+        let conflicting_hash = block_hash(&block_with_index_and_nonce(7, 2));
+
+        assert_eq!(
+            match_persisted_block(block.clone(), &hash),
+            PersistedBlockMatch::Matches
+        );
+        assert_eq!(
+            match_persisted_block(block, &conflicting_hash),
+            PersistedBlockMatch::Mismatch
+        );
+    }
+
+    #[test]
+    fn block_hash_match_compares_hashes() {
+        let block = block_with_index_and_nonce(7, 1);
+        let hash = block_hash(&block);
+        let other = block_hash(&block_with_index_and_nonce(8, 1));
+
+        assert_eq!(block_matches_hash(&block, &hash), BlockHashMatch::Matches);
+        assert_eq!(
+            block_matches_hash(&block, &other),
+            BlockHashMatch::DoesNotMatch
+        );
+    }
+}

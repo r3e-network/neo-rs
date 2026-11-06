@@ -1,4 +1,4 @@
-use neo_core::UInt160;
+use neo_primitives::UInt160;
 
 /// Represents an address for JSON-RPC parameters. Matches the semantics of the
 /// C# `Neo.Plugins.RpcServer.Model.Address` record by storing the script hash

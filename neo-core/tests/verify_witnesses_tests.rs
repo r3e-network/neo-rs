@@ -1,6 +1,5 @@
-use neo_core::ledger::BlockHeader;
 use neo_core::neo_io::{BinaryWriter, Serializable};
-use neo_core::network::p2p::payloads::header::Header;
+use neo_core::network::p2p::payloads::{block::Block, header::Header, transaction::Transaction};
 use neo_core::persistence::{DataCache, StorageItem, StorageKey};
 use neo_core::protocol_settings::ProtocolSettings;
 use neo_core::smart_contract::ContractBasicMethod;
@@ -10,8 +9,11 @@ use neo_core::smart_contract::helper::Helper;
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
 };
+use neo_core::smart_contract::native::LedgerContract;
 use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
-use neo_core::{UInt160, UInt256, Verifiable, Witness};
+use neo_core::{UInt160, UInt256, Verifiable, VerifiableExt, Witness, WitnessData};
+use neo_primitives::SerializablePayload;
+use neo_protocol::execution::BlockHeader;
 use neo_vm::OpCode;
 
 const CONTRACT_MANAGEMENT_ID: i32 = -1;
@@ -127,7 +129,9 @@ impl neo_core::VerifiableExt for ManualWitness {
     fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         self.hashes.clone()
     }
+}
 
+impl neo_core::WitnessData for ManualWitness {
     fn witnesses(&self) -> Vec<&Witness> {
         self.witnesses.iter().collect()
     }
@@ -135,6 +139,156 @@ impl neo_core::VerifiableExt for ManualWitness {
     fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
         self.witnesses.iter_mut().collect()
     }
+}
+
+#[test]
+fn header_genesis_verification_hash_is_its_witness_script_hash() {
+    let snapshot = DataCache::new(false);
+    let unrelated = make_trimmed_block(contract_hash(0x31));
+    store_trimmed_block(&snapshot, &unrelated);
+
+    let mut header = Header::new();
+    header.set_next_consensus(contract_hash(0x32));
+    header.witness =
+        Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSHT.byte(), OpCode::RET.byte()]);
+    let witness_hash = header.witness.script_hash();
+    assert_eq!(*header.prev_hash(), UInt256::zero());
+    assert_ne!(witness_hash, *header.next_consensus());
+    assert_ne!(witness_hash, unrelated.header.next_consensus);
+
+    assert_eq!(
+        header.script_hashes_for_verifying(&snapshot),
+        vec![witness_hash]
+    );
+}
+
+#[test]
+fn header_verification_hash_uses_persisted_previous_consensus() {
+    let snapshot = DataCache::new(false);
+    let previous = make_trimmed_block(contract_hash(0x41));
+    let unrelated = make_trimmed_block(contract_hash(0x42));
+    store_trimmed_block(&snapshot, &previous);
+    store_trimmed_block(&snapshot, &unrelated);
+
+    let mut header = Header::new();
+    header.set_prev_hash(previous.hash());
+    header.set_index(previous.index() + 1);
+    header.set_next_consensus(contract_hash(0x43));
+    header.witness =
+        Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSHT.byte(), OpCode::RET.byte()]);
+    let persisted = LedgerContract::new()
+        .get_trimmed_block(&snapshot, header.prev_hash())
+        .expect("previous block lookup")
+        .expect("persisted previous block");
+    assert_eq!(persisted.header.next_consensus, contract_hash(0x41));
+    assert_ne!(previous.hash(), unrelated.hash());
+    assert_ne!(persisted.header.next_consensus, *header.next_consensus());
+    assert_ne!(
+        persisted.header.next_consensus,
+        unrelated.header.next_consensus
+    );
+    assert_ne!(
+        persisted.header.next_consensus,
+        header.witness.script_hash()
+    );
+
+    assert_eq!(
+        header.script_hashes_for_verifying(&snapshot),
+        vec![persisted.header.next_consensus]
+    );
+}
+
+#[test]
+fn header_verification_hashes_are_empty_when_previous_block_is_missing() {
+    let snapshot = DataCache::new(false);
+    let unrelated = make_trimmed_block(contract_hash(0x51));
+    store_trimmed_block(&snapshot, &unrelated);
+    let mut header = Header::new();
+    header.set_prev_hash(UInt256::from([0x52; 32]));
+    header.set_next_consensus(contract_hash(0x53));
+    header.witness = Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSHT.byte()]);
+    assert_ne!(*header.prev_hash(), unrelated.hash());
+    assert!(
+        LedgerContract::new()
+            .get_trimmed_block(&snapshot, header.prev_hash())
+            .expect("missing previous block lookup")
+            .is_none()
+    );
+
+    assert!(header.script_hashes_for_verifying(&snapshot).is_empty());
+}
+
+#[test]
+fn header_verification_hashes_are_empty_when_previous_block_decode_fails() {
+    let snapshot = DataCache::new(false);
+    let mut header = Header::new();
+    header.set_prev_hash(UInt256::from([0x61; 32]));
+    header.set_next_consensus(contract_hash(0x62));
+    header.witness = Witness::new_with_scripts(Vec::new(), vec![OpCode::PUSHT.byte()]);
+    let mut key = vec![PREFIX_BLOCK];
+    key.extend_from_slice(&header.prev_hash().to_bytes());
+    snapshot.add(
+        StorageKey::new(LEDGER_CONTRACT_ID, key),
+        StorageItem::from_bytes(vec![0xff]),
+    );
+    assert!(
+        LedgerContract::new()
+            .get_trimmed_block(&snapshot, header.prev_hash())
+            .is_err()
+    );
+
+    assert!(header.script_hashes_for_verifying(&snapshot).is_empty());
+}
+
+#[test]
+fn block_witness_data_borrows_and_mutates_only_the_header_witness() {
+    let mut block = Block::new();
+    block.header.witness = Witness::new_with_scripts(vec![0x70], vec![0x71]);
+    let first_witnesses = vec![
+        Witness::new_with_scripts(vec![0x72], vec![0x73]),
+        Witness::new_with_scripts(vec![0x74], vec![0x75]),
+    ];
+    let second_witnesses = vec![Witness::new_with_scripts(vec![0x76], vec![0x77])];
+    let mut first = Transaction::new();
+    first.set_witnesses(first_witnesses.clone());
+    let mut second = Transaction::new();
+    second.set_witnesses(second_witnesses.clone());
+    block.transactions = vec![first, second];
+
+    {
+        let witnesses = WitnessData::witnesses(&block);
+        assert_eq!(witnesses.len(), 1);
+        assert!(std::ptr::eq(witnesses[0], &block.header.witness));
+        assert_eq!(witnesses[0].invocation_script, vec![0x70]);
+    }
+    assert_eq!(SerializablePayload::witness_count(&block), 4);
+    assert_eq!(SerializablePayload::invocation_script(&block, 1), &[0x72]);
+    assert_eq!(SerializablePayload::invocation_script(&block, 2), &[0x74]);
+    assert_eq!(SerializablePayload::invocation_script(&block, 3), &[0x76]);
+
+    {
+        let mut witnesses = WitnessData::witnesses_mut(&mut block);
+        assert_eq!(witnesses.len(), 1);
+        witnesses[0].invocation_script = vec![0x78, 0x79];
+        witnesses[0].verification_script = vec![0x7a];
+    }
+
+    assert_eq!(block.header.witness.invocation_script, vec![0x78, 0x79]);
+    assert_eq!(block.header.witness.verification_script, vec![0x7a]);
+    assert_eq!(
+        block.transactions[0].witnesses(),
+        first_witnesses.as_slice()
+    );
+    assert_eq!(
+        block.transactions[1].witnesses(),
+        second_witnesses.as_slice()
+    );
+    assert_eq!(WitnessData::witnesses(&block).len(), 1);
+    assert_eq!(SerializablePayload::witness_count(&block), 4);
+    assert_eq!(
+        SerializablePayload::invocation_script(&block, 0),
+        &[0x78, 0x79]
+    );
 }
 
 #[test]

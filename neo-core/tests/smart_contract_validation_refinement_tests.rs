@@ -272,7 +272,7 @@ fn test_multisig_n_parameter_range() {
 /// Test 12: Multi-sig parameter validation - no public keys
 #[test]
 fn test_multisig_no_public_keys() {
-    use neo_core::error::CoreError;
+    use neo_smart_contract::error::CoreError;
 
     let result = Contract::try_create_multi_sig_redeem_script(1, &[]);
 

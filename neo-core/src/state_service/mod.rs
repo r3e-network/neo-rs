@@ -1,57 +1,94 @@
 //! State Service Module
 //!
-//! This module provides the state root computation and verification service
-//! that matches the C# StateService plugin exactly.
+//! This module re-exports the canonical state root computation and verification
+//! service from the `neo-state-service` crate. The commit handlers that wired
+//! state roots into block persistence moved to `neo-system::state_service`
+//! (task W3-C2), and the `verification` actor moved to
+//! `neo-system::state_verification` (task 208).
 
-pub mod async_state_root;
-#[cfg(feature = "runtime")]
-pub(crate) mod commit_handlers;
-#[cfg(feature = "runtime")]
-pub mod conflict_detector;
-pub mod keys;
-pub mod message_type;
+// ---------------------------------------------------------------------------
+// Re-exported modules from neo-state-service (always available)
+// ---------------------------------------------------------------------------
+pub use neo_state_service::async_state_root;
+pub use neo_state_service::keys;
+pub use neo_state_service::message_type;
 /// Metrics counters for state root ingestion from the network.
-pub mod metrics;
-#[cfg(feature = "runtime")]
-pub mod optimistic_executor;
-#[cfg(feature = "runtime")]
-pub mod parallel_execution_integration;
-#[cfg(feature = "runtime")]
-pub mod prefetch_pipeline;
-// WIP: the prefetch subsystem (background worker, BlockPrefetchService, pipeline
-// demo) is not yet implemented; gate it behind the `prefetch` feature (not in
-// default) so the default lib still builds without inventing the missing subsystem.
-#[cfg(feature = "prefetch")]
-pub mod pipeline_integration_example;
-#[cfg(feature = "prefetch")]
-pub mod prefetch_background;
-#[cfg(feature = "prefetch")]
-pub mod prefetch_worker;
-pub mod read_only_store;
-pub mod root_cache;
-pub mod state_root;
-pub mod state_store;
-pub mod tiered_storage;
-#[cfg(feature = "runtime")]
-pub mod verification;
-pub mod vote;
+pub use neo_state_service::metrics;
+pub use neo_state_service::read_only_store;
+pub use neo_state_service::root_cache;
+pub use neo_state_service::state_root;
+pub use neo_state_service::state_store;
+pub use neo_state_service::tiered_storage;
+pub use neo_state_service::vote;
 
-/// Extensible payload category for state service messages (matches C# StateService.StatePayloadCategory).
-pub const STATE_SERVICE_CATEGORY: &str = "StateService";
+// ---------------------------------------------------------------------------
+// Re-exported modules from neo-state-service (runtime feature gate)
+// ---------------------------------------------------------------------------
+#[cfg(feature = "runtime")]
+pub use neo_state_service::conflict_detector;
+#[cfg(feature = "runtime")]
+pub use neo_state_service::optimistic_executor;
+#[cfg(feature = "runtime")]
+pub use neo_state_service::parallel_execution_integration;
+#[cfg(feature = "runtime")]
+pub use neo_state_service::prefetch_pipeline;
 
-pub use keys::Keys;
-pub use message_type::MessageType;
-pub use metrics::StateRootIngestStats;
-pub use root_cache::{
+// ---------------------------------------------------------------------------
+// Re-exported modules from neo-state-service (prefetch feature gate)
+// ---------------------------------------------------------------------------
+#[cfg(feature = "prefetch")]
+pub use neo_state_service::prefetch_background;
+#[cfg(feature = "prefetch")]
+pub use neo_state_service::prefetch_worker;
+
+// ---------------------------------------------------------------------------
+// Local modules
+// ---------------------------------------------------------------------------
+// `commit_handlers` and `test_support` moved to
+// `neo-system::state_service` (task W3-C2) together with the blockchain actor
+// and the `NeoSystem` handler registry that drive them.
+
+// ---------------------------------------------------------------------------
+// Flat re-exports (public API surface)
+// ---------------------------------------------------------------------------
+pub use neo_state_service::STATE_SERVICE_CATEGORY;
+pub use neo_state_service::ValidatedRootPersisted;
+pub use neo_state_service::Vote;
+pub use neo_state_service::{
     DEFAULT_ROOT_CACHE_CAPACITY, StateRootCache, StateRootCacheEntry, StateRootCacheStats,
 };
-pub use state_root::StateRoot;
-pub use state_store::{StateRootDivergence, StateStore, StateStoreTransaction};
-pub use vote::Vote;
+pub use neo_state_service::{Keys, MessageType, StateRootIngestStats};
+pub use neo_state_service::{StateRoot, StateRootDivergence, StateStore, StateStoreTransaction};
 
-/// Event published when a validated state root is persisted.
-#[derive(Debug, Clone)]
-pub struct ValidatedRootPersisted {
-    /// Block index (height) of the validated state root that was persisted.
-    pub index: u32,
+// ---------------------------------------------------------------------------
+// Trait impls bridging neo-core's local WitnessData / VerifiableExt traits to
+// the re-exported StateRoot type from neo-state-service.
+// ---------------------------------------------------------------------------
+use crate::persistence::DataCache;
+use crate::smart_contract::native::Role;
+use crate::smart_contract::native::helpers::NativeHelpers;
+use crate::smart_contract::native::role_management::RoleManagement;
+use crate::witness::Witness;
+use crate::{UInt160, VerifiableExt, WitnessData};
+
+impl WitnessData for StateRoot {
+    fn witnesses(&self) -> Vec<&Witness> {
+        self.witness.as_ref().map(|w| vec![w]).unwrap_or_default()
+    }
+
+    fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
+        self.witness.as_mut().map(|w| vec![w]).unwrap_or_default()
+    }
+}
+
+impl VerifiableExt for StateRoot {
+    fn script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
+        let validators = RoleManagement::new()
+            .get_designated_by_role_at(snapshot, Role::StateValidator, self.index)
+            .unwrap_or_default();
+        if validators.is_empty() {
+            return Vec::new();
+        }
+        vec![NativeHelpers::get_bft_address(&validators)]
+    }
 }

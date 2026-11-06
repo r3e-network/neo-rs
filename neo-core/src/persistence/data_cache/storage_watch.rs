@@ -24,7 +24,7 @@ use tracing::{info, warn};
 
 #[cfg(feature = "runtime")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
-pub(crate) enum StorageWatchPhase {
+pub enum StorageWatchPhase {
     #[default]
     Unknown,
     OnPersist,
@@ -58,7 +58,7 @@ thread_local! {
 }
 
 #[cfg(feature = "runtime")]
-pub(crate) fn set_storage_watch_context(
+pub fn set_storage_watch_context(
     block_index: u32,
     phase: StorageWatchPhase,
     tx_hash: Option<UInt256>,
@@ -73,7 +73,7 @@ pub(crate) fn set_storage_watch_context(
 }
 
 #[cfg(feature = "runtime")]
-pub(crate) fn clear_storage_watch_context() {
+pub fn clear_storage_watch_context() {
     STORAGE_WATCH_CONTEXT.with(|context| {
         *context.borrow_mut() = None;
     });

@@ -15,7 +15,7 @@ use crate::{
     smart_contract::{
         application_engine::ApplicationEngine,
         call_flags::CallFlags,
-        native::{ContractManagement, LedgerContract, NativeRegistry},
+        native::{ContractManagement, LedgerContract, composition::standard_registry},
         trigger_type::TriggerType,
     },
 };
@@ -58,7 +58,11 @@ impl AssetDescriptor {
         {
             Some(contract) => contract,
             None => {
-                let registry = NativeRegistry::new();
+                // Look the asset up in the standard native registry: an asset that
+                // is not deployed may still be a native contract (e.g. NEO/GAS), whose
+                // metadata is synthesised from its `contract_state`. An empty registry
+                // would never resolve those.
+                let registry = standard_registry();
                 let height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
                 registry
                     .get(&asset_id)
@@ -82,6 +86,7 @@ impl AssetDescriptor {
             settings.clone(),
             Self::QUERY_GAS,
             None,
+            crate::smart_contract::native::composition::default_native_services(),
         )
         .map_err(|err| err.to_string())?;
         engine

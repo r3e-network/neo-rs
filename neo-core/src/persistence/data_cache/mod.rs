@@ -6,6 +6,6 @@ pub use neo_storage::persistence::data_cache::trackable::*;
 mod storage_watch;
 
 #[cfg(feature = "runtime")]
-pub(crate) use storage_watch::{
+pub use storage_watch::{
     StorageWatchPhase, clear_storage_watch_context, set_storage_watch_context,
 };

@@ -14,9 +14,11 @@ pub use neo_io_crate::witness_rule::{
     WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction,
 };
 
-// Stack projection stays in neo-core (depends on neo-vm StackItem)
-mod stack_projection;
-pub use stack_projection::{ToStackItem, ToStackValue};
+// Stack projection now lives in neo-vm (single source of truth); re-exported
+// here to preserve the historical `witness_rule::{ToStackItem, ToStackValue}` path.
+pub use neo_vm::stack_projection::{
+    ToStackItem, ToStackValue, witness_condition_to_stack_value, witness_rule_to_stack_value,
+};
 
 #[cfg(test)]
 #[allow(dead_code)]

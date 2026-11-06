@@ -3,8 +3,8 @@
 use super::tasks::BackgroundTasks;
 use crate::cli::NodeCli;
 use crate::config::NodeConfig;
-use neo_core::neo_system::NeoSystem;
-use neo_core::state_service::metrics::state_root_ingest_stats;
+use neo_state_service::metrics::state_root_ingest_stats;
+use neo_system::NeoSystem;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info};
@@ -106,7 +106,7 @@ pub(crate) fn spawn_metrics_pump(
             let peer_count = metrics_system.peer_count().await.unwrap_or(0);
             let mempool_size = metrics_system.mempool().lock().count() as u32;
 
-            let timeouts = neo_core::network::p2p::timeouts::stats();
+            let timeouts = neo_p2p::timeouts::stats();
 
             let (state_local_root, state_validated_root) = match metrics_system.state_store() {
                 Ok(Some(store)) => (store.local_root_index(), store.validated_root_index()),
@@ -149,7 +149,7 @@ pub(crate) fn spawn_metrics_pump(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::protocol_settings::ProtocolSettings;
+    use neo_protocol::ProtocolSettings;
     use std::time::Duration;
 
     #[tokio::test(flavor = "multi_thread")]

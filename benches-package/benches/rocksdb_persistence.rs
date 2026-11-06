@@ -5,14 +5,14 @@
 //! ledger updates, and commit.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use neo_core::UInt160;
-use neo_core::UInt256;
-use neo_core::neo_system::NeoSystem;
-use neo_core::network::p2p::payloads::Block;
-use neo_core::persistence::providers::RocksDBStoreProvider;
-use neo_core::persistence::storage::StorageConfig;
-use neo_core::persistence::store_provider::StoreProvider;
-use neo_core::protocol_settings::ProtocolSettings;
+use neo_primitives::UInt160;
+use neo_primitives::UInt256;
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::block::Block;
+use neo_storage::persistence::providers::RocksDBStoreProvider;
+use neo_storage::persistence::storage::StorageConfig;
+use neo_storage::persistence::store_provider::StoreProvider;
+use neo_system::NeoSystem;
 use std::sync::Arc;
 
 fn empty_block(index: u32, prev_hash: UInt256, timestamp: u64) -> Block {

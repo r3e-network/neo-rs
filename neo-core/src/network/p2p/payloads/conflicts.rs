@@ -9,29 +9,43 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::UInt256;
-use crate::neo_io::{BinaryWriter, IoResult, Serializable, impl_serializable};
+//! Conflicts transaction attribute.
+//!
+//! The canonical `Conflicts` payload is owned by `neo-protocol` and re-exported
+//! here for backward compatibility (R2 leaf-type unification). All structural
+//! API (`new`, the `hash` field, and wire `Serializable`) is provided by
+//! `neo-protocol`.
+//!
+//! neo-core keeps only the snapshot-aware verification and fee helpers, which
+//! depend on the native ledger contract. Because `Conflicts` is now a foreign
+//! type, these cannot be inherent methods (orphan rule) and are exposed via the
+//! [`ConflictsExt`] extension trait instead.
+
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
-use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-/// Represents a conflicts transaction attribute.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Conflicts {
-    /// Indicates the conflict transaction hash.
-    pub hash: UInt256,
+/// Canonical conflicts transaction attribute, owned by `neo-protocol`.
+pub use neo_protocol::payloads::conflicts::Conflicts;
+
+/// neo-core-specific verification and fee helpers for [`Conflicts`].
+pub trait ConflictsExt {
+    /// Verify the conflicts attribute against the ledger.
+    /// Matches C# Verify method.
+    fn verify(
+        &self,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        tx: &super::transaction::Transaction,
+    ) -> bool;
+
+    /// Calculate network fee for this attribute.
+    fn calculate_network_fee(&self, base_fee: i64, tx: &super::transaction::Transaction) -> i64;
 }
 
-impl Conflicts {
-    /// Creates a new conflicts attribute.
-    pub fn new(hash: UInt256) -> Self {
-        Self { hash }
-    }
-
-    /// Verify the conflicts attribute.
-    pub fn verify(
+impl ConflictsExt for Conflicts {
+    fn verify(
         &self,
         _settings: &ProtocolSettings,
         snapshot: &DataCache,
@@ -47,23 +61,7 @@ impl Conflicts {
         }
     }
 
-    /// Calculate network fee for this attribute.
-    pub fn calculate_network_fee(
-        &self,
-        base_fee: i64,
-        tx: &super::transaction::Transaction,
-    ) -> i64 {
+    fn calculate_network_fee(&self, base_fee: i64, tx: &super::transaction::Transaction) -> i64 {
         tx.signers().len() as i64 * base_fee
-    }
-
-    /// Serialize without type byte.
-    pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        <Self as Serializable>::serialize(self, writer)
-    }
-}
-
-impl_serializable! {
-    struct Conflicts {
-        hash: UInt256,
     }
 }

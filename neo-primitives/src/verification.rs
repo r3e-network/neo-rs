@@ -679,10 +679,10 @@ mod tests {
         let witness = MockWitness::new(vec![], vec![]);
         let result = verifier.verify_witness(&hash, &witness);
         assert!(result.is_err());
-        std::assert_matches!(
+        assert!(matches!(
             result.unwrap_err(),
             VerificationError::GasLimitExceeded { .. }
-        );
+        ));
     }
 
     #[test]

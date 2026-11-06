@@ -405,14 +405,13 @@ pub struct PrivacySubmitter {
 impl neo_rpc::server::EncryptedTransactionSubmitter for PrivacySubmitter {
     fn open_encrypted(
         &self,
-        tx_hash: &neo_core::UInt256,
+        tx_hash: &neo_primitives::UInt256,
         ciphertext: &MempoolCiphertext,
-    ) -> Result<Arc<neo_core::network::p2p::payloads::transaction::Transaction>, String> {
+    ) -> Result<Arc<neo_protocol::payloads::transaction::Transaction>, String> {
         let plaintext = ContentCipher::open(ciphertext, &tx_hash.as_bytes(), &self.kem)
             .map_err(|err| err.to_string())?;
-        let transaction =
-            neo_core::network::p2p::payloads::transaction::Transaction::from_bytes(&plaintext)
-                .map_err(|err| err.to_string())?;
+        let transaction = neo_protocol::payloads::transaction::Transaction::from_bytes(&plaintext)
+            .map_err(|err| err.to_string())?;
         if transaction.hash() != *tx_hash {
             return Err("decrypted transaction hash does not match the claimed hash".to_string());
         }
@@ -578,19 +577,19 @@ mod tests {
     // Privacy mode (strictly opt-in) — default-off and enabled-on behavior
     // ------------------------------------------------------------------
 
-    use neo_core::UInt256;
-    use neo_core::network::p2p::payloads::transaction::Transaction;
-    use neo_core::protocol_settings::ProtocolSettings;
     use neo_core::wallets::KeyPair;
+    use neo_primitives::UInt256;
+    use neo_protocol::ProtocolSettings;
+    use neo_protocol::payloads::transaction::Transaction;
     use neo_rpc::server::EncryptedTransactionSubmitter;
     use neo_tee::attestation::AttestationReport;
     use neo_tee::mempool::{ContentState, MODE_TEE_SEALED_KEY};
 
     fn build_privacy_test_transaction(keypair: &KeyPair) -> Transaction {
-        use neo_core::WitnessScope;
-        use neo_core::network::p2p::helper::get_sign_data_vec;
-        use neo_core::network::p2p::payloads::signer::Signer;
-        use neo_core::network::p2p::payloads::witness::Witness;
+        use neo_primitives::WitnessScope;
+        use neo_protocol::get_sign_data_vec;
+        use neo_protocol::payloads::Signer;
+        use neo_protocol::witness::Witness;
         use neo_vm::OpCode;
 
         let settings = ProtocolSettings::default();

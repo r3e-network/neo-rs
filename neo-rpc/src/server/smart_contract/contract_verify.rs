@@ -2,14 +2,15 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::UInt160;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::ContractParameterType;
-use neo_core::smart_contract::{ApplicationEngine, TriggerType};
+use neo_primitives::CallFlags;
+use neo_primitives::ContractParameterType;
+use neo_primitives::TriggerType;
+use neo_primitives::UInt160;
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
+use neo_protocol::witness::Witness;
+use neo_smart_contract::application_engine::ApplicationEngine;
 use rand::random;
 use serde_json::{Value, json};
 
@@ -40,7 +41,7 @@ pub(super) fn invoke_contract_verify(
     let snapshot_cache = Arc::new(store_cache.data_cache().clone());
 
     let contract =
-        neo_core::smart_contract::native::contract_management::ContractManagement::get_contract_from_snapshot(
+        neo_native_contracts::native::contract_management::ContractManagement::get_contract_from_snapshot(
             snapshot_cache.as_ref(),
             &script_hash,
         )
@@ -65,8 +66,8 @@ pub(super) fn invoke_contract_verify(
         ));
     }
 
-    let signers =
-        signers.unwrap_or_else(|| vec![Signer::new(script_hash, neo_core::WitnessScope::NONE)]);
+    let signers = signers
+        .unwrap_or_else(|| vec![Signer::new(script_hash, neo_primitives::WitnessScope::NONE)]);
     let mut witnesses = witnesses.unwrap_or_default();
 
     let mut invocation_script = Vec::new();
@@ -88,7 +89,7 @@ pub(super) fn invoke_contract_verify(
     tx.set_witnesses(witnesses);
     tx.set_script(vec![OpCode::RET.byte()]);
 
-    let tx_container = Arc::new(tx) as Arc<dyn neo_core::Verifiable>;
+    let tx_container = Arc::new(tx) as Arc<dyn neo_primitives::Verifiable>;
     let mut engine = ApplicationEngine::new(
         TriggerType::Verification,
         Some(tx_container),
@@ -97,6 +98,7 @@ pub(super) fn invoke_contract_verify(
         system.settings().clone(),
         server.settings().max_gas_invoke,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .map_err(|err| internal_error(err.to_string()))?;
 
@@ -149,7 +151,7 @@ pub(super) fn invoke_contract_verify(
 fn build_verification_invocation_script(
     parameters: &[neo_core::smart_contract::contract_parameter::ContractParameter],
 ) -> Result<Vec<u8>, RpcException> {
-    let mut builder = neo_core::ScriptBuilder::new();
+    let mut builder = neo_vm::ScriptBuilder::new();
     for parameter in parameters.iter().rev() {
         let item = super::helpers::contract_parameter_to_stack_value(parameter)?;
         builder

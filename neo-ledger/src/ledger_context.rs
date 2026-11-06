@@ -1,0 +1,262 @@
+//! Shared in-memory ledger cache mirroring the behaviour of the C# `NeoSystem`.
+//!
+//! Distributed from `neo-core::ledger::ledger_context`. Uses `neo-protocol`
+//! payload types and `neo-io` result types instead of the former neo-core
+//! internal types.
+//!
+//! # Lock Ordering
+//!
+//! When acquiring multiple locks in this struct, follow this order to prevent deadlocks:
+//! 1. `hashes_by_index`
+//! 2. `headers_by_index`
+//! 3. `blocks_by_hash`
+//! 4. `extensibles_by_hash`
+//! 5. `transactions_by_hash`
+//!
+//! See `docs/LOCK_ORDERING.md` for the global lock hierarchy.
+
+use neo_io::IoResult;
+use neo_primitives::UInt256;
+use neo_protocol::payloads::block::Block;
+use neo_protocol::payloads::extensible::Extensible;
+use neo_protocol::payloads::header::Header;
+use neo_protocol::payloads::transaction::Transaction;
+use parking_lot::RwLock;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+/// Centralised cache that tracks recently seen ledger data (blocks, headers,
+/// transactions, extensible payloads) for fast access by networking
+/// components. Matches the responsibilities of the C# `LedgerContext`.
+///
+/// # Thread Safety
+///
+/// All fields are protected by `RwLock` or atomic operations. Multiple readers
+/// can access simultaneously, but writers have exclusive access.
+///
+/// # Lock Ordering
+///
+/// The locks in this structure must be acquired in the order defined at the module level.
+/// Most methods only acquire a single lock, which is always safe.
+#[derive(Default)]
+pub struct LedgerContext {
+    best_height: AtomicU32,
+    best_header: AtomicU32,
+    hashes_by_index: RwLock<Vec<UInt256>>,
+    headers_by_index: RwLock<Vec<Option<Header>>>,
+    blocks_by_hash: RwLock<HashMap<UInt256, Block>>,
+    extensibles_by_hash: RwLock<HashMap<UInt256, Extensible>>,
+    transactions_by_hash: RwLock<HashMap<UInt256, Transaction>>,
+}
+
+impl LedgerContext {
+    /// Returns the highest block index recorded in memory.
+    pub fn current_height(&self) -> u32 {
+        self.best_height.load(Ordering::Relaxed)
+    }
+
+    /// Updates in-memory tip trackers without storing block/header bodies.
+    pub fn record_tip(&self, index: u32) {
+        self.best_height.fetch_max(index, Ordering::Relaxed);
+        self.best_header.fetch_max(index, Ordering::Relaxed);
+    }
+
+    /// Inserts a transaction into the mempool cache and returns its hash.
+    pub fn insert_transaction(&self, transaction: Transaction) -> IoResult<UInt256> {
+        let hash = transaction.try_hash()?;
+        self.transactions_by_hash.write().insert(hash, transaction);
+        Ok(hash)
+    }
+
+    /// Removes a transaction from the mempool cache if present.
+    pub fn remove_transaction(&self, hash: &UInt256) -> Option<Transaction> {
+        self.transactions_by_hash.write().remove(hash)
+    }
+
+    /// Attempts to fetch a transaction from the mempool cache.
+    pub fn get_transaction(&self, hash: &UInt256) -> Option<Transaction> {
+        self.transactions_by_hash.read().get(hash).cloned()
+    }
+
+    /// Records a block and its header for quick access by hash or index.
+    ///
+    /// # Lock Ordering
+    ///
+    /// This method acquires locks in the correct order: hashes_by_index,
+    /// headers_by_index, then blocks_by_hash.
+    pub fn insert_block(&self, mut block: Block) -> IoResult<UInt256> {
+        let header = block.header.clone();
+        let index = header.index() as usize;
+        let hash = block.try_hash()?;
+
+        // Lock order: 1. hashes_by_index, 2. headers_by_index, 3. blocks_by_hash
+        {
+            let mut hashes = self.hashes_by_index.write();
+            if hashes.len() <= index {
+                hashes.resize(index + 1, UInt256::zero());
+            }
+            hashes[index] = hash;
+        }
+
+        {
+            let mut headers = self.headers_by_index.write();
+            if headers.len() <= index {
+                headers.resize(index + 1, None);
+            }
+            headers[index] = Some(header);
+        }
+
+        {
+            self.blocks_by_hash.write().insert(hash, block);
+        }
+
+        self.best_height.fetch_max(index as u32, Ordering::Relaxed);
+        self.best_header.fetch_max(index as u32, Ordering::Relaxed);
+        Ok(hash)
+    }
+
+    /// Retrieves a cached block by hash.
+    pub fn get_block(&self, hash: &UInt256) -> Option<Block> {
+        self.blocks_by_hash.read().get(hash).cloned()
+    }
+
+    /// Returns the block hash at the specified index when available.
+    pub fn block_hash_at(&self, index: u32) -> Option<UInt256> {
+        let hashes = self.hashes_by_index.read();
+        hashes
+            .get(index as usize)
+            .cloned()
+            .filter(|hash| *hash != UInt256::zero())
+    }
+
+    /// Stores an extensible payload in the cache.
+    pub fn insert_extensible(&self, mut payload: Extensible) -> IoResult<UInt256> {
+        let hash = payload.try_hash()?;
+        self.extensibles_by_hash.write().insert(hash, payload);
+        Ok(hash)
+    }
+
+    /// Tries to retrieve an extensible payload by hash.
+    pub fn get_extensible(&self, hash: &UInt256) -> Option<Extensible> {
+        self.extensibles_by_hash.read().get(hash).cloned()
+    }
+
+    /// Returns block hashes following `hash_start`, limited by `count`.
+    pub fn block_hashes_from(&self, hash_start: &UInt256, count: usize) -> Vec<UInt256> {
+        if count == 0 {
+            return Vec::new();
+        }
+
+        let hashes = self.hashes_by_index.read();
+        let Some(start_pos) = hashes.iter().position(|hash| hash == hash_start) else {
+            return Vec::new();
+        };
+
+        hashes
+            .iter()
+            .skip(start_pos + 1)
+            .filter(|hash| **hash != UInt256::zero())
+            .take(count)
+            .cloned()
+            .collect()
+    }
+
+    /// Returns the highest header index this context has observed.
+    pub fn highest_header_index(&self) -> u32 {
+        self.best_header.load(Ordering::Relaxed)
+    }
+
+    /// Indicates whether headers beyond the current block height are buffered.
+    pub fn has_future_headers(&self) -> bool {
+        self.highest_header_index() > self.current_height()
+    }
+
+    /// Returns headers starting at `index_start`, up to `count` entries.
+    pub fn headers_from_index(&self, index_start: u32, count: usize) -> Vec<Header> {
+        if count == 0 {
+            return Vec::new();
+        }
+
+        let headers = self.headers_by_index.read();
+        let mut collected = Vec::with_capacity(count);
+        let mut index = index_start as usize;
+
+        while index < headers.len() && collected.len() < count {
+            match &headers[index] {
+                Some(header) => collected.push(header.clone()),
+                None => break,
+            }
+            index += 1;
+        }
+
+        collected
+    }
+
+    /// Returns all transaction hashes currently tracked by the mempool cache.
+    pub fn mempool_transaction_hashes(&self) -> Vec<UInt256> {
+        self.transactions_by_hash.read().keys().cloned().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_primitives::{UInt160, WitnessScope};
+    use neo_protocol::payloads::signer::Signer;
+    use neo_protocol::witness::Witness;
+    use neo_vm::OpCode;
+    use std::sync::atomic::Ordering;
+
+    fn transaction_with_script(script: Vec<u8>) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_version(0);
+        tx.set_nonce(0x0102_0304);
+        tx.set_system_fee(1);
+        tx.set_network_fee(1);
+        tx.set_valid_until_block(42);
+        tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
+        tx.set_attributes(Vec::new());
+        tx.set_script(script);
+        tx.set_witnesses(vec![Witness::empty()]);
+        tx
+    }
+
+    #[test]
+    fn detects_future_headers() {
+        let context = LedgerContext::default();
+        assert!(!context.has_future_headers());
+
+        {
+            let mut headers = context.headers_by_index.write();
+            headers.resize(3, None);
+            let mut header = Header::new();
+            header.set_index(2);
+            headers[2] = Some(header);
+        }
+
+        context.best_header.store(2, Ordering::Relaxed);
+        assert!(context.has_future_headers());
+    }
+
+    #[test]
+    fn insert_transaction_rejects_unserializable_hash_without_zero_cache() {
+        let context = LedgerContext::default();
+        let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
+
+        assert!(context.insert_transaction(tx).is_err());
+        assert!(context.transactions_by_hash.read().is_empty());
+        assert!(context.get_transaction(&UInt256::zero()).is_none());
+    }
+
+    #[test]
+    fn insert_transaction_caches_valid_hash() {
+        let context = LedgerContext::default();
+        let tx = transaction_with_script(vec![OpCode::PUSH1.byte()]);
+        let expected = tx.try_hash().expect("hash");
+
+        let hash = context.insert_transaction(tx).expect("insert transaction");
+
+        assert_eq!(hash, expected);
+        assert!(context.get_transaction(&expected).is_some());
+    }
+}

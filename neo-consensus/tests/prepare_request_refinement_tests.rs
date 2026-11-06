@@ -317,7 +317,10 @@ fn test_wrong_primary_rejected() {
 
     assert!(msg.validate(0).is_err());
     let err = msg.validate(0).unwrap_err();
-    std::assert_matches!(err, neo_consensus::ConsensusError::InvalidPrimary { .. });
+    assert!(matches!(
+        err,
+        neo_consensus::ConsensusError::InvalidPrimary { .. }
+    ));
 }
 
 // ============================================================================

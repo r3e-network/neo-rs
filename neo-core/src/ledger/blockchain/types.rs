@@ -7,14 +7,14 @@ use std::sync::Arc;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub(super) struct UnverifiedBlocksList {
-    pub(super) blocks: Vec<Arc<Block>>,
+pub struct UnverifiedBlocksList {
+    pub blocks: Vec<Arc<Block>>,
     nodes: HashSet<String>,
 }
 
 impl UnverifiedBlocksList {
     #[allow(dead_code)]
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             blocks: Vec::new(),
             nodes: HashSet::new(),
@@ -103,13 +103,13 @@ pub struct Reverify {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ImportDisposition {
+pub enum ImportDisposition {
     AlreadySeen,
     NextExpected,
     FutureGap,
 }
 
-pub(super) fn classify_import_block(current_height: u32, block_index: u32) -> ImportDisposition {
+pub fn classify_import_block(current_height: u32, block_index: u32) -> ImportDisposition {
     if block_index <= current_height {
         ImportDisposition::AlreadySeen
     } else if block_index == current_height.saturating_add(1) {
@@ -119,8 +119,11 @@ pub(super) fn classify_import_block(current_height: u32, block_index: u32) -> Im
     }
 }
 
-#[cfg(test)]
-pub(super) fn should_schedule_reverify_idle(more_pending: bool, header_backlog: bool) -> bool {
+/// Whether the reverify idle tick should schedule another pass.
+///
+/// Pure scheduling predicate shared with the actor implementation (now in
+/// `neo-system`), hence public and always compiled.
+pub fn should_schedule_reverify_idle(more_pending: bool, header_backlog: bool) -> bool {
     more_pending && !header_backlog
 }
 
@@ -183,6 +186,4 @@ pub enum BlockchainCommand {
     /// to ensure persistence continues even when the specific InventoryBlock message
     /// for the next-to-persist block is delayed in the mailbox.
     DrainUnverified,
-    /// Attach the system context.
-    AttachSystem(Arc<NeoSystemContext>),
 }

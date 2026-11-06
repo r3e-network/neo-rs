@@ -127,7 +127,7 @@ mod tests {
             .recv()
             .await
             .expect("should receive transaction notification");
-        std::assert_matches!(event, WsEvent::TransactionAdded { .. });
+        assert!(matches!(event, WsEvent::TransactionAdded { .. }));
     }
 
     #[test]

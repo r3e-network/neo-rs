@@ -1,0 +1,36 @@
+[package]
+name = "neo-protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Neo protocol settings, hardfork activation, and signing data"
+
+[dependencies]
+neo-config = { workspace = true }
+neo-crypto = { workspace = true }
+neo-io = { workspace = true }
+neo-primitives = { workspace = true }
+neo-vm = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, features = ["preserve_order"] }
+hex = { workspace = true }
+base64 = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

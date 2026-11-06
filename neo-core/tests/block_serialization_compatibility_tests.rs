@@ -5,7 +5,7 @@
 
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::{
-    Block, Header, Transaction, signer::Signer, witness::Witness,
+    Block, BlockExt, Header, Transaction, signer::Signer, witness::Witness,
 };
 use neo_core::{UInt160, UInt256, WitnessScope};
 

@@ -1,17 +1,15 @@
 #![cfg(feature = "server")]
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::ledger::{
-    block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
-};
-use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
-use neo_core::network::p2p::payloads::{
-    signer::Signer, transaction::Transaction, witness::Witness as PayloadWitness,
-};
-use neo_core::smart_contract::StorageKey;
-use neo_core::smart_contract::native::{LedgerContract, trimmed_block::TrimmedBlock};
-use neo_core::{UInt160, UInt256, Witness as LedgerWitness, WitnessScope};
+use neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExtensions as SerializableExt};
+use neo_native_contracts::native::{LedgerContract, trimmed_block::TrimmedBlock};
+use neo_primitives::{UInt160, UInt256, WitnessScope};
+use neo_protocol::execution::{Block as LedgerBlock, BlockHeader as LedgerBlockHeader};
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::payloads::{signer::Signer, witness::Witness as PayloadWitness};
+use neo_protocol::witness::Witness as LedgerWitness;
 use neo_rpc::server::{RpcHandler, RpcServer, RpcServerBlockchain, RpcServerConfig};
+use neo_storage::StorageKey;
 use neo_vm::VmState as VMState;
 use serde_json::Value;
 
@@ -35,7 +33,7 @@ fn make_transaction(nonce: u32) -> Transaction {
 }
 
 fn make_ledger_block(
-    store: &neo_core::persistence::StoreCache,
+    store: &neo_storage::persistence::StoreCache,
     index: u32,
     transactions: Vec<Transaction>,
 ) -> LedgerBlock {
@@ -52,25 +50,25 @@ fn make_ledger_block(
     let merkle_root = if hashes.is_empty() {
         UInt256::zero()
     } else {
-        neo_core::cryptography::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
+        neo_crypto::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
     };
 
-    let header = LedgerBlockHeader {
-        index,
-        previous_hash: prev_hash,
-        merkle_root,
-        timestamp: 1,
-        nonce: 0,
-        primary_index: 0,
-        next_consensus: UInt160::zero(),
-        witnesses: vec![LedgerWitness::empty()],
-        ..Default::default()
-    };
+    let header = LedgerBlockHeader::new(
+        0,               // version
+        prev_hash,       // previous_hash
+        merkle_root,     // merkle_root
+        1,               // timestamp
+        0,               // nonce
+        index,           // index
+        0,               // primary_index
+        UInt160::zero(), // next_consensus
+        vec![LedgerWitness::empty()],
+    );
 
     LedgerBlock::new(header, transactions)
 }
 
-fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBlock) {
+fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerBlock) {
     const PREFIX_BLOCK: u8 = 0x05;
     const PREFIX_BLOCK_HASH: u8 = 0x09;
     const PREFIX_TRANSACTION: u8 = 0x0b;
@@ -88,7 +86,7 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
     let hash_key = StorageKey::new(LedgerContract::ID, hash_key_bytes);
     store.add(
         hash_key,
-        neo_core::smart_contract::StorageItem::from_bytes(hash.to_bytes().to_vec()),
+        neo_storage::StorageItem::from_bytes(hash.to_bytes().to_vec()),
     );
 
     let trimmed = TrimmedBlock::from_block(block);
@@ -99,7 +97,7 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
     let block_key = StorageKey::new(LedgerContract::ID, block_key_bytes);
     store.add(
         block_key,
-        neo_core::smart_contract::StorageItem::from_bytes(trimmed_bytes),
+        neo_storage::StorageItem::from_bytes(trimmed_bytes),
     );
 
     for tx in &block.transactions {
@@ -117,7 +115,7 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
         let tx_key = StorageKey::new(LedgerContract::ID, tx_key_bytes);
         store.add(
             tx_key,
-            neo_core::smart_contract::StorageItem::from_bytes(writer.into_bytes()),
+            neo_storage::StorageItem::from_bytes(writer.into_bytes()),
         );
     }
 
@@ -127,19 +125,15 @@ fn store_block(store: &mut neo_core::persistence::StoreCache, block: &LedgerBloc
     let current_key = StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK]);
     store.add(
         current_key,
-        neo_core::smart_contract::StorageItem::from_bytes(current_bytes),
+        neo_storage::StorageItem::from_bytes(current_bytes),
     );
     store.commit();
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_raw_transaction_verbose_confirmed_matches_csharp() {
-    let system = neo_core::neo_system::NeoSystem::new(
-        neo_core::protocol_settings::ProtocolSettings::default(),
-        None,
-        None,
-    )
-    .expect("system to start");
+    let system = neo_system::NeoSystem::new(neo_protocol::ProtocolSettings::default(), None, None)
+        .expect("system to start");
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getrawtransaction");

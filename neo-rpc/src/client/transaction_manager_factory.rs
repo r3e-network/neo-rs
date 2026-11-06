@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use crate::{RpcClient, RpcError, TransactionManager};
-use neo_core::{Signer, Transaction, TransactionAttribute};
+use neo_protocol::payloads::{Signer, Transaction, TransactionAttribute};
 use rand::Rng;
 use std::sync::Arc;
 

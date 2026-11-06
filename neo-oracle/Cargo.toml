@@ -1,0 +1,56 @@
+[package]
+name = "neo-oracle"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+description = "Oracle service implementation for Neo N3 nodes"
+license = "MIT"
+build = "build.rs"
+
+[dependencies]
+neo-primitives = { path = "../neo-primitives" }
+neo-protocol = { path = "../neo-protocol" }
+neo-crypto = { path = "../neo-crypto" }
+neo-io = { path = "../neo-io" }
+neo-json = { path = "../neo-json" }
+neo-wallets = { path = "../neo-wallets" }
+neo-vm = { path = "../neo-vm" }
+
+# Third-party
+async-trait = "0.1"
+base64 = "0.22"
+futures = "0.3"
+hex = "0.4"
+parking_lot = "0.12"
+percent-encoding = "2.3"
+rand = "0.8"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+url = "2"
+
+# NeoFS gRPC transport (optional, mirrors neo-core's `neofs-grpc` feature gate).
+tonic = { version = "0.13", features = ["transport", "tls-ring", "tls-webpki-roots"], optional = true }
+prost = { version = "0.13", optional = true }
+
+[build-dependencies]
+# NOTE: These are only used when the `neofs-grpc` feature is enabled (build.rs
+# checks CARGO_FEATURE_NEOFS_GRPC). Cargo does not support feature-gating
+# build-deps, so they are always compiled.
+tonic-build = "0.13"
+protoc-bin-vendored = "3.0"
+
+[dev-dependencies]
+bs58 = { workspace = true }
+tokio = { version = "1", features = ["full", "test-util"] }
+
+[features]
+default = []
+# NeoFS gRPC support (optional, for parity with C# and neo-core).
+neofs-grpc = ["dep:tonic", "dep:prost"]
+# Aggregate gate so `neo-oracle` participates in the workspace-wide
+# `--features full` build and the per-crate acceptance check.
+full = ["neofs-grpc"]

@@ -1,12 +1,12 @@
 #![cfg(feature = "jsonrpsee-server")]
 
-use neo_core::neo_system::NeoSystem;
-use neo_core::protocol_settings::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use neo_rpc::server::{
     RpcException, RpcHandler, RpcMethodDescriptor, RpcServer, RpcServerBlockchain, RpcServerConfig,
     RpcServerNode, RpcServerUtilities, ServerRpcError, build_jsonrpsee_module,
     build_jsonrpsee_module_with_disabled,
 };
+use neo_system::NeoSystem;
 use parking_lot::RwLock;
 use serde_json::{Value, json};
 use std::collections::HashSet;

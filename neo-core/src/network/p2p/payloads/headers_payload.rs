@@ -9,34 +9,10 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::header::Header;
-use crate::neo_io::{IoError, impl_serializable};
-use serde::{Deserialize, Serialize};
+//! Headers payload re-exported from `neo-p2p` (task 199 consolidation).
+//!
+//! The canonical `HeadersPayload` (built on `neo_protocol::payloads::Header`,
+//! the same type re-exported by `super::header`) lives in
+//! `neo_p2p::payloads::headers_payload`.
 
-/// Indicates the maximum number of headers sent each time.
-pub const MAX_HEADERS_COUNT: usize = 2000;
-
-/// This message is sent to respond to GetHeaders messages.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HeadersPayload {
-    /// The list of headers.
-    pub headers: Vec<Header>,
-}
-
-impl HeadersPayload {
-    /// Creates a new headers payload.
-    pub fn create(headers: Vec<Header>) -> Self {
-        Self { headers }
-    }
-}
-
-impl_serializable! {
-    struct HeadersPayload {
-        headers: var_array<Header> { max: MAX_HEADERS_COUNT },
-    }
-    validate(self_ref) {
-        if self_ref.headers.is_empty() {
-            return Err(IoError::invalid_data("Empty headers list"));
-        }
-    }
-}
+pub use neo_p2p::payloads::headers_payload::{HeadersPayload, MAX_HEADERS_COUNT};

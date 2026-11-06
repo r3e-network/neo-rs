@@ -2,38 +2,42 @@ use super::*;
 use crate::client::models::RpcPeers;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_server_settings::RpcServerConfig;
-use neo_core::ledger::{TransactionVerificationContext, VerifyResult};
-use neo_core::neo_io::BinaryWriter;
-use neo_core::neo_io::SerializableExt;
-use neo_core::network::p2p::helper::get_sign_data_vec;
-use neo_core::network::p2p::payloads::TransactionAttributeType;
-use neo_core::network::p2p::payloads::notary_assisted::NotaryAssisted;
-use neo_core::network::p2p::payloads::oracle_response::{MAX_RESULT_SIZE, OracleResponse};
-use neo_core::network::p2p::payloads::oracle_response_code::OracleResponseCode;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::network::p2p::payloads::{Block, Header, TransactionAttribute};
-use neo_core::persistence::StoreCache;
-use neo_core::persistence::apply_tracked_items;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::Contract;
-use neo_core::smart_contract::TriggerType;
-use neo_core::smart_contract::application_engine::ApplicationEngine;
-use neo_core::smart_contract::native::GasToken;
-use neo_core::smart_contract::native::LedgerContract;
-use neo_core::smart_contract::native::NativeContract;
-use neo_core::smart_contract::native::Notary;
-use neo_core::smart_contract::native::PolicyContract;
-use neo_core::smart_contract::native::helpers::NativeHelpers;
-use neo_core::smart_contract::native::{Role, RoleManagement};
-use neo_core::smart_contract::{CallFlags, StorageItem, StorageKey};
+use neo_core::ledger::TransactionVerificationContext;
 use neo_core::wallets::KeyPair;
-use neo_core::{
-    NeoSystem, ScriptBuilder, UInt160, UInt256, Verifiable, VerifiableExt, WitnessScope,
-};
+use neo_core::{TransactionExt, WitnessData};
+use neo_io::BinaryWriter;
+use neo_io::SerializableExtensions as SerializableExt;
 use neo_json::JToken;
+use neo_native_contracts::native::GasToken;
+use neo_native_contracts::native::LedgerContract;
+use neo_native_contracts::native::NativeContract;
+use neo_native_contracts::native::Notary;
+use neo_native_contracts::native::PolicyContract;
+use neo_native_contracts::native::helpers::NativeHelpers;
+use neo_native_contracts::native::{Role, RoleManagement};
+use neo_primitives::CallFlags;
+use neo_primitives::TriggerType;
+use neo_primitives::VerifyResult;
+use neo_primitives::{UInt160, UInt256, Verifiable, WitnessScope};
+use neo_protocol::ProtocolSettings;
+use neo_protocol::get_sign_data_vec;
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::TransactionAttribute;
+use neo_protocol::payloads::TransactionAttributeType;
+use neo_protocol::payloads::notary_assisted::NotaryAssisted;
+use neo_protocol::payloads::oracle_response::{MAX_RESULT_SIZE, OracleResponse};
+use neo_protocol::payloads::oracle_response_code::OracleResponseCode;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::payloads::{Block, Header};
+use neo_protocol::witness::Witness;
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::contract::Contract;
+use neo_storage::persistence::StoreCache;
+use neo_storage::persistence::transaction::apply_tracked_items;
+use neo_storage::{StorageItem, StorageKey};
+use neo_system::NeoSystem;
 use neo_vm::OpCode;
+use neo_vm::ScriptBuilder;
 use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 use std::sync::Arc;
@@ -192,7 +196,7 @@ fn build_signed_block(
 }
 
 fn mint_gas(
-    store: &mut neo_core::persistence::StoreCache,
+    store: &mut neo_storage::persistence::StoreCache,
     settings: &ProtocolSettings,
     account: UInt160,
     amount: BigInt,
@@ -210,6 +214,7 @@ fn mint_gas(
         settings.clone(),
         400_000_000,
         None,
+        neo_native_contracts::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -888,7 +893,8 @@ async fn submit_block_accepts_valid_block() {
         vec![OpCode::PUSH1.byte()],
     );
     let snapshot = store.data_cache();
-    let verification = tx.verify(
+    let verification = TransactionExt::verify(
+        &tx,
         &settings,
         snapshot,
         Some(&TransactionVerificationContext::new()),
@@ -1283,7 +1289,7 @@ async fn notary_node_level_deposit_deduction_roundtrip() {
     let snapshot = store.data_cache();
     // DEBUG: inspect role designation storage after block 1
     {
-        use neo_core::persistence::SeekDirection;
+        use neo_storage::persistence::SeekDirection;
         let prefix = StorageKey::create(RoleManagement::new().id(), Role::P2PNotary as u8);
         let found: Vec<_> = snapshot
             .find(Some(&prefix), SeekDirection::Backward)

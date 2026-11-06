@@ -2,11 +2,11 @@ use super::*;
 use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
 use base64::{Engine as _, engine::general_purpose};
 use mockito::{Matcher, Server};
-use neo_core::NativeContract;
-use neo_core::ScriptBuilder;
-use neo_core::smart_contract::native::GasToken;
 use neo_json::{JArray, JObject, JToken};
+use neo_native_contracts::NativeContract;
+use neo_native_contracts::native::GasToken;
 use neo_vm::OpCode;
+use neo_vm::ScriptBuilder;
 use regex::escape;
 use reqwest::Url;
 use std::fs;
@@ -207,7 +207,7 @@ fn load_contract_state_case(manifest_name: &str) -> Option<(String, String)> {
         let contract = if UInt160::parse(&contract).is_ok() {
             contract
         } else {
-            neo_core::smart_contract::native::NativeRegistry::new()
+            neo_native_contracts::native::composition::standard_registry()
                 .get_by_name(&contract)
                 .map(|native| native.hash().to_string())
                 .unwrap_or(contract)
@@ -323,7 +323,7 @@ async fn token_info_with_balance_fetches_balance() {
         return;
     }
 
-    let settings = neo_core::ProtocolSettings::default_settings();
+    let settings = neo_protocol::ProtocolSettings::default_settings();
     let address = WalletHelper::to_address(&UInt160::zero(), settings.address_version);
     let Some((contract_hash, contract_state_response)) = load_contract_state_case("GasToken")
     else {

@@ -26,10 +26,10 @@ use crate::signing_provider::{
     STATE_SIGNING_PRINCIPAL, initialize_signer_service,
 };
 use anyhow::{Context, Result, bail};
-use neo_core::neo_system::NeoSystem;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::signing::SecurityLevel;
+use neo_protocol::ProtocolSettings;
 use neo_rpc::server::RpcSignerRuntime;
+use neo_signing::SecurityLevel;
+use neo_system::NeoSystem;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 #[cfg(feature = "tee")]

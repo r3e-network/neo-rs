@@ -12,7 +12,6 @@ keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
 description = "Core functionality for Neo blockchain"
-build = "build.rs"
 
 [dependencies]
 # External dependencies
@@ -25,7 +24,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 byteorder = { workspace = true }
 bytes = { workspace = true }
-# tokio kept for monitoring and persistence/backup modules
+# tokio kept for persistence/backup modules
 # Consider moving these to neo-node in future refactoring
 tokio = { workspace = true, features = ["sync", "time", "fs", "io-util", "rt"] }
 tokio-util = { workspace = true, features = ["codec", "rt"] }
@@ -37,44 +36,31 @@ bip39 = { workspace = true }
 # secp256k1, ed25519-dalek removed - use neo-crypto instead
 blst = { workspace = true }
 tracing = { workspace = true }
-prometheus = { workspace = true, optional = true }
-sysinfo = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
-tonic = { version = "0.13", features = ["transport", "tls-ring", "tls-webpki-roots"], optional = true }
-prost = { version = "0.13", optional = true }
 quick-xml = { version = "0.31", features = ["serialize"], optional = true }
 uuid = { workspace = true }
 base64 = { workspace = true }
 murmur3 = { workspace = true }
-zstd = "0.13"
 rocksdb = { workspace = true, optional = true }
 url = { workspace = true }
 percent-encoding = "2.3"
-bincode = { workspace = true }
 scrypt = "0.11"
 parking_lot = { workspace = true }
 lz4_flex = { workspace = true }
 dashmap = { workspace = true }
 hashbrown = { workspace = true }
-indexmap = { workspace = true }
-lru = { workspace = true }
-governor = { workspace = true }
-fastbloom = { workspace = true }
 memchr = { workspace = true }
 toml = { workspace = true }
 dirs = "5.0"
-if-addrs = "0.10"
 bitflags = { workspace = true }
-bitvec = { workspace = true }
 aes = "0.8"
 cbc = "0.1"
 cipher = "0.4"
 zeroize = { workspace = true }
 subtle = { workspace = true }
 
-
-# Parallel processing for bulk sync
-rayon = { workspace = true }
+# Task W3-C2: rayon, indexmap, lru, governor, fastbloom, bitvec and if-addrs
+# moved to `neo-system` together with the P2P/blockchain actors that used them.
 
 # Cross-thread communication for parallel pipeline
 crossbeam-channel = "0.5"
@@ -95,10 +81,27 @@ log = "0.4"
 # Foundation layer dependencies only (Layer 0)
 # NOTE: neo-consensus removed to fix layering violation
 neo-p2p = { path = "../neo-p2p" }
+neo-protocol = { workspace = true }
 neo-config = { workspace = true }
 neo-primitives = { path = "../neo-primitives" }
 neo-crypto = { path = "../neo-crypto" }
 neo-storage = { path = "../neo-storage" }
+neo-native-contracts = { workspace = true }
+neo-smart-contract = { workspace = true }
+# Task 173 (B2): authoritative wallet primitives. neo-core/src/wallets re-exports
+# the collapsible leaf modules (bip32, bip39, transfer_output) from here.
+neo-wallets = { workspace = true }
+neo-state-service = { workspace = true }
+# Task 194: authoritative generic actor runtime. neo-core/src/actors was removed;
+# `pub use neo_actors as actors`/`as runtime` re-exports it under the `runtime`
+# feature. Frozen transition edge until the runtime wiring leaves neo-core.
+neo-actors = { workspace = true }
+# Task 179 (C-1): authoritative memory pool. neo-core/src/ledger re-exports the
+# `memory_pool` module from here; the local copy was removed.
+neo-mempool = { workspace = true }
+# Task 180 (C-2): authoritative block validation rules. neo-core/src/validation.rs
+# was removed; callers bind to `neo_ledger::validation::rules` instead.
+neo-ledger = { workspace = true }
 xxhash-rust = { workspace = true }
 unicode-segmentation = "1.10"
 
@@ -106,7 +109,6 @@ unicode-segmentation = "1.10"
 criterion = { workspace = true }
 proptest = { workspace = true }
 tempfile = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 # For cryptography tests that need direct secp256k1 access
 secp256k1 = { workspace = true }
 
@@ -118,33 +120,23 @@ harness = false
 name = "storage"
 harness = false
 
-[build-dependencies]
-# NOTE: These are only used when neofs-grpc feature is enabled (build.rs checks
-# CARGO_FEATURE_NEOFS_GRPC). Cargo does not support feature-gating build-deps,
-# so they are always compiled. Consider moving proto generation to a build script
-# crate or xtask to avoid compiling these unconditionally.
-tonic-build = "0.13"
-protoc-bin-vendored = "3.0"
-
 [features]
 default = []
 # RocksDB storage provider - enable for production use
-rocksdb = ["dep:rocksdb"]
+rocksdb = ["dep:rocksdb", "neo-storage/rocksdb"]
 # UPnP network discovery - requires reqwest
 upnp = ["dep:reqwest", "dep:quick-xml"]
-# Monitoring subsystem - requires prometheus, sysinfo, reqwest
-monitoring = ["dep:prometheus", "dep:sysinfo", "dep:reqwest"]
-# Oracle service - requires reqwest
+# Oracle service - requires reqwest.
+# The NeoFS transport (REST + gRPC) now lives in `neo-oracle`, which owns its
+# own `neofs-grpc` feature, tonic/prost deps and proto codegen build script.
 oracle = ["dep:reqwest"]
-# NeoFS gRPC support (optional, for parity with C#)
-neofs-grpc = ["dep:tonic", "dep:prost", "oracle"]
 # Parallel processing for bulk sync (rayon is always available)
 parallel = []
 # Account prefetch cache (Solana-inspired optimization) - requires runtime
-prefetch = ["runtime"]
+prefetch = ["runtime", "neo-state-service/prefetch"]
 # All optional features for full functionality
-full = ["rocksdb", "upnp", "monitoring", "oracle", "neofs-grpc", "parallel"]
-runtime = []
+full = ["rocksdb", "upnp", "oracle", "parallel"]
+runtime = ["neo-state-service/runtime"]
 performance-tests = []
 # VM object pooling for high-throughput transaction processing
 pooled-engine = []

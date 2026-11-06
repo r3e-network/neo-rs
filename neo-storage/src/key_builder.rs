@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn test_key_builder_try_new_zero_max_length() {
         let result = KeyBuilder::try_new(1, 0x01, 0);
-        std::assert_matches!(result, Err(KeyBuilderError::InvalidMaxLength));
+        assert!(matches!(result, Err(KeyBuilderError::InvalidMaxLength)));
     }
 
     #[test]
@@ -238,7 +238,7 @@ mod tests {
     fn test_key_builder_try_add_exceeds_max_length() {
         let mut builder = KeyBuilder::try_new(1, 0x01, 5).unwrap();
         let result = builder.try_add(&[0u8; 10]);
-        std::assert_matches!(result, Err(KeyBuilderError::DataTooLarge { .. }));
+        assert!(matches!(result, Err(KeyBuilderError::DataTooLarge { .. })));
     }
 
     #[test]

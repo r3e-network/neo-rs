@@ -16,8 +16,7 @@ use crate::network::{NetworkError, NetworkResult as Result};
 use neo_io_crate::var_int::{encoded_len as var_int_len, write_var_bytes};
 use serde::{Deserialize, Serialize};
 
-/// Maximum payload size (matches `Neo.Network.P2P.Message.PayloadMaxSize`)
-pub const PAYLOAD_MAX_SIZE: usize = 0x0200_0000; // 32 MiB
+pub use neo_p2p::message::PAYLOAD_MAX_SIZE;
 
 /// Default buffer capacity for small messages (avoids reallocation for common cases).
 const DEFAULT_MESSAGE_CAPACITY: usize = 256;
@@ -126,7 +125,7 @@ impl Message {
     /// Reconstructs a message from uncompressed payload bytes while preserving
     /// an explicit flag state supplied by a higher protocol layer.
     #[cfg(any(feature = "runtime", test))]
-    pub(crate) fn from_payload_with_flags(
+    pub fn from_payload_with_flags(
         flags: MessageFlags,
         command: MessageCommand,
         payload_bytes: Vec<u8>,

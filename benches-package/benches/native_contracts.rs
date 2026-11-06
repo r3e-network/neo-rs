@@ -6,12 +6,12 @@
 //! caught.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use neo_core::persistence::DataCache;
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::CallFlags;
-use neo_core::smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
-use neo_core::smart_contract::native::NativeRegistry;
-use neo_core::smart_contract::trigger_type::TriggerType;
+use neo_native_contracts::native::composition::{default_native_services, standard_registry};
+use neo_primitives::CallFlags;
+use neo_primitives::TriggerType;
+use neo_protocol::ProtocolSettings;
+use neo_smart_contract::application_engine::{ApplicationEngine, TEST_MODE_GAS};
+use neo_storage::persistence::DataCache;
 use neo_vm::InteropService;
 use std::sync::Arc;
 
@@ -24,6 +24,7 @@ fn make_engine() -> ApplicationEngine {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         None,
+        default_native_services(),
     )
     .expect("application engine")
 }
@@ -57,6 +58,7 @@ fn bench_engine_initialization(c: &mut Criterion) {
                 settings.clone(),
                 TEST_MODE_GAS,
                 None,
+                default_native_services(),
             )
             .expect("engine");
             black_box(engine);
@@ -75,6 +77,7 @@ fn bench_engine_initialization(c: &mut Criterion) {
                 contracts.clone(),
                 Arc::clone(&cache),
                 None,
+                default_native_services(),
             )
             .expect("engine");
             black_box(engine);
@@ -82,7 +85,7 @@ fn bench_engine_initialization(c: &mut Criterion) {
     });
 
     c.bench_function("native_registry_new", |b| {
-        b.iter(|| black_box(NativeRegistry::new()));
+        b.iter(|| black_box(standard_registry()));
     });
 
     let names: Vec<String> = (0..50)

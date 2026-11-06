@@ -5,8 +5,8 @@ use neo_core::wallets::Helper as WalletHelper;
 use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;
 use super::rpc_server::{RpcHandler, RpcServer};
-use neo_core::application_logs::ApplicationLogsService;
-use neo_core::tokens_tracker::TokensTrackerService;
+use crate::application_logs::ApplicationLogsService;
+use crate::tokens_tracker::TokensTrackerService;
 
 pub struct RpcServerUtilities;
 
@@ -161,9 +161,9 @@ mod tests {
     use super::*;
     use crate::server::rpc_server::RpcHandler;
     use crate::server::rpc_server_settings::RpcServerConfig;
-    use neo_core::UInt160;
-    use neo_core::neo_system::NeoSystem;
-    use neo_core::protocol_settings::ProtocolSettings;
+    use neo_primitives::UInt160;
+    use neo_protocol::ProtocolSettings;
+    use neo_system::NeoSystem;
 
     fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
         handlers

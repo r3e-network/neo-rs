@@ -345,13 +345,13 @@ mod tests {
         // R06: post-Gorgon, a zero shift converts the operand to Integer
         // instead of preserving its original stack item type.
         let result = shl_value(StackValue::ByteString(vec![0x01]), 0).unwrap();
-        std::assert_matches!(result, StackValue::Integer(1));
+        assert!(matches!(result, StackValue::Integer(1)));
     }
 
     #[test]
     fn shr_zero_shift_yields_integer_gorgon() {
         let result = shr_value(StackValue::ByteString(vec![0x04]), 0).unwrap();
-        std::assert_matches!(result, StackValue::Integer(4));
+        assert!(matches!(result, StackValue::Integer(4)));
     }
 
     #[test]

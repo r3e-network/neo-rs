@@ -3,15 +3,15 @@ use std::sync::Arc;
 
 use crate::server::rpc_helpers::expect_base64_param_with_decode_message;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_core::UInt160;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::transaction_attribute::TransactionAttribute;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::persistence::StoreCache;
-use neo_core::smart_contract::native::GasToken;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::wallets::{Wallet, WalletAccount};
+use neo_native_contracts::native::GasToken;
+use neo_primitives::UInt160;
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::transaction::Transaction;
+use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
+use neo_protocol::witness::Witness;
+use neo_storage::persistence::StoreCache;
 use num_bigint::BigInt;
 use rand::random;
 use serde_json::{Map, Number as JsonNumber, Value, json};
@@ -20,7 +20,7 @@ use crate::server::diagnostic::Diagnostic;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 use crate::server::session::Session;
-use neo_core::neo_vm::StackItem;
+use neo_vm::StackItem;
 use neo_vm::VmState as VMState;
 
 use super::helpers::{
@@ -41,7 +41,7 @@ enum WalletInvocationOutcome {
 struct PendingSignatureItem {
     account: UInt160,
     script: Option<Vec<u8>>,
-    parameter_types: Vec<neo_core::smart_contract::ContractParameterType>,
+    parameter_types: Vec<neo_primitives::ContractParameterType>,
 }
 
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -272,7 +272,7 @@ fn build_and_sign_transaction(
     tx.set_signers(signers.to_vec());
     tx.set_attributes(Vec::<TransactionAttribute>::new());
 
-    let ledger = neo_core::smart_contract::native::ledger_contract::LedgerContract::new();
+    let ledger = neo_native_contracts::native::ledger_contract::LedgerContract::new();
     let valid_until = ledger
         .current_index(snapshot)
         .map_err(|err| err.to_string())?

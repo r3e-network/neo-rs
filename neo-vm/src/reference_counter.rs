@@ -216,6 +216,30 @@ impl ReferenceCounter {
         // (clippy::drain_collect, clippy 1.98).
         let candidate_filter: HashSet<ItemId> = std::mem::take(&mut tracked.zero_referred);
 
+        // Most zero-referred records are short-lived Buffers with no compound
+        // edges. They are already unreachable and their stack/child references
+        // were released when the last stack reference disappeared. Remove these
+        // isolated records directly instead of adding them to Tarjan's graph;
+        // running the full graph algorithm for every transient Buffer makes the
+        // implicit-RET cleanup quadratic on allocation-heavy contracts.
+        let isolated = candidate_filter
+            .iter()
+            .copied()
+            .filter(|id| {
+                tracked.tracked_items.get(id).is_some_and(|record| {
+                    record.stack_references == 0
+                        && record.parents.values().all(|count| *count == 0)
+                        && record.children.values().all(|count| *count == 0)
+                })
+            })
+            .collect::<Vec<_>>();
+        for id in isolated {
+            tracked.tracked_items.remove(&id);
+        }
+        if tracked.tracked_items.is_empty() {
+            return self.state.references_count.load(Ordering::Relaxed);
+        }
+
         let mut tarjan = Tarjan::new();
         for id in tracked.tracked_items.keys() {
             tarjan.add_vertex(*id);
@@ -587,5 +611,22 @@ mod tests {
 
         // Second call should be a no-op.
         assert_eq!(counter.check_zero_referred(), 0);
+    }
+
+    #[test]
+    fn zero_referred_collects_many_isolated_buffers() {
+        let counter = ReferenceCounter::new();
+        for value in 0..20_000u32 {
+            let item = StackItem::from_buffer(value.to_le_bytes().to_vec());
+            counter.add_stack_reference(&item, 1);
+            counter.remove_stack_reference(&item);
+        }
+        assert_eq!(counter.count(), 0);
+        assert_eq!(counter.state.tracked.lock().tracked_items.len(), 20_000);
+
+        assert_eq!(counter.check_zero_referred(), 0);
+        let tracked = counter.state.tracked.lock();
+        assert!(tracked.tracked_items.is_empty());
+        assert!(tracked.zero_referred.is_empty());
     }
 }

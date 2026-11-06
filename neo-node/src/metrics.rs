@@ -1,10 +1,10 @@
 //! Metrics for neo-node health and performance.
 //!
-//! This module provides metrics collection using the neo-core telemetry system,
+//! This module provides metrics collection using the neo-telemetry collector,
 //! with optional Prometheus export support for backward compatibility.
 
-use neo_core::network::p2p::timeouts::TimeoutStats;
-use neo_core::telemetry::Telemetry;
+use neo_p2p::timeouts::TimeoutStats;
+use neo_telemetry::collector::Telemetry;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -195,5 +195,65 @@ mod tests {
         assert!(text.contains("neo_block_height"));
         assert!(text.contains("neo_p2p_timeouts_handshake"));
         assert!(text.contains("neo_state_roots_accepted"));
+
+        // Repeated totals must not double count; decreases reset the delta baseline.
+        for (accepted, rejected, expected_accepted, expected_rejected) in
+            [(7, 1, 7, 1), (10, 3, 10, 3), (2, 0, 10, 3), (5, 1, 13, 4)]
+        {
+            update_metrics(
+                100,
+                105,
+                5,
+                12,
+                TimeoutStats {
+                    handshake: 1,
+                    read: 2,
+                    write: 3,
+                },
+                8,
+                None,
+                Some(100),
+                Some(95),
+                Some(5),
+                accepted,
+                rejected,
+            );
+
+            let snapshot = TELEMETRY.snapshot();
+            assert_eq!(
+                snapshot.counters.get("neo_state_roots_accepted"),
+                Some(&expected_accepted)
+            );
+            assert_eq!(
+                snapshot.counters.get("neo_state_roots_rejected"),
+                Some(&expected_rejected)
+            );
+            assert_eq!(
+                snapshot.gauges.get("neo_state_roots_accepted_total"),
+                Some(&(accepted as f64))
+            );
+            assert_eq!(
+                snapshot.gauges.get("neo_state_roots_rejected_total"),
+                Some(&(rejected as f64))
+            );
+
+            let json: serde_json::Value =
+                serde_json::from_str(&gather_telemetry("json")).expect("valid metrics JSON");
+            assert_eq!(
+                json["counters"]["neo_state_roots_accepted"],
+                expected_accepted
+            );
+            assert_eq!(
+                json["counters"]["neo_state_roots_rejected"],
+                expected_rejected
+            );
+            let prometheus = gather_telemetry("prometheus");
+            assert!(prometheus.contains(&format!(
+                "# TYPE neo_state_roots_accepted counter\nneo_state_roots_accepted {expected_accepted}\n"
+            )));
+            assert!(prometheus.contains(&format!(
+                "# TYPE neo_state_roots_rejected counter\nneo_state_roots_rejected {expected_rejected}\n"
+            )));
+        }
     }
 }

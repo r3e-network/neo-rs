@@ -925,7 +925,7 @@ mod tests {
         let mut hash = [0u8; 32];
         hash[0] = 100;
         let result = mempool.add_transaction(hash, vec![100], 1000, 500, sender);
-        std::assert_matches!(result, Err(TeeError::MempoolFull));
+        assert!(matches!(result, Err(TeeError::MempoolFull)));
     }
 
     // ---- Privacy Mode Phase A: encrypted mempool tests ----

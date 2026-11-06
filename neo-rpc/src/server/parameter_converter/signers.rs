@@ -1,11 +1,12 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use hex;
-use neo_core::cryptography::{ECCurve, ECPoint};
-use neo_core::network::p2p::payloads::signer::{MAX_SIGNER_SUBITEMS, Signer};
-use neo_core::network::p2p::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::{WitnessRule, WitnessScope};
+use neo_crypto::{ECCurve, ECPoint};
+use neo_io::witness_rule::WitnessRule;
 use neo_json::JToken;
+use neo_primitives::WitnessScope;
+use neo_protocol::payloads::signer::{MAX_SIGNER_SUBITEMS, Signer};
+use neo_protocol::payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
+use neo_protocol::witness::Witness;
 
 use super::super::model::SignersAndWitnesses;
 use super::super::rpc_exception::RpcException;

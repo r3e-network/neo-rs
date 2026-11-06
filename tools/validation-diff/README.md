@@ -10,17 +10,17 @@
 ## 工具链
 
 ### 1. rust_validator.rs
-包装 neo-core 的验证规则：
+包装 neo-protocol 的验证规则：
 ```rust
-use neo_core::block::Block;
-use neo_core::transaction::Transaction;
+use neo_protocol::block::Block;
+use neo_protocol::transaction::Transaction;
 
 pub fn validate_block(block: &Block) -> ValidationResult {
-    // 调用 neo-core 验证规则
+    // 调用 neo-protocol 验证规则
 }
 
 pub fn validate_transaction(tx: &Transaction) -> ValidationResult {
-    // 调用 neo-core 验证规则
+    // 调用 neo-protocol 验证规则
 }
 ```
 

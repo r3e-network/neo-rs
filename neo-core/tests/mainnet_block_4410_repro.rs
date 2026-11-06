@@ -126,7 +126,7 @@ fn replay_block_4410_onpersist_postpersist() {
         },
     ));
 
-    let block = Arc::new(block_4410());
+    let block = Arc::new(block_4410().to_payload_block());
     let settings = ProtocolSettings::mainnet();
 
     let mut on_persist_engine = ApplicationEngine::new_with_shared_block(
@@ -137,6 +137,7 @@ fn replay_block_4410_onpersist_postpersist() {
         settings.clone(),
         neo_core::smart_contract::application_engine::TEST_MODE_GAS,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist_engine.native_on_persist().expect("on persist");
@@ -161,6 +162,7 @@ fn replay_block_4410_onpersist_postpersist() {
         seeded_contracts,
         seeded_native_cache,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist_engine.set_state(tx_states_carry);

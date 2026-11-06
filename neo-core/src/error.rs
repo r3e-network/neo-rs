@@ -422,6 +422,18 @@ impl CoreError {
     }
 }
 
+/// Converts `neo_smart_contract::error::CoreError` into the local `CoreError`.
+///
+/// Both enums share the same variant layout; we map through the `Display`
+/// representation to avoid coupling to every variant individually.
+impl From<neo_smart_contract::error::CoreError> for CoreError {
+    fn from(err: neo_smart_contract::error::CoreError) -> Self {
+        CoreError::InvalidOperation {
+            message: err.to_string(),
+        }
+    }
+}
+
 /// Result type for core operations
 pub type CoreResult<T> = std::result::Result<T, CoreError>;
 
@@ -520,7 +532,7 @@ mod tests {
     #[test]
     fn test_error_creation() {
         let error = CoreError::invalid_format("test message");
-        std::assert_matches!(error, CoreError::Invalid { .. });
+        assert!(matches!(error, CoreError::Invalid { .. }));
         assert_eq!(error.to_string(), "Invalid: test message");
     }
 
@@ -569,10 +581,10 @@ mod tests {
     fn test_from_std_errors() {
         let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
         let core_error = CoreError::from(io_error);
-        std::assert_matches!(core_error, CoreError::Io { .. });
+        assert!(matches!(core_error, CoreError::Io { .. }));
 
         let parse_error = "abc".parse::<i32>().unwrap_err();
         let core_error = CoreError::from(parse_error);
-        std::assert_matches!(core_error, CoreError::TypeConversion { .. });
+        assert!(matches!(core_error, CoreError::TypeConversion { .. }));
     }
 }

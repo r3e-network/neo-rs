@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::{InventoryType, inventory::Inventory, witness::Witness};
-use crate::macros::ValidateLength;
+use crate::ValidateLength;
 use crate::neo_io::serializable::helper::{get_var_size, get_var_size_bytes, get_var_size_str};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
@@ -84,7 +84,7 @@ impl ExtensiblePayload {
         }
 
         // Verify witness with max gas of 0.06 GAS
-        crate::VerifiableExt::verify_witnesses(self, settings, snapshot, 6_000_000)
+        crate::smart_contract::helper::Helper::verify_witnesses(self, settings, snapshot, 6_000_000)
     }
 
     /// Returns the cached hash of the payload, computing it if necessary.
@@ -234,7 +234,9 @@ impl crate::VerifiableExt for ExtensiblePayload {
     fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         vec![self.sender]
     }
+}
 
+impl crate::WitnessData for ExtensiblePayload {
     fn witnesses(&self) -> Vec<&Witness> {
         vec![&self.witness]
     }

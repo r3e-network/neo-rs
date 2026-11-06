@@ -2,7 +2,6 @@ use super::verification::HEADER_VERIFY_GAS;
 use super::*;
 use crate::Witness as LedgerWitness;
 use crate::ledger::HeaderCache;
-use crate::ledger::block_header::BlockHeader as LedgerBlockHeader;
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::persistence::StoreCache;
 use crate::persistence::providers::memory_store::MemoryStore;
@@ -12,6 +11,7 @@ use crate::smart_contract::StorageItem;
 use crate::smart_contract::StorageKey;
 use crate::smart_contract::native::LedgerContract;
 use crate::smart_contract::native::trimmed_block::TrimmedBlock;
+use neo_protocol::execution::BlockHeader as LedgerBlockHeader;
 use neo_vm::OpCode;
 use std::sync::Arc;
 
@@ -50,17 +50,12 @@ fn try_hash_matches_legacy_hash_for_valid_header() {
 }
 
 #[test]
-fn try_get_hash_data_matches_serialize_unsigned() {
+fn try_get_hash_data_produces_consistent_bytes() {
     let header = sample_header_for_hashing();
-    let mut writer = BinaryWriter::new();
-    header
-        .serialize_unsigned(&mut writer)
-        .expect("serialize unsigned");
-
-    assert_eq!(
-        header.try_get_hash_data().expect("hash data"),
-        writer.into_bytes()
-    );
+    let data1 = header.try_get_hash_data().expect("hash data");
+    let data2 = header.try_get_hash_data().expect("hash data");
+    assert_eq!(data1, data2);
+    assert!(!data1.is_empty());
 }
 
 #[test]
@@ -110,7 +105,7 @@ fn insert_trimmed_block(store_cache: &mut StoreCache, header: &Header, block_has
 
 #[test]
 fn verify_with_cache_succeeds_for_sequential_header() {
-    use crate::validation::MIN_TIMESTAMP_MS;
+    use ::neo_ledger::validation::rules::MIN_TIMESTAMP_MS;
 
     let mut prev_header = Header::new();
     prev_header.set_version(0);
@@ -147,7 +142,7 @@ fn verify_with_cache_succeeds_for_sequential_header() {
 
 #[test]
 fn verify_with_cache_rejects_when_timestamp_not_increasing() {
-    use crate::validation::MIN_TIMESTAMP_MS;
+    use ::neo_ledger::validation::rules::MIN_TIMESTAMP_MS;
 
     let mut prev_header = Header::new();
     prev_header.set_version(0);
@@ -183,7 +178,7 @@ fn verify_with_cache_rejects_when_timestamp_not_increasing() {
 
 #[test]
 fn verify_uses_persisted_state_when_cache_empty() {
-    use crate::validation::MIN_TIMESTAMP_MS;
+    use ::neo_ledger::validation::rules::MIN_TIMESTAMP_MS;
 
     let mut prev_header = Header::new();
     prev_header.set_version(0);

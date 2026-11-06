@@ -156,6 +156,14 @@ pub const RPC_MAX_RESPONSE_SIZE: usize = 10_485_760;
 /// Default timeout for RPC requests in milliseconds (30 seconds).
 pub const RPC_DEFAULT_TIMEOUT_MS: u64 = 30_000;
 
+// === Wire-Format Limits ===
+
+/// Wire-format upper bound for transaction count in a serialised block
+/// (matches C# `Block.MaxTransactionsPerBlock = 0xFFFF`).
+/// Used only during block deserialization; consensus validation uses
+/// [`MAX_TRANSACTIONS_PER_BLOCK`] (or the runtime protocol setting).
+pub const BLOCK_MAX_TX_WIRE_LIMIT: usize = 65_535; // u16::MAX
+
 // === P2P Protocol Constants ===
 
 /// Protocol version for P2P communication.

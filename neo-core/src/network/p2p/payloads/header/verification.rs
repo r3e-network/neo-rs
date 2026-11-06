@@ -8,14 +8,14 @@ use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::helper::Helper;
 use crate::smart_contract::native::{ContractManagement, LedgerContract};
 use crate::smart_contract::{ContractBasicMethod, ContractParameterType};
-use crate::validation::{
+use crate::{UInt160, UInt256};
+use ::neo_ledger::validation::rules::{
     BlockValidationError, validate_primary_index, validate_timestamp_progression,
 };
-use crate::{UInt160, UInt256};
 use std::sync::Arc;
 use tracing::debug;
 
-pub(super) const HEADER_VERIFY_GAS: i64 = 300_000_000;
+pub const HEADER_VERIFY_GAS: i64 = 300_000_000;
 
 #[derive(Debug)]
 enum HeaderSelfValidationFailure {
@@ -36,8 +36,47 @@ impl HeaderSelfValidationFailure {
     }
 }
 
-impl Header {
-    pub(super) fn validate_against_previous(
+/// Extension trait providing verification methods for [`Header`].
+pub trait HeaderExt {
+    /// Validates the header fields against the previous block's state.
+    fn validate_against_previous(
+        &self,
+        settings: &ProtocolSettings,
+        prev_index: u32,
+        prev_hash: &UInt256,
+        prev_timestamp: u64,
+    ) -> Result<(), &'static str>;
+
+    /// Verifies a witness against the given script hash using the VM.
+    fn verify_witness_against_hash(
+        &self,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        script_hash: &UInt160,
+        witness: &Witness,
+        gas_limit: i64,
+    ) -> bool;
+
+    /// Verifies the header using the provided store cache.
+    ///
+    /// Matches C# Header.Verify: primary index range, chain continuity
+    /// (index/hash/timestamp ordering against the previous header) and witness
+    /// verification against the previous header's next consensus address.
+    fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool;
+
+    /// Verifies the header using persisted state and cached headers.
+    ///
+    /// Performs the same validations as `verify` but uses the header cache for efficiency.
+    fn verify_with_cache(
+        &self,
+        settings: &ProtocolSettings,
+        store_cache: &StoreCache,
+        header_cache: &HeaderCache,
+    ) -> bool;
+}
+
+impl HeaderExt for Header {
+    fn validate_against_previous(
         &self,
         settings: &ProtocolSettings,
         prev_index: u32,
@@ -45,7 +84,7 @@ impl Header {
         prev_timestamp: u64,
     ) -> Result<(), &'static str> {
         // Validate primary index is within valid range
-        if self.primary_index as i32 >= settings.validators_count {
+        if self.primary_index() as i32 >= settings.validators_count {
             return Err("primary index exceeds validators count");
         }
 
@@ -53,20 +92,20 @@ impl Header {
             return Err("previous index overflow");
         };
 
-        if expected_index != self.index {
+        if expected_index != self.index() {
             return Err("inconsistent block index");
         }
 
-        if prev_hash != &self.prev_hash {
+        if prev_hash != self.prev_hash() {
             return Err("previous hash mismatch");
         }
 
         // Validate timestamp progression using validation module
-        if let Err(e) = validate_timestamp_progression(self.timestamp, prev_timestamp) {
+        if let Err(e) = validate_timestamp_progression(self.timestamp(), prev_timestamp) {
             tracing::debug!(
                 target: "neo::header",
-                index = self.index,
-                timestamp = self.timestamp,
+                index = self.index(),
+                timestamp = self.timestamp(),
                 prev_timestamp = prev_timestamp,
                 error = %e,
                 "Timestamp progression validation failed"
@@ -77,53 +116,7 @@ impl Header {
         Ok(())
     }
 
-    fn validate_self(
-        &self,
-        settings: &ProtocolSettings,
-    ) -> Result<(), HeaderSelfValidationFailure> {
-        // C# Header.Verify performs no wall-clock timestamp and no structural
-        // witness-script checks; the timestamp ordering is enforced against the
-        // previous header in validate_against_previous, and the witness is
-        // verified by execution (VerifyWitnesses).
-        validate_primary_index(self.primary_index, settings.validators_count)
-            .map_err(HeaderSelfValidationFailure::PrimaryIndex)?;
-        Ok(())
-    }
-
-    fn log_self_validation_failure(
-        &self,
-        settings: &ProtocolSettings,
-        failure: &HeaderSelfValidationFailure,
-        cached: bool,
-    ) {
-        let validation = failure.name();
-        let error = failure.error();
-        if cached {
-            tracing::warn!(
-                target: "neo",
-                index = self.index,
-                timestamp = self.timestamp,
-                primary_index = self.primary_index,
-                validators_count = settings.validators_count,
-                validation,
-                error = %error,
-                "Header self validation failed (cached)"
-            );
-        } else {
-            debug!(
-                target: "neo",
-                index = self.index,
-                timestamp = self.timestamp,
-                primary_index = self.primary_index,
-                validators_count = settings.validators_count,
-                validation,
-                error = %error,
-                "Header self validation failed"
-            );
-        }
-    }
-
-    pub(super) fn verify_witness_against_hash(
+    fn verify_witness_against_hash(
         &self,
         settings: &ProtocolSettings,
         snapshot: &DataCache,
@@ -167,6 +160,7 @@ impl Header {
             settings.clone(),
             verification_gas,
             None,
+            crate::smart_contract::native::composition::default_native_services(),
         ) {
             Ok(engine) => engine,
             Err(e) => {
@@ -340,26 +334,21 @@ impl Header {
         }
     }
 
-    /// Verifies the header using the provided store cache.
-    ///
-    /// Matches C# Header.Verify: primary index range, chain continuity
-    /// (index/hash/timestamp ordering against the previous header) and witness
-    /// verification against the previous header's next consensus address.
-    pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
-        if let Err(error) = self.validate_self(settings) {
-            self.log_self_validation_failure(settings, &error, false);
+    fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
+        if let Err(error) = validate_self(self, settings) {
+            log_self_validation_failure(self, settings, &error, false);
             return false;
         }
 
         // Step 4: Get previous block for chain validation
         let ledger = LedgerContract::new();
-        let prev_trimmed = match ledger.get_trimmed_block(store_cache, &self.prev_hash) {
+        let prev_trimmed = match ledger.get_trimmed_block(store_cache, self.prev_hash()) {
             Ok(Some(block)) => block,
             Ok(None) => {
                 debug!(
                     target: "neo",
-                    index = self.index,
-                    prev_hash = %self.prev_hash,
+                    index = self.index(),
+                    prev_hash = %self.prev_hash(),
                     "verify: get_trimmed_block returned None for prev_hash"
                 );
                 return false;
@@ -367,8 +356,8 @@ impl Header {
             Err(err) => {
                 debug!(
                     target: "neo",
-                    index = self.index,
-                    prev_hash = %self.prev_hash,
+                    index = self.index(),
+                    prev_hash = %self.prev_hash(),
                     error = %err,
                     "verify: get_trimmed_block failed"
                 );
@@ -382,7 +371,7 @@ impl Header {
             Err(error) => {
                 debug!(
                     target: "neo",
-                    index = self.index,
+                    index = self.index(),
                     error = %error,
                     "verify: failed to hash previous trimmed block"
                 );
@@ -399,7 +388,7 @@ impl Header {
         {
             debug!(
                 target: "neo",
-                index = self.index,
+                index = self.index(),
                 %prev_hash,
                 prev_index,
                 %reason,
@@ -421,7 +410,7 @@ impl Header {
         if !verified {
             debug!(
                 target: "neo",
-                index = self.index,
+                index = self.index(),
                 %script_hash,
                 prev_index,
                 %prev_hash,
@@ -432,17 +421,14 @@ impl Header {
         verified
     }
 
-    /// Verifies the header using persisted state and cached headers.
-    ///
-    /// Performs the same validations as `verify` but uses the header cache for efficiency.
-    pub fn verify_with_cache(
+    fn verify_with_cache(
         &self,
         settings: &ProtocolSettings,
         store_cache: &StoreCache,
         header_cache: &HeaderCache,
     ) -> bool {
-        if let Err(error) = self.validate_self(settings) {
-            self.log_self_validation_failure(settings, &error, true);
+        if let Err(error) = validate_self(self, settings) {
+            log_self_validation_failure(self, settings, &error, true);
             return false;
         }
 
@@ -453,7 +439,7 @@ impl Header {
                 Err(error) => {
                     tracing::warn!(
                         target: "neo",
-                        index = self.index,
+                        index = self.index(),
                         error = %error,
                         "failed to hash cached previous header"
                     );
@@ -466,16 +452,16 @@ impl Header {
 
             debug!(
                 target: "neo",
-                index = self.index,
+                index = self.index(),
                 prev_index,
                 %prev_hash,
                 "verifying header index {} against previous index {}",
-                self.index,
+                self.index(),
                 prev_index
             );
             debug!(
                 target: "neo",
-                index = self.index,
+                index = self.index(),
                 prev_index,
                 %prev_hash,
                 "attempting validate_against_previous"
@@ -485,7 +471,7 @@ impl Header {
             {
                 tracing::warn!(
                     target: "neo",
-                    index = self.index,
+                    index = self.index(),
                     %prev_hash,
                     prev_index,
                     %reason,
@@ -497,7 +483,7 @@ impl Header {
             let snapshot = store_cache.data_cache();
             debug!(
                 target: "neo",
-                index = self.index,
+                index = self.index(),
                 prev_index,
                 %prev_hash,
                 %script_hash,
@@ -515,7 +501,7 @@ impl Header {
             if !verified {
                 tracing::warn!(
                     target: "neo",
-                    index = self.index,
+                    index = self.index(),
                     %script_hash,
                     prev_index,
                     %prev_hash,
@@ -530,9 +516,53 @@ impl Header {
         // Fall back to full verification if cache is empty
         tracing::warn!(
             target: "neo",
-            index = self.index,
+            index = self.index(),
             "header_cache empty, falling back to full verification"
         );
         self.verify(settings, store_cache)
+    }
+}
+
+// ─── Private helpers ────────────────────────────────────────────────────────
+
+fn validate_self(
+    header: &Header,
+    settings: &ProtocolSettings,
+) -> Result<(), HeaderSelfValidationFailure> {
+    validate_primary_index(header.primary_index(), settings.validators_count)
+        .map_err(HeaderSelfValidationFailure::PrimaryIndex)?;
+    Ok(())
+}
+
+fn log_self_validation_failure(
+    header: &Header,
+    settings: &ProtocolSettings,
+    failure: &HeaderSelfValidationFailure,
+    cached: bool,
+) {
+    let validation = failure.name();
+    let error = failure.error();
+    if cached {
+        tracing::warn!(
+            target: "neo",
+            index = header.index(),
+            timestamp = header.timestamp(),
+            primary_index = header.primary_index(),
+            validators_count = settings.validators_count,
+            validation,
+            error = %error,
+            "Header self validation failed (cached)"
+        );
+    } else {
+        debug!(
+            target: "neo",
+            index = header.index(),
+            timestamp = header.timestamp(),
+            primary_index = header.primary_index(),
+            validators_count = settings.validators_count,
+            validation,
+            error = %error,
+            "Header self validation failed"
+        );
     }
 }

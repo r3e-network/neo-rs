@@ -7,16 +7,16 @@ use crate::probe_controller::validate_probe_startup;
 use crate::remote_signer::{MAX_ATTESTATION_CLOCK_SKEW_MS, validate_remote_provider_config};
 use crate::signing_provider::NEO_SIGN_DATA_ENCODING;
 use anyhow::{Context, Result, bail};
+use neo_core::smart_contract::helper::Helper as ContractHelper;
+use neo_crypto::{Crypto, ECCurve, ECPoint};
+use neo_primitives::UnhandledExceptionPolicy;
+use neo_protocol::ProtocolSettings;
+use neo_state_service::state_store::StateServiceSettings;
 #[cfg(feature = "full")]
-use neo_core::persistence::providers::{RocksDBStoreProvider, rocksdb::BatchCommitConfig};
-use neo_core::{
-    UnhandledExceptionPolicy,
-    cryptography::{Crypto, ECCurve, ECPoint},
-    persistence::{StoreProvider, storage::StorageConfig},
-    protocol_settings::ProtocolSettings,
-    smart_contract::helper::Helper as ContractHelper,
-    state_service::state_store::StateServiceSettings,
-};
+use neo_storage::persistence::providers::RocksDBStoreProvider;
+#[cfg(feature = "full")]
+use neo_storage::persistence::providers::rocksdb::BatchCommitConfig;
+use neo_storage::persistence::{StoreProvider, storage::StorageConfig};
 use std::{
     collections::BTreeSet,
     fs,
@@ -476,7 +476,7 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
                     provider.id, key.key_id
                 )
             })?;
-            let account = neo_core::UInt160::from_str(&key.account).with_context(|| {
+            let account = neo_primitives::UInt160::from_str(&key.account).with_context(|| {
                 format!(
                     "signer provider '{}' key '{}' has invalid account",
                     provider.id, key.key_id
@@ -484,7 +484,8 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
             })?;
             let public_key_valid = ECPoint::new(ECCurve::Secp256r1, public_key.clone()).is_ok();
             let verification_script = ContractHelper::signature_redeem_script(&public_key);
-            let public_key_account = neo_core::UInt160::from(Crypto::hash160(&verification_script));
+            let public_key_account =
+                neo_primitives::UInt160::from(Crypto::hash160(&verification_script));
             if key.key_id.trim().is_empty()
                 || key.version == 0
                 || key.account.trim().is_empty()
@@ -517,10 +518,10 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
         if provider.purposes.iter().any(|purpose| {
             !matches!(
                 purpose,
-                neo_core::signing::SignPurpose::Transaction
-                    | neo_core::signing::SignPurpose::Consensus
-                    | neo_core::signing::SignPurpose::StateRoot
-                    | neo_core::signing::SignPurpose::OracleResponse
+                neo_signing::SignPurpose::Transaction
+                    | neo_signing::SignPurpose::Consensus
+                    | neo_signing::SignPurpose::StateRoot
+                    | neo_signing::SignPurpose::OracleResponse
             )
         }) {
             bail!(
@@ -542,7 +543,7 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
         if provider
             .algorithms
             .iter()
-            .any(|algorithm| algorithm != neo_core::signing::ALGORITHM_ECDSA_P256_SHA256)
+            .any(|algorithm| algorithm != neo_signing::ALGORITHM_ECDSA_P256_SHA256)
         {
             bail!(
                 "signer provider '{}' declares an unsupported signature algorithm",
@@ -556,18 +557,16 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
             )
         })?;
         let valid_level = match provider.kind {
-            SignerProviderKind::Nep6 => {
-                declared_level == neo_core::signing::SecurityLevel::Software
-            }
+            SignerProviderKind::Nep6 => declared_level == neo_signing::SecurityLevel::Software,
             SignerProviderKind::Hsm => matches!(
                 declared_level,
-                neo_core::signing::SecurityLevel::Software | neo_core::signing::SecurityLevel::Hsm
+                neo_signing::SecurityLevel::Software | neo_signing::SecurityLevel::Hsm
             ),
             SignerProviderKind::HostSealedTee => {
-                declared_level == neo_core::signing::SecurityLevel::HostSealed
+                declared_level == neo_signing::SecurityLevel::HostSealed
             }
             SignerProviderKind::HardwareTee => {
-                if declared_level != neo_core::signing::SecurityLevel::HardwareTee {
+                if declared_level != neo_signing::SecurityLevel::HardwareTee {
                     bail!(
                         "hardware TEE signer provider '{}' must declare hardware_tee security",
                         provider.id
@@ -578,7 +577,7 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
             }
             SignerProviderKind::Remote => {
                 validate_remote_provider_config(provider)?;
-                if declared_level != neo_core::signing::SecurityLevel::Software {
+                if declared_level != neo_signing::SecurityLevel::Software {
                     bail!(
                         "remote signer provider '{}' may only claim software security without hardware attestation",
                         provider.id
@@ -599,7 +598,7 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
             }
             SignerProviderKind::RemoteTee => {
                 validate_remote_provider_config(provider)?;
-                if declared_level != neo_core::signing::SecurityLevel::RemoteHardwareTee {
+                if declared_level != neo_signing::SecurityLevel::RemoteHardwareTee {
                     bail!(
                         "remote TEE signer provider '{}' must declare remote_hardware_tee security",
                         provider.id
@@ -666,7 +665,7 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
     if node_config.rpc.enabled
         && default
             .purposes
-            .contains(&neo_core::signing::SignPurpose::Transaction)
+            .contains(&neo_signing::SignPurpose::Transaction)
         && (!node_config.rpc.auth_enabled
             || node_config
                 .rpc
@@ -686,7 +685,7 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
     if node_config.rpc.enabled
         && !default
             .purposes
-            .contains(&neo_core::signing::SignPurpose::Transaction)
+            .contains(&neo_signing::SignPurpose::Transaction)
     {
         bail!(
             "RPC wallet signing requires the default signer provider '{}' to support transaction purpose",
@@ -696,7 +695,7 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
     if dbft_enabled
         && !default
             .purposes
-            .contains(&neo_core::signing::SignPurpose::Consensus)
+            .contains(&neo_signing::SignPurpose::Consensus)
     {
         bail!(
             "dBFT requires the default signer provider '{}' to support consensus purpose",
@@ -706,7 +705,7 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
     if state_signing_enabled
         && !default
             .purposes
-            .contains(&neo_core::signing::SignPurpose::StateRoot)
+            .contains(&neo_signing::SignPurpose::StateRoot)
     {
         bail!(
             "state service verification requires the default signer provider '{}' to support state_root purpose",
@@ -716,7 +715,7 @@ fn validate_signer_service_config(node_config: &NodeConfig, dbft_enabled: bool) 
     if oracle_signing_enabled
         && !default
             .purposes
-            .contains(&neo_core::signing::SignPurpose::OracleResponse)
+            .contains(&neo_signing::SignPurpose::OracleResponse)
     {
         bail!(
             "OracleService requires the default signer provider '{}' to support oracle_response purpose",
@@ -1644,16 +1643,16 @@ algorithms = ["ecdsa-p256-sha256"]
             kind: SignerProviderKind::HardwareTee,
             enabled: true,
             default: true,
-            security_level: Some(neo_core::signing::SecurityLevel::HardwareTee),
-            purposes: vec![neo_core::signing::SignPurpose::Consensus],
+            security_level: Some(neo_signing::SecurityLevel::HardwareTee),
+            purposes: vec![neo_signing::SignPurpose::Consensus],
             canonical_encodings: vec![NEO_SIGN_DATA_ENCODING.to_string()],
-            algorithms: vec![neo_core::signing::ALGORITHM_ECDSA_P256_SHA256.to_string()],
+            algorithms: vec![neo_signing::ALGORITHM_ECDSA_P256_SHA256.to_string()],
             keys: vec![crate::config::SignerKeySection {
                 key_id: "validator-key".to_string(),
                 version: 2,
                 public_key_hex: public_key_hex.to_string(),
                 account: account.to_string(),
-                purposes: vec![neo_core::signing::SignPurpose::Consensus],
+                purposes: vec![neo_signing::SignPurpose::Consensus],
             }],
             endpoint: None,
             remote: None,
@@ -1689,7 +1688,7 @@ algorithms = ["ecdsa-p256-sha256"]
         let public_key =
             neo_crypto::Secp256r1Crypto::derive_public_key(&[0x53; 32]).expect("public key");
         let script = ContractHelper::signature_redeem_script(&public_key);
-        let account = neo_core::UInt160::from(Crypto::hash160(&script)).to_string();
+        let account = neo_primitives::UInt160::from(Crypto::hash160(&script)).to_string();
         (hex::encode(public_key), account)
     }
 
@@ -1775,13 +1774,14 @@ algorithms = ["ecdsa-p256-sha256"]
             let other_public_key = neo_crypto::Secp256r1Crypto::derive_public_key(&[0x54; 32])
                 .expect("other public key");
             let other_script = ContractHelper::signature_redeem_script(&other_public_key);
-            let other_account = neo_core::UInt160::from(Crypto::hash160(&other_script)).to_string();
+            let other_account =
+                neo_primitives::UInt160::from(Crypto::hash160(&other_script)).to_string();
             crate::config::SignerKeySection {
                 key_id: "backup-key".to_string(),
                 version: 3,
                 public_key_hex: hex::encode(&other_public_key),
                 account: other_account,
-                purposes: vec![neo_core::signing::SignPurpose::Consensus],
+                purposes: vec![neo_signing::SignPurpose::Consensus],
             }
         });
         let cfg = hardware_tee_node_config(provider);
@@ -1801,7 +1801,7 @@ algorithms = ["ecdsa-p256-sha256"]
     fn hardware_tee_pkcs11_signer_rejects_wrong_security_level() {
         let (public_key_hex, account) = hardware_tee_key_material();
         let mut provider = hardware_tee_provider(&public_key_hex, &account);
-        provider.security_level = Some(neo_core::signing::SecurityLevel::Software);
+        provider.security_level = Some(neo_signing::SecurityLevel::Software);
         let cfg = hardware_tee_node_config(provider);
 
         let error = validate_node_config(&cfg, None, None, &cfg.protocol_settings(), false)

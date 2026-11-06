@@ -9,107 +9,37 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use super::{
-    InventoryType, TransactionAttributeType, inventory::Inventory, signer::Signer,
-    transaction_attribute::TransactionAttribute, witness::Witness,
+//! Transaction payload.
+//!
+//! The canonical [`Transaction`] type is owned by `neo-protocol` and
+//! re-exported here for backward compatibility (R2 leaf-type unification).
+//! All structural API — getters/setters, hashing (`hash`/`try_hash`), wire
+//! [`neo_io_crate::Serializable`], `to_json`, `Default`, `std::hash::Hash`,
+//! `Inventory`, and `neo_primitives::Verifiable` — is provided by
+//! `neo-protocol`.
+//!
+//! neo-core keeps only the pieces that depend on the snapshot / VM layer:
+//! the [`TransactionExt`] verification helpers, the VM stack projection free
+//! functions ([`transaction_to_stack_item`] / [`transaction_to_stack_value`]),
+//! and the local [`crate::witness::WitnessData`] / [`crate::VerifiableExt`]
+//! trait implementations.
+
+/// Canonical transaction payload, owned by `neo-protocol`.
+pub use neo_protocol::payloads::transaction::Transaction;
+/// Canonical transaction size / attribute limits, owned by `neo-protocol`.
+pub use neo_protocol::payloads::transaction::{
+    HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
 };
-use crate::cryptography::{Crypto, Secp256r1Crypto};
-use crate::hardfork::Hardfork;
-use crate::neo_io::serializable::helper::{
-    deserialize_array_with, deserialize_exact_array, get_var_size_bytes,
-    get_var_size_serializable_slice, serialize_array,
-};
-use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::neo_vm::StackItem;
-use crate::network::p2p::helper;
-use crate::persistence::DataCache;
-use crate::protocol_settings::ProtocolSettings;
-use crate::smart_contract::CallFlags;
-use crate::smart_contract::TriggerType;
-use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::smart_contract::helper::Helper;
-use crate::smart_contract::native::{ContractManagement, LedgerContract, PolicyContract};
-use crate::smart_contract::{ContractBasicMethod, ContractParameterType, Interoperable};
-use crate::wallets::helper::Helper as WalletHelper;
-use crate::{CoreResult, UInt160, UInt256, VerifiableExt, ledger::VerifyResult};
-use base64::{Engine as _, engine::general_purpose};
-use neo_vm::OpCode;
-use parking_lot::Mutex;
-use rand::RngCore;
-use rand::rngs::OsRng;
-use serde::{Deserialize, Serialize};
-use std::any::Any;
-use std::collections::HashSet;
-use std::hash::{Hash as StdHash, Hasher};
-use std::sync::Arc;
 
-/// The maximum size of a transaction.
-pub const MAX_TRANSACTION_SIZE: usize = 102400;
-
-/// The maximum number of attributes that can be contained within a transaction.
-pub const MAX_TRANSACTION_ATTRIBUTES: usize = 16;
-
-/// The size of a transaction header.
-pub const HEADER_SIZE: usize = 1 + 4 + 8 + 8 + 4; // Version + Nonce + SystemFee + NetworkFee + ValidUntilBlock
-
-/// Represents a transaction.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Transaction {
-    /// Version of the transaction format.
-    pub(super) version: u8,
-
-    /// Random number to avoid hash collision.
-    pub(super) nonce: u32,
-
-    /// System fee in datoshi (1 datoshi = 1e-8 GAS).
-    pub(super) system_fee: i64,
-
-    /// Network fee in datoshi (1 datoshi = 1e-8 GAS).
-    pub(super) network_fee: i64,
-
-    /// Block height when transaction expires.
-    pub(super) valid_until_block: u32,
-
-    /// Signers of the transaction.
-    pub(super) signers: Vec<Signer>,
-
-    /// Attributes of the transaction.
-    pub(super) attributes: Vec<TransactionAttribute>,
-
-    /// Script to be executed.
-    pub(super) script: Vec<u8>,
-
-    /// Witnesses for verification.
-    pub(super) witnesses: Vec<Witness>,
-
-    #[serde(skip)]
-    pub(super) _hash: Mutex<Option<UInt256>>,
-
-    #[serde(skip)]
-    pub(super) _size: Mutex<Option<usize>>,
-}
-
-impl Clone for Transaction {
-    fn clone(&self) -> Self {
-        Self {
-            version: self.version,
-            nonce: self.nonce,
-            system_fee: self.system_fee,
-            network_fee: self.network_fee,
-            valid_until_block: self.valid_until_block,
-            signers: self.signers.clone(),
-            attributes: self.attributes.clone(),
-            script: self.script.clone(),
-            witnesses: self.witnesses.clone(),
-            _hash: Mutex::new(None),
-            _size: Mutex::new(None),
-        }
-    }
-}
-
-// Include implementation files
-mod core;
-mod json;
-mod serialization;
+// Include implementation files (neo-core specific: snapshot / VM layer only).
+mod ledger_adapter;
+mod stack_projection;
 mod traits;
 mod verification;
+mod witness_verification;
+
+pub use stack_projection::{transaction_to_stack_item, transaction_to_stack_value};
+pub use verification::{
+    TransactionExt, verify_transaction, verify_transaction_state_dependent,
+    verify_transaction_state_dependent_at_height, verify_transaction_state_independent,
+};

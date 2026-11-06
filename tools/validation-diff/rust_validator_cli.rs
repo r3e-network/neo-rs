@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use neo_core::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use std::fs;
 use std::path::PathBuf;
 

@@ -206,8 +206,18 @@ impl DataCache {
         let store_find: Arc<StoreFindFn> =
             Arc::new(move |prefix, direction| store_find_parent.find(prefix, direction).collect());
 
+        // Each overlay has an independent lifetime. A sibling may commit while this
+        // overlay is still alive, so neither a private LRU nor TrackState::None read
+        // mirrors may retain values with no opportunity for the parent to invalidate
+        // them. Keep read caching in the shared parent; writes remain tracked locally.
+        let overlay_config = DataCacheConfig {
+            track_reads_in_write_cache: false,
+            enable_read_cache: false,
+            enable_prefetching: false,
+            ..self.config
+        };
         let mut overlay =
-            Self::new_with_config(false, Some(store_get), Some(store_find), self.config);
+            Self::new_with_config(false, Some(store_get), Some(store_find), overlay_config);
         overlay.commit_apply = Some(Arc::new(move |items: &[(StorageKey, Trackable)]| {
             commit_parent.merge_tracked_items(items);
         }));
@@ -668,14 +678,16 @@ impl DataCache {
         }
 
         let mut state = self.state.write();
-        state.dictionary.retain(|_, trackable| match trackable.state {
-            TrackState::Added | TrackState::Changed => {
-                trackable.state = TrackState::None;
-                true
-            }
-            TrackState::Deleted => false,
-            TrackState::None | TrackState::NotFound => true,
-        });
+        state
+            .dictionary
+            .retain(|_, trackable| match trackable.state {
+                TrackState::Added | TrackState::Changed => {
+                    trackable.state = TrackState::None;
+                    true
+                }
+                TrackState::Deleted => false,
+                TrackState::None | TrackState::NotFound => true,
+            });
     }
 
     /// Resets the cache for reuse.

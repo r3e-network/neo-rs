@@ -9,27 +9,38 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{BinaryWriter, IoResult, Serializable, impl_serializable};
+//! Not-valid-before transaction attribute.
+//!
+//! The canonical `NotValidBefore` payload is owned by `neo-protocol` and
+//! re-exported here for backward compatibility (R2 leaf-type unification). All
+//! structural API (`new`, the `height` field, and wire `Serializable`) is
+//! provided by `neo-protocol`.
+//!
+//! neo-core keeps only the snapshot-aware verification helper, exposed via the
+//! [`NotValidBeforeExt`] extension trait because it cannot be an inherent
+//! method on a foreign type (orphan rule).
+
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::native::LedgerContract;
-use serde::{Deserialize, Serialize};
 
-/// Represents a not-valid-before transaction attribute.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NotValidBefore {
-    /// Indicates that the transaction is not valid before this height.
-    pub height: u32,
+/// Canonical not-valid-before transaction attribute, owned by `neo-protocol`.
+pub use neo_protocol::payloads::not_valid_before::NotValidBefore;
+
+/// neo-core-specific verification helper for [`NotValidBefore`].
+pub trait NotValidBeforeExt {
+    /// Verify the not-valid-before attribute.
+    /// Matches C# Verify method.
+    fn verify(
+        &self,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        tx: &super::transaction::Transaction,
+    ) -> bool;
 }
 
-impl NotValidBefore {
-    /// Creates a new not-valid-before attribute.
-    pub fn new(height: u32) -> Self {
-        Self { height }
-    }
-
-    /// Verify the not-valid-before attribute.
-    pub fn verify(
+impl NotValidBeforeExt for NotValidBefore {
+    fn verify(
         &self,
         _settings: &ProtocolSettings,
         snapshot: &DataCache,
@@ -37,16 +48,5 @@ impl NotValidBefore {
     ) -> bool {
         let current_height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
         current_height >= self.height
-    }
-
-    /// Serialize without type byte.
-    pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        <Self as Serializable>::serialize(self, writer)
-    }
-}
-
-impl_serializable! {
-    struct NotValidBefore {
-        height: u32,
     }
 }

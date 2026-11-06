@@ -1,4 +1,4 @@
-use neo_core::network::p2p::payloads::{Signer, Witness};
+use neo_protocol::payloads::{Signer, Witness};
 
 /// Mirrors `Neo.Plugins.RpcServer.Model.SignersAndWitnesses`, bundling a set of
 /// signers together with their optional witness scripts supplied via RPC.

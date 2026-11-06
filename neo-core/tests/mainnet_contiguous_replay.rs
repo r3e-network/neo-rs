@@ -17,8 +17,8 @@
 //! cargo test -p neo-core --features rocksdb --test mainnet_contiguous_replay -- --ignored --nocapture
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use neo_core::ledger::Block;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_core::network::p2p::payloads::Block as PayloadBlock;
 use neo_core::persistence::data_cache::{DataCache, DataCacheConfig};
 use neo_core::persistence::{
     SeekDirection, StorageConfig, StoreCache, StoreProvider, providers::RocksDBStoreProvider,
@@ -34,6 +34,7 @@ use neo_core::smart_contract::native::ledger_contract::PersistedTransactionState
 use neo_core::state_service::state_store::{
     SnapshotBackedStateStoreBackend, StateServiceSettings, StateStore, StateStoreBackend,
 };
+use neo_protocol::execution::Block as ExecutionBlock;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::fs::File;
@@ -323,7 +324,7 @@ fn open_state_store(
 type StateChanges = Vec<(Vec<u8>, Option<Vec<u8>>)>;
 type ReplayChanges = (neo_core::UInt256, StateChanges, StateChanges);
 
-fn load_raw_block(path_template: &str, height: u32) -> Block {
+fn load_raw_block(path_template: &str, height: u32) -> ExecutionBlock {
     let path = path_template.replace("{height}", &height.to_string());
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -338,22 +339,10 @@ fn load_raw_block(path_template: &str, height: u32) -> Block {
     let network_block =
         <neo_core::network::p2p::payloads::Block as Serializable>::deserialize(&mut reader)
             .expect("deserialize raw C# block");
-    let header = network_block.header;
-    let header = neo_core::ledger::BlockHeader::new(
-        header.version(),
-        *header.prev_hash(),
-        *header.merkle_root(),
-        header.timestamp(),
-        header.nonce(),
-        header.index(),
-        header.primary_index(),
-        *header.next_consensus(),
-        vec![header.witness.clone()],
-    );
-    Block::new(header, network_block.transactions)
+    ExecutionBlock::from(&network_block)
 }
 
-fn persist_trimmed_block(store: &Arc<dyn neo_core::persistence::Store>, block: &Block) {
+fn persist_trimmed_block(store: &Arc<dyn neo_core::persistence::Store>, block: &ExecutionBlock) {
     use neo_core::smart_contract::native::trimmed_block::TrimmedBlock;
 
     let trimmed = TrimmedBlock::try_from_block(block).expect("trim historical block");
@@ -412,7 +401,7 @@ fn execute_empty_block(
         >,
     >,
     ledger_cache: Arc<StoreCache>,
-    block: Arc<Block>,
+    block: Arc<PayloadBlock>,
 ) -> Option<ReplayChanges> {
     let execution_started = Instant::now();
     let ledger_index = block.index().saturating_sub(1);
@@ -483,6 +472,7 @@ fn execute_empty_block(
         ProtocolSettings::mainnet(),
         TEST_MODE_GAS,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("on persist engine");
     on_persist.native_on_persist().expect("native on persist");
@@ -548,6 +538,7 @@ fn execute_empty_block(
             seeded_contracts.clone(),
             Arc::clone(&seeded_native_cache),
             None,
+            neo_core::smart_contract::native::composition::default_native_services(),
         )
         .expect("tx engine");
         tx_engine.set_state(tx_states);
@@ -605,6 +596,7 @@ fn execute_empty_block(
         seeded_contracts,
         seeded_native_cache,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("post persist engine");
     post_persist.set_state(tx_states);
@@ -809,7 +801,7 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
     let replay_loop_started = Instant::now();
     for index in start..=end {
         let block_started = Instant::now();
-        let block = if let Some(path) = raw_block_path.as_deref() {
+        let execution_block = if let Some(path) = raw_block_path.as_deref() {
             load_raw_block(path, index)
         } else {
             ledger
@@ -817,8 +809,8 @@ fn contiguous_blocks_replay_to_matching_state_roots() {
                 .expect("read block")
                 .unwrap_or_else(|| panic!("missing block {index}"))
         };
-        assert_eq!(block.index(), index, "raw block height mismatch");
-        let block = Arc::new(block);
+        assert_eq!(execution_block.index(), index, "raw block height mismatch");
+        let block = Arc::new(execution_block.to_payload_block());
         let (actual, actual_entries, ledger_changes) = execute_empty_block(
             Arc::clone(&trie),
             Arc::clone(&ledger_cache),

@@ -29,7 +29,7 @@ impl ApplicationExecuted {
     /// Creates from an ApplicationEngine after execution.
     /// Reserved for block execution pipeline integration.
     #[allow(dead_code)]
-    pub(crate) fn new(engine: &mut ApplicationEngine) -> Self {
+    pub fn new(engine: &mut ApplicationEngine) -> Self {
         let transaction = engine.script_container().and_then(|c| {
             c.as_ref()
                 .as_any()
@@ -60,14 +60,16 @@ mod tests {
     use super::*;
     use crate::UInt160;
     use crate::WitnessScope;
-    use crate::ledger::{Block, BlockHeader};
+    use crate::network::p2p::payloads::block::Block;
     use crate::network::p2p::payloads::signer::Signer;
     use crate::network::p2p::payloads::witness::Witness;
     use crate::persistence::data_cache::DataCache;
     use crate::protocol_settings::ProtocolSettings;
     use crate::smart_contract::TriggerType;
     use crate::smart_contract::application_engine::TEST_MODE_GAS;
+    use crate::smart_contract::call_flags::CallFlags;
     use crate::smart_contract::native::{LedgerContract, NativeContract};
+    use neo_vm::OpCode;
     use std::sync::Arc;
 
     fn signed_transaction() -> Transaction {
@@ -89,7 +91,9 @@ mod tests {
 
         let container: Arc<dyn crate::Verifiable> =
             Arc::new(transaction.clone()) as Arc<dyn crate::Verifiable>;
-        let block = Block::new(BlockHeader::default(), vec![transaction.clone()]);
+        // The engine persists the canonical network payload block.
+        let mut block = Block::new();
+        block.transactions = vec![transaction.clone()];
         let snapshot = Arc::new(DataCache::new(false));
 
         let mut engine = ApplicationEngine::new(
@@ -100,10 +104,18 @@ mod tests {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             None,
+            crate::smart_contract::native::composition::default_native_services(),
         )
         .expect("failed to create engine");
 
-        engine.force_vm_state(VMState::HALT);
+        // Drive the VM to `HALT` with a no-op script. The canonical `force_vm_state` helper is
+        // test-private inside `neo-smart-contract`, so the state is reached through the public
+        // load/execute path instead.
+        engine
+            .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
+            .expect("load halt script");
+        engine.execute().expect("execute halt script");
+        assert_eq!(engine.state(), VMState::HALT);
 
         let ledger = LedgerContract::new();
         NativeContract::on_persist(&ledger, &mut engine).expect("on_persist");

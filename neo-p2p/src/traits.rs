@@ -242,16 +242,16 @@ mod tests {
         let addr: SocketAddr = "127.0.0.1:10333".parse().unwrap();
 
         let event = P2PEvent::PeerConnected(PeerInfo::new(addr));
-        std::assert_matches!(event, P2PEvent::PeerConnected(_));
+        assert!(matches!(event, P2PEvent::PeerConnected(_)));
 
         let event = P2PEvent::PeerDisconnected(addr);
-        std::assert_matches!(event, P2PEvent::PeerDisconnected(_));
+        assert!(matches!(event, P2PEvent::PeerDisconnected(_)));
 
         let event = P2PEvent::TransactionReceived {
             hash: UInt256::default(),
             data: vec![],
             from: addr,
         };
-        std::assert_matches!(event, P2PEvent::TransactionReceived { .. });
+        assert!(matches!(event, P2PEvent::TransactionReceived { .. }));
     }
 }

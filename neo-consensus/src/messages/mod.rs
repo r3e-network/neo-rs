@@ -183,7 +183,10 @@ mod wire_format_tests {
     #[test]
     fn consensus_payload_from_message_bytes_rejects_short_buffer() {
         let result = ConsensusPayload::from_message_bytes(0x4E454F, &[0x20, 0x01], Vec::new());
-        std::assert_matches!(result, Err(crate::ConsensusError::InvalidProposal { .. }));
+        assert!(matches!(
+            result,
+            Err(crate::ConsensusError::InvalidProposal { .. })
+        ));
     }
 
     #[test]
@@ -195,6 +198,9 @@ mod wire_format_tests {
         bytes.push(0);
 
         let result = ConsensusPayload::from_message_bytes(0x4E454F, &bytes, Vec::new());
-        std::assert_matches!(result, Err(crate::ConsensusError::InvalidProposal { .. }));
+        assert!(matches!(
+            result,
+            Err(crate::ConsensusError::InvalidProposal { .. })
+        ));
     }
 }

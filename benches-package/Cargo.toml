@@ -10,9 +10,14 @@ rocksdb = ["neo-core/rocksdb"]
 [dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
 neo-core = { workspace = true, features = ["runtime"] }
+neo-native-contracts = { workspace = true }
+neo-smart-contract = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-primitives = { workspace = true }
+neo-protocol = { workspace = true }
+neo-storage = { workspace = true }
+neo-system = { workspace = true }
 neo-vm = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 tempfile.workspace = true

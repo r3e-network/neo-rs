@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use crate::{ContractClient, RpcClient, RpcError, RpcUtility};
-use neo_core::NativeContract;
-use neo_core::smart_contract::native::PolicyContract;
+use neo_native_contracts::NativeContract;
+use neo_native_contracts::native::PolicyContract;
 use neo_primitives::UInt160;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
@@ -102,9 +102,9 @@ mod tests {
     use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
     use base64::{Engine as _, engine::general_purpose};
     use mockito::{Matcher, Server};
-    use neo_core::ScriptBuilder;
     use neo_json::{JArray, JObject, JToken};
     use neo_vm::OpCode;
+    use neo_vm::ScriptBuilder;
     use regex::escape;
     use reqwest::Url;
     use std::sync::Arc;
@@ -185,7 +185,7 @@ mod tests {
             sb.emit_pack();
         }
 
-        sb.emit_push_int(neo_core::smart_contract::CallFlags::ALL.bits() as i64);
+        sb.emit_push_int(neo_primitives::CallFlags::ALL.bits() as i64);
         sb.emit_push(operation.as_bytes());
         sb.emit_push(&PolicyContract::new().hash().to_array());
         sb.emit_syscall("System.Contract.Call").expect("syscall");

@@ -1,0 +1,644 @@
+use super::*;
+use crate::error::CoreResult;
+impl ApplicationEngine {
+    /// Creates a new application engine for the given trigger and script container.
+    pub fn new(
+        trigger: TriggerType,
+        script_container: Option<Arc<dyn Verifiable>>,
+        snapshot_cache: Arc<DataCache>,
+        persisting_block: Option<Block>,
+        protocol_settings: ProtocolSettings,
+        gas_limit: i64,
+        diagnostic: Option<Box<dyn Diagnostic>>,
+        native_services: EngineNativeServices,
+    ) -> CoreResult<Self> {
+        Self::new_with_shared_block(
+            trigger,
+            script_container,
+            snapshot_cache,
+            persisting_block.map(Arc::new),
+            protocol_settings,
+            gas_limit,
+            diagnostic,
+            native_services,
+        )
+    }
+    /// Creates a new application engine, sharing the persisting block as an `Arc`.
+    pub fn new_with_shared_block(
+        trigger: TriggerType,
+        script_container: Option<Arc<dyn Verifiable>>,
+        snapshot_cache: Arc<DataCache>,
+        persisting_block: Option<Arc<Block>>,
+        protocol_settings: ProtocolSettings,
+        gas_limit: i64,
+        diagnostic: Option<Box<dyn Diagnostic>>,
+        native_services: EngineNativeServices,
+    ) -> CoreResult<Self> {
+        let nonce_data =
+            Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
+        let original_snapshot_cache = Arc::clone(&snapshot_cache);
+        let engine = ExecutionEngine::new(Some(JumpTable::default()));
+        let mut app = Self {
+            trigger,
+            script_container,
+            persisting_block,
+            protocol_settings,
+            gas_limit,
+            gas_consumed: 0,
+            fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
+            fee_consumed: 0,
+            exec_fee_factor: native_services.default_exec_fee_factor * (FEE_FACTOR as u32),
+            fee_whitelist_context: 0,
+            fee_whitelist_flag: false,
+            storage_price: native_services.default_storage_price,
+            call_flags: CallFlags::ALL,
+            vm_engine: VmEngineHost::new(engine),
+            interop_handlers: HashMap::new(),
+            snapshot_cache,
+            original_snapshot_cache,
+            notifications: Vec::new(),
+            logs: Vec::new(),
+            native_registry: native_services.registry,
+            native_state_reader: native_services.state_reader,
+            witness_hash_resolver: native_services.witness_hash_resolver,
+            chain_queries: None,
+            policy_hash: native_services.policy_hash,
+            native_contract_cache: Arc::new(Mutex::new(NativeContractsCache::default())),
+            contracts: HashMap::new(),
+            storage_iterators: HashMap::new(),
+            next_iterator_id: 1,
+            current_script_hash: None,
+            calling_script_hash: None,
+            native_calling_override: None,
+            entry_script_hash: None,
+            invocation_counter: HashMap::new(),
+            pending_native_calls: Vec::new(),
+            nonce_data,
+            random_times: 0,
+            diagnostic,
+            fault_exception: None,
+            states: HashMap::new(),
+            event_observer: None,
+        };
+        app.select_hardfork_vm_semantics();
+
+        // Initialize static syscall registry (once per application lifetime)
+        // NOTE: This is now handled by VM layer - commented out to avoid duplication
+        // SYSCALL_REGISTRY_INIT.call_once(|| {
+        //     init_syscall_registry();
+        // });
+
+        // No `attach_host` here: the engine is returned by value, so a pointer
+        // taken now would dangle the moment the caller receives it. The host
+        // pointer is attached at the entry points that actually execute the VM.
+        app.register_native_contracts();
+        app.refresh_policy_settings();
+        app.register_default_interops()?;
+        // Ignore any fees incurred during engine initialization (native contract setup, policy reads).
+        app.fee_consumed = 0;
+        app.gas_consumed = 0;
+        if let Some(mut diagnostic) = app.diagnostic.take() {
+            diagnostic.initialized(&mut app);
+            app.diagnostic = Some(diagnostic);
+        }
+        Ok(app)
+    }
+    /// Creates a new application engine with preloaded contract states and a
+    /// shared native-contract cache (used by hosts/tests that seed state).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_preloaded_native(
+        trigger: TriggerType,
+        script_container: Option<Arc<dyn Verifiable>>,
+        snapshot_cache: Arc<DataCache>,
+        persisting_block: Option<Arc<Block>>,
+        protocol_settings: ProtocolSettings,
+        gas_limit: i64,
+        contracts: HashMap<UInt160, ContractState>,
+        native_contract_cache: Arc<Mutex<NativeContractsCache>>,
+        diagnostic: Option<Box<dyn Diagnostic>>,
+        native_services: EngineNativeServices,
+    ) -> CoreResult<Self> {
+        let contracts = contracts
+            .into_iter()
+            .map(|(hash, state)| (hash, Arc::new(state)))
+            .collect();
+        Self::new_with_preloaded_native_shared(
+            trigger,
+            script_container,
+            snapshot_cache,
+            persisting_block,
+            protocol_settings,
+            gas_limit,
+            contracts,
+            native_contract_cache,
+            diagnostic,
+            native_services,
+        )
+    }
+
+    /// Shared-contract-state variant used by the block persistence pipeline.
+    ///
+    /// Cloning the map only bumps `Arc` references; the NEF scripts and
+    /// manifests are not copied per transaction.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_preloaded_native_shared(
+        trigger: TriggerType,
+        script_container: Option<Arc<dyn Verifiable>>,
+        snapshot_cache: Arc<DataCache>,
+        persisting_block: Option<Arc<Block>>,
+        protocol_settings: ProtocolSettings,
+        gas_limit: i64,
+        contracts: HashMap<UInt160, Arc<ContractState>>,
+        native_contract_cache: Arc<Mutex<NativeContractsCache>>,
+        diagnostic: Option<Box<dyn Diagnostic>>,
+        native_services: EngineNativeServices,
+    ) -> CoreResult<Self> {
+        let nonce_data =
+            Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
+        let original_snapshot_cache = Arc::clone(&snapshot_cache);
+        let engine = ExecutionEngine::new(Some(JumpTable::default()));
+        let mut app = Self {
+            trigger,
+            script_container,
+            persisting_block,
+            protocol_settings,
+            gas_limit,
+            gas_consumed: 0,
+            fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
+            fee_consumed: 0,
+            exec_fee_factor: native_services.default_exec_fee_factor * (FEE_FACTOR as u32),
+            fee_whitelist_context: 0,
+            fee_whitelist_flag: false,
+            storage_price: native_services.default_storage_price,
+            call_flags: CallFlags::ALL,
+            vm_engine: VmEngineHost::new(engine),
+            interop_handlers: HashMap::new(),
+            snapshot_cache,
+            original_snapshot_cache,
+            notifications: Vec::new(),
+            logs: Vec::new(),
+            native_registry: native_services.registry,
+            native_state_reader: native_services.state_reader,
+            witness_hash_resolver: native_services.witness_hash_resolver,
+            chain_queries: None,
+            policy_hash: native_services.policy_hash,
+            native_contract_cache,
+            contracts,
+            storage_iterators: HashMap::new(),
+            next_iterator_id: 1,
+            current_script_hash: None,
+            calling_script_hash: None,
+            native_calling_override: None,
+            entry_script_hash: None,
+            invocation_counter: HashMap::new(),
+            pending_native_calls: Vec::new(),
+            nonce_data,
+            random_times: 0,
+            diagnostic,
+            fault_exception: None,
+            states: HashMap::new(),
+            event_observer: None,
+        };
+        // A05/R06: persist path must apply hardfork-dependent VM semantics
+        // (e.g. Gorgon zero-shift typing), matching `new` / `new_with_shared_block`.
+        app.select_hardfork_vm_semantics();
+
+        // Initialize static syscall registry (once per application lifetime)
+        // NOTE: This is now handled by VM layer - commented out to avoid duplication
+        // SYSCALL_REGISTRY_INIT.call_once(|| {
+        //     init_syscall_registry();
+        // });
+
+        // See the note in `new_with_shared_block`: attaching here would leave a
+        // dangling pointer behind, because the engine moves when it is returned.
+        app.refresh_policy_settings();
+        app.register_default_interops()?;
+        // Ignore any fees incurred during engine initialization.
+        app.fee_consumed = 0;
+        app.gas_consumed = 0;
+        if let Some(mut diagnostic) = app.diagnostic.take() {
+            diagnostic.initialized(&mut app);
+            app.diagnostic = Some(diagnostic);
+        }
+        Ok(app)
+    }
+    /// Points the VM's interop host at this engine, so syscalls dispatch back
+    /// into it.
+    ///
+    /// This stores a self-reference, and a raw pointer does not follow the
+    /// struct when it moves -- returning an engine by value invalidates it. The
+    /// pointer is therefore attached inside every VM entry point
+    /// (`execute_allow_fault`, `execute_until_invocation_stack_depth`,
+    /// `load_script_with_state`) and nowhere else, and the constructors leave it
+    /// unset so that no stale pointer is ever reachable.
+    pub(super) fn attach_host(&mut self) {
+        let host: &mut dyn InteropHost = self;
+        let host_ptr = host as *mut dyn InteropHost;
+        // SAFETY: `host_ptr` is derived from `&mut self`, so it is valid as long
+        // as this engine stays at its current address, and `&mut self` keeps the
+        // engine exclusively borrowed until execution returns. Every path that
+        // dereferences the pointer runs inside a VM entry point, which calls this
+        // method first; nothing may dereference it between a move and the next
+        // attach.
+        unsafe { self.vm_engine.engine_mut().set_interop_host(host_ptr) };
+    }
+    fn register_default_interops(&mut self) -> Result<()> {
+        register_contract_interops(self)
+            .map_err(|err| Self::map_vm_error("System.Contract", err))?;
+        register_runtime_interops(self).map_err(|err| Self::map_vm_error("System.Runtime", err))?;
+        register_storage_interops(self).map_err(|err| Self::map_vm_error("System.Storage", err))?;
+        register_iterator_interops(self)
+            .map_err(|err| Self::map_vm_error("System.Iterator", err))?;
+        register_crypto_interops(self).map_err(|err| Self::map_vm_error("System.Crypto", err))?;
+        Ok(())
+    }
+    fn map_vm_error(context: &str, error: VmError) -> Error {
+        Error::invalid_operation(format!("{context} interop failed: {error}"))
+    }
+    pub(crate) fn register_host_service(
+        &mut self,
+        name: &str,
+        price: i64,
+        call_flags: CallFlags,
+        handler: InteropHandler,
+    ) -> VmResult<()> {
+        let interop_service = self
+            .vm_engine
+            .engine_mut()
+            .interop_service_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("Interop service not configured"))?;
+        let hash = interop_service.register_host_descriptor(name, price, call_flags)?;
+        self.interop_handlers.insert(
+            hash,
+            HostInteropHandler {
+                price,
+                required_call_flags: call_flags,
+                handler,
+            },
+        );
+        Ok(())
+    }
+    /// Returns the current VM execution state.
+    pub fn state(&self) -> VMState {
+        self.vm_engine.engine().state()
+    }
+    /// Returns the fault exception message as a string slice, if any.
+    pub fn fault_exception_string(&self) -> Option<&str> {
+        self.fault_exception.as_deref()
+    }
+    /// Sets the fault exception message.
+    pub fn set_fault_exception<S: Into<String>>(&mut self, message: S) {
+        self.fault_exception = Some(message.into());
+    }
+    /// Clears the fault exception message.
+    pub fn clear_fault_exception(&mut self) {
+        self.fault_exception = None;
+    }
+    /// Stores a typed state value in the engine's state map.
+    pub fn set_state<T: Any + Send + Sync>(&mut self, value: T) {
+        self.states.insert(TypeId::of::<T>(), Box::new(value));
+    }
+    /// Retrieves a reference to a typed state value.
+    pub fn get_state<T: Any + Send + Sync>(&self) -> Option<&T> {
+        self.states
+            .get(&TypeId::of::<T>())
+            .and_then(|boxed| boxed.downcast_ref::<T>())
+    }
+    /// Retrieves a mutable reference to a typed state value.
+    pub fn get_state_mut<T: Any + Send + Sync>(&mut self) -> Option<&mut T> {
+        self.states
+            .get_mut(&TypeId::of::<T>())
+            .and_then(|boxed| boxed.downcast_mut::<T>())
+    }
+    /// Removes and returns a typed state value.
+    pub fn take_state<T: Any + Send + Sync>(&mut self) -> Option<T> {
+        self.states
+            .remove(&TypeId::of::<T>())
+            .and_then(|boxed| boxed.downcast::<T>().ok())
+            .map(|boxed| *boxed)
+    }
+    #[cfg(test)]
+    pub(crate) fn force_vm_state(&mut self, state: VMState) {
+        self.vm_engine.engine_mut().set_state(state);
+    }
+
+    /// Native OnPersist and PostPersist do not enter the VM loop. The engine
+    /// is constructed in `BREAK`, while C# `ApplicationEngine.Execute` records
+    /// a successful native persist as `HALT`. Leave `FAULT` and an already
+    /// halted engine unchanged.
+    #[cfg(feature = "runtime")]
+    pub fn record_native_persist_success(&mut self) {
+        if self.state() == VMState::BREAK {
+            self.vm_engine.engine_mut().set_state(VMState::HALT);
+        }
+    }
+    /// Records the VM state for a transaction in the ledger state tracker.
+    pub fn record_transaction_vm_state(&mut self, hash: &UInt256, vm_state: VMState) -> bool {
+        if let Some(states) = self.get_state_mut::<LedgerTransactionStates>() {
+            states.mark_vm_state(hash, vm_state)
+        } else {
+            false
+        }
+    }
+    /// Pushes a stack item onto the evaluation stack.
+    pub fn push(&mut self, item: StackItem) -> StdResult<()> {
+        self.vm_engine
+            .engine_mut()
+            .push(item)
+            .map_err(|err| err.to_string())
+    }
+    /// Pops a stack item from the evaluation stack.
+    pub fn pop(&mut self) -> StdResult<StackItem> {
+        self.vm_engine
+            .engine_mut()
+            .pop()
+            .map_err(|err| err.to_string())
+    }
+    /// Peeks at a stack item at the given index without removing it.
+    pub fn peek(&self, index: usize) -> StdResult<StackItem> {
+        self.vm_engine
+            .engine()
+            .peek(index)
+            .map_err(|err| err.to_string())
+    }
+    /// Returns the invocation stack of execution contexts.
+    pub fn invocation_stack(&self) -> &[ExecutionContext] {
+        self.vm_engine.engine().invocation_stack()
+    }
+    /// Returns the script hash of the calling contract.
+    pub fn get_calling_script_hash(&self) -> Option<UInt160> {
+        self.calling_script_hash
+    }
+    /// Returns the script hash of the currently executing contract.
+    pub fn current_script_hash(&self) -> Option<UInt160> {
+        self.current_script_hash
+    }
+    /// Returns the script hash of the entry point contract.
+    pub fn entry_script_hash(&self) -> Option<UInt160> {
+        self.entry_script_hash
+    }
+    /// Checks if the current execution context has the required call flags.
+    pub fn has_call_flags(&self, required: CallFlags) -> bool {
+        match self.current_execution_state() {
+            Ok(state_arc) => state_arc.lock().call_flags.contains(required),
+            Err(_) => false,
+        }
+    }
+    /// Returns the call flags of the current execution context.
+    pub fn get_current_call_flags(&self) -> VmResult<CallFlags> {
+        let state_arc = self.current_execution_state()?;
+        let call_flags = state_arc.lock().call_flags;
+        Ok(call_flags)
+    }
+    /// Returns the execution state of the current context.
+    pub fn current_execution_state(&self) -> VmResult<Arc<Mutex<ExecutionContextState>>> {
+        let context = self
+            .vm_engine
+            .engine()
+            .current_context()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current execution context"))?;
+        Ok(context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new))
+    }
+    /// Returns the index of the block currently being persisted.
+    pub fn current_block_index(&self) -> u32 {
+        if let Some(block) = self.persisting_block.as_ref() {
+            return block.header.index();
+        }
+        self.native_state_reader
+            .current_index(self.snapshot_cache.as_ref())
+            .unwrap_or(0)
+    }
+    /// Selects hardfork-dependent VM semantics from the protocol settings and
+    /// the block height this engine executes at. Without this, the engine used
+    /// a single shift semantic regardless of the active hardfork (report R06).
+    fn select_hardfork_vm_semantics(&mut self) {
+        let mut limits = neo_vm::ExecutionEngineLimits::DEFAULT;
+        let gorgon_enabled = self
+            .protocol_settings
+            .hardforks
+            .get(&neo_protocol::Hardfork::HfGorgon)
+            .is_some_and(|activation| self.current_block_index() >= *activation);
+        limits.zero_shift_converts_to_integer = gorgon_enabled;
+        limits.pre_gorgon_collection_semantics = !gorgon_enabled;
+        self.vm_engine.engine_mut().set_limits(limits);
+    }
+    /// Returns the timestamp of the block currently being persisted.
+    pub fn current_block_timestamp(&self) -> Result<u64, String> {
+        self.persisting_block
+            .as_deref()
+            .map(|block| block.header.timestamp())
+            .ok_or_else(|| "GetTime can only be called with Application trigger.".to_string())
+    }
+    /// Returns the block currently being persisted, if any.
+    pub fn persisting_block(&self) -> Option<&Block> {
+        self.persisting_block.as_deref()
+    }
+    /// Returns the block currently being persisted, or an error if none.
+    pub fn get_persisting_block(&self) -> Result<Block> {
+        self.persisting_block()
+            .cloned()
+            .ok_or_else(|| Error::native_contract("No persisting block available"))
+    }
+    /// Checks if a hardfork is enabled at the current block height.
+    pub fn is_hardfork_enabled(&self, hardfork: Hardfork) -> bool {
+        self.protocol_settings
+            .is_hardfork_enabled(hardfork, self.current_block_index())
+    }
+    /// Returns the trigger type for this execution.
+    pub fn trigger_type(&self) -> TriggerType {
+        self.trigger
+    }
+    /// Returns the trigger type (alias for trigger_type).
+    pub fn trigger(&self) -> TriggerType {
+        self.trigger
+    }
+    /// Returns the total GAS consumed during execution.
+    pub fn gas_consumed(&self) -> i64 {
+        self.gas_consumed
+            .saturating_add(FEE_FACTOR - 1)
+            .saturating_div(FEE_FACTOR)
+    }
+    /// Returns the total fee consumed during execution.
+    pub fn fee_consumed(&self) -> i64 {
+        self.fee_consumed
+            .saturating_add(FEE_FACTOR - 1)
+            .saturating_div(FEE_FACTOR)
+    }
+    /// Returns the raw execution fee factor (scaled into picoGAS units)
+    /// cached from the Policy contract.
+    #[must_use]
+    pub const fn exec_fee_factor_raw(&self) -> u32 {
+        self.exec_fee_factor
+    }
+    /// Returns the current storage price (datoshi per byte) cached from the Policy contract.
+    pub fn storage_price(&self) -> u32 {
+        self.storage_price
+    }
+    /// Returns the fault exception message if execution halted with an error.
+    pub fn fault_exception(&self) -> Option<&str> {
+        self.fault_exception.as_deref()
+    }
+    /// Returns the VM result stack left after execution.
+    pub fn result_stack(&self) -> &EvaluationStack {
+        self.vm_engine.engine().result_stack()
+    }
+    pub fn current_evaluation_stack(&self) -> Option<parking_lot::MutexGuard<'_, EvaluationStack>> {
+        self.vm_engine
+            .engine()
+            .current_context()
+            .map(|ctx| ctx.evaluation_stack())
+    }
+    /// Returns the protocol settings used by this engine.
+    pub fn protocol_settings(&self) -> &ProtocolSettings {
+        &self.protocol_settings
+    }
+    /// Returns the script container being executed, if any.
+    pub fn script_container(&self) -> Option<&Arc<dyn Verifiable>> {
+        self.script_container.as_ref()
+    }
+    /// Returns the VM execution limits (stack size, item size, etc.).
+    pub fn execution_limits(&self) -> &ExecutionEngineLimits {
+        self.vm_engine.engine().limits()
+    }
+    /// Returns the manifest name of the contract with the given hash,
+    /// falling back to the native contract's name.
+    pub fn contract_display_name(&self, hash: &UInt160) -> Option<String> {
+        if let Some(contract) = self.contracts.get(hash) {
+            return Some(contract.manifest.name.clone());
+        }
+        self.native_registry
+            .get(hash)
+            .map(|native| native.name().to_string())
+    }
+    /// Returns true if the given hash belongs to a native contract (even if inactive).
+    pub fn is_native_contract_hash(&self, hash: &UInt160) -> bool {
+        self.native_registry.is_native(hash)
+    }
+    /// Registers an additional native contract on this engine.
+    ///
+    /// The standard registry only contains the 11 C# v3.10.1 native contracts;
+    /// non-protocol contracts (or test doubles) can be injected here without
+    /// polluting `NativeRegistry::register_standard_contracts`.
+    pub fn register_native_contract(&mut self, contract: std::sync::Arc<dyn NativeContract>) {
+        self.native_registry.register(contract);
+    }
+    /// Records a log event and notifies the attached runtime context.
+    pub fn push_log(&mut self, event: LogEventArgs) {
+        if let Some(context) = self.event_observer.as_ref() {
+            context.notify_application_log(self, &event);
+        }
+        self.logs.push(event);
+    }
+    /// Records a notification event and notifies the attached runtime context.
+    pub fn push_notification(&mut self, event: NotifyEventArgs) {
+        if let Some(context) = self.event_observer.as_ref() {
+            context.notify_application_notify(self, &event);
+        }
+        self.notifications.push(event);
+    }
+    /// Returns all notification events emitted during execution.
+    pub fn notifications(&self) -> &[NotifyEventArgs] {
+        &self.notifications
+    }
+    /// Returns all log events emitted during execution.
+    pub fn logs(&self) -> &[LogEventArgs] {
+        &self.logs
+    }
+    /// Sets the event-only observer used for logging/notify callbacks.
+    pub fn set_event_observer(&mut self, observer: Option<Arc<dyn EngineEventObserver>>) {
+        self.event_observer = observer;
+    }
+    /// Attaches the composition-specific chain adapter to this engine only.
+    pub fn attach_chain_queries(&mut self, queries: Arc<dyn NativeChainQueries>) {
+        self.chain_queries = Some(queries);
+    }
+    /// Returns this engine to provider-free native chain fallbacks.
+    pub fn detach_chain_queries(&mut self) {
+        self.chain_queries = None;
+    }
+    /// Clones this engine's adapter handle without consulting global state.
+    pub fn chain_queries(&self) -> Option<Arc<dyn NativeChainQueries>> {
+        self.chain_queries.clone()
+    }
+    /// Returns how many times the script with the given hash has been invoked.
+    pub fn get_invocation_counter(&self, script_hash: &UInt160) -> u32 {
+        self.invocation_counter
+            .get(script_hash)
+            .copied()
+            .unwrap_or(0)
+    }
+    pub(super) fn increment_invocation_counter(&mut self, script_hash: &UInt160) -> u32 {
+        let counter = self.invocation_counter.entry(*script_hash).or_insert(0);
+        *counter = counter.saturating_add(1);
+        *counter
+    }
+    pub(super) fn native_contract_cache(&self) -> Arc<Mutex<NativeContractsCache>> {
+        Arc::clone(&self.native_contract_cache)
+    }
+    /// Returns a shareable handle to the native-contract metadata cache.
+    pub fn native_contract_cache_handle(&self) -> Arc<Mutex<NativeContractsCache>> {
+        Arc::clone(&self.native_contract_cache)
+    }
+    /// Returns a snapshot (clone) of the deployed contract states known to this engine.
+    pub fn contracts_snapshot(&self) -> HashMap<UInt160, ContractState> {
+        self.contracts
+            .iter()
+            .map(|(hash, state)| (*hash, (**state).clone()))
+            .collect()
+    }
+    /// Returns a cheap snapshot with shared contract states.
+    ///
+    /// Public for profiling; normal callers should use [`Self::contracts_snapshot`].
+    #[doc(hidden)]
+    pub fn contracts_shared_snapshot(&self) -> HashMap<UInt160, Arc<ContractState>> {
+        self.contracts.clone()
+    }
+    /// Returns a clone of the current snapshot cache.
+    pub fn snapshot_cache(&self) -> Arc<DataCache> {
+        Arc::clone(&self.snapshot_cache)
+    }
+    /// Returns the execution's original snapshot rather than a nested call snapshot.
+    pub fn original_snapshot_cache(&self) -> Arc<DataCache> {
+        Arc::clone(&self.original_snapshot_cache)
+    }
+    pub(super) fn policy_contract(&self) -> Option<Arc<dyn NativeContract>> {
+        self.native_registry.get(&self.policy_hash)
+    }
+    /// Returns the ordered native interfaces attached to this engine.
+    pub fn native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
+        self.native_registry.contracts().collect()
+    }
+    pub(super) fn get_contract(&self, hash: &UInt160) -> Option<&ContractState> {
+        self.contracts.get(hash).map(Arc::as_ref)
+    }
+    /// Extracts all storage changes from the execution as raw key-value pairs.
+    ///
+    /// This method returns the state changes accumulated during contract execution,
+    /// which can be used for state root calculation via MPT trie.
+    ///
+    /// # Returns
+    /// A vector of tuples where:
+    /// - First element: serialized storage key bytes (contract_id + key_suffix)
+    /// - Second element: `Some(value_bytes)` for additions/updates, `None` for deletions
+    ///
+    /// # Example
+    /// ```ignore
+    /// let engine = ApplicationEngine::new(...)?;
+    /// engine.execute();
+    /// let changes = engine.extract_storage_changes();
+    /// for (key_bytes, value_opt) in changes {
+    ///     // Process state changes for state root calculation
+    /// }
+    /// ```
+    pub fn extract_storage_changes(&self) -> Vec<(Vec<u8>, Option<Vec<u8>>)> {
+        self.snapshot_cache.extract_raw_changes()
+    }
+    /// Returns the number of pending storage changes.
+    pub fn pending_storage_change_count(&self) -> usize {
+        self.snapshot_cache.pending_change_count()
+    }
+    /// Returns true if there are any pending storage changes.
+    pub fn has_pending_storage_changes(&self) -> bool {
+        self.snapshot_cache.has_pending_changes()
+    }
+}

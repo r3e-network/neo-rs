@@ -442,7 +442,7 @@ mod tests {
         let cache = DataCache::new(false);
         let key = StorageKey::new(-1, vec![0x01]);
         let result = cache.get(&key);
-        std::assert_matches!(result, Err(DataCacheError::KeyNotFound));
+        assert!(matches!(result, Err(DataCacheError::KeyNotFound)));
     }
 
     #[test]
@@ -488,7 +488,7 @@ mod tests {
         let cache = DataCache::new(true);
         let key = StorageKey::new(-1, vec![0x01]);
         let result = cache.try_add(key, StorageItem::from_bytes(vec![0xAA]));
-        std::assert_matches!(result, Err(DataCacheError::ReadOnly));
+        assert!(matches!(result, Err(DataCacheError::ReadOnly)));
     }
 
     #[test]
@@ -496,7 +496,7 @@ mod tests {
         let cache = DataCache::new(true);
         let key = StorageKey::new(-1, vec![0x01]);
         let result = cache.try_update(key, StorageItem::from_bytes(vec![0xAA]));
-        std::assert_matches!(result, Err(DataCacheError::ReadOnly));
+        assert!(matches!(result, Err(DataCacheError::ReadOnly)));
     }
 
     #[test]
@@ -504,7 +504,7 @@ mod tests {
         let cache = DataCache::new(true);
         let key = StorageKey::new(-1, vec![0x01]);
         let result = cache.try_delete(&key);
-        std::assert_matches!(result, Err(DataCacheError::ReadOnly));
+        assert!(matches!(result, Err(DataCacheError::ReadOnly)));
     }
 
     // ============ Tracking Tests ============

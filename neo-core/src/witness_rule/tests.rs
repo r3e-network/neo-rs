@@ -1,8 +1,7 @@
-use super::*;
-use crate::UInt160;
-use crate::neo_config::ADDRESS_SIZE;
-use crate::neo_vm::StackItem;
-use neo_io_crate::witness_rule::helpers::{encode_hex, parse_group_bytes};
+use neo_io_crate::witness_rule::{
+    WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction,
+    helpers::{encode_hex, parse_group_bytes},
+};
 
 #[test]
 fn test_witness_rule_action_values() {
@@ -94,53 +93,4 @@ fn group_condition_json_roundtrip_without_prefix() {
     assert_eq!(json["group"], encode_hex(&bytes));
     let decoded = WitnessCondition::from_json(&json).unwrap();
     assert_eq!(decoded, condition);
-}
-
-#[test]
-fn witness_rule_projects_to_neo_vm_rs_stack_value() {
-    let hash = UInt160::from_bytes(&[0x11; ADDRESS_SIZE]).unwrap();
-    let rule = WitnessRule::new(
-        WitnessRuleAction::Allow,
-        WitnessCondition::And {
-            conditions: vec![
-                WitnessCondition::Boolean { value: true },
-                WitnessCondition::ScriptHash { hash },
-            ],
-        },
-    );
-
-    assert_eq!(
-        rule.to_stack_value(),
-        neo_vm::StackValue::Array(vec![
-            neo_vm::StackValue::Integer(WitnessRuleAction::Allow.to_byte().into()),
-            neo_vm::StackValue::Array(vec![
-                neo_vm::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
-                neo_vm::StackValue::Array(vec![
-                    neo_vm::StackValue::Array(vec![
-                        neo_vm::StackValue::Integer(WitnessConditionType::Boolean.to_byte().into()),
-                        neo_vm::StackValue::Boolean(true),
-                    ]),
-                    neo_vm::StackValue::Array(vec![
-                        neo_vm::StackValue::Integer(
-                            WitnessConditionType::ScriptHash.to_byte().into()
-                        ),
-                        neo_vm::StackValue::ByteString(hash.to_bytes()),
-                    ]),
-                ]),
-            ]),
-        ])
-    );
-}
-
-#[test]
-fn witness_rule_stack_item_projection_matches_stack_value_projection() {
-    let rule = WitnessRule::new(
-        WitnessRuleAction::Deny,
-        WitnessCondition::Not {
-            condition: Box::new(WitnessCondition::CalledByEntry),
-        },
-    );
-
-    let expected = StackItem::try_from(rule.to_stack_value()).unwrap();
-    assert_eq!(rule.to_stack_item(), expected);
 }

@@ -6,15 +6,15 @@
 //! every block pays before transaction execution.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use neo_core::UInt160;
-use neo_core::UInt256;
-use neo_core::WitnessScope;
-use neo_core::neo_system::NeoSystem;
-use neo_core::network::p2p::payloads::signer::Signer;
-use neo_core::network::p2p::payloads::witness::Witness;
-use neo_core::network::p2p::payloads::{Block, Transaction};
-use neo_core::protocol_settings::ProtocolSettings;
-use neo_core::smart_contract::native::NativeHelpers;
+use neo_native_contracts::native::NativeHelpers;
+use neo_primitives::UInt160;
+use neo_primitives::UInt256;
+use neo_primitives::WitnessScope;
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Signer;
+use neo_protocol::payloads::{block::Block, transaction::Transaction};
+use neo_protocol::witness::Witness;
+use neo_system::NeoSystem;
 
 fn empty_block(index: u32, prev_hash: UInt256, timestamp: u64) -> Block {
     let mut block = Block::new();

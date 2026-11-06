@@ -13,7 +13,7 @@ use super::super::utility::{
     NepTransferFieldRefs, insert_nep_transfer_fields, parse_nep_transfer_fields,
     parse_transfer_lists, transfer_lists_to_json,
 };
-use neo_core::config::ProtocolSettings;
+use neo_config::ProtocolSettings;
 use neo_json::JObject;
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;

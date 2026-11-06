@@ -15,12 +15,19 @@ description = "Capability-restricted detached transaction prevalidation worker"
 
 [dependencies]
 neo-ai-agent = { workspace = true }
-neo-core = { workspace = true }
+neo-native-contracts = { workspace = true }
+neo-primitives = { workspace = true }
+neo-protocol = { workspace = true }
+neo-smart-contract = { workspace = true }
 neo-storage = { workspace = true }
+neo-vm = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
+
+[features]
+full = []
 
 [lints]
 workspace = true

@@ -1,4 +1,4 @@
-use neo_core::UInt256;
+use neo_primitives::UInt256;
 
 use crate::server::rpc_error::RpcError;
 

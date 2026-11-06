@@ -113,6 +113,24 @@ keeps that `Arc`. The trie receives one detached copy. Changing a reference
 count copies the node first, so the cached node stays as it was stored. One
 hit in sixteen also moves the node to the front of the eviction list.
 
+## Block sync (2026-10-30)
+
+A peer can deliver blocks faster than they are persisted. The node keeps at
+most 256 unverified blocks from that peer. The in-flight index window is one
+1,000-block batch, matching that budget: a 10,000-block window filled the
+256-slot buffer, marked every dropped height complete, and immediately asked
+for it again. Duplicate deliveries were then ignored, so those tasks stayed
+in flight until the 60s timeout. The live node dropped the same heights
+millions of times and persistence only moved in short bursts.
+
+When the per-peer buffer is full of blocks above the next height, the task
+manager drops the highest of those blocks and asks for the next height again.
+Leaving that buffer full and refusing every new request stalls persistence
+until the process is restarted. A block closer to the persist frontier still
+displaces the highest retained index when it arrives. A block that is already persisted, or already
+forwarded, still completes the in-flight index task so the window can advance.
+The drop is counted every time and written to the log once per 1024 drops.
+
 ## Target Improvements
 
 - Block processing: 30-50% faster

@@ -18,6 +18,7 @@ fn runtime_notify_requires_allow_notify_flag() {
         Default::default(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 
@@ -50,6 +51,7 @@ fn runtime_log_requires_allow_notify_flag() {
         Default::default(),
         400_000_000,
         None,
+        neo_core::smart_contract::native::composition::default_native_services(),
     )
     .expect("engine");
 

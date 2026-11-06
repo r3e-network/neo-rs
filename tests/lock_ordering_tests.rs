@@ -4,9 +4,9 @@
 //! as documented in `docs/LOCK_ORDERING.md`.
 
 use neo_core::ledger::LedgerContext;
-use neo_core::network::p2p::payloads::block::Block;
-use neo_core::network::p2p::payloads::header::Header;
-use neo_core::UInt256;
+use neo_protocol::payloads::block::Block;
+use neo_protocol::payloads::header::Header;
+use neo_primitives::UInt256;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;

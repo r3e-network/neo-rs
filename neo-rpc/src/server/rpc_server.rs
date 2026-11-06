@@ -1,15 +1,12 @@
 use futures::stream;
 use hyper::server::accept::from_stream;
 use hyper::service::{Service, make_service_fn, service_fn};
-use neo_core::{
-    neo_system::NeoSystem,
-    services::RpcService,
-    signing::{
-        AuthenticatedContext, FrozenSignIntent, KeyRef, SIGNING_SCHEMA_VERSION, SignPurpose,
-        SignerService, SigningKeyResolver, TrustedSignerClient,
-    },
-    wallets::Wallet,
+use neo_core::{services::RpcService, wallets::Wallet};
+use neo_signing::{
+    AuthenticatedContext, FrozenSignIntent, KeyRef, SIGNING_SCHEMA_VERSION, SignPurpose,
+    SignerService, SigningKeyResolver, TrustedSignerClient,
 };
+use neo_system::NeoSystem;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use prometheus::Counter;
 use rustls::ServerConfig;
@@ -76,7 +73,7 @@ impl RpcSignerRuntime {
         &self,
         operation_id: &str,
         frozen_intent: FrozenSignIntent,
-    ) -> neo_core::signing::SignResult<neo_core::signing::SignResponse> {
+    ) -> neo_signing::SignResult<neo_signing::SignResponse> {
         let client = TrustedSignerClient::new(
             Arc::clone(&self.service),
             self.default_provider.clone(),
@@ -100,7 +97,7 @@ impl RpcSignerRuntime {
         &self,
         account: &str,
         purpose: &SignPurpose,
-    ) -> neo_core::signing::SignResult<KeyRef> {
+    ) -> neo_signing::SignResult<KeyRef> {
         self.key_resolver.resolve(account, purpose)
     }
 }
