@@ -32,17 +32,17 @@ use crate::network::p2p::{
     },
 };
 use crate::services::SystemContext;
-use neo_core::extensions::log_level::LogLevel;
-use neo_ledger::{HeaderCache, LedgerContext, MemoryPool};
+use neo_primitives::LogLevel;
+use neo_ledger::{LedgerContext};
 use neo_storage::persistence::{StoreCache, store::Store, store_provider::StoreProvider};
-use neo_core::services::{
+use crate::services::{
     LedgerService, LockedMempoolService, MempoolService, PeerManagerService, StateStoreService,
 };
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::log_event_args::LogEventArgs;
 use neo_native_contracts::ledger_contract::{HashOrIndex, LedgerContract};
 use neo_smart_contract::notify_event_args::NotifyEventArgs;
-use neo_core::state_service::StateStore;
+use crate::state_service::StateStore;
 use neo_wallets::{Wallet, WalletProvider};
 use neo_primitives::contains_transaction_type::ContainsTransactionType;
 use neo_primitives::{UInt160, UInt256};

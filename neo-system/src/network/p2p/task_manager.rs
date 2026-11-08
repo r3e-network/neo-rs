@@ -156,7 +156,7 @@ impl TaskManager {
     }
 }
 
-neo_core::impl_default_via_new!(TaskManager);
+// neo_core::impl_default_via_new! - macro removed(TaskManager);
 
 /// Actor-runtime wrapper around [`TaskManager`].
 pub struct TaskManagerActor {

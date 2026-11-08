@@ -3,7 +3,7 @@
 
 use crate::network::p2p::payloads::{OracleResponseCode, Signer, Transaction, Witness};
 use crate::oracle_service::adapters::{CoreResponseTxBuilder, CoreSnapshot};
-use neo_core::cryptography::{ECCurve, ECPoint, Secp256r1Crypto};
+use neo_crypto::{ECCurve, ECPoint, Secp256r1Crypto};
 use neo_storage::persistence::StoreCache;
 use neo_storage::persistence::storage_key::StorageKey;
 use neo_smart_contract::StorageItem;
@@ -24,7 +24,7 @@ fn sample_point(byte: u8) -> ECPoint {
 }
 
 fn seed_transaction_state(
-    snapshot: &neo_core::persistence::DataCache,
+    snapshot: &neo_storage::persistence::DataCache,
     tx_hash: &UInt256,
     tx: &Transaction,
     block_index: u32,

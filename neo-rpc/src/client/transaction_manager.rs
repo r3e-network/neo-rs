@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use crate::{Nep17Api, RpcClient, RpcError, TransactionManagerFactory};
-use neo_p2p::helper::get_sign_data_vec;
+use neo_protocol::signing_data::get_sign_data_vec;
 use neo_wallets::helper::Helper as WalletHelper;
 use neo_ledger::{KeyPair, VerifiableExt, smart_contract::ContractParametersContext};
 use neo_crypto::ECPoint;

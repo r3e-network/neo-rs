@@ -17,9 +17,6 @@ members = [
     # JSON (matches C# Neo.Json)
     "neo-json",
 
-    # Signing service contracts
-    "neo-signing",
-
     # === Core Layer ===
     # NeoVM runtime (execution engine, stack items, jump tables)
     "neo-vm",
@@ -42,35 +39,20 @@ members = [
     "neo-smart-contract",
     # Actor runtime and system adapters
     "neo-system",
-    # Wallet primitives (BIP-32 / BIP-39)
+    # Wallet primitives (BIP-32 / BIP-39) and signing service
     "neo-wallets",
-    # Memory pool for unconfirmed transactions
-    "neo-mempool",
-    # Peer-to-peer networking
-    "neo-p2p",
     # Oracle service for external data
     "neo-oracle",
 
-    # TEE (Trusted Execution Environment) support
-    # Optional feature-gated integration via neo-node (`--features tee`)
-    "neo-tee",
-
-    # HSM (Hardware Security Module) support
-    # Optional feature-gated integration via neo-node (`--features hsm`)
-    "neo-hsm",
-
     # Node daemon (standalone RPC server)
     "neo-node",
-
-    # Reference mTLS remote TEE signer service (see neo-signer-server)
-    "neo-signer-server",
 
     # === Integration Tests ===
     "tests",
 
     # === Benchmarks ===
     "benches-package",
-    
+
     # === Tools ===
     "tools/validation-diff",
     "tools/state-root-diff",
@@ -143,7 +125,6 @@ neo-crypto = { path = "neo-crypto", version = "0.20.0" }
 neo-storage = { path = "neo-storage", version = "0.20.0" }
 neo-io = { path = "neo-io", version = "0.20.0" }
 neo-json = { path = "neo-json", version = "0.20.0" }
-neo-signing = { path = "neo-signing", version = "0.20.0" }
 
 # Core layer
 neo-vm = { path = "neo-vm", version = "0.20.0" }
@@ -160,13 +141,7 @@ neo-ledger = { path = "neo-ledger" }
 neo-smart-contract = { path = "neo-smart-contract" }
 neo-system = { path = "neo-system" }
 neo-wallets = { path = "neo-wallets" }
-neo-mempool = { path = "neo-mempool" }
-neo-p2p = { path = "neo-p2p" }
 neo-oracle = { path = "neo-oracle" }
-
-# Infrastructure layer
-neo-tee = { path = "neo-tee", version = "0.20.0" }
-neo-hsm = { path = "neo-hsm", version = "0.20.0" }
 
 # Application layer
 # neo-cli removed: functionality merged into neo-node

@@ -72,16 +72,16 @@ use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::network::p2p::{
     LocalNode, LocalNodeHandle, TaskManager, TaskManagerHandle, payloads::block::Block, timeouts,
 };
-use neo_core::extensions::log_level::LogLevel;
-use neo_core::extensions::utility::ExtensionsUtility;
-use neo_ledger::{HeaderCache, LedgerContext, MemoryPool};
+use neo_primitives::LogLevel;
+// ExtensionsUtility was removed - utilities should be inlined
+use neo_ledger::LedgerContext;
 use neo_storage::persistence::{
     StoreCache, StoreFactory, store::Store, store_provider::StoreProvider,
 };
-use neo_core::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
+use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
 use neo_native_contracts::PolicyContract;
 use neo_native_contracts::ledger_contract::LedgerContract;
-use neo_core::state_service::StateStore;
+use crate::state_service::StateStore;
 use neo_primitives::UInt256;
 use neo_protocol::hardfork::Hardfork;
 pub use neo_protocol::protocol_settings::ProtocolSettings;
@@ -184,7 +184,7 @@ impl NeoSystem {
         settings: ProtocolSettings,
         storage_provider: Option<Arc<dyn StoreProvider>>,
         storage_path: Option<String>,
-        state_service_settings: Option<neo_core::state_service::state_store::StateServiceSettings>,
+        state_service_settings: Option<crate::state_service::StateServiceSettings>,
     ) -> CoreResult<Arc<Self>> {
         Self::open_with_genesis_policy(
             settings,
@@ -204,7 +204,7 @@ impl NeoSystem {
         settings: ProtocolSettings,
         storage_provider: Option<Arc<dyn StoreProvider>>,
         storage_path: Option<String>,
-        state_service_settings: Option<neo_core::state_service::state_store::StateServiceSettings>,
+        state_service_settings: Option<crate::state_service::StateServiceSettings>,
     ) -> CoreResult<Arc<Self>> {
         Self::open_with_genesis_policy(
             settings,
@@ -219,7 +219,7 @@ impl NeoSystem {
         settings: ProtocolSettings,
         storage_provider: Option<Arc<dyn StoreProvider>>,
         storage_path: Option<String>,
-        state_service_settings: Option<neo_core::state_service::state_store::StateServiceSettings>,
+        state_service_settings: Option<crate::state_service::StateServiceSettings>,
         persist_genesis: bool,
     ) -> CoreResult<Arc<Self>> {
         #[cfg(test)]
@@ -227,7 +227,7 @@ impl NeoSystem {
 
         let actor_system = ActorSystem::new("neo").map_err(to_core_error)?;
         let settings_arc = Arc::new(settings.clone());
-        let genesis_ledger = neo_core::ledger::create_genesis_block(&settings);
+        let genesis_ledger = neo_ledger::create_genesis_block(&settings);
         let genesis_block = Arc::new(super::converters::convert_ledger_block(genesis_ledger));
 
         let service_registry = Arc::new(ServiceRegistry::new());
@@ -376,7 +376,7 @@ impl NeoSystem {
     /// Persists the canonical genesis block when the ledger does not already
     /// contain it. Committing handlers registered before this call observe genesis.
     pub fn persist_genesis_if_absent(&self) -> CoreResult<()> {
-        let genesis_ledger = neo_core::ledger::create_genesis_block(self.settings());
+        let genesis_ledger = neo_ledger::create_genesis_block(self.settings());
         let genesis_hash = genesis_ledger.hash();
         let store = self.store();
         let snapshot = store.snapshot();

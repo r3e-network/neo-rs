@@ -106,7 +106,7 @@ pub(crate) fn spawn_metrics_pump(
             let peer_count = metrics_system.peer_count().await.unwrap_or(0);
             let mempool_size = metrics_system.mempool().lock().count() as u32;
 
-            let timeouts = neo_p2p::timeouts::stats();
+            let timeouts = neo_system::network::p2p::timeouts::stats();
 
             let (state_local_root, state_validated_root) = match metrics_system.state_store() {
                 Ok(Some(store)) => (store.local_root_index(), store.validated_root_index()),

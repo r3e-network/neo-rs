@@ -38,8 +38,8 @@
 //! session as `Arc<dyn InboundDispatchPort>`.
 
 use crate::runtime::ActorRef;
-use neo_p2p::MessageCommand;
-use neo_p2p::ports::{InboundDispatchPort, PeerHandle};
+use crate::network::p2p::MessageCommand;
+use crate::network::p2p::ports::{InboundDispatchPort, PeerHandle};
 use std::fmt;
 
 /// Boxed synchronous veto handler body.

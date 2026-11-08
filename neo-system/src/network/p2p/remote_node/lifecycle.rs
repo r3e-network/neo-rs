@@ -1,7 +1,7 @@
 //! Connection lifecycle helpers for `RemoteNode`.
 
 use super::RemoteNode;
-use neo_core::network::MessageCommand;
+use crate::network::p2p::MessageCommand;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum HandshakeGateDecision {

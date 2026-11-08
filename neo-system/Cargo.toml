@@ -35,8 +35,6 @@ neo-ledger = { path = "../neo-ledger" }
 neo-storage = { path = "../neo-storage" }
 neo-crypto = { workspace = true }
 neo-native-contracts = { workspace = true }
-neo-mempool = { workspace = true }
-neo-p2p = { workspace = true }
 neo-oracle = { workspace = true }
 
 # Task D4: neo-system binds wallet primitives directly from neo-wallets.
@@ -59,7 +57,9 @@ neo-protocol = { workspace = true }
 # Third-party
 async-trait = { workspace = true }
 bitvec = { workspace = true }
+bytes = { workspace = true }
 dashmap = { workspace = true }
+futures = { workspace = true }
 governor = { workspace = true }
 hex = { workspace = true }
 if-addrs = "0.10"
@@ -71,12 +71,13 @@ rayon = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { workspace = true, features = ["rt"] }
+tokio-util = { workspace = true, features = ["codec", "rt"] }
 tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
 num-bigint = { workspace = true }
+serde_json = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [lints]

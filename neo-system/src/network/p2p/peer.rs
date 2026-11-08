@@ -428,7 +428,7 @@ impl PeerState {
     /// `tokio::task::spawn_blocking`.
     #[cfg(feature = "upnp")]
     fn configure_upnp(&mut self) {
-        use neo_core::network::u_pn_p::UPnP;
+        use crate::network::upnp::UPnP;
 
         if self.listener_tcp_port == 0 || self.upnp_configured {
             return;

@@ -13,7 +13,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use neo_p2p::message::Message;
+use neo_system::network::p2p::message::Message;
 use neo_io::{MemoryReader, Serializable};
 
 fuzz_target!(|data: &[u8]| {

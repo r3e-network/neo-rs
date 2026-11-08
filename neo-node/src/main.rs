@@ -12,6 +12,8 @@ mod config;
 mod consensus;
 mod health;
 #[cfg(feature = "hsm")]
+mod hsm;
+#[cfg(feature = "hsm")]
 mod hsm_integration;
 #[cfg(feature = "hsm")]
 mod hsm_wallet;
@@ -52,8 +54,11 @@ mod probe_containment;
 mod probe_controller;
 mod remote_signer;
 mod rpc_consensus;
+mod services;
 mod signing_provider;
 mod startup;
+#[cfg(feature = "tee")]
+mod tee;
 #[cfg(feature = "tee")]
 mod tee_integration;
 #[cfg(feature = "tee")]

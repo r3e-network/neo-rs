@@ -8,10 +8,10 @@
 
 use neo_ledger::block::Block as LedgerBlock;
 use neo_ledger::blockchain_application_executed::ApplicationExecuted;
-use neo_p2p::message::Message;
-use neo_p2p::message_command::MessageCommand;
+use neo_system::network::p2p::message::Message;
+use neo_system::network::p2p::message_command::MessageCommand;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_p2p::payloads::{InvPayload, PingPayload};
+use neo_system::network::p2p::payloads::{InvPayload, PingPayload};
 use neo_primitives::{InventoryType, UInt160, UInt256, WitnessScope};
 use neo_protocol::ProtocolSettings;
 use neo_protocol::payloads::Signer;

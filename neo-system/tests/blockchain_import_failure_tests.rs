@@ -4,8 +4,8 @@
 //! it exercises; `BlockchainCommand`/`Import` still come from `neo-core`.
 
 use neo_ledger::{BlockchainCommand, Import};
-use neo_p2p::helper::get_sign_data_vec;
-use neo_p2p::payloads::{block::Block, header::Header};
+use neo_system::network::p2p::helper::get_sign_data_vec;
+use neo_system::network::p2p::payloads::{block::Block, header::Header};
 use neo_wallets::KeyPair;
 use neo_protocol::payloads::{Signer, Transaction};
 use neo_primitives::{UInt160, UInt256, WitnessScope};

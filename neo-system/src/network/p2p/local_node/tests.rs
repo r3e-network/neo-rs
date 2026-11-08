@@ -49,7 +49,7 @@ mod tests {
 
     #[test]
     fn compression_capability_respects_configuration() {
-        use crate::network::p2p::capabilities::NodeCapability;
+        use crate::network::p2p::payloads::NodeCapability;
 
         let settings = Arc::new(ProtocolSettings::default());
         let node = LocalNode::new(settings, 10333, "/agent".to_string());

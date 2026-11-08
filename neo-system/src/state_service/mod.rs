@@ -7,6 +7,8 @@
 //! driven by the blockchain actor and the `NeoSystemContext` handler
 //! registry, both of which live here.
 
+mod state_root;
+
 // pub mod commit_handlers;  // Removed during consolidation (state-service removed)
 
 /// Test-only helpers for building native-contract storage fixtures.
@@ -15,4 +17,13 @@
 #[cfg(test)]
 pub(crate) mod test_support;
 
+// Re-export state root types
+pub use state_root::{STATE_SERVICE_CATEGORY, StateRoot};
+
 // pub use commit_handlers::StateServiceCommitHandlers;  // Removed during consolidation
+
+/// Event emitted when a validated state root is persisted.
+#[derive(Debug, Clone)]
+pub struct ValidatedRootPersisted {
+    pub index: u32,
+}

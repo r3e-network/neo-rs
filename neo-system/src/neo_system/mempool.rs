@@ -17,7 +17,7 @@ use crate::network::p2p::payloads::transaction::Transaction;
 /// Attaches callbacks to the mempool to surface events and relay transactions.
 pub(crate) fn attach_mempool_callbacks(
     context: &Arc<NeoSystemContext>,
-    memory_pool: &Arc<Mutex<neo_core::ledger::MemoryPool>>,
+    memory_pool: &Arc<Mutex<crate::mempool::MemoryPool>>,
     local_node: LocalNodeHandle,
     blockchain: BlockchainHandle,
 ) {

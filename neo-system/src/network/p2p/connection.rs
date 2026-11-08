@@ -13,9 +13,9 @@ use super::{
         write_frame_vectored,
     },
 };
-use neo_core::network::{
-    error::{NetworkError, NetworkResult},
-    p2p::messages::NetworkMessage,
+use crate::network::p2p::{
+    error::{P2PError as NetworkError, P2PResult as NetworkResult},
+    protocol_message::NetworkMessage,
 };
 use std::net::SocketAddr;
 use tokio::{io::AsyncWriteExt, net::TcpStream};

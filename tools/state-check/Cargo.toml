@@ -12,6 +12,9 @@ license = "MIT"
 
 [workspace]
 
+[lib]
+path = "src/lib.rs"
+
 [dependencies]
 neo-crypto = { path = "../../neo-crypto" }
 neo-primitives = { path = "../../neo-primitives" }

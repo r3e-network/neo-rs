@@ -5273,7 +5273,7 @@ fn protocol_and_framing_have_single_real_owners() {
     );
     let network = read_source(workspace.join("neo-core/src/network/p2p/mod.rs"));
     assert!(
-        network.contains("pub use neo_p2p::framed;")
+        network.contains("pub use neo_system::network::p2p::framed;")
             && network.contains("pub use framed::FrameConfig;")
     );
     let mut files = Vec::new();
@@ -5376,7 +5376,7 @@ fn protocol_and_framing_have_single_real_owners() {
         assert!(hardfork.contains(&format!("Hardfork::Hf{fork} => heights.hf_{field}")));
     }
     let message = read_source(workspace.join("neo-core/src/network/p2p/message.rs"));
-    assert!(message.contains("pub use neo_p2p::message::PAYLOAD_MAX_SIZE;"));
+    assert!(message.contains("pub use neo_system::network::p2p::message::PAYLOAD_MAX_SIZE;"));
     let codec = read_source(workspace.join("neo-p2p/src/framed_codec.rs"));
     for required in [
         "use crate::message::PAYLOAD_MAX_SIZE;",
@@ -5415,12 +5415,12 @@ fn protocol_and_framing_have_single_real_owners() {
         TypeId::of::<neo_primitives::Hardfork>()
     );
     assert_eq!(
-        TypeId::of::<neo_p2p::FrameConfig>(),
-        TypeId::of::<neo_p2p::FrameConfig>()
+        TypeId::of::<neo_system::network::p2p::FrameConfig>(),
+        TypeId::of::<neo_system::network::p2p::FrameConfig>()
     );
     assert_eq!(
-        TypeId::of::<neo_p2p::NeoMessageCodec>(),
-        TypeId::of::<neo_p2p::NeoMessageCodec>()
+        TypeId::of::<neo_system::network::p2p::NeoMessageCodec>(),
+        TypeId::of::<neo_system::network::p2p::NeoMessageCodec>()
     );
 }
 
@@ -5529,8 +5529,8 @@ fn witness_access_contract_does_not_execute_the_engine() {
         read_source(workspace.join("neo-core/src/smart_contract/contract_parameters_context.rs"));
     assert!(context.contains("verifiable.script_hashes_for_verifying(snapshot_cache.as_ref())"));
     fn requires_witness_data<T: neo_core::WitnessData>() {}
-    requires_witness_data::<neo_p2p::payloads::Header>();
-    requires_witness_data::<neo_p2p::payloads::Block>();
+    requires_witness_data::<neo_protocol::payloads::Header>();
+    requires_witness_data::<neo_protocol::payloads::Block>();
     requires_witness_data::<neo_p2p::payloads::ExtensiblePayload>();
     requires_witness_data::<Transaction>();
 }

@@ -34,7 +34,7 @@ mod tests {
         AccountState, NativeContract, Role, role_management::RoleManagement,
     };
     use neo_smart_contract::{StorageItem, StorageKey};
-    use neo_core::state_service::state_store::StateServiceSettings;
+    use neo_state_service::state_store::StateServiceSettings;
     use neo_wallets::KeyPair;
     use neo_io_crate::BinaryWriter;
     use neo_io_crate::Serializable;
@@ -58,18 +58,18 @@ mod tests {
         fn blockchain_committing_handler(
             &self,
             _system: &dyn Any,
-            _block: &neo_core::ledger::block::Block,
-            _snapshot: &neo_core::persistence::DataCache,
-            _application_executed_list: &[neo_core::ledger::blockchain_application_executed::ApplicationExecuted],
+            _block: &neo_protocol::block::Block,
+            _snapshot: &neo_storage::persistence::DataCache,
+            _application_executed_list: &[neo_ledger::ApplicationExecuted],
         ) {
         }
 
         fn try_blockchain_committing_handler(
             &self,
             _system: &dyn Any,
-            _block: &neo_core::ledger::block::Block,
-            _snapshot: &neo_core::persistence::DataCache,
-            _application_executed_list: &[neo_core::ledger::blockchain_application_executed::ApplicationExecuted],
+            _block: &neo_protocol::block::Block,
+            _snapshot: &neo_storage::persistence::DataCache,
+            _application_executed_list: &[neo_ledger::ApplicationExecuted],
         ) -> CoreResult<()> {
             if !self.failed.swap(true, Ordering::SeqCst) {
                 return Err(CoreError::system("injected blockchain committing failure"));

@@ -26,7 +26,7 @@ use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::payloads::inv_payload::InvPayload;
 use async_trait::async_trait;
 use neo_actors::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
-use neo_core::network::error::NetworkError;
+use crate::network::p2p::error::P2PError as NetworkError;
 use neo_io_crate::HashSetCache;
 use neo_primitives::UInt256;
 use neo_protocol::protocol_settings::ProtocolSettings;
@@ -335,7 +335,7 @@ impl RemoteNode {
                 self.is_full_node = payload
                     .capabilities
                     .iter()
-                    .any(|cap| matches!(cap, super::capabilities::NodeCapability::FullNode { .. }));
+                    .any(|cap| matches!(cap, super::payloads::NodeCapability::FullNode { .. }));
                 self.local_node
                     .update_peer_height(&self.endpoint, snapshot.last_block_index);
                 debug!(
@@ -427,7 +427,7 @@ impl RemoteNode {
             .capabilities
             .iter()
             .find_map(|capability| match capability {
-                super::capabilities::NodeCapability::TcpServer { port } => Some(*port),
+                super::payloads::NodeCapability::TcpServer { port } => Some(*port),
                 _ => None,
             })
             .unwrap_or(self.endpoint.port());
@@ -436,7 +436,7 @@ impl RemoteNode {
             .capabilities
             .iter()
             .find_map(|capability| match capability {
-                super::capabilities::NodeCapability::FullNode { start_height } => {
+                super::payloads::NodeCapability::FullNode { start_height } => {
                     Some(*start_height)
                 }
                 _ => None,
@@ -621,7 +621,7 @@ mod tests {
         },
         timeouts,
     };
-    use neo_core::network::{MessageCommand, MessageFlags};
+    use crate::network::p2p::{MessageCommand, MessageFlags};
     use neo_primitives::{UInt160, WitnessScope};
     use neo_vm::OpCode;
     use std::sync::{

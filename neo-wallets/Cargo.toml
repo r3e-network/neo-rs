@@ -30,6 +30,7 @@ neo-smart-contract = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+anyhow = { workspace = true }
 
 # Async support
 async-trait = { workspace = true }
@@ -43,10 +44,17 @@ rand = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
 subtle = { workspace = true }
+uuid = { workspace = true }
 
 # BIP-39 mnemonics and secret zeroization
 bip39 = { workspace = true }
 zeroize = { workspace = true }
+
+# Utilities
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
 
 # NEP-2 crypto (scrypt KDF + AES-256-CBC). Pinned with explicit versions to
 # match neo-core's declaration style; not centralized in workspace.dependencies.

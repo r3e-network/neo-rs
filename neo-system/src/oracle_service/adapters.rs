@@ -24,16 +24,17 @@ use crate::network::p2p::payloads::{
     oracle_response::{MAX_RESULT_SIZE, OracleResponseExt},
 };
 use async_trait::async_trait;
-use neo_core::VerifiableExt;
-use neo_core::cryptography::ECPoint;
+use neo_io_crate::VerifiableExt;
+use neo_crypto::ECPoint;
 use neo_storage::persistence::{DataCache, StoreCache};
-use neo_smart_contract::call_flags::CallFlags;
-use neo_smart_contract::contract_basic_method::ContractBasicMethod;
+use neo_smart_contract::helper::call_flags::CallFlags;
+use neo_smart_contract::helper::contract_basic_method::ContractBasicMethod;
 use neo_native_contracts::native_contract::NativeContract;
 use neo_native_contracts::{
     ContractManagement, LedgerContract, OracleContract, PolicyContract, Role, RoleManagement,
 };
-use neo_smart_contract::{ApplicationEngine, Contract, TriggerType};
+use neo_smart_contract::{application_engine::ApplicationEngine, contract::Contract};
+use neo_primitives::TriggerType;
 use neo_wallets::Wallet;
 use neo_io_crate::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
@@ -52,9 +53,9 @@ use neo_signing::{
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
-/// Converts an on-chain [`neo_core::smart_contract::native::OracleRequest`] into
+/// Converts an on-chain [`neo_native_contracts::oracle::OracleRequest`] into
 /// the engine-side [`OracleRequest`] representation (structurally identical).
-fn to_engine_request(request: &neo_core::smart_contract::native::OracleRequest) -> OracleRequest {
+fn to_engine_request(request: &neo_native_contracts::oracle::OracleRequest) -> OracleRequest {
     OracleRequest {
         original_tx_id: request.original_tx_id,
         gas_for_response: request.gas_for_response,
@@ -385,9 +386,9 @@ impl CoreResponseTxBuilder {
             Arc::new(snapshot.clone()),
             None,
             settings.clone(),
-            neo_core::smart_contract::helper::Helper::MAX_VERIFICATION_GAS,
+            neo_smart_contract::helper::Helper::MAX_VERIFICATION_GAS,
             None,
-            neo_core::smart_contract::native::composition::default_native_services(),
+            neo_native_contracts::default_native_services(),
         )
         .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
 
@@ -422,7 +423,7 @@ impl CoreResponseTxBuilder {
             .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR)
             as i64;
         let multi_sig_cost =
-            neo_core::smart_contract::helper::Helper::multi_signature_contract_cost(
+            neo_smart_contract::helper::Helper::multi_signature_contract_cost(
                 m as i32, n as i32,
             );
         let comp2 = exec_fee_factor * multi_sig_cost;

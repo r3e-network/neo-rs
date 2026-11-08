@@ -12,7 +12,7 @@ use crate::wallet_provider::NodeWalletProvider;
 use anyhow::{Context, Result, bail};
 use neo_wallets::{Nep6Wallet, Wallet as CoreWallet, WalletProvider};
 use neo_native_contracts::native::ContractManagement;
-use neo_p2p::ChannelsConfig;
+use neo_system::network::p2p::ChannelsConfig;
 use neo_protocol::ProtocolSettings;
 use neo_rpc::application_logs::ApplicationLogsService;
 use neo_rpc::server::{

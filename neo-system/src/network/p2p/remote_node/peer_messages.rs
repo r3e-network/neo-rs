@@ -12,7 +12,7 @@ use crate::network::p2p::payloads::{
 };
 use crate::network::p2p::peer::PeerCommand;
 use neo_actors::{ActorContext, ActorResult};
-use neo_core::network::MessageCommand;
+use crate::network::p2p::MessageCommand;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use tracing::warn;
@@ -157,7 +157,7 @@ fn collect_reachable_endpoints(addresses: Vec<NetworkAddressWithTime>) -> Vec<So
 #[cfg(test)]
 mod tests {
     use super::{collect_reachable_endpoints, normalize_request};
-    use crate::network::p2p::capabilities::tcp_server;
+    use crate::network::p2p::payloads::node_capability::tcp_server;
     use crate::network::p2p::payloads::network_address_with_time::NetworkAddressWithTime;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 

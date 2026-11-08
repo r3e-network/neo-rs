@@ -25,15 +25,15 @@ profiling = []
 # Full profiling with CPU profiler (Unix only, requires pprof)
 profiling-full = ["profiling", "pprof", "tracing-timing", "tracing-flame"]
 # Enable TEE (Trusted Execution Environment) support
-tee = ["neo-tee"]
+tee = ["dep:hkdf", "dep:aes-gcm", "dep:libloading"]
 # Enable TEE with SGX hardware
-tee-sgx = ["tee", "neo-tee/sgx-hw"]
+tee-sgx = ["tee", "dep:sgx-isa"]
 # Enable HSM (Hardware Security Module) support
-hsm = ["dep:neo-hsm", "dep:rpassword"]
+hsm = ["dep:rpassword", "dep:hidapi", "dep:byteorder", "dep:cryptoki"]
 # Enable HSM with Ledger hardware wallet
-hsm-ledger = ["hsm", "neo-hsm/ledger"]
+hsm-ledger = ["hsm", "dep:hidapi", "dep:byteorder"]
 # Enable HSM with PKCS#11 interface
-hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
+hsm-pkcs11 = ["hsm", "dep:cryptoki"]
 
 [dependencies]
 # Task 206: consensus binds directly to neo-actors instead of the neo-core
@@ -60,11 +60,23 @@ neo-ledger = { path = "../neo-ledger" }
 
 # TEMPORARILY DISABLED: neo-plugins being refactored
 # neo-plugins = { path = "../neo-plugins" }
-neo-tee = { path = "../neo-tee", optional = true }
-neo-hsm = { path = "../neo-hsm", optional = true }
+
+# TEE-specific dependencies (optional, enabled with tee feature)
+hkdf = { version = "0.12", optional = true }
+aes-gcm = { version = "0.10", optional = true }
+libloading = { version = "0.8", optional = true }
+sgx-isa = { version = "0.4", optional = true }
 
 # PIN input for HSM
 rpassword = { version = "7.3", optional = true }
+
+# HSM dependencies (optional)
+hidapi = { version = "2.6", optional = true }
+byteorder = { version = "1.5", optional = true }
+cryptoki = { version = "0.6", optional = true }
+
+# Oracle dependencies
+percent-encoding = "2.3"
 
 # Logging
 env_logger = "0.10"

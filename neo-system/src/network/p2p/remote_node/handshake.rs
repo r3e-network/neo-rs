@@ -4,7 +4,7 @@ use crate::network::p2p::connection::{ConnectionState, ReceiveStep};
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
 use crate::network::p2p::timeouts;
 use neo_actors::{ActorContext, ActorResult};
-use neo_core::network::error::NetworkError;
+use crate::network::p2p::error::P2PError as NetworkError;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};

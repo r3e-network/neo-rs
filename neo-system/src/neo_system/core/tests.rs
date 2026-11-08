@@ -33,18 +33,18 @@ fn ledger_block_hash_key(index: u32) -> Vec<u8> {
     let mut key = Vec::with_capacity(1 + std::mem::size_of::<u32>());
     key.push(9); // PREFIX_BLOCK_HASH
     key.extend_from_slice(&index.to_be_bytes());
-    neo_core::smart_contract::StorageKey::new(-4, key).to_array()
+    neo_storage::types::StorageKey::new(-4, key).to_array()
 }
 
 fn ledger_block_key(hash: &UInt256) -> Vec<u8> {
     let mut key = Vec::with_capacity(1 + hash.to_bytes().len());
     key.push(5); // PREFIX_BLOCK
     key.extend_from_slice(&hash.to_bytes());
-    neo_core::smart_contract::StorageKey::new(-4, key).to_array()
+    neo_storage::types::StorageKey::new(-4, key).to_array()
 }
 
 fn ledger_current_block_key() -> Vec<u8> {
-    neo_core::smart_contract::StorageKey::new(-4, vec![12]).to_array()
+    neo_storage::types::StorageKey::new(-4, vec![12]).to_array()
 }
 
 #[derive(Debug)]
@@ -95,7 +95,7 @@ fn hydrate_ledger_restores_height_and_headers() {
 
     // Persist two blocks (genesis index 0 and block index 1).
     let mut persist_block = |index: u32, nonce: u64| {
-        let header = neo_core::ledger::block_header::BlockHeader {
+        let header = neo_protocol::block_header::BlockHeader {
             index,
             timestamp: index as u64,
             nonce,
@@ -163,7 +163,7 @@ fn hydrate_ledger_respects_bounded_window() {
     let total_blocks = LEDGER_HYDRATION_WINDOW + 5;
     let mut last_hash = UInt256::zero();
     for index in 0..=total_blocks {
-        let header = neo_core::ledger::block_header::BlockHeader {
+        let header = neo_protocol::block_header::BlockHeader {
             index,
             timestamp: index as u64,
             nonce: index as u64,
@@ -563,9 +563,9 @@ impl CommittingHandler for GenesisIndexCapture {
     fn blockchain_committing_handler(
         &self,
         _system: &dyn Any,
-        block: &neo_core::ledger::block::Block,
-        _snapshot: &neo_core::persistence::data_cache::DataCache,
-        _executed: &[neo_core::ledger::blockchain_application_executed::ApplicationExecuted],
+        block: &neo_protocol::block::Block,
+        _snapshot: &neo_storage::persistence::DataCache,
+        _executed: &[neo_ledger::ApplicationExecuted],
     ) {
         self.seen.store(block.index(), Ordering::SeqCst);
     }

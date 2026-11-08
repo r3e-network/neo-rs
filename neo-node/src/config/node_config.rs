@@ -4,7 +4,7 @@
 //! along with free utility functions.
 
 use anyhow::{Context, Result, bail};
-use neo_p2p::ChannelsConfig;
+use neo_system::network::p2p::ChannelsConfig;
 use neo_primitives::constants::{MAINNET_MAGIC, TESTNET_MAGIC};
 use neo_protocol::ProtocolSettings;
 use neo_rpc::application_logs::ApplicationLogsSettings;

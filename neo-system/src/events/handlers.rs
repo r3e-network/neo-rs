@@ -1,10 +1,10 @@
-use neo_core::{
-    error::CoreResult,
-    ledger::{block::Block, blockchain_application_executed::ApplicationExecuted},
-    network::message::Message,
-};
+use neo_protocol::{execution::{Block, ApplicationExecuted}};
+use crate::network::p2p::Message;
+use neo_storage::DataCache;
 use neo_wallets::Wallet;
 use std::{any::Any, sync::Arc};
+
+pub type CoreResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Handler of Committed event from Blockchain.
 /// Triggered after a new block is committed and state has been updated.
@@ -26,7 +26,7 @@ pub trait CommittingHandler {
         &self,
         system: &dyn Any,
         block: &Block,
-        snapshot: &neo_core::persistence::data_cache::DataCache,
+        snapshot: &DataCache,
         application_executed_list: &[ApplicationExecuted],
     );
 
@@ -35,7 +35,7 @@ pub trait CommittingHandler {
         &self,
         system: &dyn Any,
         block: &Block,
-        snapshot: &neo_core::persistence::data_cache::DataCache,
+        snapshot: &DataCache,
         application_executed_list: &[ApplicationExecuted],
     ) -> CoreResult<()> {
         self.blockchain_committing_handler(system, block, snapshot, application_executed_list);

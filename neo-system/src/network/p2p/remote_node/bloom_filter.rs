@@ -8,7 +8,7 @@ use crate::network::p2p::payloads::{
 use governor::{
     DefaultDirectRateLimiter, Quota, RateLimiter, middleware::StateInformationMiddleware,
 };
-use neo_core::cryptography::BloomFilter;
+use neo_crypto::BloomFilter;
 use std::net::SocketAddr;
 use std::num::NonZeroU32;
 use tracing::{debug, warn};
@@ -179,7 +179,7 @@ mod tests {
         block::Block, filter_add_payload::FilterAddPayload, filter_load_payload::FilterLoadPayload,
         signer::Signer, transaction::Transaction, witness::Witness,
     };
-    use neo_core::cryptography::BloomFilter;
+    use neo_crypto::BloomFilter;
     use neo_primitives::{UInt160, WitnessScope};
     use neo_vm::OpCode;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};

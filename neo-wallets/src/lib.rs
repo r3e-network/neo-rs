@@ -10,6 +10,7 @@
 //!   the concrete NEP-6 file-backed wallet ([`nep6`]).
 //! * Transfer outputs ([`transfer_output`]) and the active-wallet provider
 //!   ([`wallet_provider`]).
+//! * Unified, policy-bound signing service contracts ([`signing`]).
 
 pub mod bip32;
 pub mod bip39;
@@ -19,6 +20,7 @@ pub mod helper;
 pub mod key_pair;
 pub mod nep2;
 pub mod nep6;
+pub mod signing;
 pub mod transfer_output;
 pub mod wallet;
 pub mod wallet_provider;
@@ -36,3 +38,16 @@ pub use nep6::{Nep6Account, Nep6Wallet, Nep6WalletFactory};
 pub use transfer_output::TransferOutput;
 pub use wallet::{Version, Wallet, WalletError, WalletFactory, WalletManager, WalletResult};
 pub use wallet_provider::WalletProvider;
+
+// Signing service types re-exported at the crate root.
+pub use signing::{
+    AuthenticatedContext, AuthorizedSignRequest, BeginSigningOutcome, BeginSigningRequest,
+    DefaultSignerService, DigestAlgorithm, DurableSigningStore, FrozenSignIntent, IdempotencyInfo,
+    KeyInfo, KeyRef, PersistedSigningOperation, PolicyDecision, PolicyLimits, PolicySelector,
+    ProtocolContext, ProviderCapabilities, ProviderOperationStatus, ProviderOutcomeProvenance,
+    ProviderSignature, QuotaReservation, SecurityLevel, SignError, SignErrorCode, SignPayload,
+    SignPurpose, SignRequest, SignResponse, SignResult, SignerProvider, SignerProviderRegistry,
+    SignerService, SigningAuditEvent, SigningDeadlineRegistry, SigningKeyBinding,
+    SigningKeyResolver, SigningPolicy, SigningRequestState, SigningRequestStatus, SigningStore,
+    TrustedSignerClient,
+};

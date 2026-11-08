@@ -21,9 +21,10 @@
 pub mod adapters;
 pub mod blockchain;
 pub mod events;
+pub mod mempool;
 pub mod network;
 pub mod oracle_service;
-// pub mod runtime;  // Removed during consolidation
+pub mod runtime;
 pub mod services;
 pub mod state_service;
 
@@ -55,6 +56,9 @@ pub use neo_system::{
     TransactionExecutionObservation, TransactionExecutionSink, TransactionExecutionStage,
     TransactionRouterHandle,
 };
+
+// Re-export MemoryPool from the merged mempool module
+pub use mempool::MemoryPool;
 
 #[cfg(feature = "state-verifier")]
 pub use state_verification::StateServiceVerification;

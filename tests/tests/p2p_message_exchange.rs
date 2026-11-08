@@ -2,12 +2,12 @@
 //!
 //! Tests for peer-to-peer networking protocol
 
-use neo_p2p::{
+use neo_system::network::p2p::{
     message::Message, message_command::MessageCommand, message_flags::MessageFlags,
 };
-use neo_p2p::payloads::PingPayload;
+use neo_system::network::p2p::payloads::PingPayload;
 
-use neo_p2p::VerifyResult;
+use neo_system::network::p2p::VerifyResult;
 
 #[test]
 fn test_ping_pong_messages() {

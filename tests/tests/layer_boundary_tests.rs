@@ -46,7 +46,7 @@ fn classify(name: &str, relative_manifest: &Path, package: &Value) -> Result<Mem
         // so it declares no ALLOWED_EDGES entry of its own.
         | "neo-actors" => Some(ProtocolExecution),
         "neo-p2p" | "neo-consensus" | "neo-rpc" | "neo-telemetry" | "neo-tee" | "neo-hsm"
-        | "neo-ai-agent" | "neo-probe" | "neo-signing" | "neo-mempool" | "neo-oracle"
+        | "neo-ai-agent" | "neo-probe" | "neo-mempool" | "neo-oracle"
         | "neo-state-service" | "neo-wallets" | "neo-system" => Some(Services),
         "neo-node" | "neo-signer-server" => Some(Assembly),
         _ => None,
@@ -117,7 +117,7 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // runtime (downward edge, same pattern as neo-vm).
     ("neo-rpc", "neo-actors"),
     // Same-layer service edges exercised by RPC request handlers.
-    ("neo-rpc", "neo-signing"),
+    ("neo-rpc", "neo-wallets"),
     ("neo-rpc", "neo-system"),
     ("neo-tee", "neo-crypto"),
     ("neo-tee", "neo-primitives"),
@@ -147,7 +147,7 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-node", "neo-io"),
     ("neo-node", "neo-primitives"),
     ("neo-node", "neo-protocol"),
-    ("neo-node", "neo-signing"),
+    ("neo-node", "neo-wallets"),
     ("neo-node", "neo-storage"),
     ("neo-node", "neo-system"),
     // Wave B/C consumer repoints: direct deps on authoritative crates.
@@ -165,9 +165,6 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-rpc", "neo-wallets"),
     ("neo-rpc", "neo-mempool"),
     ("neo-rpc", "neo-oracle"),
-    ("neo-signer-server", "neo-crypto"),
-    ("neo-signer-server", "neo-tee"),
-    ("neo-signer-server", "neo-signing"),
     // Native implementations may use the engine, never the reverse direction.
     ("neo-native-contracts", "neo-smart-contract"),
     // Decomposed protocol/execution crates (Phase 2), verified one by one
@@ -198,8 +195,8 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     // Test-only edge (kind dev): wallet fixtures are exercised in tests.
     ("neo-native-contracts", "neo-wallets"),
     // Decomposed service crates, same metadata-verified review.
-    ("neo-signing", "neo-crypto"),
-    ("neo-signing", "neo-primitives"),
+    ("neo-wallets", "neo-crypto"),
+    ("neo-wallets", "neo-primitives"),
     ("neo-mempool", "neo-primitives"),
     // Test-only edge (kind dev): mempool tests build VM scripts directly.
     ("neo-mempool", "neo-vm"),
@@ -252,9 +249,9 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("neo-system", "neo-p2p"),
     ("neo-system", "neo-primitives"),
     // Task 208: state verification service moved from neo-core into
-    // neo-system; it binds directly to the unified signing service and builds
-    // witness invocation scripts with VM opcodes.
-    ("neo-system", "neo-signing"),
+    // neo-system; it binds directly to the unified signing service (now in
+    // neo-wallets) and builds witness invocation scripts with VM opcodes.
+    ("neo-system", "neo-wallets"),
     ("neo-system", "neo-vm"),
     // Wave D1-L1 (task 215): the moved node actors bind directly to the generic
     // actor runtime instead of the neo-core `runtime` compatibility re-export
@@ -1148,8 +1145,8 @@ fn test_native_to_smart_contract_is_one_way_and_other_reverse_edges_fail() {
         ("neo-smart-contract", "neo-native-contracts"),
         ("neo-ledger", "neo-mempool"),
         ("neo-protocol", "neo-wallets"),
-        ("neo-signing", "neo-system"),
-        ("neo-signing", "neo-consensus"),
+        ("neo-wallets", "neo-system"),
+        ("neo-wallets", "neo-consensus"),
         ("neo-smart-contract", "neo-oracle"),
     ] {
         let graph = fixture_pair(from, to, fixture_dependency(to, to));

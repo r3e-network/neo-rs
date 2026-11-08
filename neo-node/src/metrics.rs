@@ -3,7 +3,7 @@
 //! This module provides metrics collection using the neo-telemetry collector,
 //! with optional Prometheus export support for backward compatibility.
 
-use neo_p2p::timeouts::TimeoutStats;
+use neo_system::network::p2p::timeouts::TimeoutStats;
 use neo_telemetry::collector::Telemetry;
 use std::sync::Arc;
 use std::sync::LazyLock;

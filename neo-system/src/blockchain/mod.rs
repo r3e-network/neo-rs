@@ -69,7 +69,7 @@ use neo_ledger::LedgerContext;
 use neo_storage::persistence::DataCache;
 use neo_storage::persistence::StoreCache;
 use neo_native_contracts::LedgerContract;
-use neo_core::state_service::{STATE_SERVICE_CATEGORY, StateRoot};
+use crate::state_service::{STATE_SERVICE_CATEGORY, StateRoot};
 use neo_io_crate::{MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::protocol_settings::ProtocolSettings;
@@ -83,7 +83,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
-use neo_ledger::VerifyResult;
+use neo_primitives::VerifyResult;
 use neo_ledger::blockchain::types::{
     ImportDisposition, UnverifiedBlocksList, classify_import_block,
 };
@@ -114,7 +114,7 @@ struct InventoryCacheKey {
 
 impl InventoryCacheKey {
     fn new(inventory_type: InventoryType, payload: &[u8]) -> Self {
-        let payload_hash = UInt256::from(neo_core::cryptography::Crypto::sha256(payload));
+        let payload_hash = UInt256::from(neo_crypto::Crypto::sha256(payload));
         Self {
             inventory_type,
             payload_hash,
