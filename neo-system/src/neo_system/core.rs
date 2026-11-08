@@ -165,20 +165,28 @@ impl NeoSystem {
     ///
     /// Reference: C# Neo NeoSystem.OnInventory()
     pub fn persist_block(&self, block: neo_protocol::execution::Block) -> Result<(), String> {
-        use crate::blockchain::BlockchainCommand;
-        use neo_ledger::InventoryPayload;
+        use crate::network::p2p::actors::blockchain::BlockchainCommand;
+        use crate::network::p2p::ports::peer_handle::PeerHandle;
 
         // Convert execution block to payload block for processing
         let payload_block = block.to_payload_block();
 
+        // Create a placeholder peer handle for direct block submission
+        // In real usage, this would come from the P2P layer
+        let peer_handle = PeerHandle::new(0); // Placeholder peer ID
+
         // Send to blockchain actor for persistence
-        let command = BlockchainCommand::InventoryBlock(InventoryPayload::Block(payload_block));
+        let _command = BlockchainCommand::InventoryBlock {
+            block: payload_block,
+            relay: false, // Don't relay blocks we're persisting directly
+            pre_verified: true, // Assume pre-verified if called directly
+            source: peer_handle,
+        };
 
         // Delegate to blockchain actor
         // Note: In the full actor system, this would be:
         // self.blockchain.tell(command)?;
         // For now, we acknowledge the delegation point
-        let _ = command;
 
         Ok(())
     }

@@ -154,7 +154,8 @@ pub fn hydrate_ledger(
         message: "Genesis block not found in storage".to_string(),
     })?;
 
-    let genesis_block = Block::read_from(&mut ByteReader::new(genesis_item.value()))
+    let mut reader = MemoryReader::new(genesis_item.value());
+    let genesis_block = Block::deserialize(&mut reader)
         .map_err(|e| StorageError {
             message: format!("Failed to deserialize genesis block: {}", e),
         })?;
@@ -183,18 +184,19 @@ pub fn hydrate_ledger(
             message: format!("Block at height {} not found in storage", index),
         })?;
 
-        let block = Block::read_from(&mut ByteReader::new(block_item.value())).map_err(|e| {
+        let mut reader = MemoryReader::new(block_item.value());
+        let block = Block::deserialize(&mut reader).map_err(|e| {
             StorageError {
                 message: format!("Failed to deserialize block at height {}: {}", index, e),
             }
         })?;
 
         // Step 4: Validate chain integrity - previous hash must match
-        if block.header.prev_hash != prev_hash {
+        if block.header.prev_hash() != &prev_hash {
             return Err(StorageError {
                 message: format!(
                     "Chain integrity broken at height {}: expected prev_hash {}, got {}",
-                    index, prev_hash, block.header.prev_hash
+                    index, prev_hash, block.header.prev_hash()
                 ),
             });
         }
@@ -253,9 +255,8 @@ pub fn hydrate_ledger(
 /// - Deserialization fails
 pub fn hydrate_native_contracts(
     store_cache: &Arc<StoreCache>,
-    _native_contract_cache: &Arc<
-        std::sync::Mutex<neo_smart_contract::NativeContractsCache>,
-    >,
+    // TODO: Re-enable when NativeContractsCache is implemented in neo-smart-contract
+    // _native_contract_cache: &Arc<std::sync::Mutex<neo_smart_contract::NativeContractsCache>>,
 ) -> Result<(), StorageError> {
     use neo_storage::persistence::SeekDirection;
     use neo_storage::types::StorageKey;
