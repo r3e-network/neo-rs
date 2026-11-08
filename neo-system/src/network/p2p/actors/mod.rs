@@ -6,9 +6,9 @@
 //! the networking runtime depends only on:
 //!
 //! * [`crate::ports`] — the task-105 typed port bundles
-//!   ([`RemoteSessionPorts`](crate::ports::RemoteSessionPorts) and
-//!   [`TaskManagerPorts`](crate::ports::TaskManagerPorts)) plus the opaque
-//!   [`PeerHandle`](crate::ports::PeerHandle) that replaces `ActorRef`.
+//!   ([`RemoteSessionPorts`](crate::network::p2p::ports::RemoteSessionPorts) and
+//!   [`TaskManagerPorts`](crate::network::p2p::ports::TaskManagerPorts)) plus the opaque
+//!   [`PeerHandle`](crate::network::p2p::ports::PeerHandle) that replaces `ActorRef`.
 //! * [`crate::sessions`] — the task-103 [`TaskSession`](crate::sessions::TaskSession)
 //!   per-peer bookkeeping.
 //! * `neo-protocol` canonical payloads (`Block`, `Transaction`, `Extensible`,
@@ -65,11 +65,11 @@ pub use blockchain::{Blockchain, BlockchainCommand};
 pub use remote_node::{RemoteNode, RemoteNodeCommand};
 pub use task_manager::{TaskManager, TaskManagerActor, TaskManagerCommand};
 
-use crate::payloads::{
+use crate::network::p2p::payloads::{
     AddrPayload, FilterAddPayload, FilterLoadPayload, GetBlockByIndexPayload, GetBlocksPayload,
     InvPayload, NetworkAddressWithTime, PingPayload, VersionPayload,
 };
-use crate::ports::PeerHandle;
+use crate::network::p2p::ports::PeerHandle;
 use async_trait::async_trait;
 use neo_protocol::payloads::{Block, Extensible, Header, Transaction};
 use std::any::Any;
@@ -341,9 +341,9 @@ pub enum SessionInbound {
 }
 
 impl SessionInbound {
-    /// The [`crate::MessageCommand`] discriminator for this inbound message.
-    pub fn command(&self) -> crate::MessageCommand {
-        use crate::MessageCommand;
+    /// The [`crate::network::p2p::MessageCommand`] discriminator for this inbound message.
+    pub fn command(&self) -> crate::network::p2p::MessageCommand {
+        use crate::network::p2p::MessageCommand;
         match self {
             Self::Version(_) => MessageCommand::Version,
             Self::Verack => MessageCommand::Verack,
@@ -370,7 +370,7 @@ impl SessionInbound {
         }
     }
 
-    /// Raw payload bytes for the [`crate::ports::InboundDispatchPort`] veto hook.
+    /// Raw payload bytes for the [`crate::network::p2p::ports::InboundDispatchPort`] veto hook.
     ///
     /// The dispatch port only needs a byte view for external handlers; the
     /// dest-only bodies pass an empty slice because re-serializing canonical
@@ -417,9 +417,9 @@ pub enum SessionOutbound {
 }
 
 impl SessionOutbound {
-    /// The [`crate::MessageCommand`] discriminator for this outbound message.
-    pub fn command(&self) -> crate::MessageCommand {
-        use crate::MessageCommand;
+    /// The [`crate::network::p2p::MessageCommand`] discriminator for this outbound message.
+    pub fn command(&self) -> crate::network::p2p::MessageCommand {
+        use crate::network::p2p::MessageCommand;
         match self {
             Self::Version(_) => MessageCommand::Version,
             Self::Verack => MessageCommand::Verack,
@@ -448,7 +448,7 @@ impl SessionOutbound {
 /// the original `send_wire_message` upheld.
 pub trait OutboundSink: Send + Sync {
     /// Queues one outbound protocol message for the session's peer.
-    fn enqueue(&self, message: SessionOutbound) -> crate::ports::PortResult<()>;
+    fn enqueue(&self, message: SessionOutbound) -> crate::network::p2p::ports::PortResult<()>;
 }
 
 // ===========================================================================
@@ -723,7 +723,7 @@ mod tests {
 
     #[test]
     fn inbound_command_discriminators_are_stable() {
-        use crate::MessageCommand;
+        use crate::network::p2p::MessageCommand;
         assert_eq!(SessionInbound::Verack.command(), MessageCommand::Verack);
         assert_eq!(SessionInbound::Mempool.command(), MessageCommand::Mempool);
         assert_eq!(SessionOutbound::GetAddr.command(), MessageCommand::GetAddr);

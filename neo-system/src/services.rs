@@ -12,10 +12,24 @@
 //! `NotifyEventArgs`) are resolved through `neo-core`'s public surface.
 
 use neo_storage::persistence::StoreCache;
-use neo_smart_contract::{ApplicationEngine, LogEventArgs, NotifyEventArgs};
+use neo_smart_contract::ApplicationEngine;
 use neo_primitives::UInt256;
 use neo_protocol::protocol_settings::ProtocolSettings;
 use std::sync::Arc;
+
+// Re-export mempool services
+pub use crate::mempool::services::{MempoolService, LockedMempoolService};
+
+// Re-export network services
+pub use crate::network::p2p::services::PeerManagerService;
+
+// Placeholder traits for services not yet fully implemented
+pub trait LedgerService: Send + Sync {}
+pub trait StateStoreService: Send + Sync {}
+
+// Placeholder types for event args
+pub struct LogEventArgs;
+pub struct NotifyEventArgs;
 
 /// System context trait providing access to core runtime services.
 ///

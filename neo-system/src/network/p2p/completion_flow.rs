@@ -21,15 +21,15 @@
 //! diagnostic branches of the original are collapsed into the same structured
 //! [`crate::block_validation`] outcomes; the caller decides what to log.
 
-use crate::block_validation::{
+use super::block_validation::{
     BlockHashMatch, IncomingBlockOutcome, PersistedBlockMatch, block_matches_hash,
     match_persisted_block, persisted_block_hash, validate_incoming_block,
 };
-use crate::ports::{PeerHandle, RelayOutcome, TaskManagerPorts};
-use crate::scheduling::{HEADER_TASK_HASH, TaskCounter};
-use crate::sessions::task_session::TaskSession;
-use crate::{InventoryType, VerifyResult};
-use neo_io::HashSetCache;
+use super::ports::{PeerHandle, RelayOutcome, TaskManagerPorts};
+use super::scheduling::{HEADER_TASK_HASH, TaskCounter};
+use super::sessions::task_session::TaskSession;
+use super::{InventoryType, VerifyResult};
+use neo_io_crate::HashSetCache;
 use neo_primitives::UInt256;
 use neo_protocol::payloads::Block;
 use std::collections::HashMap;

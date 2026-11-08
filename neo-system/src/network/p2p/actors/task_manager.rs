@@ -4,7 +4,7 @@
 //! `state` / `scheduling` / `request_flow` / `completion_flow` / `restart_flow`
 //! / `timeout_pruning` / `session_lifecycle` / `peer_commands` /
 //! `block_validation` / `handle` submodules) on top of the task-105
-//! [`TaskManagerPorts`](crate::ports::TaskManagerPorts) bundle.
+//! [`TaskManagerPorts`](crate::network::p2p::ports::TaskManagerPorts) bundle.
 //!
 //! The two structural changes from the original are mandated by the ports
 //! boundary:
@@ -16,7 +16,7 @@
 //!   known-hash dedup cache, `ledger_query.current_index()` seeds the persist
 //!   frontier, and `persistence_events.subscribe()` yields the event receiver
 //!   the [`TaskManagerActor`] drains. Outbound peer requests go through
-//!   [`PeerCommandPort`](crate::ports::PeerCommandPort) instead of `tell`-ing a
+//!   [`PeerCommandPort`](crate::network::p2p::ports::PeerCommandPort) instead of `tell`-ing a
 //!   peer `ActorRef`.
 //!
 //! # Task-89 alignment points
@@ -25,16 +25,16 @@
 //!   runtime from [`super`]; task 89 swaps in `neo-system::runtime`.
 //! * Relay-invalid block attribution (disconnecting the peer that supplied a bad
 //! * block) needs a hash→peer provenance map the neutral
-//!   [`RelayOutcome`](crate::ports::RelayOutcome) does not carry; the handler
+//!   [`RelayOutcome`](crate::network::p2p::ports::RelayOutcome) does not carry; the handler
 //!   releases the index task and logs, leaving attribution to the adapter.
 
 use super::{Actor, ActorContext, ActorResult, ScheduleHandle};
-use crate::payloads::{InvPayload, VersionPayload};
-use crate::ports::{PeerHandle, PersistenceEvent, RelayOutcome, TaskManagerPorts};
+use crate::network::p2p::payloads::{InvPayload, VersionPayload};
+use crate::network::p2p::ports::{PeerHandle, PersistenceEvent, RelayOutcome, TaskManagerPorts};
 use crate::sessions::TaskSession;
 use crate::{ContainsTransactionType, InventoryType, VerifyResult};
 use async_trait::async_trait;
-use neo_io::HashSetCache;
+use neo_io_crate::HashSetCache;
 use neo_primitives::UInt256;
 use neo_protocol::payloads::Block;
 use std::any::Any;
@@ -51,7 +51,7 @@ const PERSISTENCE_FRONTIER_TIMEOUT: Duration = Duration::from_secs(10);
 /// Maximum peers that may concurrently fetch the same hash/index.
 const MAX_CONCURRENT_TASKS: u32 = 3;
 /// Maximum hashes carried in one inventory message.
-const MAX_HASHES_COUNT: usize = crate::payloads::inv_payload::MAX_HASHES_COUNT;
+const MAX_HASHES_COUNT: usize = crate::network::p2p::payloads::inv_payload::MAX_HASHES_COUNT;
 /// Upper bound of a single `GetBlockByIndex` batch.
 const MAX_BLOCK_INDEX_BATCH: u32 = MAX_HASHES_COUNT as u32;
 /// Default number of block indexes requested per scheduling pass.
@@ -719,7 +719,7 @@ impl TaskManager {
 
 /// Commands accepted by the [`TaskManagerActor`].
 ///
-/// Mirrors the [`TaskManagerPort`](crate::ports::TaskManagerPort) command set
+/// Mirrors the [`TaskManagerPort`](crate::network::p2p::ports::TaskManagerPort) command set
 /// one-for-one (delivered as mailbox messages instead of port calls), plus the
 /// internal [`Timer`](Self::Timer) tick and peer-removal the runtime needs.
 /// There is deliberately **no** `AttachSystem` variant: wiring happens once in

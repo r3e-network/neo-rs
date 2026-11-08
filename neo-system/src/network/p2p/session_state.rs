@@ -11,10 +11,10 @@
 
 use crate::bloom_filter::BloomFilterState;
 use crate::handshake::{HandshakeGateDecision, handshake_gate_decision};
-use crate::message_command::MessageCommand;
+use super::message_command::MessageCommand;
 use crate::outbound_queue::CommandBitSet;
 use crate::pending_known_hashes::PendingKnownHashes;
-use neo_io::HashSetCache;
+use neo_io_crate::HashSetCache;
 use neo_primitives::UInt256;
 use std::net::SocketAddr;
 

@@ -43,3 +43,29 @@ pub use network_address_with_time::NetworkAddressWithTime;
 pub use node_capability::NodeCapability;
 pub use ping_payload::PingPayload;
 pub use version_payload::VersionPayload;
+
+// Re-export core protocol types from neo-protocol
+pub use neo_protocol::payloads::{Block, Transaction, Witness};
+pub use neo_protocol::payloads::extensible::Extensible as ExtensiblePayload;
+pub use neo_protocol::execution::BlockHeader as Header;
+
+// Re-export InventoryType from parent module for compatibility
+pub use super::InventoryType;
+
+// Re-export modules for compatibility
+pub mod block {
+    pub use neo_protocol::payloads::Block;
+}
+
+pub mod transaction {
+    pub use neo_protocol::payloads::Transaction;
+    pub const MAX_TRANSACTION_SIZE: usize = neo_protocol::payloads::transaction::MAX_TRANSACTION_SIZE;
+}
+
+pub mod extensible_payload {
+    pub use neo_protocol::payloads::extensible::Extensible as ExtensiblePayload;
+}
+
+pub mod header {
+    pub use neo_protocol::execution::BlockHeader as Header;
+}

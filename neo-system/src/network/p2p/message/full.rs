@@ -6,16 +6,16 @@
 //! - Reusable buffer support for high-throughput scenarios
 
 use crate::{MessageCommand, MessageFlags};
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::NetworkError;
 use serde::{Deserialize, Serialize};
 
 pub use crate::message::PAYLOAD_MAX_SIZE;
 
 /// Minimum size in bytes for data to be considered for compression.
-const COMPRESSION_MIN_SIZE: usize = neo_io::COMPRESSION_MIN_SIZE;
+const COMPRESSION_MIN_SIZE: usize = neo_io_crate::COMPRESSION_MIN_SIZE;
 /// Threshold in bytes below which compression is skipped.
-const COMPRESSION_THRESHOLD: usize = neo_io::COMPRESSION_THRESHOLD;
+const COMPRESSION_THRESHOLD: usize = neo_io_crate::COMPRESSION_THRESHOLD;
 
 /// Default buffer capacity for small messages (avoids reallocation for common cases).
 const DEFAULT_MESSAGE_CAPACITY: usize = 256;
@@ -97,7 +97,7 @@ impl Message {
         if enable_compression
             && command.allows_compression()
             && message.payload_compressed.len() > COMPRESSION_MIN_SIZE
-            && let Ok(compressed) = neo_io::compress_lz4(&message.payload_compressed)
+            && let Ok(compressed) = neo_io_crate::compress_lz4(&message.payload_compressed)
             && compressed.len() + COMPRESSION_THRESHOLD < message.payload_compressed.len()
         {
             message.payload_compressed = compressed;
@@ -138,7 +138,7 @@ impl Message {
         };
 
         if message.is_compressed() {
-            match neo_io::compress_lz4(&message.payload_raw) {
+            match neo_io_crate::compress_lz4(&message.payload_raw) {
                 Ok(compressed) => message.payload_compressed = compressed,
                 Err(err) => {
                     tracing::warn!(
@@ -186,7 +186,7 @@ impl Message {
         };
 
         // Calculate exact size needed to avoid reallocations
-        let total_size = 1 + 1 + neo_io::var_int::encoded_len(payload.len() as u64) + payload.len();
+        let total_size = 1 + 1 + neo_io_crate::var_int::encoded_len(payload.len() as u64) + payload.len();
         let mut writer = BinaryWriter::with_capacity(total_size);
 
         writer.write_u8(flags.to_byte())?;
@@ -214,12 +214,12 @@ impl Message {
         };
 
         // Reserve capacity to avoid reallocations
-        let required = 1 + 1 + neo_io::var_int::encoded_len(payload.len() as u64) + payload.len();
+        let required = 1 + 1 + neo_io_crate::var_int::encoded_len(payload.len() as u64) + payload.len();
         buffer.reserve(required);
 
         buffer.push(flags.to_byte());
         buffer.push(self.command.to_byte());
-        neo_io::var_int::write_var_bytes(payload, buffer);
+        neo_io_crate::var_int::write_var_bytes(payload, buffer);
 
         Ok(buffer.len() - start_len)
     }
@@ -233,7 +233,7 @@ impl Message {
 
         if self.is_compressed() {
             let decompressed =
-                neo_io::decompress_lz4(&self.payload_compressed, PAYLOAD_MAX_SIZE).map_err(|err| {
+                neo_io_crate::decompress_lz4(&self.payload_compressed, PAYLOAD_MAX_SIZE).map_err(|err| {
                     NetworkError::InvalidMessage(format!("Failed to decompress payload: {err}"))
                 })?;
             self.payload_raw = decompressed;
@@ -246,7 +246,7 @@ impl Message {
 
     /// Get payload size (matches C# `Size` property).
     pub fn size(&self) -> usize {
-        1 + 1 + neo_io::var_int::encoded_len(self.payload_compressed.len() as u64) + self.payload_compressed.len()
+        1 + 1 + neo_io_crate::var_int::encoded_len(self.payload_compressed.len() as u64) + self.payload_compressed.len()
     }
 
     /// Attempts to deserialize the payload into a strongly typed representation.
@@ -257,7 +257,7 @@ impl Message {
 }
 
 impl Serializable for Message {
-    fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
+    fn deserialize(reader: &mut MemoryReader) -> neo_io_crate::IoResult<Self> {
         let flags = MessageFlags::from_byte(reader.read_u8()?);
         let command = MessageCommand::from_byte(reader.read_u8()?).map_err(|_| {
             IoError::invalid_data_with_context("Message::deserialize", "invalid command value")
@@ -279,7 +279,7 @@ impl Serializable for Message {
         Ok(message)
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io_crate::IoResult<()> {
         writer.write_u8(self.flags.to_byte())?;
         writer.write_u8(self.command.to_byte())?;
         writer.write_var_bytes(self.payload_compressed())?;
@@ -294,7 +294,7 @@ impl Serializable for Message {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_io::{BinaryWriter, MemoryReader, Serializable};
+    use neo_io_crate::{BinaryWriter, MemoryReader, Serializable};
 
     #[derive(Default)]
     struct DummyPayload {
@@ -302,11 +302,11 @@ mod tests {
     }
 
     impl Serializable for DummyPayload {
-        fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
+        fn serialize(&self, writer: &mut BinaryWriter) -> neo_io_crate::IoResult<()> {
             writer.write_bytes(&self.bytes)
         }
 
-        fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
+        fn deserialize(reader: &mut MemoryReader) -> neo_io_crate::IoResult<Self> {
             // Consume the remaining buffer as the payload for test round-trips.
             let remaining = reader.read_to_end()?.to_vec();
             Ok(Self { bytes: remaining })
@@ -468,12 +468,12 @@ mod tests {
 
     #[test]
     fn uses_shared_var_int_size_calculation() {
-        assert_eq!(neo_io::var_int::encoded_len(0), 1);
-        assert_eq!(neo_io::var_int::encoded_len(0xFC), 1);
-        assert_eq!(neo_io::var_int::encoded_len(0xFD), 3);
-        assert_eq!(neo_io::var_int::encoded_len(0xFFFF), 3);
-        assert_eq!(neo_io::var_int::encoded_len(0x10000), 5);
-        assert_eq!(neo_io::var_int::encoded_len(0xFFFF_FFFF), 5);
-        assert_eq!(neo_io::var_int::encoded_len(0x1_0000_0000), 9);
+        assert_eq!(neo_io_crate::var_int::encoded_len(0), 1);
+        assert_eq!(neo_io_crate::var_int::encoded_len(0xFC), 1);
+        assert_eq!(neo_io_crate::var_int::encoded_len(0xFD), 3);
+        assert_eq!(neo_io_crate::var_int::encoded_len(0xFFFF), 3);
+        assert_eq!(neo_io_crate::var_int::encoded_len(0x10000), 5);
+        assert_eq!(neo_io_crate::var_int::encoded_len(0xFFFF_FFFF), 5);
+        assert_eq!(neo_io_crate::var_int::encoded_len(0x1_0000_0000), 9);
     }
 }

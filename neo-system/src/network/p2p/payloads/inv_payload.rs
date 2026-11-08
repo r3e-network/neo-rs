@@ -1,7 +1,7 @@
 //! Inventory payload (mirrors `Neo.Network.P2P.Payloads.InvPayload`).
 
-use neo_io::serializable::helper;
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io_crate::serializable::helper;
+use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::{InventoryType, UInt256};
 use serde::{Deserialize, Serialize};
 

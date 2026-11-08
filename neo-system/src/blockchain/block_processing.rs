@@ -3,7 +3,6 @@
 //
 
 use super::*;
-use crate::network::p2p::payloads::extensible_payload::ExtensiblePayloadExt;
 use dashmap::mapref::entry::Entry;
 use std::sync::atomic::Ordering;
 use tracing::instrument;

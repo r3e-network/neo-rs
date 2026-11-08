@@ -10,7 +10,7 @@
 //! not be migrated here.
 //!
 //! What the P2P runtime *does* need is the **consumer side of
-//! [`ChainSinkPort`](crate::ports::ChainSinkPort)**: a coordination point that
+//! [`ChainSinkPort`](crate::network::p2p::ports::ChainSinkPort)**: a coordination point that
 //! receives the inventory a [`RemoteNode`](super::remote_node::RemoteNode)
 //! forwarded, applies purely p2p-local concerns (dedup, consecutive-order
 //! buffering, byte/count budget, drain-on-stall), and hands ready-to-commit items
@@ -19,7 +19,7 @@
 //! [`PersistenceEvent`]s back out through [`PersistenceEventPublisher`], which is
 //! exactly the stream the [`TaskManager`](super::task_manager::TaskManager)
 //! subscribes to via
-//! [`PersistenceEventPort`](crate::ports::PersistenceEventPort).
+//! [`PersistenceEventPort`](crate::network::p2p::ports::PersistenceEventPort).
 //!
 //! This keeps `neo-p2p` free of any ledger/native/storage dependency while
 //! preserving the ordering and stall-recovery behaviour the original
@@ -36,11 +36,11 @@
 //!   would change.
 
 use super::{Actor, ActorContext, ActorResult, ScheduleHandle};
-use crate::ports::{
+use crate::network::p2p::ports::{
     PeerHandle, PersistFailure, PersistedBlock, PersistenceEvent, PortResult, RelayOutcome,
 };
 use async_trait::async_trait;
-use neo_io::{HashSetCache, Serializable};
+use neo_io_crate::{HashSetCache, Serializable};
 use neo_primitives::UInt256;
 use neo_protocol::payloads::{Block, Extensible, Header};
 use std::any::Any;
@@ -94,7 +94,7 @@ pub trait ChainPersistenceSink: Send + Sync {
 /// Adapter-provided publisher of neutral persistence/relay events.
 ///
 /// This is the source side of the
-/// [`PersistenceEventPort`](crate::ports::PersistenceEventPort) the task manager
+/// [`PersistenceEventPort`](crate::network::p2p::ports::PersistenceEventPort) the task manager
 /// subscribes to. Publishing keeps the frontier advance observable without the
 /// P2P layer naming any ledger/system event type.
 pub trait PersistenceEventPublisher: Send + Sync {
@@ -463,7 +463,7 @@ mod tests {
             let index = block.index();
             if let Some(fail) = self.fail_at.lock().unwrap().as_ref() {
                 if *fail == index {
-                    return Err(crate::ports::PortError::delivery("commit failed"));
+                    return Err(crate::network::p2p::ports::PortError::delivery("commit failed"));
                 }
             }
             self.committed.lock().unwrap().push(index);

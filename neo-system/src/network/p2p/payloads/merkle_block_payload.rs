@@ -10,10 +10,10 @@
 //! `BitVec<u8, Lsb0>::into_vec()` exactly.
 
 use neo_crypto::MerkleTree;
-use neo_io::serializable::helper::{
+use neo_io_crate::serializable::helper::{
     deserialize_array, get_var_size_bytes, get_var_size_serializable_slice, serialize_array,
 };
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use neo_protocol::payloads::{Block, Header};
 use serde::{Deserialize, Serialize};

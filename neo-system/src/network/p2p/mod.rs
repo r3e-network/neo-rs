@@ -64,7 +64,6 @@ pub mod outbound_queue;
 pub mod peer_messages;
 pub mod pending_known_hashes;
 pub mod scheduling;
-pub mod mod_protocol;
 
 // ============================================================================
 // Re-exports from neo-primitives

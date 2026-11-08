@@ -12,7 +12,7 @@
 //! the adapter performs at construction, not a per-session runtime command.
 
 use super::{PeerHandle, PortResult};
-use crate::payloads::{InvPayload, VersionPayload};
+use crate::network::p2p::payloads::{InvPayload, VersionPayload};
 use neo_primitives::UInt256;
 use neo_protocol::payloads::Block;
 

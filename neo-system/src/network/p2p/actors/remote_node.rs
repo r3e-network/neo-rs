@@ -3,7 +3,7 @@
 //! This is the faithful re-expression of `neo-core::network::p2p::RemoteNode`
 //! (and its `routing` / `handshake` / `lifecycle` / `inventory` /
 //! `peer_messages` / `timers` submodules) on top of the task-105
-//! [`RemoteSessionPorts`](crate::ports::RemoteSessionPorts) bundle. Every
+//! [`RemoteSessionPorts`](crate::network::p2p::ports::RemoteSessionPorts) bundle. Every
 //! collaborator the original reached through `NeoSystemContext` / `ActorRef` is
 //! now either:
 //!
@@ -21,7 +21,7 @@
 //!   the local placeholder from [`super`]; task 89 swaps in
 //!   `neo-system::runtime` without touching the body.
 //! * `on_get_headers` cannot enumerate stored headers because
-//!   [`LedgerQueryPort`](crate::ports::LedgerQueryPort) exposes no
+//!   [`LedgerQueryPort`](crate::network::p2p::ports::LedgerQueryPort) exposes no
 //!   "headers-from-index" projection. The handler therefore records the request
 //!   and defers the reply to the adapter/chain seam (documented inline).
 //! * Bloom-filtered (`MerkleBlock`) serving is deferred: `neo-p2p` has no
@@ -33,13 +33,13 @@ use super::{
     PendingKnownHashes, ScheduleHandle, SessionInbound, SessionLifecycleSink, SessionOutbound,
     normalize_request,
 };
-use crate::payloads::{
+use crate::network::p2p::payloads::{
     AddrPayload, GetBlockByIndexPayload, GetBlocksPayload, InvPayload, PingPayload, VersionPayload,
 };
-use crate::ports::{PeerHandle, RemoteSessionPorts};
+use crate::network::p2p::ports::{PeerHandle, RemoteSessionPorts};
 use crate::{ChannelsConfig, ContainsTransactionType, InventoryType};
 use async_trait::async_trait;
-use neo_io::{HashSetCache, Serializable};
+use neo_io_crate::{HashSetCache, Serializable};
 use neo_primitives::{MAX_TRANSACTION_SIZE, UInt160, UInt256};
 use neo_protocol::payloads::{Block, Extensible, Header, Transaction};
 use std::any::Any;
@@ -54,9 +54,9 @@ const PING_INTERVAL: Duration = Duration::from_secs(60);
 /// How far ahead of the persisted frontier an unsolicited block is accepted.
 const BLOCK_INDEX_LOOKAHEAD: u32 = 500;
 /// Maximum hashes carried in one inventory payload.
-const MAX_HASHES_COUNT: usize = crate::payloads::inv_payload::MAX_HASHES_COUNT;
+const MAX_HASHES_COUNT: usize = crate::network::p2p::payloads::inv_payload::MAX_HASHES_COUNT;
 /// Maximum peer addresses served in one `Addr` reply.
-const MAX_COUNT_TO_SEND: usize = crate::payloads::addr_payload::MAX_COUNT_TO_SEND;
+const MAX_COUNT_TO_SEND: usize = crate::network::p2p::payloads::addr_payload::MAX_COUNT_TO_SEND;
 
 /// Commands accepted by the [`RemoteNode`] session actor.
 ///
@@ -104,9 +104,9 @@ pub enum HandshakeGateDecision {
 pub fn handshake_gate_decision(
     version_received: bool,
     handshake_complete: bool,
-    command: crate::MessageCommand,
+    command: crate::network::p2p::MessageCommand,
 ) -> HandshakeGateDecision {
-    use crate::MessageCommand;
+    use crate::network::p2p::MessageCommand;
     match command {
         MessageCommand::Version => {
             if version_received {
@@ -346,7 +346,7 @@ impl RemoteNode {
         }
 
         for capability in &version.capabilities {
-            if let crate::payloads::NodeCapability::FullNode { start_height } = capability {
+            if let crate::network::p2p::payloads::NodeCapability::FullNode { start_height } = capability {
                 self.is_full_node = true;
                 self.last_block_index = *start_height;
             }
@@ -356,7 +356,7 @@ impl RemoteNode {
             .capabilities
             .iter()
             .find_map(|cap| match cap {
-                crate::payloads::NodeCapability::TcpServer { port } => Some(*port),
+                crate::network::p2p::payloads::NodeCapability::TcpServer { port } => Some(*port),
                 _ => None,
             })
             .unwrap_or(self.endpoint.port());
@@ -795,7 +795,7 @@ impl RemoteNode {
         let endpoints: Vec<SocketAddr> = payload
             .address_list
             .iter()
-            .filter_map(crate::payloads::NetworkAddressWithTime::endpoint)
+            .filter_map(crate::network::p2p::payloads::NetworkAddressWithTime::endpoint)
             .collect();
         if endpoints.is_empty() {
             return;
@@ -900,7 +900,7 @@ impl Actor for RemoteNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MessageCommand;
+    use crate::network::p2p::MessageCommand;
 
     #[test]
     fn handshake_gate_enforces_ordering() {

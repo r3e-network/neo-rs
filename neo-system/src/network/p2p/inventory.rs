@@ -12,16 +12,16 @@
 //! Fast-sync mode was `self.system.is_fast_sync_mode()`; it is now an explicit
 //! `fast_sync: bool` argument so the caller (session actor) owns that policy.
 
-use crate::contains_transaction_type::ContainsTransactionType;
-use crate::payloads::inv_payload::MAX_HASHES_COUNT;
-use crate::payloads::merkle_block_payload::MerkleBlockPayload;
-use crate::payloads::{GetBlockByIndexPayload, GetBlocksPayload, InvPayload};
-use crate::peer_messages::normalize_request;
-use crate::ports::{PeerHandle, RemoteSessionPorts};
-use crate::protocol_message::{NetworkMessage, ProtocolMessage};
-use crate::scheduling::BLOCK_INDEX_LOOKAHEAD;
-use crate::session_state::SessionState;
-use neo_io::Serializable;
+use super::contains_transaction_type::ContainsTransactionType;
+use super::payloads::inv_payload::MAX_HASHES_COUNT;
+use super::payloads::merkle_block_payload::MerkleBlockPayload;
+use super::payloads::{GetBlockByIndexPayload, GetBlocksPayload, InvPayload};
+use super::peer_messages::normalize_request;
+use super::ports::{PeerHandle, RemoteSessionPorts};
+use super::protocol_message::{NetworkMessage, ProtocolMessage};
+use super::scheduling::BLOCK_INDEX_LOOKAHEAD;
+use super::session_state::SessionState;
+use neo_io_crate::Serializable;
 use neo_primitives::{InventoryType, UInt160, UInt256};
 use neo_protocol::payloads::transaction::MAX_TRANSACTION_SIZE;
 use neo_protocol::payloads::{Block, Extensible, Transaction};

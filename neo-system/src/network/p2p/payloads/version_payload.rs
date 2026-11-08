@@ -13,8 +13,8 @@ use super::node_capability::{
     NodeCapability, deserialize_node_capabilities, node_capabilities_size,
     serialize_node_capabilities,
 };
-use neo_io::serializable::helper::get_var_size_str;
-use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use neo_io_crate::serializable::helper::get_var_size_str;
+use neo_io_crate::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Protocol version constant

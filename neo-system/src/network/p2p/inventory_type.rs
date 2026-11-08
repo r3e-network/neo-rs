@@ -3,7 +3,7 @@
 
 pub use neo_primitives::InventoryType;
 
-use crate::message_command::MessageCommand;
+use super::message_command::MessageCommand;
 
 impl From<InventoryType> for MessageCommand {
     fn from(inv_type: InventoryType) -> Self {

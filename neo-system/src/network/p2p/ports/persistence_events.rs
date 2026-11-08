@@ -11,8 +11,8 @@
 //! Only canonical protocol payloads, p2p's own `InventoryType`/`VerifyResult`,
 //! and primitives cross the boundary.
 
-use crate::InventoryType;
-use crate::VerifyResult;
+use crate::network::p2p::InventoryType;
+use crate::network::p2p::VerifyResult;
 use neo_primitives::UInt256;
 use neo_protocol::payloads::Block;
 

@@ -6,8 +6,8 @@
 //! translation below keeps the same fields and behaviour so that the ported
 //! `TaskManager` can rely on identical semantics.
 
-use crate::payloads::{NodeCapability, VersionPayload};
-use neo_io::Serializable;
+use crate::network::p2p::payloads::{NodeCapability, VersionPayload};
+use neo_io_crate::Serializable;
 use neo_primitives::UInt256;
 use neo_protocol::payloads::Block;
 use std::collections::{HashMap, HashSet};

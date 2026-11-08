@@ -9,7 +9,7 @@
 //! session's concrete command enums.
 
 use super::{PeerHandle, PortResult};
-use crate::InventoryType;
+use crate::network::p2p::InventoryType;
 use neo_primitives::UInt256;
 
 /// Outbound requests and control signals sent to a connected peer.

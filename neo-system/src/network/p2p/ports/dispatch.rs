@@ -7,7 +7,7 @@
 //! only the opaque peer handle and p2p's own `MessageCommand`.
 
 use super::PeerHandle;
-use crate::MessageCommand;
+use crate::network::p2p::MessageCommand;
 
 /// Offers an inbound frame to external handlers before default processing.
 ///

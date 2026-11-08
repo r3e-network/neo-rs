@@ -1,7 +1,7 @@
 //! Capability container implementation (mirrors `NodeCapability.cs`).
 
-use neo_io::serializable::helper;
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io_crate::serializable::helper;
+use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::NodeCapabilityType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

@@ -7,9 +7,9 @@
 //! hash the task manager expected.
 //!
 //! The `neo-core` original carries a `CoreError` for unhashable headers; here the
-//! hash failure type is `neo_io::IoError`, the error `Block::try_hash` returns.
+//! hash failure type is `neo_io_crate::IoError`, the error `Block::try_hash` returns.
 
-use neo_io::IoError;
+use neo_io_crate::IoError;
 use neo_primitives::UInt256;
 use neo_protocol::payloads::Block;
 

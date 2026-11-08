@@ -7,7 +7,7 @@
 //! actor/system/ledger type so they can be unit-tested in isolation and reused
 //! by the ported task manager.
 
-use crate::payloads::inv_payload::MAX_HASHES_COUNT;
+use super::payloads::inv_payload::MAX_HASHES_COUNT;
 use neo_primitives::UInt256;
 use std::collections::HashMap;
 use std::hash::Hash;

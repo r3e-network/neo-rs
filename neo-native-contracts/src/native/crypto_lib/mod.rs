@@ -17,7 +17,6 @@ use std::any::Any;
 
 mod bls12381;
 mod metadata;
-pub(crate) use neo_smart_contract::application_engine::native_interop::Bls12381Interop;
 
 /// The CryptoLib native contract exposing hashing primitives (SHA-256, RIPEMD-160,
 /// Murmur32, Keccak-256) plus signature verification and secp256k1 public-key recovery.

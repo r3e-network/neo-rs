@@ -4,7 +4,7 @@
 //! `NeoSystemContext` into the memory pool and the in-memory relay/extensible
 //! caches. Only canonical protocol payloads and primitives cross the boundary.
 
-use crate::ContainsTransactionType;
+use crate::network::p2p::ContainsTransactionType;
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::payloads::{Extensible, Transaction};
 

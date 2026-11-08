@@ -41,13 +41,13 @@ pub use wallet_provider::WalletProvider;
 
 // Signing service types re-exported at the crate root.
 pub use signing::{
-    AuthenticatedContext, AuthorizedSignRequest, BeginSigningOutcome, BeginSigningRequest,
-    DefaultSignerService, DigestAlgorithm, DurableSigningStore, FrozenSignIntent, IdempotencyInfo,
-    KeyInfo, KeyRef, PersistedSigningOperation, PolicyDecision, PolicyLimits, PolicySelector,
-    ProtocolContext, ProviderCapabilities, ProviderOperationStatus, ProviderOutcomeProvenance,
-    ProviderSignature, QuotaReservation, SecurityLevel, SignError, SignErrorCode, SignPayload,
-    SignPurpose, SignRequest, SignResponse, SignResult, SignerProvider, SignerProviderRegistry,
-    SignerService, SigningAuditEvent, SigningDeadlineRegistry, SigningKeyBinding,
-    SigningKeyResolver, SigningPolicy, SigningRequestState, SigningRequestStatus, SigningStore,
-    TrustedSignerClient,
+    ALGORITHM_ECDSA_P256_SHA256, AuthenticatedContext, AuthorizedSignRequest, BeginSigningOutcome,
+    BeginSigningRequest, DefaultSignerService, DigestAlgorithm, DurableSigningStore,
+    FrozenSignIntent, IdempotencyInfo, KeyInfo, KeyRef, PersistedSigningOperation, PolicyDecision,
+    PolicyLimits, PolicySelector, ProtocolContext, ProviderCapabilities, ProviderOperationStatus,
+    ProviderOutcomeProvenance, ProviderSignature, QuotaReservation, SIGNING_SCHEMA_VERSION,
+    SecurityLevel, SignError, SignErrorCode, SignPayload, SignPurpose, SignRequest, SignResponse,
+    SignResult, SignerProvider, SignerProviderRegistry, SignerService, SigningAuditEvent,
+    SigningDeadlineRegistry, SigningKeyBinding, SigningKeyResolver, SigningPolicy,
+    SigningRequestState, SigningRequestStatus, SigningStore, TrustedSignerClient,
 };

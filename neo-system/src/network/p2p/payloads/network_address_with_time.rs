@@ -5,7 +5,7 @@ use super::node_capability::{
     serialize_node_capabilities,
 };
 use super::version_payload::MAX_CAPABILITIES;
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 

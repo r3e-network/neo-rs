@@ -24,6 +24,7 @@ use super::system::{ReadinessStatus, STATE_STORE_SERVICE};
 use crate::blockchain::BlockchainHandle;
 use crate::events::{PluginEvent, broadcast_plugin_event};
 use crate::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
+use crate::mempool::MemoryPool;
 use crate::network::p2p::{
     LocalNode, LocalNodeHandle, TaskManagerHandle,
     payloads::{

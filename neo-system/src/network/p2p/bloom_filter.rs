@@ -16,7 +16,7 @@
 //! * every rejection path is surfaced as a [`FilterLoadOutcome`] /
 //!   [`FilterAddOutcome`] value the caller can log, instead of logging here.
 
-use crate::payloads::{FilterAddPayload, FilterLoadPayload};
+use super::payloads::{FilterAddPayload, FilterLoadPayload};
 use neo_crypto::BloomFilter;
 use neo_protocol::payloads::{Block, Transaction};
 use std::time::{Duration, Instant};

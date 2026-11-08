@@ -64,6 +64,7 @@ scrypt = "0.11"
 
 [dev-dependencies]
 chrono = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 # Aggregate gate so `neo-wallets` participates in the workspace-wide

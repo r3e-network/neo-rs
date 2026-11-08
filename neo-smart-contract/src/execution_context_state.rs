@@ -83,3 +83,144 @@ impl Default for ExecutionContextState {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_creates_default_state() {
+        let state = ExecutionContextState::new();
+        assert!(state.script_hash.is_none());
+        assert!(state.calling_script_hash.is_none());
+        assert!(state.calling_context.is_none());
+        assert!(state.native_calling_script_hash.is_none());
+        assert!(state.contract.is_none());
+        assert_eq!(state.call_flags, CallFlags::ALL);
+        assert!(state.snapshot_cache.is_none());
+        assert_eq!(state.notification_count, 0);
+        assert!(!state.is_dynamic_call);
+        assert!(!state.whitelisted);
+        assert!(state.method_name.is_none());
+        assert_eq!(state.argument_count, 0);
+        assert!(state.return_type.is_none());
+        assert!(state.parameter_types.is_empty());
+    }
+
+    #[test]
+    fn default_matches_new() {
+        let state1 = ExecutionContextState::new();
+        let state2 = ExecutionContextState::default();
+
+        assert_eq!(state1.call_flags, state2.call_flags);
+        assert_eq!(state1.notification_count, state2.notification_count);
+        assert_eq!(state1.is_dynamic_call, state2.is_dynamic_call);
+        assert_eq!(state1.whitelisted, state2.whitelisted);
+    }
+
+    #[test]
+    fn can_set_script_hash() {
+        let mut state = ExecutionContextState::new();
+        let hash = UInt160::from_bytes(&[0x01; 20]).expect("hash");
+        state.script_hash = Some(hash);
+        assert_eq!(state.script_hash, Some(hash));
+    }
+
+    #[test]
+    fn can_set_calling_script_hash() {
+        let mut state = ExecutionContextState::new();
+        let hash = UInt160::from_bytes(&[0x02; 20]).expect("hash");
+        state.calling_script_hash = Some(hash);
+        assert_eq!(state.calling_script_hash, Some(hash));
+    }
+
+    #[test]
+    fn can_set_native_calling_script_hash() {
+        let mut state = ExecutionContextState::new();
+        let hash = UInt160::from_bytes(&[0x03; 20]).expect("hash");
+        state.native_calling_script_hash = Some(hash);
+        assert_eq!(state.native_calling_script_hash, Some(hash));
+    }
+
+    #[test]
+    fn can_set_call_flags() {
+        let mut state = ExecutionContextState::new();
+        state.call_flags = CallFlags::READ_ONLY;
+        assert_eq!(state.call_flags, CallFlags::READ_ONLY);
+    }
+
+    #[test]
+    fn can_increment_notification_count() {
+        let mut state = ExecutionContextState::new();
+        state.notification_count = 5;
+        assert_eq!(state.notification_count, 5);
+    }
+
+    #[test]
+    fn can_set_dynamic_call_flag() {
+        let mut state = ExecutionContextState::new();
+        state.is_dynamic_call = true;
+        assert!(state.is_dynamic_call);
+    }
+
+    #[test]
+    fn can_set_whitelisted_flag() {
+        let mut state = ExecutionContextState::new();
+        state.whitelisted = true;
+        assert!(state.whitelisted);
+    }
+
+    #[test]
+    fn can_set_method_name() {
+        let mut state = ExecutionContextState::new();
+        state.method_name = Some("transfer".to_string());
+        assert_eq!(state.method_name, Some("transfer".to_string()));
+    }
+
+    #[test]
+    fn can_set_argument_count() {
+        let mut state = ExecutionContextState::new();
+        state.argument_count = 3;
+        assert_eq!(state.argument_count, 3);
+    }
+
+    #[test]
+    fn can_set_return_type() {
+        let mut state = ExecutionContextState::new();
+        state.return_type = Some(ContractParameterType::Boolean);
+        assert_eq!(state.return_type, Some(ContractParameterType::Boolean));
+    }
+
+    #[test]
+    fn can_set_parameter_types() {
+        let mut state = ExecutionContextState::new();
+        state.parameter_types = vec![
+            ContractParameterType::Hash160,
+            ContractParameterType::Integer,
+        ];
+        assert_eq!(state.parameter_types.len(), 2);
+    }
+
+    #[test]
+    fn state_is_cloneable() {
+        let mut state = ExecutionContextState::new();
+        state.notification_count = 5;
+        state.is_dynamic_call = true;
+
+        let cloned = state.clone();
+        assert_eq!(cloned.notification_count, 5);
+        assert!(cloned.is_dynamic_call);
+    }
+
+    #[test]
+    fn snapshot_cache_is_arc() {
+        let mut state = ExecutionContextState::new();
+        let cache = Arc::new(DataCache::new(false));
+        state.snapshot_cache = Some(Arc::clone(&cache));
+
+        assert!(Arc::ptr_eq(
+            state.snapshot_cache.as_ref().unwrap(),
+            &cache
+        ));
+    }
+}

@@ -131,3 +131,129 @@ impl StorageItemExt for StorageItem {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use num_bigint::BigInt;
+
+    #[test]
+    fn from_bigint_creates_item_with_cached_value() {
+        let value = BigInt::from(42);
+        let item = StorageItem::from_bigint(value.clone());
+        assert_eq!(item.to_bigint(), value);
+    }
+
+    #[test]
+    fn to_bigint_returns_zero_for_empty_item() {
+        let item = StorageItem::new();
+        assert_eq!(item.to_bigint(), BigInt::ZERO);
+    }
+
+    #[test]
+    fn to_bigint_decodes_from_bytes_when_no_cache() {
+        let mut item = StorageItem::new();
+        let value = BigInt::from(12345);
+        let bytes = value.to_signed_bytes_le();
+        item.deserialize_from_bytes(&bytes);
+        assert_eq!(item.to_bigint(), value);
+    }
+
+    #[test]
+    fn set_bigint_clears_value_and_sets_cache() {
+        let mut item = StorageItem::new();
+        item.deserialize_from_bytes(&[1, 2, 3]);
+
+        let new_value = BigInt::from(999);
+        item.set_bigint(new_value.clone());
+
+        assert_eq!(item.to_bigint(), new_value);
+        assert!(item.value_bytes().is_empty());
+    }
+
+    #[test]
+    fn add_ext_increments_bigint_value() {
+        let mut item = StorageItem::from_bigint(BigInt::from(10));
+        item.add_ext(BigInt::from(5));
+        assert_eq!(item.to_bigint(), BigInt::from(15));
+    }
+
+    #[test]
+    fn add_ext_works_with_negative_numbers() {
+        let mut item = StorageItem::from_bigint(BigInt::from(10));
+        item.add_ext(BigInt::from(-3));
+        assert_eq!(item.to_bigint(), BigInt::from(7));
+    }
+
+    #[test]
+    fn serialized_size_returns_correct_var_size() {
+        let mut item = StorageItem::new();
+        item.deserialize_from_bytes(&[1, 2, 3]);
+        // var-size for 3 bytes is 1 byte prefix + 3 bytes = 4
+        assert_eq!(item.serialized_size(), 4);
+    }
+
+    #[test]
+    fn serialized_size_for_empty_item() {
+        let item = StorageItem::new();
+        // var-size for 0 bytes is 1 byte (0x00)
+        assert_eq!(item.serialized_size(), 1);
+    }
+
+    #[test]
+    fn cache_to_bytes_returns_bigint_bytes() {
+        let value = BigInt::from(256);
+        let cache = StorageCache::BigInteger(value.clone());
+        let bytes = cache.to_bytes();
+        assert_eq!(BigInt::from_signed_bytes_le(&bytes), value);
+    }
+
+    #[test]
+    fn cache_to_bytes_returns_zero_byte_for_zero() {
+        let value = BigInt::ZERO;
+        let cache = StorageCache::BigInteger(value);
+        let bytes = cache.to_bytes();
+        assert_eq!(bytes, vec![0]);
+    }
+
+    #[test]
+    fn storage_cache_clone_preserves_bigint() {
+        let cache = StorageCache::BigInteger(BigInt::from(42));
+        let cloned = cache.clone();
+
+        if let StorageCache::BigInteger(val) = cloned {
+            assert_eq!(val, BigInt::from(42));
+        } else {
+            panic!("Expected BigInteger variant");
+        }
+    }
+
+    #[test]
+    fn deserialize_reader_loads_bytes_into_item() {
+        let data = vec![1, 2, 3, 4, 5];
+        let mut reader = MemoryReader::new(&data);
+        let mut item = StorageItem::new();
+
+        item.deserialize_reader(&mut reader).expect("deserialize");
+        assert_eq!(item.value_bytes().as_ref(), data.as_slice());
+    }
+
+    #[test]
+    fn bigint_roundtrip_through_cache() {
+        let original = BigInt::from(-12345);
+        let mut item = StorageItem::from_bigint(original.clone());
+
+        // Modify through add_ext
+        item.add_ext(BigInt::from(100));
+
+        let result = item.to_bigint();
+        assert_eq!(result, BigInt::from(-12245));
+    }
+
+    #[test]
+    fn large_bigint_serialization() {
+        let large_value = BigInt::from(i64::MAX) + BigInt::from(1000);
+        let item = StorageItem::from_bigint(large_value.clone());
+        assert_eq!(item.to_bigint(), large_value);
+    }
+}

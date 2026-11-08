@@ -1,5 +1,5 @@
 //! Tokio-based framing helpers for Neo P2P streams with timeouts, size guards, and vectored I/O.
-use crate::channels_config::ChannelsConfig;
+use super::channels_config::ChannelsConfig;
 use bytes::BytesMut;
 use neo_primitives::{NetworkError, NetworkResult};
 use std::io::IoSlice;

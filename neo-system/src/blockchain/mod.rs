@@ -56,9 +56,9 @@ use crate::network::p2p::{
     local_node::RelayInventory,
     payloads::{
         InventoryType, Transaction,
-        block::{Block, BlockExt},
+        block::Block,
         extensible_payload::ExtensiblePayload,
-        header::{Header, HeaderExt},
+        header::Header,
     },
 };
 use async_trait::async_trait;

@@ -1,7 +1,7 @@
 //! Headers payload for `GetHeaders` responses (mirrors `Neo.Network.P2P.Payloads.HeadersPayload`).
 
-use neo_io::serializable::helper;
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io_crate::serializable::helper;
+use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_protocol::payloads::Header;
 use serde::{Deserialize, Serialize};
 
@@ -77,7 +77,7 @@ mod tests {
 
         let mut writer = BinaryWriter::new();
         // Fully qualified call to disambiguate between `serde::Serialize` (derived)
-        // and `neo_io::Serializable` (impl'd below); both expose `serialize`.
+        // and `neo_io_crate::Serializable` (impl'd below); both expose `serialize`.
         Serializable::serialize(&payload, &mut writer).unwrap();
         let bytes = writer.into_bytes();
 

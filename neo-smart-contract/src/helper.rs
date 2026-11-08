@@ -333,3 +333,136 @@ impl Helper {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Valid secp256r1 compressed public keys for testing
+    fn test_pubkey() -> Vec<u8> {
+        hex::decode("02486fd15702c4490a26703112a5cc1d0923fd697a33406bd5a1c00e0013b09a70")
+            .expect("valid hex")
+    }
+
+    fn test_pubkey2() -> Vec<u8> {
+        hex::decode("024c7b7fb6c310fccf1ba33b082519d82964ea93868d676662d4a59ad548df0e7d")
+            .expect("valid hex")
+    }
+
+    fn test_pubkey3() -> Vec<u8> {
+        hex::decode("02aaec38470f6aad0042c6e877cfd8087d2676b0f516fddd362801b9bd3936399e")
+            .expect("valid hex")
+    }
+
+    #[test]
+    fn signature_contract_cost_is_positive() {
+        let cost = Helper::signature_contract_cost();
+        assert!(cost > 0);
+    }
+
+    #[test]
+    fn multi_signature_contract_cost_scales_with_m_and_n() {
+        let cost_2_of_3 = Helper::multi_signature_contract_cost(2, 3);
+        let cost_2_of_5 = Helper::multi_signature_contract_cost(2, 5);
+        let cost_3_of_5 = Helper::multi_signature_contract_cost(3, 5);
+
+        assert!(cost_2_of_5 > cost_2_of_3, "More keys should cost more");
+        assert!(cost_3_of_5 > cost_2_of_5, "More signatures should cost more");
+    }
+
+    #[test]
+    fn is_signature_contract_validates_correct_format() {
+        let pubkey = test_pubkey();
+        let script = Helper::signature_redeem_script(&pubkey);
+        assert!(Helper::is_signature_contract(&script));
+    }
+
+    #[test]
+    fn is_signature_contract_rejects_wrong_length() {
+        let short_script = vec![0u8; 39];
+        assert!(!Helper::is_signature_contract(&short_script));
+
+        let long_script = vec![0u8; 41];
+        assert!(!Helper::is_signature_contract(&long_script));
+    }
+
+    #[test]
+    fn is_multi_sig_contract_accepts_valid_script() {
+        let keys = vec![test_pubkey(), test_pubkey2(), test_pubkey3()];
+        let script = Helper::multi_sig_redeem_script(2, &keys);
+        assert!(Helper::is_multi_sig_contract(&script));
+    }
+
+    #[test]
+    fn parse_multi_sig_contract_extracts_m_and_keys() {
+        let keys = vec![test_pubkey(), test_pubkey2(), test_pubkey3()];
+        let script = Helper::multi_sig_redeem_script(2, &keys);
+
+        let result = Helper::parse_multi_sig_contract(&script);
+        assert!(result.is_some());
+
+        let (m, parsed_keys) = result.unwrap();
+        assert_eq!(m, 2);
+        assert_eq!(parsed_keys.len(), 3);
+    }
+
+    #[test]
+    fn try_multi_sig_redeem_script_enforces_bounds() {
+        let keys = vec![vec![0u8; 33]];
+
+        // m = 0 is invalid
+        assert!(Helper::try_multi_sig_redeem_script(0, &keys).is_err());
+
+        // m > n is invalid
+        assert!(Helper::try_multi_sig_redeem_script(2, &keys).is_err());
+    }
+
+    #[test]
+    fn try_multi_sig_redeem_script_validates_key_format() {
+        let invalid_key = vec![0xFFu8; 33];
+        let keys = vec![invalid_key];
+        assert!(Helper::try_multi_sig_redeem_script(1, &keys).is_err());
+    }
+
+    #[test]
+    fn get_contract_hash_is_deterministic() {
+        let sender = UInt160::from_bytes(&[1u8; 20]).expect("sender");
+        let hash1 = Helper::get_contract_hash(&sender, 12345, "TestContract");
+        let hash2 = Helper::get_contract_hash(&sender, 12345, "TestContract");
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn parse_multi_sig_invocation_valid_signatures() {
+        let sig1 = vec![0xAA; 64];
+        let sig2 = vec![0xBB; 64];
+
+        let mut invocation = Vec::new();
+        invocation.push(OpCode::PUSHDATA1.byte());
+        invocation.push(64);
+        invocation.extend_from_slice(&sig1);
+        invocation.push(OpCode::PUSHDATA1.byte());
+        invocation.push(64);
+        invocation.extend_from_slice(&sig2);
+
+        let result = Helper::parse_multi_sig_invocation(&invocation, 2);
+        assert!(result.is_some());
+
+        let signatures = result.unwrap();
+        assert_eq!(signatures.len(), 2);
+        assert_eq!(signatures[0], sig1);
+        assert_eq!(signatures[1], sig2);
+    }
+
+    #[test]
+    fn parse_multi_sig_invocation_rejects_wrong_count() {
+        let sig = vec![0xAA; 64];
+
+        let mut invocation = Vec::new();
+        invocation.push(OpCode::PUSHDATA1.byte());
+        invocation.push(64);
+        invocation.extend_from_slice(&sig);
+
+        assert!(Helper::parse_multi_sig_invocation(&invocation, 2).is_none());
+    }
+}

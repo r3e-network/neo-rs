@@ -500,7 +500,7 @@ async fn reader_paths_share_the_message_payload_limit_and_primitive_error() {
         .expect("loopback permission is required for migration parity");
     let cfg = FrameConfig::default();
     let mut header = vec![0x00, 0x2C];
-    neo_io::var_int::write_var_int(crate::message::PAYLOAD_MAX_SIZE as u64 + 1, &mut header);
+    neo_io_crate::var_int::write_var_int(crate::message::PAYLOAD_MAX_SIZE as u64 + 1, &mut header);
 
     let mut reader = FrameReader::new();
     reader.buffer.extend_from_slice(&header);

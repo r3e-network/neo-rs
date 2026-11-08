@@ -8,7 +8,7 @@
 //! while preserving the handler's ability to inspect the message command and
 //! raw payload.
 
-use crate::MessageCommand;
+use super::MessageCommand;
 use std::any::Any;
 
 /// Lightweight reference to a received network message.

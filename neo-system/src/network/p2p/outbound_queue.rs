@@ -7,9 +7,9 @@
 //! Uses a `[bool; 256]` array instead of `bitvec` to stay within the allowed
 //! dependency set.
 
-use crate::message_command::MessageCommand;
-use crate::protocol_message::{NetworkMessage, ProtocolMessage};
-use neo_io::Serializable;
+use super::message_command::MessageCommand;
+use super::protocol_message::{NetworkMessage, ProtocolMessage};
+use neo_io_crate::Serializable;
 use neo_protocol::payloads::Block;
 use std::collections::VecDeque;
 

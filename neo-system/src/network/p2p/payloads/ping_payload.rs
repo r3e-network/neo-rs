@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms, with or without
 // modifications are permitted.
 
-use neo_io::impl_serializable;
+use neo_io_crate::impl_serializable;
 use serde::{Deserialize, Serialize};
 
 /// Sent to detect whether the connection has been disconnected.

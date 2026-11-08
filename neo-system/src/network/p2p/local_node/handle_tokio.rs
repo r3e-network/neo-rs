@@ -58,6 +58,8 @@ struct LocalNodeWorkerState {
     disconnect_rx: broadcast::Receiver<DisconnectEvent>,
     /// Map of RemoteNode actor refs by endpoint (temporary until full migration).
     remote_actors: HashMap<SocketAddr, ActorRef>,
+    /// Command sender for background tasks to communicate with the worker.
+    command_tx: mpsc::Sender<LocalNodeCommand>,
 }
 
 impl LocalNodeHandle {
@@ -82,6 +84,7 @@ impl LocalNodeHandle {
             deferred_connects: Vec::new(),
             disconnect_rx,
             remote_actors: HashMap::new(),
+            command_tx: tx.clone(),
         };
 
         tokio::spawn(async move {
@@ -418,6 +421,7 @@ fn queue_outbound_connect(
 ) {
     let tx = worker.state.clone(); // Clone for background task
     let cancel = worker.task_cancellation.child_token();
+    let command_tx = worker.command_tx.clone();
 
     drop(worker.spawned_tasks.spawn(async move {
         tokio::select! {
@@ -434,13 +438,33 @@ fn queue_outbound_connect(
                             .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
 
                         debug!(target: "neo", endpoint = %endpoint, "outbound connection established");
-                        // TODO: Send OutboundTcpConnected command back to worker
+
+                        // Send OutboundTcpConnected command back to worker
+                        let _ = command_tx.send(LocalNodeCommand::OutboundTcpConnected {
+                            stream,
+                            endpoint,
+                            local,
+                            is_trusted,
+                        }).await;
                     }
                     Ok(Err(error)) => {
-                        debug!(target: "neo", endpoint = %endpoint, error = %error, "connection failed");
+                        let permission_denied = error.kind() == ErrorKind::PermissionDenied;
+                        let _ = command_tx.send(LocalNodeCommand::OutboundTcpFailed {
+                            endpoint,
+                            is_trusted,
+                            error: error.to_string(),
+                            timed_out: false,
+                            permission_denied,
+                        }).await;
                     }
                     Err(_) => {
-                        warn!(target: "neo", endpoint = %endpoint, "connection timed out");
+                        let _ = command_tx.send(LocalNodeCommand::OutboundTcpFailed {
+                            endpoint,
+                            is_trusted,
+                            error: "connection timed out".to_string(),
+                            timed_out: true,
+                            permission_denied: false,
+                        }).await;
                     }
                 }
             } => {}
@@ -480,8 +504,8 @@ fn start_listener(worker: &mut LocalNodeWorkerState, tcp_endpoint: Option<Socket
 
     let listener_cancellation = worker.task_cancellation.child_token();
     worker.listener_cancellation = Some(listener_cancellation.clone());
+    let command_tx = worker.command_tx.clone();
 
-    // TODO: Send accepted connections back to worker via channel
     drop(worker.spawned_tasks.spawn(async move {
         loop {
             tokio::select! {
@@ -490,7 +514,17 @@ fn start_listener(worker: &mut LocalNodeWorkerState, tcp_endpoint: Option<Socket
                     match accepted {
                         Ok((stream, remote)) => {
                             debug!(target: "neo", remote = %remote, "inbound connection accepted");
-                            // TODO: Send InboundTcpAccepted command to worker
+
+                            let local = stream
+                                .local_addr()
+                                .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
+
+                            // Send InboundTcpAccepted command to worker
+                            let _ = command_tx.send(LocalNodeCommand::InboundTcpAccepted {
+                                stream,
+                                remote,
+                                local,
+                            }).await;
                         }
                         Err(error) => {
                             warn!(target: "neo", error = %error, "failed to accept inbound connection");

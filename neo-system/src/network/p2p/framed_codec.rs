@@ -1,6 +1,6 @@
-use crate::message::PAYLOAD_MAX_SIZE;
+use super::message::PAYLOAD_MAX_SIZE;
 use bytes::{BufMut, BytesMut};
-use neo_io::var_int::{read_var_int_prefix, write_var_int};
+use neo_io_crate::var_int::{read_var_int_prefix, write_var_int};
 use neo_primitives::{NetworkError, NetworkResult};
 use tokio_util::codec::{Decoder, Encoder};
 

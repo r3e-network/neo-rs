@@ -6,7 +6,7 @@
 //! phase: version-first, then verack, then everything else. This module keeps
 //! that decision as a pure function so it can be unit-tested without a socket.
 
-use crate::message_command::MessageCommand;
+use super::message_command::MessageCommand;
 
 /// Outcome of the handshake gate for one inbound command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

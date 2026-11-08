@@ -15,9 +15,9 @@
 // using System.Runtime.CompilerServices;
 // using System.Threading;
 
-use crate::new_transaction_event_args::NewTransactionEventArgs;
-use crate::pool_item::PoolItem;
-use crate::transaction_removed_event_args::TransactionRemovedEventArgs;
+use crate::mempool::new_transaction_event_args::NewTransactionEventArgs;
+use crate::mempool::pool_item::PoolItem;
+use crate::mempool::transaction_removed_event_args::TransactionRemovedEventArgs;
 use neo_ledger::validation::{
     TransactionVerificationContext, verify_transaction_state_dependent,
     verify_transaction_state_independent,

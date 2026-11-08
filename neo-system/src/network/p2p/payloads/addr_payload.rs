@@ -10,10 +10,10 @@
 // modifications are permitted.
 
 use super::network_address_with_time::NetworkAddressWithTime;
-use neo_io::serializable::helper::{
+use neo_io_crate::serializable::helper::{
     deserialize_array, get_var_size_serializable_slice, serialize_array,
 };
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Indicates the maximum number of nodes sent each time.

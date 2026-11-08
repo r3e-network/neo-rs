@@ -53,9 +53,11 @@
 pub mod engine_port;
 pub mod error;
 pub mod evidence;
-// pub mod fast_path;  // TODO: Module not yet implemented after crate consolidation
 pub mod participant;
 pub mod receipt;
+
+#[cfg(test)]
+mod block_processing_tests;
 
 pub use engine_port::{
     ApplicationEnginePort, EngineFactory, NativeCacheHandle, NativeEnginePort,
@@ -224,45 +226,7 @@ pub fn persist_block(
                 message: err.to_string(),
             })?;
 
-            // Fast-path execution disabled after consolidation (fast_path module removed)
-            // TODO: Re-enable fast-path optimization when fast_path module is restored
-            /*
-            if let Some(fast_result) = fast_path::try_fast_path_execution(
-                tx,
-                &tx_overlay,
-                tx.system_fee(),
-            ) {
-                match fast_result.vm_state {
-                    VmState::HALT => {
-                        base_snapshot.merge_from_child(&tx_overlay);
-                        if detailed {
-                            // TODO: Build a proper execution receipt for fast-path
-                        }
-                        continue;
-                    }
-                    VmState::FAULT => {
-                        tx_overlay.reset();
-                        if detailed {
-                            // TODO: Build a proper fault receipt for fast-path
-                        }
-                        fault_buffer.push(FaultObservation {
-                            transaction_hash: tx_hash,
-                            block_height,
-                            block_hash,
-                            vm_state: VmState::FAULT,
-                            category: FaultCategory::VmFault,
-                            gas_consumed: fast_result.gas_consumed,
-                        });
-                        continue;
-                    }
-                    _ => {
-                        // Fall through to full VM execution
-                    }
-                }
-            }
-            */
-
-            // Full VM execution
+            // VM execution for the transaction
             let container: Arc<dyn Verifiable> = Arc::new(tx.clone());
             let mut app = engines.open_application(
                 container,

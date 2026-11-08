@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms, with or without
 // modifications are permitted.
 
-use neo_io::{IoError, impl_serializable};
+use neo_io_crate::{IoError, impl_serializable};
 use serde::{Deserialize, Serialize};
 
 // Maximum headers count from HeadersPayload

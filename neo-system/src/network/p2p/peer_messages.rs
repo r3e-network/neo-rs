@@ -23,15 +23,15 @@
 //!   into its own connector. The `GetAddr` correlation flag is still consumed so
 //!   an unsolicited `Addr` is ignored exactly as before.
 
-use crate::message_command::MessageCommand;
-use crate::payloads::addr_payload::AddrPayload;
-use crate::payloads::get_block_by_index_payload::GetBlockByIndexPayload;
-use crate::payloads::headers_payload::{HeadersPayload, MAX_HEADERS_COUNT};
-use crate::payloads::network_address_with_time::NetworkAddressWithTime;
-use crate::payloads::ping_payload::PingPayload;
-use crate::ports::{PeerHandle, RemoteSessionPorts};
-use crate::protocol_message::{NetworkMessage, ProtocolMessage};
-use crate::session_state::SessionState;
+use super::message_command::MessageCommand;
+use super::payloads::addr_payload::AddrPayload;
+use super::payloads::get_block_by_index_payload::GetBlockByIndexPayload;
+use super::payloads::headers_payload::{HeadersPayload, MAX_HEADERS_COUNT};
+use super::payloads::network_address_with_time::NetworkAddressWithTime;
+use super::payloads::ping_payload::PingPayload;
+use super::ports::{PeerHandle, RemoteSessionPorts};
+use super::protocol_message::{NetworkMessage, ProtocolMessage};
+use super::session_state::SessionState;
 use neo_protocol::payloads::Header;
 use std::collections::HashSet;
 use std::net::SocketAddr;

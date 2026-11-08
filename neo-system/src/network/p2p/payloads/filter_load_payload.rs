@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use neo_crypto::bloom_filter::BloomFilter;
-use neo_io::serializable::helper::get_var_size_bytes;
-use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_io_crate::serializable::helper::get_var_size_bytes;
+use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Maximum filter size (36000 bytes)

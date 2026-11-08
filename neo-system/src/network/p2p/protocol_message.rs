@@ -10,16 +10,16 @@
 //! Only `neo-protocol` canonical payloads (`Block`, `Header`, `Transaction`,
 //! `Extensible`), this crate's own payload types, `neo-io`, and `neo-primitives`.
 
-use crate::message::Message;
-use crate::message_command::MessageCommand;
-use crate::message_flags::MessageFlags;
-use crate::payloads::{
+use super::message::Message;
+use super::message_command::MessageCommand;
+use super::message_flags::MessageFlags;
+use super::payloads::{
     AddrPayload, FilterAddPayload, FilterLoadPayload, GetBlockByIndexPayload, GetBlocksPayload,
     InvPayload, PingPayload, VersionPayload,
 };
-use crate::payloads::headers_payload::HeadersPayload;
-use crate::payloads::merkle_block_payload::MerkleBlockPayload;
-use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use super::payloads::headers_payload::HeadersPayload;
+use super::payloads::merkle_block_payload::MerkleBlockPayload;
+use neo_io_crate::{BinaryWriter, MemoryReader, Serializable};
 use neo_protocol::payloads::{Block, Extensible, Transaction};
 
 // ---------------------------------------------------------------------------
@@ -281,7 +281,7 @@ impl NetworkMessage {
     /// Decodes a message from raw wire bytes (flags + command + var payload).
     pub fn from_bytes(bytes: &[u8]) -> P2PResult<Self> {
         let mut reader = MemoryReader::new(bytes);
-        let message: crate::message::Message = neo_io::Serializable::deserialize(&mut reader)
+        let message: crate::message::Message = neo_io_crate::Serializable::deserialize(&mut reader)
             .map_err(|e| P2PMessageError::Io(e.to_string()))?;
 
         if reader.remaining() != 0 {
