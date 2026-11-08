@@ -7,6 +7,7 @@ use neo_ledger::{LedgerContext, HeaderCache};
 use neo_storage::persistence::StoreCache;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::store::Store;
+use neo_storage::types::{StorageKey, StorageItem};
 use crate::services::StateStoreService;
 use std::sync::Arc;
 
@@ -105,7 +106,8 @@ pub fn hydrate_ledger(
     ledger: &Arc<LedgerContext>,
     header_cache: &Arc<HeaderCache>,
 ) -> Result<(), StorageError> {
-    use neo_io::{ByteReader, Readable};
+    use neo_io_crate::MemoryReader;
+    use neo_io_crate::Serializable;
     use neo_primitives::UInt256;
     use neo_protocol::payloads::block::Block;
     use neo_storage::persistence::SeekDirection;
@@ -380,7 +382,8 @@ pub fn validate_chain_integrity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_io::{ByteWriter, Writable};
+    use neo_io_crate::BinaryWriter;
+    use neo_io_crate::Serializable;
     use neo_primitives::UInt256;
     use neo_protocol::payloads::block::Block;
     use neo_protocol::payloads::header::Header;

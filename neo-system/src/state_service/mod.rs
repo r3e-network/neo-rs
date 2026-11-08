@@ -26,8 +26,46 @@ pub struct ValidatedRootPersisted {
     pub index: u32,
 }
 
-/// State service settings (placeholder for removed state service).
+/// State service settings for state root computation and verification.
+///
+/// Configures the state root tracking service that:
+/// - Computes and validates MPT state roots
+/// - Verifies state root signatures from committee nodes
+/// - Provides state proof generation and verification
+///
+/// # Implementation Reference
+///
+/// Mirrors C# Neo `StateService` plugin configuration:
+/// - `Neo.Plugins.StateService.Settings`
+/// - Used by `Neo.Plugins.StateService.StatePlugin`
 #[derive(Debug, Clone)]
 pub struct StateServiceSettings {
-    pub enabled: bool,
+    /// Whether to maintain full state trie (vs. pruned state).
+    pub full_state: bool,
+
+    /// Database path for state store (supports {0} for network substitution).
+    pub path: String,
+
+    /// Network magic value for validation.
+    pub network: u32,
+
+    /// Enable automatic state root verification when wallet changes.
+    pub auto_verify: bool,
+
+    /// Maximum items returned by state service queries.
+    pub max_find_result_items: usize,
+
+    /// Policy for handling unhandled exceptions.
+    pub exception_policy: UnhandledExceptionPolicy,
+}
+
+/// Policy for handling unhandled exceptions in plugins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnhandledExceptionPolicy {
+    /// Ignore exceptions and continue.
+    Ignore,
+    /// Stop the plugin on exception.
+    StopPlugin,
+    /// Stop the entire node on exception.
+    StopNode,
 }

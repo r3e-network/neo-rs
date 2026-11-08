@@ -25,7 +25,7 @@ use neo_wallets::signing::TrustedSignerClient;
 use neo_system::state_service::StateServiceSettings;
 use neo_system::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
 use neo_system::oracle_service::OracleService;
-use neo_system::{NeoSystem}; // StateServiceVerification removed
+use neo_system::{NeoSystem, StateServiceVerification};
 use parking_lot::RwLock as ParkingRwLock;
 use serde_json::Value;
 use std::{fs, path::PathBuf, sync::Arc};

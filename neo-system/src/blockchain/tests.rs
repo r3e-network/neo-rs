@@ -24,7 +24,6 @@ mod tests {
         },
     };
     use neo_protocol::Witness;
-    };
     use neo_ledger::LedgerContext;
     use neo_storage::persistence::StoreCache;
     use neo_smart_contract::BinarySerializer;

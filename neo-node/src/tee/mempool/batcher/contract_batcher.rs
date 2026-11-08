@@ -39,6 +39,7 @@
 //! ```
 
 use crate::mempool::tee_mempool::TeeMempoolEntry;
+use neo_crypto::hash::Crypto;
 use neo_primitives::UInt160;
 use parking_lot::RwLock;
 use std::collections::{HashMap, VecDeque};
@@ -217,20 +218,11 @@ impl ContractBatchScheduler {
                         let descriptor: [u8; 4] =
                             data[pos + 1..pos + 5].try_into().unwrap_or([0; 4]);
 
-                        // Convert descriptor to UInt160
-                        // NEO uses Hash160 for contract IDs - we can directly use descriptor
-                        // In production, would use proper interop hash computation
-                        let hash_bytes: [u8; 20] = {
-                            // Simplified: use descriptor repeated/padded to 20 bytes
-                            // A real implementation would compute Hash160(descriptor)
-                            let mut hash = [0u8; 20];
-                            hash[0..4].copy_from_slice(&descriptor);
-                            // Fill rest with pattern derived from descriptor
-                            for i in 4..20 {
-                                hash[i] = (descriptor[i % 4] ^ i as u8).wrapping_mul(31);
-                            }
-                            hash
-                        };
+                        // Convert descriptor to UInt160 using Hash160
+                        // NEO protocol: Hash160(descriptor) = RIPEMD160(SHA256(descriptor))
+                        // This matches the interop service hash computation used by Neo VM
+                        // Reference: Neo C# - ApplicationEngine.GetInteroperable()
+                        let hash_bytes = Crypto::hash160(&descriptor);
 
                         return Some(UInt160::from(hash_bytes));
                     }
