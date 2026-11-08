@@ -54,12 +54,41 @@ pub enum BlockchainCommand {
     FillMemoryPool(FillMemoryPool),
     /// Reverify an inventory item.
     Reverify(Reverify),
+    /// Initialize the blockchain
+    Initialize,
+    /// Preverify completed event
+    PreverifyCompleted(PreverifyCompleted),
+    /// Inventory block command
+    InventoryBlock {
+        block: Arc<Block>,
+        relay: bool,
+        pre_verified: bool,
+    },
+    /// Inventory extensible command
+    InventoryExtensible {
+        payload: neo_protocol::payloads::Extensible,
+        relay: bool,
+    },
+    /// Headers command
+    Headers(Vec<Arc<Block>>),
+    /// Drain unverified blocks
+    DrainUnverified,
+    /// Idle reverify command
+    Idle,
+    /// Persist completed event
+    PersistCompleted(PersistCompleted),
+    /// Fill completed event
+    FillCompleted(FillCompleted),
+    /// Relay result
+    RelayResult(RelayResult<()>),
 }
 
 /// Import block command.
 #[derive(Debug, Clone)]
 pub struct Import {
     pub block: Arc<Block>,
+    pub blocks: Vec<Arc<Block>>,
+    pub verify: bool,
 }
 
 /// Import completed event.
@@ -71,7 +100,7 @@ pub struct ImportCompleted {
 /// Fill memory pool command.
 #[derive(Debug, Clone)]
 pub struct FillMemoryPool {
-    pub transactions: Vec<UInt256>,
+    pub transactions: Vec<neo_protocol::payloads::Transaction>,
 }
 
 /// Fill completed event.
@@ -82,12 +111,14 @@ pub struct FillCompleted;
 #[derive(Debug, Clone)]
 pub struct Reverify {
     pub items: Vec<ReverifyItem>,
+    pub inventories: Vec<ReverifyItem>,
 }
 
 /// Item to reverify.
 #[derive(Debug, Clone)]
 pub struct ReverifyItem {
     pub hash: UInt256,
+    pub payload: InventoryPayload,
 }
 
 /// Preverify completed event.
@@ -95,16 +126,66 @@ pub struct ReverifyItem {
 pub struct PreverifyCompleted {
     pub hash: UInt256,
     pub result: VerifyResult,
+    pub transaction: neo_protocol::payloads::Transaction,
+    pub relay: bool,
 }
 
 /// Blockchain actor handle (placeholder for actual actor handle).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BlockchainHandle;
+
+impl BlockchainHandle {
+    /// Stub: Send a message from an async context
+    pub async fn tell_from_async<M>(&self, _msg: M, _sender: impl std::any::Any) -> Result<(), String>
+    where
+        M: std::any::Any + Send + 'static,
+    {
+        // TODO: Implement actual actor messaging
+        Ok(())
+    }
+
+    /// Stub: Send a message with sender
+    pub fn tell_from<M>(&self, _msg: M, _sender: impl std::any::Any) -> Result<(), String>
+    where
+        M: std::any::Any + Send + 'static,
+    {
+        // TODO: Implement actual actor messaging
+        Ok(())
+    }
+
+    /// Stub: Get raw actor reference
+    pub fn raw_ref(&self) -> &Self {
+        self
+    }
+
+    /// Stub: Send a message
+    pub fn tell<M>(&self, _msg: M) -> Result<(), String>
+    where
+        M: std::any::Any + Send + 'static,
+    {
+        // TODO: Implement actual actor messaging
+        Ok(())
+    }
+
+    /// Stub: Create a new handle
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for BlockchainHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Inventory payload wrapper.
 #[derive(Debug, Clone)]
 pub enum InventoryPayload {
     Block(Arc<Block>),
+    Transaction(neo_protocol::payloads::Transaction),
+    Extensible(neo_protocol::payloads::Extensible),
+    Raw(neo_primitives::InventoryType, Vec<u8>),
 }
 
 #[cfg(test)]

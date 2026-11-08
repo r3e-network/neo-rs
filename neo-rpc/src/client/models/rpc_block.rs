@@ -10,7 +10,7 @@
 // modifications are permitted.
 
 use super::super::utility::insert_optional_string;
-use neo_config::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use neo_ledger::Block;
 use neo_json::JObject;
 use neo_primitives::UInt256;
@@ -33,8 +33,8 @@ impl RpcBlock {
     /// Converts to JSON
     /// Matches C# `ToJson`
     #[must_use]
-    pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
-        let mut json = super::super::utility::block_to_json(&self.block, protocol_settings);
+    pub fn to_json(&mut self, protocol_settings: &ProtocolSettings) -> JObject {
+        let mut json = super::super::utility::block_to_json(&mut self.block, protocol_settings);
         json.insert(
             "confirmations".to_string(),
             neo_json::JToken::Number(f64::from(self.confirmations)),

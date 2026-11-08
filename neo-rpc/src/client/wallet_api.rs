@@ -361,8 +361,8 @@ impl WalletApi {
         // Wait for transaction to be included in a block
         let tx_hash = tx.hash();
         let timeout = std::time::Duration::from_secs(timeout_seconds);
-        let poll_interval = std::cmp::max(1, self.rpc_client.protocol_settings.ms_per_block / 2);
-        let poll_duration = tokio::time::Duration::from_millis(poll_interval);
+        let poll_interval = std::cmp::max(1, self.rpc_client.protocol_settings.milliseconds_per_block / 2);
+        let poll_duration = tokio::time::Duration::from_millis(poll_interval as u64);
         let deadline = std::time::Instant::now() + timeout;
 
         while std::time::Instant::now() < deadline {

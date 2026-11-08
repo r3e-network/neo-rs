@@ -216,6 +216,18 @@ where
 
 impl<T> ExactSizeIterator for HashSetCacheIntoIter<T> where T: Eq + Hash {}
 
+impl<T> std::fmt::Debug for HashSetCache<T>
+where
+    T: Eq + Hash,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HashSetCache")
+            .field("capacity", &self.capacity)
+            .field("len", &self.items.as_ref().map_or(0, |cache| cache.len()))
+            .finish()
+    }
+}
+
 impl<T> IntoIterator for HashSetCache<T>
 where
     T: Eq + Hash,

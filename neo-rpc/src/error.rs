@@ -77,6 +77,15 @@ pub enum RpcError {
     #[error("Core error: {0}")]
     Core(#[from] neo_smart_contract::error::CoreError),
 
+    /// Wallet error.
+    #[cfg(feature = "client")]
+    #[error("Wallet error: {0}")]
+    Wallet(#[from] neo_wallets::WalletError),
+
+    /// Primitive error.
+    #[error("Primitive error: {0}")]
+    Primitive(#[from] neo_primitives::PrimitiveError),
+
     /// Generic error for domain-specific validation failures.
     #[error("{0}")]
     Other(String),

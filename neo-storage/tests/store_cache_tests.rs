@@ -42,7 +42,7 @@ fn store_cache_update_existing_value() {
         provider.get_store("").expect("store"),
         false,
     );
-    let result = reader.try_get(&key);
+    let _result = reader.try_get(&key);
     // Note: Memory store creates independent instances, so this tests the update logic
     assert!(cache2.get(&key).is_some());
 }
@@ -76,8 +76,10 @@ fn store_cache_track_state_for_added_items() {
 
     cache.add(key.clone(), value);
 
-    let trackable = cache.try_get_trackable(&key).expect("trackable exists");
-    assert_eq!(trackable.state, TrackState::Added);
+    let tracked = cache.data_cache().tracked_items();
+    let trackable = tracked.iter().find(|(k, _)| k == &key);
+    assert!(trackable.is_some());
+    assert_eq!(trackable.unwrap().1.state, TrackState::Added);
 }
 
 #[test]
@@ -96,8 +98,10 @@ fn store_cache_track_state_for_changed_items() {
     let mut cache2 = StoreCache::new_from_store(store, false);
     cache2.update(key.clone(), value2);
 
-    let trackable = cache2.try_get_trackable(&key).expect("trackable exists");
-    assert_eq!(trackable.state, TrackState::Changed);
+    let tracked = cache2.data_cache().tracked_items();
+    let trackable = tracked.iter().find(|(k, _)| k == &key);
+    assert!(trackable.is_some());
+    assert_eq!(trackable.unwrap().1.state, TrackState::Changed);
 }
 
 #[test]
@@ -115,8 +119,10 @@ fn store_cache_track_state_for_deleted_items() {
     let mut cache2 = StoreCache::new_from_store(store, false);
     cache2.delete(key.clone());
 
-    let trackable = cache2.try_get_trackable(&key).expect("trackable exists");
-    assert_eq!(trackable.state, TrackState::Deleted);
+    let tracked = cache2.data_cache().tracked_items();
+    let trackable = tracked.iter().find(|(k, _)| k == &key);
+    assert!(trackable.is_some());
+    assert_eq!(trackable.unwrap().1.state, TrackState::Deleted);
 }
 
 #[test]

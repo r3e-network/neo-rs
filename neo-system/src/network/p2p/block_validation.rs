@@ -7,9 +7,8 @@
 //! hash the task manager expected.
 //!
 //! The `neo-core` original carries a `CoreError` for unhashable headers; here the
-//! hash failure type is `neo_io_crate::IoError`, the error `Block::try_hash` returns.
+//! hash failure type is stored as a String for simplicity.
 
-use neo_io_crate::IoError;
 use neo_primitives::UInt256;
 use neo_protocol::payloads::Block;
 
@@ -37,7 +36,7 @@ pub enum IncomingBlockOutcome {
         /// Why the peer is being disconnected.
         reason: IncomingBlockDisconnect,
         /// The hash computation error, when the disconnect was caused by one.
-        hash_error: Option<IoError>,
+        hash_error: Option<String>,
         /// Whether a cached copy at this height must also be removed.
         remove_cached: bool,
     },
@@ -73,7 +72,7 @@ pub enum PersistedBlockMatch {
     /// The stored block hashes to a different value.
     Mismatch,
     /// The stored block could not be hashed.
-    Unhashable(IoError),
+    Unhashable(String),
 }
 
 /// Result of comparing a block against an expected hash.
@@ -84,7 +83,7 @@ pub enum BlockHashMatch {
     /// The block hashes to a different value.
     DoesNotMatch,
     /// The block could not be hashed.
-    Unhashable(IoError),
+    Unhashable(String),
 }
 
 /// Validates an incoming block against an optional cached copy at the same height.
@@ -96,7 +95,7 @@ pub fn validate_incoming_block(mut block: Block, existing: Option<&Block>) -> In
             return IncomingBlockOutcome::Disconnect {
                 index,
                 reason: IncomingBlockDisconnect::InvalidIncomingHash,
-                hash_error: Some(error),
+                hash_error: Some(error.to_string()),
                 remove_cached: false,
             };
         }
@@ -120,17 +119,17 @@ pub fn validate_incoming_block(mut block: Block, existing: Option<&Block>) -> In
         Err(error) => IncomingBlockOutcome::Disconnect {
             index,
             reason: IncomingBlockDisconnect::InvalidCachedHash,
-            hash_error: Some(error),
+            hash_error: Some(error.to_string()),
             remove_cached: true,
         },
     }
 }
 
 /// Computes the hash of a persisted block.
-pub fn persisted_block_hash(block: &Block) -> Result<UInt256, IoError> {
+pub fn persisted_block_hash(block: &Block) -> Result<UInt256, String> {
     // Clone required: `try_hash` requires `&mut self` but callers hold `&Block`.
     let mut block = block.clone();
-    block.try_hash()
+    block.try_hash().map_err(|e| e.to_string())
 }
 
 /// Compares a stored block against the hash that was actually persisted.
@@ -138,7 +137,7 @@ pub fn match_persisted_block(mut stored: Block, persisted_hash: &UInt256) -> Per
     match stored.try_hash() {
         Ok(stored_hash) if stored_hash == *persisted_hash => PersistedBlockMatch::Matches,
         Ok(_) => PersistedBlockMatch::Mismatch,
-        Err(error) => PersistedBlockMatch::Unhashable(error),
+        Err(error) => PersistedBlockMatch::Unhashable(error.to_string()),
     }
 }
 
@@ -149,7 +148,7 @@ pub fn block_matches_hash(block: &Block, expected_hash: &UInt256) -> BlockHashMa
     match candidate.try_hash() {
         Ok(candidate_hash) if candidate_hash == *expected_hash => BlockHashMatch::Matches,
         Ok(_) => BlockHashMatch::DoesNotMatch,
-        Err(error) => BlockHashMatch::Unhashable(error),
+        Err(error) => BlockHashMatch::Unhashable(error.to_string()),
     }
 }
 

@@ -120,7 +120,7 @@ mod tests {
     use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
     use base64::{Engine as _, engine::general_purpose};
     use mockito::{Matcher, Server};
-    use neo_config::ProtocolSettings;
+    use neo_protocol::ProtocolSettings;
     use neo_wallets::KeyPair;
     use neo_json::{JArray, JObject, JToken};
     use neo_native_contracts::native::{GasToken, NativeContract};

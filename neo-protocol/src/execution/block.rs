@@ -24,13 +24,26 @@ impl Block {
     pub fn hash(&self) -> UInt256 {
         self.header.hash()
     }
+    /// Gets the header hash with potential wire errors.
+    pub fn try_hash(&self) -> neo_io::IoResult<UInt256> {
+        self.header.try_hash()
+    }
     /// Gets the block height.
     pub fn index(&self) -> u32 {
         self.header.index()
     }
+    /// Gets the previous block hash.
+    pub fn prev_hash(&self) -> &UInt256 {
+        &self.header.previous_hash
+    }
     /// Gets the first header witness, if present.
     pub fn primary_witness(&self) -> Option<&Witness> {
         self.header.witnesses.first()
+    }
+    /// Stub: Verify the block (placeholder implementation).
+    pub fn verify(&self, _settings: &crate::protocol_settings::ProtocolSettings) -> bool {
+        // TODO: Implement full block verification logic
+        true
     }
     /// Projects this execution block into the single-witness network payload block
     /// that the application engine and native contracts consume.
@@ -39,6 +52,18 @@ impl Block {
     /// carries exactly one header witness. Only the first witness is projected.
     pub fn to_payload_block(&self) -> crate::payloads::Block {
         super::conversions::convert_ledger_block(self.clone())
+    }
+
+    /// Returns the serialized size of the block.
+    /// This is an approximation based on header size plus transaction sizes.
+    pub fn size(&self) -> usize {
+        use neo_io::serializable::helper::get_var_size_usize;
+        use neo_io::Serializable;
+        // Header size + transaction count varint + sum of transaction sizes
+        let header_size = self.header.size();
+        let tx_count_size = get_var_size_usize(self.transactions.len());
+        let tx_total_size: usize = self.transactions.iter().map(|tx| Serializable::size(tx)).sum();
+        header_size + tx_count_size + tx_total_size
     }
 }
 

@@ -15,14 +15,15 @@ mod tests {
     use crate::NeoSystem;
     use crate::i_event_handlers::CommittingHandler;
     use crate::network::p2p::payloads::extensible_payload::ExtensiblePayload;
-    use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
+    use neo_protocol::Witness as PayloadWitness;
     use crate::network::p2p::{
         helper::get_sign_data_vec,
         payloads::{
             InventoryType, block::Block as PayloadBlock, conflicts::Conflicts, header::Header,
             signer::Signer, transaction::Transaction, transaction_attribute::TransactionAttribute,
-            witness::Witness,
         },
+    };
+    use neo_protocol::Witness;
     };
     use neo_ledger::LedgerContext;
     use neo_storage::persistence::StoreCache;

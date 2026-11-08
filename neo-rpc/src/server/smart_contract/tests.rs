@@ -67,12 +67,12 @@ impl Wallet for TestWallet {
         None
     }
 
-    fn version(&self) -> &neo_core::wallets::Version {
-        static VERSION: neo_core::wallets::Version = neo_core::wallets::Version::new(1, 0, 0);
+    fn version(&self) -> &neo_wallets::Version {
+        static VERSION: neo_wallets::Version = neo_wallets::Version::new(1, 0, 0);
         &VERSION
     }
 
-    async fn change_password(&self, _old: &str, _new: &str) -> WalletResult<bool> {
+    fn change_password(&self, _old: &str, _new: &str) -> WalletResult<bool> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
@@ -80,11 +80,11 @@ impl Wallet for TestWallet {
         &self.account.script_hash() == script_hash
     }
 
-    async fn create_account(&self, _private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>> {
+    fn create_account(&self, _private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    async fn create_account_with_contract(
+    fn create_account_with_contract(
         &self,
         _contract: Contract,
         _key_pair: Option<KeyPair>,
@@ -92,18 +92,18 @@ impl Wallet for TestWallet {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    async fn create_account_watch_only(
+    fn create_account_watch_only(
         &self,
         _script_hash: UInt160,
     ) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    async fn delete_account(&self, _script_hash: &UInt160) -> WalletResult<bool> {
+    fn delete_account(&self, _script_hash: &UInt160) -> WalletResult<bool> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    async fn export(&self, _path: &str, _password: &str) -> WalletResult<()> {
+    fn export(&self, _path: &str, _password: &str) -> WalletResult<()> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
@@ -119,22 +119,19 @@ impl Wallet for TestWallet {
         vec![Arc::clone(&self.account)]
     }
 
-    async fn get_available_balance(
-        &self,
-        _asset_id: &neo_primitives::UInt256,
-    ) -> WalletResult<i64> {
+    fn get_default_account(&self) -> Option<Arc<dyn WalletAccount>> {
+        Some(Arc::clone(&self.account))
+    }
+
+    fn set_default_account(&self, _script_hash: &UInt160) -> WalletResult<()> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    async fn get_unclaimed_gas(&self) -> WalletResult<i64> {
+    fn import_wif(&self, _wif: &str) -> WalletResult<Arc<dyn WalletAccount>> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    async fn import_wif(&self, _wif: &str) -> WalletResult<Arc<dyn WalletAccount>> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn import_nep2(
+    fn import_nep2(
         &self,
         _nep2: &str,
         _password: &str,
@@ -142,36 +139,23 @@ impl Wallet for TestWallet {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    async fn sign(&self, _data: &[u8], _script_hash: &UInt160) -> WalletResult<Vec<u8>> {
+    fn sign(&self, _data: &[u8], _script_hash: &UInt160) -> WalletResult<Vec<u8>> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    async fn sign_transaction(
-        &self,
-        _transaction: &mut neo_protocol::payloads::Transaction,
-    ) -> WalletResult<()> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn unlock(&self, _password: &str) -> WalletResult<bool> {
+    fn unlock(&self, _password: &str) -> WalletResult<bool> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
     fn lock(&self) {}
 
-    async fn verify_password(&self, _password: &str) -> WalletResult<bool> {
+    fn verify_password(&self, _password: &str) -> WalletResult<bool> {
         Ok(false)
     }
 
-    async fn save(&self) -> WalletResult<()> {
+    fn save(&self) -> WalletResult<()> {
         Err(WalletError::Other("not supported".to_string()))
     }
-
-    fn get_default_account(&self) -> Option<Arc<dyn WalletAccount>> {
-        Some(Arc::clone(&self.account))
-    }
-
-    async fn set_default_account(&self, _script_hash: &UInt160) -> WalletResult<()> {
         Err(WalletError::Other("not supported".to_string()))
     }
 }

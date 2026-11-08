@@ -69,7 +69,7 @@ impl Actor for Blockchain {
                     }
                     BlockchainCommand::Idle => self.handle_idle(ctx).await,
                     BlockchainCommand::DrainUnverified => self.handle_drain_unverified(ctx).await,
-                    BlockchainCommand::FillCompleted => {}
+                    BlockchainCommand::FillCompleted(_) => {}
                     BlockchainCommand::RelayResult(result) => {
                         self.handle_relay_result(result).await
                     }

@@ -110,11 +110,7 @@ pub(super) fn contract_parameter_to_stack_value(
     match &parameter.value {
         ContractParameterValue::Any | ContractParameterValue::Void => Ok(StackValue::Null),
         ContractParameterValue::Boolean(value) => Ok(StackValue::Boolean(*value)),
-        ContractParameterValue::Integer(value) => Ok(if let Some(value) = value.to_i64() {
-            StackValue::Integer(value)
-        } else {
-            StackValue::BigInteger(value.to_signed_bytes_le())
-        }),
+        ContractParameterValue::Integer(value) => Ok(StackValue::Integer(*value)),
         ContractParameterValue::Hash160(value) => Ok(StackValue::ByteString(value.to_bytes())),
         ContractParameterValue::Hash256(value) => {
             Ok(StackValue::ByteString(value.to_array().to_vec()))
@@ -122,7 +118,7 @@ pub(super) fn contract_parameter_to_stack_value(
         ContractParameterValue::ByteArray(bytes) | ContractParameterValue::Signature(bytes) => {
             Ok(StackValue::ByteString(bytes.clone()))
         }
-        ContractParameterValue::PublicKey(point) => Ok(StackValue::ByteString(point.encoded())),
+        ContractParameterValue::PublicKey(point) => Ok(StackValue::ByteString(point.to_vec())),
         ContractParameterValue::String(value) => {
             Ok(StackValue::ByteString(value.as_bytes().to_vec()))
         }

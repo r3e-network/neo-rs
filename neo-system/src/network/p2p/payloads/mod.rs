@@ -47,7 +47,7 @@ pub use version_payload::VersionPayload;
 // Re-export core protocol types from neo-protocol
 pub use neo_protocol::payloads::{Block, Transaction, Witness};
 pub use neo_protocol::payloads::extensible::Extensible as ExtensiblePayload;
-pub use neo_protocol::execution::BlockHeader as Header;
+pub use neo_protocol::payloads::Header;
 
 // Re-export InventoryType from parent module for compatibility
 pub use super::InventoryType;
@@ -67,5 +67,5 @@ pub mod extensible_payload {
 }
 
 pub mod header {
-    pub use neo_protocol::execution::BlockHeader as Header;
+    pub use neo_protocol::payloads::Header;
 }

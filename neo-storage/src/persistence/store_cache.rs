@@ -26,6 +26,11 @@ pub struct StoreCache {
 
 impl StoreCache {
     /// Initializes a new instance of the StoreCache class with a store.
+    pub fn new(store: Arc<dyn Store>) -> Self {
+        Self::new_from_store(store, false)
+    }
+
+    /// Initializes a new instance of the StoreCache class with a store.
     pub fn new_from_store(store: Arc<dyn Store>, read_only: bool) -> Self {
         Self::new_from_store_with_config(store, read_only, DataCacheConfig::default())
     }
@@ -222,5 +227,19 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for StoreCache {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         self.data_cache.find(key_prefix, direction)
+    }
+}
+
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for Arc<StoreCache> {
+    fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
+        (**self).try_get(key)
+    }
+
+    fn find(
+        &self,
+        key_prefix: Option<&StorageKey>,
+        direction: SeekDirection,
+    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+        (**self).find(key_prefix, direction)
     }
 }

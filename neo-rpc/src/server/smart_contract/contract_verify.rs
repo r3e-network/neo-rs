@@ -149,7 +149,7 @@ pub(super) fn invoke_contract_verify(
 }
 
 fn build_verification_invocation_script(
-    parameters: &[neo_core::smart_contract::contract_parameter::ContractParameter],
+    parameters: &[neo_smart_contract::ContractParameter],
 ) -> Result<Vec<u8>, RpcException> {
     let mut builder = neo_vm::ScriptBuilder::new();
     for parameter in parameters.iter().rev() {

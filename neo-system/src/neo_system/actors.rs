@@ -10,13 +10,13 @@
 use std::sync::Arc;
 
 use neo_actors::{ActorRef, ActorRuntimeError, ActorRuntimeResult};
-use neo_ledger::transaction_router::TransactionRouter;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::warn;
 
 use crate::blockchain::{BlockchainCommand, BlockchainHandle};
 use crate::network::p2p::payloads::transaction::Transaction;
 use neo_protocol::protocol_settings::ProtocolSettings;
+use neo_ledger::{VerifyResult, verify_transaction_state_independent};
 
 const TX_ROUTER_MAILBOX_CAPACITY: usize = 65_536;
 
@@ -24,6 +24,28 @@ struct TransactionRouterEnvelope {
     transaction: Transaction,
     relay: bool,
     sender: Option<ActorRef>,
+}
+
+/// Simple transaction router for state-independent verification
+struct TransactionRouter {
+    settings: ProtocolSettings,
+}
+
+impl TransactionRouter {
+    fn new(settings: ProtocolSettings) -> Self {
+        Self { settings }
+    }
+
+    fn preverify(&self, transaction: Transaction, relay: bool) -> crate::blockchain::PreverifyCompleted {
+        let result = verify_transaction_state_independent(&transaction, &self.settings);
+        let hash = transaction.hash();
+        crate::blockchain::PreverifyCompleted {
+            hash,
+            transaction,
+            result,
+            relay,
+        }
+    }
 }
 
 /// Typed handle responsible for routing transaction verification requests.

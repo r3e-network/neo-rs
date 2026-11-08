@@ -2,6 +2,7 @@
 
 pub mod application_engine;
 pub mod contract;
+pub mod contract_parameter;
 pub mod contract_state;
 pub mod diagnostic;
 pub mod env_flags;
@@ -30,6 +31,7 @@ pub use neo_vm::storage_context;
 // Additional re-exports for common types
 pub use application_engine::ApplicationEngine;
 pub use contract::Contract;
+pub use contract_parameter::{ContractParameter, ContractParameterValue};
 pub use contract_state::{ContractState, NefFile};
 pub use diagnostic::Diagnostic;
 pub use error::{CoreError, CoreResult, ToNativeError};

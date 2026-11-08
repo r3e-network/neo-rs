@@ -14,7 +14,7 @@ use neo_protocol::payloads::conflicts::Conflicts;
 use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::witness::Witness;
-use neo_signing::{
+use neo_wallets::signing::{
     AuthenticatedContext, KeyRef, SignRequest, SignerService, SigningKeyBinding, SigningKeyResolver,
 };
 use neo_storage::{StorageItem, StorageKey};
@@ -50,34 +50,34 @@ impl SignerService for RecordingSignerService {
         &self,
         request: SignRequest,
         context: AuthenticatedContext,
-    ) -> neo_signing::SignResult<SignResponse> {
+    ) -> neo_wallets::signing::SignResult<SignResponse> {
         let request_digest = request.binding_digest(&context)?;
         self.requests
             .lock()
             .expect("recording signer lock")
             .push((request.clone(), context));
         if request.key_ref != self.expected_key_ref {
-            return Err(neo_signing::SignError::new(
-                neo_signing::SignErrorCode::KeyNotFound,
+            return Err(neo_wallets::signing::SignError::new(
+                neo_wallets::signing::SignErrorCode::KeyNotFound,
                 "RPC signer key version is not registered",
             ));
         }
         let signed_digest = request.payload.signing_digest();
         let bytes = request.payload.canonical_bytes().ok_or_else(|| {
-            neo_signing::SignError::new(
-                neo_signing::SignErrorCode::InvalidRequest,
+            neo_wallets::signing::SignError::new(
+                neo_wallets::signing::SignErrorCode::InvalidRequest,
                 "test RPC signer requires canonical bytes",
             )
         })?;
         let key_pair = KeyPair::from_private_key(&self.private_key).map_err(|error| {
-            neo_signing::SignError::new(
-                neo_signing::SignErrorCode::ProviderFailure,
+            neo_wallets::signing::SignError::new(
+                neo_wallets::signing::SignErrorCode::ProviderFailure,
                 error.to_string(),
             )
         })?;
         let signature = key_pair.sign(bytes).map_err(|error| {
-            neo_signing::SignError::new(
-                neo_signing::SignErrorCode::ProviderFailure,
+            neo_wallets::signing::SignError::new(
+                neo_wallets::signing::SignErrorCode::ProviderFailure,
                 error.to_string(),
             )
         })?;
@@ -85,7 +85,7 @@ impl SignerService for RecordingSignerService {
             schema_version: SIGNING_SCHEMA_VERSION,
             request_id: request.request_id,
             key_ref: request.key_ref,
-            algorithm: neo_signing::ALGORITHM_ECDSA_P256_SHA256.to_string(),
+            algorithm: neo_wallets::signing::ALGORITHM_ECDSA_P256_SHA256.to_string(),
             signature,
             signed_digest,
             request_digest,
@@ -105,13 +105,13 @@ impl SignerService for RecordingSignerService {
         frozen_intent: FrozenSignIntent,
         context: AuthenticatedContext,
         request_timeout: Duration,
-    ) -> neo_signing::SignResult<SignResponse> {
+    ) -> neo_wallets::signing::SignResult<SignResponse> {
         self.resume_calls.fetch_add(1, Ordering::SeqCst);
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|error| {
-                neo_signing::SignError::new(
-                    neo_signing::SignErrorCode::ProviderFailure,
+                neo_wallets::signing::SignError::new(
+                    neo_wallets::signing::SignErrorCode::ProviderFailure,
                     error.to_string(),
                 )
             })?

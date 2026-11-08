@@ -46,9 +46,11 @@ pub use witness::{
 #[allow(unused_imports)]
 pub use witness_rule::rule_from_json;
 
-use neo_config::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use neo_wallets::helper::Helper as WalletHelper;
-use neo_ledger::{Block, BlockHeader, KeyPair};
+use neo_wallets::KeyPair;
+use neo_ledger::Block;
+use neo_protocol::payloads::Header as BlockHeader;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_json::{JObject, JToken};
 use neo_native_contracts::native::NativeRegistry;
@@ -166,7 +168,7 @@ impl RpcUtility {
 
     /// Converts a block to JSON representation.
     #[must_use]
-    pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JObject {
+    pub fn block_to_json(block: &mut Block, protocol_settings: &ProtocolSettings) -> JObject {
         tx_json::block_to_json(block, protocol_settings)
     }
 
@@ -231,17 +233,19 @@ impl RpcUtility {
             },
         )?;
 
-        Ok(BlockHeader::new(
-            version,
-            previous_hash,
-            merkle_root,
-            timestamp,
-            nonce,
-            index,
-            primary_index,
-            next_consensus,
-            witnesses,
-        ))
+        let mut header = BlockHeader::new();
+        header.set_version(version);
+        header.set_prev_hash(previous_hash);
+        header.set_merkle_root(merkle_root);
+        header.set_timestamp(timestamp);
+        header.set_nonce(nonce);
+        header.set_index(index);
+        header.set_primary_index(primary_index);
+        header.set_next_consensus(next_consensus);
+        if let Some(witness) = witnesses.into_iter().next() {
+            header.witness = witness;
+        }
+        Ok(header)
     }
 
     /// Converts JSON to a block
@@ -309,7 +313,7 @@ impl RpcUtility {
 }
 
 /// Public wrappers matching the historical `crate::utility::function` style.
-pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JObject {
+pub fn block_to_json(block: &mut Block, protocol_settings: &ProtocolSettings) -> JObject {
     RpcUtility::block_to_json(block, protocol_settings)
 }
 
@@ -626,13 +630,12 @@ mod tests {
         let parsed =
             RpcUtility::block_from_json(&json, &ProtocolSettings::default_settings()).unwrap();
 
-        assert_eq!(parsed.header.index, block.header.index);
-        assert_eq!(parsed.header.timestamp, block.header.timestamp);
+        assert_eq!(parsed.header.index(), block.header.index());
+        assert_eq!(parsed.header.timestamp(), block.header.timestamp());
         assert_eq!(parsed.transactions.len(), 1);
         assert_eq!(parsed.transactions[0].script(), b"\t\t\t");
-        assert_eq!(parsed.header.witnesses.len(), 1);
         assert_eq!(
-            parsed.header.witnesses[0].invocation_script(),
+            parsed.header.witness.invocation_script(),
             witness.invocation_script()
         );
     }

@@ -1,6 +1,6 @@
 use neo_storage::persistence::providers::memory_store_provider::MemoryStoreProvider;
 use neo_storage::persistence::{
-    StoreCache, StoreProvider, StoreTransaction, TrackState, Trackable,
+    ReadOnlyStoreGeneric, StoreCache, StoreProvider, StoreTransaction, TrackState, Trackable,
 };
 use neo_storage::{StorageItem, StorageKey};
 

@@ -56,7 +56,6 @@ use crate::network::p2p::{
     local_node::RelayInventory,
     payloads::{
         InventoryType, Transaction,
-        block::Block,
         extensible_payload::ExtensiblePayload,
         header::Header,
     },
@@ -64,7 +63,7 @@ use crate::network::p2p::{
 use async_trait::async_trait;
 use dashmap::DashMap;
 use lru::LruCache;
-use neo_actors::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
+use neo_actors::{Actor, ActorContext, ActorResult, ActorRef, Props, ScheduleHandle};
 use neo_ledger::LedgerContext;
 use neo_storage::persistence::DataCache;
 use neo_storage::persistence::StoreCache;
@@ -73,6 +72,7 @@ use crate::state_service::{STATE_SERVICE_CATEGORY, StateRoot};
 use neo_io_crate::{MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
 use neo_protocol::protocol_settings::ProtocolSettings;
+use neo_protocol::execution::Block;
 use neo_smart_contract::error::CoreError;
 use neo_smart_contract::error::CoreResult;
 use std::any::Any;
@@ -194,13 +194,14 @@ impl Blockchain {
     }
 
     fn try_block_hash(block: &Block) -> CoreResult<UInt256> {
-        let mut header = block.header.clone();
-        header.try_hash().map_err(CoreError::from)
+        Ok(block.hash())
     }
 
     /// Approximate memory cost of one cached unverified block.
     fn unverified_block_cost(block: &Block) -> usize {
-        block.size().saturating_add(UNVERIFIED_BLOCK_OVERHEAD)
+        // Convert to payload block to get serialized size
+        let payload_block = block.to_payload_block();
+        payload_block.size().saturating_add(UNVERIFIED_BLOCK_OVERHEAD)
     }
 
     /// Removes every unverified candidate at `index`, keeping the cache byte
@@ -211,11 +212,10 @@ impl Blockchain {
             .remove(&index)
             .map(|(_, list)| list)?;
         let bytes = removed
-            .blocks
             .iter()
             .map(|block| Self::unverified_block_cost(block.as_ref()))
             .fold(0usize, usize::saturating_add);
-        let count = removed.blocks.len();
+        let count = removed.len();
         self._unverified_cache_bytes
             .update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                 current.saturating_sub(bytes)
@@ -297,10 +297,12 @@ impl Blockchain {
             .last()
             .map(|header| header.index())
             .unwrap_or(current_height);
+        // Convert to payload block for validation
+        let payload_block = block.to_payload_block();
         let verified = if block.index() == header_height.saturating_add(1) {
-            block.verify_with_cache(settings.as_ref(), &store_cache, &header_cache)
+            neo_ledger::verify_block_with_cache(&payload_block, settings.as_ref(), &store_cache, &header_cache)
         } else {
-            block.verify(settings.as_ref(), &store_cache)
+            neo_ledger::verify_block(&payload_block, settings.as_ref(), &store_cache)
         };
         if !verified {
             warn!(
@@ -357,6 +359,7 @@ impl Blockchain {
                 // a local commit failure, not evidence that the peer is invalid.
                 context.actor_system.event_stream().publish(PersistFailed {
                     block: Arc::clone(block),
+                    error: error.to_string(),
                 });
                 false
             }
@@ -389,13 +392,49 @@ mod block_processing;
 mod handlers;
 mod transaction;
 
-// Command vocabulary and the typed handle stay in neo-core; re-exported here
-// so `crate::blockchain::*` keeps serving the moved actor code and consumers.
+// Re-export types from neo-ledger, but shadow BlockchainHandle with our own
 pub use neo_ledger::blockchain::{
-    BlockchainCommand, BlockchainHandle, FillCompleted, FillMemoryPool, Import, ImportCompleted,
+    BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted,
     InventoryPayload, PersistCompleted, PersistFailed, PreverifyCompleted, RelayResult, Reverify,
     ReverifyItem,
 };
+
+// Our own BlockchainHandle that wraps ActorRef
+#[derive(Clone, Debug)]
+pub struct BlockchainHandle {
+    actor_ref: ActorRef,
+}
+
+impl BlockchainHandle {
+    pub fn new(actor_ref: ActorRef) -> Self {
+        Self { actor_ref }
+    }
+
+    pub fn raw_ref(&self) -> &ActorRef {
+        &self.actor_ref
+    }
+
+    pub fn tell<M>(&self, msg: M) -> Result<(), String>
+    where
+        M: std::any::Any + Send + 'static,
+    {
+        self.actor_ref.tell(msg).map_err(|e| e.to_string())
+    }
+
+    pub async fn tell_from_async<M>(&self, msg: M, _sender: impl std::any::Any) -> Result<(), String>
+    where
+        M: std::any::Any + Send + 'static,
+    {
+        self.actor_ref.tell(msg).map_err(|e| e.to_string())
+    }
+
+    pub fn tell_from<M>(&self, msg: M, _sender: impl std::any::Any) -> Result<(), String>
+    where
+        M: std::any::Any + Send + 'static,
+    {
+        self.actor_ref.tell(msg).map_err(|e| e.to_string())
+    }
+}
 
 #[cfg(test)]
 mod tests;

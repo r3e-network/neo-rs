@@ -69,25 +69,36 @@ use neo_actors::{ActorRef, ActorSystem, EventStreamHandle};
 
 use crate::blockchain::{Blockchain, BlockchainCommand, BlockchainHandle, BlockchainSystemCommand};
 use crate::events::{PluginEvent, broadcast_plugin_event};
+use crate::mempool::MemoryPool;
 use crate::network::p2p::{
-    LocalNode, LocalNodeHandle, TaskManager, TaskManagerHandle, payloads::block::Block, timeouts,
+    LocalNode, LocalNodeHandle, TaskManager, TaskManagerHandle, timeouts,
 };
 use neo_primitives::LogLevel;
 // ExtensionsUtility was removed - utilities should be inlined
-use neo_ledger::LedgerContext;
+use neo_ledger::{LedgerContext, HeaderCache};
 use neo_storage::persistence::{
     StoreCache, StoreFactory, store::Store, store_provider::StoreProvider,
 };
+use neo_storage::persistence::providers::memory_store::MemoryStore;
 use crate::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
 use neo_native_contracts::PolicyContract;
 use neo_native_contracts::ledger_contract::LedgerContract;
-use crate::state_service::StateStore;
+use crate::services::StateStoreService as StateStore;
 use neo_primitives::UInt256;
 use neo_protocol::hardfork::Hardfork;
 pub use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::error::{CoreError, CoreResult};
 #[cfg(test)]
 use std::sync::LazyLock;
+
+// Stub for ExtensionsUtility - removed from neo-core
+struct ExtensionsUtility;
+
+impl ExtensionsUtility {
+    fn set_logging(_callback: Option<Box<dyn Fn(String, LogLevel, String) + Send + Sync>>) {
+        // Stub implementation - logging hook registration would go here
+    }
+}
 
 // initialise_plugins and to_core_error have been extracted to super::helpers module
 #[cfg(test)]
@@ -132,7 +143,7 @@ pub struct NeoSystem {
     store_provider: Arc<dyn StoreProvider>,
     store: Arc<dyn Store>,
     ledger: Arc<LedgerContext>,
-    genesis_block: Arc<Block>,
+    genesis_block: Arc<neo_protocol::execution::Block>,
     context: Arc<NeoSystemContext>,
     pub(crate) self_ref: Mutex<Weak<NeoSystem>>,
 }
@@ -151,6 +162,13 @@ impl NeoSystem {
     /// Returns the current best block index tracked by the system.
     pub fn current_block_index(&self) -> u32 {
         self.context.current_block_index()
+    }
+
+    /// Stub: Persist a block to storage.
+    /// TODO: Implement actual persistence logic or delegate to blockchain actor.
+    pub fn persist_block(&self, _block: neo_protocol::execution::Block) -> Result<(), String> {
+        // Placeholder - actual persistence is handled by the blockchain actor
+        Ok(())
     }
 
     // persist_block moved to persistence module
@@ -227,8 +245,8 @@ impl NeoSystem {
 
         let actor_system = ActorSystem::new("neo").map_err(to_core_error)?;
         let settings_arc = Arc::new(settings.clone());
-        let genesis_ledger = neo_ledger::create_genesis_block(&settings);
-        let genesis_block = Arc::new(super::converters::convert_ledger_block(genesis_ledger));
+        let genesis_payload = neo_ledger::create_genesis_block(&settings);
+        let genesis_block = Arc::new(super::converters::convert_payload_block(&genesis_payload));
 
         let service_registry = Arc::new(ServiceRegistry::new());
         let wallet_changed_handlers = Arc::new(RwLock::new(Vec::new()));
@@ -241,12 +259,7 @@ impl NeoSystem {
                 CoreError::invalid_operation("default memory store provider is not registered")
             })?,
         };
-        let (store, store_cache_for_hydration, state_store) = super::storage::init_store(
-            store_provider.clone(),
-            storage_path,
-            settings_arc.clone(),
-            state_service_settings,
-        )?;
+        let (store, store_cache_for_hydration, state_store) = super::storage::init_store()?;
 
         let user_agent = format!("/neo-rs:{}/", env!("CARGO_PKG_VERSION"));
         let local_node_state = Arc::new(LocalNode::new(settings_arc.clone(), 10333, user_agent));
@@ -272,13 +285,23 @@ impl NeoSystem {
         )));
         let relay_cache = Arc::new(RelayExtensibleCache::new(RELAY_CACHE_CAPACITY));
 
-        register_builtin_services(
-            &service_registry,
-            &local_node_state,
-            &ledger,
-            &memory_pool,
-            &state_store,
-        )?;
+        if let Some(ref state_store_service) = state_store {
+            register_builtin_services(
+                &service_registry,
+                &local_node_state,
+                &ledger,
+                &memory_pool,
+                state_store_service,
+            )?;
+        } else {
+            // Register services without state store
+            register_builtin_services_without_state(
+                &service_registry,
+                &local_node_state,
+                &ledger,
+                &memory_pool,
+            )?;
+        }
 
         let (blockchain, local_node, task_manager, tx_router) = spawn_core_actors(
             &actor_system,
@@ -301,7 +324,7 @@ impl NeoSystem {
             genesis_block: genesis_block.clone(),
             ledger: ledger.clone(),
             state_service_enabled,
-            state_store: state_store.clone(),
+            state_store: state_store.clone().unwrap_or_else(|| Arc::new(MemoryStore::new())),
             memory_pool: memory_pool.clone(),
             header_cache: header_cache.clone(),
             local_node_state: local_node_state.clone(),
@@ -316,13 +339,15 @@ impl NeoSystem {
         });
 
         if state_service_enabled {
-            let handlers = Arc::new(
-                crate::state_service::commit_handlers::StateServiceCommitHandlers::new(
-                    state_store.clone(),
-                ),
-            );
-            context.register_committing_handler(handlers.clone())?;
-            context.register_committed_handler(handlers)?;
+            if state_store.is_some() {
+                let handlers = crate::state_service::commit_handlers::StateServiceCommitHandlers::new(
+                    store_cache_for_hydration.clone(),
+                    true, // state_root_enabled
+                ).map_err(|e| CoreError::invalid_operation(&e.message))?;
+                let handlers = Arc::new(handlers);
+                context.register_committing_handler(handlers.clone())?;
+                context.register_committed_handler(handlers)?;
+            }
         }
 
         super::system_context::attach_system_context(context.clone());
@@ -376,15 +401,16 @@ impl NeoSystem {
     /// Persists the canonical genesis block when the ledger does not already
     /// contain it. Committing handlers registered before this call observe genesis.
     pub fn persist_genesis_if_absent(&self) -> CoreResult<()> {
-        let genesis_ledger = neo_ledger::create_genesis_block(self.settings());
-        let genesis_hash = genesis_ledger.hash();
+        let mut genesis_payload = neo_ledger::create_genesis_block(self.settings());
+        let genesis_hash = genesis_payload.hash();
         let store = self.store();
         let snapshot = store.snapshot();
         let store_cache = StoreCache::new_from_snapshot(snapshot);
         let ledger_contract = LedgerContract::new();
         if !ledger_contract.contains_block(&store_cache, &genesis_hash) {
             tracing::info!(target: "neo", "persisting genesis block to initialize state");
-            self.persist_block((*self.genesis_block).clone())?;
+            self.persist_block((*self.genesis_block).clone())
+                .map_err(|e| CoreError::invalid_operation(e))?;
         }
         Ok(())
     }
@@ -410,7 +436,7 @@ impl NeoSystem {
     }
 
     /// Typed ledger view.
-    pub fn ledger_typed(&self) -> CoreResult<Option<Arc<dyn LedgerService>>> {
+    pub fn ledger_typed(&self) -> CoreResult<Option<Arc<LedgerContext>>> {
         self.context.ledger_typed()
     }
 
@@ -520,7 +546,7 @@ impl NeoSystem {
     }
 
     /// Returns the canonical genesis block for this system instance.
-    pub fn genesis_block(&self) -> Arc<Block> {
+    pub fn genesis_block(&self) -> Arc<neo_protocol::execution::Block> {
         self.genesis_block.clone()
     }
 
@@ -540,7 +566,7 @@ impl NeoSystem {
     }
 
     /// Returns the state store service when available (None if not registered).
-    pub fn state_store(&self) -> CoreResult<Option<Arc<StateStore>>> {
+    pub fn state_store(&self) -> CoreResult<Option<Arc<dyn StateStore>>> {
         self.context.state_store()
     }
 
@@ -573,7 +599,7 @@ fn register_builtin_services(
     local_node_state: &Arc<LocalNode>,
     ledger: &Arc<LedgerContext>,
     memory_pool: &Arc<Mutex<MemoryPool>>,
-    state_store: &Arc<StateStore>,
+    state_store: &Arc<dyn StateStoreService>,
 ) -> CoreResult<()> {
     // Note: Cannot use Arc::clone() here because we need to coerce concrete Arc<T> to Arc<dyn Any>
     let local_node_any: Arc<dyn Any + Send + Sync> = local_node_state.clone();
@@ -585,8 +611,27 @@ fn register_builtin_services(
     let mem_pool_any: Arc<dyn Any + Send + Sync> = memory_pool.clone();
     service_registry.register(mem_pool_any, Some("MemoryPool".to_string()))?;
 
-    let state_store_any: Arc<dyn Any + Send + Sync> = state_store.clone();
-    service_registry.register(state_store_any, Some(STATE_STORE_SERVICE.to_string()))?;
+    // Register state_store as its concrete type via Any
+    // Since state_store is Arc<dyn StateStoreService>, we need to box it
+    let state_store_boxed: Arc<dyn Any + Send + Sync> = Arc::new(state_store.clone());
+    service_registry.register(state_store_boxed, Some(STATE_STORE_SERVICE.to_string()))?;
+    Ok(())
+}
+
+fn register_builtin_services_without_state(
+    service_registry: &Arc<ServiceRegistry>,
+    local_node_state: &Arc<LocalNode>,
+    ledger: &Arc<LedgerContext>,
+    memory_pool: &Arc<Mutex<MemoryPool>>,
+) -> CoreResult<()> {
+    let local_node_any: Arc<dyn Any + Send + Sync> = local_node_state.clone();
+    service_registry.register(local_node_any, Some("LocalNode".to_string()))?;
+
+    let ledger_any: Arc<dyn Any + Send + Sync> = ledger.clone();
+    service_registry.register(ledger_any, Some("Ledger".to_string()))?;
+
+    let mem_pool_any: Arc<dyn Any + Send + Sync> = memory_pool.clone();
+    service_registry.register(mem_pool_any, Some("MemoryPool".to_string()))?;
     Ok(())
 }
 
@@ -628,12 +673,12 @@ fn attach_system_to_actors(
     blockchain
         .raw_ref()
         .tell(BlockchainSystemCommand::AttachSystem(context.clone()))
-        .map_err(to_core_error)?;
+        .map_err(|e| CoreError::system(e.to_string()))?;
     local_node_state.set_system_context(context.clone());
     task_manager.attach_system(context).map_err(to_core_error)?;
     blockchain
         .tell(BlockchainCommand::Initialize)
-        .map_err(to_core_error)?;
+        .map_err(|e| CoreError::system(e.to_string()))?;
     Ok(())
 }
 

@@ -2,7 +2,7 @@ use super::*;
 use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
 use base64::{Engine as _, engine::general_purpose};
 use mockito::{Matcher, Server};
-use neo_config::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;
 use neo_vm::OpCode;
@@ -748,7 +748,7 @@ async fn wallet_api_wait_transaction_returns_confirmed_tx() {
     }
 
     let mut settings = ProtocolSettings::default_settings();
-    settings.ms_per_block = 2;
+    settings.milliseconds_per_block = 2;
     let tx = Transaction::new();
 
     let Some(result_json) = load_rpc_case_result("getrawtransactionasync") else {
@@ -793,7 +793,7 @@ async fn wallet_api_wait_transaction_times_out() {
     }
 
     let mut settings = ProtocolSettings::default_settings();
-    settings.ms_per_block = 2;
+    settings.milliseconds_per_block = 2;
     let tx = Transaction::new();
 
     let Some(mut unconfirmed) = load_rpc_case_result("getrawtransactionasync") else {

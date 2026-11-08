@@ -38,7 +38,7 @@ pub(crate) mod network;
 pub mod registry;
 pub(crate) mod relay;
 pub(crate) mod services;
-// pub(crate) mod storage;  // Removed during consolidation
+pub(crate) mod storage;
 pub mod system;
 pub(crate) mod system_context;
 

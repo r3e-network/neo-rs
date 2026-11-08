@@ -60,6 +60,22 @@ impl Extensible {
         }
     }
 
+    /// Stub: Verify the extensible payload against protocol settings and snapshot.
+    /// TODO: Implement full validation including whitelist checking.
+    pub fn verify(
+        &self,
+        _settings: &crate::protocol_settings::ProtocolSettings,
+        _snapshot: &dyn std::any::Any,
+        _whitelist: &std::collections::HashSet<UInt160>,
+    ) -> bool {
+        // Basic structural validation
+        if self.valid_block_start >= self.valid_block_end {
+            return false;
+        }
+        // TODO: Add full validation logic
+        true
+    }
+
     /// Returns the cached hash of the payload, computing it if necessary.
     ///
     /// Mirrors the historical fail-soft accessor: on unsigned-serialization

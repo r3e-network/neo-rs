@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use super::super::utility::{RpcUtility, object_array, witness_to_json};
-use neo_config::ProtocolSettings;
-use neo_ledger::BlockHeader;
+use neo_protocol::ProtocolSettings;
+use neo_protocol::payloads::Header as BlockHeader;
 use neo_wallets::helper::Helper as WalletHelper;
 use neo_io::Serializable;
 use neo_json::{JObject, JToken};
@@ -94,17 +94,18 @@ impl RpcBlockHeader {
             parsed_witnesses.push(RpcUtility::witness_from_json(witness_obj)?);
         }
 
-        let header = BlockHeader::new(
-            version,
-            previous_hash,
-            merkle_root,
-            timestamp,
-            nonce,
-            index,
-            primary_index,
-            next_consensus,
-            parsed_witnesses,
-        );
+        let mut header = BlockHeader::new();
+        header.set_version(version);
+        header.set_prev_hash(previous_hash);
+        header.set_merkle_root(merkle_root);
+        header.set_timestamp(timestamp);
+        header.set_nonce(nonce);
+        header.set_index(index);
+        header.set_primary_index(primary_index);
+        header.set_next_consensus(next_consensus);
+        if let Some(witness) = parsed_witnesses.into_iter().next() {
+            header.witness = witness;
+        }
 
         let confirmations = json
             .get("confirmations")
@@ -126,8 +127,8 @@ impl RpcBlockHeader {
     /// Converts to JSON
     /// Matches C# `ToJson`
     #[must_use]
-    pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
-        let header = &self.header;
+    pub fn to_json(&mut self, protocol_settings: &ProtocolSettings) -> JObject {
+        let header = &mut self.header;
         let mut json = JObject::new();
         json.insert(
             "hash".to_string(),
@@ -136,36 +137,36 @@ impl RpcBlockHeader {
         json.insert("size".to_string(), JToken::Number(header.size() as f64));
         json.insert(
             "version".to_string(),
-            JToken::Number(f64::from(header.version)),
+            JToken::Number(f64::from(header.version())),
         );
         json.insert(
             "previousblockhash".to_string(),
-            JToken::String(header.previous_hash.to_string()),
+            JToken::String(header.prev_hash().to_string()),
         );
         json.insert(
             "merkleroot".to_string(),
-            JToken::String(header.merkle_root.to_string()),
+            JToken::String(header.merkle_root().to_string()),
         );
-        json.insert("time".to_string(), JToken::Number(header.timestamp as f64));
+        json.insert("time".to_string(), JToken::Number(header.timestamp() as f64));
         json.insert(
             "nonce".to_string(),
-            JToken::String(format!("{:016X}", header.nonce)),
+            JToken::String(format!("{:016X}", header.nonce())),
         );
-        json.insert("index".to_string(), JToken::Number(f64::from(header.index)));
+        json.insert("index".to_string(), JToken::Number(f64::from(header.index())));
         json.insert(
             "primary".to_string(),
-            JToken::Number(f64::from(header.primary_index)),
+            JToken::Number(f64::from(header.primary_index())),
         );
         json.insert(
             "nextconsensus".to_string(),
             JToken::String(WalletHelper::to_address(
-                &header.next_consensus,
+                header.next_consensus(),
                 protocol_settings.address_version,
             )),
         );
         json.insert(
             "witnesses".to_string(),
-            object_array(&header.witnesses, witness_to_json),
+            object_array(&[header.witness.clone()], witness_to_json),
         );
         json.insert(
             "confirmations".to_string(),
@@ -240,12 +241,12 @@ mod tests {
         let settings = ProtocolSettings::default();
         let rpc_header = RpcBlockHeader::from_json(&json, &settings).expect("should parse");
 
-        assert_eq!(rpc_header.header.version, 0);
-        assert_eq!(rpc_header.header.timestamp, 123);
-        assert_eq!(rpc_header.header.nonce, 42);
+        assert_eq!(rpc_header.header.version(), 0);
+        assert_eq!(rpc_header.header.timestamp(), 123);
+        assert_eq!(rpc_header.header.nonce(), 42);
         assert_eq!(rpc_header.confirmations, 8);
         assert!(rpc_header.next_block_hash.is_some());
-        assert_eq!(rpc_header.header.witnesses.len(), 1);
+        assert_eq!(rpc_header.header.witness.invocation_script().len(), 1);
     }
 
     #[test]

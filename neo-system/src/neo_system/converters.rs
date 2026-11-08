@@ -4,11 +4,11 @@
 //! (used in P2P communication) and ledger types (used in storage and processing).
 
 use crate::network::p2p::payloads::{
-    block::Block, header::Header, witness::Witness as PayloadWitness,
+    Block, Witness as PayloadWitness,
 };
-use neo_ledger::{
-    block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
-};
+use neo_protocol::payloads::Header;
+use neo_protocol::execution::Block as LedgerBlock;
+use neo_protocol::execution::BlockHeader as LedgerBlockHeader;
 
 /// Converts a payload witness to a ledger witness.
 pub(crate) fn convert_payload_witness(witness: &PayloadWitness) -> neo_protocol::witness::Witness {

@@ -13,7 +13,7 @@ use super::super::utility::{
     NepTransferFieldRefs, insert_nep_transfer_fields, parse_nep_transfer_fields,
     parse_transfer_lists, transfer_lists_to_json,
 };
-use neo_config::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use neo_json::JObject;
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
@@ -128,7 +128,7 @@ impl RpcNep17Transfer {
 mod tests {
     use super::super::test_fixtures::rpc_case_result;
     use super::*;
-    use neo_config::ProtocolSettings;
+    use neo_protocol::ProtocolSettings;
 
     #[test]
     fn transfer_roundtrip() {

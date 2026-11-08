@@ -281,7 +281,7 @@ impl NetworkMessage {
     /// Decodes a message from raw wire bytes (flags + command + var payload).
     pub fn from_bytes(bytes: &[u8]) -> P2PResult<Self> {
         let mut reader = MemoryReader::new(bytes);
-        let message: crate::message::Message = neo_io_crate::Serializable::deserialize(&mut reader)
+        let message: super::Message = neo_io_crate::Serializable::deserialize(&mut reader)
             .map_err(|e| P2PMessageError::Io(e.to_string()))?;
 
         if reader.remaining() != 0 {

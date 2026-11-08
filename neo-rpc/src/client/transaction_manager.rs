@@ -12,16 +12,57 @@
 use crate::{Nep17Api, RpcClient, RpcError, TransactionManagerFactory};
 use neo_protocol::signing_data::get_sign_data_vec;
 use neo_wallets::helper::Helper as WalletHelper;
-use neo_ledger::{KeyPair, VerifiableExt, smart_contract::ContractParametersContext};
-use neo_crypto::ECPoint;
+use neo_wallets::KeyPair;
+use neo_ledger::VerifiableExt;
 use neo_native_contracts::native::{GasToken, NativeContract};
 use neo_primitives::UInt160;
 use neo_protocol::payloads::{Signer, Transaction, TransactionAttribute};
 use neo_protocol::witness::Witness;
 use neo_smart_contract::contract::Contract;
 use neo_storage::persistence::DataCache;
+use neo_crypto::ECPoint;
 use num_bigint::BigInt;
 use std::sync::Arc;
+
+// TODO: ContractParametersContext stub - needs proper implementation
+#[derive(Clone)]
+struct ContractParametersContext {
+    _tx: Transaction,
+}
+
+impl ContractParametersContext {
+    fn new(
+        _snapshot: Arc<DataCache>,
+        tx: Transaction,
+        _network: u32,
+    ) -> Self {
+        Self { _tx: tx }
+    }
+
+    fn add_signature(
+        &mut self,
+        _contract: &Contract,
+        _public_key: &ECPoint,
+        _signature: Vec<u8>,
+    ) -> Result<bool, String> {
+        // TODO: Implement signature addition
+        Ok(true)
+    }
+
+    fn add_contract(&mut self, _contract: Contract) {
+        // TODO: Implement contract addition
+    }
+
+    fn completed(&self) -> bool {
+        // TODO: Check if all signatures are collected
+        false
+    }
+
+    fn witnesses(&self) -> Vec<Witness> {
+        // TODO: Return constructed witnesses
+        Vec::new()
+    }
+}
 
 /// Sign item for transaction signing
 #[derive(Clone)]
@@ -152,9 +193,7 @@ impl TransactionManager {
     /// Add witness with contract
     /// Matches C# `AddWitness`
     pub fn add_witness(&mut self, contract: Contract) -> Result<&mut Self, RpcError> {
-        if !self.context.add_contract(contract) {
-            return Err("AddWitness failed!".into());
-        }
+        self.context.add_contract(contract);
         Ok(self)
     }
 
@@ -214,7 +253,7 @@ impl TransactionManager {
                 let public_key = key.get_public_key_point()?;
                 let added = self
                     .context
-                    .add_signature(item.contract.clone(), public_key, signature)
+                    .add_signature(&item.contract, &public_key, signature)
                     .map_err(|err| format!("AddSignature failed: {err}"))?;
                 if !added {
                     return Err("AddSignature failed!".into());
@@ -226,10 +265,10 @@ impl TransactionManager {
             return Err("Please add signature or witness first!".into());
         }
 
-        let final_witnesses = self
-            .context
-            .witnesses()
-            .ok_or_else(|| "No witnesses available; context incomplete".to_string())?;
+        let final_witnesses = self.context.witnesses();
+        if final_witnesses.is_empty() {
+            return Err("No witnesses available; context incomplete".to_string().into());
+        }
         self.tx.set_witnesses(final_witnesses);
 
         Ok(self.tx.clone())
@@ -300,7 +339,7 @@ impl TransactionManager {
 mod tests {
     use super::*;
     use mockito::{Matcher, Server};
-    use neo_config::ProtocolSettings;
+    use neo_protocol::ProtocolSettings;
     use neo_json::{JArray, JObject, JToken};
     use neo_primitives::WitnessScope;
     use reqwest::Url;

@@ -1,9 +1,10 @@
 use futures::stream;
 use hyper::server::accept::from_stream;
 use hyper::service::{Service, make_service_fn, service_fn};
-use neo_services::RpcService;
+// TODO: neo_services crate doesn't exist - needs to be created or removed
+// use neo_services::RpcService;
 use neo_wallets::Wallet;
-use neo_signing::{
+use neo_wallets::signing::{
     AuthenticatedContext, FrozenSignIntent, KeyRef, SIGNING_SCHEMA_VERSION, SignPurpose,
     SignerService, SigningKeyResolver, TrustedSignerClient,
 };
@@ -74,7 +75,7 @@ impl RpcSignerRuntime {
         &self,
         operation_id: &str,
         frozen_intent: FrozenSignIntent,
-    ) -> neo_signing::SignResult<neo_signing::SignResponse> {
+    ) -> neo_wallets::signing::SignResult<neo_wallets::signing::SignResponse> {
         let client = TrustedSignerClient::new(
             Arc::clone(&self.service),
             self.default_provider.clone(),
@@ -98,7 +99,7 @@ impl RpcSignerRuntime {
         &self,
         account: &str,
         purpose: &SignPurpose,
-    ) -> neo_signing::SignResult<KeyRef> {
+    ) -> neo_wallets::signing::SignResult<KeyRef> {
         self.key_resolver.resolve(account, purpose)
     }
 }
@@ -759,8 +760,9 @@ impl RpcServer {
     }
 }
 
-impl RpcService for RpcServer {
-    fn is_started(&self) -> bool {
-        self.started
-    }
-}
+// TODO: Re-enable once neo_services crate is available
+// impl RpcService for RpcServer {
+//     fn is_started(&self) -> bool {
+//         self.started
+//     }
+// }

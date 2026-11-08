@@ -11,6 +11,7 @@ use neo_protocol::payloads::Signer;
 use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::witness::Witness;
+use neo_protocol::get_sign_data_vec;
 use neo_storage::persistence::StoreCache;
 use num_bigint::BigInt;
 use rand::random;
@@ -299,7 +300,7 @@ fn build_and_sign_transaction(
     }
 
     let mut tx_clone = tx.clone();
-    let pending = sign_transaction_with_wallet(&mut tx_clone, signers, &wallet);
+    let pending = sign_transaction_with_wallet(&mut tx_clone, signers, &wallet, protocol_settings.network);
     if pending.is_empty() {
         Ok(WalletInvocationOutcome::Signed(tx_clone.to_bytes()))
     } else {
@@ -312,11 +313,16 @@ fn sign_transaction_with_wallet(
     tx: &mut Transaction,
     signers: &[Signer],
     wallet: &Arc<dyn Wallet>,
+    network: u32,
 ) -> Vec<PendingSignatureItem> {
     let mut pending = Vec::new();
+    let sign_data = match get_sign_data_vec(tx, network) {
+        Ok(data) => data,
+        Err(_) => return pending,
+    };
     for signer in signers {
         match wallet.get_account(&signer.account) {
-            Some(account) if account.has_key() => match account.create_witness(tx) {
+            Some(account) if account.has_key() => match account.create_witness(&sign_data) {
                 Ok(witness) => tx.add_witness(witness),
                 Err(_) => pending.push(build_pending_item(signer.account, Some(account))),
             },

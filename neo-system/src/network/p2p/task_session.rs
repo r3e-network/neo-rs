@@ -8,7 +8,7 @@
 
 use crate::network::p2p::{
     capabilities::NodeCapability,
-    payloads::{VersionPayload, block::Block},
+    payloads::{Block, VersionPayload},
 };
 use neo_io_crate::Serializable;
 use neo_primitives::UInt256;

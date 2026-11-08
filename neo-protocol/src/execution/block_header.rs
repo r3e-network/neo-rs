@@ -145,6 +145,7 @@ impl BlockHeader {
     pub fn index(&self) -> u32 {
         self.index
     }
+
     /// Shared unsigned wire width.
     pub const UNSIGNED_WIRE_SIZE: usize = UnsignedHeader::WIRE_SIZE;
 }

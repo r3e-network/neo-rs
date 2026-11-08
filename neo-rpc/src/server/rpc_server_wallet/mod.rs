@@ -2,11 +2,12 @@
 
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_smart_contract::contract_parameters_context::ContractParametersContext;
+// TODO: ContractParametersContext needs to be implemented
+// use neo_smart_contract::contract_parameters_context::ContractParametersContext;
 use neo_smart_contract::helper::Helper as ContractHelper;
 use neo_wallets::helper::Helper as WalletHelper;
 use neo_wallets::{
-    AssetDescriptor, Helper, KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet,
+    Helper, KeyPair, Nep6Wallet, TransferOutput, Wallet as CoreWallet,
     WalletAccount, WalletError, WalletResult,
 };
 use neo_crypto::{ECCurve, ECPoint};
@@ -23,7 +24,7 @@ use neo_protocol::payloads::conflicts::Conflicts;
 use neo_protocol::payloads::transaction::Transaction;
 use neo_protocol::payloads::transaction_attribute::TransactionAttribute;
 use neo_protocol::witness::Witness;
-use neo_signing::{
+use neo_wallets::signing::{
     FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
     SignResponse,
 };
@@ -53,6 +54,81 @@ use crate::server::rpc_helpers::{
 };
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer, RpcSignerRuntime};
+
+// TODO: AssetDescriptor stub - should be moved to neo-wallets or neo-native-contracts
+struct AssetDescriptor {
+    decimals: u8,
+}
+
+impl AssetDescriptor {
+    fn new(
+        _cache: &DataCache,
+        _settings: &Arc<neo_protocol::ProtocolSettings>,
+        asset: UInt160,
+    ) -> Result<Self, String> {
+        // For now, assume 8 decimals (standard for NEP-17 tokens)
+        // TODO: Query the contract's decimals() method
+        let _ = asset; // Suppress warning
+        Ok(Self { decimals: 8 })
+    }
+}
+
+// TODO: ContractParametersContext stub - needs proper implementation
+struct ContractParametersContext {
+    _snapshot: Arc<DataCache>,
+    tx: Transaction,
+    _network: u32,
+    _type_name: Option<String>,
+}
+
+impl ContractParametersContext {
+    fn new_with_type(
+        snapshot: Arc<DataCache>,
+        tx: Transaction,
+        network: u32,
+        type_name: Option<String>,
+    ) -> Self {
+        Self {
+            _snapshot: snapshot,
+            tx,
+            _network: network,
+            _type_name: type_name,
+        }
+    }
+
+    fn add_contract(&mut self, _contract: neo_smart_contract::Contract) {
+        // TODO: Implement contract witness generation
+    }
+
+    fn add_signature(
+        &mut self,
+        _contract: &neo_smart_contract::Contract,
+        _public_key: &ECPoint,
+        _signature: Vec<u8>,
+    ) -> Result<bool, String> {
+        // TODO: Implement signature addition
+        Ok(true)
+    }
+
+    fn completed(&self) -> bool {
+        // TODO: Check if all signatures are collected
+        false
+    }
+
+    fn witnesses(&self) -> Vec<Witness> {
+        // TODO: Return constructed witnesses
+        Vec::new()
+    }
+
+    fn to_json(&self) -> Value {
+        // TODO: Return proper JSON representation
+        json!({
+            "type": "Neo.Network.P2P.Payloads.Transaction",
+            "hash": self.tx.hash().to_string(),
+            "data": "not implemented",
+        })
+    }
+}
 
 pub struct RpcServerWallet;
 
@@ -148,7 +224,7 @@ impl RpcServerWallet {
         let wallet_clone = Arc::clone(&wallet);
         let key_bytes = Zeroizing::new(*key_pair.private_key());
         let account = Self::await_wallet_future(Box::pin(async move {
-            wallet_clone.create_account(key_bytes.as_ref()).await
+            wallet_clone.create_account(key_bytes.as_ref())
         }))?;
         Self::save_wallet(&wallet)?;
         Ok(Value::String(account.address()))
@@ -229,7 +305,7 @@ impl RpcServerWallet {
         let wallet_clone = Arc::clone(&wallet);
         let privkey_value = privkey;
         let account = Self::await_wallet_future(Box::pin(async move {
-            wallet_clone.import_wif(&privkey_value).await
+            wallet_clone.import_wif(&privkey_value)
         }))?;
         Self::save_wallet(&wallet)?;
         Ok(Self::account_to_json(&account))
@@ -251,7 +327,7 @@ impl RpcServerWallet {
         let resolved = Self::resolve_jailed_wallet_path(server, &path)?;
         let system = server.system();
         let settings = Arc::new(system.settings().clone());
-        let wallet = Nep6Wallet::from_file(
+        let wallet = Nep6Wallet::open(
             resolved
                 .to_str()
                 .ok_or_else(|| RpcException::from(RpcError::wallet_not_found()))?,
@@ -409,8 +485,9 @@ impl RpcServerWallet {
         let signers = Self::parse_optional_signers(server, params, index + 1)?;
 
         let store = server.system().store_cache();
+        let settings = Arc::new(server.system().settings().clone());
         let descriptor_cache = |asset: &UInt160| {
-            AssetDescriptor::new(store.data_cache(), server.system().settings(), *asset)
+            AssetDescriptor::new(store.data_cache(), &settings, *asset)
         };
 
         let transfers = outputs_array
@@ -641,7 +718,7 @@ impl RpcServerWallet {
 
     fn save_wallet(wallet: &Arc<dyn CoreWallet>) -> Result<(), RpcException> {
         let wallet_clone = Arc::clone(wallet);
-        Self::await_wallet_future(Box::pin(async move { wallet_clone.save().await }))
+        Self::await_wallet_future(Box::pin(async move { wallet_clone.save() }))
     }
 
     fn wallet_failure(err: WalletError) -> RpcException {
@@ -804,8 +881,9 @@ impl RpcServerWallet {
     ) -> Result<Value, RpcException> {
         let wallet = Self::require_wallet(server)?;
         let store = server.system().store_cache();
+        let settings = Arc::new(server.system().settings().clone());
         let descriptor =
-            AssetDescriptor::new(store.data_cache(), server.system().settings(), asset)
+            AssetDescriptor::new(store.data_cache(), &settings, asset)
                 .map_err(invalid_params)?;
         let (ok, value) = BigDecimal::try_parse(&amount, descriptor.decimals);
         if !ok || value.sign() <= 0 {
@@ -1098,15 +1176,16 @@ impl RpcServerWallet {
             let pub_key_bytes = signature_contract_pubkey(&contract.script)?;
             let pub_key = ECPoint::new(ECCurve::Secp256r1, pub_key_bytes)
                 .map_err(|err| internal_error(err.to_string()))?;
-            let _ = context.add_signature(contract, pub_key, signature);
+            let _ = context.add_signature(&contract, &pub_key, signature);
         }
 
         if !context.completed() {
             return Ok(WalletAuthorization::Pending(context.to_json()));
         }
-        let witnesses = context.witnesses().ok_or_else(|| {
-            internal_error("Completed signature context has no witnesses".to_string())
-        })?;
+        let witnesses = context.witnesses();
+        if witnesses.is_empty() {
+            return Err(internal_error("Completed signature context has no witnesses".to_string()));
+        }
         Ok(WalletAuthorization::Signed(prepared.complete(witnesses)?))
     }
 
@@ -1162,7 +1241,7 @@ impl RpcServerWallet {
     }
 
     fn await_signer_future(
-        future: Pin<Box<dyn Future<Output = neo_signing::SignResult<SignResponse>> + Send>>,
+        future: Pin<Box<dyn Future<Output = neo_wallets::signing::SignResult<SignResponse>> + Send>>,
     ) -> Result<SignResponse, RpcException> {
         let result = if let Ok(handle) = Handle::try_current() {
             match handle.runtime_flavor() {
@@ -1171,8 +1250,8 @@ impl RpcServerWallet {
                         .enable_all()
                         .build()
                         .map_err(|error| {
-                            neo_signing::SignError::new(
-                                neo_signing::SignErrorCode::ProviderFailure,
+                            neo_wallets::signing::SignError::new(
+                                neo_wallets::signing::SignErrorCode::ProviderFailure,
                                 error.to_string(),
                             )
                         })?

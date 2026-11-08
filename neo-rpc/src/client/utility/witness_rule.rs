@@ -1,4 +1,4 @@
-use neo_config::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_io::witness_rule::{WitnessCondition, WitnessRule, WitnessRuleAction};
 use neo_json::{JArray, JObject};

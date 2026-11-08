@@ -60,5 +60,6 @@ pub use neo_system::{
 // Re-export MemoryPool from the merged mempool module
 pub use mempool::MemoryPool;
 
-#[cfg(feature = "state-verifier")]
-pub use state_verification::StateServiceVerification;
+// State verification is available but StateServiceVerification is not yet implemented
+// #[cfg(feature = "state-verifier")]
+// pub use state_verification::StateServiceVerification;

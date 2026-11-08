@@ -34,6 +34,8 @@ neo-system = { workspace = true, optional = true }
 neo-json = { path = "../neo-json", optional = true }
 # Wallet primitives (task D4): server RPC endpoints bind to neo-wallets directly.
 neo-wallets = { workspace = true, optional = true }
+# Native contracts are used by RPC server for GAS, NEO, and other native contract interactions
+neo-native-contracts = { workspace = true, optional = true }
 # `application_logs` and `tokens_tracker` are unconditional modules that bind
 # directly to the VM, so neo-vm is a non-optional dependency (task 140).
 neo-vm = { workspace = true }
@@ -110,6 +112,7 @@ server = [
     "dep:neo-system",
     "dep:neo-json",
     "dep:neo-wallets",
+    "dep:neo-native-contracts",
     "dep:warp",
     "dep:hyper",
     "dep:uuid",
@@ -134,6 +137,7 @@ client = [
     "dep:neo-smart-contract",
     "dep:neo-system",
     "dep:neo-json",
+    "dep:neo-native-contracts",
     "dep:reqwest",
     "dep:hyper",
     "dep:anyhow",

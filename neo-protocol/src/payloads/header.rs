@@ -181,3 +181,19 @@ impl neo_primitives::SerializablePayload for Header {
         }
     }
 }
+
+impl From<Header> for crate::execution::BlockHeader {
+    fn from(header: Header) -> Self {
+        crate::execution::BlockHeader::new(
+            header.version,
+            header.prev_hash,
+            header.merkle_root,
+            header.timestamp,
+            header.nonce,
+            header.index,
+            header.primary_index,
+            header.next_consensus,
+            vec![header.witness],
+        )
+    }
+}

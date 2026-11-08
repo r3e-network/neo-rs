@@ -214,13 +214,14 @@ impl RpcServerNode {
         let mut reader = MemoryReader::new(&raw);
         let block = <Block as Serializable>::deserialize(&mut reader)
             .map_err(|err| invalid_params(format!("Invalid block: {err}")))?;
+        let execution_block = neo_protocol::execution::Block::from(&block);
         let relay_result = rpc_relay::with_relay_responder(server, |sender| {
             server
                 .system()
                 .blockchain_actor()
                 .tell_from(
                     BlockchainCommand::InventoryBlock {
-                        block: Arc::new(block),
+                        block: Arc::new(execution_block),
                         relay: true,
                         pre_verified: false,
                     },

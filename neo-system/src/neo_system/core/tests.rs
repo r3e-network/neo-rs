@@ -5,10 +5,10 @@ use crate::neo_system::converters::{convert_ledger_block, convert_ledger_header}
 use crate::neo_system::relay::LEDGER_HYDRATION_WINDOW;
 use crate::network::p2p::ChannelsConfig;
 use crate::network::p2p::payloads::Transaction;
-use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
+use neo_protocol::Witness as PayloadWitness;
 use async_trait::async_trait;
 use neo_ledger::Block as LedgerBlock;
-use neo_ledger::{Block, block_header::BlockHeader as LedgerBlockHeader};
+use neo_ledger::Block;
 use neo_storage::persistence::StoreCache;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::store::Store;

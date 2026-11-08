@@ -31,8 +31,8 @@
 use super::{Actor, ActorContext, ActorResult, ScheduleHandle};
 use crate::network::p2p::payloads::{InvPayload, VersionPayload};
 use crate::network::p2p::ports::{PeerHandle, PersistenceEvent, RelayOutcome, TaskManagerPorts};
-use crate::sessions::TaskSession;
-use crate::{ContainsTransactionType, InventoryType, VerifyResult};
+use crate::network::sessions::TaskSession;
+use crate::network::{ContainsTransactionType, InventoryType, VerifyResult};
 use async_trait::async_trait;
 use neo_io_crate::HashSetCache;
 use neo_primitives::UInt256;

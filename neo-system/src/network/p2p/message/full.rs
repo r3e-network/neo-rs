@@ -5,12 +5,12 @@
 //! - Efficient serialization path with minimal intermediate allocations
 //! - Reusable buffer support for high-throughput scenarios
 
-use crate::{MessageCommand, MessageFlags};
+use crate::network::{MessageCommand, MessageFlags};
 use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::NetworkError;
 use serde::{Deserialize, Serialize};
 
-pub use crate::message::PAYLOAD_MAX_SIZE;
+pub use crate::network::message::PAYLOAD_MAX_SIZE;
 
 /// Minimum size in bytes for data to be considered for compression.
 const COMPRESSION_MIN_SIZE: usize = neo_io_crate::COMPRESSION_MIN_SIZE;
@@ -250,8 +250,8 @@ impl Message {
     }
 
     /// Attempts to deserialize the payload into a strongly typed representation.
-    pub fn to_protocol_message(&self) -> Result<crate::protocol_message::ProtocolMessage> {
-        crate::protocol_message::ProtocolMessage::from_bytes(self.command, &self.payload_raw)
+    pub fn to_protocol_message(&self) -> Result<super::super::ProtocolMessage> {
+        super::super::ProtocolMessage::from_bytes(self.command, &self.payload_raw)
             .map_err(|e| NetworkError::InvalidMessage(e.to_string()))
     }
 }

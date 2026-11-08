@@ -13,7 +13,8 @@ mod builder;
 mod client;
 mod helpers;
 mod hooks;
-mod wallet;
+// TODO: Re-enable once wallet.rs is implemented
+// mod wallet;
 
 #[cfg(test)]
 mod tests;
@@ -23,7 +24,7 @@ use reqwest::{Client, Url};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use neo_config::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 
 pub use builder::RpcClientBuilder;
 pub use hooks::{RpcClientHooks, RpcRequestOutcome};

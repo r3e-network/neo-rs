@@ -18,7 +18,7 @@ use super::super::models::{
 use crate::RpcError;
 use crate::serialization;
 use base64::{Engine as _, engine::general_purpose};
-use neo_config::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use neo_io::Serializable;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt256;

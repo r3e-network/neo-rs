@@ -171,7 +171,7 @@ enum TaskManagerMessage {
     Command(TaskManagerCommand),
     PersistCompleted(PersistCompleted),
     PersistFailed(PersistFailed),
-    RelayResult(RelayResult),
+    RelayResult(neo_ledger::RelayResult<()>),
     Terminated(Terminated),
     TimerTick,
 }
@@ -184,7 +184,7 @@ impl TaskManagerMessage {
                 Ok(persist) => Ok(Self::PersistCompleted(*persist)),
                 Err(envelope) => match envelope.downcast::<PersistFailed>() {
                     Ok(persist) => Ok(Self::PersistFailed(*persist)),
-                    Err(envelope) => match envelope.downcast::<RelayResult>() {
+                    Err(envelope) => match envelope.downcast::<neo_ledger::RelayResult<()>>() {
                         Ok(result) => Ok(Self::RelayResult(*result)),
                         Err(envelope) => match envelope.downcast::<Terminated>() {
                             Ok(terminated) => Ok(Self::Terminated(*terminated)),
@@ -268,7 +268,8 @@ impl TaskManagerActor {
                 }
             },
             TaskManagerMessage::PersistCompleted(persist) => {
-                self.state.on_persist_completed(&persist.block);
+                let payload_block = persist.block.to_payload_block();
+                self.state.on_persist_completed(&payload_block);
             }
             TaskManagerMessage::PersistFailed(persist) => {
                 self.state.on_persist_failed(persist.block.index());

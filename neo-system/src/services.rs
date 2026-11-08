@@ -24,12 +24,18 @@ pub use crate::mempool::services::{MempoolService, LockedMempoolService};
 pub use crate::network::p2p::services::PeerManagerService;
 
 // Placeholder traits for services not yet fully implemented
-pub trait LedgerService: Send + Sync {}
-pub trait StateStoreService: Send + Sync {}
+pub trait LedgerService: Send + Sync {
+    fn current_height(&self) -> u32;
+    fn current_header_height(&self) -> u32;
+}
 
-// Placeholder types for event args
-pub struct LogEventArgs;
-pub struct NotifyEventArgs;
+pub trait StateStoreService: Send + Sync {
+    fn on_new_state_root(&self, state_root: crate::state_service::StateRoot) -> bool;
+}
+
+// Re-export event args types from their actual locations
+pub use neo_primitives::LogEventArgs;
+pub use neo_vm::NotifyEventArgs;
 
 /// System context trait providing access to core runtime services.
 ///

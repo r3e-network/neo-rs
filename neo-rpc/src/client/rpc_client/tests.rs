@@ -7,7 +7,7 @@ use base64::{Engine as _, engine::general_purpose};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Response, Server as HyperServer};
 use mockito::{Matcher, Mock, Server, ServerGuard};
-use neo_config::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use neo_io::SerializableExtensions;
 use neo_io::{MemoryReader, Serializable};
 use neo_json::{JArray, JObject, JToken};

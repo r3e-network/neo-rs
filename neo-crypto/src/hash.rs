@@ -299,6 +299,20 @@ impl Crypto {
             HashAlgorithm::Blake2s => Self::blake2s(data).to_vec(),
         }
     }
+
+    /// Verifies a signature using the default curve (secp256r1).
+    ///
+    /// # Arguments
+    /// * `message` - The message that was signed
+    /// * `signature` - The signature bytes
+    /// * `public_key` - The public key bytes
+    ///
+    /// # Returns
+    /// `true` if the signature is valid, `false` otherwise
+    pub fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
+        crate::ecc::verify_signature(crate::ECCurve::Secp256r1, public_key, message, signature)
+            .unwrap_or(false)
+    }
 }
 
 /// Compares two hash values in constant time to prevent timing attacks.

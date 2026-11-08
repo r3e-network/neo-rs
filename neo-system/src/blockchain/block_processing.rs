@@ -68,12 +68,14 @@ impl Blockchain {
 
         if verify {
             if block_index == header_height + 1 {
-                if !block.verify_with_cache(settings.as_ref(), &store_cache, &header_cache) {
+                // Convert to payload block for validation
+                let payload_block = block.to_payload_block();
+                if !neo_ledger::verify_block_with_cache(&payload_block, settings.as_ref(), &store_cache, &header_cache) {
                     tracing::warn!(
                         target: "neo",
                         index = block_index,
                         %hash,
-                        prev = %block.prev_hash(),
+                        prev = %block.header.previous_hash,
                         "block verification failed against header cache"
                     );
                     return VerifyResult::Invalid;
@@ -137,7 +139,8 @@ impl Blockchain {
             }
         } else {
             if block_index == header_height + 1 {
-                header_cache.add(block.header.clone());
+                let payload_block = block.to_payload_block();
+                header_cache.add(payload_block.header);
             }
             self.add_unverified_block(Arc::clone(&block)).await;
             VerifyResult::Succeed
@@ -182,16 +185,15 @@ impl Blockchain {
         let mut evicted_cost = 0usize;
         if let Some(mut existing) = self._block_cache_unverified.get_mut(&index) {
             let duplicate = existing
-                .blocks
                 .iter()
                 .any(|candidate| Self::try_block_hash(candidate.as_ref()).ok() == Some(block_hash));
             if duplicate {
                 return;
             }
-            if existing.blocks.len() >= MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT
-                && let Some(evicted) = existing.blocks.first().cloned()
+            if existing.len() >= MAX_UNVERIFIED_CANDIDATES_PER_HEIGHT
+                && let Some(evicted) = existing.first().cloned()
             {
-                existing.blocks.remove(0);
+                existing.remove(0);
                 evicted_cost = Self::unverified_block_cost(evicted.as_ref());
             }
         }
@@ -218,8 +220,7 @@ impl Blockchain {
 
         self._block_cache_unverified
             .entry(index)
-            .or_insert_with(UnverifiedBlocksList::new)
-            .blocks
+            .or_insert_with(Vec::new)
             .push(block);
         self._unverified_cache_bytes
             .fetch_add(cost, Ordering::Relaxed);
@@ -437,9 +438,9 @@ impl Blockchain {
     fn pop_from_unverified(&self, index: u32) -> Option<Arc<Block>> {
         let (block, cost, empty) = {
             let mut entry = self._block_cache_unverified.get_mut(&index)?;
-            let block = entry.blocks.pop()?;
+            let block = entry.pop()?;
             let cost = Self::unverified_block_cost(block.as_ref());
-            (block, cost, entry.blocks.is_empty())
+            (block, cost, entry.is_empty())
         };
         if empty {
             self._block_cache_unverified.remove(&index);

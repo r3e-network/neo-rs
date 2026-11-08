@@ -28,6 +28,13 @@ impl OracleResponse {
     pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         <Self as Serializable>::serialize(self, writer)
     }
+
+    /// Returns the fixed script for oracle responses.
+    /// This is a stub implementation that returns an empty script.
+    pub fn get_fixed_script() -> Vec<u8> {
+        // TODO: Implement the actual fixed script for oracle responses
+        Vec::new()
+    }
 }
 impl Serializable for OracleResponse {
     fn size(&self) -> usize {

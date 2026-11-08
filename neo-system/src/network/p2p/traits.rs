@@ -9,7 +9,7 @@
 //! specifying the implementation details. Implementations can use
 //! different async runtimes (tokio, async-std) or actor frameworks.
 
-use crate::{InventoryType, MessageCommand, P2PResult};
+use crate::network::{InventoryType, MessageCommand, P2PResult};
 use neo_primitives::UInt256;
 use std::net::SocketAddr;
 use std::time::Duration;

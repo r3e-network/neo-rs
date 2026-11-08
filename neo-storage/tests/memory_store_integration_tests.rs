@@ -48,14 +48,14 @@ fn memory_store_contains_check() {
     let provider = MemoryStoreProvider::new();
     let store = provider.get_store("").expect("memory store");
 
-    let key = StorageKey::new(3, vec![0x03]).to_array();
+    let key = StorageKey::new(3, vec![0x03]);
     let value = vec![0xEE];
 
     assert!(!store.contains(&key));
 
     let mut snapshot = store.snapshot();
     let snapshot_mut = std::sync::Arc::get_mut(&mut snapshot).expect("exclusive");
-    snapshot_mut.put(key.clone(), value).unwrap();
+    snapshot_mut.put(key.to_array(), value).unwrap();
     snapshot_mut.try_commit().unwrap();
 
     assert!(store.contains(&key));
@@ -83,7 +83,7 @@ fn memory_store_find_forward() {
     assert_eq!(results.len(), 5);
 
     for (i, (key, value)) in results.iter().enumerate() {
-        assert_eq!(key.key[0], i as u8);
+        assert_eq!(key.key()[0], i as u8);
         assert_eq!(value.value_bytes()[0], (i * 2) as u8);
     }
 }
@@ -110,7 +110,7 @@ fn memory_store_find_backward() {
     assert_eq!(results.len(), 5);
 
     for (i, (key, _)) in results.iter().enumerate() {
-        assert_eq!(key.key[0], (4 - i) as u8);
+        assert_eq!(key.key()[0], (4 - i) as u8);
     }
 }
 

@@ -8,8 +8,7 @@
 //! registry, both of which live here.
 
 mod state_root;
-
-// pub mod commit_handlers;  // Removed during consolidation (state-service removed)
+pub mod commit_handlers;
 
 /// Test-only helpers for building native-contract storage fixtures.
 ///
@@ -19,11 +18,16 @@ pub(crate) mod test_support;
 
 // Re-export state root types
 pub use state_root::{STATE_SERVICE_CATEGORY, StateRoot};
-
-// pub use commit_handlers::StateServiceCommitHandlers;  // Removed during consolidation
+pub use commit_handlers::StateServiceCommitHandlers;
 
 /// Event emitted when a validated state root is persisted.
 #[derive(Debug, Clone)]
 pub struct ValidatedRootPersisted {
     pub index: u32,
+}
+
+/// State service settings (placeholder for removed state service).
+#[derive(Debug, Clone)]
+pub struct StateServiceSettings {
+    pub enabled: bool,
 }

@@ -16,7 +16,7 @@ impl TaskManager {
         let stream = context.event_stream();
         stream.subscribe::<PersistCompleted>(ctx.self_ref());
         stream.subscribe::<PersistFailed>(ctx.self_ref());
-        stream.subscribe::<RelayResult>(ctx.self_ref());
+        stream.subscribe::<neo_ledger::RelayResult<()>>(ctx.self_ref());
         self.event_stream = Some(stream);
         self.system = Some(context);
     }

@@ -9,11 +9,11 @@
 //! connection-local dedup/filter/command bookkeeping — never an actor, system,
 //! ledger, or storage type.
 
-use crate::bloom_filter::BloomFilterState;
-use crate::handshake::{HandshakeGateDecision, handshake_gate_decision};
+use crate::network::bloom_filter::BloomFilterState;
+use crate::network::handshake::{HandshakeGateDecision, handshake_gate_decision};
 use super::message_command::MessageCommand;
-use crate::outbound_queue::CommandBitSet;
-use crate::pending_known_hashes::PendingKnownHashes;
+use crate::network::outbound_queue::CommandBitSet;
+use crate::network::pending_known_hashes::PendingKnownHashes;
 use neo_io_crate::HashSetCache;
 use neo_primitives::UInt256;
 use std::net::SocketAddr;

@@ -1,7 +1,8 @@
 use base64::{Engine as _, engine::general_purpose};
-use neo_config::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use neo_wallets::helper::Helper as WalletHelper;
-use neo_ledger::{Block, BlockHeader};
+use neo_ledger::Block;
+use neo_protocol::payloads::Header as BlockHeader;
 use neo_io::serializable::Serializable;
 use neo_io::serializable::helper::get_var_size;
 use neo_json::{JObject, JToken};
@@ -15,11 +16,14 @@ use super::parsing::{
 use super::witness::{payload_witness_from_json, payload_witness_to_json, witness_to_json};
 
 /// Converts a block to JSON representation.
-pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JObject {
+pub fn block_to_json(block: &mut Block, protocol_settings: &ProtocolSettings) -> JObject {
     let mut json = JObject::new();
+
+    // Compute hash first before borrowing header
+    let hash_string = block.hash().to_string();
     let header = &block.header;
 
-    json.insert("hash".to_string(), JToken::String(block.hash().to_string()));
+    json.insert("hash".to_string(), JToken::String(hash_string));
     let block_size = header.size()
         + get_var_size(block.transactions.len() as u64)
         + block
@@ -30,36 +34,36 @@ pub fn block_to_json(block: &Block, protocol_settings: &ProtocolSettings) -> JOb
     json.insert("size".to_string(), JToken::Number(block_size as f64));
     json.insert(
         "version".to_string(),
-        JToken::Number(f64::from(header.version)),
+        JToken::Number(f64::from(header.version())),
     );
     json.insert(
         "previousblockhash".to_string(),
-        JToken::String(header.previous_hash.to_string()),
+        JToken::String(header.prev_hash().to_string()),
     );
     json.insert(
         "merkleroot".to_string(),
-        JToken::String(header.merkle_root.to_string()),
+        JToken::String(header.merkle_root().to_string()),
     );
-    json.insert("time".to_string(), JToken::Number(header.timestamp as f64));
+    json.insert("time".to_string(), JToken::Number(header.timestamp() as f64));
     json.insert(
         "nonce".to_string(),
-        JToken::String(format!("{:016X}", header.nonce)),
+        JToken::String(format!("{:016X}", header.nonce())),
     );
-    json.insert("index".to_string(), JToken::Number(f64::from(header.index)));
+    json.insert("index".to_string(), JToken::Number(f64::from(header.index())));
     json.insert(
         "primary".to_string(),
-        JToken::Number(f64::from(header.primary_index)),
+        JToken::Number(f64::from(header.primary_index())),
     );
     json.insert(
         "nextconsensus".to_string(),
         JToken::String(WalletHelper::to_address(
-            &header.next_consensus,
+            header.next_consensus(),
             protocol_settings.address_version,
         )),
     );
     json.insert(
         "witnesses".to_string(),
-        object_array(&header.witnesses, witness_to_json),
+        object_array(&[header.witness.clone()], witness_to_json),
     );
     json.insert(
         "tx".to_string(),
@@ -92,7 +96,10 @@ pub fn block_from_json(
         },
     )?;
 
-    Ok(Block::new(header, transactions))
+    let mut block = Block::new();
+    block.header = header;
+    block.transactions = transactions;
+    Ok(block)
 }
 
 /// Converts a transaction to JSON

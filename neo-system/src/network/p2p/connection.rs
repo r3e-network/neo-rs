@@ -415,7 +415,9 @@ impl PeerConnection {
                     self.frame_config.read_timeout_handshake
                 };
                 if self.read_progress.elapsed() >= active_timeout {
-                    Err(NetworkError::Timeout)
+                    Err(NetworkError::Timeout {
+                        operation: "frame read".to_string(),
+                    })
                 } else {
                     Ok(ReceiveStep::Idle)
                 }

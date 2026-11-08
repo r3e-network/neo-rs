@@ -15,6 +15,7 @@ use neo_actors::{ActorContext, ActorResult};
 use crate::network::p2p::MessageCommand;
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tracing::warn;
 
 impl RemoteNode {
@@ -103,7 +104,15 @@ impl RemoteNode {
                 .system
                 .blockchain
                 .tell_from_async(
-                    BlockchainCommand::Headers(payload.headers),
+                    BlockchainCommand::Headers(
+                        payload.headers
+                            .into_iter()
+                            .map(|h| {
+                                let block_header: neo_protocol::execution::BlockHeader = h.into();
+                                Arc::new(neo_protocol::execution::Block::new(block_header, Vec::new()))
+                            })
+                            .collect()
+                    ),
                     Some(ctx.self_ref()),
                 )
                 .await

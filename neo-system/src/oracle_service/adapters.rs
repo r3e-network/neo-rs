@@ -18,23 +18,22 @@
 //! - [`CoreSignatureVerifier`]: delegates to `ECPoint::verify_signature`.
 
 use crate::neo_system::NeoSystem;
-use crate::network::p2p::payloads::{
-    HEADER_SIZE, OracleResponse, OracleResponseCode, Signer, Transaction, TransactionAttribute,
-    Witness,
-    oracle_response::{MAX_RESULT_SIZE, OracleResponseExt},
+use crate::oracle_service::{
+    FrozenSignIntent, SignPurpose, SignPayload, ProtocolContext, TrustedSignerClient,
+    SIGNING_SCHEMA_VERSION,
 };
 use async_trait::async_trait;
-use neo_io_crate::VerifiableExt;
+use neo_io_crate::Serializable;
 use neo_crypto::ECPoint;
 use neo_storage::persistence::{DataCache, StoreCache};
-use neo_smart_contract::helper::call_flags::CallFlags;
-use neo_smart_contract::helper::contract_basic_method::ContractBasicMethod;
+use neo_primitives::{CallFlags, ContractBasicMethod};
 use neo_native_contracts::native_contract::NativeContract;
 use neo_native_contracts::{
     ContractManagement, LedgerContract, OracleContract, PolicyContract, Role, RoleManagement,
 };
 use neo_smart_contract::{application_engine::ApplicationEngine, contract::Contract};
-use neo_primitives::TriggerType;
+use neo_primitives::{TriggerType, OracleResponseCode};
+use neo_protocol::payloads::Transaction;
 use neo_wallets::Wallet;
 use neo_io_crate::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,
@@ -46,12 +45,15 @@ use neo_oracle::ports::{
 use neo_oracle::{OracleRequest, OracleServiceError};
 use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_protocol::protocol_settings::ProtocolSettings;
-use neo_signing::{
-    FrozenSignIntent, ProtocolContext, SIGNING_SCHEMA_VERSION, SignPayload, SignPurpose,
-    TrustedSignerClient,
+use neo_protocol::payloads::{
+    OracleResponse, Signer, TransactionAttribute, Witness,
+    oracle_response::MAX_RESULT_SIZE,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
+
+/// HEADER_SIZE constant from neo-protocol
+const HEADER_SIZE: usize = 25;
 
 /// Converts an on-chain [`neo_native_contracts::oracle::OracleRequest`] into
 /// the engine-side [`OracleRequest`] representation (structurally identical).
@@ -362,7 +364,8 @@ impl CoreResponseTxBuilder {
         .into_iter()
         .collect();
 
-        let hashes = tx.script_hashes_for_verifying(snapshot);
+        // TODO: Implement full script_hashes_for_verifying logic
+        let hashes = tx.signer_accounts();
         let mut witnesses = Vec::with_capacity(hashes.len());
         for hash in hashes.iter() {
             let witness = witness_map
@@ -388,7 +391,9 @@ impl CoreResponseTxBuilder {
             settings.clone(),
             neo_smart_contract::helper::Helper::MAX_VERIFICATION_GAS,
             None,
-            neo_native_contracts::default_native_services(),
+            neo_native_contracts::engine_native_services_from_registry(
+                neo_native_contracts::default_native_services()
+            ),
         )
         .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
 

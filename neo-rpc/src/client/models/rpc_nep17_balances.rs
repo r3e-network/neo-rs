@@ -13,7 +13,7 @@ use super::super::utility::{
     NepBalanceFieldRefs, balance_list_to_json, insert_nep_balance_fields, parse_balance_list,
     parse_nep_balance_fields, required_script_hash_or_address,
 };
-use neo_config::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use neo_json::{JObject, JToken};
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
@@ -111,7 +111,7 @@ impl RpcNep17Balance {
 mod tests {
     use super::super::test_fixtures::rpc_case_result;
     use super::*;
-    use neo_config::ProtocolSettings;
+    use neo_protocol::ProtocolSettings;
     use neo_wallets::helper::Helper as WalletHelper;
     use neo_json::{JArray, JToken};
 

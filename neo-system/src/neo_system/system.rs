@@ -53,12 +53,9 @@ impl ReadinessStatus {
 impl super::core::NeoSystem {
     /// Basic readiness snapshot (ledger sync only). Consumers can layer on service checks (RPC, storage, etc.).
     pub fn readiness(&self, max_header_lag: Option<u32>) -> ReadinessStatus {
-        let (block_height, header_height) = if let Ok(Some(ledger)) = self.ledger_typed() {
-            (ledger.current_height(), ledger.current_header_height())
-        } else {
-            let ledger = self.ledger_context();
-            (ledger.current_height(), ledger.highest_header_index())
-        };
+        let ledger = self.ledger_context();
+        let block_height = ledger.current_height();
+        let header_height = ledger.highest_header_index();
         let header_lag = header_height.saturating_sub(block_height);
         let healthy = max_header_lag
             .map(|threshold| header_lag <= threshold)

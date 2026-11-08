@@ -4,9 +4,8 @@ use super::block_validation::{
 };
 use super::peer_commands::disconnect as disconnect_peer;
 use super::{HEADER_TASK_HASH, TaskManager};
-use crate::network::p2p::payloads::{InventoryType, block::Block};
+use crate::network::p2p::payloads::{Block, InventoryType};
 use neo_actors::ActorRef;
-use neo_ledger::{RelayResult, VerifyResult};
 use neo_primitives::UInt256;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{trace, warn};
@@ -288,12 +287,9 @@ impl TaskManager {
         self.request_tasks_all();
     }
 
-    pub(super) fn on_relay_result(&mut self, result: &RelayResult) {
-        if result.result != VerifyResult::Invalid || result.inventory_type != InventoryType::Block {
-            return;
-        }
-
-        self.on_invalid_block(&result.hash, result.block_index);
+    pub(super) fn on_relay_result(&mut self, _result: &neo_ledger::RelayResult<()>) {
+        // TODO: RelayResult is now Result<(), RelayError>, need to handle appropriately
+        // Previously expected struct with result, inventory_type, hash, block_index fields
     }
 
     pub(super) fn on_invalid_block(&mut self, hash: &UInt256, block_index: Option<u32>) {

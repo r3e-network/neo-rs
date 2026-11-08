@@ -28,22 +28,22 @@ use crate::mempool::MemoryPool;
 use crate::network::p2p::{
     LocalNode, LocalNodeHandle, TaskManagerHandle,
     payloads::{
-        block::Block, extensible_payload::ExtensiblePayload, header::Header,
+        extensible_payload::ExtensiblePayload, header::Header,
         transaction::Transaction,
     },
 };
 use crate::services::SystemContext;
 use neo_primitives::LogLevel;
-use neo_ledger::{LedgerContext};
+use neo_ledger::{LedgerContext, HeaderCache};
 use neo_storage::persistence::{StoreCache, store::Store, store_provider::StoreProvider};
 use crate::services::{
     LedgerService, LockedMempoolService, MempoolService, PeerManagerService, StateStoreService,
 };
 use neo_smart_contract::application_engine::ApplicationEngine;
-use neo_smart_contract::log_event_args::LogEventArgs;
+use neo_primitives::LogEventArgs;
 use neo_native_contracts::ledger_contract::{HashOrIndex, LedgerContract};
-use neo_smart_contract::notify_event_args::NotifyEventArgs;
-use crate::state_service::StateStore;
+use neo_vm::NotifyEventArgs;
+use crate::services::StateStoreService as StateStore;
 use neo_wallets::{Wallet, WalletProvider};
 use neo_primitives::contains_transaction_type::ContainsTransactionType;
 use neo_primitives::{UInt160, UInt256};
@@ -149,10 +149,10 @@ pub struct NeoSystemContext {
     /// Active persistence store.
     pub store: Arc<dyn Store>,
     /// Cached genesis block shared with the blockchain actor.
-    pub(crate) genesis_block: Arc<Block>,
+    pub(crate) genesis_block: Arc<neo_protocol::execution::Block>,
     pub(crate) ledger: Arc<LedgerContext>,
     pub(crate) state_service_enabled: bool,
-    pub(crate) state_store: Arc<StateStore>,
+    pub(crate) state_store: Arc<dyn StateStore>,
     pub(crate) memory_pool: Arc<Mutex<MemoryPool>>,
     pub(crate) header_cache: Arc<HeaderCache>,
     pub(crate) local_node_state: Arc<LocalNode>,
@@ -210,7 +210,7 @@ impl NeoSystemContext {
     }
 
     /// Returns the canonical genesis block.
-    pub fn genesis_block(&self) -> Arc<Block> {
+    pub fn genesis_block(&self) -> Arc<neo_protocol::execution::Block> {
         self.genesis_block.clone()
     }
 
@@ -233,13 +233,12 @@ impl NeoSystemContext {
     }
 
     /// Access the registered state store service if present.
-    pub fn state_store(&self) -> CoreResult<Option<Arc<StateStore>>> {
+    pub fn state_store(&self) -> CoreResult<Option<Arc<dyn StateStore>>> {
         if !self.state_service_enabled {
             return Ok(None);
         }
-        if let Some(service) = self.typed_service::<StateStore>(STATE_STORE_SERVICE)? {
-            return Ok(Some(service));
-        }
+        // Note: Cannot use typed_service for trait objects directly due to size constraints
+        // Return the stored state_store directly
         Ok(Some(self.state_store.clone()))
     }
 
@@ -258,11 +257,10 @@ impl NeoSystemContext {
         Ok(Some(self.ledger.clone()))
     }
 
-    /// Typed ledger view.
-    pub fn ledger_typed(&self) -> CoreResult<Option<Arc<dyn LedgerService>>> {
-        Ok(self
-            .ledger_service()?
-            .map(|svc| svc as Arc<dyn LedgerService>))
+    /// Typed ledger view - returns LedgerContext wrapped as trait object.
+    /// Note: LedgerContext does not implement LedgerService trait yet.
+    pub fn ledger_typed(&self) -> CoreResult<Option<Arc<LedgerContext>>> {
+        self.ledger_service()
     }
 
     /// Access the shared memory pool service if present.
@@ -278,7 +276,7 @@ impl NeoSystemContext {
         &self,
     ) -> CoreResult<Option<Arc<dyn MempoolService + Send + Sync + 'static>>> {
         Ok(self.mempool_service()?.map(|svc| {
-            Arc::new(LockedMempoolService::new(svc)) as Arc<dyn MempoolService + Send + Sync>
+            Arc::new(crate::mempool::services::MutexMempoolService::new(svc)) as Arc<dyn MempoolService + Send + Sync>
         }))
     }
 
@@ -647,7 +645,7 @@ impl NeoSystemContext {
     }
 
     /// Attempts to retrieve a block by its hash from the local store.
-    pub fn try_get_block(&self, hash: &UInt256) -> Option<Block> {
+    pub fn try_get_block(&self, hash: &UInt256) -> Option<neo_ledger::Block> {
         if let Some(block) = self.ledger.get_block(hash) {
             return Some(block);
         }
@@ -809,7 +807,9 @@ impl NeoSystemContext {
         &self,
         transaction: Transaction,
     ) -> neo_smart_contract::error::CoreResult<UInt256> {
-        self.ledger.insert_transaction(transaction)
+        self.ledger.insert_transaction(transaction).map_err(|e| {
+            neo_smart_contract::error::CoreError::invalid_operation(format!("Failed to insert transaction: {}", e))
+        })
     }
 
     /// Removes a transaction from the mempool if present.
@@ -818,8 +818,10 @@ impl NeoSystemContext {
     }
 
     /// Registers a block with the in-memory ledger cache and returns its hash.
-    pub fn record_block(&self, block: Block) -> neo_smart_contract::error::CoreResult<UInt256> {
-        self.ledger.insert_block(block)
+    pub fn record_block(&self, block: neo_ledger::Block) -> neo_smart_contract::error::CoreResult<UInt256> {
+        self.ledger.insert_block(block).map_err(|e| {
+            neo_smart_contract::error::CoreError::invalid_operation(format!("Failed to insert block: {}", e))
+        })
     }
 
     /// Registers an extensible payload with the in-memory ledger cache.

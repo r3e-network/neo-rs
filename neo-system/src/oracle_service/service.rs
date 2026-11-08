@@ -16,12 +16,12 @@ use super::adapters::{
     CoreOracleSigner, CoreOracleWallet, CoreResponseTxBuilder, CoreSignatureVerifier,
     CoreSnapshotFactory, CoreTxRelay,
 };
+use super::signing_stubs::TrustedSignerClient;
 use crate::neo_system::NeoSystem;
 use neo_crypto::ECPoint;
 use neo_wallets::Wallet;
 use neo_oracle::service::OracleService as EngineService;
 pub use neo_oracle::{OracleServiceError, OracleStatus};
-use neo_signing::TrustedSignerClient;
 #[cfg(test)]
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -173,13 +173,13 @@ impl OracleService {
     }
 }
 
-impl crate::i_event_handlers::CommittingHandler for OracleService {
+impl crate::events::handlers::CommittingHandler for OracleService {
     fn blockchain_committing_handler(
         &self,
         system: &dyn std::any::Any,
-        _block: &neo_protocol::block::Block,
+        _block: &neo_protocol::execution::Block,
         _snapshot: &neo_storage::persistence::DataCache,
-        _application_executed_list: &[neo_ledger::ApplicationExecuted],
+        _application_executed_list: &[neo_protocol::execution::ApplicationExecuted],
     ) {
         let Some(system) = system.downcast_ref::<NeoSystem>() else {
             return;

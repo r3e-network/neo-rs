@@ -19,7 +19,7 @@ use super::vm_state_utils::{
 };
 use std::str::FromStr;
 
-use neo_config::ProtocolSettings;
+use neo_protocol::ProtocolSettings;
 use neo_json::{JObject, JToken};
 use neo_primitives::TriggerType;
 use neo_primitives::{UInt160, UInt256};

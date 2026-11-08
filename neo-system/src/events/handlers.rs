@@ -1,6 +1,6 @@
 use neo_protocol::{execution::{Block, ApplicationExecuted}};
 use crate::network::p2p::Message;
-use neo_storage::DataCache;
+use neo_storage::persistence::DataCache;
 use neo_wallets::Wallet;
 use std::{any::Any, sync::Arc};
 

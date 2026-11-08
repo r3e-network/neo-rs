@@ -12,9 +12,14 @@
 //! dedicated NeoFS signer algorithms land, so neo-core carries no NeoFS code.
 
 mod adapters;
+mod signing_stubs;
 
 pub mod service;
 pub mod settings;
 
 pub use service::{OracleService, OracleServiceError, OracleStatus};
 pub use settings::OracleServiceSettings;
+pub use signing_stubs::{
+    FrozenSignIntent, KeyRef, ProtocolContext, SignPayload, SignPurpose, SignResponse,
+    SigningError, TrustedSignerClient, SIGNING_SCHEMA_VERSION,
+};

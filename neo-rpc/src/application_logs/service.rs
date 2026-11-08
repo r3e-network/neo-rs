@@ -1,7 +1,7 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
-use neo_ledger::block::Block as LedgerBlock;
-use neo_ledger::blockchain_application_executed::ApplicationExecuted;
+use neo_protocol::execution::Block as ExecutionBlock;
+use neo_ledger::ApplicationExecuted;
 use neo_primitives::TriggerType;
 use neo_primitives::UInt256;
 use neo_primitives::panic_message;
@@ -326,7 +326,7 @@ impl CommittingHandler for ApplicationLogsService {
     fn blockchain_committing_handler(
         &self,
         system: &dyn Any,
-        block: &LedgerBlock,
+        block: &ExecutionBlock,
         _snapshot: &DataCache,
         application_executed_list: &[ApplicationExecuted],
     ) {
@@ -365,7 +365,7 @@ impl CommittingHandler for ApplicationLogsService {
 }
 
 impl CommittedHandler for ApplicationLogsService {
-    fn blockchain_committed_handler(&self, system: &dyn Any, _block: &LedgerBlock) {
+    fn blockchain_committed_handler(&self, system: &dyn Any, _block: &ExecutionBlock) {
         if self.disabled.load(Ordering::Relaxed) {
             return;
         }

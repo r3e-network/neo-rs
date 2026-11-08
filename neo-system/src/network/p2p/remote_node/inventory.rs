@@ -296,7 +296,9 @@ impl RemoteNode {
         let block_clone = block.clone();
         self.notify_inventory_completed(hash, Some(block_clone), Some(block.index()), ctx);
 
-        let block = Arc::new(block);
+        // Convert payload Block to execution Block for blockchain actor
+        let exec_block = neo_protocol::execution::Block::from(&block);
+        let block = Arc::new(exec_block);
 
         if let Err(err) = self
             .system

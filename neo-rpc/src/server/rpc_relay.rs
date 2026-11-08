@@ -4,8 +4,7 @@ use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
 use async_trait::async_trait;
 use neo_actors::{Actor, ActorContext, ActorRef, ActorResult, ActorSystem, Props};
-use neo_ledger::RelayResult;
-use neo_primitives::VerifyResult;
+use neo_primitives::{UInt256, VerifyResult};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::any::Any;
@@ -13,7 +12,15 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::oneshot;
 
-pub(super) fn map_relay_result(result: RelayResult) -> Result<Value, RpcException> {
+// TODO: This struct is a temporary compatibility shim until the relay system is refactored
+// to use the proper types from neo-system or neo-ledger
+#[derive(Debug, Clone)]
+pub struct RelayResponse {
+    pub result: VerifyResult,
+    pub hash: UInt256,
+}
+
+pub(super) fn map_relay_result(result: RelayResponse) -> Result<Value, RpcException> {
     match result.result {
         VerifyResult::Succeed => Ok(json!({ "hash": result.hash.to_string() })),
         VerifyResult::AlreadyExists => Err(RpcException::from(RpcError::already_exists())),
@@ -50,7 +57,7 @@ pub(super) fn map_relay_result(result: RelayResult) -> Result<Value, RpcExceptio
 pub(super) fn with_relay_responder<F>(
     server: &RpcServer,
     send: F,
-) -> Result<RelayResult, RpcException>
+) -> Result<RelayResponse, RpcException>
 where
     F: FnOnce(ActorRef) -> Result<(), RpcException>,
 {
@@ -70,7 +77,7 @@ where
 
 fn spawn_relay_responder(
     actor_system: &ActorSystem,
-) -> Result<(ActorRef, oneshot::Receiver<RelayResult>), RpcException> {
+) -> Result<(ActorRef, oneshot::Receiver<RelayResponse>), RpcException> {
     let (tx, rx) = oneshot::channel();
     let completion = Arc::new(Mutex::new(Some(tx)));
     let props = {
@@ -90,7 +97,7 @@ fn spawn_relay_responder(
 }
 
 struct RelayResultResponder {
-    completion: Arc<Mutex<Option<oneshot::Sender<RelayResult>>>>,
+    completion: Arc<Mutex<Option<oneshot::Sender<RelayResponse>>>>,
 }
 
 #[async_trait]
@@ -100,7 +107,7 @@ impl Actor for RelayResultResponder {
         message: Box<dyn Any + Send>,
         ctx: &mut ActorContext,
     ) -> ActorResult {
-        if let Ok(result) = message.downcast::<RelayResult>() {
+        if let Ok(result) = message.downcast::<RelayResponse>() {
             let mut guard = self.completion.lock();
             if let Some(tx) = guard.take() {
                 let _ = tx.send(*result);

@@ -37,7 +37,7 @@ use crate::network::p2p::payloads::{
     AddrPayload, GetBlockByIndexPayload, GetBlocksPayload, InvPayload, PingPayload, VersionPayload,
 };
 use crate::network::p2p::ports::{PeerHandle, RemoteSessionPorts};
-use crate::{ChannelsConfig, ContainsTransactionType, InventoryType};
+use crate::network::{ChannelsConfig, ContainsTransactionType, InventoryType};
 use async_trait::async_trait;
 use neo_io_crate::{HashSetCache, Serializable};
 use neo_primitives::{MAX_TRANSACTION_SIZE, UInt160, UInt256};
