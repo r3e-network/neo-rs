@@ -3,7 +3,7 @@
 use super::tasks::BackgroundTasks;
 use crate::cli::NodeCli;
 use crate::config::NodeConfig;
-use neo_state_service::metrics::state_root_ingest_stats;
+// use neo_system::state_service::metrics::state_root_ingest_stats; // Removed with neo-telemetry
 use neo_system::NeoSystem;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -109,7 +109,7 @@ pub(crate) fn spawn_metrics_pump(
             let timeouts = neo_system::network::p2p::timeouts::stats();
 
             let (state_local_root, state_validated_root) = match metrics_system.state_store() {
-                Ok(Some(store)) => (store.local_root_index(), store.validated_root_index()),
+                Ok(Some(store)) => (Some(store.local_root_index()), Some(store.validated_root_index())),
                 _ => (None, None),
             };
             let state_validated_lag = match (state_local_root, state_validated_root) {
@@ -117,9 +117,10 @@ pub(crate) fn spawn_metrics_pump(
                 _ => None,
             };
 
-            let ingest = state_root_ingest_stats();
+            // Ingest stats removed with neo-telemetry
+            // let ingest = state_root_ingest_stats();
 
-            crate::metrics::update_metrics(
+            crate::metrics::update_node_metrics(
                 block_height,
                 header_height,
                 header_lag,

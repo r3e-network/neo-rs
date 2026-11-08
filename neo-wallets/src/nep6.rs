@@ -183,6 +183,16 @@ impl Nep6Wallet {
     /// Returns [`WalletError::WalletFileNotFound`], [`WalletError::InvalidWalletFormat`],
     /// or [`WalletError::InvalidPassword`].
     pub fn open(path: &str, password: &str, settings: Arc<ProtocolSettings>) -> WalletResult<Self> {
+        Self::from_file(path, password, settings)
+    }
+
+    /// Opens an existing NEP-6 wallet from a file (primary implementation).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WalletError::WalletFileNotFound`], [`WalletError::InvalidWalletFormat`],
+    /// or [`WalletError::InvalidPassword`].
+    pub fn from_file(path: &str, password: &str, settings: Arc<ProtocolSettings>) -> WalletResult<Self> {
         if !std::path::Path::new(path).exists() {
             return Err(WalletError::WalletFileNotFound(path.to_string()));
         }

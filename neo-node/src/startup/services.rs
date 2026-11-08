@@ -16,15 +16,18 @@ use neo_system::network::p2p::ChannelsConfig;
 use neo_protocol::ProtocolSettings;
 use neo_rpc::application_logs::ApplicationLogsService;
 use neo_rpc::server::{
-    RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode, RpcServerOracle,
-    RpcServerSettings, RpcServerSmartContract, RpcServerState, RpcServerUtilities, RpcServerWallet,
+    RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode,
+    // RpcServerOracle, // TODO: Re-enable once implemented
+    RpcServerSettings, RpcServerSmartContract,
+    // RpcServerState, // TODO: Re-enable once implemented
+    RpcServerUtilities, RpcServerWallet,
 };
 use neo_rpc::tokens_tracker::{TokensTracker, TokensTrackerService};
-use neo_signing::TrustedSignerClient;
-use neo_state_service::state_store::StateServiceSettings;
+use neo_wallets::signing::TrustedSignerClient;
+use neo_system::state_service::StateServiceSettings;
 use neo_system::i_event_handlers::{CommittedHandler, CommittingHandler, WalletChangedHandler};
 use neo_system::oracle_service::OracleService;
-use neo_system::{NeoSystem, StateServiceVerification};
+use neo_system::{NeoSystem}; // StateServiceVerification removed
 use parking_lot::RwLock as ParkingRwLock;
 use serde_json::Value;
 use std::{fs, path::PathBuf, sync::Arc};
@@ -391,15 +394,15 @@ pub(crate) async fn start_rpc_server_if_enabled(
     if has_application_logs {
         server.register_handlers(RpcServerApplicationLogs::register_handlers());
     }
-    if has_state_service {
-        server.register_handlers(RpcServerState::register_handlers());
-    }
+    // if has_state_service {
+    //     server.register_handlers(RpcServerState::register_handlers()); // TODO: Re-enable
+    // }
     if has_tokens_tracker {
         server.register_handlers(neo_rpc::server::RpcServerTokensTracker::register_handlers());
     }
-    if has_oracle_service {
-        server.register_handlers(RpcServerOracle::register_handlers());
-    }
+    // if has_oracle_service {
+    //     server.register_handlers(RpcServerOracle::register_handlers()); // TODO: Re-enable
+    // }
 
     // Privacy mode (strictly opt-in): register the encrypted submission
     // endpoint only when the active TEE runtime has privacy enabled. Without

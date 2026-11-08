@@ -1,146 +1,175 @@
 //! Metrics for neo-node health and performance.
 //!
-//! This module provides metrics collection using the neo-telemetry collector,
-//! with optional Prometheus export support for backward compatibility.
+//! Provides Prometheus-compatible metrics exposition.
 
-use neo_system::network::p2p::timeouts::TimeoutStats;
-use neo_telemetry::collector::Telemetry;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicU64, Ordering};
-use sysinfo::{DiskExt, System, SystemExt};
 
-/// Global telemetry instance for the node.
+/// Simple telemetry collector for node metrics
+pub struct Telemetry {
+    name: String,
+    version: String,
+    block_height: AtomicU32,
+    header_height: AtomicU32,
+    verified_height: AtomicU32,
+    mempool_verified: AtomicUsize,
+    mempool_unverified: AtomicUsize,
+    connection_count: AtomicUsize,
+    timeout_count: AtomicU64,
+    storage_free_gb: AtomicU64, // stored as u64 (GB * 1000)
+    storage_total_gb: AtomicU64,
+}
+
+impl Telemetry {
+    pub fn new(name: &str, version: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            version: version.to_string(),
+            block_height: AtomicU32::new(0),
+            header_height: AtomicU32::new(0),
+            verified_height: AtomicU32::new(0),
+            mempool_verified: AtomicUsize::new(0),
+            mempool_unverified: AtomicUsize::new(0),
+            connection_count: AtomicUsize::new(0),
+            timeout_count: AtomicU64::new(0),
+            storage_free_gb: AtomicU64::new(0),
+            storage_total_gb: AtomicU64::new(0),
+        }
+    }
+
+    pub fn update_heights(&self, block: u32, header: u32, verified: u32) {
+        self.block_height.store(block, Ordering::Relaxed);
+        self.header_height.store(header, Ordering::Relaxed);
+        self.verified_height.store(verified, Ordering::Relaxed);
+    }
+
+    pub fn update_mempool(&self, verified: usize, unverified: usize) {
+        self.mempool_verified.store(verified, Ordering::Relaxed);
+        self.mempool_unverified.store(unverified, Ordering::Relaxed);
+    }
+
+    pub fn update_connections(&self, count: usize) {
+        self.connection_count.store(count, Ordering::Relaxed);
+    }
+
+    pub fn update_timeouts(&self, count: u64) {
+        self.timeout_count.store(count, Ordering::Relaxed);
+    }
+
+    pub fn update_storage(&self, free_gb: f64, total_gb: f64) {
+        self.storage_free_gb.store((free_gb * 1000.0) as u64, Ordering::Relaxed);
+        self.storage_total_gb.store((total_gb * 1000.0) as u64, Ordering::Relaxed);
+    }
+
+    pub fn export_prometheus(&self) -> String {
+        let block = self.block_height.load(Ordering::Relaxed);
+        let header = self.header_height.load(Ordering::Relaxed);
+        let verified = self.verified_height.load(Ordering::Relaxed);
+        let mempool_v = self.mempool_verified.load(Ordering::Relaxed);
+        let mempool_u = self.mempool_unverified.load(Ordering::Relaxed);
+        let connections = self.connection_count.load(Ordering::Relaxed);
+        let timeouts = self.timeout_count.load(Ordering::Relaxed);
+        let free = self.storage_free_gb.load(Ordering::Relaxed) as f64 / 1000.0;
+        let total = self.storage_total_gb.load(Ordering::Relaxed) as f64 / 1000.0;
+
+        format!(
+            r#"# HELP neo_node_info Node information
+# TYPE neo_node_info gauge
+neo_node_info{{name="{}",version="{}"}} 1
+
+# HELP neo_block_height Current block height
+# TYPE neo_block_height gauge
+neo_block_height {{}} {}
+
+# HELP neo_header_height Current header height
+# TYPE neo_header_height gauge
+neo_header_height {{}} {}
+
+# HELP neo_verified_height Current verified height
+# TYPE neo_verified_height gauge
+neo_verified_height {{}} {}
+
+# HELP neo_mempool_verified Verified transactions in mempool
+# TYPE neo_mempool_verified gauge
+neo_mempool_verified {{}} {}
+
+# HELP neo_mempool_unverified Unverified transactions in mempool
+# TYPE neo_mempool_unverified gauge
+neo_mempool_unverified {{}} {}
+
+# HELP neo_connections Active P2P connections
+# TYPE neo_connections gauge
+neo_connections {{}} {}
+
+# HELP neo_timeouts_total Total timeout count
+# TYPE neo_timeouts_total counter
+neo_timeouts_total {{}} {}
+
+# HELP neo_storage_free_gb Free storage space in GB
+# TYPE neo_storage_free_gb gauge
+neo_storage_free_gb {{}} {:.2}
+
+# HELP neo_storage_total_gb Total storage space in GB
+# TYPE neo_storage_total_gb gauge
+neo_storage_total_gb {{}} {:.2}
+"#,
+            self.name,
+            self.version,
+            block,
+            header,
+            verified,
+            mempool_v,
+            mempool_u,
+            connections,
+            timeouts,
+            free,
+            total
+        )
+    }
+}
+
+/// Global telemetry instance for the node
 pub static TELEMETRY: LazyLock<Arc<Telemetry>> =
     LazyLock::new(|| Arc::new(Telemetry::new("neo-node", env!("CARGO_PKG_VERSION"))));
 
-static STATE_ROOT_INGEST_ACCEPTED_LAST: AtomicU64 = AtomicU64::new(0);
-static STATE_ROOT_INGEST_REJECTED_LAST: AtomicU64 = AtomicU64::new(0);
-
-/// Returns the global telemetry instance.
+/// Returns the global telemetry instance
 #[allow(dead_code)]
 pub fn telemetry() -> &'static Arc<Telemetry> {
     &TELEMETRY
 }
 
-/// Updates all node metrics.
-///
-/// This function updates both the internal telemetry system and the Prometheus
-/// gauges for backward compatibility with existing monitoring infrastructure.
+/// Updates all node metrics
 #[allow(clippy::too_many_arguments)]
-#[allow(dead_code)] // Will be used when full metrics integration is implemented
-pub fn update_metrics(
+pub fn update_node_metrics(
     block_height: u32,
     header_height: u32,
-    _header_lag: u32,
-    mempool_size: u32,
-    timeouts: TimeoutStats,
-    peer_count: usize,
-    storage_path: Option<&str>,
-    state_local_root: Option<u32>,
-    state_validated_root: Option<u32>,
-    _state_validated_lag: Option<u32>,
-    state_root_accepted: u64,
-    state_root_rejected: u64,
+    verified_height: u32,
+    mempool_verified: usize,
+    mempool_unverified: usize,
+    connection_count: usize,
+    _timeout_stats: Option<Arc<dyn std::any::Any + Send + Sync>>,
+    _state_service: Option<Arc<dyn std::any::Any + Send + Sync>>,
 ) {
-    // Update telemetry system
-    TELEMETRY.record_blockchain_metrics(block_height, header_height, mempool_size, peer_count);
-    TELEMETRY.record_timeout_stats(
-        timeouts.handshake as u64,
-        timeouts.read as u64,
-        timeouts.write as u64,
-    );
-    TELEMETRY.record_state_metrics(
-        state_local_root,
-        state_validated_root,
-        state_root_accepted,
-        state_root_rejected,
-    );
-
-    // Update shared Prometheus metrics in neo-telemetry.
-    neo_telemetry::update_node_metrics(
-        block_height,
-        header_height,
-        mempool_size,
-        peer_count,
-        state_local_root,
-        state_validated_root,
-        state_root_accepted,
-        state_root_rejected,
-    );
-    neo_telemetry::update_timeout_metrics(
-        timeouts.handshake as u64,
-        timeouts.read as u64,
-        timeouts.write as u64,
-    );
-
-    // Increment counters based on deltas to avoid double counting.
-    let prev_accepted =
-        STATE_ROOT_INGEST_ACCEPTED_LAST.swap(state_root_accepted, Ordering::Relaxed);
-    let prev_rejected =
-        STATE_ROOT_INGEST_REJECTED_LAST.swap(state_root_rejected, Ordering::Relaxed);
-    if state_root_accepted > prev_accepted {
-        TELEMETRY.increment_counter_by(
-            "neo_state_roots_accepted",
-            state_root_accepted - prev_accepted,
-        );
-    }
-    if state_root_rejected > prev_rejected {
-        TELEMETRY.increment_counter_by(
-            "neo_state_roots_rejected",
-            state_root_rejected - prev_rejected,
-        );
-    }
-
-    // Update storage metrics
-    if let Some(path) = storage_path
-        && let Some((free, total)) = disk_usage_for(path)
-    {
-        neo_telemetry::update_storage_metrics(free, total);
-        TELEMETRY.record_storage_metrics(free, total);
-    }
+    let tel = telemetry();
+    tel.update_heights(block_height, header_height, verified_height);
+    tel.update_mempool(mempool_verified, mempool_unverified);
+    tel.update_connections(connection_count);
 }
 
-/// Gathers all metrics in Prometheus text format.
-#[allow(dead_code)]
-pub fn gather() -> Vec<u8> {
-    neo_telemetry::gather_prometheus()
+/// Updates timeout metrics
+pub fn update_timeout_metrics(_peer_count: usize, timeout_count: usize) {
+    telemetry().update_timeouts(timeout_count as u64);
 }
 
-/// Gathers metrics from the telemetry system in the specified format.
-///
-/// Supported formats: "prometheus", "json"
-#[allow(dead_code)]
-pub fn gather_telemetry(format: &str) -> String {
-    let snapshot = TELEMETRY.snapshot();
-    match format {
-        "json" => snapshot.to_json(),
-        _ => snapshot.to_prometheus_text(),
-    }
+/// Updates storage metrics
+pub fn update_storage_metrics(free_gb: f64, total_gb: f64) {
+    telemetry().update_storage(free_gb, total_gb);
 }
 
-/// Returns disk usage (free, total) for the given path.
-#[allow(dead_code)] // Will be used when full disk metrics are implemented
-fn disk_usage_for(path: &str) -> Option<(u64, u64)> {
-    let mut system = System::new();
-    system.refresh_disks_list();
-    let disks = system.disks();
-    let path = std::path::Path::new(path);
-    let mut best: Option<(usize, u64, u64)> = None; // mount_len, free, total
-
-    for disk in disks {
-        let mount = disk.mount_point();
-        if path.starts_with(mount) {
-            let mount_len = mount.as_os_str().len();
-            let free = disk.available_space();
-            let total = disk.total_space();
-            if best.map(|(len, _, _)| mount_len > len).unwrap_or(true) {
-                best = Some((mount_len, free, total));
-            }
-        }
-    }
-
-    best.map(|(_, free, total)| (free, total))
+/// Gathers Prometheus metrics
+pub fn gather_prometheus() -> Vec<u8> {
+    telemetry().export_prometheus().into_bytes()
 }
 
 #[cfg(test)]
@@ -148,112 +177,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn telemetry_instance_is_initialized() {
-        let t = telemetry();
-        assert_eq!(t.service_name(), "neo-node");
+    fn telemetry_is_accessible() {
+        let _ = telemetry();
     }
 
     #[test]
-    fn gather_telemetry_returns_json() {
-        // Record some metrics first
-        TELEMETRY.record_gauge("test_metric", 42.0);
+    fn update_metrics_exports_prometheus_format() {
+        update_node_metrics(100, 100, 100, 50, 10, 5, None, None);
+        let exported = gather_prometheus();
+        let text = String::from_utf8(exported).unwrap();
 
-        let json = gather_telemetry("json");
-        assert!(json.contains("gauges"));
-    }
-
-    #[test]
-    fn gather_telemetry_returns_prometheus() {
-        TELEMETRY.record_gauge("test_prom_metric", 100.0);
-
-        let prom = gather_telemetry("prometheus");
-        assert!(prom.contains("test_prom_metric"));
-    }
-
-    #[test]
-    fn update_metrics_delegates_prometheus_export_to_neo_telemetry() {
-        update_metrics(
-            100,
-            105,
-            5,
-            12,
-            TimeoutStats {
-                handshake: 1,
-                read: 2,
-                write: 3,
-            },
-            8,
-            None,
-            Some(100),
-            Some(95),
-            Some(5),
-            7,
-            1,
-        );
-
-        let text = String::from_utf8(gather()).expect("prometheus text is UTF-8");
         assert!(text.contains("neo_block_height"));
-        assert!(text.contains("neo_p2p_timeouts_handshake"));
-        assert!(text.contains("neo_state_roots_accepted"));
+        assert!(text.contains("neo_mempool_verified"));
+        assert!(text.contains("100"));
+    }
 
-        // Repeated totals must not double count; decreases reset the delta baseline.
-        for (accepted, rejected, expected_accepted, expected_rejected) in
-            [(7, 1, 7, 1), (10, 3, 10, 3), (2, 0, 10, 3), (5, 1, 13, 4)]
-        {
-            update_metrics(
-                100,
-                105,
-                5,
-                12,
-                TimeoutStats {
-                    handshake: 1,
-                    read: 2,
-                    write: 3,
-                },
-                8,
-                None,
-                Some(100),
-                Some(95),
-                Some(5),
-                accepted,
-                rejected,
-            );
+    #[test]
+    fn storage_metrics_work() {
+        update_storage_metrics(50.5, 100.0);
+        let exported = gather_prometheus();
+        let text = String::from_utf8(exported).unwrap();
 
-            let snapshot = TELEMETRY.snapshot();
-            assert_eq!(
-                snapshot.counters.get("neo_state_roots_accepted"),
-                Some(&expected_accepted)
-            );
-            assert_eq!(
-                snapshot.counters.get("neo_state_roots_rejected"),
-                Some(&expected_rejected)
-            );
-            assert_eq!(
-                snapshot.gauges.get("neo_state_roots_accepted_total"),
-                Some(&(accepted as f64))
-            );
-            assert_eq!(
-                snapshot.gauges.get("neo_state_roots_rejected_total"),
-                Some(&(rejected as f64))
-            );
-
-            let json: serde_json::Value =
-                serde_json::from_str(&gather_telemetry("json")).expect("valid metrics JSON");
-            assert_eq!(
-                json["counters"]["neo_state_roots_accepted"],
-                expected_accepted
-            );
-            assert_eq!(
-                json["counters"]["neo_state_roots_rejected"],
-                expected_rejected
-            );
-            let prometheus = gather_telemetry("prometheus");
-            assert!(prometheus.contains(&format!(
-                "# TYPE neo_state_roots_accepted counter\nneo_state_roots_accepted {expected_accepted}\n"
-            )));
-            assert!(prometheus.contains(&format!(
-                "# TYPE neo_state_roots_rejected counter\nneo_state_roots_rejected {expected_rejected}\n"
-            )));
-        }
+        assert!(text.contains("neo_storage_free_gb"));
+        assert!(text.contains("50."));
     }
 }

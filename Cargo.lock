@@ -2692,6 +2692,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-timing",
  "url",
+ "warp",
  "windows-sys 0.61.2",
  "zeroize",
 ]

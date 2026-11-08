@@ -9,7 +9,7 @@ use neo_primitives::constants::{MAINNET_MAGIC, TESTNET_MAGIC};
 use neo_protocol::ProtocolSettings;
 use neo_rpc::application_logs::ApplicationLogsSettings;
 use neo_rpc::tokens_tracker::TokensTrackerSettings;
-use neo_state_service::state_store::StateServiceSettings;
+use neo_system::state_service::StateServiceSettings;
 use neo_storage::persistence::storage::{CompressionAlgorithm, StorageConfig};
 use neo_system::oracle_service::OracleServiceSettings;
 use serde_json::{Value, json};

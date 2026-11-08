@@ -3,7 +3,7 @@ use neo_primitives::UnhandledExceptionPolicy;
 use neo_primitives::constants::MAX_BLOCK_SIZE;
 use neo_rpc::application_logs::ApplicationLogsSettings;
 use neo_rpc::tokens_tracker::TokensTrackerSettings;
-use neo_state_service::state_store::StateServiceSettings;
+use neo_system::state_service::StateServiceSettings;
 use neo_system::oracle_service::OracleServiceSettings;
 use serde::Deserialize;
 use std::{env, fs, path::PathBuf, time::Duration};

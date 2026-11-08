@@ -31,6 +31,18 @@ pub trait LedgerService: Send + Sync {
 
 pub trait StateStoreService: Send + Sync {
     fn on_new_state_root(&self, state_root: crate::state_service::StateRoot) -> bool;
+
+    /// Get the current local root index
+    fn local_root_index(&self) -> u64;
+
+    /// Get the current validated root index
+    fn validated_root_index(&self) -> u64;
+
+    /// Set a fetcher for reference state roots
+    fn set_reference_root_fetcher(&self, fetcher: Arc<dyn Fn(u32) -> Option<UInt256> + Send + Sync>);
+
+    /// Flush pending state changes to storage
+    fn flush(&self);
 }
 
 // Re-export event args types from their actual locations

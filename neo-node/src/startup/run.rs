@@ -28,7 +28,7 @@ use crate::signing_provider::{
 use anyhow::{Context, Result, bail};
 use neo_protocol::ProtocolSettings;
 use neo_rpc::server::RpcSignerRuntime;
-use neo_signing::SecurityLevel;
+use neo_wallets::signing::SecurityLevel;
 use neo_system::NeoSystem;
 use std::sync::Arc;
 use tokio::sync::RwLock;

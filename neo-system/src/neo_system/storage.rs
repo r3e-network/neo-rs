@@ -36,6 +36,24 @@ impl StateStoreService for MemoryStore {
         // Memory store doesn't persist state roots
         true
     }
+
+    fn local_root_index(&self) -> u64 {
+        // Memory store doesn't track state root index
+        0
+    }
+
+    fn validated_root_index(&self) -> u64 {
+        // Memory store doesn't track validated state root index
+        0
+    }
+
+    fn set_reference_root_fetcher(&self, _fetcher: Arc<dyn Fn(u32) -> Option<neo_primitives::UInt256> + Send + Sync>) {
+        // Memory store doesn't use reference roots
+    }
+
+    fn flush(&self) {
+        // Memory store doesn't need flushing
+    }
 }
 
 /// Initializes the storage layer for NeoSystem.

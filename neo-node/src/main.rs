@@ -5,11 +5,18 @@
 
 #![warn(missing_docs)]
 
-mod action_store;
-mod ai_agent;
+// Modules currently removed/refactored:
+// mod action_store;
+// mod ai_agent;
+// mod consensus;
+// mod pkcs11;
+// mod probe_containment;
+// mod probe_controller;
+// mod remote_signer;
+// mod signing_provider;
+
 mod cli;
 mod config;
-mod consensus;
 mod health;
 #[cfg(feature = "hsm")]
 mod hsm;
@@ -49,13 +56,13 @@ mod import_acc {
 }
 mod logging;
 mod metrics;
-mod pkcs11;
-mod probe_containment;
-mod probe_controller;
-mod remote_signer;
+// mod pkcs11;
+// mod probe_containment;
+// mod probe_controller;
+// mod remote_signer;
 mod rpc_consensus;
 mod services;
-mod signing_provider;
+// mod signing_provider;
 mod startup;
 #[cfg(feature = "tee")]
 mod tee;

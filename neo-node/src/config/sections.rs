@@ -3,7 +3,7 @@
 //! This module contains all config struct definitions used by the Neo N3 node.
 
 use neo_primitives::UnhandledExceptionPolicy;
-use neo_signing::{SecurityLevel, SignPurpose};
+use neo_wallets::signing::{SecurityLevel, SignPurpose};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
