@@ -17,8 +17,10 @@ use neo_protocol::ProtocolSettings;
 use neo_rpc::application_logs::ApplicationLogsService;
 use neo_rpc::server::{
     RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode,
-    RpcServerOracle, RpcServerSettings, RpcServerSmartContract,
-    RpcServerState, RpcServerUtilities, RpcServerWallet,
+    // RpcServerOracle, // TODO: Re-enable when neo-oracle crate is available
+    RpcServerSettings, RpcServerSmartContract,
+    // RpcServerState, // TODO: Re-enable when neo-state-service crate is available
+    RpcServerUtilities, RpcServerWallet,
 };
 use neo_rpc::tokens_tracker::{TokensTracker, TokensTrackerService};
 use neo_wallets::signing::TrustedSignerClient;
@@ -393,13 +395,17 @@ pub(crate) async fn start_rpc_server_if_enabled(
         server.register_handlers(RpcServerApplicationLogs::register_handlers());
     }
     if has_state_service {
-        server.register_handlers(RpcServerState::register_handlers());
+        // TODO: Re-enable when RpcServerState is available
+        // server.register_handlers(RpcServerState::register_handlers());
+        warn!("State service RPC handlers not yet available");
     }
     if has_tokens_tracker {
         server.register_handlers(neo_rpc::server::RpcServerTokensTracker::register_handlers());
     }
     if has_oracle_service {
-        server.register_handlers(RpcServerOracle::register_handlers());
+        // TODO: Re-enable when RpcServerOracle is available
+        // server.register_handlers(RpcServerOracle::register_handlers());
+        warn!("Oracle service RPC handlers not yet available");
     }
 
     // Privacy mode (strictly opt-in): register the encrypted submission

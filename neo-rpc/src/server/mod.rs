@@ -22,10 +22,12 @@ mod rpc_server;
 mod rpc_server_application_logs;
 mod rpc_server_blockchain;
 mod rpc_server_node;
-mod rpc_server_oracle;
+// TODO: Re-enable when neo-oracle crate is available
+// mod rpc_server_oracle;
 mod rpc_server_privacy;
 mod rpc_server_settings;
-mod rpc_server_state;
+// TODO: Re-enable when neo-state-service crate is available
+// mod rpc_server_state;
 mod rpc_server_tokens_tracker;
 mod rpc_server_utilities;
 mod rpc_server_wallet;
@@ -45,10 +47,10 @@ pub use rpc_server::{RpcCallback, RpcHandler, RpcServer, RpcSignerRuntime};
 pub use rpc_server_application_logs::RpcServerApplicationLogs;
 pub use rpc_server_blockchain::RpcServerBlockchain;
 pub use rpc_server_node::RpcServerNode;
-pub use rpc_server_oracle::RpcServerOracle;
+// pub use rpc_server_oracle::RpcServerOracle;
 pub use rpc_server_privacy::{EncryptedTransactionSubmitter, RpcServerPrivacy};
 pub use rpc_server_settings::{RpcServerConfig, RpcServerSettings};
-pub use rpc_server_state::RpcServerState;
+// pub use rpc_server_state::RpcServerState;
 pub use rpc_server_tokens_tracker::RpcServerTokensTracker;
 pub use rpc_server_utilities::RpcServerUtilities;
 pub use rpc_server_wallet::RpcServerWallet;

@@ -125,7 +125,7 @@ impl AssetDescriptor {
             None,
             snapshot,
             None,
-            (*settings).clone(),
+            settings.as_ref().clone(),
             10_000_000, // 0.1 GAS gas limit for metadata query
             None,
             neo_native_contracts::native::composition::default_native_services(),
