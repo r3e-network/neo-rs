@@ -27,7 +27,7 @@ pub use neo_core::network::p2p::timeouts;
 
 // connection and upnp modules now live in neo-system (moved from neo-core).
 pub mod connection;
-pub mod upnp;
+// pub mod upnp;  // Removed during consolidation (feature disabled)
 
 // Re-export commonly used types (actor layer local, vocabulary via neo-core).
 pub use local_node::{

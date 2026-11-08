@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use neo_core::persistence::store_provider::StoreProvider;
+use neo_storage::persistence::store_provider::StoreProvider;
 use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::error::CoreResult;
 

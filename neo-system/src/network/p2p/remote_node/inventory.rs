@@ -10,7 +10,7 @@ use crate::network::p2p::payloads::merkle_block_payload::MerkleBlockPayload;
 use crate::network::p2p::payloads::transaction::{MAX_TRANSACTION_SIZE, Transaction};
 use crate::network::p2p::payloads::{block::Block, extensible_payload::ExtensiblePayload};
 use crate::network::p2p::task_manager::BLOCK_INDEX_LOOKAHEAD;
-use neo_core::smart_contract::native::ledger_contract::LedgerContract;
+use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_io_crate::Serializable;
 use neo_primitives::ContainsTransactionType;
 use neo_primitives::UInt160;

@@ -23,7 +23,7 @@ pub mod blockchain;
 pub mod events;
 pub mod network;
 pub mod oracle_service;
-pub mod runtime;
+// pub mod runtime;  // Removed during consolidation
 pub mod services;
 pub mod state_service;
 

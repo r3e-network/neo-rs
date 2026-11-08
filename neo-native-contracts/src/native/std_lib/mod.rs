@@ -1,0 +1,65 @@
+//! StdLib native contract implementation.
+//!
+//! The StdLib contract provides standard utility functions for smart contracts,
+//! including string manipulation, JSON operations, and mathematical functions.
+
+use super::{NativeContract, NativeMethod};
+use neo_primitives::UInt160;
+use neo_smart_contract::application_engine::ApplicationEngine;
+use neo_smart_contract::error::CoreResult as Result;
+use neo_smart_contract::impl_native_contract;
+
+mod encoding;
+mod helpers;
+mod memory;
+mod metadata;
+mod numbers;
+mod serialization;
+mod strings;
+
+/// The StdLib native contract.
+pub struct StdLib {
+    id: i32,
+    hash: UInt160,
+    methods: &'static [NativeMethod],
+}
+
+impl StdLib {
+    const ID: i32 = -2;
+
+    /// Creates a new StdLib contract.
+    pub fn new() -> Self {
+        // StdLib contract hash: 0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0
+        let hash =
+            crate::native::static_contract_hash!("0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0");
+
+        Self {
+            id: Self::ID,
+            hash,
+            methods: crate::native::static_native_methods!(StdLib::native_methods()),
+        }
+    }
+
+    /// Invokes a method on the StdLib contract.
+    pub fn invoke_method(
+        &self,
+        engine: &mut ApplicationEngine,
+        method: &str,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
+        self.dispatch_method(engine, method, args)
+    }
+}
+
+impl NativeContract for StdLib {
+    impl_native_contract!(hash, "StdLib", methods);
+
+    fn id(&self) -> i32 {
+        self.id
+    }
+}
+
+neo_storage::impl_default_via_new!(StdLib);
+
+#[cfg(test)]
+mod tests;

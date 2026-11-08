@@ -22,6 +22,7 @@ default = []
 
 [dependencies]
 neo-crypto = { workspace = true }
+neo-signing = { workspace = true }
 neo-tee = { workspace = true }
 
 # HTTP + TLS server (same hyper/rustls stack used by neo-rpc's server TLS)

@@ -1,0 +1,42 @@
+[package]
+name = "neo-native-contracts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Native contract definitions and metadata for neo-rs"
+
+[dependencies]
+# Internal crates (registered in workspace.dependencies)
+neo-crypto = { workspace = true }
+neo-io = { workspace = true }
+neo-primitives = { workspace = true }
+neo-protocol = { workspace = true }
+neo-storage = { workspace = true }
+neo-vm = { workspace = true }
+neo-smart-contract = { workspace = true }
+
+# Third-party
+blst = { workspace = true }
+hex = { workspace = true }
+memchr = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+unicode-segmentation = "1.10"
+
+[dev-dependencies]
+neo-wallets = { workspace = true }
+
+[lints]
+workspace = true

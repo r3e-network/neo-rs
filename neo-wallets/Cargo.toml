@@ -21,6 +21,7 @@ neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-vm = { workspace = true }
 neo-storage = { workspace = true }
+neo-native-contracts = { workspace = true }
 
 # Internal crates (registered by task 89; path deps like the other consumers)
 neo-smart-contract = { workspace = true }

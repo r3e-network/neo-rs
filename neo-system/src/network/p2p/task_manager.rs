@@ -36,7 +36,7 @@ use neo_actors::{
     Actor, ActorContext, ActorRef, ActorResult, EventStreamHandle, Props, ScheduleHandle,
     Terminated,
 };
-use neo_core::ledger::{PersistCompleted, PersistFailed, RelayResult};
+use neo_ledger::{PersistCompleted, PersistFailed, RelayResult};
 use neo_io_crate::HashSetCache;
 use neo_primitives::UInt256;
 use scheduling::TaskCounter;

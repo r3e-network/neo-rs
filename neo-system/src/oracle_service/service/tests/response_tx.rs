@@ -4,10 +4,10 @@
 use crate::network::p2p::payloads::{OracleResponseCode, Signer, Transaction, Witness};
 use crate::oracle_service::adapters::{CoreResponseTxBuilder, CoreSnapshot};
 use neo_core::cryptography::{ECCurve, ECPoint, Secp256r1Crypto};
-use neo_core::persistence::StoreCache;
-use neo_core::persistence::storage_key::StorageKey;
-use neo_core::smart_contract::StorageItem;
-use neo_core::smart_contract::native::LedgerContract;
+use neo_storage::persistence::StoreCache;
+use neo_storage::persistence::storage_key::StorageKey;
+use neo_smart_contract::StorageItem;
+use neo_native_contracts::LedgerContract;
 use neo_io_crate::{BinaryWriter, Serializable};
 use neo_oracle::OracleRequest;
 use neo_oracle::ports::ResponseTxBuilder;

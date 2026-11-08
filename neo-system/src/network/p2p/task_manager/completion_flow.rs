@@ -6,7 +6,7 @@ use super::peer_commands::disconnect as disconnect_peer;
 use super::{HEADER_TASK_HASH, TaskManager};
 use crate::network::p2p::payloads::{InventoryType, block::Block};
 use neo_actors::ActorRef;
-use neo_core::ledger::{RelayResult, VerifyResult};
+use neo_ledger::{RelayResult, VerifyResult};
 use neo_primitives::UInt256;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{trace, warn};

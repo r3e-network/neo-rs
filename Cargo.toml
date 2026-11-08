@@ -17,6 +17,9 @@ members = [
     # JSON (matches C# Neo.Json)
     "neo-json",
 
+    # Signing service contracts
+    "neo-signing",
+
     # === Core Layer ===
     # NeoVM runtime (execution engine, stack items, jump tables)
     "neo-vm",
@@ -26,6 +29,9 @@ members = [
 
     # RPC server and client
     "neo-rpc",
+
+    # Native contracts
+    "neo-native-contracts",
 
     # === Application Layer ===
     # Generic async actor runtime
@@ -131,11 +137,13 @@ neo-crypto = { path = "neo-crypto", version = "0.20.0" }
 neo-storage = { path = "neo-storage", version = "0.20.0" }
 neo-io = { path = "neo-io", version = "0.20.0" }
 neo-json = { path = "neo-json", version = "0.20.0" }
+neo-signing = { path = "neo-signing", version = "0.20.0" }
 
 # Core layer
 neo-vm = { path = "neo-vm", version = "0.20.0" }
 neo-protocol = { path = "neo-protocol", version = "0.20.0" }
 neo-rpc = { path = "neo-rpc", version = "0.20.0" }
+neo-native-contracts = { path = "neo-native-contracts", version = "0.20.0" }
 
 # Generic actor runtime extracted from neo-core (task 189). It has no neo-*
 # dependency, so it carries the workspace version like the core layer above.

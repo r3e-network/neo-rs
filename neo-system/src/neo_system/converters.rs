@@ -6,7 +6,7 @@
 use crate::network::p2p::payloads::{
     block::Block, header::Header, witness::Witness as PayloadWitness,
 };
-use neo_core::ledger::{
+use neo_ledger::{
     block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
 };
 

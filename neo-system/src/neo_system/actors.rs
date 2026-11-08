@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use neo_actors::{ActorRef, ActorRuntimeError, ActorRuntimeResult};
-use neo_core::ledger::transaction_router::TransactionRouter;
+use neo_ledger::transaction_router::TransactionRouter;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::warn;
 
@@ -128,7 +128,7 @@ mod tests {
     use crate::network::p2p::payloads::transaction::TransactionExt;
     use async_trait::async_trait;
     use neo_actors::{Actor, ActorContext, ActorResult, ActorSystem, Props};
-    use neo_core::ledger::VerifyResult;
+    use neo_ledger::VerifyResult;
     use parking_lot::Mutex;
     use std::any::Any;
     use std::time::Duration;

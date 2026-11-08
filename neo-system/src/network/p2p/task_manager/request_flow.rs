@@ -11,7 +11,7 @@ use crate::network::p2p::payloads::{
     inv_payload::{InvPayload, MAX_HASHES_COUNT},
 };
 use neo_actors::ActorRef;
-use neo_core::smart_contract::native::LedgerContract;
+use neo_native_contracts::LedgerContract;
 use std::sync::Arc;
 use tracing::{trace, warn};
 

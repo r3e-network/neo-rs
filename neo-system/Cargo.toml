@@ -34,6 +34,7 @@ neo-vm = { workspace = true }
 neo-ledger = { path = "../neo-ledger" }
 neo-storage = { path = "../neo-storage" }
 neo-crypto = { workspace = true }
+neo-native-contracts = { workspace = true }
 
 # Task D4: neo-system binds wallet primitives directly from neo-wallets.
 neo-wallets = { workspace = true }

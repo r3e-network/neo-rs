@@ -65,10 +65,10 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use lru::LruCache;
 use neo_actors::{Actor, ActorContext, ActorResult, Props, ScheduleHandle};
-use neo_core::ledger::LedgerContext;
-use neo_core::persistence::DataCache;
-use neo_core::persistence::StoreCache;
-use neo_core::smart_contract::native::LedgerContract;
+use neo_ledger::LedgerContext;
+use neo_storage::persistence::DataCache;
+use neo_storage::persistence::StoreCache;
+use neo_native_contracts::LedgerContract;
 use neo_core::state_service::{STATE_SERVICE_CATEGORY, StateRoot};
 use neo_io_crate::{MemoryReader, Serializable};
 use neo_primitives::{UInt160, UInt256};
@@ -83,13 +83,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
-use neo_core::ledger::VerifyResult;
-use neo_core::ledger::blockchain::types::{
+use neo_ledger::VerifyResult;
+use neo_ledger::blockchain::types::{
     ImportDisposition, UnverifiedBlocksList, classify_import_block,
 };
 
 #[cfg(test)]
-use neo_core::ledger::blockchain::types::should_schedule_reverify_idle;
+use neo_ledger::blockchain::types::should_schedule_reverify_idle;
 
 /// System-attachment command accepted by the blockchain actor.
 ///
@@ -391,7 +391,7 @@ mod transaction;
 
 // Command vocabulary and the typed handle stay in neo-core; re-exported here
 // so `crate::blockchain::*` keeps serving the moved actor code and consumers.
-pub use neo_core::ledger::blockchain::{
+pub use neo_ledger::blockchain::{
     BlockchainCommand, BlockchainHandle, FillCompleted, FillMemoryPool, Import, ImportCompleted,
     InventoryPayload, PersistCompleted, PersistFailed, PreverifyCompleted, RelayResult, Reverify,
     ReverifyItem,

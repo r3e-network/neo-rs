@@ -74,13 +74,13 @@ use crate::network::p2p::{
 };
 use neo_core::extensions::log_level::LogLevel;
 use neo_core::extensions::utility::ExtensionsUtility;
-use neo_core::ledger::{HeaderCache, LedgerContext, MemoryPool};
-use neo_core::persistence::{
+use neo_ledger::{HeaderCache, LedgerContext, MemoryPool};
+use neo_storage::persistence::{
     StoreCache, StoreFactory, store::Store, store_provider::StoreProvider,
 };
 use neo_core::services::{LedgerService, MempoolService, PeerManagerService, StateStoreService};
-use neo_core::smart_contract::native::PolicyContract;
-use neo_core::smart_contract::native::ledger_contract::LedgerContract;
+use neo_native_contracts::PolicyContract;
+use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_core::state_service::StateStore;
 use neo_primitives::UInt256;
 use neo_protocol::hardfork::Hardfork;

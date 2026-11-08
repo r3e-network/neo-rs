@@ -2548,6 +2548,7 @@ dependencies = [
  "base64 0.22.1",
  "neo-crypto",
  "neo-io",
+ "neo-native-contracts",
  "neo-primitives",
  "neo-protocol",
  "neo-smart-contract",
@@ -2561,6 +2562,30 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tracing",
+]
+
+[[package]]
+name = "neo-native-contracts"
+version = "0.20.0"
+dependencies = [
+ "blst",
+ "hex",
+ "memchr",
+ "neo-crypto",
+ "neo-io",
+ "neo-primitives",
+ "neo-protocol",
+ "neo-smart-contract",
+ "neo-storage",
+ "neo-vm",
+ "neo-wallets",
+ "num-bigint",
+ "num-traits",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tracing",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -2725,6 +2750,7 @@ dependencies = [
  "hex",
  "hyper 0.14.32",
  "neo-crypto",
+ "neo-signing",
  "neo-tee",
  "parking_lot",
  "rand 0.8.8",
@@ -2742,6 +2768,21 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "zeroize",
+]
+
+[[package]]
+name = "neo-signing"
+version = "0.20.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "neo-crypto",
+ "neo-primitives",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -2806,6 +2847,7 @@ dependencies = [
  "neo-crypto",
  "neo-io",
  "neo-ledger",
+ "neo-native-contracts",
  "neo-primitives",
  "neo-protocol",
  "neo-smart-contract",
@@ -2911,6 +2953,7 @@ dependencies = [
  "hex",
  "neo-crypto",
  "neo-io",
+ "neo-native-contracts",
  "neo-primitives",
  "neo-protocol",
  "neo-smart-contract",
@@ -5050,6 +5093,12 @@ checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
 dependencies = [
  "tinyvec",
 ]
+
+[[package]]
+name = "unicode-segmentation"
+version = "1.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
 
 [[package]]
 name = "unicode-width"

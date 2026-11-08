@@ -24,16 +24,16 @@ mod tests {
             witness::Witness,
         },
     };
-    use neo_core::ledger::LedgerContext;
-    use neo_core::persistence::StoreCache;
-    use neo_core::smart_contract::BinarySerializer;
-    use neo_core::smart_contract::Contract;
-    use neo_core::smart_contract::native::fungible_token::{PREFIX_ACCOUNT, PREFIX_TOTAL_SUPPLY};
-    use neo_core::smart_contract::native::gas_token::GasToken;
-    use neo_core::smart_contract::native::{
+    use neo_ledger::LedgerContext;
+    use neo_storage::persistence::StoreCache;
+    use neo_smart_contract::BinarySerializer;
+    use neo_smart_contract::Contract;
+    use neo_native_contracts::fungible_token::{PREFIX_ACCOUNT, PREFIX_TOTAL_SUPPLY};
+    use neo_native_contracts::gas_token::GasToken;
+    use neo_native_contracts::{
         AccountState, NativeContract, Role, role_management::RoleManagement,
     };
-    use neo_core::smart_contract::{StorageItem, StorageKey};
+    use neo_smart_contract::{StorageItem, StorageKey};
     use neo_core::state_service::state_store::StateServiceSettings;
     use neo_wallets::KeyPair;
     use neo_io_crate::BinaryWriter;
@@ -591,7 +591,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn persist_completed_updates_memory_pool_during_fast_sync() {
-        use neo_core::ledger::PersistCompleted;
+        use neo_ledger::PersistCompleted;
 
         let settings = ProtocolSettings::default();
         let system = NeoSystem::new(settings.clone(), None, None).expect("neo system");

@@ -26,14 +26,14 @@ use crate::network::p2p::payloads::{
 use async_trait::async_trait;
 use neo_core::VerifiableExt;
 use neo_core::cryptography::ECPoint;
-use neo_core::persistence::{DataCache, StoreCache};
-use neo_core::smart_contract::call_flags::CallFlags;
-use neo_core::smart_contract::contract_basic_method::ContractBasicMethod;
-use neo_core::smart_contract::native::native_contract::NativeContract;
-use neo_core::smart_contract::native::{
+use neo_storage::persistence::{DataCache, StoreCache};
+use neo_smart_contract::call_flags::CallFlags;
+use neo_smart_contract::contract_basic_method::ContractBasicMethod;
+use neo_native_contracts::native_contract::NativeContract;
+use neo_native_contracts::{
     ContractManagement, LedgerContract, OracleContract, PolicyContract, Role, RoleManagement,
 };
-use neo_core::smart_contract::{ApplicationEngine, Contract, TriggerType};
+use neo_smart_contract::{ApplicationEngine, Contract, TriggerType};
 use neo_wallets::Wallet;
 use neo_io_crate::serializable::helper::{
     get_var_size, get_var_size_bytes, get_var_size_serializable_slice,

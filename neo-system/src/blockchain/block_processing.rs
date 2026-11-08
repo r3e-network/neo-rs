@@ -511,9 +511,9 @@ impl Blockchain {
         settings: &ProtocolSettings,
         snapshot: &DataCache,
     ) -> std::collections::HashSet<UInt160> {
-        use neo_core::smart_contract::Contract;
-        use neo_core::smart_contract::native::helpers::NativeHelpers;
-        use neo_core::smart_contract::native::{NeoToken, Role, RoleManagement};
+        use neo_smart_contract::Contract;
+        use neo_native_contracts::helpers::NativeHelpers;
+        use neo_native_contracts::{NeoToken, Role, RoleManagement};
 
         let current_height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
         let mut whitelist = std::collections::HashSet::new();

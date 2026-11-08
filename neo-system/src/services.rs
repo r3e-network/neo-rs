@@ -11,8 +11,8 @@
 //! (`StoreCache`, `ProtocolSettings`, `ApplicationEngine`, `LogEventArgs`,
 //! `NotifyEventArgs`) are resolved through `neo-core`'s public surface.
 
-use neo_core::persistence::StoreCache;
-use neo_core::smart_contract::{ApplicationEngine, LogEventArgs, NotifyEventArgs};
+use neo_storage::persistence::StoreCache;
+use neo_smart_contract::{ApplicationEngine, LogEventArgs, NotifyEventArgs};
 use neo_primitives::UInt256;
 use neo_protocol::protocol_settings::ProtocolSettings;
 use std::sync::Arc;

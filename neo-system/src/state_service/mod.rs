@@ -7,7 +7,7 @@
 //! driven by the blockchain actor and the `NeoSystemContext` handler
 //! registry, both of which live here.
 
-pub mod commit_handlers;
+// pub mod commit_handlers;  // Removed during consolidation (state-service removed)
 
 /// Test-only helpers for building native-contract storage fixtures.
 ///
@@ -15,4 +15,4 @@ pub mod commit_handlers;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-pub use commit_handlers::StateServiceCommitHandlers;
+// pub use commit_handlers::StateServiceCommitHandlers;  // Removed during consolidation
