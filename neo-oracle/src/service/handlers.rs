@@ -33,10 +33,12 @@ where
 
         if self.settings.auto_start
             && self.status() == OracleStatus::Unstarted
-            && let Some(wallet) = self.wallet.read().clone()
-            && let Some(service) = self.self_ref.read().upgrade()
         {
-            service.start(wallet);
+            if let Some(wallet) = self.wallet.read().clone() {
+                if let Some(service) = self.self_ref.read().upgrade() {
+                    service.start(wallet);
+                }
+            }
         }
 
         if self.status() != OracleStatus::Running {

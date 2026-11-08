@@ -334,6 +334,7 @@ impl WalletAccount for StandardWalletAccount {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_crypto::ECPoint;
 
     fn settings() -> Arc<ProtocolSettings> {
         Arc::new(ProtocolSettings::default_settings())
@@ -392,7 +393,8 @@ mod tests {
     #[test]
     fn signature_contract_script_hash_matches_key() {
         let key = KeyPair::generate().unwrap();
-        let contract = Contract::create_signature_contract(key.public_key());
+        let public_key = ECPoint::from_bytes(&key.public_key()).unwrap();
+        let contract = Contract::create_signature_contract(public_key);
         assert_eq!(contract.script_hash(), key.get_script_hash());
     }
 }
