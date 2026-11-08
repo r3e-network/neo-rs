@@ -53,6 +53,7 @@
 pub mod engine_port;
 pub mod error;
 pub mod evidence;
+pub mod fast_path;
 pub mod participant;
 pub mod receipt;
 
@@ -222,6 +223,19 @@ pub fn persist_block(
             let tx_hash = tx.try_hash().map_err(|err| LedgerError::TransactionHash {
                 message: err.to_string(),
             })?;
+
+            // Attempt fast-path execution if enabled
+            if let Some(_fast_result) = fast_path::try_fast_path_execution(
+                tx,
+                &tx_overlay,
+                tx.system_fee(),
+            ) {
+                // Fast-path succeeded - use its result
+                // TODO: When fast-path is fully implemented, use fast_result here
+                // For now, fall through to full VM execution
+            }
+
+            // Full VM execution (fallback or primary path)
             let container: Arc<dyn Verifiable> = Arc::new(tx.clone());
             let mut app = engines.open_application(
                 container,
