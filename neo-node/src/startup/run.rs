@@ -38,6 +38,11 @@ use tracing::info;
 use tracing::warn;
 
 pub(crate) async fn run(cli: NodeCli) -> Result<()> {
+    // Handle migration if requested
+    if let Some(ref migrate_from) = cli.migrate_from {
+        return run_migration(&cli).await;
+    }
+
     let live_stop_height =
         parse_live_stop_height(std::env::var("NEO_LIVE_STOP_HEIGHT").ok().as_deref())
             .map_err(anyhow::Error::msg)?;
@@ -516,5 +521,70 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     }
 
     info!(target: "neo", "shutdown complete");
+    Ok(())
+}
+
+/// Run migration from neo-cli or neo-go.
+async fn run_migration(cli: &NodeCli) -> Result<()> {
+    use crate::migration::{MigrationConfig, NodeImplementation, detect_implementation, migrate};
+
+    let migrate_from = cli.migrate_from.as_ref().unwrap();
+
+    info!("Starting migration from: {}", migrate_from.display());
+
+    // Detect or use specified implementation type
+    let implementation = if let Some(ref type_str) = cli.migrate_type {
+        match type_str.to_lowercase().as_str() {
+            "neo-cli" | "neocli" => NodeImplementation::NeoCli,
+            "neo-go" | "neogo" => NodeImplementation::NeoGo,
+            _ => bail!("Invalid migration type: {}. Use 'neo-cli' or 'neo-go'", type_str),
+        }
+    } else {
+        info!("Auto-detecting implementation type...");
+        detect_implementation(migrate_from)?
+    };
+
+    info!("Detected implementation: {}", implementation.as_str());
+
+    // Determine target storage directory
+    let target_dir = cli.storage.clone().unwrap_or_else(|| {
+        std::path::PathBuf::from("./Chain")
+    });
+
+    // Build migration config
+    let config = MigrationConfig {
+        source_dir: migrate_from.clone(),
+        target_dir: target_dir.clone(),
+        implementation,
+        migrate_storage: !cli.migrate_config_only,
+        migrate_config: true,
+        verify: true,
+    };
+
+    // Perform migration
+    info!("Starting migration...");
+    info!("  Source: {}", config.source_dir.display());
+    info!("  Target: {}", config.target_dir.display());
+    info!("  Mode: {}", if config.migrate_storage { "full (storage + config)" } else { "config only" });
+
+    let result = migrate(config).await?;
+
+    // Display results
+    info!("");
+    info!("╔══════════════════════════════════════════════════════════╗");
+    info!("║           Migration Completed Successfully              ║");
+    info!("╠══════════════════════════════════════════════════════════╣");
+    info!("║ Network:        {:40} ║", result.network);
+    info!("║ Magic:          {:40} ║", result.protocol_magic);
+    info!("║ Blocks:         {:40} ║", result.blocks_migrated);
+    info!("║ State entries:  {:40} ║", result.state_entries_migrated);
+    info!("║ Starting height:{:40} ║", result.starting_height);
+    info!("╠══════════════════════════════════════════════════════════╣");
+    info!("║ Storage path:   {:40} ║", target_dir.display());
+    info!("╚══════════════════════════════════════════════════════════╝");
+    info!("");
+    info!("You can now start neo-rs with --storage {} to continue syncing", target_dir.display());
+    info!("The node will resume from block height {}", result.starting_height);
+
     Ok(())
 }

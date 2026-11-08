@@ -55,21 +55,126 @@ use crate::server::rpc_helpers::{
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer, RpcSignerRuntime};
 
-// TODO: AssetDescriptor stub - should be moved to neo-wallets or neo-native-contracts
+/// Queries NEP-17 contract metadata (decimals and symbol).
+///
+/// Corresponds to C# RpcServer.AssetDescriptor class.
+/// Executes the contract's `decimals()` and `symbol()` methods using ApplicationEngine.
+///
+/// Reference: neo-project/neo-modules RpcServer.Wallet.cs
 struct AssetDescriptor {
     decimals: u8,
+    symbol: String,
 }
 
 impl AssetDescriptor {
     fn new(
-        _cache: &DataCache,
-        _settings: &Arc<neo_protocol::ProtocolSettings>,
+        cache: &DataCache,
+        settings: &Arc<neo_protocol::ProtocolSettings>,
         asset: UInt160,
     ) -> Result<Self, String> {
-        // For now, assume 8 decimals (standard for NEP-17 tokens)
-        // TODO: Query the contract's decimals() method
-        let _ = asset; // Suppress warning
-        Ok(Self { decimals: 8 })
+        // Handle native contracts (NEO and GAS) directly
+        if asset == NeoToken::new().hash() {
+            return Ok(Self {
+                decimals: NeoToken::new().decimals(),
+                symbol: "NEO".to_string(),
+            });
+        }
+        if asset == GasToken::new().hash() {
+            return Ok(Self {
+                decimals: GasToken::new().decimals(),
+                symbol: "GAS".to_string(),
+            });
+        }
+
+        // Query NEP-17 contract via ApplicationEngine
+        Self::query_nep17_metadata(cache, settings, &asset)
+    }
+
+    fn query_nep17_metadata(
+        cache: &DataCache,
+        settings: &Arc<neo_protocol::ProtocolSettings>,
+        asset: &UInt160,
+    ) -> Result<Self, String> {
+        // Build script to call decimals() and symbol() methods
+        let mut script = ScriptBuilder::new();
+
+        // Call decimals()
+        script.emit_opcode(OpCode::PUSH0); // empty args array
+        script.emit_opcode(OpCode::NEWARRAY);
+        script.emit_push_int(i64::from(CallFlags::READ_ONLY.bits()));
+        script.emit_push_string("decimals");
+        script.emit_push_byte_array(&asset.to_bytes());
+        script
+            .emit_syscall("System.Contract.Call")
+            .map_err(|e| format!("Failed to build decimals call: {e}"))?;
+
+        // Call symbol()
+        script.emit_opcode(OpCode::PUSH0); // empty args array
+        script.emit_opcode(OpCode::NEWARRAY);
+        script.emit_push_int(i64::from(CallFlags::READ_ONLY.bits()));
+        script.emit_push_string("symbol");
+        script.emit_push_byte_array(&asset.to_bytes());
+        script
+            .emit_syscall("System.Contract.Call")
+            .map_err(|e| format!("Failed to build symbol call: {e}"))?;
+
+        // Execute the script
+        let snapshot = Arc::new(cache.clone());
+        let mut engine = ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            snapshot,
+            None,
+            (*settings).clone(),
+            10_000_000, // 0.1 GAS gas limit for metadata query
+            None,
+            neo_native_contracts::native::composition::default_native_services(),
+        )
+        .map_err(|e| format!("Failed to create engine: {e}"))?;
+
+        engine
+            .load_script(script.to_array(), CallFlags::READ_ONLY, Some(*asset))
+            .map_err(|e| format!("Failed to load script: {e}"))?;
+
+        engine
+            .execute()
+            .map_err(|e| format!("Failed to execute script: {e}"))?;
+
+        if engine.state() != VMState::HALT {
+            return Err(format!(
+                "Contract execution failed (state: {:?}). Asset may not be a valid NEP-17 token.",
+                engine.state()
+            ));
+        }
+
+        // Read results from stack (symbol is on top, decimals below)
+        let symbol_item = engine
+            .peek(0)
+            .map_err(|e| format!("Failed to read symbol from stack: {e}"))?;
+        let decimals_item = engine
+            .peek(1)
+            .map_err(|e| format!("Failed to read decimals from stack: {e}"))?;
+
+        // Parse decimals
+        let decimals_bigint = decimals_item
+            .as_int()
+            .map_err(|e| format!("decimals() did not return an integer: {e}"))?;
+        let decimals = decimals_bigint
+            .to_u8()
+            .ok_or_else(|| format!("decimals value out of range: {decimals_bigint}"))?;
+
+        // Parse symbol
+        let symbol_bytes = symbol_item
+            .as_bytes()
+            .map_err(|e| format!("symbol() did not return a byte array: {e}"))?;
+        let symbol = String::from_utf8(symbol_bytes)
+            .map_err(|e| format!("symbol() returned invalid UTF-8: {e}"))?;
+
+        if symbol.is_empty() {
+            return Err("symbol() returned empty string".to_string());
+        }
+
+        Ok(Self { decimals, symbol })
     }
 }
 

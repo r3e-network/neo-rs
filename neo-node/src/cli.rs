@@ -235,4 +235,24 @@ pub struct NodeCli {
     /// Password for the NEP-6 wallet file.
     #[arg(long, value_name = "PASSWORD", env = "NEO_WALLET_PASSWORD")]
     pub wallet_password: Option<String>,
+
+    /// Migrate from neo-cli or neo-go data directory.
+    ///
+    /// Automatically detects the implementation type (neo-cli C# or neo-go) and migrates:
+    /// - RocksDB/LevelDB storage
+    /// - Block data and state
+    /// - Protocol configuration
+    /// - Continues syncing from the last block height
+    ///
+    /// Example: --migrate-from /path/to/neo-cli
+    #[arg(long, value_name = "PATH", env = "NEO_MIGRATE_FROM")]
+    pub migrate_from: Option<PathBuf>,
+
+    /// Force migration type (neo-cli or neo-go) instead of auto-detection.
+    #[arg(long, value_name = "TYPE", env = "NEO_MIGRATE_TYPE", requires = "migrate_from")]
+    pub migrate_type: Option<String>,
+
+    /// Skip storage migration, only import configuration.
+    #[arg(long, requires = "migrate_from")]
+    pub migrate_config_only: bool,
 }

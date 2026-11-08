@@ -24,6 +24,13 @@ mod hsm;
 mod hsm_integration;
 #[cfg(feature = "hsm")]
 mod hsm_wallet;
+mod migration;
+#[cfg(feature = "hsm")]
+mod hsm;
+#[cfg(feature = "hsm")]
+mod hsm_integration;
+#[cfg(feature = "hsm")]
+mod hsm_wallet;
 #[cfg(feature = "full")]
 mod import_acc;
 #[cfg(not(feature = "full"))]

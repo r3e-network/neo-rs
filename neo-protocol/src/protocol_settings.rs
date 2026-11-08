@@ -84,6 +84,39 @@ pub struct ProtocolSettings {
 }
 
 impl ProtocolSettings {
+    /// Create a new ProtocolSettings with basic parameters.
+    ///
+    /// This is a convenience constructor for migration and testing purposes.
+    /// For production use, prefer loading from configuration files.
+    pub fn new(
+        magic: u32,
+        address_version: u8,
+        standby_committee: Vec<String>,
+        seed_list: Vec<String>,
+        max_transactions_per_block: u32,
+        memory_pool_max_transactions: u32,
+        milliseconds_per_block: u32,
+    ) -> Self {
+        use crate::config::ProtocolSettings as ConfigSettings;
+
+        // Build a minimal config and convert
+        let config = ConfigSettings {
+            network: magic as i64,
+            address_version,
+            standby_validators: standby_committee,
+            seed_list,
+            ms_per_block: milliseconds_per_block as i64,
+            max_transactions_per_block: max_transactions_per_block as i64,
+            memory_pool_max_transactions: memory_pool_max_transactions as i64,
+            max_trace_able_blocks: 2_102_400,
+            initial_gas_distribution: 52_000_000,
+            validators_count: 7,
+            hardforks: Default::default(),
+        };
+
+        Self::from_config(config).unwrap_or_else(|_| Self::default())
+    }
+
     /// The number of members of the committee in NEO system.
     /// Matches C# CommitteeMembersCount property
     pub fn committee_members_count(&self) -> usize {

@@ -90,12 +90,17 @@ zeroize = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+serde_yaml = "0.9"
 sha2.workspace = true
 reqwest = { workspace = true, features = ["rustls-tls"] }
 toml.workspace = true
 hex.workspace = true
 prometheus = { workspace = true }
 parking_lot = { workspace = true }
+
+# Storage migration
+rocksdb = { workspace = true }
+# bolt = "0.5"  # Optional: for neo-go BoltDB support
 
 # Async runtime
 tokio = { workspace = true, features = ["process", "signal"] }
