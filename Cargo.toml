@@ -5,9 +5,6 @@ members = [
     # Primitive types (UInt160, UInt256, BigDecimal)
     "neo-primitives",
 
-    # Config (zero cross-module deps)
-    "neo-config",
-
     # Cryptography (hashing, ECC, signatures)
     "neo-crypto",
 
@@ -27,44 +24,20 @@ members = [
     # Protocol settings and signing data
     "neo-protocol",
 
-    # P2P networking
-    "neo-p2p",
-
     # RPC server and client
     "neo-rpc",
 
-    # dBFT consensus
-    "neo-consensus",
-
-    # === neo-core decomposition crates (task 89) ===
-    # Generic async actor runtime (task 189); depends on no other neo-* crate
+    # === Application Layer ===
+    # Generic async actor runtime
     "neo-actors",
     # Ledger persistence and block/transaction validation
     "neo-ledger",
-    # Unified, policy-bound signing service contracts
-    "neo-signing",
     # Smart contract application engine, manifests, and storage
     "neo-smart-contract",
     # Actor runtime and system adapters
     "neo-system",
     # Wallet primitives (BIP-32 / BIP-39)
     "neo-wallets",
-    # Native contract definitions and metadata
-    "neo-native-contracts",
-    # Memory pool for transaction management
-    "neo-mempool",
-    # Oracle service implementation
-    "neo-oracle",
-    # Canonical state root computation / verification service
-    "neo-state-service",
-
-    # Extensions (matches C# Neo.Extensions)
-
-    # NOTE: C# Neo's plugin set has been inlined:
-    #   ApplicationLogs → neo-core/src/application_logs
-    #   DBFTPlugin      → neo-consensus
-    #   RpcServer       → neo-rpc/src/server
-    #   TokensTracker   → neo-core/src/tokens_tracker
 
     # TEE (Trusted Execution Environment) support
     # Optional feature-gated integration via neo-node (`--features tee`)
@@ -74,17 +47,6 @@ members = [
     # Optional feature-gated integration via neo-node (`--features hsm`)
     "neo-hsm",
 
-    # === Telemetry ===
-    # Observability stack
-    "neo-telemetry",
-
-    # Isolated AI-assisted diagnostics (no node control capabilities)
-    "neo-ai-agent",
-
-    # Restricted detached-state probe worker
-    "neo-probe",
-
-    # === Application Layer ===
     # Node daemon (standalone RPC server)
     "neo-node",
 

@@ -1,7 +1,6 @@
 # Build artifacts
 /target/
 **/target/
-.target-*/
 
 # Data and logs
 *.log
@@ -164,3 +163,4 @@ formal/**/.mimosa/
 
 # Local verification logs (not sources)
 /.audit-logs/
+.target-*/

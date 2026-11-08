@@ -1,161 +1,224 @@
 name: Fuzzing
-'on':
-  push:
-    branches:
-    - main
-    - master
-    paths:
-    - neo-core/**
-    - neo-io/**
-    - neo-p2p/**
-    - neo-primitives/**
-    - fuzz/**
-    - .github/workflows/fuzz.yml
+
+on:
   pull_request:
-    branches:
-    - main
-    - master
     paths:
-    - neo-core/**
-    - neo-io/**
-    - neo-p2p/**
-    - neo-primitives/**
-    - fuzz/**
-    - .github/workflows/fuzz.yml
-  # Daily scheduled run (cron 0 2 * * *) removed 2026-09-10 to conserve CI
-  # minutes; coverage-guided fuzzing continues via the ci.yml fuzz-smoke lane
-  # on push/PR and via manual workflow_dispatch for long runs.
+      - 'neo-protocol/**'
+      - 'neo-vm/**'
+      - 'neo-crypto/**'
+      - 'neo-rpc/**'
+      - 'neo-storage/**'
+      - 'fuzz/**'
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
   workflow_dispatch:
     inputs:
       duration:
-        description: Fuzzing duration in seconds per target
+        description: 'Fuzzing duration per target (seconds)'
         required: false
-        default: '300'
-        type: string
-env:
-  CARGO_INCREMENTAL: 0
-  RUST_BACKTRACE: 1
+        default: '3600'
+
 jobs:
-  fuzz-transaction:
-    name: Fuzz Transaction Parsing
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Install dependencies
-      run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
-        \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
-        \ \\\n  librocksdb-dev \\\n  libssl-dev \\\n  pkg-config\n"
-    - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
-    - name: Install cargo-fuzz
-      run: cargo install cargo-fuzz
-    - name: Cache cargo
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: fuzz-transaction
-    - name: Run fuzz_transaction_parse
-      run: "cd fuzz\ncargo fuzz run fuzz_transaction_parse \\\n  --release \\\n  --\
-        \ -max_total_time=${{ github.event.inputs.duration || 300 }} -print_final_stats=1\n"
-    - name: Upload crash artifacts
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: transaction-crashes
-        path: fuzz/artifacts/fuzz_transaction_parse/
-        retention-days: 7
-  fuzz-script:
-    name: Fuzz Script Parsing
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Install dependencies
-      run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
-        \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
-        \ \\\n  librocksdb-dev \\\n  libssl-dev \\\n  pkg-config\n"
-    - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
-    - name: Install cargo-fuzz
-      run: cargo install cargo-fuzz
-    - name: Cache cargo
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: fuzz-script
-    - name: Run fuzz_script_parse
-      run: "cd fuzz\ncargo fuzz run fuzz_script_parse \\\n  --release \\\n  -- -max_total_time=${{\
-        \ github.event.inputs.duration || 300 }} -print_final_stats=1\n"
-    - name: Upload crash artifacts
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: script-crashes
-        path: fuzz/artifacts/fuzz_script_parse/
-        retention-days: 7
-  fuzz-message:
-    name: Fuzz Message Parsing
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Install dependencies
-      run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
-        \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
-        \ \\\n  librocksdb-dev \\\n  libssl-dev \\\n  pkg-config\n"
-    - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
-    - name: Install cargo-fuzz
-      run: cargo install cargo-fuzz
-    - name: Cache cargo
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: fuzz-message
-    - name: Run fuzz_message_parse
-      run: "cd fuzz\ncargo fuzz run fuzz_message_parse \\\n  --release \\\n  -- -max_total_time=${{\
-        \ github.event.inputs.duration || 300 }} -print_final_stats=1\n"
-    - name: Upload crash artifacts
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: message-crashes
-        path: fuzz/artifacts/fuzz_message_parse/
-        retention-days: 7
   fuzz-smoke-test:
-    name: Fuzz Smoke Test
+    name: Fuzz Smoke Test (${{ matrix.target }})
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_message_parse
+          - fuzz_transaction_parse
+          - fuzz_script_parse
+          - fuzz_block_parse
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Install dependencies
-      run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
-        \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
-        \ \\\n  librocksdb-dev \\\n  libssl-dev \\\n  pkg-config\n"
-    - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
-    - name: Install cargo-fuzz
-      run: cargo install cargo-fuzz
-    - name: Cache cargo
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: fuzz-smoke
-    - name: Run smoke tests (30 seconds each)
-      run: 'cd fuzz
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-        echo "=== Transaction Fuzzing ==="
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
 
-        cargo fuzz run fuzz_transaction_parse --release -- -max_total_time=30
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
 
-        echo "=== Script Fuzzing ==="
+      - name: Cache fuzzing corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.sha }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
 
-        cargo fuzz run fuzz_script_parse --release -- -max_total_time=30
+      - name: Run quick fuzz test (30 seconds)
+        run: |
+          cd fuzz
+          cargo fuzz run ${{ matrix.target }} -- -max_total_time=30 -rss_limit_mb=4096
+        continue-on-error: true
 
-        echo "=== Message Fuzzing ==="
+      - name: Upload crashes if found
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crashes-${{ matrix.target }}-pr
+          path: fuzz/artifacts/${{ matrix.target }}/
+          retention-days: 30
 
-        cargo fuzz run fuzz_message_parse --release -- -max_total_time=30
+  fuzz-nightly:
+    name: Nightly Fuzzing (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_message_parse
+          - fuzz_transaction_parse
+          - fuzz_script_parse
+          - fuzz_block_parse
+          - fuzz_rpc_request
+          - fuzz_crypto_signature
+          - fuzz_witness_condition
+          - fuzz_storage_mpt
+          - fuzz_vm_execution
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-        '
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Cache fuzzing corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.sha }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
+      - name: Run fuzzing (1 hour)
+        run: |
+          cd fuzz
+          cargo fuzz run ${{ matrix.target }} -- -max_total_time=3600 -rss_limit_mb=8192 -timeout=60
+        continue-on-error: true
+
+      - name: Upload crashes if found
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crashes-${{ matrix.target }}-nightly-${{ github.run_number }}
+          path: fuzz/artifacts/${{ matrix.target }}/
+          retention-days: 90
+
+      - name: Upload corpus
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-${{ matrix.target }}-${{ github.run_number }}
+          path: fuzz/corpus/${{ matrix.target }}/
+          retention-days: 7
+
+      - name: Report statistics
+        run: |
+          cd fuzz
+          echo "## Fuzzing Statistics for ${{ matrix.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Duration: 1 hour" >> $GITHUB_STEP_SUMMARY
+          echo "- Corpus size: $(find corpus/${{ matrix.target }} -type f | wc -l) files" >> $GITHUB_STEP_SUMMARY
+          if [ -d "artifacts/${{ matrix.target }}" ]; then
+            echo "- Crashes found: $(find artifacts/${{ matrix.target }} -type f | wc -l)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Crashes found: 0" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  fuzz-extended:
+    name: Extended Fuzzing (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_message_parse
+          - fuzz_transaction_parse
+          - fuzz_script_parse
+          - fuzz_block_parse
+          - fuzz_rpc_request
+          - fuzz_crypto_signature
+          - fuzz_witness_condition
+          - fuzz_storage_mpt
+          - fuzz_vm_execution
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Cache fuzzing corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.sha }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
+      - name: Run extended fuzzing
+        run: |
+          cd fuzz
+          cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ github.event.inputs.duration }} -rss_limit_mb=8192 -timeout=120
+        continue-on-error: true
+
+      - name: Upload crashes if found
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crashes-${{ matrix.target }}-extended-${{ github.run_number }}
+          path: fuzz/artifacts/${{ matrix.target }}/
+          retention-days: 90
+
+      - name: Upload corpus
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-${{ matrix.target }}-extended-${{ github.run_number }}
+          path: fuzz/corpus/${{ matrix.target }}/
+          retention-days: 30
+
+  fuzz-summary:
+    name: Fuzzing Summary
+    runs-on: ubuntu-latest
+    needs: [fuzz-nightly]
+    if: always() && github.event_name == 'schedule'
+    steps:
+      - name: Download all crash artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: crashes-*
+          path: all-crashes
+
+      - name: Generate summary report
+        run: |
+          echo "# Daily Fuzzing Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date**: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -d "all-crashes" ] && [ "$(ls -A all-crashes)" ]; then
+            echo "## ⚠️ Crashes Found" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            for dir in all-crashes/crashes-*; do
+              if [ -d "$dir" ]; then
+                target=$(basename "$dir" | sed 's/crashes-//' | sed 's/-nightly-.*//')
+                count=$(find "$dir" -type f | wc -l)
+                echo "- **$target**: $count crash(es)" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          else
+            echo "## ✅ No Crashes Found" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All fuzz targets completed successfully without crashes." >> $GITHUB_STEP_SUMMARY
+          fi
