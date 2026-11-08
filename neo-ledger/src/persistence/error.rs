@@ -66,6 +66,11 @@ pub enum LedgerError {
         /// Underlying runtime cache failure message.
         message: String,
     },
+    /// Fast-path execution validation failed, triggering fallback to full VM.
+    FastPathError {
+        /// Validation failure message.
+        message: String,
+    },
 }
 
 impl fmt::Display for LedgerError {
@@ -94,6 +99,9 @@ impl fmt::Display for LedgerError {
                     f,
                     "failed to update runtime block cache for block {index}: {message}"
                 )
+            }
+            LedgerError::FastPathError { message } => {
+                write!(f, "fast-path validation failed: {message}")
             }
         }
     }

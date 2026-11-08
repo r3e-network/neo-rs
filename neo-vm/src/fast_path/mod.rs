@@ -30,3 +30,4 @@ pub mod error;
 pub use classifier::{TransactionClassifier, TransactionComplexity};
 pub use executor::FastPathExecutor;
 pub use error::{FastPathError, FastPathResult};
+pub use nep17::TransferParams;

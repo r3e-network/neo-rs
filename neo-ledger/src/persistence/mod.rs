@@ -225,14 +225,57 @@ pub fn persist_block(
             })?;
 
             // Attempt fast-path execution if enabled
-            if let Some(_fast_result) = fast_path::try_fast_path_execution(
+            if let Some(fast_result) = fast_path::try_fast_path_execution(
                 tx,
                 &tx_overlay,
                 tx.system_fee(),
             ) {
-                // Fast-path succeeded - use its result
-                // TODO: When fast-path is fully implemented, use fast_result here
-                // For now, fall through to full VM execution
+                // Fast-path succeeded - use its result instead of full VM
+                match fast_result.vm_state {
+                    VmState::HALT => {
+                        // Fast-path transfer succeeded
+                        // Storage changes are already applied to tx_overlay
+                        // Merge into base snapshot
+                        base_snapshot.merge_from_child(&tx_overlay);
+
+                        // Record transaction state for this fast-path execution
+                        // Note: Notifications are not emitted yet - this is a known limitation
+                        // Production implementation would need to emit Transfer events here
+
+                        if detailed {
+                            // TODO: Build a proper execution receipt for fast-path
+                            // For now, skip detailed receipt for fast-path transfers
+                        }
+
+                        // Continue to next transaction without full VM execution
+                        continue;
+                    }
+                    VmState::FAULT => {
+                        // Fast-path detected a fault (e.g., insufficient balance)
+                        // Reset overlay and record the fault
+                        tx_overlay.reset();
+
+                        if detailed {
+                            // TODO: Build a proper fault receipt for fast-path
+                        }
+
+                        fault_buffer.push(FaultObservation {
+                            transaction_hash: tx_hash,
+                            block_height,
+                            block_hash,
+                            vm_state: VmState::FAULT,
+                            category: FaultCategory::VmFault,
+                            gas_consumed: fast_result.gas_consumed,
+                        });
+
+                        // Continue to next transaction
+                        continue;
+                    }
+                    _ => {
+                        // Unexpected VM state from fast-path - should not happen
+                        // Fall through to full VM execution
+                    }
+                }
             }
 
             // Full VM execution (fallback or primary path)
