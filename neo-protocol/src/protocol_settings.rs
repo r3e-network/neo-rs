@@ -97,7 +97,7 @@ impl ProtocolSettings {
     }
 
     /// Converts the shared pure-data configuration into normative protocol parameters.
-    fn from_config(config: neo_config::ProtocolSettings) -> Result<Self, String> {
+    fn from_config(config: crate::config::ProtocolSettings) -> Result<Self, String> {
         let standby_committee = parse_committee(config.standby_validators)?;
         let validators_count = i32::try_from(config.validators_count)
             .map_err(|_| "validators_count exceeds i32".to_string())?;
@@ -133,13 +133,13 @@ impl ProtocolSettings {
 
     /// Returns built-in ProtocolSettings for Neo MainNet.
     pub fn mainnet() -> Self {
-        Self::from_config(neo_config::ProtocolSettings::mainnet())
+        Self::from_config(crate::config::ProtocolSettings::mainnet())
             .expect("embedded mainnet protocol settings should be valid")
     }
 
     /// Returns built-in ProtocolSettings for Neo TestNet.
     pub fn testnet() -> Self {
-        Self::from_config(neo_config::ProtocolSettings::testnet())
+        Self::from_config(crate::config::ProtocolSettings::testnet())
             .expect("embedded testnet protocol settings should be valid")
     }
 
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn config_numeric_boundaries_preserve_field_widths() {
-        let mut config = neo_config::ProtocolSettings::private(42);
+        let mut config = crate::config::ProtocolSettings::private(42);
         config.validators_count = i32::MAX as u32;
         config.ms_per_block = u32::MAX as u64;
         config.memory_pool_max_transactions = i32::MAX as u32;
@@ -314,28 +314,28 @@ mod tests {
 
     #[test]
     fn config_numeric_overflow_errors_are_preserved() {
-        let mut config = neo_config::ProtocolSettings::private(42);
+        let mut config = crate::config::ProtocolSettings::private(42);
         config.validators_count = i32::MAX as u32 + 1;
         assert_eq!(
             ProtocolSettings::from_config(config).unwrap_err(),
             "validators_count exceeds i32"
         );
 
-        let mut config = neo_config::ProtocolSettings::private(42);
+        let mut config = crate::config::ProtocolSettings::private(42);
         config.ms_per_block = u32::MAX as u64 + 1;
         assert_eq!(
             ProtocolSettings::from_config(config).unwrap_err(),
             "ms_per_block exceeds u32"
         );
 
-        let mut config = neo_config::ProtocolSettings::private(42);
+        let mut config = crate::config::ProtocolSettings::private(42);
         config.memory_pool_max_transactions = i32::MAX as u32 + 1;
         assert_eq!(
             ProtocolSettings::from_config(config).unwrap_err(),
             "memory_pool_max_transactions exceeds i32"
         );
 
-        let mut config = neo_config::ProtocolSettings::private(42);
+        let mut config = crate::config::ProtocolSettings::private(42);
         config.initial_gas_distribution = -1;
         assert_eq!(
             ProtocolSettings::from_config(config).unwrap_err(),

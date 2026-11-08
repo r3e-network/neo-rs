@@ -53,7 +53,7 @@
 pub mod engine_port;
 pub mod error;
 pub mod evidence;
-pub mod fast_path;
+// pub mod fast_path;  // TODO: Module not yet implemented after crate consolidation
 pub mod participant;
 pub mod receipt;
 

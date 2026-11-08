@@ -23,7 +23,7 @@
 //! `multi_sig_redeem_script`, `MAX_VERIFICATION_GAS`, ...) already lives here.
 
 use crate::application_engine::ApplicationEngine;
-use crate::contract::Contract;
+use crate::contract_state::ContractState;
 use crate::error::{CoreError, CoreResult};
 use neo_crypto::ECPoint;
 use neo_primitives::UInt160;
@@ -108,8 +108,8 @@ impl Helper {
     }
 
     /// Gets the script hash from a contract
-    pub fn to_script_hash(contract: &Contract) -> UInt160 {
-        contract.script_hash()
+    pub fn to_script_hash(contract: &ContractState) -> UInt160 {
+        contract.hash
     }
 
     /// Creates a signature redeem script
@@ -149,8 +149,27 @@ impl Helper {
             points.push(point);
         }
 
-        Contract::try_create_multi_sig_redeem_script(m, &points)
-            .map_err(|err| CoreError::invalid_operation(err.to_string()))
+        // Build the multi-sig redeem script directly
+        Self::create_multi_sig_script_from_points(m, &points)
+    }
+
+    /// Internal method to create multi-sig script from ECPoints
+    fn create_multi_sig_script_from_points(m: usize, points: &[ECPoint]) -> CoreResult<Vec<u8>> {
+        use neo_vm::ScriptBuilder;
+
+        let mut builder = ScriptBuilder::new();
+        builder.emit_push_int(m as i64);
+
+        for point in points {
+            builder.emit_push(&point.to_bytes());
+        }
+
+        builder.emit_push_int(points.len() as i64);
+        let hash_bytes = Self::check_multisig_hash();
+        let hash = u32::from_le_bytes(hash_bytes);
+        builder.emit_syscall_hash(hash);
+
+        Ok(builder.to_array())
     }
 
     /// Creates a multi-sig redeem script (panics on invalid input).

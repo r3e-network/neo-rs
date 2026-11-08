@@ -23,7 +23,6 @@ neo-storage = { workspace = true }
 neo-vm = { workspace = true }
 
 # Internal crates (not yet in workspace.dependencies; registered by task 89)
-neo-native-contracts = { path = "../neo-native-contracts" }
 neo-smart-contract = { path = "../neo-smart-contract" }
 
 # Third-party

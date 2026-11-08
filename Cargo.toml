@@ -65,16 +65,13 @@ members = [
 ]
 default-members = [
     "neo-primitives",
-    "neo-config",
     "neo-crypto",
     "neo-storage",
     "neo-io",
     "neo-json",
     "neo-vm",
     "neo-protocol",
-    "neo-p2p",
     "neo-rpc",
-    "neo-consensus",
     "neo-node",
 ]
 exclude = [
@@ -130,7 +127,6 @@ assertions_on_constants = "allow"
 # === Internal crates ===
 # Foundation layer
 neo-primitives = { path = "neo-primitives", version = "0.20.0" }
-neo-config = { path = "neo-config", version = "0.20.0" }
 neo-crypto = { path = "neo-crypto", version = "0.20.0" }
 neo-storage = { path = "neo-storage", version = "0.20.0" }
 neo-io = { path = "neo-io", version = "0.20.0" }
@@ -138,37 +134,22 @@ neo-json = { path = "neo-json", version = "0.20.0" }
 
 # Core layer
 neo-vm = { path = "neo-vm", version = "0.20.0" }
-neo-core = { path = "neo-core", version = "0.20.0" }
 neo-protocol = { path = "neo-protocol", version = "0.20.0" }
-neo-p2p = { path = "neo-p2p", version = "0.20.0" }
 neo-rpc = { path = "neo-rpc", version = "0.20.0" }
-neo-consensus = { path = "neo-consensus", version = "0.20.0" }
 
 # Generic actor runtime extracted from neo-core (task 189). It has no neo-*
 # dependency, so it carries the workspace version like the core layer above.
 neo-actors = { path = "neo-actors", version = "0.20.0" }
 
-# neo-core decomposition crates (task 89).
-# Path-only entries: neo-oracle currently pins its own package version (0.1.0),
-# so no workspace version constraint is imposed on these new crates.
+# Application layer crates (task 89).
 neo-ledger = { path = "neo-ledger" }
-neo-signing = { path = "neo-signing" }
 neo-smart-contract = { path = "neo-smart-contract" }
 neo-system = { path = "neo-system" }
 neo-wallets = { path = "neo-wallets" }
-neo-native-contracts = { path = "neo-native-contracts" }
-neo-mempool = { path = "neo-mempool" }
-neo-oracle = { path = "neo-oracle" }
-neo-state-service = { path = "neo-state-service" }
 
 # Infrastructure layer
 neo-tee = { path = "neo-tee", version = "0.20.0" }
 neo-hsm = { path = "neo-hsm", version = "0.20.0" }
-
-# Telemetry
-neo-telemetry = { path = "neo-telemetry", version = "0.20.0" }
-neo-ai-agent = { path = "neo-ai-agent", version = "0.20.0" }
-neo-probe = { path = "neo-probe", version = "0.20.0" }
 
 # Application layer
 # neo-cli removed: functionality merged into neo-node

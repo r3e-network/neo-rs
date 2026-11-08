@@ -1,12 +1,11 @@
 //! Neo protocol settings, hardfork activation, and signing data.
 
+mod config;
 pub mod builders;
 pub mod call_flags;
-pub mod contract;
 pub mod execution;
 pub mod hardfork;
 pub mod header_wire;
-pub mod parameters;
 pub mod payloads;
 pub mod protocol_settings;
 pub mod signing_data;

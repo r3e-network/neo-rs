@@ -14,7 +14,6 @@ readme.workspace = true
 description = "Neo protocol settings, hardfork activation, and signing data"
 
 [dependencies]
-neo-config = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-primitives = { workspace = true }

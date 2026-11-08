@@ -23,11 +23,11 @@ pub use neo_primitives::{Hardfork, HardforkParseError};
 
 /// Height configured for `fork`, if the config names one.
 ///
-/// The exhaustive match is the sole bridge from `neo_config::HardforkHeights`
+/// The exhaustive match is the sole bridge from `crate::config::HardforkHeights`
 /// to typed activation maps. Adding a primitive hardfork requires mapping its
 /// corresponding config field here, without duplicating network default tables.
 pub(crate) fn hardfork_height(
-    heights: &neo_config::HardforkHeights,
+    heights: &crate::config::HardforkHeights,
     fork: Hardfork,
 ) -> Option<u32> {
     match fork {
@@ -60,18 +60,18 @@ impl HardforkManager {
         Self { hardforks }
     }
 
-    /// Creates a manager using the single MainNet source in `neo-config`.
+    /// Creates a manager using the single MainNet source.
     pub fn mainnet() -> Self {
-        Self::from_heights(&neo_config::ProtocolSettings::mainnet().hardforks)
+        Self::from_heights(&crate::config::ProtocolSettings::mainnet().hardforks)
     }
 
-    /// Creates a manager using the single TestNet source in `neo-config`.
+    /// Creates a manager using the single TestNet source.
     pub fn testnet() -> Self {
-        Self::from_heights(&neo_config::ProtocolSettings::testnet().hardforks)
+        Self::from_heights(&crate::config::ProtocolSettings::testnet().hardforks)
     }
 
     /// Builds a manager from explicitly configured heights, without filling omissions.
-    pub(crate) fn from_heights(heights: &neo_config::HardforkHeights) -> Self {
+    pub(crate) fn from_heights(heights: &crate::config::HardforkHeights) -> Self {
         let mut hardforks = HashMap::new();
         for hardfork in Hardfork::all() {
             if let Some(height) = hardfork_height(heights, hardfork) {

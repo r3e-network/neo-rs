@@ -20,18 +20,13 @@ neo-storage = { workspace = true }
 neo-crypto = { workspace = true }
 
 # Layer 2 - Protocol
-neo-consensus = { workspace = true }
-neo-native-contracts = { workspace = true }
-neo-p2p = { workspace = true }
 neo-protocol = { workspace = true }
 neo-smart-contract = { workspace = true }
 
 # Layer 4 - Services
 neo-rpc = { workspace = true }
-neo-telemetry = { workspace = true }
 neo-vm = { workspace = true }
 neo-system = { workspace = true }
-neo-state-service = { workspace = true, features = ["runtime"] }
 
 # Utilities
 num-bigint = { workspace = true }

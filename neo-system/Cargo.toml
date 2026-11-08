@@ -25,12 +25,7 @@ full = ["state-verifier", "upnp"]
 
 [dependencies]
 # Internal crates (registered in workspace.dependencies)
-neo-p2p = { workspace = true }
 neo-primitives = { workspace = true }
-# Task 208: state verification signs state roots through the unified signing
-# service (key bindings, trusted signer client) — same direct binding the
-# module used while it lived in neo-core.
-neo-signing = { workspace = true }
 # Task 208: state verification builds extensible-payload witness invocation
 # scripts with VM opcodes (PUSHDATA1).
 neo-vm = { workspace = true }
@@ -51,9 +46,6 @@ neo-smart-contract = { workspace = true }
 # actor runtime instead of the neo-core `runtime` compatibility re-export
 # (same types, TypeId-preserving).
 neo-actors = { workspace = true }
-
-# Oracle engine + response pipeline ports used by `oracle_service`.
-neo-oracle = { workspace = true }
 # Shared caches (HashSetCache/RelayCache) used by the P2P actors. Bound under
 # the historical `neo_io_crate` alias used throughout the moved code.
 neo_io_crate = { path = "../neo-io", package = "neo-io" }

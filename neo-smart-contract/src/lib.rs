@@ -1,7 +1,6 @@
 //! Smart contract application engine, manifests, iterators, and storage.
 
 pub mod application_engine;
-pub mod contract;
 pub mod contract_state;
 pub mod diagnostic;
 pub mod env_flags;
@@ -24,5 +23,7 @@ pub mod witness_verification;
 // `binary_serializer` / `storage_context` canonically live in `neo-vm`;
 // `application_engine_contract` is the `application_engine::contract` module.
 pub use application_engine::contract as application_engine_contract;
+// Re-export contract module at the crate root for backward compatibility
+pub use application_engine::contract;
 pub use neo_vm::binary_serializer;
 pub use neo_vm::storage_context;

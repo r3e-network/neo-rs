@@ -24,7 +24,6 @@ neo-storage = { workspace = true }
 
 # Internal crates (registered by task 89; path deps like the other consumers)
 neo-smart-contract = { workspace = true }
-neo-native-contracts = { workspace = true }
 
 # Serialization / error handling
 serde = { workspace = true }

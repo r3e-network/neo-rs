@@ -39,12 +39,8 @@ hsm-pkcs11 = ["hsm", "neo-hsm/pkcs11"]
 # Task 206: consensus binds directly to neo-actors instead of the neo-core
 # `runtime` compatibility re-export (same types, TypeId-preserving).
 neo-actors = { workspace = true }
-# Task 175: bind directly to neo-native-contracts instead of neo-core::smart_contract::native.
-neo-native-contracts = { workspace = true }
 # Task 177: bind directly to neo-smart-contract instead of neo-core::smart_contract re-exports.
 neo-smart-contract = { workspace = true }
-neo-consensus = { path = "../neo-consensus" }
-neo-p2p = { path = "../neo-p2p" }
 neo-crypto = { path = "../neo-crypto" }
 neo-vm = { workspace = true }
 # Task 156: bind directly to the canonical foundation crates instead of the
@@ -54,22 +50,13 @@ neo-protocol = { workspace = true }
 neo-io = { workspace = true }
 neo-storage = { workspace = true }
 neo-rpc = { path = "../neo-rpc", features = ["server"] }
-neo-telemetry = { workspace = true }
-neo-ai-agent = { path = "../neo-ai-agent" }
-neo-probe = { workspace = true }
-# Signing authority (task 142): consumers bind to neo-signing, not neo-core::signing.
-neo-signing = { workspace = true }
 # System runtime (task 157): consumers bind to neo-system, not neo-core::neo_system.
 # The neo-system crate re-exports the identical canonical types (TypeId-preserving).
 # Task 208: enable the state root verification service moved from neo-core.
 neo-system = { workspace = true, features = ["state-verifier"] }
-# State service (task 176): consumers bind to neo-state-service directly.
-neo-state-service = { workspace = true }
-# Canonical memory pool (task 179 / C-1): consumers bind to neo-mempool
-# directly instead of the neo-core compatibility re-export.
-neo-mempool = { workspace = true }
 # Wallet primitives (task D4): consumers bind to neo-wallets directly.
 neo-wallets = { workspace = true }
+neo-ledger = { path = "../neo-ledger" }
 
 # TEMPORARILY DISABLED: neo-plugins being refactored
 # neo-plugins = { path = "../neo-plugins" }

@@ -9,7 +9,6 @@ rocksdb = []
 
 [dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
-neo-native-contracts = { workspace = true }
 neo-smart-contract = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }

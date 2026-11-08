@@ -23,20 +23,14 @@ neo-io = { workspace = true }
 neo-storage = { workspace = true }
 neo-ledger = { workspace = true }
 neo-protocol = { workspace = true }
-neo-config = { workspace = true, optional = true }
 # Task 206: the RPC server actor relay binds directly to neo-actors instead of
 # the neo-core `runtime` compatibility re-export (same types, TypeId-preserving).
 neo-actors = { workspace = true, optional = true }
 neo-smart-contract = { workspace = true, optional = true }
-neo-native-contracts = { workspace = true, optional = true }
-# Signing authority (task 142): the `server` wallet RPC binds to neo-signing.
-neo-signing = { workspace = true, optional = true }
 # Task 153: `NeoSystem` is consumed through the `neo_system::*` facade, which
 # re-exports the canonical `neo_core::neo_system` surface (same types), so the
 # RPC server/session code no longer needs to name neo-core for it.
 neo-system = { workspace = true, optional = true }
-# State service (task 176): server RPC endpoints bind to neo-state-service directly.
-neo-state-service = { workspace = true, optional = true }
 neo-json = { path = "../neo-json", optional = true }
 neo-tee = { workspace = true, optional = true }
 # Wallet primitives (task D4): server RPC endpoints bind to neo-wallets directly.
@@ -112,13 +106,9 @@ tracing-subscriber = { workspace = true }
 default = []
 server = [
     "client",  # Server uses client models for JSON serialization
-    "dep:neo-config",
     "dep:neo-actors",
     "dep:neo-smart-contract",
-    "dep:neo-native-contracts",
-    "dep:neo-signing",
     "dep:neo-system",
-    "dep:neo-state-service",
     "dep:neo-json",
     "dep:neo-tee",
     "dep:neo-wallets",
@@ -143,9 +133,7 @@ server = [
     "dep:socket2",
 ]
 client = [
-    "dep:neo-config",
     "dep:neo-smart-contract",
-    "dep:neo-native-contracts",
     "dep:neo-system",
     "dep:neo-json",
     "dep:reqwest",
