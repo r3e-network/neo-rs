@@ -1,5 +1,6 @@
 //! Blockchain command types and relay results.
 
+use neo_actors::ActorRef;
 use neo_primitives::{UInt256, VerifyResult};
 use neo_protocol::execution::Block;
 use std::sync::Arc;
@@ -130,52 +131,162 @@ pub struct PreverifyCompleted {
     pub relay: bool,
 }
 
-/// Blockchain actor handle (placeholder for actual actor handle).
+/// Blockchain actor handle wrapping an ActorRef.
+///
+/// Provides type-safe messaging to the blockchain actor with proper error
+/// handling for mailbox capacity and actor lifecycle. All messaging methods
+/// delegate to the underlying ActorRef, converting actor runtime errors to
+/// String-based errors for consistency with the ledger layer API.
+///
+/// # Error Handling
+///
+/// All messaging methods return `Result<(), String>`:
+/// - `Ok(())` - Message successfully enqueued to the actor's mailbox
+/// - `Err(msg)` - Mailbox full, actor stopped, or system shutdown
+///
+/// Callers should handle mailbox-full errors by either:
+/// 1. Using `tell_from_async` to apply backpressure
+/// 2. Dropping the message if it's non-critical
+/// 3. Logging and continuing with degraded functionality
+///
+/// # Implementation Note
+///
+/// This is the authoritative BlockchainHandle implementation for neo-ledger.
+/// Higher layers (such as neo-system) may re-export or wrap this type, but
+/// they should delegate to this implementation rather than reimplementing
+/// the actor messaging logic.
+///
+/// # Reference
+///
+/// See C# Neo: `NeoSystem.Blockchain` (property returning the blockchain actor reference)
 #[derive(Clone, Debug)]
-pub struct BlockchainHandle;
-
-impl BlockchainHandle {
-    /// Stub: Send a message from an async context
-    pub async fn tell_from_async<M>(&self, _msg: M, _sender: impl std::any::Any) -> Result<(), String>
-    where
-        M: std::any::Any + Send + 'static,
-    {
-        // TODO: Implement actual actor messaging
-        Ok(())
-    }
-
-    /// Stub: Send a message with sender
-    pub fn tell_from<M>(&self, _msg: M, _sender: impl std::any::Any) -> Result<(), String>
-    where
-        M: std::any::Any + Send + 'static,
-    {
-        // TODO: Implement actual actor messaging
-        Ok(())
-    }
-
-    /// Stub: Get raw actor reference
-    pub fn raw_ref(&self) -> &Self {
-        self
-    }
-
-    /// Stub: Send a message
-    pub fn tell<M>(&self, _msg: M) -> Result<(), String>
-    where
-        M: std::any::Any + Send + 'static,
-    {
-        // TODO: Implement actual actor messaging
-        Ok(())
-    }
-
-    /// Stub: Create a new handle
-    pub fn new() -> Self {
-        Self
-    }
+pub struct BlockchainHandle {
+    actor_ref: ActorRef,
 }
 
-impl Default for BlockchainHandle {
-    fn default() -> Self {
-        Self::new()
+impl BlockchainHandle {
+    /// Creates a new blockchain handle wrapping the given actor reference.
+    ///
+    /// # Arguments
+    ///
+    /// * `actor_ref` - Reference to the blockchain actor spawned by the actor system
+    pub fn new(actor_ref: ActorRef) -> Self {
+        Self { actor_ref }
+    }
+
+    /// Returns a reference to the underlying actor reference.
+    ///
+    /// Useful for advanced operations like watching the actor for termination.
+    pub fn raw_ref(&self) -> &ActorRef {
+        &self.actor_ref
+    }
+
+    /// Sends a message to the blockchain actor without specifying a sender.
+    ///
+    /// Uses non-blocking `try_send` - if the mailbox is full, returns an error
+    /// immediately rather than waiting.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `M` - Message type, must be `Any + Send + 'static` for actor messaging
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if:
+    /// - The actor's mailbox is full (bounded capacity exceeded)
+    /// - The actor has stopped
+    /// - The actor system is shutting down
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// handle.tell(BlockchainCommand::Initialize)?;
+    /// handle.tell(BlockchainCommand::Import(import_cmd))?;
+    /// ```
+    pub fn tell<M>(&self, msg: M) -> Result<(), String>
+    where
+        M: std::any::Any + Send + 'static,
+    {
+        self.actor_ref.tell(msg).map_err(|e| e.to_string())
+    }
+
+    /// Sends a message to the blockchain actor with an explicit sender.
+    ///
+    /// Uses non-blocking `try_send` - if the mailbox is full, returns an error
+    /// immediately. The sender parameter is type-erased to `impl Any` for API
+    /// flexibility, but is typically another `ActorRef`.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `M` - Message type, must be `Any + Send + 'static`
+    ///
+    /// # Arguments
+    ///
+    /// * `msg` - The message to send
+    /// * `sender` - The sender reference (typically another ActorRef, type-erased for flexibility)
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if:
+    /// - The actor's mailbox is full
+    /// - The actor has stopped
+    /// - The actor system is shutting down
+    ///
+    /// # Note
+    ///
+    /// The current implementation ignores the `sender` parameter because the
+    /// blockchain actor typically doesn't need to reply. This may be extended
+    /// in the future if request/reply patterns are needed.
+    pub fn tell_from<M>(&self, msg: M, _sender: impl std::any::Any) -> Result<(), String>
+    where
+        M: std::any::Any + Send + 'static,
+    {
+        // For now, blockchain messages are fire-and-forget, so sender is unused
+        self.actor_ref.tell(msg).map_err(|e| e.to_string())
+    }
+
+    /// Sends a message to the blockchain actor from an async context.
+    ///
+    /// Uses backpressured `send` - if the mailbox is full, this will await
+    /// capacity rather than returning an error immediately. This is useful
+    /// for critical messages that should not be dropped.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `M` - Message type, must be `Any + Send + 'static`
+    ///
+    /// # Arguments
+    ///
+    /// * `msg` - The message to send
+    /// * `sender` - The sender reference (type-erased, currently unused)
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if:
+    /// - The actor has stopped
+    /// - The actor system is shutting down
+    ///
+    /// # Note
+    ///
+    /// Unlike `tell` and `tell_from`, this method will NOT fail if the mailbox
+    /// is temporarily full - it will wait for capacity. However, it will still
+    /// fail if the actor or system is permanently stopped.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Critical persist operation - wait for mailbox capacity
+    /// handle.tell_from_async(
+    ///     BlockchainCommand::PersistCompleted(event),
+    ///     actor_context.self_ref()
+    /// ).await?;
+    /// ```
+    pub async fn tell_from_async<M>(&self, msg: M, _sender: impl std::any::Any) -> Result<(), String>
+    where
+        M: std::any::Any + Send + 'static,
+    {
+        // Use async send with backpressure for critical messages
+        self.actor_ref.tell_async(msg).await.map_err(|e| e.to_string())
     }
 }
 

@@ -6,15 +6,49 @@ use super::*;
 use neo_protocol::execution::BlockHeader;
 use neo_ledger::HeaderCache;
 
-// Helper function to verify a header with cache
+/// Verifies a block header against the header cache or store.
+///
+/// This function implements the complete header verification logic used during
+/// block header synchronization. It validates:
+/// - Self-consistency (primary index within bounds)
+/// - Continuity (correct index, prev_hash, and timestamp against the previous header)
+/// - Witness verification (cryptographic signature validation against next_consensus)
+///
+/// The verification first attempts to use the cached previous header for efficiency.
+/// If the header cache is empty, it falls back to full verification against the store.
+///
+/// # Reference
+/// C# implementation: neo/Blockchain.cs `Header.Verify()` delegation path
+///
+/// # Arguments
+/// * `header` - The execution block header to verify
+/// * `settings` - Protocol settings (validator count, timing rules)
+/// * `store_cache` - Store snapshot for reading previous blocks
+/// * `header_cache` - Header cache holding recently synchronized headers
+///
+/// # Returns
+/// `true` if the header passes all validation checks, `false` otherwise.
 fn verify_header_with_cache(
-    _header: &BlockHeader,
-    _settings: &ProtocolSettings,
-    _store_cache: &StoreCache,
-    _header_cache: &HeaderCache,
+    header: &BlockHeader,
+    settings: &ProtocolSettings,
+    store_cache: &StoreCache,
+    header_cache: &HeaderCache,
 ) -> bool {
-    // TODO: Implement full verification logic
-    true
+    // Convert execution BlockHeader to payload Header for neo-ledger validation
+    let payload_header = neo_protocol::execution::conversions::convert_ledger_header(header.clone());
+
+    // Use neo_ledger's comprehensive header verification with cache support
+    // This handles:
+    // 1. Self-validation (primary index bounds check)
+    // 2. Validation against previous header (index, prev_hash, timestamp progression)
+    // 3. Witness verification (cryptographic signature against next_consensus script hash)
+    // 4. Automatic fallback to store-based verification when cache is empty
+    neo_ledger::verify_header_with_cache(
+        &payload_header,
+        settings,
+        store_cache,
+        header_cache,
+    )
 }
 
 impl Blockchain {

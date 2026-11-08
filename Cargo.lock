@@ -2591,6 +2591,7 @@ name = "neo-ledger"
 version = "0.20.0"
 dependencies = [
  "base64 0.22.1",
+ "neo-actors",
  "neo-crypto",
  "neo-io",
  "neo-native-contracts",

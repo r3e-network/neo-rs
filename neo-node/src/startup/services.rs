@@ -17,10 +17,8 @@ use neo_protocol::ProtocolSettings;
 use neo_rpc::application_logs::ApplicationLogsService;
 use neo_rpc::server::{
     RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerNode,
-    // RpcServerOracle, // TODO: Re-enable once implemented
-    RpcServerSettings, RpcServerSmartContract,
-    // RpcServerState, // TODO: Re-enable once implemented
-    RpcServerUtilities, RpcServerWallet,
+    RpcServerOracle, RpcServerSettings, RpcServerSmartContract,
+    RpcServerState, RpcServerUtilities, RpcServerWallet,
 };
 use neo_rpc::tokens_tracker::{TokensTracker, TokensTrackerService};
 use neo_wallets::signing::TrustedSignerClient;
@@ -394,15 +392,15 @@ pub(crate) async fn start_rpc_server_if_enabled(
     if has_application_logs {
         server.register_handlers(RpcServerApplicationLogs::register_handlers());
     }
-    // if has_state_service {
-    //     server.register_handlers(RpcServerState::register_handlers()); // TODO: Re-enable
-    // }
+    if has_state_service {
+        server.register_handlers(RpcServerState::register_handlers());
+    }
     if has_tokens_tracker {
         server.register_handlers(neo_rpc::server::RpcServerTokensTracker::register_handlers());
     }
-    // if has_oracle_service {
-    //     server.register_handlers(RpcServerOracle::register_handlers()); // TODO: Re-enable
-    // }
+    if has_oracle_service {
+        server.register_handlers(RpcServerOracle::register_handlers());
+    }
 
     // Privacy mode (strictly opt-in): register the encrypted submission
     // endpoint only when the active TEE runtime has privacy enabled. Without

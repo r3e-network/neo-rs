@@ -101,16 +101,17 @@ impl ProtocolSettings {
 
         // Build a minimal config and convert
         let config = ConfigSettings {
-            network: magic as i64,
+            network: magic,
             address_version,
             standby_validators: standby_committee,
-            seed_list,
-            ms_per_block: milliseconds_per_block as i64,
-            max_transactions_per_block: max_transactions_per_block as i64,
-            memory_pool_max_transactions: memory_pool_max_transactions as i64,
-            max_trace_able_blocks: 2_102_400,
-            initial_gas_distribution: 52_000_000,
             validators_count: 7,
+            seed_list,
+            ms_per_block: milliseconds_per_block as u64,
+            max_transactions_per_block,
+            max_valid_until_block_increment: 5760,
+            memory_pool_max_transactions,
+            max_traceable_blocks: 2_102_400,
+            initial_gas_distribution: 52_000_000,
             hardforks: Default::default(),
         };
 

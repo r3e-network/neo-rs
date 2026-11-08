@@ -15,6 +15,7 @@ description = "Ledger persistence and block/transaction validation for neo-rs"
 
 [dependencies]
 # Internal crates (registered in workspace.dependencies)
+neo-actors = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 neo-native-contracts = { workspace = true }

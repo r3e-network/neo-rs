@@ -73,8 +73,7 @@ use crate::mempool::MemoryPool;
 use crate::network::p2p::{
     LocalNode, LocalNodeHandle, TaskManager, TaskManagerHandle, timeouts,
 };
-use neo_primitives::LogLevel;
-// ExtensionsUtility was removed - utilities should be inlined
+use neo_primitives::{LogLevel, ExtensionsUtility};
 use neo_ledger::{LedgerContext, HeaderCache};
 use neo_storage::persistence::{
     StoreCache, StoreFactory, store::Store, store_provider::StoreProvider,
@@ -90,15 +89,6 @@ pub use neo_protocol::protocol_settings::ProtocolSettings;
 use neo_smart_contract::error::{CoreError, CoreResult};
 #[cfg(test)]
 use std::sync::LazyLock;
-
-// Stub for ExtensionsUtility - removed from neo-core
-struct ExtensionsUtility;
-
-impl ExtensionsUtility {
-    fn set_logging(_callback: Option<Box<dyn Fn(String, LogLevel, String) + Send + Sync>>) {
-        // Stub implementation - logging hook registration would go here
-    }
-}
 
 // initialise_plugins and to_core_error have been extracted to super::helpers module
 #[cfg(test)]

@@ -55,35 +55,3 @@ pub use neo_native_contracts::create_genesis_block;
 
 // Re-export ApplicationExecuted from neo-protocol
 pub use neo_protocol::execution::ApplicationExecuted;
-
-/// Main ledger type.
-///
-/// This is a simplified stub to satisfy compilation requirements.
-/// The full implementation would include block storage, indexing, and querying.
-pub struct Ledger {
-    // Internal fields would go here
-}
-
-impl Ledger {
-    /// Creates a new empty ledger.
-    pub fn new() -> Self {
-        Self {}
-    }
-
-    /// Inserts a block into the ledger.
-    pub fn insert_block(&self, _block: Block) -> Result<(), LedgerError> {
-        // Stub implementation
-        Ok(())
-    }
-
-    /// Gets the current block height.
-    pub fn current_height(&self) -> u32 {
-        0
-    }
-}
-
-impl Default for Ledger {
-    fn default() -> Self {
-        Self::new()
-    }
-}

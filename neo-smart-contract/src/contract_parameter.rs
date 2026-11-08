@@ -109,7 +109,9 @@ impl ContractParameter {
                 let hex_str = value_json
                     .as_str()
                     .ok_or_else(|| "Invalid Hash160, expected hex string".to_string())?;
-                let hash = UInt160::from_hex(hex_str.trim_start_matches("0x"))
+                let bytes = hex::decode(hex_str.trim_start_matches("0x"))
+                    .map_err(|e| format!("Invalid Hash160 hex: {}", e))?;
+                let hash = UInt160::from_bytes(&bytes)
                     .map_err(|e| format!("Invalid Hash160: {}", e))?;
                 ContractParameterValue::Hash160(hash)
             }
@@ -117,7 +119,9 @@ impl ContractParameter {
                 let hex_str = value_json
                     .as_str()
                     .ok_or_else(|| "Invalid Hash256, expected hex string".to_string())?;
-                let hash = UInt256::from_hex(hex_str.trim_start_matches("0x"))
+                let bytes = hex::decode(hex_str.trim_start_matches("0x"))
+                    .map_err(|e| format!("Invalid Hash256 hex: {}", e))?;
+                let hash = UInt256::from_bytes(&bytes)
                     .map_err(|e| format!("Invalid Hash256: {}", e))?;
                 ContractParameterValue::Hash256(hash)
             }

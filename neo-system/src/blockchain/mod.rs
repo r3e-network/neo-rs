@@ -392,49 +392,12 @@ mod block_processing;
 mod handlers;
 mod transaction;
 
-// Re-export types from neo-ledger, but shadow BlockchainHandle with our own
+// Re-export types from neo-ledger
 pub use neo_ledger::blockchain::{
-    BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted,
+    BlockchainCommand, BlockchainHandle, FillCompleted, FillMemoryPool, Import, ImportCompleted,
     InventoryPayload, PersistCompleted, PersistFailed, PreverifyCompleted, RelayResult, Reverify,
     ReverifyItem,
 };
-
-// Our own BlockchainHandle that wraps ActorRef
-#[derive(Clone, Debug)]
-pub struct BlockchainHandle {
-    actor_ref: ActorRef,
-}
-
-impl BlockchainHandle {
-    pub fn new(actor_ref: ActorRef) -> Self {
-        Self { actor_ref }
-    }
-
-    pub fn raw_ref(&self) -> &ActorRef {
-        &self.actor_ref
-    }
-
-    pub fn tell<M>(&self, msg: M) -> Result<(), String>
-    where
-        M: std::any::Any + Send + 'static,
-    {
-        self.actor_ref.tell(msg).map_err(|e| e.to_string())
-    }
-
-    pub async fn tell_from_async<M>(&self, msg: M, _sender: impl std::any::Any) -> Result<(), String>
-    where
-        M: std::any::Any + Send + 'static,
-    {
-        self.actor_ref.tell(msg).map_err(|e| e.to_string())
-    }
-
-    pub fn tell_from<M>(&self, msg: M, _sender: impl std::any::Any) -> Result<(), String>
-    where
-        M: std::any::Any + Send + 'static,
-    {
-        self.actor_ref.tell(msg).map_err(|e| e.to_string())
-    }
-}
 
 #[cfg(test)]
 mod tests;

@@ -20,6 +20,24 @@
 //! Logging (`tracing`) is not in this crate's allowed dependency set, so the
 //! diagnostic branches of the original are collapsed into the same structured
 //! [`crate::block_validation`] outcomes; the caller decides what to log.
+//!
+//! # Production Integration
+//!
+//! The [`TaskManagerPorts`] bundle must be wired with real adapters:
+//!
+//! * **`ledger_query`**: Adapter wrapping [`neo_ledger::blockchain::BlockchainHandle`]
+//!   to implement [`LedgerQueryPort`]. Queries the canonical chain state (current
+//!   height, headers, block lookup by hash/index).
+//! * **`mempool`**: Adapter wrapping the mempool service (e.g. `LockedMempoolService`
+//!   from `crate::mempool::services`) to implement [`MempoolQueryPort`]. Used for
+//!   transaction dedup and capacity checks.
+//! * **`peer_command`**: Adapter translating peer commands to actor sends. Already
+//!   implemented for the RemoteNode/P2P layer.
+//! * **`persistence_events`**: Event stream adapter subscribing to
+//!   `PersistCompleted`, `PersistFailed`, and `RelayResult` events from the
+//!   blockchain/system event bus, translating them to [`PersistenceEvent`] values.
+//!
+//! Test code uses minimal stub implementations that return empty results.
 
 use super::block_validation::{
     BlockHashMatch, IncomingBlockOutcome, PersistedBlockMatch, block_matches_hash,
@@ -389,10 +407,10 @@ mod tests {
     fn harness() -> Harness {
         let peer_command = Arc::new(RecordingPeerCommand::default());
         let ports = TaskManagerPorts {
-            ledger_query: Arc::new(StubLedger),
-            mempool: Arc::new(StubMempool),
+            ledger_query: Arc::new(TestLedger::default()),
+            mempool: Arc::new(TestMempool::default()),
             peer_command: peer_command.clone(),
-            persistence_events: Arc::new(StubEvents),
+            persistence_events: Arc::new(TestPersistenceEvents::default()),
         };
         Harness { ports, peer_command }
     }
@@ -496,10 +514,15 @@ mod tests {
         assert!(state.on_relay_result(&h.ports, &ok_relay).is_empty());
     }
 
-    // --- Stub ports (only peer_command is exercised by the completion flow) ---
+    // --- Test-only port implementations (isolated from production logic) ---
 
-    struct StubLedger;
-    impl crate::ports::LedgerQueryPort for StubLedger {
+    /// Test-only ledger for unit tests.
+    ///
+    /// Production code wires a real ledger adapter implementing LedgerQueryPort.
+    #[derive(Default)]
+    struct TestLedger;
+
+    impl crate::ports::LedgerQueryPort for TestLedger {
         fn current_index(&self) -> u32 {
             0
         }
@@ -523,8 +546,13 @@ mod tests {
         }
     }
 
-    struct StubMempool;
-    impl crate::ports::MempoolQueryPort for StubMempool {
+    /// Test-only mempool for unit tests.
+    ///
+    /// Production code wires a real mempool adapter implementing MempoolQueryPort.
+    #[derive(Default)]
+    struct TestMempool;
+
+    impl crate::ports::MempoolQueryPort for TestMempool {
         fn capacity(&self) -> usize {
             0
         }
@@ -548,8 +576,13 @@ mod tests {
         }
     }
 
-    struct StubEvents;
-    impl crate::ports::PersistenceEventPort for StubEvents {
+    /// Test-only persistence event source for unit tests.
+    ///
+    /// Production code wires a real event stream adapter implementing PersistenceEventPort.
+    #[derive(Default)]
+    struct TestPersistenceEvents;
+
+    impl crate::ports::PersistenceEventPort for TestPersistenceEvents {
         fn subscribe(&self) -> tokio::sync::mpsc::Receiver<crate::ports::PersistenceEvent> {
             let (_tx, rx) = tokio::sync::mpsc::channel(1);
             rx
