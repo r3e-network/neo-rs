@@ -128,7 +128,7 @@ exclude = [
 version = "0.20.0"
 edition = "2024"
 # MSRV equals the rust-toolchain.toml pin; see docs/TOOLCHAIN.md.
-rust-version = "1.99"
+rust-version = "1.95"
 authors = [
     "R3E Network <jimmy@r3e.network>"
 ]
@@ -242,6 +242,8 @@ zeroize = { version = "1.8", features = ["derive", "serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json", "ansi"] }
 tracing-appender = "0.2"
+tracing-timing = "0.6"
+tracing-flame = "0.2"
 # CLI
 clap = { version = "=4.5.53", features = ["derive", "env", "unicode"] }
 
@@ -253,7 +255,8 @@ k256 = { version = "0.13", features = ["ecdsa", "sha256"] }
 p256 = { version = "0.13", features = ["ecdsa", "sha256"] }
 
 # BLS12-381 cryptography
-blst = "0.3"
+# portable feature: Pure Rust fallback for platforms without assembly support (Windows MSVC)
+blst = { version = "0.3", features = ["portable"] }
 
 # Hashing
 sha2 = "0.10"
