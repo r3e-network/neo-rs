@@ -106,7 +106,8 @@ fn store_factory_thread_safety() {
                 let store = StoreFactory::get_store("Memory", &format!("thread_{}", i))
                     .expect("store creation");
                 let snapshot = store.snapshot();
-                snapshot.try_get(&[0x42])
+                let key = vec![0x42];
+                snapshot.try_get(&key)
             })
         })
         .collect();
