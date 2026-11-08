@@ -60,19 +60,51 @@ impl Extensible {
         }
     }
 
-    /// Stub: Verify the extensible payload against protocol settings and snapshot.
-    /// TODO: Implement full validation including whitelist checking.
+    /// Verify the extensible payload against protocol settings and snapshot.
+    ///
+    /// Validation includes:
+    /// 1. Block height range validation (valid_block_start < valid_block_end)
+    /// 2. Sender whitelist checking (sender must be in the allowed list for this category)
+    /// 3. Size limits (data must not exceed MAX_DATA_LENGTH)
+    /// 4. Category format validation
+    ///
+    /// Note: Witness verification is performed separately by the caller using
+    /// neo_ledger::verify_witness functions.
+    ///
+    /// Reference: C# Neo ExtensiblePayload.Verify()
     pub fn verify(
         &self,
         _settings: &crate::protocol_settings::ProtocolSettings,
         _snapshot: &dyn std::any::Any,
-        _whitelist: &std::collections::HashSet<UInt160>,
+        whitelist: &std::collections::HashSet<UInt160>,
     ) -> bool {
-        // Basic structural validation
+        // 1. Validate block height range
         if self.valid_block_start >= self.valid_block_end {
             return false;
         }
-        // TODO: Add full validation logic
+
+        // 2. Validate data size
+        if self.data.len() > MAX_DATA_LENGTH {
+            return false;
+        }
+
+        // 3. Validate category length
+        if self.category.len() > MAX_CATEGORY_LENGTH {
+            return false;
+        }
+
+        // 4. Check sender against whitelist
+        // The whitelist contains addresses authorized to send extensible payloads
+        // of this category (typically consensus nodes for dBFT messages)
+        if !whitelist.contains(&self.sender) {
+            return false;
+        }
+
+        // 5. Additional validation: category should not be empty
+        if self.category.is_empty() {
+            return false;
+        }
+
         true
     }
 
