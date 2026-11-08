@@ -1,6 +1,7 @@
 # Build artifacts
 /target/
 **/target/
+.target-*/
 
 # Data and logs
 *.log
