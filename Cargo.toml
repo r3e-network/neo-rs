@@ -44,6 +44,12 @@ members = [
     "neo-system",
     # Wallet primitives (BIP-32 / BIP-39)
     "neo-wallets",
+    # Memory pool for unconfirmed transactions
+    "neo-mempool",
+    # Peer-to-peer networking
+    "neo-p2p",
+    # Oracle service for external data
+    "neo-oracle",
 
     # TEE (Trusted Execution Environment) support
     # Optional feature-gated integration via neo-node (`--features tee`)
@@ -154,6 +160,9 @@ neo-ledger = { path = "neo-ledger" }
 neo-smart-contract = { path = "neo-smart-contract" }
 neo-system = { path = "neo-system" }
 neo-wallets = { path = "neo-wallets" }
+neo-mempool = { path = "neo-mempool" }
+neo-p2p = { path = "neo-p2p" }
+neo-oracle = { path = "neo-oracle" }
 
 # Infrastructure layer
 neo-tee = { path = "neo-tee", version = "0.20.0" }

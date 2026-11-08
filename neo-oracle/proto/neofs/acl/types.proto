@@ -1,0 +1,250 @@
+syntax = "proto3";
+
+package neo.fs.v2.acl;
+
+import "refs/types.proto";
+
+option csharp_namespace = "Neo.FileStorage.API.Acl";
+option go_package = "github.com/nspcc-dev/neofs-sdk-go/proto/acl";
+
+// Target role of the access control rule in access control list.
+enum Role {
+  // Unspecified  role, default value
+  ROLE_UNSPECIFIED = 0;
+
+  // User target rule is applied if sender is the owner of the container
+  USER = 1;
+
+  // System target rule is applied if sender is a storage node within the
+  // container or an inner ring node
+  SYSTEM = 2;
+
+  // Others target rule is applied if sender is neither a user nor a system target
+  OTHERS = 3;
+}
+
+// MatchType is an enumeration of match types.
+enum MatchType {
+  // Unspecified match type, default value.
+  MATCH_TYPE_UNSPECIFIED = 0;
+
+  // Return true if strings are equal
+  STRING_EQUAL = 1;
+
+  // Return true if strings are different
+  STRING_NOT_EQUAL = 2;
+
+  // Absence of attribute
+  NOT_PRESENT = 3;
+
+  // Numeric 'greater than'
+  NUM_GT = 4;
+
+  // Numeric 'greater or equal than'
+  NUM_GE = 5;
+
+  // Numeric 'less than'
+  NUM_LT = 6;
+
+  // Numeric 'less or equal than'
+  NUM_LE = 7;
+}
+
+// Request's operation type to match if the rule is applicable to a particular
+// request.
+enum Operation {
+  // Unspecified operation, default value
+  OPERATION_UNSPECIFIED = 0;
+
+  // Get
+  GET = 1;
+
+  // Head
+  HEAD = 2;
+
+  // Put
+  PUT = 3;
+
+  // Delete
+  DELETE = 4;
+
+  // Search
+  SEARCH = 5;
+
+  // GetRange
+  GETRANGE = 6;
+
+  // GetRangeHash
+  GETRANGEHASH = 7;
+}
+
+// Rule execution result action. Either allows or denies access if the rule's
+// filters match.
+enum Action {
+  // Unspecified action, default value
+  ACTION_UNSPECIFIED = 0;
+
+  // Allow action
+  ALLOW = 1;
+
+  // Deny action
+  DENY = 2;
+}
+
+// Enumeration of possible sources of Headers to apply filters.
+enum HeaderType {
+  // Unspecified header, default value.
+  HEADER_UNSPECIFIED = 0;
+
+  // Filter request headers
+  REQUEST = 1;
+
+  // Filter object headers
+  OBJECT = 2;
+
+  // Filter service headers. These are not processed by NeoFS nodes and
+  // exist for service use only.
+  SERVICE = 3;
+}
+
+// Describes a single eACL rule.
+message EACLRecord {
+  // NeoFS request Verb to match
+  Operation operation = 1 [json_name = "operation"];
+
+  // Rule execution result. Either allows or denies access if filters match.
+  Action action = 2 [json_name = "action"];
+
+  // Filter to check particular properties of the request or the object.
+  //
+  // The `value` field must be empty if `match_type` is an unary operator
+  // (e.g. `NOT_PRESENT`). If `match_type` field is numeric (e.g. `NUM_GT`),
+  // the `value` field must be a base-10 integer.
+  //
+  // By default `key` field refers to the corresponding object's `Attribute`.
+  // Some Object's header fields can also be accessed by adding `$Object:`
+  // prefix to the name. For such attributes, field 'match_type' must not be
+  // 'NOT_PRESENT'. Here is the list of fields available via this prefix:
+  //
+  // * $Object:version \
+  //   version
+  // * $Object:objectID \
+  //   object_id
+  // * $Object:containerID \
+  //   container_id
+  // * $Object:ownerID \
+  //   owner_id
+  // * $Object:creationEpoch \
+  //   creation_epoch
+  // * $Object:payloadLength \
+  //   payload_length
+  // * $Object:payloadHash \
+  //   payload_hash
+  // * $Object:objectType \
+  //   object_type
+  // * $Object:homomorphicHash \
+  //   homomorphic_hash
+  //
+  // Numeric `match_type` field can only be used with `$Object:creationEpoch`
+  // and `$Object:payloadLength` system attributes.
+  //
+  // Please note, that if request or response does not have object's headers of
+  // full object (Range, RangeHash, Search, Delete), it will not be possible to
+  // filter by object header fields or user attributes. From the well-known list
+  // only `$Object:objectID` and `$Object:containerID` will be available, as
+  // it's possible to take that information from the requested address.
+  message Filter {
+    // Define if Object or Request header will be used
+    HeaderType header_type = 1 [json_name = "headerType"];
+
+    // Match operation type
+    MatchType match_type = 2 [json_name = "matchType"];
+
+    // Name of the Header to use
+    string key = 3 [json_name = "key"];
+
+    // Expected Header Value or pattern to match
+    string value = 4 [json_name = "value"];
+  }
+
+  // List of filters to match and see if rule is applicable
+  repeated Filter filters = 3 [json_name = "filters"];
+
+  // Target to apply ACL rule. Can be a subject's role class or a list of public
+  // keys to match.
+  message Target {
+    // Target subject's role class
+    Role role = 1 [json_name = "role"];
+
+    // List of 25-byte accounts to identify target subjects.
+    // 33-byte public keys are also supported, however, they are deprecated and script hashes should be derived from them.
+    repeated bytes keys = 2 [json_name = "keys"];
+  }
+  // List of target subjects to apply ACL rule to
+  repeated Target targets = 4 [json_name = "targets"];
+}
+
+// Extended ACL rules table. A list of ACL rules defined additionally to Basic
+// ACL. Extended ACL rules can be attached to a container and can be updated
+// or may be defined in `BearerToken` structure. Please see the corresponding
+// NeoFS Technical Specification section for detailed description.
+message EACLTable {
+  // eACL format version. Effectively, the version of API library used to create
+  // eACL Table.
+  neo.fs.v2.refs.Version version = 1 [json_name = "version"];
+
+  // Identifier of the container that should use given access control rules
+  neo.fs.v2.refs.ContainerID container_id = 2 [json_name = "containerID"];
+
+  // List of Extended ACL rules
+  repeated EACLRecord records = 3 [json_name = "records"];
+}
+
+// BearerToken allows to attach signed Extended ACL rules to the request in
+// `RequestMetaHeader`. If container's Basic ACL rules allow, the attached rule
+// set will be checked instead of one attached to the container itself. Just
+// like [JWT](https://jwt.io), it has a limited lifetime and scope, hence can be
+// used in the similar use cases, like providing authorisation to externally
+// authenticated party.
+//
+// BearerToken can be issued only by the container's owner and must be signed using
+// the key associated with the container's `OwnerID`.
+message BearerToken {
+  // Bearer Token body structure contains Extended ACL table issued by the container
+  // owner with additional information preventing token abuse.
+  message Body {
+    // Table of Extended ACL rules to use instead of the ones attached to the
+    // container. If it contains `container_id` field, bearer token is only
+    // valid for this specific container. Otherwise, any container of the same owner
+    // is allowed.
+    EACLTable eacl_table = 1 [json_name = "eaclTable"];
+
+    // `OwnerID` defines to whom the token was issued. It must match the request
+    // originator's `OwnerID`. If empty, any token bearer will be accepted.
+    neo.fs.v2.refs.OwnerID owner_id = 2 [json_name = "ownerID"];
+
+    // Lifetime parameters of the token. Field names taken from
+    // [rfc7519](https://tools.ietf.org/html/rfc7519).
+    message TokenLifetime {
+      // Expiration epoch, the last epoch when token is valid.
+      uint64 exp = 1 [json_name = "exp"];
+
+      // Not valid before epoch, the first epoch when token is valid.
+      uint64 nbf = 2 [json_name = "nbf"];
+
+      // Issued at Epoch
+      uint64 iat = 3 [json_name = "iat"];
+    }
+    // Token expiration and valid time period parameters
+    TokenLifetime lifetime = 3 [json_name = "lifetime"];
+
+    // Token issuer's user ID in NeoFS. It must equal to the related
+    // container's owner.
+    neo.fs.v2.refs.OwnerID issuer = 4 [json_name = "issuer"];
+  }
+  // Bearer Token body
+  Body body = 1 [json_name = "body"];
+
+  // Signature of BearerToken body
+  neo.fs.v2.refs.Signature signature = 2 [json_name = "signature"];
+}
