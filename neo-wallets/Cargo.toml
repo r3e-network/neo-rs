@@ -54,6 +54,9 @@ aes = "0.8"
 cbc = "0.1"
 scrypt = "0.11"
 
+[dev-dependencies]
+chrono = { workspace = true }
+
 [features]
 # Aggregate gate so `neo-wallets` participates in the workspace-wide
 # `--features full` build and the per-crate acceptance check. The crate has no

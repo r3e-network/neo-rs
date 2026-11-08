@@ -19,7 +19,11 @@ path = "src/main.rs"
 
 [features]
 default = []
-full = []
+full = ["neo-storage/rocksdb"]
+# Enable profiling support (metrics always available, full profiling on Unix with profiling-full)
+profiling = []
+# Full profiling with CPU profiler (Unix only, requires pprof)
+profiling-full = ["profiling", "pprof", "tracing-timing", "tracing-flame"]
 # Enable TEE (Trusted Execution Environment) support
 tee = ["neo-tee"]
 # Enable TEE with SGX hardware
@@ -115,8 +119,17 @@ rand = { workspace = true }
 url = { workspace = true }
 num_cpus = { workspace = true }
 mimalloc = { version = "0.1", default-features = false }
-# Dynamic loading of real PKCS#11 HSM modules (same pattern as neo-tee's SGX adapter)
-libloading = "0.8"
+base64 = { workspace = true }
+dashmap = { workspace = true }
+bincode = { workspace = true }
+
+# Profiling support
+tracing-timing = { workspace = true, optional = true }
+tracing-flame = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+# pprof only works on Unix platforms
+pprof = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
