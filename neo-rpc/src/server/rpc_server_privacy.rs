@@ -31,7 +31,20 @@ use neo_protocol::payloads::transaction::Transaction;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-// TODO: MempoolCiphertext stub - needs proper TEE implementation
+/// Encrypted mempool transaction envelope (privacy mode).
+///
+/// This is a stub implementation that accepts the wire format but does not
+/// provide actual TEE (Trusted Execution Environment) decryption.
+///
+/// Production deployment requires:
+/// - TEE integration (Intel SGX, AMD SEV, or ARM TrustZone)
+/// - AEAD decryption with transaction hash as associated data
+/// - Attestation report generation for client verification
+/// - Key management and secure enclave initialization
+///
+/// The stub allows the RPC endpoint to be tested without TEE hardware,
+/// enabling development of the surrounding infrastructure (RPC handlers,
+/// configuration, client tooling) in parallel with TEE integration.
 #[derive(Clone)]
 pub struct MempoolCiphertext {
     data: Vec<u8>,

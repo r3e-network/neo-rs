@@ -12,8 +12,17 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::oneshot;
 
-// TODO: This struct is a temporary compatibility shim until the relay system is refactored
-// to use the proper types from neo-system or neo-ledger
+/// Relay response wrapper for RPC endpoints.
+///
+/// This struct bridges the blockchain's VerifyResult and the RPC layer's
+/// JSON response format. It wraps the verification result with the transaction
+/// or block hash for successful relay operations.
+///
+/// The separation between blockchain verification (VerifyResult) and RPC
+/// response formatting (RelayResponse -> JSON) allows:
+/// - Blockchain layer to remain RPC-agnostic
+/// - RPC layer to handle protocol-specific error codes
+/// - Type-safe relay result passing through the actor system
 #[derive(Debug, Clone)]
 pub struct RelayResponse {
     pub result: VerifyResult,
