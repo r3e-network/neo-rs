@@ -178,12 +178,27 @@ impl AssetDescriptor {
     }
 }
 
-// TODO: ContractParametersContext stub - needs proper implementation
+/// Context for collecting signatures for multi-signature transactions.
+///
+/// This structure manages the process of collecting signatures from multiple parties
+/// for transactions that require multi-signature authorization.
 struct ContractParametersContext {
-    _snapshot: Arc<DataCache>,
+    snapshot: Arc<DataCache>,
     tx: Transaction,
-    _network: u32,
-    _type_name: Option<String>,
+    network: u32,
+    type_name: Option<String>,
+    /// Map of script hash to collected signatures and contract info
+    signatures: std::collections::HashMap<UInt160, ContractSignatures>,
+}
+
+/// Signatures collected for a specific contract
+#[derive(Debug, Clone)]
+struct ContractSignatures {
+    contract: neo_smart_contract::Contract,
+    /// Map of public key (in bytes) to signature
+    signatures: std::collections::HashMap<Vec<u8>, Vec<u8>>,
+    /// Number of signatures required
+    required: usize,
 }
 
 impl ContractParametersContext {
@@ -194,44 +209,148 @@ impl ContractParametersContext {
         type_name: Option<String>,
     ) -> Self {
         Self {
-            _snapshot: snapshot,
+            snapshot,
             tx,
-            _network: network,
-            _type_name: type_name,
+            network,
+            type_name,
+            signatures: std::collections::HashMap::new(),
         }
     }
 
-    fn add_contract(&mut self, _contract: neo_smart_contract::Contract) {
-        // TODO: Implement contract witness generation
+    fn add_contract(&mut self, contract: neo_smart_contract::Contract) {
+        let script_hash = contract.script_hash();
+
+        // Determine required signature count based on contract script
+        let required = self.parse_multisig_required(&contract).unwrap_or(1);
+
+        self.signatures.insert(
+            script_hash,
+            ContractSignatures {
+                contract,
+                signatures: std::collections::HashMap::new(),
+                required,
+            },
+        );
     }
 
     fn add_signature(
         &mut self,
-        _contract: &neo_smart_contract::Contract,
-        _public_key: &ECPoint,
-        _signature: Vec<u8>,
+        contract: &neo_smart_contract::Contract,
+        public_key: &ECPoint,
+        signature: Vec<u8>,
     ) -> Result<bool, String> {
-        // TODO: Implement signature addition
-        Ok(true)
+        let script_hash = contract.script_hash();
+
+        // Ensure contract is registered
+        if !self.signatures.contains_key(&script_hash) {
+            self.add_contract(contract.clone());
+        }
+
+        let contract_sigs = self.signatures.get_mut(&script_hash)
+            .ok_or_else(|| "Contract not found".to_string())?;
+
+        // Add signature for this public key
+        let pk_bytes = public_key.encode_point(true)
+            .map_err(|e| format!("Failed to encode public key: {}", e))?;
+        contract_sigs.signatures.insert(pk_bytes, signature);
+
+        // Return true if this contract now has enough signatures
+        Ok(contract_sigs.signatures.len() >= contract_sigs.required)
     }
 
     fn completed(&self) -> bool {
-        // TODO: Check if all signatures are collected
-        false
+        // Check if all signers have enough signatures
+        for signer in self.tx.signers() {
+            if let Some(contract_sigs) = self.signatures.get(&signer.account) {
+                if contract_sigs.signatures.len() < contract_sigs.required {
+                    return false;
+                }
+            } else {
+                // Missing contract for this signer
+                return false;
+            }
+        }
+        true
     }
 
     fn witnesses(&self) -> Vec<Witness> {
-        // TODO: Return constructed witnesses
-        Vec::new()
+        let mut witnesses = Vec::new();
+
+        for signer in self.tx.signers() {
+            if let Some(contract_sigs) = self.signatures.get(&signer.account) {
+                // Build witness from collected signatures
+                let witness = self.build_witness(contract_sigs);
+                witnesses.push(witness);
+            }
+        }
+
+        witnesses
     }
 
     fn to_json(&self) -> Value {
-        // TODO: Return proper JSON representation
+        let items: Vec<Value> = self.signatures.iter().map(|(script_hash, contract_sigs)| {
+            let signatures_json: Vec<Value> = contract_sigs.signatures.iter()
+                .map(|(pk, sig)| json!({
+                    "publicKey": hex::encode(pk),
+                    "signature": hex::encode(sig)
+                }))
+                .collect();
+
+            json!({
+                "scriptHash": script_hash.to_string(),
+                "required": contract_sigs.required,
+                "collected": contract_sigs.signatures.len(),
+                "signatures": signatures_json
+            })
+        }).collect();
+
         json!({
-            "type": "Neo.Network.P2P.Payloads.Transaction",
+            "type": self.type_name.as_deref().unwrap_or("Neo.Network.P2P.Payloads.Transaction"),
             "hash": self.tx.hash().to_string(),
-            "data": "not implemented",
+            "network": self.network,
+            "items": items,
+            "completed": self.completed()
         })
+    }
+
+    /// Parse multisig contract to determine required signature count
+    fn parse_multisig_required(&self, contract: &neo_smart_contract::Contract) -> Option<usize> {
+        // Neo multisig script format: PUSH(m) PUSH(pubkey1) ... PUSH(pubkeyn) PUSH(n) SYSCALL(CheckMultisig)
+        let script = &contract.script;
+        if script.len() < 3 {
+            return None;
+        }
+
+        // First byte should be PUSH for m (required count)
+        // OpCode: PUSH1=0x51, PUSH2=0x52, ..., PUSH16=0x60
+        let first_byte = script[0];
+        if (0x51..=0x60).contains(&first_byte) {
+            Some((first_byte - 0x50) as usize)
+        } else {
+            None
+        }
+    }
+
+    /// Build witness from collected signatures
+    fn build_witness(&self, contract_sigs: &ContractSignatures) -> Witness {
+        let mut invocation_script = Vec::new();
+
+        // Sort signatures by public key order (required by Neo)
+        let mut sorted_sigs: Vec<_> = contract_sigs.signatures.iter().collect();
+        sorted_sigs.sort_by_key(|(pk, _)| pk.as_slice());
+
+        // Build invocation script with signatures
+        for (_, signature) in sorted_sigs.iter().take(contract_sigs.required) {
+            // PUSHDATA1 opcode (0x0c) followed by length and signature
+            invocation_script.push(0x0c);
+            invocation_script.push(signature.len() as u8);
+            invocation_script.extend_from_slice(signature);
+        }
+
+        Witness {
+            invocation_script,
+            verification_script: contract_sigs.contract.script.clone(),
+        }
     }
 }
 
