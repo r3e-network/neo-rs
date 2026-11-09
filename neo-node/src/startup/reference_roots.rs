@@ -36,7 +36,7 @@ pub(super) fn configure_live_reference_roots(system: &NeoSystem) -> Result<()> {
     let cache = Arc::new(LiveReferenceRootCache::new(Arc::new(
         move |start, count| fetch_reference_root_batch(&fetch_endpoints, start, count),
     )));
-    state_store.set_reference_root_fetcher(Arc::new(move |height| cache.get(height)));
+    state_store.set_reference_root_fetcher(Arc::new(move |height| cache.get(height).ok()));
     info!(
         target: "neo::state_service",
         endpoints = ?endpoints,

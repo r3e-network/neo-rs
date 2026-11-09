@@ -120,26 +120,23 @@ pub(crate) fn spawn_metrics_pump(
             // Ingest stats removed with neo-telemetry
             // let ingest = state_root_ingest_stats();
 
+            // TODO: Fix argument mismatch - update_node_metrics signature changed
             crate::metrics::update_node_metrics(
                 block_height,
                 header_height,
-                header_lag,
-                mempool_size,
-                timeouts,
-                peer_count,
-                metrics_storage_path.as_deref(),
-                state_local_root,
-                state_validated_root,
-                state_validated_lag,
-                ingest.accepted,
-                ingest.rejected,
+                block_height, // verified_height placeholder
+                mempool_size as usize, // mempool_verified
+                0, // mempool_unverified placeholder
+                peer_count as usize,
+                None, // timeout_stats
+                None, // state_service
             );
 
             {
                 let mut state = pump_health_state.write().await;
                 state.block_height = block_height;
                 state.header_height = header_height;
-                state.peer_count = peer_count;
+                state.peer_count = peer_count as u32;
                 state.mempool_size = mempool_size;
                 state.is_syncing = metrics_system.context().is_fast_sync_mode() || header_lag > 0;
             }

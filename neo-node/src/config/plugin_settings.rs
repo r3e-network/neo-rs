@@ -1,9 +1,8 @@
 use anyhow::{Context, Result, bail};
-use neo_primitives::UnhandledExceptionPolicy;
 use neo_primitives::constants::MAX_BLOCK_SIZE;
 use neo_rpc::application_logs::ApplicationLogsSettings;
 use neo_rpc::tokens_tracker::TokensTrackerSettings;
-use neo_system::state_service::StateServiceSettings;
+use neo_system::state_service::{StateServiceSettings, UnhandledExceptionPolicy as StateExceptionPolicy};
 use neo_system::oracle_service::OracleServiceSettings;
 use serde::Deserialize;
 use std::{env, fs, path::PathBuf, time::Duration};
@@ -417,9 +416,9 @@ fn build_application_logs_settings(
     let network = network.unwrap_or(default_network);
     let max_stack_size = max_stack_size.unwrap_or(u16::MAX as usize);
     let debug = debug.unwrap_or(false);
-    let exception_policy = parse_unhandled_exception_policy(
+    let exception_policy = parse_primitives_exception_policy(
         unhandled_exception_policy.as_deref(),
-        UnhandledExceptionPolicy::Ignore,
+        neo_primitives::UnhandledExceptionPolicy::Ignore,
     );
     ApplicationLogsSettings::new(true, network, path, max_stack_size, debug, exception_policy)
 }
@@ -440,7 +439,7 @@ fn build_state_service_settings(
     let max_find_result_items = max_find_result_items.unwrap_or(100);
     let exception_policy = parse_unhandled_exception_policy(
         unhandled_exception_policy.as_deref(),
-        UnhandledExceptionPolicy::StopPlugin,
+        StateExceptionPolicy::StopPlugin,
     );
     StateServiceSettings {
         full_state,
@@ -471,7 +470,7 @@ fn build_tokens_tracker_settings(
     }
     if let Some(policy) = unhandled_exception_policy {
         settings.exception_policy =
-            parse_unhandled_exception_policy(Some(policy.as_str()), settings.exception_policy);
+            parse_primitives_exception_policy(Some(policy.as_str()), settings.exception_policy);
     }
     settings
 }
@@ -494,7 +493,7 @@ fn build_dbft_settings(
         network: default_network,
         max_block_size: MAX_BLOCK_SIZE as u32,
         max_block_system_fee: 150_000_000_000,
-        exception_policy: UnhandledExceptionPolicy::StopNode,
+        exception_policy: neo_primitives::UnhandledExceptionPolicy::StopNode,
     };
 
     if let Some(value) = recovery_logs {
@@ -515,7 +514,7 @@ fn build_dbft_settings(
     }
     if let Some(policy) = unhandled_exception_policy {
         settings.exception_policy =
-            parse_unhandled_exception_policy(Some(policy.as_str()), settings.exception_policy);
+            parse_primitives_exception_policy(Some(policy.as_str()), settings.exception_policy);
     }
 
     settings
@@ -565,7 +564,7 @@ fn build_oracle_service_settings(
     }
     if let Some(policy) = unhandled_exception_policy {
         settings.exception_policy =
-            parse_unhandled_exception_policy(Some(policy.as_str()), settings.exception_policy);
+            parse_primitives_exception_policy(Some(policy.as_str()), settings.exception_policy);
     }
     settings.normalize();
     settings
@@ -600,17 +599,32 @@ fn apply_neofs_settings(settings: &mut OracleServiceSettings, neofs: OracleServi
 
 fn parse_unhandled_exception_policy(
     value: Option<&str>,
-    default_policy: UnhandledExceptionPolicy,
-) -> UnhandledExceptionPolicy {
+    default_policy: StateExceptionPolicy,
+) -> StateExceptionPolicy {
     let Some(raw) = value else {
         return default_policy;
     };
     match raw.trim().to_ascii_lowercase().as_str() {
-        "ignore" => UnhandledExceptionPolicy::Ignore,
-        "stopplugin" => UnhandledExceptionPolicy::StopPlugin,
-        "continue" => UnhandledExceptionPolicy::Continue,
-        "terminate" => UnhandledExceptionPolicy::Terminate,
-        "stopnode" => UnhandledExceptionPolicy::StopNode,
+        "ignore" => StateExceptionPolicy::Ignore,
+        "stopplugin" => StateExceptionPolicy::StopPlugin,
+        "stopnode" | "terminate" => StateExceptionPolicy::StopNode,
+        _ => default_policy,
+    }
+}
+
+fn parse_primitives_exception_policy(
+    value: Option<&str>,
+    default_policy: neo_primitives::UnhandledExceptionPolicy,
+) -> neo_primitives::UnhandledExceptionPolicy {
+    let Some(raw) = value else {
+        return default_policy;
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "ignore" => neo_primitives::UnhandledExceptionPolicy::Ignore,
+        "stopplugin" => neo_primitives::UnhandledExceptionPolicy::StopPlugin,
+        "continue" => neo_primitives::UnhandledExceptionPolicy::Continue,
+        "terminate" => neo_primitives::UnhandledExceptionPolicy::Terminate,
+        "stopnode" => neo_primitives::UnhandledExceptionPolicy::StopNode,
         _ => default_policy,
     }
 }

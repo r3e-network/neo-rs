@@ -17,7 +17,7 @@ pub async fn migrate(config: &MigrationConfig) -> Result<MigrationResult> {
 
     // Step 1: Parse protocol configuration from config.yml
     let protocol_settings = parse_config_yml(&config.source_dir)?;
-    info!("Detected network: magic={}", protocol_settings.magic);
+    info!("Detected network: magic={}", protocol_settings.network);
 
     // Step 2: Detect BoltDB storage
     let db_path = detect_bolt_db(&config.source_dir)?;
@@ -35,7 +35,7 @@ pub async fn migrate(config: &MigrationConfig) -> Result<MigrationResult> {
         blocks_migrated,
         state_entries_migrated: state_entries,
         starting_height,
-        protocol_magic: protocol_settings.magic,
+        protocol_magic: protocol_settings.network,
         network: detect_network_name(&protocol_settings),
     })
 }
@@ -216,10 +216,10 @@ fn read_bolt_height(_bolt_path: &Path) -> Result<u32> {
 
 /// Detect network name from protocol settings
 fn detect_network_name(settings: &ProtocolSettings) -> String {
-    match settings.magic {
+    match settings.network {
         5195086 => "mainnet".to_string(),
         1951352142 => "testnet".to_string(),
-        _ => format!("custom-{}", settings.magic),
+        _ => format!("custom-{}", settings.network),
     }
 }
 
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn test_detect_network_name() {
         let mut settings = ProtocolSettings::default();
-        settings.magic = 5195086;
+        settings.network = 5195086;
         assert_eq!(detect_network_name(&settings), "mainnet");
     }
 }

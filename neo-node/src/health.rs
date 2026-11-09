@@ -8,6 +8,10 @@ pub const DEFAULT_MAX_HEADER_LAG: u32 = 300;
 pub struct HealthState {
     pub current_height: u32,
     pub header_height: u32,
+    pub block_height: u32,
+    pub peer_count: u32,
+    pub mempool_size: u32,
+    pub is_syncing: bool,
 }
 
 use std::future::Future;

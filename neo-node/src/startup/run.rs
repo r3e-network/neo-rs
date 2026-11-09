@@ -17,14 +17,15 @@ use super::services::{
 use super::services::{maybe_enable_tee_runtime, maybe_enable_tee_wallet};
 use super::signal::{parse_live_stop_height, wait_for_live_stop_height, wait_for_shutdown_signal};
 use super::tasks::{BackgroundTasks, DEFAULT_BACKGROUND_TASK_SHUTDOWN};
-use crate::ai_agent::AiAgentRuntime;
+// TODO: Re-enable when these modules are implemented
+// use crate::ai_agent::AiAgentRuntime;
+// use crate::signing_provider::{
+//     ActiveSignerBackend, NODE_SIGNING_TENANT, ORACLE_SIGNING_PRINCIPAL, RPC_SIGNING_PRINCIPAL,
+//     STATE_SIGNING_PRINCIPAL, initialize_signer_service,
+// };
 use crate::cli::NodeCli;
 use crate::config::{NodeConfig, SignerProviderKind};
 use crate::rpc_consensus::RpcServerConsensus;
-use crate::signing_provider::{
-    ActiveSignerBackend, NODE_SIGNING_TENANT, ORACLE_SIGNING_PRINCIPAL, RPC_SIGNING_PRINCIPAL,
-    STATE_SIGNING_PRINCIPAL, initialize_signer_service,
-};
 use anyhow::{Context, Result, bail};
 use neo_protocol::ProtocolSettings;
 use neo_rpc::server::RpcSignerRuntime;
@@ -135,6 +136,13 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         storage_path.as_deref(),
         &protocol_settings,
     )?;
+
+    // Save auto_verify flag before moving state_service_settings
+    let state_service_auto_verify = state_service_settings
+        .as_ref()
+        .map(|s| s.auto_verify)
+        .unwrap_or(false);
+
     let dbft_settings = node_config.dbft_settings(&protocol_settings)?;
 
     let rpc_plugin_config_path = node_config
@@ -149,7 +157,7 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     // import then skipped height 0, so those plugins never saw the genesis block.
     let system = NeoSystem::new_with_state_service_deferring_genesis(
         protocol_settings.clone(),
-        store_provider.clone(),
+        store_provider.map(Arc::from),
         storage_path.clone(),
         state_service_settings.clone(),
     )
@@ -162,14 +170,16 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         .context("contract management storage integrity check failed")?;
 
     apply_mempool_policy(&node_config, &system);
-    let diagnostics_config = node_config.diagnostics.clone().unwrap_or_default();
-    let ai_agent_runtime = Arc::new(
-        AiAgentRuntime::new(&diagnostics_config, system.clone())
-            .context("failed to initialize AI diagnostics runtime")?,
-    );
-    ai_agent_runtime
-        .configure_mempool(&diagnostics_config)
-        .context("failed to configure diagnostics quarantine")?;
+
+    // TODO: Re-enable when AiAgentRuntime is available
+    // let diagnostics_config = node_config.diagnostics.clone().unwrap_or_default();
+    // let ai_agent_runtime = Arc::new(
+    //     AiAgentRuntime::new(&diagnostics_config, system.clone())
+    //         .context("failed to initialize AI diagnostics runtime")?,
+    // );
+    // ai_agent_runtime
+    //     .configure_mempool(&diagnostics_config)
+    //     .context("failed to configure diagnostics quarantine")?;
 
     #[cfg(feature = "tee")]
     let tee_runtime = maybe_enable_tee_runtime(&cli, &node_config, &protocol_settings, &system)
@@ -294,10 +304,7 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     .await
     .context("failed to start RPC server")?;
 
-    let needs_wallet_provider = state_service_settings
-        .as_ref()
-        .map(|settings| settings.auto_verify)
-        .unwrap_or(false)
+    let needs_wallet_provider = state_service_auto_verify
         || oracle_service.is_some()
         || dbft_settings
             .as_ref()
@@ -355,66 +362,72 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         false
     };
 
-    let mut active_signer_backend = None;
-    #[cfg(feature = "hsm")]
-    if hsm_wallet_enabled {
-        let security_level = if cli.hsm_device.eq_ignore_ascii_case("simulation")
-            || cli.hsm_device.eq_ignore_ascii_case("sim")
-        {
-            SecurityLevel::Software
-        } else {
-            SecurityLevel::Hsm
-        };
-        active_signer_backend = Some(ActiveSignerBackend {
-            kind: SignerProviderKind::Hsm,
-            security_level,
-        });
-    }
-    if tee_wallet_enabled {
-        active_signer_backend = Some(ActiveSignerBackend {
-            kind: SignerProviderKind::HostSealedTee,
-            security_level: SecurityLevel::HostSealed,
-        });
-    } else if nep6_wallet_enabled {
-        active_signer_backend = Some(ActiveSignerBackend {
-            kind: SignerProviderKind::Nep6,
-            security_level: SecurityLevel::Software,
-        });
-    }
+    // TODO: Re-enable when signing_provider module is available
+    // let mut active_signer_backend = None;
+    // #[cfg(feature = "hsm")]
+    // if hsm_wallet_enabled {
+    //     let security_level = if cli.hsm_device.eq_ignore_ascii_case("simulation")
+    //         || cli.hsm_device.eq_ignore_ascii_case("sim")
+    //     {
+    //         SecurityLevel::Software
+    //     } else {
+    //         SecurityLevel::Hsm
+    //     };
+    //     active_signer_backend = Some(ActiveSignerBackend {
+    //         kind: SignerProviderKind::Hsm,
+    //         security_level,
+    //     });
+    // }
+    // if tee_wallet_enabled {
+    //     active_signer_backend = Some(ActiveSignerBackend {
+    //         kind: SignerProviderKind::HostSealedTee,
+    //         security_level: SecurityLevel::HostSealed,
+    //     });
+    // } else if nep6_wallet_enabled {
+    //     active_signer_backend = Some(ActiveSignerBackend {
+    //         kind: SignerProviderKind::Nep6,
+    //         security_level: SecurityLevel::Software,
+    //     });
+    // }
+    //
+    // let signer_runtime = initialize_signer_service(
+    //     node_config.signer_service.as_ref(),
+    //     protocol_settings.network,
+    //     wallet_provider.as_ref(),
+    //     active_signer_backend,
+    // )
+    // .context("failed to initialize unified signer service")?;
+    let signer_runtime: Option<()> = None; // Placeholder
 
-    let signer_runtime = initialize_signer_service(
-        node_config.signer_service.as_ref(),
-        protocol_settings.network,
-        wallet_provider.as_ref(),
-        active_signer_backend,
-    )
-    .context("failed to initialize unified signer service")?;
-    if let Some(server) = rpc_server.as_ref() {
-        server
-            .write()
-            .set_signer_runtime(signer_runtime.as_ref().map(|runtime| RpcSignerRuntime {
-                service: runtime.service(),
-                default_provider: runtime.default_provider().to_string(),
-                policy_version: runtime.policy_version().to_string(),
-                request_timeout: runtime.request_timeout(),
-                key_resolver: runtime.key_resolver(),
-                principal: RPC_SIGNING_PRINCIPAL.to_string(),
-                tenant: NODE_SIGNING_TENANT.to_string(),
-            }))
-            .map_err(anyhow::Error::msg)
-            .context("failed to install authenticated RPC signer runtime")?;
-    }
-    let state_signer = signer_runtime
-        .as_ref()
-        .map(|runtime| {
-            runtime.trusted_client(
-                STATE_SIGNING_PRINCIPAL,
-                "node-local-state-service",
-                "sign:state-root",
-            )
-        })
-        .transpose()
-        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    // TODO: Re-enable when NodeSignerRuntime is available
+    // if let Some(server) = rpc_server.as_ref() {
+    //     server
+    //         .write()
+    //         .set_signer_runtime(signer_runtime.as_ref().map(|runtime| RpcSignerRuntime {
+    //             service: runtime.service(),
+    //             default_provider: runtime.default_provider().to_string(),
+    //             policy_version: runtime.policy_version().to_string(),
+    //             request_timeout: runtime.request_timeout(),
+    //             key_resolver: runtime.key_resolver(),
+    //             principal: RPC_SIGNING_PRINCIPAL.to_string(),
+    //             tenant: NODE_SIGNING_TENANT.to_string(),
+    //         }))
+    //         .map_err(anyhow::Error::msg)
+    //         .context("failed to install authenticated RPC signer runtime")?;
+    // }
+    // let state_signer = signer_runtime
+    //     .as_ref()
+    //     .map(|runtime| {
+    //         runtime.trusted_client(
+    //             STATE_SIGNING_PRINCIPAL,
+    //             "node-local-state-service",
+    //             "sign:state-root",
+    //         )
+    //     })
+    //     .transpose()
+    //     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    let state_signer = None; // Placeholder
+
     maybe_enable_state_service_verification(
         &system,
         &state_service_settings,
@@ -422,26 +435,33 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         state_signer,
     )
     .context("failed to initialise state service verification")?;
-    if let Some(oracle) = oracle_service.as_ref() {
-        let runtime = signer_runtime
-            .as_ref()
-            .context("OracleService requires the unified signer service")?;
-        let client = runtime
-            .trusted_client(
-                ORACLE_SIGNING_PRINCIPAL,
-                "node-local-oracle-service",
-                "sign:oracle-response",
-            )
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        oracle.set_signer_client(client);
-    }
+
+    // TODO: Re-enable when oracle signer is available
+    // if let Some(oracle) = oracle_service.as_ref() {
+    //     let runtime = signer_runtime
+    //         .as_ref()
+    //         .context("OracleService requires the unified signer service")?;
+    //     let client = runtime
+    //         .trusted_client(
+    //             ORACLE_SIGNING_PRINCIPAL,
+    //             "node-local-oracle-service",
+    //             "sign:oracle-response",
+    //         )
+    //         .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    //     oracle.set_signer_client(client);
+    // }
+
+    // TODO: Re-enable when AiAgentRuntime is available
+    // let ai_agent_runtime = Arc::new(AiAgentRuntime::default());
+    let ai_agent_runtime = (); // Placeholder
+
     maybe_enable_dbft_consensus(
         &dbft_settings,
         &protocol_settings,
         &system,
         wallet_provider.as_ref(),
         signer_runtime,
-        Arc::clone(&ai_agent_runtime),
+        ai_agent_runtime,
     )
     .context("failed to initialise dBFT consensus")?;
 

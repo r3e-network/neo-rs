@@ -20,7 +20,7 @@ pub async fn migrate(config: &MigrationConfig) -> Result<MigrationResult> {
 
     // Step 1: Parse protocol configuration
     let protocol_settings = parse_protocol_config(&config.source_dir)?;
-    info!("Detected network: magic={}", protocol_settings.magic);
+    info!("Detected network: magic={}", protocol_settings.network);
 
     // Step 2: Detect storage backend
     let storage_path = detect_storage_path(&config.source_dir)?;
@@ -38,7 +38,7 @@ pub async fn migrate(config: &MigrationConfig) -> Result<MigrationResult> {
         blocks_migrated,
         state_entries_migrated: state_entries,
         starting_height,
-        protocol_magic: protocol_settings.magic,
+        protocol_magic: protocol_settings.network,
         network: detect_network_name(&protocol_settings),
     })
 }
@@ -237,10 +237,10 @@ fn estimate_state_entries(_storage_path: &Path) -> Result<u64> {
 
 /// Detect network name from protocol settings.
 fn detect_network_name(settings: &ProtocolSettings) -> String {
-    match settings.magic {
+    match settings.network {
         5195086 => "mainnet".to_string(),      // 0x004F454E (Neo N3 MainNet)
         1951352142 => "testnet".to_string(),   // 0x7474654E (Neo N3 TestNet)
-        _ => format!("custom-{}", settings.magic),
+        _ => format!("custom-{}", settings.network),
     }
 }
 
@@ -265,20 +265,20 @@ mod tests {
         }"#;
 
         let settings = parse_protocol_json(json).unwrap();
-        assert_eq!(settings.magic, 5195086);
+        assert_eq!(settings.network, 5195086);
         assert_eq!(settings.address_version, 53);
     }
 
     #[test]
     fn test_detect_network_name() {
         let mut settings = ProtocolSettings::default();
-        settings.magic = 5195086;
+        settings.network = 5195086;
         assert_eq!(detect_network_name(&settings), "mainnet");
 
-        settings.magic = 1951352142;
+        settings.network = 1951352142;
         assert_eq!(detect_network_name(&settings), "testnet");
 
-        settings.magic = 12345;
+        settings.network = 12345;
         assert_eq!(detect_network_name(&settings), "custom-12345");
     }
 }
