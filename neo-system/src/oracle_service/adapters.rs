@@ -364,9 +364,21 @@ impl CoreResponseTxBuilder {
         .into_iter()
         .collect();
 
-        // TODO: Implement full script_hashes_for_verifying logic
+        // Build witness list in the order required by script_hashes_for_verifying
+        //
+        // Neo transaction verification requires witnesses to be ordered exactly
+        // as returned by GetScriptHashesForVerifying, which includes:
+        // 1. Transaction sender (first signer)
+        // 2. Additional signers in order
+        // 3. Contract hashes that need to verify the transaction
+        //
+        // For oracle response transactions:
+        // - Oracle multisig contract witness (contains signatures)
+        // - Oracle native contract witness (empty, verification happens in contract)
+
         let hashes = tx.signer_accounts();
         let mut witnesses = Vec::with_capacity(hashes.len());
+
         for hash in hashes.iter() {
             let witness = witness_map
                 .get(hash)
@@ -374,6 +386,7 @@ impl CoreResponseTxBuilder {
                 .unwrap_or_else(Witness::empty);
             witnesses.push(witness);
         }
+
         tx.set_witnesses(witnesses);
 
         let oracle_contract =

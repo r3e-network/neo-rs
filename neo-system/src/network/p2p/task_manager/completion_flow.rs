@@ -6,7 +6,7 @@ use super::peer_commands::disconnect as disconnect_peer;
 use super::{HEADER_TASK_HASH, TaskManager};
 use crate::network::p2p::payloads::{Block, InventoryType};
 use neo_actors::ActorRef;
-use neo_primitives::UInt256;
+use neo_primitives::{RelayError, UInt256};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{trace, warn};
 
@@ -287,9 +287,61 @@ impl TaskManager {
         self.request_tasks_all();
     }
 
-    pub(super) fn on_relay_result(&mut self, _result: &neo_ledger::RelayResult<()>) {
-        // TODO: RelayResult is now Result<(), RelayError>, need to handle appropriately
-        // Previously expected struct with result, inventory_type, hash, block_index fields
+    pub(super) fn on_relay_result(&mut self, result: &neo_ledger::RelayResult<()>) {
+        // Handle relay result from blockchain
+        //
+        // RelayResult<()> is Result<(), RelayError> indicating whether the
+        // inventory (block/transaction) was successfully relayed to the network.
+        //
+        // Success case (Ok(())): Inventory validated and added, normal flow continues
+        //
+        // Error cases track why relay failed for monitoring and peer reputation
+
+        if let Err(error) = result {
+            match error {
+                RelayError::ValidationFailed { message } => {
+                    tracing::warn!(
+                        target: "neo::p2p",
+                        message = %message,
+                        "block validation failed from peer"
+                    );
+                    // Future: Track validation failures per peer for reputation
+                }
+                RelayError::AlreadyExists { hash } => {
+                    // Normal P2P behavior - multiple peers may send same block
+                    tracing::trace!(
+                        target: "neo::p2p",
+                        hash = %hash,
+                        "duplicate block received"
+                    );
+                }
+                RelayError::TransactionInvalid { message } => {
+                    tracing::warn!(
+                        target: "neo::p2p",
+                        message = %message,
+                        "invalid transaction from peer"
+                    );
+                    // Future: Penalize peer for invalid transactions
+                }
+                RelayError::MempoolFull { current, max } => {
+                    tracing::debug!(
+                        target: "neo::p2p",
+                        current = %current,
+                        max = %max,
+                        "mempool full, relay rejected"
+                    );
+                    // Future: Temporarily pause requesting transactions
+                }
+                _ => {
+                    // Handle any other relay errors (InvalidHeight, etc.)
+                    tracing::debug!(
+                        target: "neo::p2p",
+                        error = %error,
+                        "relay failed"
+                    );
+                }
+            }
+        }
     }
 
     pub(super) fn on_invalid_block(&mut self, hash: &UInt256, block_index: Option<u32>) {
