@@ -51,7 +51,7 @@ pub(crate) fn build_state_service_settings(
     protocol_settings: &ProtocolSettings,
 ) -> Result<Option<StateServiceSettings>> {
     // Check if state service is enabled in config
-    let state_service_section = match &config.plugin_config.state_service {
+    let state_service_section = match &config.state_service {
         Some(section) => section,
         None => {
             info!("State service not configured");
@@ -102,7 +102,7 @@ pub(crate) fn build_state_service_settings(
         full_state: state_service_section.full_state.unwrap_or(false),
         path,
         network,
-        auto_verify: state_service_section.auto_verify.unwrap_or(false) && !cli.no_verify,
+        auto_verify: state_service_section.auto_verify.unwrap_or(false),
         max_find_result_items,
         exception_policy: neo_system::state_service::UnhandledExceptionPolicy::StopPlugin,
     };
@@ -339,7 +339,7 @@ pub(crate) fn validate_node_config(
     // Validate network consistency across all plugins
     let expected_network = protocol_settings.network;
 
-    if let Some(ref state_service) = config.plugin_config.state_service {
+    if let Some(ref state_service) = config.state_service {
         if let Some(network) = state_service.network {
             if network != expected_network {
                 anyhow::bail!(
@@ -351,7 +351,7 @@ pub(crate) fn validate_node_config(
         }
     }
 
-    if let Some(ref app_logs) = config.plugin_config.application_logs {
+    if let Some(ref app_logs) = config.application_logs {
         if let Some(network) = app_logs.network {
             if network != expected_network {
                 anyhow::bail!(
@@ -363,7 +363,7 @@ pub(crate) fn validate_node_config(
         }
     }
 
-    if let Some(ref tokens_tracker) = config.plugin_config.tokens_tracker {
+    if let Some(ref tokens_tracker) = config.tokens_tracker {
         if let Some(network) = tokens_tracker.network {
             if network != expected_network {
                 anyhow::bail!(
@@ -376,30 +376,29 @@ pub(crate) fn validate_node_config(
     }
 
     // Validate RPC configuration
-    if let Some(ref rpc_config) = config.rpc_server {
-        if rpc_hardened {
-            info!("RPC server running in hardened mode (sensitive methods restricted)");
-        }
+    let rpc_config = &config.rpc;
+    if rpc_hardened {
+        info!("RPC server running in hardened mode (sensitive methods restricted)");
+    }
 
-        // Validate bind addresses
-        for bind_addr in &rpc_config.bind_addresses {
-            if bind_addr.starts_with("0.0.0.0") && !rpc_hardened {
-                warn!(
-                    "RPC server binding to all interfaces ({}). Consider using 127.0.0.1 \
-                     or enable --rpc-hardened for production.",
-                    bind_addr
-                );
-            }
+    // Validate bind address
+    if let Some(ref bind_addr) = rpc_config.bind_address {
+        if bind_addr.starts_with("0.0.0.0") && !rpc_hardened {
+            warn!(
+                "RPC server binding to all interfaces ({}). Consider using 127.0.0.1 \
+                 or enable --rpc-hardened for production.",
+                bind_addr
+            );
         }
+    }
 
-        // Validate max connections
-        if let Some(max_conn) = rpc_config.max_connections {
-            if max_conn == 0 {
-                anyhow::bail!("RPC max_connections must be greater than 0");
-            }
-            if max_conn > 10000 {
-                warn!("RPC max_connections ({}) is very high, may impact performance", max_conn);
-            }
+    // Validate max connections
+    if let Some(max_conn) = rpc_config.max_connections {
+        if max_conn == 0 {
+            anyhow::bail!("RPC max_connections must be greater than 0");
+        }
+        if max_conn > 10000 {
+            warn!("RPC max_connections ({}) is very high, may impact performance", max_conn);
         }
     }
 
@@ -413,9 +412,9 @@ pub(crate) fn validate_node_config(
     }
 
     // Validate consensus configuration
-    if let Some(ref dbft) = config.plugin_config.dbft {
-        if dbft.auto_start {
-            if config.unlock_wallet.is_none() {
+    if let Some(ref dbft) = config.dbft {
+        if dbft.auto_start.unwrap_or(false) {
+            if config.unlock_wallet.path.as_ref().map_or(true, |p| p.is_empty()) {
                 anyhow::bail!(
                     "Consensus auto-start enabled but no wallet unlock configuration found. \
                      Either configure 'UnlockWallet' section in config or disable 'AutoStart' in dBFT settings."
@@ -441,8 +440,8 @@ pub(crate) fn validate_node_config(
     }
 
     // Validate oracle service configuration
-    if let Some(ref oracle) = config.plugin_config.oracle_service {
-        if oracle.auto_start && config.unlock_wallet.is_none() {
+    if let Some(ref oracle) = config.oracle_service {
+        if oracle.auto_start.unwrap_or(false) && config.unlock_wallet.path.as_ref().map_or(true, |p| p.is_empty()) {
             anyhow::bail!(
                 "Oracle service auto-start enabled but no wallet unlock configuration found."
             );
@@ -465,17 +464,15 @@ pub(crate) fn validate_node_config(
     }
 
     // Validate wallet unlock configuration
-    if let Some(ref unlock) = config.unlock_wallet {
-        if unlock.path.is_empty() {
-            anyhow::bail!("UnlockWallet path cannot be empty");
-        }
-
-        let wallet_path = Path::new(&unlock.path);
-        if !wallet_path.exists() {
-            warn!(
-                "Wallet file does not exist: {}. Will fail at runtime if needed.",
-                unlock.path
-            );
+    if let Some(ref wallet_path_str) = config.unlock_wallet.path {
+        if !wallet_path_str.is_empty() {
+            let wallet_path = Path::new(wallet_path_str);
+            if !wallet_path.exists() {
+                warn!(
+                    "Wallet file does not exist: {}. Will fail at runtime if needed.",
+                    wallet_path_str
+                );
+            }
         }
     }
 

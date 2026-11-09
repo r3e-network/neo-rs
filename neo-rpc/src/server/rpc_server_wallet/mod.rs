@@ -347,10 +347,7 @@ impl ContractParametersContext {
             invocation_script.extend_from_slice(signature);
         }
 
-        Witness {
-            invocation_script,
-            verification_script: contract_sigs.contract.script.clone(),
-        }
+        Witness::new_with_scripts(invocation_script, contract_sigs.contract.script.clone())
     }
 }
 
