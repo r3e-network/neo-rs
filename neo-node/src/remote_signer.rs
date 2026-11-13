@@ -380,8 +380,7 @@ impl RemoteSignerProvider {
                     || policy.max_clock_skew_ms > MAX_ATTESTATION_CLOCK_SKEW_MS
                 {
                     bail!(
-                        "remote TEE freshness policy requires positive challenge/session ages and clock skew no greater than {} ms",
-                        MAX_ATTESTATION_CLOCK_SKEW_MS
+                        "remote TEE freshness policy requires positive challenge/session ages and clock skew no greater than {MAX_ATTESTATION_CLOCK_SKEW_MS} ms"
                     );
                 }
                 Some(RemoteAttestationRuntime {

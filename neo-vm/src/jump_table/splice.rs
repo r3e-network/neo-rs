@@ -119,8 +119,7 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     };
     if result_len > max_item_size {
         return Err(VmError::invalid_operation_msg(format!(
-            "MaxItemSize exceed: {}/{}",
-            result_len, max_item_size
+            "MaxItemSize exceed: {result_len}/{max_item_size}"
         )));
     }
     context.push(StackItem::try_from(result)?)?;

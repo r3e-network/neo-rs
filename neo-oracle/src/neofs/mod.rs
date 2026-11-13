@@ -72,7 +72,7 @@ impl OracleNeoFsProtocol {
     pub fn new() -> Self {
         let version = env!("CARGO_PKG_VERSION");
         let client = reqwest::Client::builder()
-            .user_agent(format!("NeoOracleService/{}", version))
+            .user_agent(format!("NeoOracleService/{version}"))
             .build()
             .expect("failed to build neofs http client");
         Self { client }

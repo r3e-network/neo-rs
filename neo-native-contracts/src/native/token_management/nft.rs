@@ -84,7 +84,7 @@ impl TokenManagement {
 
         self.emit_created_event(engine, &asset_id, &TokenType::NonFungible)?;
 
-        Ok(asset_id.to_bytes().to_vec())
+        Ok(asset_id.to_bytes().clone())
     }
 
     pub(super) fn invoke_mint_nft(
@@ -163,7 +163,7 @@ impl TokenManagement {
 
         self.emit_transfer_event(engine, None, Some(&account), &BigInt::from(1))?;
 
-        Ok(unique_id.to_bytes().to_vec())
+        Ok(unique_id.to_bytes().clone())
     }
 
     pub(super) fn invoke_burn_nft(

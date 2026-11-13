@@ -241,16 +241,8 @@ fn trim_node(node: &mut MerkleTreeNode, index: usize, depth: usize, flags: &[boo
         trim_node(right, index * 2 + 1, depth - 1, flags);
     }
 
-    let left_pruned = node
-        .left
-        .as_ref()
-        .map(|child| child.is_pruned())
-        .unwrap_or(true);
-    let right_pruned = node
-        .right
-        .as_ref()
-        .map(|child| child.is_pruned())
-        .unwrap_or(true);
+    let left_pruned = node.left.as_ref().is_none_or(|child| child.is_pruned());
+    let right_pruned = node.right.as_ref().is_none_or(|child| child.is_pruned());
 
     if left_pruned && right_pruned {
         node.left = None;
@@ -420,11 +412,10 @@ mod tests {
 
         // Note: actual speedup depends on CPU cores and load
         // This test just ensures the optimization doesn't regress
-        println!("1000-hash Merkle root computed in {:?}", parallel_time);
+        println!("1000-hash Merkle root computed in {parallel_time:?}");
         assert!(
             parallel_time.as_millis() < 100,
-            "Performance regression: 1000 hashes took {:?} (expected <100ms)",
-            parallel_time
+            "Performance regression: 1000 hashes took {parallel_time:?} (expected <100ms)"
         );
     }
 
@@ -444,11 +435,10 @@ mod tests {
         let tree_root = MerkleTree::compute_root_with_tree(&hashes);
         assert_eq!(root, tree_root);
 
-        println!("7-hash Merkle root computed in {:?}", time);
+        println!("7-hash Merkle root computed in {time:?}");
         assert!(
             time.as_micros() < 1000,
-            "Small tree performance regression: {:?} (expected <1ms)",
-            time
+            "Small tree performance regression: {time:?} (expected <1ms)"
         );
     }
 

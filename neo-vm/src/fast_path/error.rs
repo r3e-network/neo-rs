@@ -33,13 +33,13 @@ pub enum FastPathError {
 impl fmt::Display for FastPathError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidPattern(msg) => write!(f, "Invalid script pattern: {}", msg),
+            Self::InvalidPattern(msg) => write!(f, "Invalid script pattern: {msg}"),
             Self::InsufficientBalance => write!(f, "Insufficient balance for transfer"),
-            Self::StorageError(msg) => write!(f, "Storage error: {}", msg),
-            Self::ParseError(msg) => write!(f, "Parse error: {}", msg),
+            Self::StorageError(msg) => write!(f, "Storage error: {msg}"),
+            Self::ParseError(msg) => write!(f, "Parse error: {msg}"),
             Self::ContractNotFound => write!(f, "Contract not found"),
-            Self::InvalidScriptLength(len) => write!(f, "Invalid script length: {}", len),
-            Self::NotApplicable(msg) => write!(f, "Fast path not applicable: {}", msg),
+            Self::InvalidScriptLength(len) => write!(f, "Invalid script length: {len}"),
+            Self::NotApplicable(msg) => write!(f, "Fast path not applicable: {msg}"),
         }
     }
 }

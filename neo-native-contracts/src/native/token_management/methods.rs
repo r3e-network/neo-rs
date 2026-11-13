@@ -46,8 +46,7 @@ neo_native_contract_methods!(
     table = token_management_method_table,
     aliases = [],
     unknown = |method| neo_smart_contract::error::CoreError::native_contract(format!(
-        "TokenManagement: unknown method '{}'",
-        method
+        "TokenManagement: unknown method '{method}'"
     ))
 );
 

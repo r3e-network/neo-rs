@@ -36,7 +36,7 @@ impl OracleContract {
             }
             _ => false,
         });
-        Ok(vec![if valid { 1 } else { 0 }])
+        Ok(vec![u8::from(valid)])
     }
 
     /// Verify the oracle response attribute against on-chain state.

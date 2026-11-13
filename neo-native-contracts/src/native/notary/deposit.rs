@@ -77,7 +77,7 @@ pub(super) fn deserialize_deposit(data: &[u8]) -> Result<Deposit> {
             "Invalid deposit data length".to_string(),
         ));
     }
-    let amount_bytes = &data[1..1 + amount_len];
+    let amount_bytes = &data[1..=amount_len];
     let amount = BigInt::from_signed_bytes_le(amount_bytes);
     let till_bytes = &data[1 + amount_len..1 + amount_len + 4];
     let till = u32::from_le_bytes([till_bytes[0], till_bytes[1], till_bytes[2], till_bytes[3]]);

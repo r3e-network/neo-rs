@@ -202,9 +202,9 @@ fn test_transaction_type_enum() {
     let exists_in_ledger = ContainsTransactionType::ExistsInLedger;
 
     // Test Display implementation
-    assert_eq!(format!("{:?}", not_exist), "NotExist");
-    assert_eq!(format!("{:?}", exists_in_pool), "ExistsInPool");
-    assert_eq!(format!("{:?}", exists_in_ledger), "ExistsInLedger");
+    assert_eq!(format!("{not_exist:?}"), "NotExist");
+    assert_eq!(format!("{exists_in_pool:?}"), "ExistsInPool");
+    assert_eq!(format!("{exists_in_ledger:?}"), "ExistsInLedger");
 }
 
 #[test]

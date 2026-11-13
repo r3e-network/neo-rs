@@ -144,8 +144,7 @@ where
             task.backup_signs.insert(oracle_pub.clone(), sign);
         } else {
             return Err(OracleServiceError::InvalidSignature(format!(
-                "Invalid oracle response transaction signature from '{}'.",
-                oracle_pub
+                "Invalid oracle response transaction signature from '{oracle_pub}'."
             )));
         }
 
@@ -202,11 +201,7 @@ where
         let invocation_script = builder.to_array();
 
         let hashes = tx.signer_accounts();
-        let idx = if hashes.first() == Some(&contract.script_hash()) {
-            0
-        } else {
-            1
-        };
+        let idx = usize::from(hashes.first() != Some(&contract.script_hash()));
 
         let mut tx_mut = tx.clone();
         let mut witnesses = tx_mut.witnesses().to_vec();
@@ -276,7 +271,7 @@ where
                 ]
             });
 
-            for node in settings.nodes.iter() {
+            for node in &settings.nodes {
                 let Ok(url) = url::Url::parse(node) else {
                     tracing::warn!(target: "neo::oracle", node = %node, "invalid oracle node endpoint");
                     continue;
@@ -332,8 +327,7 @@ where
 
         if !oracles.iter().any(|key| key == &oracle_pub) {
             return Err(OracleServiceError::NotDesignated(format!(
-                "{} isn't an oracle node.",
-                oracle_pub
+                "{oracle_pub} isn't an oracle node."
             )));
         }
 
@@ -351,8 +345,7 @@ where
 
         if !self.verify_oracle_signature(&oracle_pub, &message, &msg_sign) {
             return Err(OracleServiceError::InvalidSignature(format!(
-                "Invalid oracle response transaction signature from '{}'.",
-                oracle_pub
+                "Invalid oracle response transaction signature from '{oracle_pub}'."
             )));
         }
 

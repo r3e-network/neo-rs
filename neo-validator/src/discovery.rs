@@ -50,8 +50,7 @@ pub fn discover_protocol(config: &ValidatorConfig) -> Result<(ProtocolSettings, 
     }
     let Some((settings, path)) = matching.first().cloned() else {
         bail!(
-            "no neo-cli config.json or protocol.*.json with network {} was found; set network.protocol_path explicitly",
-            expected_magic
+            "no neo-cli config.json or protocol.*.json with network {expected_magic} was found; set network.protocol_path explicitly"
         );
     };
     if matching.iter().any(|(other, _)| other != &settings) {

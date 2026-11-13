@@ -251,7 +251,7 @@ mod tests {
         let json = result.to_json();
         assert_eq!(
             json.get("state")
-                .and_then(|token| token.as_string())
+                .and_then(neo_json::JToken::as_string)
                 .unwrap(),
             "HALT"
         );

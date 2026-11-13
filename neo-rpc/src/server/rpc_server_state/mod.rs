@@ -1,7 +1,7 @@
 //! State Service RPC endpoints backed by the canonical `neo-system` state store.
 //!
 //! Proof and storage-value methods remain unregistered until their wire encoding
-//! is implemented against the canonical persistent MPT; no placeholder success
+//! is implemented against the canonical persistent MPT; no stubbed success
 //! responses are exposed.
 
 use neo_system::state_service::{StateRoot, commit_handlers::read_state_root_record};
@@ -84,17 +84,16 @@ impl RpcServerState {
             "roothash".to_string(),
             json!(state_root.root_hash.to_string()),
         );
-        let witnesses = state_root
-            .witness
-            .as_ref()
-            .map(|witness| {
+        let witnesses = state_root.witness.as_ref().map_or_else(
+            || json!([]),
+            |witness| {
                 use base64::{Engine as _, engine::general_purpose::STANDARD};
                 json!([{
                     "invocation": STANDARD.encode(&witness.invocation_script),
                     "verification": STANDARD.encode(&witness.verification_script),
                 }])
-            })
-            .unwrap_or_else(|| json!([]));
+            },
+        );
         object.insert("witnesses".to_string(), witnesses);
         Value::Object(object)
     }

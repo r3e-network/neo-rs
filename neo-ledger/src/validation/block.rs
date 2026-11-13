@@ -21,7 +21,7 @@ pub fn calculate_block_network_fee(block: &Block, _snapshot: &DataCache) -> i64 
     block
         .transactions
         .iter()
-        .map(|transaction| transaction.network_fee())
+        .map(neo_protocol::payloads::Transaction::network_fee)
         .sum()
 }
 

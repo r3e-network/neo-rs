@@ -39,21 +39,21 @@ fn test_get_nonexistent_block() {
     let missing_hash = UInt256::from([0xFF; 32]);
 
     // This simulates the expected error when storage doesn't have the block
-    let error = StorageError::key_not_found(format!("Block {} not found", missing_hash));
+    let error = StorageError::key_not_found(format!("Block {missing_hash} not found"));
     assert!(error.to_string().contains("not found"));
 }
 
 #[test]
 fn test_get_nonexistent_transaction() {
     let missing_tx = UInt256::from([0xAA; 32]);
-    let error = StorageError::key_not_found(format!("Transaction {} not found", missing_tx));
+    let error = StorageError::key_not_found(format!("Transaction {missing_tx} not found"));
     assert!(error.to_string().contains("Transaction"));
 }
 
 #[test]
 fn test_get_nonexistent_contract() {
     let missing_contract = UInt160::from([0xBB; 20]);
-    let error = StorageError::key_not_found(format!("Contract {} not found", missing_contract));
+    let error = StorageError::key_not_found(format!("Contract {missing_contract} not found"));
     assert!(error.to_string().contains("Contract"));
 }
 
@@ -247,8 +247,7 @@ fn test_state_root_mismatch() {
     let expected = UInt256::from([0x11; 32]);
     let actual = UInt256::from([0x22; 32]);
     let error = StorageError::serialization(format!(
-        "state root mismatch: expected {}, got {}",
-        expected, actual
+        "state root mismatch: expected {expected}, got {actual}"
     ));
     assert!(error.to_string().contains("mismatch"));
 }
@@ -288,7 +287,7 @@ fn test_unicode_in_error_messages() {
 #[test]
 fn test_nested_error_context() {
     let inner = "failed to read block";
-    let outer = format!("transaction processing failed: {}", inner);
+    let outer = format!("transaction processing failed: {inner}");
     let error = StorageError::io(outer);
     assert!(error.to_string().contains("transaction"));
     assert!(error.to_string().contains("block"));

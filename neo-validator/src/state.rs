@@ -218,9 +218,7 @@ impl GateRegistry {
         }
         if local_height != Some(height) {
             bail!(
-                "local executor height {:?} differs from recovery baseline {}; repair or rebuild validator storage instead of clearing the incident",
-                local_height,
-                height
+                "local executor height {local_height:?} differs from recovery baseline {height}; repair or rebuild validator storage instead of clearing the incident"
             );
         }
         *self.inner.phase.write() = ValidationPhase::Verifying;

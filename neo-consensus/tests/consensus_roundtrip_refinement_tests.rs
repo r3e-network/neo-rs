@@ -66,8 +66,8 @@ fn test_message_pool_identity_prepare_request() {
     let _view_number: u8 = 0;
 
     let hash_data: [u8; 32] = [0xAB; 32];
-    let serialized = format!("{:?}-{}", hash_data, block_index).into_bytes();
-    let key = format!("prepare_request_{}", block_index);
+    let serialized = format!("{hash_data:?}-{block_index}").into_bytes();
+    let key = format!("prepare_request_{block_index}");
 
     // Persist message (round-trip through pool)
     env.persist_message(&key, &serialized);
@@ -87,9 +87,8 @@ fn test_message_pool_identity_prepare_response() {
     let validator_index = 1u8;
 
     let preparation_hash: [u8; 32] = [0x12; 32];
-    let serialized =
-        format!("{:?}-{}_{}", preparation_hash, block_index, validator_index).into_bytes();
-    let key = format!("prepare_response_{}_{}", block_index, validator_index);
+    let serialized = format!("{preparation_hash:?}-{block_index}_{validator_index}").into_bytes();
+    let key = format!("prepare_response_{block_index}_{validator_index}");
 
     env.persist_message(&key, &serialized);
 
@@ -108,12 +107,9 @@ fn test_message_pool_identity_commit() {
     let validator_index = 2u8;
 
     let block_hash: [u8; 32] = [0xEF; 32];
-    let serialized = format!(
-        "{:?}-{}_{}_{}",
-        block_hash, block_index, view_number, validator_index
-    )
-    .into_bytes();
-    let key = format!("commit_{}_{}", block_index, validator_index);
+    let serialized =
+        format!("{block_hash:?}-{block_index}_{view_number}_{validator_index}").into_bytes();
+    let key = format!("commit_{block_index}_{validator_index}");
 
     env.persist_message(&key, &serialized);
 
@@ -137,10 +133,7 @@ fn test_state_machine_transition_prepare_request() {
 
     // Receive valid PrepareRequest simulation
     let payload_hash: [u8; 32] = [0xDE; 32];
-    env.persist_message(
-        &format!("proposal_{}", block_index),
-        payload_hash.as_slice(),
-    );
+    env.persist_message(&format!("proposal_{block_index}"), payload_hash.as_slice());
 
     // Transition: mark request received
     let prepare_request_received = true;
@@ -165,7 +158,7 @@ fn test_state_machine_transition_enough_prepare_responses() {
 
     // Add responses from different validators
     for i in 1..4u8 {
-        env.persist_message(&format!("response_{}_{}", block_index, i), b"response");
+        env.persist_message(&format!("response_{block_index}_{i}"), b"response");
     }
 
     // With our own vote + 3 others = 4 total (M)
@@ -271,12 +264,7 @@ fn test_view_change_reason_serialization() {
         let byte = reason.to_byte();
         let recovered = ChangeViewReason::from_byte(byte);
 
-        assert_eq!(
-            recovered,
-            Some(reason),
-            "Round-trip failed for {:?}",
-            reason
-        );
+        assert_eq!(recovered, Some(reason), "Round-trip failed for {reason:?}");
     }
 }
 
@@ -321,14 +309,12 @@ fn test_quorum_calculation_different_networks() {
         assert_eq!(
             env.f_value(),
             expected_f,
-            "f calculation incorrect for n={}",
-            n
+            "f calculation incorrect for n={n}"
         );
         assert_eq!(
             env.m_quorum(),
             expected_m,
-            "M calculation incorrect for n={}",
-            n
+            "M calculation incorrect for n={n}"
         );
         assert!(env.m_quorum() > env.f_value(), "M must be greater than F");
     }
@@ -346,7 +332,7 @@ fn test_m_votes_guarantee_commitment() {
     let _view_number: u8 = 0;
 
     for i in 0..env.m_quorum().saturating_sub(1) {
-        env.persist_message(&format!("vote_{}_{}", block_index, i), b"vote");
+        env.persist_message(&format!("vote_{block_index}_{i}"), b"vote");
     }
 
     let vote_count: usize = env.m_quorum().saturating_sub(1);
@@ -479,7 +465,7 @@ fn test_concurrent_prepare_responses() {
 
     for i in 0..num_responses {
         env.persist_message(
-            &format!("concurrent_response_{}_{}", block_index, i),
+            &format!("concurrent_response_{block_index}_{i}"),
             b"response",
         );
         count += 1;
@@ -526,7 +512,7 @@ fn test_timing_parameters_stress() {
         let timeout = timeout_base.saturating_mul(1u64 << shift);
 
         // Timer should grow but not overflow
-        assert!(timeout > 0, "Timeout overflow at view {}", view);
+        assert!(timeout > 0, "Timeout overflow at view {view}");
 
         // Don't add too much time in one iteration
         env.advance_time((timeout / 100).min(10_000));
@@ -550,9 +536,7 @@ fn test_lru_cache_bounds() {
         cache_count += 1;
         assert!(
             cache_count <= MAX_CACHE_SIZE + 100,
-            "Cache should not grow unbounded ({} at iteration {})",
-            cache_count,
-            i
+            "Cache should not grow unbounded ({cache_count} at iteration {i})"
         );
     }
 
@@ -574,14 +558,14 @@ fn test_complete_message_flow() {
     // Step 1: Primary sends PrepareRequest
     let prepare_hash: [u8; 32] = [0x11; 32];
     env.persist_message(
-        &format!("prepare_request_{}", block_index),
+        &format!("prepare_request_{block_index}"),
         prepare_hash.as_slice(),
     );
 
     // Step 2: Validators send PrepareResponses
     for i in 1..env.m_quorum() {
         env.persist_message(
-            &format!("prepare_response_{}_{}_{}", block_index, i, view_number),
+            &format!("prepare_response_{block_index}_{i}_{view_number}"),
             prepare_hash.as_slice(),
         );
     }
@@ -590,24 +574,21 @@ fn test_complete_message_flow() {
     let commit_hash: [u8; 32] = [0x22; 32];
     for i in 1..env.m_quorum() {
         env.persist_message(
-            &format!("commit_{}_{}_{}", block_index, i, view_number),
+            &format!("commit_{block_index}_{i}_{view_number}"),
             commit_hash.as_slice(),
         );
     }
 
     // Verify all stages completed
     assert!(
-        env.retrieve_message(&format!("prepare_request_{}", block_index))
+        env.retrieve_message(&format!("prepare_request_{block_index}"))
             .is_some()
     );
 
     let mut response_count = 0;
     for i in 1..env.m_quorum() {
         if env
-            .retrieve_message(&format!(
-                "prepare_response_{}_{}_{}",
-                block_index, i, view_number
-            ))
+            .retrieve_message(&format!("prepare_response_{block_index}_{i}_{view_number}"))
             .is_some()
         {
             response_count += 1;
@@ -618,7 +599,7 @@ fn test_complete_message_flow() {
     let mut commit_count = 0;
     for i in 1..env.m_quorum() {
         if env
-            .retrieve_message(&format!("commit_{}_{}_{}", block_index, i, view_number))
+            .retrieve_message(&format!("commit_{block_index}_{i}_{view_number}"))
             .is_some()
         {
             commit_count += 1;
@@ -637,8 +618,8 @@ fn test_message_pool_cleanup() {
     // Fill pool with old block messages
     for i in 0..10 {
         env.persist_message(
-            &format!("old_{}_{}", old_block, i),
-            format!("old_{}", i).as_bytes(),
+            &format!("old_{old_block}_{i}"),
+            format!("old_{i}").as_bytes(),
         );
     }
 
@@ -647,15 +628,15 @@ fn test_message_pool_cleanup() {
 
     // Old messages should be gone
     let old_exists = env
-        .retrieve_message(&format!("old_{}_0", old_block))
+        .retrieve_message(&format!("old_{old_block}_0"))
         .is_some();
     assert!(!old_exists);
 
     // Can add new messages
-    env.persist_message(&format!("new_{}_0", new_block), b"new");
+    env.persist_message(&format!("new_{new_block}_0"), b"new");
 
     assert!(
-        env.retrieve_message(&format!("new_{}_0", new_block))
+        env.retrieve_message(&format!("new_{new_block}_0"))
             .is_some()
     );
 }

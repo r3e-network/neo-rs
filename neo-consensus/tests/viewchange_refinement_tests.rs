@@ -65,8 +65,7 @@ fn test_no_view_regression_across_sequence() {
 
         assert!(
             current_view > previous_view,
-            "View regression detected at view {}",
-            current_view
+            "View regression detected at view {current_view}"
         );
         previous_view = current_view;
     }
@@ -242,8 +241,8 @@ fn test_last_block_hash_nonzero() {
     // Validates Coq Lemma `lemma_nonzero_block_hash`: Block hash must be meaningful
     let msg = ChangeViewMessage::new(100, 0, 1, 1000, ChangeViewReason::Timeout);
 
-    // In real implementation, last_block_hash would be derived from actual blockchain
-    // For now, we verify the field exists and is constructible
+    // In a full runtime, last_block_hash would be derived from actual
+    // blockchain data; this test verifies the field exists and is constructible.
     _ = msg.block_index; // Access to ensure field exists
 }
 
@@ -378,7 +377,7 @@ fn test_reason_enum_from_byte_roundtrip() {
     // Validates bidirectional mapping matches Coq enum definition
     for byte_val in 0..=5 {
         let reason = ChangeViewReason::from_byte(byte_val);
-        assert!(reason.is_some(), "Valid reason for byte {}", byte_val);
+        assert!(reason.is_some(), "Valid reason for byte {byte_val}");
 
         let recovered = reason.unwrap();
         let roundtrip = recovered.to_byte();

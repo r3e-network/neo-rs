@@ -176,7 +176,7 @@ fn test_bloom_filter_clone() {
 #[test]
 fn test_bloom_filter_debug() {
     let filter = BloomFilter::new(1024, 3, 42).unwrap();
-    let debug_str = format!("{:?}", filter);
+    let debug_str = format!("{filter:?}");
     assert!(debug_str.contains("BloomFilter"));
 }
 
@@ -223,13 +223,13 @@ fn test_bloom_filter_sequential_adds() {
     let mut filter = BloomFilter::new(4096, 7, 999).unwrap();
 
     for i in 0..100 {
-        let element = format!("element_{}", i);
+        let element = format!("element_{i}");
         filter.add(element.as_bytes());
     }
 
     // Verify all added elements
     for i in 0..100 {
-        let element = format!("element_{}", i);
+        let element = format!("element_{i}");
         assert!(filter.check(element.as_bytes()));
     }
 }

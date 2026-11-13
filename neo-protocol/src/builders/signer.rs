@@ -89,9 +89,9 @@ impl SignerBuilder {
     /// Builds and returns the configured Signer.
     pub fn build(&self) -> Signer {
         let mut signer = Signer::new(self.account, self.scopes);
-        signer.allowed_contracts = self.allowed_contracts.clone();
-        signer.allowed_groups = self.allowed_groups.clone();
-        signer.rules = self.rules.clone();
+        signer.allowed_contracts.clone_from(&self.allowed_contracts);
+        signer.allowed_groups.clone_from(&self.allowed_groups);
+        signer.rules.clone_from(&self.rules);
         signer
     }
 }

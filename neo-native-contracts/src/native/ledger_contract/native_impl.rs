@@ -201,7 +201,7 @@ impl LedgerContract {
         Self::require_no_args("currentHash", args)?;
         let snapshot = engine.snapshot_cache();
         let hash = self.current_hash(snapshot.as_ref())?;
-        Ok(hash.to_bytes().to_vec())
+        Ok(hash.to_bytes().clone())
     }
 
     pub(super) fn invoke_current_index(
@@ -433,20 +433,22 @@ impl LedgerContract {
         //   - more than 32 bytes → invalid (would fault in C# as well)
         // This is equivalent for all well-formed inputs because a u32 block index
         // encodes to at most 4 bytes and a UInt256 hash is always exactly 32 bytes.
-        if data.len() == 32 {
-            let hash = UInt256::from_bytes(data)
-                .map_err(|e| Error::invalid_argument(format!("Invalid {name}: {e}")))?;
-            Ok(HashOrIndex::Hash(hash))
-        } else if data.len() < 32 {
-            let index = BigInt::from_signed_bytes_le(data)
-                .to_u32()
-                .ok_or_else(|| Error::invalid_argument(format!("Invalid {name} value")))?;
-            Ok(HashOrIndex::Index(index))
-        } else {
-            Err(Error::invalid_argument(format!(
+        match data.len().cmp(&32) {
+            std::cmp::Ordering::Equal => {
+                let hash = UInt256::from_bytes(data)
+                    .map_err(|e| Error::invalid_argument(format!("Invalid {name}: {e}")))?;
+                Ok(HashOrIndex::Hash(hash))
+            }
+            std::cmp::Ordering::Less => {
+                let index = BigInt::from_signed_bytes_le(data)
+                    .to_u32()
+                    .ok_or_else(|| Error::invalid_argument(format!("Invalid {name} value")))?;
+                Ok(HashOrIndex::Index(index))
+            }
+            std::cmp::Ordering::Greater => Err(Error::invalid_argument(format!(
                 "Invalid {name} length: {}",
                 data.len()
-            )))
+            ))),
         }
     }
 

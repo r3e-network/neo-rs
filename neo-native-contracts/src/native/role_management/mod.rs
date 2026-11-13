@@ -216,7 +216,7 @@ impl RoleManagement {
             .to_u8()
             .ok_or_else(|| Error::native_contract("Invalid role argument"))?;
         let role = Role::from_byte(role_value).ok_or_else(|| {
-            Error::native_contract(format!("Invalid role identifier: {}", role_value))
+            Error::native_contract(format!("Invalid role identifier: {role_value}"))
         })?;
 
         let index = if args.len() >= 2 {

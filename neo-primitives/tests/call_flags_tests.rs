@@ -96,7 +96,7 @@ fn call_flags_clone_and_copy() {
 #[test]
 fn call_flags_debug_format() {
     let flags = CallFlags::READ_STATES | CallFlags::WRITE_STATES;
-    let debug_str = format!("{:?}", flags);
+    let debug_str = format!("{flags:?}");
     assert!(debug_str.contains("READ_STATES"));
     assert!(debug_str.contains("WRITE_STATES"));
 }

@@ -67,8 +67,7 @@ impl PolicyContract {
 
         if value == 0 || value > max_value {
             return Err(Error::invalid_operation(format!(
-                "ExecFeeFactor must be between [1, {}], got {value}",
-                max_value
+                "ExecFeeFactor must be between [1, {max_value}], got {value}"
             )));
         }
 
@@ -355,7 +354,7 @@ impl PolicyContract {
                 self.hash,
                 "WhitelistFeeChanged".to_string(),
                 vec![
-                    StackItem::ByteString(contract_hash.to_bytes().to_vec()),
+                    StackItem::ByteString(contract_hash.to_bytes().clone()),
                     StackItem::ByteString(method.as_bytes().to_vec()),
                     StackItem::from_int(arg_count),
                     StackItem::from_int(fixed_fee),
@@ -420,7 +419,7 @@ impl PolicyContract {
                 self.hash,
                 "WhitelistFeeChanged".to_string(),
                 vec![
-                    StackItem::ByteString(contract_hash.to_bytes().to_vec()),
+                    StackItem::ByteString(contract_hash.to_bytes().clone()),
                     StackItem::ByteString(method.as_bytes().to_vec()),
                     StackItem::from_int(arg_count),
                     StackItem::Null,
@@ -459,7 +458,7 @@ impl PolicyContract {
                     self.hash,
                     "WhitelistFeeChanged".to_string(),
                     vec![
-                        StackItem::ByteString(contract.hash.to_bytes().to_vec()),
+                        StackItem::ByteString(contract.hash.to_bytes().clone()),
                         StackItem::ByteString(whitelist.method.as_bytes().to_vec()),
                         StackItem::from_int(whitelist.arg_count),
                         StackItem::Null,

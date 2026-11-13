@@ -192,7 +192,7 @@ fn uint160_roundtrip_preserves_value() {
     for bytes in test_cases {
         let uint = UInt160::from_bytes(&bytes).unwrap();
         let roundtrip = uint.to_array();
-        assert_eq!(bytes, roundtrip, "Round-trip failed for input: {:?}", bytes);
+        assert_eq!(bytes, roundtrip, "Round-trip failed for input: {bytes:?}");
     }
 }
 
@@ -213,7 +213,7 @@ fn uint256_roundtrip_preserves_value() {
     for bytes in test_cases {
         let uint = UInt256::from_bytes(&bytes).unwrap();
         let roundtrip = uint.to_array();
-        assert_eq!(bytes, roundtrip, "Round-trip failed for input: {:?}", bytes);
+        assert_eq!(bytes, roundtrip, "Round-trip failed for input: {bytes:?}");
     }
 }
 
@@ -230,7 +230,7 @@ fn uint160_zero_value_byte_representation() {
 
     // Verify all bytes are zero
     for (i, &byte) in bytes.iter().enumerate() {
-        assert_eq!(byte, 0, "Zero UInt160 byte {} should be 0", i);
+        assert_eq!(byte, 0, "Zero UInt160 byte {i} should be 0");
     }
 
     // Verify round-trip back to zero
@@ -245,7 +245,7 @@ fn uint256_zero_value_byte_representation() {
     let bytes = zero.to_array();
 
     for (i, &byte) in bytes.iter().enumerate() {
-        assert_eq!(byte, 0, "Zero UInt256 byte {} should be 0", i);
+        assert_eq!(byte, 0, "Zero UInt256 byte {i} should be 0");
     }
 
     let reconstructed = UInt256::from_bytes(&bytes).unwrap();

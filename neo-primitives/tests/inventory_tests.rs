@@ -9,7 +9,7 @@ struct MockInventory {
 
 impl SerializablePayload for MockInventory {
     fn hash_data(&self) -> Vec<u8> {
-        self.hash.to_bytes().to_vec()
+        self.hash.to_bytes()
     }
 
     fn hash(&self) -> UInt256 {

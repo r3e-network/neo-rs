@@ -372,8 +372,7 @@ pub fn validate_chain_integrity(
     if current_height != expected_height {
         return Err(StorageError {
             message: format!(
-                "Height mismatch: ledger reports {}, expected {}",
-                current_height, expected_height
+                "Height mismatch: ledger reports {current_height}, expected {expected_height}"
             ),
         });
     }

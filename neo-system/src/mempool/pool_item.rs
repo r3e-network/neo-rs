@@ -130,12 +130,10 @@ mod tests {
         let item1 = PoolItem::new(tx1.clone());
         let item2 = PoolItem::new(tx2.clone());
 
-        let expected = if tx1.hash() > tx2.hash() {
-            Ordering::Less
-        } else if tx1.hash() < tx2.hash() {
-            Ordering::Greater
-        } else {
-            Ordering::Equal
+        let expected = match tx1.hash().cmp(&tx2.hash()) {
+            Ordering::Greater => Ordering::Less,
+            Ordering::Less => Ordering::Greater,
+            Ordering::Equal => Ordering::Equal,
         };
 
         assert_eq!(item1.compare_to(&item2), expected);

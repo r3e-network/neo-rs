@@ -36,7 +36,7 @@ impl OracleHttpsProtocol {
         let version = env!("CARGO_PKG_VERSION");
         reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
-            .user_agent(format!("NeoOracleService/{}", version))
+            .user_agent(format!("NeoOracleService/{version}"))
     }
 
     /// Returns a reference to the underlying HTTP client.
@@ -142,7 +142,7 @@ impl OracleHttpsProtocol {
                     return if e.is_timeout() {
                         (OracleResponseCode::Timeout, String::new())
                     } else {
-                        (OracleResponseCode::Error, format!("Request failed: {}", e))
+                        (OracleResponseCode::Error, format!("Request failed: {e}"))
                     };
                 }
             };
@@ -245,7 +245,7 @@ impl OracleHttpsProtocol {
                 .and_then(|value| {
                     value
                         .split(';')
-                        .map(|part| part.trim())
+                        .map(str::trim)
                         .find_map(|part| part.strip_prefix("charset="))
                         .map(|value| value.trim().to_ascii_lowercase())
                 });

@@ -15,7 +15,7 @@ pub(crate) fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
         node_config.p2p.listen_port = Some(port);
     }
     if !cli.seed_nodes.is_empty() {
-        node_config.p2p.seed_nodes = cli.seed_nodes.clone();
+        node_config.p2p.seed_nodes.clone_from(&cli.seed_nodes);
     }
     if let Some(max_conn) = cli.max_connections {
         node_config.p2p.max_connections = Some(max_conn);
@@ -72,10 +72,16 @@ pub(crate) fn apply_cli_overrides(cli: &NodeCli, node_config: &mut NodeConfig) {
         node_config.storage.read_only = Some(true);
     }
     if !cli.rpc_allow_origins.is_empty() {
-        node_config.rpc.allow_origins = cli.rpc_allow_origins.clone();
+        node_config
+            .rpc
+            .allow_origins
+            .clone_from(&cli.rpc_allow_origins);
     }
     if !cli.rpc_disabled_methods.is_empty() {
-        node_config.rpc.disabled_methods = cli.rpc_disabled_methods.clone();
+        node_config
+            .rpc
+            .disabled_methods
+            .clone_from(&cli.rpc_disabled_methods);
     }
     if cli.rpc_hardened {
         node_config.rpc.cors_enabled = Some(false);

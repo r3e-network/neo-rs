@@ -221,7 +221,7 @@ mod benchmarks {
     #[test]
     fn test_detect_cpu_features() {
         let features = detect_cpu_features();
-        println!("Detected CPU features: {:?}", features);
+        println!("Detected CPU features: {features:?}");
 
         match features {
             CpuFeatures::ScalarOnly

@@ -353,7 +353,7 @@ pub(crate) async fn start_rpc_server_if_enabled(
     if let Some(path) = rpc_config_path {
         let raw = tokio::fs::read_to_string(path)
             .await
-            .with_context(|| format!("failed to read rpc config at {}", path))?;
+            .with_context(|| format!("failed to read rpc config at {path}"))?;
         settings_json = Some(serde_json::from_str(&raw).context("invalid rpc config json")?);
     }
     RpcServerSettings::load(settings_json.as_ref())

@@ -117,7 +117,7 @@ pub(super) fn contract_parameter_to_stack_value(
         ContractParameterValue::ByteArray(bytes) | ContractParameterValue::Signature(bytes) => {
             Ok(StackValue::ByteString(bytes.clone()))
         }
-        ContractParameterValue::PublicKey(point) => Ok(StackValue::ByteString(point.to_vec())),
+        ContractParameterValue::PublicKey(point) => Ok(StackValue::ByteString(point.clone())),
         ContractParameterValue::String(value) => {
             Ok(StackValue::ByteString(value.as_bytes().to_vec()))
         }

@@ -21,7 +21,7 @@ impl StdLib {
                 .parse::<BigInt>()
                 .map_err(|_| Error::native_contract("Invalid number format"))?,
             16 => self.parse_hex_twos_complement(&string_data)?,
-            _ => return Err(Error::native_contract(format!("Invalid base: {}", base))),
+            _ => return Err(Error::native_contract(format!("Invalid base: {base}"))),
         };
 
         Ok(value.to_signed_bytes_le())
@@ -40,7 +40,7 @@ impl StdLib {
         let encoded = match base {
             10 => value.to_string(),
             16 => self.format_hex_twos_complement(&value),
-            _ => return Err(Error::native_contract(format!("Invalid base: {}", base))),
+            _ => return Err(Error::native_contract(format!("Invalid base: {base}"))),
         };
 
         Ok(encoded.into_bytes())

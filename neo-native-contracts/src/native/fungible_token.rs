@@ -163,12 +163,12 @@ pub trait FungibleToken: NativeContract {
         to: Option<&UInt160>,
         amount: &BigInt,
     ) -> Result<()> {
-        let from_item = from
-            .map(|addr| StackItem::from_byte_string(addr.to_bytes()))
-            .unwrap_or_else(StackItem::null);
-        let to_item = to
-            .map(|addr| StackItem::from_byte_string(addr.to_bytes()))
-            .unwrap_or_else(StackItem::null);
+        let from_item = from.map_or_else(StackItem::null, |addr| {
+            StackItem::from_byte_string(addr.to_bytes())
+        });
+        let to_item = to.map_or_else(StackItem::null, |addr| {
+            StackItem::from_byte_string(addr.to_bytes())
+        });
         let amount_item = StackItem::from_int(amount.clone());
 
         engine

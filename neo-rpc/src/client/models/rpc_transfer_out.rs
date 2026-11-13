@@ -113,7 +113,9 @@ mod tests {
         assert_eq!(parsed.script_hash, transfer.script_hash);
         assert_eq!(parsed.value, transfer.value);
         assert_eq!(
-            json.get("address").and_then(|t| t.as_string()).unwrap(),
+            json.get("address")
+                .and_then(neo_json::JToken::as_string)
+                .unwrap(),
             WalletHelper::to_address(&transfer.script_hash, settings.address_version)
         );
     }

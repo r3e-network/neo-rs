@@ -34,7 +34,10 @@ fn workspace_vendors_neo_vm_as_the_canonical_local_crate() {
 
     for manifest in cargo_manifests(&workspace) {
         // The neo-vm crate's own manifest legitimately declares its name.
-        if manifest.parent().map(|dir| dir == workspace.join("neo-vm")) == Some(true) {
+        if manifest
+            .parent()
+            .is_some_and(|dir| dir == workspace.join("neo-vm"))
+        {
             continue;
         }
         let manifest_text = fs::read_to_string(&manifest).unwrap();
@@ -2894,8 +2897,7 @@ fn neo_rpc_uses_neo_vm_rs_opcode_directly() {
     collect_rs_files(&rpc_dir, &mut offenders);
     offenders.retain(|path| {
         fs::read_to_string(path)
-            .map(|source| source.contains("neo_core::neo_vm::op_code::OpCode"))
-            .unwrap_or(false)
+            .is_ok_and(|source| source.contains("neo_core::neo_vm::op_code::OpCode"))
     });
 
     assert!(
@@ -2934,8 +2936,7 @@ fn workspace_tests_and_benches_do_not_import_local_vm_runtime() {
         }
 
         fs::read_to_string(path)
-            .map(|source| DEAD_PATHS.iter().any(|dead| source.contains(dead)))
-            .unwrap_or(false)
+            .is_ok_and(|source| DEAD_PATHS.iter().any(|dead| source.contains(dead)))
     });
 
     assert!(

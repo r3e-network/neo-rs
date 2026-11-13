@@ -60,7 +60,7 @@ fn test_eccurve_copy() {
 #[test]
 fn test_eccurve_debug() {
     let curve = ECCurve::Secp256r1;
-    let debug_str = format!("{:?}", curve);
+    let debug_str = format!("{curve:?}");
     assert!(debug_str.contains("Secp256r1"));
 }
 
@@ -149,8 +149,8 @@ fn test_eccurve_partial_eq() {
     let r1_b = ECCurve::Secp256r1;
     let k1 = ECCurve::Secp256k1;
 
-    assert!(r1_a == r1_b);
-    assert!(r1_a != k1);
+    assert_eq!(r1_a, r1_b);
+    assert_ne!(r1_a, k1);
 }
 
 #[test]

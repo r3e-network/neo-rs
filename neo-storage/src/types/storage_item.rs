@@ -230,7 +230,7 @@ impl fmt::Display for StorageItem {
             "Value = {{ {} }}",
             value_array
                 .iter()
-                .map(|b| format!("0x{:02x}", b))
+                .map(|b| format!("0x{b:02x}"))
                 .collect::<Vec<_>>()
                 .join(", ")
         )
@@ -375,7 +375,7 @@ mod tests {
     #[test]
     fn test_storage_item_debug() {
         let item = StorageItem::from_bytes(vec![0x01]);
-        let debug_str = format!("{:?}", item);
+        let debug_str = format!("{item:?}");
         assert!(debug_str.contains("StorageItem"));
     }
 

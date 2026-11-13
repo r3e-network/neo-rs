@@ -250,8 +250,7 @@ impl NeoSystemContext {
         Ok(Some(self.ledger.clone()))
     }
 
-    /// Typed ledger view - returns LedgerContext wrapped as trait object.
-    /// Note: LedgerContext does not implement LedgerService trait yet.
+    /// Typed ledger view - returns the shared `LedgerContext` when present.
     pub fn ledger_typed(&self) -> CoreResult<Option<Arc<LedgerContext>>> {
         self.ledger_service()
     }
@@ -306,16 +305,17 @@ impl NeoSystemContext {
 
     /// Snapshot of basic readiness (ledger sync) using the provided lag threshold.
     pub fn readiness(&self, max_header_lag: Option<u32>) -> ReadinessStatus {
-        self.neo_system()
-            .map(|sys| sys.readiness(max_header_lag))
-            .unwrap_or(ReadinessStatus {
+        self.neo_system().map_or(
+            ReadinessStatus {
                 block_height: 0,
                 header_height: 0,
                 header_lag: u32::MAX,
                 healthy: false,
                 rpc_ready: false,
                 storage_ready: false,
-            })
+            },
+            |sys| sys.readiness(max_header_lag),
+        )
     }
 
     /// Snapshot of readiness annotated with optional service checks (by name) and storage state.
@@ -326,9 +326,7 @@ impl NeoSystemContext {
         storage_ready: Option<bool>,
     ) -> ReadinessStatus {
         let status = self.readiness(max_header_lag);
-        let rpc_ready = rpc_service_name
-            .map(|name| self.has_named_service(name))
-            .unwrap_or(true);
+        let rpc_ready = rpc_service_name.is_none_or(|name| self.has_named_service(name));
         let storage_ready = storage_ready.unwrap_or(true);
         status.with_services(rpc_ready, storage_ready)
     }
@@ -380,7 +378,11 @@ impl NeoSystemContext {
     /// Callers should handle `None` gracefully, typically by aborting the
     /// current operation or returning early.
     pub fn neo_system(&self) -> Option<Arc<NeoSystem>> {
-        let result = self.system.read().as_ref().and_then(|weak| weak.upgrade());
+        let result = self
+            .system
+            .read()
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade);
 
         if result.is_none() {
             // Log at trace level to avoid spam during normal shutdown
@@ -400,8 +402,7 @@ impl NeoSystemContext {
         self.system
             .read()
             .as_ref()
-            .map(|weak| weak.strong_count() > 0)
-            .unwrap_or(false)
+            .is_some_and(|weak| weak.strong_count() > 0)
     }
 
     /// Broadcasts a plugin lifecycle event to all registered listeners.
@@ -446,7 +447,7 @@ impl NeoSystemContext {
         self.transaction_execution_sink
             .get()
             .filter(|sink| !sink.is_closed())
-            .map_or(0, |sink| sink.capacity())
+            .map_or(0, tokio::sync::mpsc::Sender::capacity)
     }
 
     /// Attempts to enqueue diagnostic evidence without locks, waits, or callbacks.
@@ -496,7 +497,7 @@ impl NeoSystemContext {
     /// Updates the active wallet, replays it to registered handlers, and
     /// broadcasts a `WalletChanged` plugin event.
     pub fn notify_wallet_changed(&self, sender: &dyn Any, wallet: Option<Arc<dyn Wallet>>) {
-        *self.current_wallet.write() = wallet.clone();
+        (*self.current_wallet.write()).clone_from(&wallet);
         let handlers = { self.wallet_changed_handlers.read().clone() };
         for handler in handlers {
             handler.wallet_provider_wallet_changed_handler(sender, wallet.clone());
@@ -762,8 +763,7 @@ impl NeoSystemContext {
     ) -> neo_smart_contract::error::CoreResult<UInt256> {
         self.ledger.insert_transaction(transaction).map_err(|e| {
             neo_smart_contract::error::CoreError::invalid_operation(format!(
-                "Failed to insert transaction: {}",
-                e
+                "Failed to insert transaction: {e}"
             ))
         })
     }
@@ -780,8 +780,7 @@ impl NeoSystemContext {
     ) -> neo_smart_contract::error::CoreResult<UInt256> {
         self.ledger.insert_block(block).map_err(|e| {
             neo_smart_contract::error::CoreError::invalid_operation(format!(
-                "Failed to insert block: {}",
-                e
+                "Failed to insert block: {e}"
             ))
         })
     }

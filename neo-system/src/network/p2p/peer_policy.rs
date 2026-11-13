@@ -297,7 +297,9 @@ mod ban_list_tests {
     fn expired_entry(ip: IpAddr) -> BanEntry {
         BanEntry {
             ip,
-            banned_at: Instant::now() - Duration::from_secs(2),
+            banned_at: Instant::now()
+                .checked_sub(Duration::from_secs(2))
+                .expect("test clock retains 2 seconds of history"),
             duration: Duration::from_secs(1),
             reason: "expired".to_string(),
         }
@@ -488,8 +490,7 @@ impl PeerReputationTracker {
         let now = Instant::now();
         reputations.retain(|_, rep| {
             rep.last_seen
-                .map(|last| now.duration_since(last) < max_age)
-                .unwrap_or(true)
+                .is_none_or(|last| now.duration_since(last) < max_age)
         });
         before - reputations.len()
     }

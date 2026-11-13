@@ -501,7 +501,7 @@ fn test_mpt_concurrent_like_access() {
     println!("\nTest 12: Concurrent instance behavior");
 
     let initial_data: Vec<(Vec<u8>, Vec<u8>)> = (0..10)
-        .map(|i| (vec![i], format!("value_{}", i).into_bytes()))
+        .map(|i| (vec![i], format!("value_{i}").into_bytes()))
         .collect();
 
     // Create 3 independent copies

@@ -19,15 +19,12 @@ use std::sync::OnceLock;
 
 /// Reads a boolean environment flag with a fallback default.
 fn env_flag_enabled(name: &str, default: bool) -> bool {
-    std::env::var(name)
-        .ok()
-        .map(|raw| {
-            let trimmed = raw.trim();
-            ["1", "true", "yes", "on"]
-                .iter()
-                .any(|flag| trimmed.eq_ignore_ascii_case(flag))
-        })
-        .unwrap_or(default)
+    std::env::var(name).ok().map_or(default, |raw| {
+        let trimmed = raw.trim();
+        ["1", "true", "yes", "on"]
+            .iter()
+            .any(|flag| trimmed.eq_ignore_ascii_case(flag))
+    })
 }
 
 thread_local! {
@@ -85,8 +82,7 @@ impl SecurityContext {
             let mut guards = guards.borrow_mut();
             if guards.contains(&guard_type) {
                 return Err(CoreError::native_contract(format!(
-                    "Reentrancy detected for operation {:?}",
-                    guard_type
+                    "Reentrancy detected for operation {guard_type:?}"
                 )));
             }
             guards.insert(guard_type);
@@ -164,7 +160,7 @@ impl SafeArithmetic {
         T: num_traits::CheckedAdd + Copy + std::fmt::Display,
     {
         a.checked_add(&b)
-            .ok_or_else(|| CoreError::native_contract(format!("Addition overflow: {} + {}", a, b)))
+            .ok_or_else(|| CoreError::native_contract(format!("Addition overflow: {a} + {b}")))
     }
 
     /// Check if subtraction would underflow
@@ -172,9 +168,8 @@ impl SafeArithmetic {
     where
         T: num_traits::CheckedSub + Copy + std::fmt::Display,
     {
-        a.checked_sub(&b).ok_or_else(|| {
-            CoreError::native_contract(format!("Subtraction underflow: {} - {}", a, b))
-        })
+        a.checked_sub(&b)
+            .ok_or_else(|| CoreError::native_contract(format!("Subtraction underflow: {a} - {b}")))
     }
 
     /// Check if multiplication would overflow
@@ -183,7 +178,7 @@ impl SafeArithmetic {
         T: num_traits::CheckedMul + Copy + std::fmt::Display,
     {
         a.checked_mul(&b).ok_or_else(|| {
-            CoreError::native_contract(format!("Multiplication overflow: {} * {}", a, b))
+            CoreError::native_contract(format!("Multiplication overflow: {a} * {b}"))
         })
     }
 
@@ -227,8 +222,7 @@ impl PermissionValidator {
     {
         if value < min || value > max {
             return Err(CoreError::native_contract(format!(
-                "{} must be between {} and {}, got {}",
-                name, min, max, value
+                "{name} must be between {min} and {max}, got {value}"
             )));
         }
         Ok(())
@@ -238,8 +232,7 @@ impl PermissionValidator {
     pub fn validate_non_negative(amount: &BigInt, name: &str) -> CoreResult<()> {
         if amount.is_negative() {
             return Err(CoreError::native_contract(format!(
-                "{} cannot be negative",
-                name
+                "{name} cannot be negative"
             )));
         }
         Ok(())
@@ -249,8 +242,7 @@ impl PermissionValidator {
     pub fn validate_positive(amount: &BigInt, name: &str) -> CoreResult<()> {
         if *amount <= BigInt::zero() {
             return Err(CoreError::native_contract(format!(
-                "{} must be positive",
-                name
+                "{name} must be positive"
             )));
         }
         Ok(())
@@ -346,8 +338,7 @@ impl StateValidator {
             && total_supply > max
         {
             return Err(CoreError::native_contract(format!(
-                "Total supply {} exceeds maximum {}",
-                total_supply, max
+                "Total supply {total_supply} exceeds maximum {max}"
             )));
         }
         Ok(())

@@ -30,9 +30,9 @@ impl NeoToken {
         S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let state = self.get_account_state(snapshot, account)?;
-        Ok(state
-            .map(|account_state| account_state.balance().clone())
-            .unwrap_or_else(BigInt::zero))
+        Ok(state.map_or_else(BigInt::zero, |account_state| {
+            account_state.balance().clone()
+        }))
     }
 
     pub(super) fn get_account_state<S>(
@@ -139,8 +139,7 @@ impl NeoToken {
         );
         snapshot
             .try_get(&key)
-            .map(|item| item.to_bigint())
-            .unwrap_or_else(BigInt::zero)
+            .map_or_else(BigInt::zero, |item| item.to_bigint())
     }
 
     pub(super) fn get_sorted_gas_records<S>(&self, snapshot: &S, end: u32) -> Vec<(u32, BigInt)>
@@ -186,7 +185,7 @@ mod tests {
 
     fn seed_ledger_current_index(snapshot: &DataCache, index: u32) {
         let key = StorageKey::create(LedgerContract::ID, PREFIX_CURRENT_BLOCK);
-        let mut bytes = UInt256::zero().to_bytes().to_vec();
+        let mut bytes = UInt256::zero().to_bytes().clone();
         bytes.extend_from_slice(&index.to_le_bytes());
         snapshot.add(key, StorageItem::from_bytes(bytes));
     }
@@ -516,8 +515,7 @@ mod tests {
         let expected_total = &expected_holder_reward + &expected_voter_reward;
         assert_eq!(
             reward, expected_total,
-            "total bonus = holder {} + voter {} = {}",
-            expected_holder_reward, expected_voter_reward, expected_total
+            "total bonus = holder {expected_holder_reward} + voter {expected_voter_reward} = {expected_total}"
         );
     }
 
@@ -604,12 +602,12 @@ mod tests {
         for val in &values {
             let encoded = NeoToken::encode_amount(val);
             let decoded = BigInt::from_signed_bytes_le(&encoded);
-            assert_eq!(&decoded, val, "roundtrip failed for {}", val);
+            assert_eq!(&decoded, val, "roundtrip failed for {val}");
 
             // Also verify via StorageItem.to_bigint()
             let item = StorageItem::from_bytes(encoded);
             let decoded2 = item.to_bigint();
-            assert_eq!(&decoded2, val, "StorageItem roundtrip failed for {}", val);
+            assert_eq!(&decoded2, val, "StorageItem roundtrip failed for {val}");
         }
     }
 
@@ -700,8 +698,7 @@ mod tests {
 
         assert_eq!(
             reward, expected,
-            "holder reward over {} blocks: got {}, expected {}",
-            blocks, reward, expected
+            "holder reward over {blocks} blocks: got {reward}, expected {expected}"
         );
     }
 
@@ -754,9 +751,7 @@ mod tests {
         let diff = &total_direct - &accumulated;
         assert!(
             diff >= BigInt::from(0i64) && diff < BigInt::from(n_epochs),
-            "truncation error must be bounded: diff={}, n_epochs={}",
-            diff,
-            n_epochs
+            "truncation error must be bounded: diff={diff}, n_epochs={n_epochs}"
         );
 
         // Now compute the voter reward as calculate_bonus does:

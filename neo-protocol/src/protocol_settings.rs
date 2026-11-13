@@ -219,8 +219,7 @@ impl ProtocolSettings {
     pub fn is_hardfork_enabled(&self, hardfork: Hardfork, block_height: u32) -> bool {
         self.hardforks
             .get(&hardfork)
-            .map(|&activation_height| block_height >= activation_height)
-            .unwrap_or(false)
+            .is_some_and(|&activation_height| block_height >= activation_height)
     }
 
     /// Returns whether the hardfork is configured (has an activation height defined),
@@ -281,8 +280,7 @@ impl ProtocolSettings {
                 {
                     let missing = all[prev_index + 1];
                     return Err(format!(
-                        "Hardfork {:?} is configured while {:?} is missing. Configure every hardfork sequentially.",
-                        hardfork, missing
+                        "Hardfork {hardfork:?} is configured while {missing:?} is missing. Configure every hardfork sequentially."
                     ));
                 }
 
@@ -290,8 +288,7 @@ impl ProtocolSettings {
                     && height < prev_height
                 {
                     return Err(format!(
-                        "Hardfork {:?} activates at block {}, which is before previously configured height {}.",
-                        hardfork, height, prev_height
+                        "Hardfork {hardfork:?} activates at block {height}, which is before previously configured height {prev_height}."
                     ));
                 }
 
@@ -320,8 +317,8 @@ fn parse_committee(entries: Vec<String>) -> Result<Vec<ECPoint>, String> {
         if trimmed.is_empty() {
             continue;
         }
-        let bytes = hex::decode(trimmed)
-            .map_err(|err| format!("Invalid ECPoint hex '{}': {}", entry, err))?;
+        let bytes =
+            hex::decode(trimmed).map_err(|err| format!("Invalid ECPoint hex '{entry}': {err}"))?;
         let point = ECPoint::from_bytes(&bytes).map_err(|e| e.to_string())?;
         committee.push(point);
     }

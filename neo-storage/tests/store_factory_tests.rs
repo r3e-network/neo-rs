@@ -109,7 +109,7 @@ fn store_factory_thread_safety() {
     let handles: Vec<_> = (0..10)
         .map(|i| {
             thread::spawn(move || {
-                let store = StoreFactory::get_store("Memory", &format!("thread_{}", i))
+                let store = StoreFactory::get_store("Memory", &format!("thread_{i}"))
                     .expect("store creation");
                 let snapshot = store.snapshot();
                 let key = vec![0x42];

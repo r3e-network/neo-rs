@@ -639,19 +639,19 @@ mod tests {
     #[test]
     fn test_verification_error_debug_all_variants() {
         let err1 = VerificationError::verification_failed("msg");
-        assert!(format!("{:?}", err1).contains("VerificationFailed"));
+        assert!(format!("{err1:?}").contains("VerificationFailed"));
 
         let err2 = VerificationError::gas_limit_exceeded(200, 100);
-        assert!(format!("{:?}", err2).contains("GasLimitExceeded"));
+        assert!(format!("{err2:?}").contains("GasLimitExceeded"));
 
         let err3 = VerificationError::invalid_script("script error");
-        assert!(format!("{:?}", err3).contains("InvalidScript"));
+        assert!(format!("{err3:?}").contains("InvalidScript"));
 
         let err4 = VerificationError::invalid_signature("sig error");
-        assert!(format!("{:?}", err4).contains("InvalidSignature"));
+        assert!(format!("{err4:?}").contains("InvalidSignature"));
 
         let err5 = VerificationError::missing_witness(&UInt160::zero());
-        assert!(format!("{:?}", err5).contains("MissingWitness"));
+        assert!(format!("{err5:?}").contains("MissingWitness"));
     }
 
     #[test]

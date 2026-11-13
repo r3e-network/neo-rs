@@ -65,7 +65,7 @@ where
 
     /// Wallet-changed hook (parity with C# `WalletChangedHandler`).
     pub fn handle_wallet_changed(&self, wallet: Option<Arc<W>>) {
-        *self.wallet.write() = wallet.clone();
+        (*self.wallet.write()).clone_from(&wallet);
         if !self.settings.auto_start {
             return;
         }

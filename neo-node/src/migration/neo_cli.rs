@@ -46,7 +46,7 @@ fn parse_protocol_config(source_dir: &Path) -> Result<ProtocolSettings> {
     // Look for protocol.*.json files
     let entries = std::fs::read_dir(source_dir)?;
 
-    for entry in entries.filter_map(|e| e.ok()) {
+    for entry in entries.filter_map(std::result::Result::ok) {
         let file_name = entry.file_name();
         let name_str = file_name.to_string_lossy();
 

@@ -361,11 +361,7 @@ async fn get_version_contains_expected_fields() {
         "initialgasdistribution",
         "hardforks",
     ] {
-        assert!(
-            protocol.get(key).is_some(),
-            "missing protocol field {}",
-            key
-        );
+        assert!(protocol.get(key).is_some(), "missing protocol field {key}");
     }
 }
 
@@ -1179,10 +1175,11 @@ async fn notary_node_level_deposit_deduction_roundtrip() {
         let script = sb.to_array();
         println!(
             "DESIGNATE_SCRIPT_HEX: {}",
-            script
-                .iter()
-                .map(|b| format!("{b:02x}"))
-                .collect::<String>()
+            script.iter().fold(String::new(), |mut out, b| {
+                use std::fmt::Write as _;
+                let _ = write!(out, "{b:02x}");
+                out
+            })
         );
         script
     };

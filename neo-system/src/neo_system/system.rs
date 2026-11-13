@@ -57,9 +57,7 @@ impl super::core::NeoSystem {
         let block_height = ledger.current_height();
         let header_height = ledger.highest_header_index();
         let header_lag = header_height.saturating_sub(block_height);
-        let healthy = max_header_lag
-            .map(|threshold| header_lag <= threshold)
-            .unwrap_or(true);
+        let healthy = max_header_lag.is_none_or(|threshold| header_lag <= threshold);
 
         ReadinessStatus {
             block_height,
@@ -79,9 +77,7 @@ impl super::core::NeoSystem {
         storage_ready: Option<bool>,
     ) -> ReadinessStatus {
         let status = self.readiness(max_header_lag);
-        let rpc_ready = rpc_service_name
-            .map(|name| self.has_named_service(name))
-            .unwrap_or(true);
+        let rpc_ready = rpc_service_name.is_none_or(|name| self.has_named_service(name));
         let storage_ready = storage_ready.unwrap_or(true);
         status.with_services(rpc_ready, storage_ready)
     }

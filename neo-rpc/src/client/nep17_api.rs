@@ -152,7 +152,7 @@ impl Nep17Api {
             hash
         } else {
             WalletHelper::to_script_hash(address, self.rpc_client.protocol_settings.address_version)
-                .map_err(|e| RpcError::Other(e.to_string()))?
+                .map_err(|e| RpcError::Other(e.clone()))?
         };
 
         // Get balance for the address

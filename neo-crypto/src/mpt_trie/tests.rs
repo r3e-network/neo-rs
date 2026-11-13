@@ -852,7 +852,11 @@ mod mpt_tests {
         cache.delete_node(hash).unwrap();
 
         let resolved = cache.resolve(&hash).unwrap();
-        assert!(resolved.as_ref().map(|n| n.is_empty()).unwrap_or(true));
+        assert!(
+            resolved
+                .as_ref()
+                .is_none_or(super::super::node::Node::is_empty)
+        );
     }
 
     #[test]
@@ -1250,7 +1254,7 @@ mod mpt_tests {
                     hex::encode(h.to_bytes())
                 );
             } else {
-                eprintln!("after entry {}: key={} root=None", i, k);
+                eprintln!("after entry {i}: key={k} root=None");
             }
         }
     }

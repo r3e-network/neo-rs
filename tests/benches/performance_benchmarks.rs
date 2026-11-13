@@ -22,7 +22,7 @@ fn bench_sha256(c: &mut Criterion) {
     for size in data_sizes {
         let data = vec![0xFFu8; size];
         group.bench_with_input(BenchmarkId::from_parameter(size), &data, |b, data| {
-            b.iter(|| Crypto::sha256(black_box(data)))
+            b.iter(|| Crypto::sha256(black_box(data)));
         });
     }
     group.finish();
@@ -35,7 +35,7 @@ fn bench_hash256(c: &mut Criterion) {
     for size in data_sizes {
         let data = vec![0xFFu8; size];
         group.bench_with_input(BenchmarkId::from_parameter(size), &data, |b, data| {
-            b.iter(|| Crypto::hash256(black_box(data)))
+            b.iter(|| Crypto::hash256(black_box(data)));
         });
     }
     group.finish();
@@ -48,7 +48,7 @@ fn bench_hash160(c: &mut Criterion) {
     for size in data_sizes {
         let data = vec![0xFFu8; size];
         group.bench_with_input(BenchmarkId::from_parameter(size), &data, |b, data| {
-            b.iter(|| Crypto::hash160(black_box(data)))
+            b.iter(|| Crypto::hash160(black_box(data)));
         });
     }
     group.finish();
@@ -72,7 +72,7 @@ fn bench_state_trie_single_insert(c: &mut Criterion) {
             |(mut trie, changes): (StateTrieManager, StateChanges)| {
                 black_box(trie.apply_changes(1, &changes).unwrap())
             },
-        )
+        );
     });
 }
 
@@ -97,7 +97,7 @@ fn bench_state_trie_batch_insert(c: &mut Criterion) {
                 |(mut trie, changes): (StateTrieManager, StateChanges)| {
                     black_box(trie.apply_changes(1, &changes).unwrap())
                 },
-            )
+            );
         });
     }
     group.finish();
@@ -118,7 +118,7 @@ fn bench_state_trie_incremental_blocks(c: &mut Criterion) {
                     black_box(trie.apply_changes(block, &changes).unwrap());
                 }
             },
-        )
+        );
     });
 }
 
@@ -130,7 +130,7 @@ fn bench_uint256_from_bytes(c: &mut Criterion) {
     let bytes = [0xFFu8; 32];
 
     c.bench_function("primitives/uint256_from_bytes", |b| {
-        b.iter(|| UInt256::from_bytes(black_box(&bytes)))
+        b.iter(|| UInt256::from_bytes(black_box(&bytes)));
     });
 }
 
@@ -138,7 +138,7 @@ fn bench_uint256_to_bytes(c: &mut Criterion) {
     let hash = UInt256::from([0xFFu8; 32]);
 
     c.bench_function("primitives/uint256_to_bytes", |b| {
-        b.iter(|| black_box(&hash).to_bytes())
+        b.iter(|| black_box(&hash).to_bytes());
     });
 }
 
@@ -146,7 +146,7 @@ fn bench_uint160_from_bytes(c: &mut Criterion) {
     let bytes = [0xFFu8; 20];
 
     c.bench_function("primitives/uint160_from_bytes", |b| {
-        b.iter(|| UInt160::from_bytes(black_box(&bytes)))
+        b.iter(|| UInt160::from_bytes(black_box(&bytes)));
     });
 }
 
@@ -159,7 +159,7 @@ fn bench_storage_key_creation(c: &mut Criterion) {
     let key_data = vec![0x01, 0x02, 0x03, 0x04];
 
     c.bench_function("storage/key_creation", |b| {
-        b.iter(|| StorageKey::new(black_box(contract), black_box(key_data.clone())))
+        b.iter(|| StorageKey::new(black_box(contract), black_box(key_data.clone())));
     });
 }
 
@@ -174,7 +174,7 @@ fn bench_storage_key_hash(c: &mut Criterion) {
             let mut hasher = DefaultHasher::new();
             black_box(&key).hash(&mut hasher);
             hasher.finish()
-        })
+        });
     });
 }
 

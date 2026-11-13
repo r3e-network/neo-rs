@@ -791,10 +791,7 @@ mod tests {
         // C#: ushort.MaxValue = 65535
         assert_eq!(
             error.to_string(),
-            format!(
-                "Memory limit exceeded: used 2048 bytes, limit {} bytes",
-                limit
-            )
+            format!("Memory limit exceeded: used 2048 bytes, limit {limit} bytes")
         );
 
         let error = VmError::gas_exhausted(1000, 800);

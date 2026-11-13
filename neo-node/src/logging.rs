@@ -65,8 +65,7 @@ pub fn init_tracing(logging: &LoggingSection, daemon_mode: bool) -> Result<Loggi
     let normalized = logging
         .format
         .as_deref()
-        .map(|value| value.to_ascii_lowercase())
-        .unwrap_or_else(|| "text".to_string());
+        .map_or_else(|| "text".to_string(), str::to_ascii_lowercase);
 
     match normalized.as_str() {
         "json" => {

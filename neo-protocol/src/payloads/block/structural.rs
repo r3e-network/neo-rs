@@ -39,6 +39,9 @@ impl Block {
         true
     }
     pub(super) fn transaction_hashes(&self) -> IoResult<Vec<UInt256>> {
-        self.transactions.iter().map(|tx| tx.try_hash()).collect()
+        self.transactions
+            .iter()
+            .map(super::super::transaction::Transaction::try_hash)
+            .collect()
     }
 }

@@ -48,6 +48,6 @@ impl OracleNeoFsProtocol {
             Ok(hash) => hash,
             Err(code) => return (code, String::new()),
         };
-        (OracleResponseCode::Success, format!("\"{}\"", hash))
+        (OracleResponseCode::Success, format!("\"{hash}\""))
     }
 }

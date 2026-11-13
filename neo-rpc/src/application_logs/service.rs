@@ -284,7 +284,7 @@ impl ApplicationLogsService {
         if include_exception || exception.is_some() {
             trigger.insert(
                 "exception".to_string(),
-                exception.map(Value::String).unwrap_or(Value::Null),
+                exception.map_or(Value::Null, Value::String),
             );
         }
 

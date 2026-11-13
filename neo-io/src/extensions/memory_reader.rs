@@ -24,8 +24,7 @@ impl MemoryReaderExtensions for MemoryReader<'_> {
         let count = self.read_var_uint()? as usize;
         if count > max {
             return Err(IoError::invalid_data(format!(
-                "Nullable array length {} exceeds maximum {}",
-                count, max
+                "Nullable array length {count} exceeds maximum {max}"
             )));
         }
 

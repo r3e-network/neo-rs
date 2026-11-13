@@ -274,7 +274,7 @@ mod tests {
         let json = token.to_json();
         assert_eq!(
             json.get("callflags")
-                .and_then(|value| value.as_string())
+                .and_then(neo_json::JToken::as_string)
                 .unwrap_or_default(),
             "All"
         );

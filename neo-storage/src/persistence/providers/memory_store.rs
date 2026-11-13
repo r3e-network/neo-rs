@@ -102,7 +102,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
         let data = self.inner_data.read();
-        let prefix_bytes = key_prefix.map(|k| k.to_array());
+        let prefix_bytes = key_prefix.map(crate::types::storage_key::StorageKey::to_array);
 
         let mut entries: Vec<_> = data
             .iter()
@@ -184,7 +184,7 @@ impl MemoryStore {
     pub fn apply_batch(&self, batch: &std::collections::BTreeMap<Vec<u8>, Option<Vec<u8>>>) {
         let mut guard = self.inner_data.write();
         let data = Arc::make_mut(&mut guard);
-        for (key, value) in batch.iter() {
+        for (key, value) in batch {
             match value {
                 Some(v) => {
                     data.insert(key.clone(), v.clone());

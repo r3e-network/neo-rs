@@ -43,7 +43,7 @@ fn test_batch_verifier_multiple_valid_signatures() {
 
     for i in 0..10 {
         let (private_key, public_key) = generate_keypair();
-        let message = format!("test message {}", i);
+        let message = format!("test message {i}");
         let message_digest = Crypto::sha256(message.as_bytes());
         let signature = Secp256r1Crypto::sign_prehash(&message_digest, &private_key).unwrap();
 
@@ -81,7 +81,7 @@ fn test_batch_verifier_mixed_signatures() {
     // Add some valid signatures
     for i in 0..5 {
         let (private_key, public_key) = generate_keypair();
-        let message = format!("valid message {}", i);
+        let message = format!("valid message {i}");
         let message_digest = Crypto::sha256(message.as_bytes());
         let signature = Secp256r1Crypto::sign_prehash(&message_digest, &private_key).unwrap();
 
@@ -158,7 +158,7 @@ fn test_batch_verifier_large_batch() {
 
     for i in 0..100 {
         let (private_key, public_key) = generate_keypair();
-        let message = format!("transaction {}", i);
+        let message = format!("transaction {i}");
         let message_digest = Crypto::sha256(message.as_bytes());
         let signature = Secp256r1Crypto::sign_prehash(&message_digest, &private_key).unwrap();
 
@@ -212,6 +212,6 @@ fn test_batch_verifier_debug_format() {
         public_key: [3u8; 33],
     };
 
-    let debug_str = format!("{:?}", components);
+    let debug_str = format!("{components:?}");
     assert!(debug_str.contains("SignatureComponents"));
 }

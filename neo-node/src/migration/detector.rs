@@ -13,11 +13,14 @@ use std::path::Path;
 pub fn detect_implementation(source_dir: &Path) -> Result<NodeImplementation> {
     // Check neo-cli indicators
     let has_config_json = source_dir.join("config.json").exists();
-    let has_protocol_json = source_dir.read_dir()?.filter_map(|e| e.ok()).any(|e| {
-        let name = e.file_name();
-        let name_str = name.to_string_lossy();
-        name_str.starts_with("protocol.") && name_str.ends_with(".json")
-    });
+    let has_protocol_json = source_dir
+        .read_dir()?
+        .filter_map(std::result::Result::ok)
+        .any(|e| {
+            let name = e.file_name();
+            let name_str = name.to_string_lossy();
+            name_str.starts_with("protocol.") && name_str.ends_with(".json")
+        });
     let has_storage_dir = source_dir.join("Storage").exists();
 
     if has_config_json && has_protocol_json {

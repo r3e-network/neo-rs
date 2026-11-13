@@ -12,7 +12,7 @@ impl fmt::Display for WitnessCondition {
                     "And([{}])",
                     conditions
                         .iter()
-                        .map(|c| c.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect::<Vec<_>>()
                         .join(", ")
                 )
@@ -23,7 +23,7 @@ impl fmt::Display for WitnessCondition {
                     "Or([{}])",
                     conditions
                         .iter()
-                        .map(|c| c.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect::<Vec<_>>()
                         .join(", ")
                 )

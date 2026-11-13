@@ -621,11 +621,7 @@ fn parse_primitives_exception_policy(
 pub(super) fn validate_oracle_nodes(nodes: &[String]) -> Result<()> {
     for node in nodes {
         if let Err(err) = Url::parse(node) {
-            bail!(
-                "OracleService.Nodes entry '{}' is not a valid absolute URI: {}",
-                node,
-                err
-            );
+            bail!("OracleService.Nodes entry '{node}' is not a valid absolute URI: {err}");
         }
     }
     Ok(())

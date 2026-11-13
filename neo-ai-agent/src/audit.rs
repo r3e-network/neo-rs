@@ -265,7 +265,7 @@ impl FileAuditLog {
                 if calculate_hash(event)? != event.event_hash {
                     return Err(AuditError::BrokenChain(event.sequence));
                 }
-                tail_hash = event.event_hash.clone();
+                tail_hash.clone_from(&event.event_hash);
                 total_events = event.sequence + 1;
                 window.push_back(event.clone());
                 if window.len() > options.memory_window {
@@ -338,7 +338,7 @@ impl AuditLog for FileAuditLog {
         state.file_bytes += encoded.len() as u64 + 1;
         state.file_events += 1;
         state.total_events = sequence + 1;
-        state.tail_hash = event.event_hash.clone();
+        state.tail_hash.clone_from(&event.event_hash);
         state.window.push_back(event.clone());
         if state.window.len() > state.options.memory_window {
             state.window.pop_front();
@@ -434,7 +434,7 @@ fn write_rotation_checkpoint(state: &mut FileAuditState) -> Result<(), AuditErro
     state.file_bytes = encoded.len() as u64 + 1;
     state.file_events = 1;
     state.total_events = event.sequence + 1;
-    state.tail_hash = event.event_hash.clone();
+    state.tail_hash.clone_from(&event.event_hash);
     state.window.push_back(event);
     if state.window.len() > state.options.memory_window {
         state.window.pop_front();
@@ -489,8 +489,9 @@ fn null_device_file() -> Result<File, AuditError> {
 fn unix_time_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or(1)
+        .map_or(1, |duration| {
+            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+        })
         .max(1)
 }
 
@@ -532,7 +533,7 @@ fn validate_input(input: &AuditInput) -> Result<(), AuditError> {
         || input
             .evidence_refs
             .iter()
-            .any(|reference| reference.is_empty())
+            .any(std::string::String::is_empty)
         || input.evidence_refs.len() != input.evidence_hashes.len()
         || input
             .evidence_hashes
@@ -593,7 +594,11 @@ fn calculate_hash(event: &AuditEvent) -> Result<String, AuditError> {
     };
     let encoded = serde_json::to_vec(&material).map_err(|_| AuditError::Serialization)?;
     let digest = Sha256::digest(encoded);
-    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+    Ok(digest.iter().fold(String::new(), |mut output, byte| {
+        use std::fmt::Write as _;
+        write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
+        output
+    }))
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]

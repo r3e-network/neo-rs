@@ -142,7 +142,7 @@ pub fn stack_items_from_json_field(json: &JObject, field: &str) -> Vec<StackValu
 fn fallback_text_or_null(json: &JObject) -> StackValue {
     let value = json.get("value");
     let text = value
-        .and_then(|token| token.as_string())
+        .and_then(neo_json::JToken::as_string)
         .or_else(|| value.map(std::string::ToString::to_string));
 
     if let Some(text) = text {
@@ -195,7 +195,7 @@ fn insert_base64_value(json: &mut JObject, bytes: &[u8]) {
 
 pub fn stack_value_to_bigint(value: &StackValue) -> Result<BigInt, String> {
     match value {
-        StackValue::Boolean(value) => Ok(BigInt::from(if *value { 1 } else { 0 })),
+        StackValue::Boolean(value) => Ok(BigInt::from(i32::from(*value))),
         StackValue::Integer(value) => Ok(BigInt::from(*value)),
         StackValue::BigInteger(bytes)
         | StackValue::ByteString(bytes)

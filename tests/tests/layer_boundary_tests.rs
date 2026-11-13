@@ -470,8 +470,10 @@ impl WorkspaceGraph {
             .members
             .iter()
             .find(|(_, member)| member.name == name)
-            .map(|(id, _)| id)
-            .unwrap_or_else(|| panic!("Required workspace member missing: {name}"));
+            .map_or_else(
+                || panic!("Required workspace member missing: {name}"),
+                |(id, _)| id,
+            );
         self.edges
             .iter()
             .filter(|edge| &edge.from == id)
@@ -1115,7 +1117,7 @@ fn test_production_cannot_depend_on_nonproduction_members() {
 fn test_static_policy_is_acyclic() {
     let mut packages = BTreeMap::new();
     let mut pairs = BTreeSet::new();
-    for &(from, to) in ALLOWED_EDGES.iter() {
+    for &(from, to) in ALLOWED_EDGES {
         assert!(
             pairs.insert((from, to)),
             "Duplicate policy edge {from} -> {to}"

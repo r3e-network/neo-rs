@@ -40,7 +40,7 @@ mod tests {
     fn to_core_error_preserves_message() {
         let runtime_err = neo_actors::ActorRuntimeError::actor("test_actor not found");
         let core_err = to_core_error(runtime_err);
-        let msg = format!("{}", core_err);
+        let msg = format!("{core_err}");
         assert!(msg.contains("test_actor"));
     }
 }

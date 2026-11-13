@@ -48,8 +48,7 @@ impl NeoToken {
             "setGasPerBlock" => self.set_gas_per_block(engine, args),
             "setRegisterPrice" => self.set_register_price(engine, args),
             _ => Err(CoreError::native_contract(format!(
-                "Unknown method: {}",
-                method
+                "Unknown method: {method}"
             ))),
         }
     }

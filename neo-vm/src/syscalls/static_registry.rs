@@ -363,7 +363,7 @@ fn classify_syscall(name: &str) -> SyscallName {
         "System.Iterator.Next" => SyscallName::IteratorNext,
         "System.Iterator.Value" => SyscallName::IteratorValue,
 
-        _ => panic!("Unknown syscall: {}", name),
+        _ => panic!("Unknown syscall: {name}"),
     }
 }
 
@@ -389,7 +389,7 @@ fn classify_category(name: &str) -> SyscallCategory {
         }
         s if s.starts_with("System.Crypto.") => SyscallCategory::Crypto,
         s if s.starts_with("System.Iterator.") => SyscallCategory::Iterator,
-        _ => panic!("Unknown syscall category for: {}", name),
+        _ => panic!("Unknown syscall category for: {name}"),
     }
 }
 
@@ -485,7 +485,7 @@ mod tests {
 
         for (name, expected_hash) in test_cases {
             let entry =
-                find_by_method_name(name).unwrap_or_else(|| panic!("Syscall {} not found", name));
+                find_by_method_name(name).unwrap_or_else(|| panic!("Syscall {name} not found"));
 
             let computed_hash = u32::from_le_bytes([
                 entry.hash_full[0],
@@ -494,7 +494,7 @@ mod tests {
                 entry.hash_full[3],
             ]);
 
-            assert_eq!(computed_hash, expected_hash, "Hash mismatch for {}", name);
+            assert_eq!(computed_hash, expected_hash, "Hash mismatch for {name}");
         }
     }
 
@@ -516,13 +516,9 @@ mod tests {
         // Verify every method in BUILTIN_METHODS has an entry
         for (idx, &method_name) in BUILTIN_METHODS.iter().enumerate() {
             let entry = find_by_method_name(method_name)
-                .unwrap_or_else(|| panic!("Missing entry for {}", method_name));
+                .unwrap_or_else(|| panic!("Missing entry for {method_name}"));
 
-            assert_eq!(
-                entry.method_id, idx,
-                "Method ID mismatch for {}",
-                method_name
-            );
+            assert_eq!(entry.method_id, idx, "Method ID mismatch for {method_name}");
         }
     }
 
@@ -540,14 +536,9 @@ mod tests {
             if let Some(entry) = get_syscall_entry(&hash) {
                 assert!(
                     entry.gas_price >= 0,
-                    "Negative gas cost for method {}",
-                    method_name
+                    "Negative gas cost for method {method_name}"
                 );
-                assert_eq!(
-                    entry.method_id, idx,
-                    "Method ID mismatch for {}",
-                    method_name
-                );
+                assert_eq!(entry.method_id, idx, "Method ID mismatch for {method_name}");
             }
         }
     }
@@ -595,7 +586,7 @@ mod tests {
         for (i, name_i) in names.iter().enumerate() {
             for (j, name_j) in names.iter().enumerate() {
                 if i != j {
-                    assert_ne!(name_i, name_j, "Duplicate syscall name: {}", name_i);
+                    assert_ne!(name_i, name_j, "Duplicate syscall name: {name_i}");
                 }
             }
         }

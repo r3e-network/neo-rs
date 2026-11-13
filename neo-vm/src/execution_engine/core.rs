@@ -80,10 +80,10 @@ impl ExecutionEngine {
                     let mut fault_text = err.to_string();
                     if let Some(context) = self.current_context() {
                         let ip = context.instruction_pointer();
-                        let opcode = context
-                            .current_instruction()
-                            .map(|instruction| format!("{:?}", instruction.opcode()))
-                            .unwrap_or_else(|_| "<none>".to_string());
+                        let opcode = context.current_instruction().map_or_else(
+                            |_| "<none>".to_string(),
+                            |instruction| format!("{:?}", instruction.opcode()),
+                        );
                         let eval_depth = context.evaluation_stack().len();
                         fault_text = format!(
                             "{fault_text} [ip={ip} opcode={opcode} eval_depth={eval_depth}]"

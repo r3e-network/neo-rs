@@ -59,7 +59,7 @@ impl NodeConfig {
                     .network
                     .network_type
                     .as_deref()
-                    .map(|value| value.to_ascii_lowercase())
+                    .map(str::to_ascii_lowercase)
                 {
                     Some(ref ty) if ty == "testnet" || ty == "test" => ProtocolSettings::testnet(),
                     Some(ref ty) if ty == "privatenet" || ty == "private" => {
@@ -78,7 +78,7 @@ impl NodeConfig {
         }
 
         if !self.p2p.seed_nodes.is_empty() {
-            settings.seed_list = self.p2p.seed_nodes.clone();
+            settings.seed_list.clone_from(&self.p2p.seed_nodes);
         }
 
         if let Some(milliseconds) = self.blockchain.block_time {

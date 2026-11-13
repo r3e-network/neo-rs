@@ -12,7 +12,7 @@ pub(crate) fn normalize_neofs_endpoint(endpoint: &str) -> Result<String, String>
     let normalized = if trimmed.contains("://") {
         trimmed.to_string()
     } else {
-        format!("http://{}", trimmed)
+        format!("http://{trimmed}")
     };
     Ok(normalized)
 }

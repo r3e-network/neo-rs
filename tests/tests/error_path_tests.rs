@@ -385,7 +385,7 @@ async fn test_concurrent_error_creation() {
     let handles: Vec<_> = (0..100)
         .map(|i| {
             task::spawn(async move {
-                let error = CoreError::invalid_format(format!("error {}", i));
+                let error = CoreError::invalid_format(format!("error {i}"));
                 assert_eq!(error.category(), "validation");
                 error
             })

@@ -44,7 +44,7 @@ impl EventStream {
     {
         let subs = self.subscribers.read();
         if let Some(entry) = subs.get(&TypeId::of::<T>()) {
-            for actor in entry.iter() {
+            for actor in entry {
                 let _ = actor.tell(message.clone());
             }
         }

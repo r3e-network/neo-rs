@@ -83,7 +83,7 @@ impl ContractPermission {
         let contract_size = self.contract.size();
         let methods_size = match &self.methods {
             WildCardContainer::Wildcard => 1,
-            WildCardContainer::List(methods) => methods.iter().map(|m| m.len()).sum(),
+            WildCardContainer::List(methods) => methods.iter().map(std::string::String::len).sum(),
         };
         contract_size + methods_size
     }
@@ -108,7 +108,7 @@ impl ContractPermission {
                     return Err(Error::invalid_data("Method list cannot be empty"));
                 }
 
-                if methods.iter().any(|m| m.is_empty()) {
+                if methods.iter().any(std::string::String::is_empty) {
                     return Err(Error::invalid_data("Method name cannot be empty"));
                 }
             }
@@ -143,13 +143,12 @@ impl ContractPermission {
         self.contract =
             ContractPermissionDescriptor::from_stack_value(items[0].clone()).map_err(|e| {
                 CoreError::invalid_format(format!(
-                    "Invalid contract descriptor in stack value: {}",
-                    e
+                    "Invalid contract descriptor in stack value: {e}"
                 ))
             })?;
 
         self.methods = WildCardContainer::from_stack_value(items[1].clone()).map_err(|e| {
-            CoreError::invalid_format(format!("Invalid methods container in stack value: {}", e))
+            CoreError::invalid_format(format!("Invalid methods container in stack value: {e}"))
         })?;
 
         Ok(())

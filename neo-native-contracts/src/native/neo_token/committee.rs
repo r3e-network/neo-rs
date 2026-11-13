@@ -177,8 +177,7 @@ impl NeoToken {
         let voters_key = StorageKey::create(Self::ID, Self::PREFIX_VOTERS_COUNT);
         let voters_count = snapshot
             .try_get(&voters_key)
-            .map(|item| item.to_bigint())
-            .unwrap_or_else(BigInt::zero);
+            .map_or_else(BigInt::zero, |item| item.to_bigint());
 
         let committee_members_count = settings.committee_members_count();
         let turnout_low = &voters_count * BigInt::from(5i64) < BigInt::from(Self::TOTAL_SUPPLY);
@@ -288,9 +287,8 @@ impl NeoToken {
         let blocked_started = profiling.then(std::time::Instant::now);
         let policy = PolicyContract::new();
         let blocked_accounts = policy.blocked_accounts_snapshot(snapshot);
-        let blocked_ms = blocked_started
-            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
-            .unwrap_or(0.0);
+        let blocked_ms =
+            blocked_started.map_or(0.0, |started| started.elapsed().as_secs_f64() * 1_000.0);
         let has_blocked_accounts = !blocked_accounts.is_empty();
 
         let scan_started = profiling.then(std::time::Instant::now);

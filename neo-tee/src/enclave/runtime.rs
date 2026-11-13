@@ -181,13 +181,13 @@ impl TeeEnclave {
 
         // Step 1: Validate configuration
         if let Err(e) = self.config.validate() {
-            self.set_error_state(format!("Configuration validation failed: {}", e));
+            self.set_error_state(format!("Configuration validation failed: {e}"));
             return Err(e);
         }
 
         // Step 2: Create sealed data directory
         if let Err(e) = self.create_sealed_data_directory() {
-            self.set_error_state(format!("Directory creation failed: {}", e));
+            self.set_error_state(format!("Directory creation failed: {e}"));
             return Err(e);
         }
 
@@ -198,7 +198,7 @@ impl TeeEnclave {
                 key
             }
             Err(e) => {
-                self.set_error_state(format!("Sealing key derivation failed: {}", e));
+                self.set_error_state(format!("Sealing key derivation failed: {e}"));
                 if matches!(e, TeeError::EnclaveInitError { .. }) {
                     return Err(e);
                 }
@@ -215,7 +215,7 @@ impl TeeEnclave {
         // while still entering Ready (that weakens sealed-blob rollback protection).
         // Missing counter file is OK (first boot); load_monotonic_counter returns Ok.
         self.load_monotonic_counter().map_err(|e| {
-            self.set_error_state(format!("Monotonic counter load failed: {}", e));
+            self.set_error_state(format!("Monotonic counter load failed: {e}"));
             e
         })?;
         debug!("Successfully loaded monotonic counter");
@@ -246,14 +246,14 @@ impl TeeEnclave {
                         self.counter_file_path(),
                         floor_path
                     );
-                    self.set_error_state(format!("Rollback floor invalid: {}", context));
+                    self.set_error_state(format!("Rollback floor invalid: {context}"));
                     return Err(TeeError::enclave_init_error(
                         EnclaveInitError::RollbackFloorInvalid,
                         context,
                     ));
                 }
                 crate::enclave::rollback_floor::store(&floor_path, 0).map_err(|e| {
-                    let context = format!("failed to initialize rollback floor witness: {}", e);
+                    let context = format!("failed to initialize rollback floor witness: {e}");
                     self.set_error_state(context.clone());
                     TeeError::enclave_init_error(EnclaveInitError::RollbackFloorInvalid, context)
                 })?;
@@ -274,10 +274,7 @@ impl TeeEnclave {
                 debug!("Loaded rollback floor witness: {}", floor_value);
             }
             Err(e) => {
-                let context = format!(
-                    "failed to load rollback floor witness {:?}: {}",
-                    floor_path, e
-                );
+                let context = format!("failed to load rollback floor witness {floor_path:?}: {e}");
                 self.set_error_state(context.clone());
                 return Err(TeeError::enclave_init_error(
                     EnclaveInitError::RollbackFloorInvalid,
@@ -310,7 +307,7 @@ impl TeeEnclave {
             if !path.is_dir() {
                 return Err(TeeError::enclave_init_error(
                     EnclaveInitError::DirectoryCreationFailed,
-                    format!("Path exists but is not a directory: {:?}", path),
+                    format!("Path exists but is not a directory: {path:?}"),
                 ));
             }
 
@@ -323,7 +320,7 @@ impl TeeEnclave {
                 Err(e) => {
                     return Err(TeeError::enclave_init_error(
                         EnclaveInitError::DirectoryCreationFailed,
-                        format!("Directory not writable: {:?} - {}", path, e),
+                        format!("Directory not writable: {path:?} - {e}"),
                     ));
                 }
             }
@@ -347,7 +344,7 @@ impl TeeEnclave {
             }
             Err(e) => Err(TeeError::enclave_init_error(
                 EnclaveInitError::DirectoryCreationFailed,
-                format!("Failed to create {:?}: {}", path, e),
+                format!("Failed to create {path:?}: {e}"),
             )),
         }
     }

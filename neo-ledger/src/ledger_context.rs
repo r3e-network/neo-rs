@@ -125,7 +125,7 @@ impl LedgerContext {
         let hashes = self.hashes_by_index.read();
         hashes
             .get(index as usize)
-            .cloned()
+            .copied()
             .filter(|hash| *hash != UInt256::zero())
     }
 
@@ -157,7 +157,7 @@ impl LedgerContext {
             .skip(start_pos + 1)
             .filter(|hash| **hash != UInt256::zero())
             .take(count)
-            .cloned()
+            .copied()
             .collect()
     }
 
@@ -194,7 +194,7 @@ impl LedgerContext {
 
     /// Returns all transaction hashes currently tracked by the mempool cache.
     pub fn mempool_transaction_hashes(&self) -> Vec<UInt256> {
-        self.transactions_by_hash.read().keys().cloned().collect()
+        self.transactions_by_hash.read().keys().copied().collect()
     }
 }
 

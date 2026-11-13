@@ -161,7 +161,7 @@ fn test_orphan_block() {
 #[test]
 fn test_duplicate_block() {
     let hash = UInt256::from([0x11; 32]);
-    let error = CoreError::already_exists(format!("block {} already exists", hash));
+    let error = CoreError::already_exists(format!("block {hash} already exists"));
     assert!(error.to_string().contains("already exists"));
 }
 

@@ -204,7 +204,7 @@ mod tests {
         let original = DataCache::new(false);
         let cloned = ClonedCache::new(&original);
 
-        let debug = format!("{:?}", cloned);
+        let debug = format!("{cloned:?}");
         assert!(debug.contains("ClonedCache"));
     }
 

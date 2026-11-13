@@ -33,7 +33,7 @@ pub(super) fn execute(
         XOR => stack_shape::binary_value(&mut value_stack, arithmetic_rules::bitwise_xor_values)?,
         NUMEQUAL => stack_shape::binary_bool(&mut value_stack, comparison_rules::num_equal_values)?,
         NUMNOTEQUAL => {
-            stack_shape::binary_bool(&mut value_stack, comparison_rules::num_not_equal_values)?
+            stack_shape::binary_bool(&mut value_stack, comparison_rules::num_not_equal_values)?;
         }
         EQUAL => {
             let right = value_stack.pop_interpreter_value()?;
@@ -49,7 +49,7 @@ pub(super) fn execute(
         LE => stack_shape::binary_bool(&mut value_stack, comparison_rules::less_or_equal_values)?,
         GT => stack_shape::binary_bool(&mut value_stack, comparison_rules::greater_than_values)?,
         GE => {
-            stack_shape::binary_bool(&mut value_stack, comparison_rules::greater_or_equal_values)?
+            stack_shape::binary_bool(&mut value_stack, comparison_rules::greater_or_equal_values)?;
         }
         // =============================================================================
         // ARITHMETIC OPERATIONS (0x99-0xbb)

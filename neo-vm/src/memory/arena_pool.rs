@@ -351,7 +351,7 @@ mod benchmarks {
         arena.reset();
         let reset_time = start.elapsed();
 
-        println!("Reset {} allocations took {:?}", allocations, reset_time);
+        println!("Reset {allocations} allocations took {reset_time:?}");
         println!(
             "Reset time per allocation: {:.2}ns",
             reset_time.as_secs_f64() * 1_000_000_000.0 / allocations as f64
@@ -395,7 +395,7 @@ mod benchmarks {
         arena.reset();
         let reset_time = start.elapsed();
 
-        println!("Transaction cleanup time: {:?}", reset_time);
+        println!("Transaction cleanup time: {reset_time:?}");
 
         // Should be instant
         assert!(reset_time < std::time::Duration::from_micros(100));
@@ -459,7 +459,7 @@ mod property_tests {
         let slice = unsafe { arena.allocate_slice_fill_repeat(42u32, 50) };
         assert_eq!(slice.len(), 50);
 
-        for &val in slice.iter() {
+        for &val in slice {
             assert_eq!(val, 42);
         }
     }

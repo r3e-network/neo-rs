@@ -27,8 +27,7 @@ impl ApplicationEngine {
     pub fn runtime_get_time(&mut self) -> Result<(), String> {
         let time = self.get_current_block_time()?;
         let big = BigInt::from(time);
-        self.push(StackItem::from_int(big))
-            .map_err(|e| e.to_string())
+        self.push(StackItem::from_int(big)).map_err(|e| e.clone())
     }
     /// Gets the script container
     pub fn runtime_get_script_container(&mut self) -> Result<(), String> {
@@ -107,7 +106,7 @@ impl ApplicationEngine {
                 // Convert public key to hash (validates the curve point).
                 let hash = self
                     .pubkey_to_hash(&hash_or_pubkey)
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| e.clone())?;
                 self.check_witness_hash(&hash).map_err(|e| e.to_string())?
             }
             _ => {
@@ -142,7 +141,7 @@ impl ApplicationEngine {
         self.add_cpu_fee(price).map_err(|e| e.to_string())?;
         let bigint = BigInt::from_bytes_le(Sign::Plus, &buffer);
         self.push(StackItem::from_int(bigint))
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.clone())
     }
     /// Gets the remaining GAS available for execution (matches C# GasLeft).
     pub fn runtime_gas_left(&mut self) -> Result<(), String> {
@@ -240,7 +239,7 @@ impl ApplicationEngine {
                 .iter()
                 .find(|descriptor| descriptor.name == event_name)
                 .cloned()
-                .ok_or_else(|| format!("Event `{}` does not exist.", event_name))?;
+                .ok_or_else(|| format!("Event `{event_name}` does not exist."))?;
             event.parameters
         };
         if parameters.len() != state.len() {
@@ -629,32 +628,28 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
             StackItemType::Any => true,
             StackItemType::ByteString | StackItemType::Buffer => item
                 .as_bytes()
-                .map(|bytes| bytes.len() == ADDRESS_SIZE)
-                .unwrap_or(false),
+                .is_ok_and(|bytes| bytes.len() == ADDRESS_SIZE),
             _ => false,
         },
         Hash256 => match item_type {
             StackItemType::Any => true,
-            StackItemType::ByteString | StackItemType::Buffer => item
-                .as_bytes()
-                .map(|bytes| bytes.len() == HASH_SIZE)
-                .unwrap_or(false),
+            StackItemType::ByteString | StackItemType::Buffer => {
+                item.as_bytes().is_ok_and(|bytes| bytes.len() == HASH_SIZE)
+            }
             _ => false,
         },
         PublicKey => match item_type {
             StackItemType::Any => true,
-            StackItemType::ByteString | StackItemType::Buffer => item
-                .as_bytes()
-                .map(|bytes| bytes.len() == 33)
-                .unwrap_or(false),
+            StackItemType::ByteString | StackItemType::Buffer => {
+                item.as_bytes().is_ok_and(|bytes| bytes.len() == 33)
+            }
             _ => false,
         },
         Signature => match item_type {
             StackItemType::Any => true,
-            StackItemType::ByteString | StackItemType::Buffer => item
-                .as_bytes()
-                .map(|bytes| bytes.len() == 64)
-                .unwrap_or(false),
+            StackItemType::ByteString | StackItemType::Buffer => {
+                item.as_bytes().is_ok_and(|bytes| bytes.len() == 64)
+            }
             _ => false,
         },
         Array => matches!(

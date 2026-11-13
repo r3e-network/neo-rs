@@ -20,9 +20,7 @@ pub(super) fn find_file(file_name: &str, path: &str) -> Option<String> {
     let primary_root = if Path::new(path).is_absolute() {
         PathBuf::from(path)
     } else {
-        application_root()
-            .map(|root| root.join(path))
-            .unwrap_or_else(|| PathBuf::from(path))
+        application_root().map_or_else(|| PathBuf::from(path), |root| root.join(path))
     };
 
     let primary = primary_root.join(file_name);
@@ -45,14 +43,14 @@ pub(super) fn load_from_stream(stream: &mut dyn Read) -> Result<ProtocolSettings
     let mut buffered = Vec::new();
     stream
         .read_to_end(&mut buffered)
-        .map_err(|err| format!("Failed to read protocol settings stream: {}", err))?;
+        .map_err(|err| format!("Failed to read protocol settings stream: {err}"))?;
 
-    if buffered.iter().all(|byte| byte.is_ascii_whitespace()) {
+    if buffered.iter().all(u8::is_ascii_whitespace) {
         return Ok(ProtocolSettings::default());
     }
 
     let value: Value = serde_json::from_slice(&buffered)
-        .map_err(|err| format!("Invalid protocol settings JSON: {}", err))?;
+        .map_err(|err| format!("Invalid protocol settings JSON: {err}"))?;
     from_value(value)
 }
 
@@ -60,7 +58,7 @@ pub(super) fn load(path: &str) -> Result<ProtocolSettings, String> {
     let resolved_path = {
         let base_dir = std::env::current_dir()
             .ok()
-            .and_then(|dir| dir.to_str().map(|s| s.to_string()));
+            .and_then(|dir| dir.to_str().map(std::string::ToString::to_string));
         match base_dir {
             Some(base) => find_file(path, &base).unwrap_or_else(|| path.to_string()),
             None => path.to_string(),
@@ -72,10 +70,10 @@ pub(super) fn load(path: &str) -> Result<ProtocolSettings, String> {
     }
 
     let mut file = File::open(&resolved_path)
-        .map_err(|err| format!("Failed to open protocol settings file: {}", err))?;
+        .map_err(|err| format!("Failed to open protocol settings file: {err}"))?;
     // Ensure the stream cursor sits at the beginning for delegates expecting fresh readers.
     file.seek(SeekFrom::Start(0))
-        .map_err(|err| format!("Failed to rewind protocol settings file: {}", err))?;
+        .map_err(|err| format!("Failed to rewind protocol settings file: {err}"))?;
     load_from_stream(&mut file)
 }
 
@@ -143,7 +141,7 @@ fn from_raw(raw: ProtocolConfiguration) -> Result<ProtocolSettings, String> {
     if let Some(hardforks) = raw.hardforks {
         let mut parsed = HashMap::new();
         for (name, height) in hardforks {
-            let hardfork = Hardfork::from_str(&name).map_err(|err| format!("{}: {}", name, err))?;
+            let hardfork = Hardfork::from_str(&name).map_err(|err| format!("{name}: {err}"))?;
             parsed.insert(hardfork, height);
         }
 

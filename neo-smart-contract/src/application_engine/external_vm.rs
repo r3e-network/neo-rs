@@ -185,7 +185,7 @@ impl ExternalVmHost<'_> {
                         let hash = self
                             .engine
                             .pubkey_to_hash(&hash_or_pubkey)
-                            .map_err(|error| error.to_string())?;
+                            .map_err(|error| error.clone())?;
                         self.engine
                             .check_witness_hash(&hash)
                             .map_err(|error| error.to_string())?

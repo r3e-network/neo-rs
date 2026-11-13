@@ -52,7 +52,7 @@ impl ConsensusService {
 
             // Store proposal data
             self.context.proposed_timestamp = timestamp;
-            self.context.proposed_tx_hashes = tx_hashes.clone();
+            self.context.proposed_tx_hashes.clone_from(&tx_hashes);
             // The primary selected these hashes from its own validated mempool.
             self.context.mark_transactions_available();
             self.context.nonce = nonce;

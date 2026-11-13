@@ -21,9 +21,7 @@ impl Transaction {
         });
         json.insert(
             "sender".to_string(),
-            sender_value
-                .map(serde_json::Value::String)
-                .unwrap_or(serde_json::Value::Null),
+            sender_value.map_or(serde_json::Value::Null, serde_json::Value::String),
         );
         json.insert(
             "sysfee".to_string(),
@@ -37,12 +35,20 @@ impl Transaction {
             "validuntilblock".to_string(),
             serde_json::json!(self.valid_until_block),
         );
-        let signers_json: Vec<_> = self.signers.iter().map(|s| s.to_json()).collect();
+        let signers_json: Vec<_> = self
+            .signers
+            .iter()
+            .map(super::super::signer::Signer::to_json)
+            .collect();
         json.insert(
             "signers".to_string(),
             serde_json::Value::Array(signers_json),
         );
-        let attributes_json: Vec<_> = self.attributes.iter().map(|a| a.to_json()).collect();
+        let attributes_json: Vec<_> = self
+            .attributes
+            .iter()
+            .map(super::super::transaction_attribute::TransactionAttribute::to_json)
+            .collect();
         json.insert(
             "attributes".to_string(),
             serde_json::Value::Array(attributes_json),
@@ -51,7 +57,11 @@ impl Transaction {
             "script".to_string(),
             serde_json::json!(general_purpose::STANDARD.encode(&self.script)),
         );
-        let witnesses_json: Vec<_> = self.witnesses.iter().map(|w| w.to_json()).collect();
+        let witnesses_json: Vec<_> = self
+            .witnesses
+            .iter()
+            .map(crate::witness::Witness::to_json)
+            .collect();
         json.insert(
             "witnesses".to_string(),
             serde_json::Value::Array(witnesses_json),

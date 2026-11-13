@@ -92,7 +92,7 @@ fn rpc_exception_equality_with_data() {
 #[test]
 fn rpc_exception_debug_format() {
     let exc = RpcException::new(-32600, "Invalid Request");
-    let debug = format!("{:?}", exc);
+    let debug = format!("{exc:?}");
     assert!(debug.contains("RpcException"));
 }
 
@@ -116,7 +116,7 @@ fn rpc_exception_empty_message() {
 
 #[test]
 fn rpc_exception_empty_data() {
-    let exc = RpcException::from_parts(-32600, "Error", Some("".to_string()));
+    let exc = RpcException::from_parts(-32600, "Error", Some(String::new()));
     assert_eq!(exc.data(), None); // Empty string becomes None after trimming
 }
 

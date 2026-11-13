@@ -128,7 +128,7 @@ impl TrackerBase {
             if let Some(snapshot) = Arc::get_mut(snapshot_arc) {
                 snapshot
                     .try_commit()
-                    .map_err(|e| format!("snapshot commit failed: {}", e))?;
+                    .map_err(|e| format!("snapshot commit failed: {e}"))?;
             } else {
                 return Err("snapshot commit failed: snapshot is still shared".to_string());
             }
@@ -160,7 +160,7 @@ impl TrackerBase {
         let value_bytes = value.to_array().map_err(|e| e.to_string())?;
         snapshot
             .put(key_bytes, value_bytes)
-            .map_err(|e| format!("storage put failed: {}", e))?;
+            .map_err(|e| format!("storage put failed: {e}"))?;
         Ok(())
     }
 
@@ -175,7 +175,7 @@ impl TrackerBase {
         let key_bytes = Self::key(prefix, key)?;
         snapshot
             .delete(key_bytes)
-            .map_err(|e| format!("storage delete failed: {}", e))?;
+            .map_err(|e| format!("storage delete failed: {e}"))?;
         Ok(())
     }
 
@@ -330,7 +330,7 @@ impl TrackerBase {
             LogLevel::Info => info!(target: "neo::tokens_tracker", track, message),
             LogLevel::Warning => warn!(target: "neo::tokens_tracker", track, message),
             LogLevel::Error | LogLevel::Fatal => {
-                error!(target: "neo::tokens_tracker", track, message)
+                error!(target: "neo::tokens_tracker", track, message);
             }
         }
     }

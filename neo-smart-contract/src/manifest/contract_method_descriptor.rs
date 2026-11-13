@@ -102,9 +102,15 @@ impl ContractMethodDescriptor {
             .and_then(|s| ContractParameterType::from_string(s).ok())
             .unwrap_or(ContractParameterType::Void);
 
-        let offset = obj.get("offset").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let offset = obj
+            .get("offset")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0) as i32;
 
-        let safe = obj.get("safe").and_then(|v| v.as_bool()).unwrap_or(false);
+        let safe = obj
+            .get("safe")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
 
         Self::new(name, parameters, return_type, offset, safe)
     }
@@ -113,7 +119,7 @@ impl ContractMethodDescriptor {
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "name": self.name,
-            "parameters": self.parameters.iter().map(|p| p.to_json()).collect::<Vec<_>>(),
+            "parameters": self.parameters.iter().map(super::contract_parameter_definition::ContractParameterDefinition::to_json).collect::<Vec<_>>(),
             "returntype": format!("{:?}", self.return_type),
             "offset": self.offset,
             "safe": self.safe,
@@ -122,7 +128,11 @@ impl ContractMethodDescriptor {
 
     /// Approximate serialized size of the method descriptor.
     pub fn size(&self) -> usize {
-        let params_size: usize = self.parameters.iter().map(|p| p.size()).sum();
+        let params_size: usize = self
+            .parameters
+            .iter()
+            .map(super::contract_parameter_definition::ContractParameterDefinition::size)
+            .sum();
         1 + self.name.len() + params_size + 1 + 4 + 1
     }
 

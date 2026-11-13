@@ -79,7 +79,10 @@ fn bench_array_serialization(c: &mut Criterion) {
 
     for count in [10, 100, 1000] {
         let payloads: Vec<BenchPayload> = (0..count).map(|_| create_payload(64)).collect();
-        let total_size: usize = payloads.iter().map(|p| p.size()).sum::<usize>()
+        let total_size: usize = payloads
+            .iter()
+            .map(neo_io::Serializable::size)
+            .sum::<usize>()
             + neo_io::var_int::encoded_len(count as u64);
 
         group.throughput(Throughput::Bytes(total_size as u64));

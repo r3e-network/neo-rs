@@ -61,7 +61,7 @@ pub fn convert_value(value: StackValue, target_type: u8) -> Result<StackValue, S
 fn convert_to_integer(value: &StackValue) -> Result<StackValue, String> {
     match value {
         StackValue::Integer(value) => Ok(StackValue::Integer(*value)),
-        StackValue::Boolean(value) => Ok(StackValue::Integer(if *value { 1 } else { 0 })),
+        StackValue::Boolean(value) => Ok(StackValue::Integer(i64::from(*value))),
         StackValue::ByteString(bytes)
         | StackValue::BigInteger(bytes)
         | StackValue::Buffer(bytes) => arithmetic::numeric_stack_value(

@@ -41,10 +41,7 @@ pub trait RuntimeStack {
             .to_i128()
             .and_then(|integer| i64::try_from(integer).ok())
             .unwrap_or_else(|| {
-                panic!(
-                    "expected integer-compatible StackValue fitting i64, got {:?}",
-                    value
-                )
+                panic!("expected integer-compatible StackValue fitting i64, got {value:?}")
             })
     }
 
@@ -235,7 +232,7 @@ impl VmContext {
             let message = match &value {
                 StackValue::ByteString(bytes) => String::from_utf8_lossy(bytes).to_string(),
                 StackValue::Integer(value) => format!("exception: {value}"),
-                _ => format!("exception: {:?}", value),
+                _ => format!("exception: {value:?}"),
             };
             self.fault(&message);
         }
@@ -257,7 +254,7 @@ impl VmContext {
             StackValue::ByteString(bytes) => {
                 format!("ABORTMSG: {}", String::from_utf8_lossy(bytes))
             }
-            _ => format!("ABORTMSG: {:?}", value),
+            _ => format!("ABORTMSG: {value:?}"),
         };
         if self.try_stack.iter().any(|frame| !frame.caught) {
             self.pending_error = Some(PendingException::message(message));
@@ -292,7 +289,7 @@ impl VmContext {
             StackValue::ByteString(bytes) => {
                 format!("ASSERTMSG: {}", String::from_utf8_lossy(bytes))
             }
-            _ => format!("ASSERTMSG: {:?}", message_value),
+            _ => format!("ASSERTMSG: {message_value:?}"),
         };
         if self.try_stack.iter().any(|frame| !frame.caught) {
             self.pending_error = Some(PendingException::message(message));

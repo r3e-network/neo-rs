@@ -307,7 +307,7 @@ fn unsigned_wallet_transaction(
 
 fn seed_ledger_current_index(store: &mut neo_storage::persistence::StoreCache, index: u32) {
     const PREFIX_CURRENT_BLOCK: u8 = 0x0c;
-    let mut bytes = UInt256::zero().to_bytes().to_vec();
+    let mut bytes = UInt256::zero().to_bytes().clone();
     bytes.extend_from_slice(&index.to_le_bytes());
     store.add(
         StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK]),
@@ -1602,8 +1602,7 @@ fn wallet_methods_require_open_wallet() {
         assert_eq!(
             rpc_error.code(),
             RpcError::no_opened_wallet().code(),
-            "{} should require a wallet",
-            name
+            "{name} should require a wallet"
         );
     }
 }
@@ -2047,7 +2046,7 @@ async fn send_many_rejects_non_positive_amount() {
             rpc_error
                 .data()
                 .unwrap_or_default()
-                .contains(&format!("Amount of '{}' can't be negative.", asset_id)),
+                .contains(&format!("Amount of '{asset_id}' can't be negative.")),
             "unexpected error message: {:?}",
             rpc_error.data()
         );

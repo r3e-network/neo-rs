@@ -148,7 +148,7 @@ fn witness_condition_type_copy() {
 #[test]
 fn witness_condition_type_debug_format() {
     let condition = WitnessConditionType::And;
-    let debug = format!("{:?}", condition);
+    let debug = format!("{condition:?}");
     assert_eq!(debug, "And");
 }
 

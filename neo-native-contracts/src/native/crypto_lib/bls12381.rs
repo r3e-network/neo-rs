@@ -78,21 +78,21 @@ impl CryptoLib {
                 let p2 = self.deserialize_g1(y.bytes())?;
                 // SAFETY: p1, p2 are valid G1 affine points from `deserialize_g1`.
                 let equal = unsafe { blst::blst_p1_affine_is_equal(&p1, &p2) };
-                Ok(vec![if equal { 1 } else { 0 }])
+                Ok(vec![u8::from(equal)])
             }
             Bls12381Group::G2 => {
                 let p1 = self.deserialize_g2(x.bytes())?;
                 let p2 = self.deserialize_g2(y.bytes())?;
                 // SAFETY: p1, p2 are valid G2 affine points from `deserialize_g2`.
                 let equal = unsafe { blst::blst_p2_affine_is_equal(&p1, &p2) };
-                Ok(vec![if equal { 1 } else { 0 }])
+                Ok(vec![u8::from(equal)])
             }
             Bls12381Group::Gt => {
                 let p1 = self.deserialize_gt(x.bytes())?;
                 let p2 = self.deserialize_gt(y.bytes())?;
                 // SAFETY: p1, p2 are valid Fp12 values from `deserialize_gt`.
                 let equal = unsafe { blst::blst_fp12_is_equal(&p1, &p2) };
-                Ok(vec![if equal { 1 } else { 0 }])
+                Ok(vec![u8::from(equal)])
             }
         }
     }
@@ -107,10 +107,7 @@ impl CryptoLib {
 
         let point = Bls12381Interop::from_encoded_bytes(&args[0])?;
         let scalar = &args[1];
-        let neg = args
-            .get(2)
-            .map(|v| !v.is_empty() && v[0] != 0)
-            .unwrap_or(false);
+        let neg = args.get(2).is_some_and(|v| !v.is_empty() && v[0] != 0);
 
         if scalar.len() != 32 {
             return Err(Error::native_contract(

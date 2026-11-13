@@ -194,7 +194,7 @@ impl MethodToken {
         writer.extend_from_slice(&self.parameters_count.to_le_bytes());
 
         // Write has return value
-        writer.push(if self.has_return_value { 1 } else { 0 });
+        writer.push(u8::from(self.has_return_value));
 
         // Write call flags
         writer.push(self.call_flags.bits());

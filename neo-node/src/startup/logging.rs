@@ -64,8 +64,8 @@ pub(crate) fn spawn_metrics_pump(
         let mut fast_sync_enabled = metrics_system.context().is_fast_sync_mode();
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(tick) => {}
-                _ = shutdown.cancelled() => break,
+                () = tokio::time::sleep(tick) => {}
+                () = shutdown.cancelled() => break,
             }
 
             let block_height = metrics_system.current_block_index();

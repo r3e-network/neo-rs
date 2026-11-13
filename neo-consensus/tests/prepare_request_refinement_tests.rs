@@ -53,8 +53,8 @@ fn test_tx_list_bound_within_max() {
         msg.transaction_hashes.len()
     );
     match msg.validate(0) {
-        Ok(_) => println!("✓ Validation passed"),
-        Err(e) => panic!("✗ Validation failed: {:?}", e),
+        Ok(()) => println!("✓ Validation passed"),
+        Err(e) => panic!("✗ Validation failed: {e:?}"),
     }
 }
 

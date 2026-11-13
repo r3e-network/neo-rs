@@ -161,7 +161,7 @@ mod tests {
 
         let nef = NefFile {
             compiler: "neo".into(),
-            source: "".into(),
+            source: String::new(),
             tokens: Vec::new(),
             script: vec![1, 2, 3],
             checksum: 123,

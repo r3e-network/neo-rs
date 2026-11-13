@@ -81,9 +81,10 @@ impl NativeHelpers {
 
     /// Gets the supplied composition's current height, or zero without a provider.
     pub fn current_index(queries: Option<&dyn NativeChainQueries>) -> u32 {
-        queries
-            .map(|queries| queries.current_block_index())
-            .unwrap_or(0)
+        queries.map_or(
+            0,
+            neo_smart_contract::application_engine::NativeChainQueries::current_block_index,
+        )
     }
 
     /// Gets the hash at the supplied composition's current height, or zero if unavailable.

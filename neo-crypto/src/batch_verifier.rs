@@ -96,7 +96,7 @@ impl BatchVerifier {
                 }
                 Err(e) => {
                     all_valid = false;
-                    self.error = Some(format!("Verification error: {:?}", e));
+                    self.error = Some(format!("Verification error: {e:?}"));
                     break;
                 }
             }

@@ -29,7 +29,7 @@ impl NodeWalletProvider {
 
     /// Updates the current wallet and notifies subscribers.
     pub fn set_wallet(&self, wallet: Option<Arc<dyn Wallet>>) {
-        *self.current.write() = wallet.clone();
+        (*self.current.write()).clone_from(&wallet);
         let _ = self.sender.send(wallet);
     }
 }

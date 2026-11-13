@@ -59,8 +59,8 @@ impl TokenManagement {
     pub(super) fn account_state_key_suffix(account: &UInt160, asset_id: &UInt160) -> Vec<u8> {
         [
             vec![PREFIX_ACCOUNT_STATE],
-            account.to_bytes().to_vec(),
-            asset_id.to_bytes().to_vec(),
+            account.to_bytes().clone(),
+            asset_id.to_bytes().clone(),
         ]
         .concat()
     }

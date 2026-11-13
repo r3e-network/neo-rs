@@ -131,7 +131,10 @@ fn make_ledger_block(
     let merkle_root = if transactions.is_empty() {
         UInt256::zero()
     } else {
-        let hashes: Vec<UInt256> = transactions.iter().map(|tx| tx.hash()).collect();
+        let hashes: Vec<UInt256> = transactions
+            .iter()
+            .map(neo_protocol::payloads::Transaction::hash)
+            .collect();
         neo_crypto::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
     };
 
@@ -167,7 +170,7 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     // fixture must match byte-for-byte or the handler reads a different key.
     hash_key_bytes.extend_from_slice(&index.to_be_bytes());
     let hash_key = StorageKey::new(LedgerContract::ID, hash_key_bytes);
-    store.add(hash_key, StorageItem::from_bytes(hash.to_bytes().to_vec()));
+    store.add(hash_key, StorageItem::from_bytes(hash.to_bytes().clone()));
 
     let trimmed = TrimmedBlock::from_block(block);
     let trimmed_bytes = trimmed.to_array().expect("serialize trimmed block");
@@ -228,7 +231,7 @@ fn store_contract_state(
     let id_key = StorageKey::new(contract_mgmt_id, id_bytes);
     store.add(
         id_key,
-        StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+        StorageItem::from_bytes(contract.hash.to_bytes().clone()),
     );
 
     let mut legacy_bytes = Vec::with_capacity(1 + 4);
@@ -237,7 +240,7 @@ fn store_contract_state(
     let legacy_key = StorageKey::new(contract_mgmt_id, legacy_bytes);
     store.add(
         legacy_key,
-        StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+        StorageItem::from_bytes(contract.hash.to_bytes().clone()),
     );
 
     store.commit();
@@ -434,12 +437,12 @@ async fn get_raw_mem_pool_mixed_verified_and_unverified() {
     let verified_hashes: HashSet<String> = parsed
         .verified
         .iter()
-        .map(|hash| hash.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
     let unverified_hashes: HashSet<String> = parsed
         .unverified
         .iter()
-        .map(|hash| hash.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
 
     assert!(verified_hashes.contains(&tx3.hash().to_string()));
@@ -1205,7 +1208,7 @@ async fn find_storage_paginates_results() {
     assert_eq!(
         obj.get("results")
             .and_then(Value::as_array)
-            .map(|v| v.len())
+            .map(std::vec::Vec::len)
             .unwrap_or_default(),
         page_size
     );
@@ -1219,7 +1222,7 @@ async fn find_storage_paginates_results() {
     ];
     let result = (handler.callback())(&server, &params).expect("find storage page2");
     let obj = result.as_object().expect("object");
-    println!("page2 result: {}", result);
+    println!("page2 result: {result}");
     assert!(
         !obj.get("truncated")
             .and_then(Value::as_bool)
@@ -1228,7 +1231,7 @@ async fn find_storage_paginates_results() {
     assert_eq!(
         obj.get("results")
             .and_then(Value::as_array)
-            .map(|v| v.len())
+            .map(std::vec::Vec::len)
             .unwrap_or_default(),
         5
     );
@@ -1428,7 +1431,7 @@ async fn get_next_block_validators_returns_standby() {
             item.as_object()?
                 .get("publickey")
                 .and_then(Value::as_str)
-                .map(|value| value.to_string())
+                .map(std::string::ToString::to_string)
         })
         .collect();
     assert_eq!(expected, received);
@@ -1590,7 +1593,7 @@ async fn get_candidates_skips_blocked_and_unregistered() {
             item.as_object()?
                 .get("publickey")
                 .and_then(Value::as_str)
-                .map(|value| value.to_string())
+                .map(std::string::ToString::to_string)
         })
         .collect();
 
@@ -1667,8 +1670,7 @@ async fn get_native_contracts_includes_gas_token() {
         entry
             .as_object()
             .and_then(|obj| obj.get("hash").and_then(Value::as_str))
-            .map(|hash| hash == gas_hash.to_string())
-            .unwrap_or(false)
+            .is_some_and(|hash| hash == gas_hash.to_string())
     });
     assert!(has_gas);
 }
@@ -1716,7 +1718,7 @@ async fn get_native_contracts_returns_all_registered_states() {
             .expect("hash present");
         let expected_value = expected_by_hash
             .get(hash)
-            .unwrap_or_else(|| panic!("missing expected contract {}", hash));
+            .unwrap_or_else(|| panic!("missing expected contract {hash}"));
         assert_eq!(value, expected_value);
     }
 }

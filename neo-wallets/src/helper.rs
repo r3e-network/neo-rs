@@ -654,15 +654,13 @@ fn calculate_network_fee_impl(
             engine.execute().map_err(|e| e.to_string())?;
             if engine.result_stack().len() != 1 {
                 return Err(format!(
-                    "Smart contract {} verification fault.",
-                    contract_hash
+                    "Smart contract {contract_hash} verification fault."
                 ));
             }
             let result_item = engine.result_stack().peek(0).map_err(|e| e.to_string())?;
             if !result_item.as_bool().unwrap_or(false) {
                 return Err(format!(
-                    "Smart contract {} verification fault.",
-                    contract_hash
+                    "Smart contract {contract_hash} verification fault."
                 ));
             }
 

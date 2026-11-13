@@ -109,17 +109,15 @@ impl SealedKey {
         let enclave_counter = enclave.current_counter()?;
         let floor = rollback_floor::load(&floor_path)?.ok_or_else(|| {
             TeeError::RollbackProtection(format!(
-                "rollback floor witness {:?} is missing while a sealed blob exists \
-                 (tampering or pre-T43 blob); refusing to unseal (fail-closed)",
-                floor_path
+                "rollback floor witness {floor_path:?} is missing while a sealed blob exists \
+                 (tampering or pre-T43 blob); refusing to unseal (fail-closed)"
             ))
         })?;
 
         if floor > enclave_counter {
             return Err(TeeError::RollbackProtection(format!(
-                "sealed-data state was rolled back: rollback floor {} is ahead of the \
-                 enclave monotonic counter {}; refusing to unseal (fail-closed)",
-                floor, enclave_counter
+                "sealed-data state was rolled back: rollback floor {floor} is ahead of the \
+                 enclave monotonic counter {enclave_counter}; refusing to unseal (fail-closed)"
             )));
         }
 

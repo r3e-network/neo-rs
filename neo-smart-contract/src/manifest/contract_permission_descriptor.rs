@@ -119,8 +119,7 @@ impl ContractPermissionDescriptor {
             StackValue::Null => Ok(Self::create_wildcard()),
             StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => Self::from_bytes(&bytes),
             other => Err(format!(
-                "Unsupported stack value type for ContractPermissionDescriptor: {:?}",
-                other
+                "Unsupported stack value type for ContractPermissionDescriptor: {other:?}"
             )),
         }
     }
@@ -144,12 +143,12 @@ impl ContractPermissionDescriptor {
         match bytes.len() {
             0 => Ok(Self::create_wildcard()),
             20 => Ok(Self::create_hash(
-                UInt160::from_bytes(bytes).map_err(|e| format!("Invalid UInt160 bytes: {}", e))?,
+                UInt160::from_bytes(bytes).map_err(|e| format!("Invalid UInt160 bytes: {e}"))?,
             )),
             33 => Ok(Self::create_group(
-                ECPoint::from_bytes(bytes).map_err(|e| format!("Invalid ECPoint bytes: {}", e))?,
+                ECPoint::from_bytes(bytes).map_err(|e| format!("Invalid ECPoint bytes: {e}"))?,
             )),
-            len => Err(format!("Invalid descriptor byte length: {}", len)),
+            len => Err(format!("Invalid descriptor byte length: {len}")),
         }
     }
 

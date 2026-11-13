@@ -62,8 +62,7 @@ pub(super) fn execute(
                 StackValue::Buffer(id, bytes) => (id, bytes),
                 other => {
                     return Err(format!(
-                        "MEMCPY expects buffer as destination, got {:?}",
-                        other
+                        "MEMCPY expects buffer as destination, got {other:?}"
                     ));
                 }
             };

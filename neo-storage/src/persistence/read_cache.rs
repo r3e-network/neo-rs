@@ -393,8 +393,7 @@ where
     pub fn fast_bloom_check(&self, key: &K) -> bool {
         self.bloom_filter
             .as_ref()
-            .map(|b| b.might_contain_hash(key.hash_for_bloom()))
-            .unwrap_or(true)
+            .is_none_or(|b| b.might_contain_hash(key.hash_for_bloom()))
     }
 
     /// Gets a value from the cache.
@@ -626,7 +625,7 @@ where
         size_bytes: usize,
     ) -> usize {
         let current_bytes = self.stats.current_bytes.load(Ordering::Relaxed);
-        let old_bytes = data.peek(key).map(|entry| entry.size_bytes).unwrap_or(0);
+        let old_bytes = data.peek(key).map_or(0, |entry| entry.size_bytes);
         current_bytes
             .saturating_sub(old_bytes)
             .saturating_add(size_bytes)

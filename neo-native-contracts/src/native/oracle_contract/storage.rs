@@ -279,12 +279,12 @@ impl OracleContract {
             &StackItem::from_array(items),
             &ExecutionEngineLimits::default(),
         )
-        .map_err(|err| Error::serialization(err.to_string()))
+        .map_err(|err| Error::serialization(err.clone()))
     }
 
     fn deserialize_id_list(&self, bytes: &[u8]) -> Result<Vec<u64>> {
         let item = BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
-            .map_err(|err| Error::serialization(err.to_string()))?;
+            .map_err(|err| Error::serialization(err.clone()))?;
 
         let StackItem::Array(array) = item else {
             return Err(Error::invalid_data(

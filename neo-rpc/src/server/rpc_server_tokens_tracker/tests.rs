@@ -32,7 +32,7 @@ fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
     handlers
         .iter()
         .find(|handler| handler.descriptor().name.eq_ignore_ascii_case(name))
-        .unwrap_or_else(|| panic!("handler {} not found", name))
+        .unwrap_or_else(|| panic!("handler {name} not found"))
 }
 
 fn create_tracker_store() -> Arc<dyn Store> {
@@ -102,7 +102,7 @@ fn store_contract_state(system: &Arc<NeoSystem>, contract: &ContractState) {
     let id_key = StorageKey::new(contract_mgmt_id, id_bytes);
     store_cache.add(
         id_key,
-        StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+        StorageItem::from_bytes(contract.hash.to_bytes().clone()),
     );
 
     let mut legacy_bytes = Vec::with_capacity(1 + 4);
@@ -111,7 +111,7 @@ fn store_contract_state(system: &Arc<NeoSystem>, contract: &ContractState) {
     let legacy_key = StorageKey::new(contract_mgmt_id, legacy_bytes);
     store_cache.add(
         legacy_key,
-        StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+        StorageItem::from_bytes(contract.hash.to_bytes().clone()),
     );
     store_cache.commit();
 }

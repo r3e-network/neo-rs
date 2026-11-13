@@ -50,7 +50,7 @@ impl ContractManagement {
         let nef_len = nef_file.len();
         let manifest_len = manifest_bytes.len();
         SafeArithmetic::check_add_overflow(nef_len, manifest_len)
-            .map_err(|e| Error::invalid_argument(format!("Payload size overflow: {}", e)))?;
+            .map_err(|e| Error::invalid_argument(format!("Payload size overflow: {e}")))?;
 
         if engine.is_hardfork_enabled(Hardfork::HfAspidochelone)
             && let Ok(state) = engine.current_execution_state()
@@ -67,16 +67,16 @@ impl ContractManagement {
         // Parse and validate NEF file
         let mut reader = MemoryReader::new(&nef_file);
         let nef = <NefFile as neo_io::Serializable>::deserialize(&mut reader)
-            .map_err(|e| Error::deserialization(format!("Invalid NEF file: {}", e)))?;
+            .map_err(|e| Error::deserialization(format!("Invalid NEF file: {e}")))?;
 
         Self::validate_nef_file(&nef)?;
 
         let manifest_size = manifest_bytes.len();
         // Parse and validate manifest
         let manifest_json = String::from_utf8(manifest_bytes)
-            .map_err(|e| Error::deserialization(format!("Invalid manifest encoding: {}", e)))?;
+            .map_err(|e| Error::deserialization(format!("Invalid manifest encoding: {e}")))?;
         let manifest: ContractManifest = serde_json::from_str(&manifest_json)
-            .map_err(|e| Error::deserialization(format!("Invalid manifest: {}", e)))?;
+            .map_err(|e| Error::deserialization(format!("Invalid manifest: {e}")))?;
 
         Self::validate_manifest(&manifest)?;
 
@@ -131,7 +131,7 @@ impl ContractManagement {
         let storage_fee =
             SafeArithmetic::check_mul_overflow(engine.storage_price() as u64, payload_size as u64)
                 .map_err(|e| {
-                    Error::invalid_argument(format!("Storage fee calculation overflow: {}", e))
+                    Error::invalid_argument(format!("Storage fee calculation overflow: {e}"))
                 })?;
 
         let minimum_fee = u64::try_from(deployment_fee.max(0)).unwrap_or(0);
@@ -139,7 +139,7 @@ impl ContractManagement {
 
         // Validate fee is reasonable
         PermissionValidator::validate_range(fee_to_charge, 0, u64::MAX / 2, "Deployment fee")
-            .map_err(|e| Error::invalid_argument(format!("Invalid deployment fee: {}", e)))?;
+            .map_err(|e| Error::invalid_argument(format!("Invalid deployment fee: {e}")))?;
 
         if fee_to_charge > 0 {
             engine.charge_execution_fee(fee_to_charge)?;

@@ -32,14 +32,10 @@ fn test_roundtrip_all_known_bytes() {
             let recovered_byte = attr_type.to_byte();
             assert_eq!(
                 recovered_byte, byte_val,
-                "Round-trip failed for byte 0x{:02X}: {} -> {:?} -> {}",
-                byte_val, byte_val, attr_type, recovered_byte
+                "Round-trip failed for byte 0x{byte_val:02X}: {byte_val} -> {attr_type:?} -> {recovered_byte}"
             );
         } else {
-            panic!(
-                "Known valid byte 0x{:02X} should map to valid attr type",
-                byte_val
-            );
+            panic!("Known valid byte 0x{byte_val:02X} should map to valid attr type");
         }
     }
 }
@@ -111,8 +107,7 @@ fn test_byte_values_are_unique() {
         for existing in &byte_values {
             assert_ne!(
                 *existing, byte_val,
-                "Byte values should be unique but found duplicate: {}",
-                byte_val
+                "Byte values should be unique but found duplicate: {byte_val}"
             );
         }
 
@@ -158,9 +153,7 @@ fn test_specific_pairs_are_different() {
         assert_ne!(
             type1.to_byte(),
             type2.to_byte(),
-            "{:?} and {:?} should have different byte values",
-            type1,
-            type2
+            "{type1:?} and {type2:?} should have different byte values"
         );
     }
 }
@@ -195,8 +188,7 @@ fn test_unknown_bytes_return_none() {
         let result = TransactionAttributeType::from_byte(byte_val);
         assert!(
             result.is_none(),
-            "Unknown byte 0x{:02X} should return None (Coq: unknown_bytes_return_none)",
-            byte_val
+            "Unknown byte 0x{byte_val:02X} should return None (Coq: unknown_bytes_return_none)"
         );
     }
 }
@@ -230,9 +222,7 @@ fn test_boundary_bytes_around_known_values() {
         if should_exist {
             assert!(
                 result.is_some(),
-                "{} (0x{:02X}) should exist but returned None",
-                description,
-                byte_val
+                "{description} (0x{byte_val:02X}) should exist but returned None"
             );
 
             // Also verify round-trip
@@ -242,10 +232,7 @@ fn test_boundary_bytes_around_known_values() {
         } else {
             assert!(
                 result.is_none(),
-                "{} (0x{:02X}) should not exist but returned {:?}. Coq lemma: unknown_bytes_return_none",
-                description,
-                byte_val,
-                result
+                "{description} (0x{byte_val:02X}) should not exist but returned {result:?}. Coq lemma: unknown_bytes_return_none"
             );
         }
     }
@@ -260,24 +247,21 @@ fn test_invalid_byte_sparse_distribution() {
     for byte_val in 0x02..=0x10 {
         assert!(
             TransactionAttributeType::from_byte(byte_val).is_none(),
-            "Gap byte 0x{:02X} should be invalid",
-            byte_val
+            "Gap byte 0x{byte_val:02X} should be invalid"
         );
     }
 
     for byte_val in 0x12..=0x1F {
         assert!(
             TransactionAttributeType::from_byte(byte_val).is_none(),
-            "Gap byte 0x{:02X} should be invalid",
-            byte_val
+            "Gap byte 0x{byte_val:02X} should be invalid"
         );
     }
 
     for byte_val in 0x23..=0xFF {
         assert!(
             TransactionAttributeType::from_byte(byte_val).is_none(),
-            "Gap byte 0x{:02X} should be invalid",
-            byte_val
+            "Gap byte 0x{byte_val:02X} should be invalid"
         );
     }
 }
@@ -310,11 +294,10 @@ fn test_as_str_matches_coq_definition() {
     ];
 
     for (attr_type, expected_str) in string_tests {
-        let rust_str = format!("{}", attr_type);
+        let rust_str = format!("{attr_type}");
         assert_eq!(
             rust_str, expected_str,
-            "String representation mismatch for {:?} (expected \"{}\", got \"{}\")",
-            attr_type, expected_str, rust_str
+            "String representation mismatch for {attr_type:?} (expected \"{expected_str}\", got \"{rust_str}\")"
         );
     }
 }
@@ -333,17 +316,16 @@ fn test_string_lengths_are_positive() {
     ];
 
     for attr_type in all_types {
-        let s = format!("{}", attr_type);
+        let s = format!("{attr_type}");
         let len = s.len();
 
         assert!(
             len > 0,
-            "String representation cannot be empty for {:?}",
-            attr_type
+            "String representation cannot be empty for {attr_type:?}"
         );
 
         // Also print lengths for reference
-        println!("{:?} -> \"{}\" (length {})", attr_type, s, len);
+        println!("{attr_type:?} -> \"{s}\" (length {len})");
     }
 }
 
@@ -402,8 +384,7 @@ fn test_only_conflicts_allows_multiple() {
 
         assert_eq!(
             allows, is_conflicts,
-            "allows_multiple({:?}) should be {}. Got {}.",
-            attr_type, is_conflicts, allows
+            "allows_multiple({attr_type:?}) should be {is_conflicts}. Got {allows}."
         );
 
         if allows {
@@ -478,14 +459,12 @@ fn test_reverse_mapping_completeness() {
 
         assert!(
             result.is_some(),
-            "Byte 0x{:02X} should map to {}",
-            byte_val,
-            expected_name
+            "Byte 0x{byte_val:02X} should map to {expected_name}"
         );
 
         if let Some(attr_type) = result {
             assert_eq!(
-                format!("{}", attr_type),
+                format!("{attr_type}"),
                 expected_name,
                 "Byte 0x{:02X} should decode to {}",
                 byte_val,
@@ -520,15 +499,13 @@ fn test_refinement_bijectivity() {
 
         assert!(
             recovered_type.is_some(),
-            "to_byte then from_byte should recover original for {:?}",
-            attr_type
+            "to_byte then from_byte should recover original for {attr_type:?}"
         );
 
         if let Some(recovered) = recovered_type {
             assert_eq!(
                 recovered, *attr_type,
-                "Round-trip bijection broken for {:?}",
-                attr_type
+                "Round-trip bijection broken for {attr_type:?}"
             );
         }
 
@@ -557,8 +534,7 @@ fn test_refinement_soundness() {
         let result = TransactionAttributeType::from_byte(byte_val);
         assert_eq!(
             result, None,
-            "Invalid byte 0x{:02X} should soundly return None",
-            byte_val
+            "Invalid byte 0x{byte_val:02X} should soundly return None"
         );
     }
 }
@@ -580,8 +556,7 @@ fn test_refinement_completeness() {
     for expected_byte in all_expected_bytes {
         assert!(
             all_actual_bytes.contains(&expected_byte),
-            "Expected byte 0x{:02X} should be present in actual mappings",
-            expected_byte
+            "Expected byte 0x{expected_byte:02X} should be present in actual mappings"
         );
     }
 }

@@ -351,8 +351,10 @@ impl NeoSystem {
                 .unwrap_or(0);
             if settings.is_hardfork_enabled(Hardfork::HfEchidna, current_index) {
                 PolicyContract::get_milliseconds_per_block_snapshot(&store_cache_for_hydration)
-                    .map(|ms| Duration::from_millis(ms as u64))
-                    .unwrap_or_else(|| settings.time_per_block())
+                    .map_or_else(
+                        || settings.time_per_block(),
+                        |ms| Duration::from_millis(ms as u64),
+                    )
             } else {
                 settings.time_per_block()
             }
@@ -581,9 +583,10 @@ impl NeoSystem {
             return settings.time_per_block();
         }
 
-        PolicyContract::get_milliseconds_per_block_snapshot(&store_cache)
-            .map(|ms| Duration::from_millis(ms as u64))
-            .unwrap_or_else(|| settings.time_per_block())
+        PolicyContract::get_milliseconds_per_block_snapshot(&store_cache).map_or_else(
+            || settings.time_per_block(),
+            |ms| Duration::from_millis(ms as u64),
+        )
     }
 
     /// Returns the max valid-until-block increment with Policy overrides after HF_Echidna.
@@ -796,7 +799,7 @@ fn attach_system_to_actors(
     task_manager.attach_system(context).map_err(to_core_error)?;
     blockchain
         .tell(BlockchainCommand::Initialize)
-        .map_err(|e| CoreError::system(e.to_string()))?;
+        .map_err(|e| CoreError::system(e.clone()))?;
     Ok(())
 }
 

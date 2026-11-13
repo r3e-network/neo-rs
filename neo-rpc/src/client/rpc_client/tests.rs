@@ -77,7 +77,7 @@ fn load_rpc_cases(name: &str) -> Option<Vec<JObject>> {
         let obj = token.as_object().expect("case object");
         let case_name = obj
             .get("Name")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .unwrap_or_default();
         if case_name.eq_ignore_ascii_case(name) {
             matches.push(obj.clone());
@@ -245,7 +245,7 @@ async fn rpc_client_respects_timeout_and_notifies_hooks() {
         r#"{"jsonrpc":"2.0","id":1,"result":1}"#,
     )
     .await;
-    let url = Url::parse(&format!("http://{}", addr)).unwrap();
+    let url = Url::parse(&format!("http://{addr}")).unwrap();
 
     let notified = Arc::new(AtomicBool::new(false));
     let hooks = RpcClientHooks::new().with_observer({
@@ -401,7 +401,7 @@ async fn send_raw_transaction_uses_base64_and_returns_hash() {
         .expect("case params");
     let base64_tx = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("base64 tx");
     let response = case
         .get("Response")
@@ -413,7 +413,7 @@ async fn send_raw_transaction_uses_base64_and_returns_hash() {
         .expect("case result");
     let expected_hash = result
         .get("hash")
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
 
     let bytes = general_purpose::STANDARD
@@ -426,10 +426,8 @@ async fn send_raw_transaction_uses_base64_and_returns_hash() {
     let escaped = escape(&base64_tx);
     let body_re =
         format!(r#""method"\s*:\s*"sendrawtransaction".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#);
-    let response_body = format!(
-        r#"{{"jsonrpc":"2.0","id":1,"result":{{"hash":"{}"}}}}"#,
-        expected_hash
-    );
+    let response_body =
+        format!(r#"{{"jsonrpc":"2.0","id":1,"result":{{"hash":"{expected_hash}"}}}}"#);
     let _m = server
         .mock("POST", "/")
         .match_body(Matcher::Regex(body_re))
@@ -469,7 +467,7 @@ async fn send_raw_transaction_propagates_error_response() {
         .expect("case params");
     let base64_tx = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("base64 tx");
     let response = case
         .get("Response")
@@ -626,10 +624,8 @@ async fn submit_block_uses_base64_and_returns_hash() {
     let mut server = Server::new_async().await;
     let escaped = escape(&base64_block);
     let body_re = format!(r#""method"\s*:\s*"submitblock".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#);
-    let response_body = format!(
-        r#"{{"jsonrpc":"2.0","id":1,"result":{{"hash":"{}"}}}}"#,
-        expected_hash
-    );
+    let response_body =
+        format!(r#"{{"jsonrpc":"2.0","id":1,"result":{{"hash":"{expected_hash}"}}}}"#);
     let _m = server
         .mock("POST", "/")
         .match_body(Matcher::Regex(body_re))
@@ -667,7 +663,7 @@ async fn invoke_script_uses_base64_and_parses_result() {
             .expect("case params");
         let base64_script = params
             .get(0)
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .expect("base64 script");
         let response = case
             .get("Response")
@@ -679,11 +675,11 @@ async fn invoke_script_uses_base64_and_parses_result() {
             .expect("case result");
         let expected_script = result
             .get("script")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .expect("script");
         let expected_gas = result
             .get("gasconsumed")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .expect("gas consumed")
             .parse::<i64>()
             .expect("parse gas consumed");
@@ -721,7 +717,7 @@ async fn get_block_count_matches_fixture() {
     let expected = fixture
         .response
         .get("result")
-        .and_then(|value| value.as_number())
+        .and_then(neo_json::JToken::as_number)
         .expect("result") as u32;
 
     let actual = fixture.client.get_block_count().await.expect("block count");
@@ -747,7 +743,7 @@ async fn get_block_hash_matches_fixture() {
         .expect("case params");
     let index = params
         .get(0)
-        .and_then(|value| value.as_number())
+        .and_then(neo_json::JToken::as_number)
         .expect("block index") as u32;
     let response = case
         .get("Response")
@@ -755,7 +751,7 @@ async fn get_block_hash_matches_fixture() {
         .expect("case response");
     let expected = response
         .get("result")
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("result");
 
     let mut server = Server::new_async().await;
@@ -785,7 +781,7 @@ async fn get_block_header_count_matches_fixture() {
     let expected = fixture
         .response
         .get("result")
-        .and_then(|value| value.as_number())
+        .and_then(neo_json::JToken::as_number)
         .expect("result") as u32;
 
     let actual = fixture
@@ -815,7 +811,7 @@ async fn get_block_sys_fee_matches_fixture() {
         .expect("case params");
     let height = params
         .get(0)
-        .and_then(|value| value.as_number())
+        .and_then(neo_json::JToken::as_number)
         .expect("height") as u32;
     let response = case
         .get("Response")
@@ -878,7 +874,7 @@ async fn get_block_header_hex_matches_fixture() {
         } else if let Some(hash) = param.as_string() {
             let escaped = escape(&hash);
             (
-                hash.to_string(),
+                hash.clone(),
                 format!(r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#),
             )
         } else {
@@ -891,7 +887,7 @@ async fn get_block_header_hex_matches_fixture() {
             .expect("case response");
         let expected = response
             .get("result")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .expect("result");
 
         let mut server = Server::new_async().await;
@@ -942,7 +938,7 @@ async fn get_block_hex_matches_fixture() {
         } else if let Some(hash) = param.as_string() {
             let escaped = escape(&hash);
             (
-                hash.to_string(),
+                hash.clone(),
                 format!(r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*"{escaped}"\s*\]"#),
             )
         } else {
@@ -955,7 +951,7 @@ async fn get_block_hex_matches_fixture() {
             .expect("case response");
         let expected = response
             .get("result")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .expect("result");
 
         let mut server = Server::new_async().await;
@@ -997,7 +993,7 @@ async fn get_raw_mempool_matches_fixture() {
         .expect("result")
         .iter()
         .filter_map(|item| item.as_ref())
-        .filter_map(|token| token.as_string())
+        .filter_map(neo_json::JToken::as_string)
         .collect::<Vec<_>>();
 
     let mut server = Server::new_async().await;
@@ -1077,7 +1073,7 @@ async fn get_raw_transaction_hex_matches_fixture() {
         .expect("case params");
     let hash = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
     let response = case
         .get("Response")
@@ -1085,7 +1081,7 @@ async fn get_raw_transaction_hex_matches_fixture() {
         .expect("case response");
     let expected = response
         .get("result")
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("result");
 
     let mut server = Server::new_async().await;
@@ -1191,7 +1187,7 @@ async fn get_storage_matches_fixture() {
         let hash_or_id = params.get(0).expect("hash or id");
         let key = params
             .get(1)
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .expect("key");
         let response = case
             .get("Response")
@@ -1199,7 +1195,7 @@ async fn get_storage_matches_fixture() {
             .expect("case response");
         let expected = response
             .get("result")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .expect("result");
 
         let (body_re, hash_or_id) = if let Some(hash) = hash_or_id.as_string() {
@@ -1208,7 +1204,7 @@ async fn get_storage_matches_fixture() {
             let body_re = format!(
                 r#""method"\s*:\s*"getstorage".*"params"\s*:\s*\[\s*"{escaped_hash}"\s*,\s*"{escaped_key}"\s*\]"#
             );
-            (body_re, hash.to_string())
+            (body_re, hash.clone())
         } else if let Some(id) = hash_or_id.as_number() {
             let id = id as i32;
             let id_string = id.to_string();
@@ -1251,7 +1247,7 @@ async fn get_connection_count_matches_fixture() {
     let expected = fixture
         .response
         .get("result")
-        .and_then(|value| value.as_number())
+        .and_then(neo_json::JToken::as_number)
         .expect("result") as u32;
 
     let actual = fixture
@@ -1281,7 +1277,7 @@ async fn get_committee_matches_fixture() {
         .expect("result")
         .iter()
         .filter_map(|item| item.as_ref())
-        .filter_map(|token| token.as_string())
+        .filter_map(neo_json::JToken::as_string)
         .collect::<Vec<_>>();
 
     let mut server = Server::new_async().await;
@@ -1366,7 +1362,7 @@ async fn get_transaction_height_matches_fixture() {
         .expect("case params");
     let hash = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
     let response = case
         .get("Response")
@@ -1374,7 +1370,7 @@ async fn get_transaction_height_matches_fixture() {
         .expect("case response");
     let expected = response
         .get("result")
-        .and_then(|value| value.as_number())
+        .and_then(neo_json::JToken::as_number)
         .expect("result") as u32;
 
     let mut server = Server::new_async().await;
@@ -1508,8 +1504,7 @@ async fn close_wallet_matches_fixture() {
         .expect("case response");
     let expected = response
         .get("result")
-        .map(|value| value.as_boolean())
-        .unwrap_or(false);
+        .is_some_and(neo_json::JToken::as_boolean);
 
     let mut server = Server::new_async().await;
     let body_re = r#""method"\s*:\s*"closewallet".*"params"\s*:\s*\[\s*\]"#;
@@ -1550,11 +1545,11 @@ async fn open_wallet_matches_fixture() {
         .expect("case params");
     let path = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("path");
     let password = params
         .get(1)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("password");
     let response = case
         .get("Response")
@@ -1562,8 +1557,7 @@ async fn open_wallet_matches_fixture() {
         .expect("case response");
     let expected = response
         .get("result")
-        .map(|value| value.as_boolean())
-        .unwrap_or(false);
+        .is_some_and(neo_json::JToken::as_boolean);
 
     let mut server = Server::new_async().await;
     let escaped_path = escape(
@@ -1614,7 +1608,7 @@ async fn get_new_address_matches_fixture() {
         .expect("case response");
     let expected = response
         .get("result")
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("result");
 
     let mut server = Server::new_async().await;
@@ -1656,7 +1650,7 @@ async fn dump_priv_key_matches_fixture() {
         .expect("case params");
     let address = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("address");
     let response = case
         .get("Response")
@@ -1664,7 +1658,7 @@ async fn dump_priv_key_matches_fixture() {
         .expect("case response");
     let expected = response
         .get("result")
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("result");
 
     let mut server = Server::new_async().await;
@@ -1765,7 +1759,7 @@ async fn get_wallet_balance_matches_fixture() {
         .expect("case params");
     let asset_id = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("asset");
     let response = case
         .get("Response")
@@ -1775,7 +1769,7 @@ async fn get_wallet_balance_matches_fixture() {
         .get("result")
         .and_then(|value| value.as_object())
         .and_then(|obj| obj.get("balance"))
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("balance");
 
     let mut server = Server::new_async().await;
@@ -1800,7 +1794,7 @@ async fn get_wallet_balance_matches_fixture() {
     let actual_balance = actual
         .as_object()
         .and_then(|obj| obj.get("balance"))
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("balance");
     assert_eq!(actual_balance, balance);
 }
@@ -1820,7 +1814,7 @@ async fn get_wallet_unclaimed_gas_matches_fixture() {
         .expect("case response");
     let amount = response
         .get("result")
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("result");
 
     let mut server = Server::new_async().await;
@@ -1862,19 +1856,19 @@ async fn send_from_matches_fixture() {
         .expect("case params");
     let asset_id = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("asset");
     let from_addr = params
         .get(1)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("from");
     let to_addr = params
         .get(2)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("to");
     let amount = params
         .get(3)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("amount");
     let response = case
         .get("Response")
@@ -1884,7 +1878,7 @@ async fn send_from_matches_fixture() {
         .get("result")
         .and_then(|value| value.as_object())
         .and_then(|obj| obj.get("hash"))
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
 
     let mut server = Server::new_async().await;
@@ -1921,7 +1915,7 @@ async fn send_from_matches_fixture() {
     let actual_hash = actual
         .get_property("hash")
         .expect("hash")
-        .and_then(|token| token.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
     assert_eq!(actual_hash, expected_hash);
 }
@@ -1941,7 +1935,7 @@ async fn get_best_block_hash_matches_fixture() {
         .expect("case response");
     let expected = response
         .get("result")
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("result");
 
     let mut server = Server::new_async().await;
@@ -1991,10 +1985,9 @@ async fn get_block_verbose_matches_fixture() {
         } else if let Some(hash) = param.as_string() {
             let escaped = escape(&hash);
             (
-                hash.to_string(),
+                hash.clone(),
                 format!(
-                    r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*"{escaped}"\s*,\s*true\s*\]"#,
-                    escaped = escaped
+                    r#""method"\s*:\s*"getblock".*"params"\s*:\s*\[\s*"{escaped}"\s*,\s*true\s*\]"#
                 ),
             )
         } else {
@@ -2061,10 +2054,9 @@ async fn get_block_header_verbose_matches_fixture() {
         } else if let Some(hash) = param.as_string() {
             let escaped = escape(&hash);
             (
-                hash.to_string(),
+                hash.clone(),
                 format!(
-                    r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*"{escaped}"\s*,\s*true\s*\]"#,
-                    escaped = escaped
+                    r#""method"\s*:\s*"getblockheader".*"params"\s*:\s*\[\s*"{escaped}"\s*,\s*true\s*\]"#
                 ),
             )
         } else {
@@ -2120,7 +2112,7 @@ async fn get_transaction_matches_fixture() {
         .expect("case params");
     let hash = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
 
     let response = case
@@ -2172,11 +2164,11 @@ async fn invoke_function_matches_fixture() {
         .expect("case params");
     let contract = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("contract");
     let operation = params
         .get(1)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("operation");
     let stack_params = params
         .get(2)
@@ -2185,7 +2177,7 @@ async fn invoke_function_matches_fixture() {
     let args = stack_params
         .children()
         .iter()
-        .filter_map(|item| item.clone())
+        .filter_map(std::clone::Clone::clone)
         .collect::<Vec<_>>();
 
     let response = case
@@ -2255,7 +2247,7 @@ async fn get_contract_state_matches_fixture() {
                 r#""method"\s*:\s*"getcontractstate".*"params"\s*:\s*\[\s*"{contract}"\s*\]"#,
                 contract = escape(&name)
             );
-            (body_re, ContractStateRequest::Hash(name.to_string()))
+            (body_re, ContractStateRequest::Hash(name.clone()))
         } else if let Some(id) = contract.as_number() {
             let id = id as i32;
             let body_re =
@@ -2375,7 +2367,7 @@ async fn get_application_log_matches_fixture() {
         .expect("case params");
     let hash = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
 
     let response = case
@@ -2429,11 +2421,11 @@ async fn get_application_log_with_trigger_matches_fixture() {
         .expect("case params");
     let hash = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
     let trigger = params
         .get(1)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("trigger");
 
     let response = case
@@ -2488,7 +2480,7 @@ async fn validate_address_matches_fixture() {
         .expect("case params");
     let address = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("address");
 
     let response = case
@@ -2542,7 +2534,7 @@ async fn import_priv_key_matches_fixture() {
         .expect("case params");
     let wif = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("wif");
 
     let response = case
@@ -2596,7 +2588,7 @@ async fn get_unclaimed_gas_matches_fixture() {
         .expect("case params");
     let address = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("address");
 
     let response = case
@@ -2650,15 +2642,15 @@ async fn get_nep17_transfers_matches_fixture() {
         .expect("case params");
     let address = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("address");
     let start_time = params
         .get(1)
-        .and_then(|value| value.as_number())
+        .and_then(neo_json::JToken::as_number)
         .map(|value| value as u64);
     let end_time = params
         .get(2)
-        .and_then(|value| value.as_number())
+        .and_then(neo_json::JToken::as_number)
         .map(|value| value as u64);
 
     let response = case
@@ -2713,15 +2705,15 @@ async fn get_nep17_transfers_accepts_null_transfer_address() {
         .expect("case params");
     let address = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("address");
     let start_time = params
         .get(1)
-        .and_then(|value| value.as_number())
+        .and_then(neo_json::JToken::as_number)
         .map(|value| value as u64);
     let end_time = params
         .get(2)
-        .and_then(|value| value.as_number())
+        .and_then(neo_json::JToken::as_number)
         .map(|value| value as u64);
 
     let response = case
@@ -2776,7 +2768,7 @@ async fn get_nep17_balances_matches_fixture() {
         .expect("case params");
     let address = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("address");
 
     let response = case
@@ -2831,15 +2823,15 @@ async fn send_to_address_matches_fixture() {
         .expect("case params");
     let asset_id = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("asset");
     let address = params
         .get(1)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("address");
     let amount = params
         .get(2)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("amount");
     let response = case
         .get("Response")
@@ -2849,7 +2841,7 @@ async fn send_to_address_matches_fixture() {
         .get("result")
         .and_then(|value| value.as_object())
         .and_then(|obj| obj.get("hash"))
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
 
     let mut server = Server::new_async().await;
@@ -2884,7 +2876,7 @@ async fn send_to_address_matches_fixture() {
     let actual_hash = actual
         .get_property("hash")
         .expect("hash")
-        .and_then(|token| token.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
     assert_eq!(actual_hash, expected_hash);
 }
@@ -2908,7 +2900,7 @@ async fn send_many_matches_fixture() {
         .expect("case params");
     let from_addr = params
         .get(0)
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("from");
     let outputs = params
         .get(1)
@@ -2922,7 +2914,7 @@ async fn send_many_matches_fixture() {
         .get("result")
         .and_then(|value| value.as_object())
         .and_then(|obj| obj.get("hash"))
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
 
     let mut server = Server::new_async().await;
@@ -2931,13 +2923,13 @@ async fn send_many_matches_fixture() {
         .get(0)
         .and_then(|token| token.as_object())
         .and_then(|obj| obj.get("asset"))
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("asset");
     let second_asset = outputs
         .get(1)
         .and_then(|token| token.as_object())
         .and_then(|obj| obj.get("asset"))
-        .and_then(|value| value.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("asset");
     let body_re = format!(
         r#"(?s)"method"\s*:\s*"sendmany".*"params"\s*:\s*\[\s*"{escaped_from}".*"{first_asset}".*"{second_asset}".*\]"#,
@@ -2969,7 +2961,7 @@ async fn send_many_matches_fixture() {
     let actual_hash = actual
         .get_property("hash")
         .expect("hash")
-        .and_then(|token| token.as_string())
+        .and_then(neo_json::JToken::as_string)
         .expect("hash");
     assert_eq!(actual_hash, expected_hash);
 }

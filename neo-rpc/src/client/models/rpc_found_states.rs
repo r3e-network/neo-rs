@@ -155,7 +155,9 @@ mod tests {
         let first = results.iter().next().and_then(|t| t.as_ref()).unwrap();
         let obj = first.as_object().unwrap();
         assert_eq!(
-            obj.get("key").and_then(|v| v.as_string()).unwrap(),
+            obj.get("key")
+                .and_then(neo_json::JToken::as_string)
+                .unwrap(),
             general_purpose::STANDARD.encode(b"a")
         );
     }

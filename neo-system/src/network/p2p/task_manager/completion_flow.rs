@@ -220,7 +220,7 @@ impl TaskManager {
         let mut to_disconnect = Vec::with_capacity(session_count);
         let mut to_request = Vec::with_capacity(session_count);
 
-        for (path, entry) in self.sessions.iter_mut() {
+        for (path, entry) in &mut self.sessions {
             if let Some(stored) = entry.session.remove_received_block(index) {
                 match match_persisted_block(stored, &hash) {
                     PersistedBlockMatch::Matches => {

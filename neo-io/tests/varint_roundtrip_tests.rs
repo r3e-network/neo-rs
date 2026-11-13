@@ -25,10 +25,10 @@ fn test_varint_encode_decode_roundtrip_small() {
         write_var_int(n, &mut buf);
 
         if let Some((decoded, width)) = read_var_int_prefix(&buf) {
-            assert_eq!(decoded, n, "Round-trip failed for small value {}", n);
+            assert_eq!(decoded, n, "Round-trip failed for small value {n}");
             assert_eq!(width, 1, "Width should be 1 for small values");
         } else {
-            panic!("Failed to decode encoded value {}", n);
+            panic!("Failed to decode encoded value {n}");
         }
 
         assert_eq!(encoded_len(n), 1, "Encoded length should be 1");
@@ -47,10 +47,10 @@ fn test_varint_encode_decode_roundtrip_2byte() {
         write_var_int(n, &mut buf);
 
         if let Some((decoded, width)) = read_var_int_prefix(&buf) {
-            assert_eq!(decoded, n, "Round-trip failed for 2-byte value {}", n);
+            assert_eq!(decoded, n, "Round-trip failed for 2-byte value {n}");
             assert_eq!(width, 3, "Width should be 3 for u16 range");
         } else {
-            panic!("Failed to decode encoded value {}", n);
+            panic!("Failed to decode encoded value {n}");
         }
 
         assert_eq!(encoded_len(n), 3, "Encoded length should be 3");
@@ -80,10 +80,10 @@ fn test_varint_encode_decode_roundtrip_4byte() {
         write_var_int(n, &mut buf);
 
         if let Some((decoded, width)) = read_var_int_prefix(&buf) {
-            assert_eq!(decoded, n, "Round-trip failed for 4-byte value {}", n);
+            assert_eq!(decoded, n, "Round-trip failed for 4-byte value {n}");
             assert_eq!(width, 5, "Width should be 5 for u32 range");
         } else {
-            panic!("Failed to decode encoded value {}", n);
+            panic!("Failed to decode encoded value {n}");
         }
 
         assert_eq!(encoded_len(n), 5, "Encoded length should be 5");
@@ -117,10 +117,10 @@ fn test_varint_encode_decode_roundtrip_8byte() {
         write_var_int(n, &mut buf);
 
         if let Some((decoded, width)) = read_var_int_prefix(&buf) {
-            assert_eq!(decoded, n, "Round-trip failed for 8-byte value {}", n);
+            assert_eq!(decoded, n, "Round-trip failed for 8-byte value {n}");
             assert_eq!(width, 9, "Width should be 9 for u64 range");
         } else {
-            panic!("Failed to decode encoded value {}", n);
+            panic!("Failed to decode encoded value {n}");
         }
 
         assert_eq!(encoded_len(n), 9, "Encoded length should be 9");
@@ -278,10 +278,10 @@ fn test_varint_length_property() {
 
         // Must be able to decode back
         if let Some((decoded, width)) = read_var_int_prefix(&buf) {
-            assert_eq!(decoded, n, "Decoded value mismatch for {}", n);
-            assert_eq!(width, buf.len(), "Width mismatch for {}", n);
+            assert_eq!(decoded, n, "Decoded value mismatch for {n}");
+            assert_eq!(width, buf.len(), "Width mismatch for {n}");
         } else {
-            panic!("Failed to decode valid encoding of {}", n);
+            panic!("Failed to decode valid encoding of {n}");
         }
     }
 }
@@ -297,8 +297,8 @@ fn test_canonical_encoding_only() {
         let mut buf = Vec::new();
         write_var_int(n, &mut buf);
 
-        assert_eq!(buf.len(), 1, "Value {} should use single byte", n);
-        assert!(buf[0] < 0xFD, "Value {} must not use FD marker", n);
+        assert_eq!(buf.len(), 1, "Value {n} should use single byte");
+        assert!(buf[0] < 0xFD, "Value {n} must not use FD marker");
     }
 
     // Values 253-65535 MUST use FD marker (not FE/FF)
@@ -306,8 +306,8 @@ fn test_canonical_encoding_only() {
         let mut buf = Vec::new();
         write_var_int(n, &mut buf);
 
-        assert_eq!(buf.len(), 3, "Value {} should use 3 bytes", n);
-        assert_eq!(buf[0], 0xFD, "Value {} must use FD marker", n);
+        assert_eq!(buf.len(), 3, "Value {n} should use 3 bytes");
+        assert_eq!(buf[0], 0xFD, "Value {n} must use FD marker");
     }
 
     // Values 65536-4294967295 MUST use FE marker (not FF)
@@ -315,8 +315,8 @@ fn test_canonical_encoding_only() {
         let mut buf = Vec::new();
         write_var_int(n, &mut buf);
 
-        assert_eq!(buf.len(), 5, "Value {} should use 5 bytes", n);
-        assert_eq!(buf[0], 0xFE, "Value {} must use FE marker", n);
+        assert_eq!(buf.len(), 5, "Value {n} should use 5 bytes");
+        assert_eq!(buf[0], 0xFE, "Value {n} must use FE marker");
     }
 
     // Values >= 4294967296 MUST use FF marker
@@ -324,8 +324,8 @@ fn test_canonical_encoding_only() {
         let mut buf = Vec::new();
         write_var_int(n, &mut buf);
 
-        assert_eq!(buf.len(), 9, "Value {} should use 9 bytes", n);
-        assert_eq!(buf[0], 0xFF, "Value {} must use FF marker", n);
+        assert_eq!(buf.len(), 9, "Value {n} should use 9 bytes");
+        assert_eq!(buf[0], 0xFF, "Value {n} must use FF marker");
     }
 }
 
@@ -354,8 +354,8 @@ fn test_varint_stress_test() {
         );
 
         let (decoded, width) = result.unwrap();
-        assert_eq!(decoded, n, "Random value round-trip failed for {}", n);
-        assert_eq!(width, buf.len(), "Width mismatch for random value {}", n);
+        assert_eq!(decoded, n, "Random value round-trip failed for {n}");
+        assert_eq!(width, buf.len(), "Width mismatch for random value {n}");
     }
 }
 
@@ -392,20 +392,18 @@ fn test_varint_write_read_consistency() {
         // Write produces correct bytes
         assert_eq!(
             buf, expected_bytes,
-            "write_var_int({}) produced incorrect bytes",
-            value
+            "write_var_int({value}) produced incorrect bytes"
         );
 
         // Read decodes correctly
         if let Some((decoded, width)) = read_var_int_prefix(&buf) {
             assert_eq!(
                 decoded, value,
-                "read_var_int_prefix({:?}) decoded incorrectly",
-                buf
+                "read_var_int_prefix({buf:?}) decoded incorrectly"
             );
-            assert_eq!(width, expected_bytes.len(), "Width mismatch for {:?}", buf);
+            assert_eq!(width, expected_bytes.len(), "Width mismatch for {buf:?}");
         } else {
-            panic!("read_var_int_prefix({:?}) returned None", buf);
+            panic!("read_var_int_prefix({buf:?}) returned None");
         }
     }
 }

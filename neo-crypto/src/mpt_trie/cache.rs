@@ -68,7 +68,8 @@ impl GlobalNodeCache {
             return None;
         };
         let hits = self.hits.fetch_add(1, Ordering::Relaxed);
-        if hits & 15 == 0 {
+        // Every sixteenth hit refreshes the entry's LRU position.
+        if hits.trailing_zeros() >= 4 {
             let _ = self.inner.write().get(key);
         }
         Some(node)
@@ -738,8 +739,7 @@ mod tests {
             // Should complete in < 1ms total (arc clone ~100ns each)
             assert!(
                 elapsed.as_micros() < 1_000_000,
-                "Cache hit too slow: {:?}",
-                elapsed
+                "Cache hit too slow: {elapsed:?}"
             );
         }
 
@@ -779,15 +779,13 @@ mod tests {
             // All reads should succeed (at least 10,000, may be slightly more from other tests)
             assert!(
                 total_hits >= 10_000,
-                "Expected at least 10000 hits, got {}",
-                total_hits
+                "Expected at least 10000 hits, got {total_hits}"
             );
 
             let (hits, _, _) = cache.stats();
             assert!(
                 hits >= 10_000,
-                "Expected at least 10000 stats hits, got {}",
-                hits
+                "Expected at least 10000 stats hits, got {hits}"
             );
         }
     }

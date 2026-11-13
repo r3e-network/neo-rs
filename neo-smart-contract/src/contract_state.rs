@@ -252,7 +252,7 @@ impl NefFile {
             "magic": Self::MAGIC,
             "compiler": self.compiler,
             "source": self.source,
-            "tokens": self.tokens.iter().map(|t| t.to_json()).collect::<Vec<_>>(),
+            "tokens": self.tokens.iter().map(neo_io::MethodToken::to_json).collect::<Vec<_>>(),
             "script": BASE64_STANDARD.encode(&self.script),
             "checksum": self.checksum,
         })
@@ -290,7 +290,7 @@ impl ContractState {
         StackValue::Array(vec![
             StackValue::Integer(self.id as i64),
             StackValue::Integer(i64::from(self.update_counter)),
-            StackValue::ByteString(self.hash.to_bytes().to_vec()),
+            StackValue::ByteString(self.hash.to_bytes().clone()),
             StackValue::ByteString(self.nef.to_bytes()),
             self.manifest.to_stack_value(),
         ])
@@ -455,8 +455,7 @@ impl Serializable for NefFile {
         let magic = reader.read_u32()?;
         if magic != Self::MAGIC {
             return Err(IoError::invalid_data(format!(
-                "NEF deserialization magic mismatch: 0x{:08X}",
-                magic
+                "NEF deserialization magic mismatch: 0x{magic:08X}"
             )));
         }
 

@@ -25,7 +25,7 @@ mod tests {
             let mut writer = BinaryWriter::new();
             writer.write_i32(value).unwrap();
             let result = writer.to_bytes();
-            assert_eq!(result, expected, "Failed to write i32 value: {}", value);
+            assert_eq!(result, expected, "Failed to write i32 value: {value}");
         }
     }
 
@@ -43,7 +43,7 @@ mod tests {
             let mut writer = BinaryWriter::new();
             writer.write_u32(value).unwrap();
             let result = writer.to_bytes();
-            assert_eq!(result, expected, "Failed to write u32 value: {}", value);
+            assert_eq!(result, expected, "Failed to write u32 value: {value}");
         }
     }
 
@@ -68,7 +68,7 @@ mod tests {
             let mut writer = BinaryWriter::new();
             writer.write_i64(value).unwrap();
             let result = writer.to_bytes();
-            assert_eq!(result, expected, "Failed to write i64 value: {}", value);
+            assert_eq!(result, expected, "Failed to write i64 value: {value}");
         }
     }
 
@@ -104,7 +104,7 @@ mod tests {
             let mut writer = BinaryWriter::new();
             writer.write_var_int(value).unwrap();
             let result = writer.to_bytes();
-            assert_eq!(result, expected, "Failed to write var_int value: {}", value);
+            assert_eq!(result, expected, "Failed to write var_int value: {value}");
         }
     }
 
@@ -126,8 +126,7 @@ mod tests {
             let result = writer.to_bytes();
             assert_eq!(
                 result, expected,
-                "Failed to write var_string value: {}",
-                value
+                "Failed to write var_string value: {value}"
             );
         }
     }
@@ -141,7 +140,7 @@ mod tests {
             let mut writer = BinaryWriter::new();
             writer.write_bool(value).unwrap();
             let result = writer.to_bytes();
-            assert_eq!(result, expected, "Failed to write boolean value: {}", value);
+            assert_eq!(result, expected, "Failed to write boolean value: {value}");
         }
     }
 

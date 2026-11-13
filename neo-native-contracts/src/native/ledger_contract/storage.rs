@@ -286,7 +286,7 @@ impl LedgerContract {
         put_item(
             snapshot,
             hash_key,
-            StorageItem::from_bytes(block_hash.to_bytes().to_vec()),
+            StorageItem::from_bytes(block_hash.to_bytes().clone()),
         );
 
         let block_key = block_storage_key(self.id, &block_hash);

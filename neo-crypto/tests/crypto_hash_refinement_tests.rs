@@ -5,6 +5,15 @@
 
 use neo_crypto::Crypto;
 use rand::Rng;
+use std::fmt::Write;
+
+/// Format a byte slice as lowercase hexadecimal without per-byte allocation.
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().fold(String::new(), |mut out, b| {
+        let _ = write!(out, "{b:02x}");
+        out
+    })
+}
 
 /// Generate random bytes of specified length
 fn random_bytes(len: usize) -> Vec<u8> {
@@ -180,14 +189,7 @@ fn test_sha256_hello_known_vector() {
         "SHA256('hello') must match C# reference implementation exactly"
     );
 
-    println!(
-        "✓ SHA256('hello') = {}",
-        result
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<Vec<_>>()
-            .join("")
-    );
+    println!("✓ SHA256('hello') = {}", to_hex(&result));
 }
 
 /// Test 8: Known vector - Hash160 composition with "hello"
@@ -203,14 +205,7 @@ fn test_hash160_hello_known_vector() {
         "Hash160('hello') must equal RIPEMD160(SHA256('hello'))"
     );
 
-    println!(
-        "✓ Hash160('hello') = {}",
-        hash160_direct
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<Vec<_>>()
-            .join("")
-    );
+    println!("✓ Hash160('hello') = {}", to_hex(&hash160_direct));
     println!("  (computed as RIPEMD160(SHA256('hello')))");
 }
 
@@ -304,8 +299,7 @@ fn test_ct_hash_eq_single_byte_detection() {
 
         assert!(
             !ct_hash_eq(&base, &different),
-            "CT eq must detect difference at position {}",
-            pos
+            "CT eq must detect difference at position {pos}"
         );
 
         // Reset for next iteration
@@ -339,14 +333,7 @@ fn test_empty_string_hashing() {
     assert_eq!(hash256_empty, expected_hash256);
 
     println!("✓ All hash functions handle empty input correctly");
-    println!(
-        "  SHA256(empty) = {}",
-        sha256_empty
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<Vec<_>>()
-            .join("")
-    );
+    println!("  SHA256(empty) = {}", to_hex(&sha256_empty));
 }
 
 #[cfg(test)]

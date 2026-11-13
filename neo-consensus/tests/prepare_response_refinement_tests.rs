@@ -315,12 +315,8 @@ fn test_quorum_threshold_concept() {
         let f = (n - 1) / 3;
         let m = n - f;
 
-        assert_eq!(
-            m, expected_quorum,
-            "Quorum calculation incorrect for n={}",
-            n
-        );
-        assert!(m > f, "Quorum must have honest majority: {} > {}", m, f);
+        assert_eq!(m, expected_quorum, "Quorum calculation incorrect for n={n}");
+        assert!(m > f, "Quorum must have honest majority: {m} > {f}");
     }
 }
 
@@ -355,7 +351,7 @@ fn test_different_validators_same_hash() {
 
     // All should validate independently
     for (i, vote) in votes.iter().enumerate() {
-        assert!(vote.validate(&hash).is_ok(), "Vote {} should validate", i);
+        assert!(vote.validate(&hash).is_ok(), "Vote {i} should validate");
     }
 
     // Count unique validators
@@ -390,7 +386,7 @@ fn test_coq_refinement_tie_in() {
         assert_eq!(hash.to_string().len(), 66); // 0x prefix + 64 hex chars
 
         // Coq prediction: validation passes with matching hash
-        assert!(msg.validate(&hash).is_ok(), "{} should validate", name);
+        assert!(msg.validate(&hash).is_ok(), "{name} should validate");
 
         // Coq prediction: serialize preserves hash
         assert_eq!(msg.serialize().len(), 32);

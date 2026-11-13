@@ -313,7 +313,7 @@ impl PeerConnection {
             buffers.push(bytes);
         }
 
-        let buffer_refs: Vec<&[u8]> = buffers.iter().map(|b| b.as_slice()).collect();
+        let buffer_refs: Vec<&[u8]> = buffers.iter().map(Vec::as_slice).collect();
         write_frame_vectored(&mut self.stream, &self.frame_config, &buffer_refs).await?;
 
         // Update statistics
@@ -541,7 +541,7 @@ mod tests {
         let listener = match TcpListener::bind("127.0.0.1:0").await {
             Ok(listener) => listener,
             Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return None,
-            Err(err) => panic!("bind listener: {}", err),
+            Err(err) => panic!("bind listener: {err}"),
         };
         let addr = listener.local_addr().expect("listener addr");
         let client = TcpStream::connect(addr);

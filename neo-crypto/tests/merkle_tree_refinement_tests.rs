@@ -211,7 +211,7 @@ fn test_compute_root_matches_reference_algorithm() {
         vec![random_hash(), random_hash(), random_hash()], // Line 108-109 odd case
     ];
 
-    for hashes in test_cases.iter() {
+    for hashes in &test_cases {
         let result = MerkleTree::compute_root(hashes);
 
         // Verify output format: always 32 bytes when Some
@@ -253,7 +253,7 @@ fn test_merkle_root_always_deterministic() {
 
     // All 100 runs must produce identical result
     for (i, r) in results.iter().enumerate().skip(1) {
-        assert_eq!(*r, results[0], "Determinism failed on iteration {}", i);
+        assert_eq!(*r, results[0], "Determinism failed on iteration {i}");
     }
 
     println!("✓ Verified deterministic across 100 consecutive runs");

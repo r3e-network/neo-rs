@@ -347,7 +347,7 @@ fn test_peer_id_creation() {
 #[test]
 fn test_peer_id_display() {
     let id = PeerId::new(123);
-    assert_eq!(format!("{}", id), "Peer(123)");
+    assert_eq!(format!("{id}"), "Peer(123)");
 }
 
 #[test]
@@ -457,7 +457,7 @@ fn test_mock_peer_registry_add_peer() {
         0,
         0,
         0,
-        "".to_string(),
+        String::new(),
     );
 
     registry.add_peer(peer.clone());
@@ -485,7 +485,7 @@ fn test_mock_peer_registry_send_to() {
         0,
         0,
         0,
-        "".to_string(),
+        String::new(),
     );
     registry.add_peer(peer);
 
@@ -509,7 +509,7 @@ fn test_mock_peer_registry_disconnect() {
         0,
         0,
         0,
-        "".to_string(),
+        String::new(),
     );
 
     registry.add_peer(peer);
@@ -640,34 +640,34 @@ fn test_send_error_all_variants_eq() {
 #[test]
 fn test_relay_error_debug() {
     let err1 = RelayError::validation_failed("test");
-    assert!(format!("{:?}", err1).contains("ValidationFailed"));
+    assert!(format!("{err1:?}").contains("ValidationFailed"));
 
     let err2 = RelayError::already_exists(&UInt256::zero());
-    assert!(format!("{:?}", err2).contains("AlreadyExists"));
+    assert!(format!("{err2:?}").contains("AlreadyExists"));
 
     let err3 = RelayError::transaction_invalid("bad tx");
-    assert!(format!("{:?}", err3).contains("TransactionInvalid"));
+    assert!(format!("{err3:?}").contains("TransactionInvalid"));
 
     let err4 = RelayError::mempool_full(100, 100);
-    assert!(format!("{:?}", err4).contains("MempoolFull"));
+    assert!(format!("{err4:?}").contains("MempoolFull"));
 
     let err5 = RelayError::invalid_height(10, 20);
-    assert!(format!("{:?}", err5).contains("InvalidHeight"));
+    assert!(format!("{err5:?}").contains("InvalidHeight"));
 }
 
 #[test]
 fn test_send_error_debug() {
     let err1 = SendError::peer_not_found(1);
-    assert!(format!("{:?}", err1).contains("PeerNotFound"));
+    assert!(format!("{err1:?}").contains("PeerNotFound"));
 
     let err2 = SendError::disconnected(2);
-    assert!(format!("{:?}", err2).contains("Disconnected"));
+    assert!(format!("{err2:?}").contains("Disconnected"));
 
     let err3 = SendError::queue_full(3);
-    assert!(format!("{:?}", err3).contains("QueueFull"));
+    assert!(format!("{err3:?}").contains("QueueFull"));
 
     let err4 = SendError::serialization_failed("test");
-    assert!(format!("{:?}", err4).contains("SerializationFailed"));
+    assert!(format!("{err4:?}").contains("SerializationFailed"));
 }
 
 #[test]
@@ -781,7 +781,7 @@ fn test_peer_registry_multiple_peers() {
             0,
             i * 1000,
             100,
-            format!("node-{}", i),
+            format!("node-{i}"),
         );
         registry.add_peer(peer);
     }

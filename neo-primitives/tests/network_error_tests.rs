@@ -93,11 +93,11 @@ fn network_error_clone() {
 #[test]
 fn network_error_debug_format() {
     let err = NetworkError::Timeout;
-    let debug = format!("{:?}", err);
+    let debug = format!("{err:?}");
     assert_eq!(debug, "Timeout");
 
     let err = NetworkError::InvalidMessage("test".to_string());
-    let debug = format!("{:?}", err);
+    let debug = format!("{err:?}");
     assert!(debug.contains("InvalidMessage"));
     assert!(debug.contains("test"));
 }

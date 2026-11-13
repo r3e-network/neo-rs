@@ -35,7 +35,7 @@ fn verify_neofs_matryoshka<B: Message>(
     let origin_bytes = verify
         .origin
         .as_ref()
-        .map(|origin| origin.encode_to_vec())
+        .map(prost::Message::encode_to_vec)
         .unwrap_or_default();
     let Some(origin_sig) = verify.origin_signature.as_ref() else {
         return false;

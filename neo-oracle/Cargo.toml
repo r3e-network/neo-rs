@@ -7,6 +7,11 @@ description = "Oracle service implementation for Neo N3 nodes"
 license = "MIT"
 build = "build.rs"
 
+# Inherit the workspace-wide clippy/rustc lint policy (audit-confirmed gap:
+# this was the only workspace member without this hookup).
+[lints]
+workspace = true
+
 [dependencies]
 neo-primitives = { path = "../neo-primitives" }
 neo-protocol = { path = "../neo-protocol" }

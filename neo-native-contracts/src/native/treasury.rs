@@ -94,7 +94,7 @@ impl NativeContract for TreasuryContract {
         match method {
             "verify" => {
                 let check = engine.check_committee_witness()?;
-                Ok(vec![if check { 1 } else { 0 }])
+                Ok(vec![u8::from(check)])
             }
             "onNEP17Payment" => Ok(Vec::new()),
             "onNEP11Payment" => Ok(Vec::new()),

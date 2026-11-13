@@ -139,7 +139,7 @@ impl NativeContract for Notary {
                 TransactionAttributeType::NotaryAssisted as u8,
             )
             .map_err(|err| {
-                Error::native_contract(format!("Failed to read Notary attribute fee: {}", err))
+                Error::native_contract(format!("Failed to read Notary attribute fee: {err}"))
             })?;
 
         let notary_count = i64::try_from(notaries.len())
@@ -197,8 +197,7 @@ impl NativeContract for Notary {
             "withdraw" => self.withdraw(engine, args),
             "setMaxNotValidBeforeDelta" => self.set_max_not_valid_before_delta(engine, args),
             _ => Err(Error::native_contract(format!(
-                "Unknown Notary method: {}",
-                method
+                "Unknown Notary method: {method}"
             ))),
         }
     }

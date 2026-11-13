@@ -84,11 +84,11 @@ fn test_ecdsa_signature_format_variations() {
     // Test various realistic ECDSA r||s patterns
     // secp256r1 signatures are always 64 bytes regardless of values
 
-    // Zero signature placeholder
+    // All-zero signature pattern
     let zero_sig = vec![0u8; 64];
     assert!(CommitMessage::new(1, 0, 0, zero_sig).validate().is_ok());
 
-    // One signature placeholder
+    // All-one-byte signature pattern
     let one_sig = vec![1u8; 64];
     assert!(CommitMessage::new(1, 0, 0, one_sig).validate().is_ok());
 
@@ -229,7 +229,7 @@ fn test_quorum_formula_mathematical_accuracy() {
         (16, 5, 11),
     ];
 
-    for (n, expected_f, expected_m) in configs.iter() {
+    for (n, expected_f, expected_m) in &configs {
         let validators: Vec<ValidatorInfo> = (0..*n as usize)
             .map(|i| ValidatorInfo {
                 index: i as u8,
@@ -240,8 +240,8 @@ fn test_quorum_formula_mathematical_accuracy() {
 
         let context = ConsensusContext::new(100, validators.clone(), Some(0), None);
 
-        assert_eq!(context.f(), *expected_f, "f incorrect for n={}", n);
-        assert_eq!(context.m(), *expected_m, "M incorrect for n={}", n);
+        assert_eq!(context.f(), *expected_f, "f incorrect for n={n}");
+        assert_eq!(context.m(), *expected_m, "M incorrect for n={n}");
     }
 }
 
@@ -321,8 +321,7 @@ fn test_multiple_validators_no_conflicts() {
         let sig = vec![idx; 64];
         assert!(
             context.add_commit(idx, 0, sig).is_ok(),
-            "Validator {} commit should succeed",
-            idx
+            "Validator {idx} commit should succeed"
         );
     }
 
@@ -431,8 +430,7 @@ fn test_coq_lemma_m_formula_integration() {
 
         assert_eq!(
             computed_m, expected_m,
-            "M formula mismatch for n={}: computed={}, expected={}",
-            n, computed_m, expected_m
+            "M formula mismatch for n={n}: computed={computed_m}, expected={expected_m}"
         );
     }
 }
@@ -456,13 +454,7 @@ fn test_coq_lemma_f_bound_verification() {
         let f = context.f();
         let bound = n / 3 + 1;
 
-        assert!(
-            f < bound,
-            "For n={}, f={} should be < bound={}",
-            n,
-            f,
-            bound
-        );
+        assert!(f < bound, "For n={n}, f={f} should be < bound={bound}");
     }
 }
 

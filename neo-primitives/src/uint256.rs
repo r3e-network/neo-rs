@@ -162,7 +162,7 @@ mod tests {
 
         #[test]
         fn test_parse_hex_string(hex in "[0-9a-fA-F]{64}") {
-            let uint = UInt256::parse(&format!("0x{}", hex)).unwrap();
+            let uint = UInt256::parse(&format!("0x{hex}")).unwrap();
             let uint2 = UInt256::parse(&uint.to_hex_string()).unwrap();
             prop_assert_eq!(uint, uint2);
         }
@@ -211,7 +211,7 @@ mod tests {
 
         #[test]
         fn test_parse_with_0x_prefix(hex in "[0-9a-fA-F]{64}") {
-            let with_prefix = UInt256::parse(&format!("0x{}", hex)).unwrap();
+            let with_prefix = UInt256::parse(&format!("0x{hex}")).unwrap();
             let without_prefix = UInt256::parse(&hex).unwrap();
             prop_assert_eq!(with_prefix, without_prefix);
         }

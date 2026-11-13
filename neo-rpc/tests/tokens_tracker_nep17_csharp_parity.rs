@@ -118,8 +118,8 @@ async fn nep17_tracker_matches_csharp_history_indexing() {
     tracker.commit().expect("commit tracker batch");
 
     let (_, sent_prefix, received_prefix) = Nep17Tracker::rpc_prefixes();
-    let sent_key = [vec![sent_prefix], source.to_bytes().to_vec()].concat();
-    let received_key = [vec![received_prefix], source.to_bytes().to_vec()].concat();
+    let sent_key = [vec![sent_prefix], source.to_bytes().clone()].concat();
+    let received_key = [vec![received_prefix], source.to_bytes().clone()].concat();
 
     let sent = find_prefix::<Nep17TransferKey, TokenTransfer>(tracker_store.as_ref(), &sent_key)
         .expect("sent transfers");

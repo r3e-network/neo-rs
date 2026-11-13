@@ -80,7 +80,7 @@ impl RootBranchBuffer {
         }
 
         // Find matching node in our compact storage
-        for entry in self.nodes.iter() {
+        for entry in &self.nodes {
             if entry.path_depth == depth && entry.slot_index == slot_index {
                 self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 return Some(&entry.node);

@@ -145,8 +145,7 @@ pub fn compute_ordering_key(
             // Primary key is commit time, secondary uses commitment for deterministic ordering
             let commitment_key = timing
                 .commitment
-                .map(|c| u64::from_le_bytes(c[..8].try_into().unwrap()))
-                .unwrap_or(0);
+                .map_or(0, |c| u64::from_le_bytes(c[..8].try_into().unwrap()));
             OrderingKey {
                 primary: timing.sequence_number,
                 secondary: commitment_key,
@@ -154,14 +153,14 @@ pub fn compute_ordering_key(
             }
         }
         FairOrderingPolicy::ThresholdEncryption => {
-            // PRE-DECRYPTION PLACEHOLDER KEY (assigned while the content is
+            // PRE-DECRYPTION PROVISIONAL KEY (assigned while the content is
             // still encrypted). For the encrypted mempool (Phase A) the
             // definitive ordering key is only assigned AFTER decryption by the
             // mempool content state machine, via
             // `compute_threshold_decrypted_ordering_key`: ordering is decided
             // at intake (hidden from the host) and revealed once the TEE
             // decrypts the payload. When the policy is used without content
-            // encryption this placeholder ordering is retained as-is.
+            // encryption this provisional ordering is retained as-is.
             OrderingKey {
                 primary: 0,
                 secondary: rand::random(),
@@ -197,7 +196,7 @@ pub fn compute_ordering_key(
 /// Compute the post-decryption ordering key for the threshold-encryption
 /// policy (Privacy Mode Phase A).
 ///
-/// This is the *real* policy key, replacing the pre-decryption placeholder
+/// This is the *real* policy key, replacing the pre-decryption provisional key
 /// produced by [`compute_ordering_key`]: it is assigned by the mempool content
 /// state machine only after a transaction has been successfully decrypted and
 /// AEAD-verified (`Encrypted -> Resolved`). Ordering is by enclave arrival

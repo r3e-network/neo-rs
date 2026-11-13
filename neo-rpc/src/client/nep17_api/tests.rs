@@ -165,7 +165,7 @@ fn load_contract_state_case(manifest_name: &str) -> Option<(String, String)> {
         let obj = token.as_object().expect("case object");
         let case_name = obj
             .get("Name")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .unwrap_or_default();
         if !case_name.eq_ignore_ascii_case("getcontractstateasync") {
             continue;
@@ -185,7 +185,7 @@ fn load_contract_state_case(manifest_name: &str) -> Option<(String, String)> {
             .expect("manifest object");
         let name = manifest
             .get("name")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .unwrap_or_default();
         if !name.eq_ignore_ascii_case(manifest_name) {
             continue;
@@ -201,9 +201,9 @@ fn load_contract_state_case(manifest_name: &str) -> Option<(String, String)> {
             .expect("case params");
         let contract = params
             .get(0)
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .unwrap_or_default()
-            .to_string();
+            .clone();
         let contract = if UInt160::parse(&contract).is_ok() {
             contract
         } else {

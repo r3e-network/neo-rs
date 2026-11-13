@@ -145,7 +145,7 @@ fn trigger_type_clone_and_copy() {
 #[test]
 fn trigger_type_debug_format() {
     let trigger = TriggerType::ON_PERSIST | TriggerType::POST_PERSIST;
-    let debug_str = format!("{:?}", trigger);
+    let debug_str = format!("{trigger:?}");
     assert!(debug_str.contains("ON_PERSIST"));
     assert!(debug_str.contains("POST_PERSIST"));
 }

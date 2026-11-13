@@ -110,9 +110,9 @@ impl ContractParameter {
                     .as_str()
                     .ok_or_else(|| "Invalid Hash160, expected hex string".to_string())?;
                 let bytes = hex::decode(hex_str.trim_start_matches("0x"))
-                    .map_err(|e| format!("Invalid Hash160 hex: {}", e))?;
+                    .map_err(|e| format!("Invalid Hash160 hex: {e}"))?;
                 let hash =
-                    UInt160::from_bytes(&bytes).map_err(|e| format!("Invalid Hash160: {}", e))?;
+                    UInt160::from_bytes(&bytes).map_err(|e| format!("Invalid Hash160: {e}"))?;
                 ContractParameterValue::Hash160(hash)
             }
             "Hash256" => {
@@ -120,9 +120,9 @@ impl ContractParameter {
                     .as_str()
                     .ok_or_else(|| "Invalid Hash256, expected hex string".to_string())?;
                 let bytes = hex::decode(hex_str.trim_start_matches("0x"))
-                    .map_err(|e| format!("Invalid Hash256 hex: {}", e))?;
+                    .map_err(|e| format!("Invalid Hash256 hex: {e}"))?;
                 let hash =
-                    UInt256::from_bytes(&bytes).map_err(|e| format!("Invalid Hash256: {}", e))?;
+                    UInt256::from_bytes(&bytes).map_err(|e| format!("Invalid Hash256: {e}"))?;
                 ContractParameterValue::Hash256(hash)
             }
             "PublicKey" => {
@@ -177,7 +177,7 @@ impl ContractParameter {
             "Void" => ContractParameterValue::Void,
             "Any" => ContractParameterValue::Any,
             "InteropInterface" => ContractParameterValue::InteropInterface,
-            _ => return Err(format!("Unknown contract parameter type: {}", type_str)),
+            _ => return Err(format!("Unknown contract parameter type: {type_str}")),
         };
 
         Ok(Self::new(value))
@@ -220,7 +220,7 @@ impl ContractParameter {
             }),
             ContractParameterValue::Array(v) => serde_json::json!({
                 "type": "Array",
-                "value": v.iter().map(|p| p.to_json()).collect::<Vec<_>>()
+                "value": v.iter().map(ContractParameter::to_json).collect::<Vec<_>>()
             }),
             ContractParameterValue::Map(v) => serde_json::json!({
                 "type": "Map",

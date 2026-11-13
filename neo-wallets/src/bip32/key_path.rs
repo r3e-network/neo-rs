@@ -85,7 +85,7 @@ impl fmt::Display for KeyPath {
             if (index & 0x8000_0000) != 0 {
                 write!(f, "{}'", index & 0x7fff_ffff)?;
             } else {
-                write!(f, "{}", index)?;
+                write!(f, "{index}")?;
             }
         }
         Ok(())

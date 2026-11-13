@@ -489,8 +489,8 @@ impl LocalNodeActor {
         // is intentional; the tracker owns shutdown.
         drop(self.spawned_tasks.spawn(async move {
             tokio::select! {
-                _ = cancel.cancelled() => {}
-                _ = task => {}
+                () = cancel.cancelled() => {}
+                () = task => {}
             }
         }));
     }
@@ -720,7 +720,7 @@ impl LocalNodeActor {
         self.spawn_background(async move {
             loop {
                 tokio::select! {
-                    _ = listener_cancellation.cancelled() => break,
+                    () = listener_cancellation.cancelled() => break,
                     accepted = listener.accept() => {
                         match accepted {
                             Ok((stream, remote)) => {
@@ -739,8 +739,8 @@ impl LocalNodeActor {
                             Err(error) => {
                                 warn!(target: "neo", error = %error, "failed to accept inbound connection");
                                 tokio::select! {
-                                    _ = listener_cancellation.cancelled() => break,
-                                    _ = tokio::time::sleep(Duration::from_millis(200)) => {}
+                                    () = listener_cancellation.cancelled() => break,
+                                    () = tokio::time::sleep(Duration::from_millis(200)) => {}
                                 }
                             }
                         }

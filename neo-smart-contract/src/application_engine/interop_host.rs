@@ -78,7 +78,7 @@ impl InteropHost for ApplicationEngine {
         // shared state yet: same-script unloads (for example `_initialize`
         // frames cloned from the real contract method) reuse the same
         // ExecutionContextState, and clearing `is_dynamic_call` here would make
-        // the later cross-contract unload lose the null placeholder it needs to
+        // the later cross-contract unload lose the null sentinel it needs to
         // push for void dynamic calls.
         let (snapshot_cache, notification_count, is_dynamic_call, unloaded_script_hash) = {
             let state = state_arc.lock();
@@ -199,12 +199,11 @@ impl InteropHost for ApplicationEngine {
         // 1. Validate call flags - need ReadStates | AllowCall
         let required_flags = CallFlags::READ_STATES | CallFlags::ALLOW_CALL;
         let current_flags = self.get_current_call_flags().map_err(|e| {
-            VmError::invalid_operation_msg(format!("Failed to get call flags: {}", e))
+            VmError::invalid_operation_msg(format!("Failed to get call flags: {e}"))
         })?;
         if !current_flags.contains(required_flags) {
             return Err(VmError::invalid_operation_msg(format!(
-                "CALLT requires {:?} but current context has {:?}",
-                required_flags, current_flags
+                "CALLT requires {required_flags:?} but current context has {current_flags:?}"
             )));
         }
         // 2. Get the current execution context and contract state
@@ -270,7 +269,7 @@ impl InteropHost for ApplicationEngine {
             &args,
             None,
         )
-        .map_err(|e| VmError::invalid_operation_msg(format!("CALLT failed: {}", e)))?;
+        .map_err(|e| VmError::invalid_operation_msg(format!("CALLT failed: {e}")))?;
         Ok(())
     }
 }

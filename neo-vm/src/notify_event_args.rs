@@ -75,7 +75,7 @@ impl Interoperable for NotifyEventArgs {
 
     fn to_stack_item(&self) -> Result<StackItem, crate::VmError> {
         // Returns an array with [ScriptHash, EventName, State]
-        let state: Vec<StackItem> = self.state.to_vec();
+        let state: Vec<StackItem> = self.state.clone();
         Ok(StackItem::from_array(vec![
             StackItem::from_byte_string(self.script_hash.to_bytes()),
             StackItem::from_byte_string(self.event_name.clone().into_bytes()),

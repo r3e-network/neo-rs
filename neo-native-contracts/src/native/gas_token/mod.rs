@@ -83,8 +83,7 @@ impl GasToken {
         match method {
             "transfer" => self.transfer(engine, args),
             _ => Err(CoreError::native_contract(format!(
-                "Unknown method: {}",
-                method
+                "Unknown method: {method}"
             ))),
         }
     }
@@ -378,17 +377,14 @@ impl GasToken {
     }
 
     fn is_watched_account(account: &UInt160) -> bool {
-        Self::watched_account()
-            .map(|watched| watched == account)
-            .unwrap_or(false)
+        Self::watched_account().is_some_and(|watched| watched == account)
     }
 
     fn watched_tx_hash(engine: &ApplicationEngine) -> String {
         engine
             .script_container()
             .and_then(|container| container.hash().ok())
-            .map(|hash| hash.to_string())
-            .unwrap_or_else(|| "<none>".to_string())
+            .map_or_else(|| "<none>".to_string(), |hash| hash.to_string())
     }
 
     fn write_account_balance(
@@ -476,12 +472,12 @@ impl GasToken {
         amount: &BigInt,
     ) -> CoreResult<()> {
         // Use StackItem types matching C# FungibleToken.PostTransferAsync
-        let from_item = from
-            .map(|addr| StackItem::from_byte_string(addr.to_bytes()))
-            .unwrap_or_else(StackItem::null);
-        let to_item = to
-            .map(|addr| StackItem::from_byte_string(addr.to_bytes()))
-            .unwrap_or_else(StackItem::null);
+        let from_item = from.map_or_else(StackItem::null, |addr| {
+            StackItem::from_byte_string(addr.to_bytes())
+        });
+        let to_item = to.map_or_else(StackItem::null, |addr| {
+            StackItem::from_byte_string(addr.to_bytes())
+        });
         let amount_item = StackItem::from_int(amount.clone());
 
         // Use send_notification with explicit contract hash (like C# engine.SendNotification)
@@ -624,8 +620,7 @@ impl GasToken {
         let key = Self::total_supply_key();
         snapshot
             .try_get(&key)
-            .map(|item| item.to_bigint())
-            .unwrap_or_else(BigInt::zero)
+            .map_or_else(BigInt::zero, |item| item.to_bigint())
     }
 
     /// Reads the balance of `account` from the snapshot.
@@ -634,10 +629,9 @@ impl GasToken {
         S: ReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
         let key = StorageKey::create_with_uint160(Self::ID, ACCOUNT_PREFIX, account);
-        snapshot
-            .try_get(&key)
-            .map(|item| Self::account_state_from_item(&item).balance)
-            .unwrap_or_else(BigInt::zero)
+        snapshot.try_get(&key).map_or_else(BigInt::zero, |item| {
+            Self::account_state_from_item(&item).balance
+        })
     }
 }
 

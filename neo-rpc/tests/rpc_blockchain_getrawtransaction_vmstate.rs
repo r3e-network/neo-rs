@@ -46,7 +46,10 @@ fn make_ledger_block(
             .expect("previous hash lookup")
             .unwrap_or_else(UInt256::zero)
     };
-    let hashes: Vec<UInt256> = transactions.iter().map(|tx| tx.hash()).collect();
+    let hashes: Vec<UInt256> = transactions
+        .iter()
+        .map(neo_protocol::payloads::Transaction::hash)
+        .collect();
     let merkle_root = if hashes.is_empty() {
         UInt256::zero()
     } else {
@@ -86,7 +89,7 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
     let hash_key = StorageKey::new(LedgerContract::ID, hash_key_bytes);
     store.add(
         hash_key,
-        neo_storage::StorageItem::from_bytes(hash.to_bytes().to_vec()),
+        neo_storage::StorageItem::from_bytes(hash.to_bytes().clone()),
     );
 
     let trimmed = TrimmedBlock::from_block(block);

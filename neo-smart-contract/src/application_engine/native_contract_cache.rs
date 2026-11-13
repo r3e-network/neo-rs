@@ -124,8 +124,7 @@ impl NativeContractsCacheEntry {
 
         if active.next().is_some() {
             return Err(Error::invalid_operation(format!(
-                "Ambiguous native method '{}({})' at height {}",
-                name, parameter_count, block_height
+                "Ambiguous native method '{name}({parameter_count})' at height {block_height}"
             )));
         }
 

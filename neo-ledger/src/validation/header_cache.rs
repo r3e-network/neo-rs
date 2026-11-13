@@ -34,7 +34,9 @@ impl HeaderCache {
 
     #[inline]
     pub fn first_index(&self) -> Option<u32> {
-        self.read().front().map(|header| header.index())
+        self.read()
+            .front()
+            .map(neo_protocol::payloads::Header::index)
     }
 
     pub fn iter(&self) -> HeaderCacheIter {

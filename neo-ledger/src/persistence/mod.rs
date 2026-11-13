@@ -231,13 +231,13 @@ pub fn persist_block_profiled(
             persisting_block
                 .transactions
                 .par_iter()
-                .map(|tx| tx.try_hash())
+                .map(neo_protocol::payloads::Transaction::try_hash)
                 .collect::<Vec<_>>()
         } else {
             persisting_block
                 .transactions
                 .iter()
-                .map(|tx| tx.try_hash())
+                .map(neo_protocol::payloads::Transaction::try_hash)
                 .collect::<Vec<_>>()
         };
         hashes
@@ -411,7 +411,7 @@ pub fn persist_block_profiled(
             block: &persisting_block,
             fast_sync,
         };
-        for participant in participants.iter() {
+        for participant in participants {
             participant.committed(&commit_context);
         }
 

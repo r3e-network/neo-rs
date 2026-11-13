@@ -458,7 +458,7 @@ impl DurableActionLog {
         let mut snapshot = current;
         snapshot.state = next;
         snapshot.updated_at_unix_ms = now_unix_ms;
-        snapshot.outcome_code = outcome_code.to_owned();
+        outcome_code.clone_into(&mut snapshot.outcome_code);
         append_snapshot(&mut state, snapshot.clone())?;
         Ok(snapshot)
     }
@@ -510,7 +510,7 @@ impl DurableActionLog {
         let mut snapshot = current;
         snapshot.state = next;
         snapshot.updated_at_unix_ms = now_unix_ms;
-        snapshot.outcome_code = outcome_code.to_owned();
+        outcome_code.clone_into(&mut snapshot.outcome_code);
         append_snapshot(&mut state, snapshot.clone())?;
         Ok(snapshot)
     }
@@ -549,7 +549,7 @@ impl DurableActionLog {
                 .ok_or(DurableActionError::NotFound)?;
             snapshot.state = next;
             snapshot.updated_at_unix_ms = unix_time_ms();
-            snapshot.outcome_code = outcome_code.to_owned();
+            outcome_code.clone_into(&mut snapshot.outcome_code);
             append_snapshot(&mut state, snapshot)?;
         }
         Ok(())
@@ -619,7 +619,7 @@ fn append_snapshot(
     state.file_bytes += encoded.len() as u64 + 1;
     state.file_entries += 1;
     state.total_entries = sequence + 1;
-    state.tail_hash = entry.entry_hash.clone();
+    state.tail_hash.clone_from(&entry.entry_hash);
     state.operations.insert(
         operation_id,
         entry.snapshot.expect("record entries carry a snapshot"),
@@ -718,7 +718,7 @@ fn verify_entries(
             // operation and all of its later entries are still validated below.
             operations.insert(operation_id, snapshot.clone());
         }
-        *tail_hash = entry.entry_hash.clone();
+        tail_hash.clone_from(&entry.entry_hash);
         *total_entries = entry.sequence + 1;
     }
     Ok(())
@@ -792,7 +792,7 @@ fn write_rotation_checkpoint(state: &mut DurableActionLogState) -> Result<(), Du
     state.file_bytes = encoded.len() as u64 + 1;
     state.file_entries = 1;
     state.total_entries = sequence + 1;
-    state.tail_hash = entry.entry_hash.clone();
+    state.tail_hash.clone_from(&entry.entry_hash);
     Ok(())
 }
 
@@ -912,7 +912,11 @@ fn calculate_entry_hash(entry: &ActionJournalEntry) -> Result<String, DurableAct
 fn hash_value(value: &impl Serialize) -> Result<String, DurableActionError> {
     let encoded = serde_json::to_vec(value).map_err(|_| DurableActionError::Serialization)?;
     let digest = Sha256::digest(encoded);
-    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+    Ok(digest.iter().fold(String::new(), |mut output, byte| {
+        use std::fmt::Write as _;
+        write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
+        output
+    }))
 }
 
 fn valid_hash(hash: &str) -> bool {
@@ -943,8 +947,9 @@ fn repair_unterminated_tail(path: &Path) -> Result<(), DurableActionError> {
 fn unix_time_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or(1)
+        .map_or(1, |duration| {
+            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+        })
         .max(1)
 }
 

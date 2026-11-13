@@ -223,7 +223,7 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HashSetCache")
             .field("capacity", &self.capacity)
-            .field("len", &self.items.as_ref().map_or(0, |cache| cache.len()))
+            .field("len", &self.items.as_ref().map_or(0, lru::LruCache::len))
             .finish()
     }
 }

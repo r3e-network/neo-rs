@@ -169,7 +169,7 @@ mod tests {
         handlers
             .iter()
             .find(|handler| handler.descriptor().name.eq_ignore_ascii_case(name))
-            .unwrap_or_else(|| panic!("handler {} not found", name))
+            .unwrap_or_else(|| panic!("handler {name} not found"))
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -215,7 +215,7 @@ mod tests {
             UInt160::zero().to_string(),
             invalid_checksum,
             valid_address[..valid_address.len().saturating_sub(1)].to_string(),
-            format!("{}X", valid_address),
+            format!("{valid_address}X"),
         ] {
             let params = [Value::String(invalid.clone())];
             let result = (handler.callback())(&server, &params).expect("validateaddress");
@@ -227,7 +227,7 @@ mod tests {
             assert_eq!(obj.get("isvalid").and_then(Value::as_bool), Some(false));
         }
 
-        let spaced = format!(" {} ", valid_address);
+        let spaced = format!(" {valid_address} ");
         let params = [Value::String(spaced.clone())];
         let result = (handler.callback())(&server, &params).expect("validateaddress");
         let obj = result.as_object().expect("validateaddress object");

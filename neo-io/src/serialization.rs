@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 /// Serializes data to binary format (production implementation matching C# Neo exactly)
 pub fn serialize<T: Serialize>(data: &T) -> CodecResult<Vec<u8>> {
     bincode::serialize(data)
-        .map_err(|e| CodecError::serialization(format!("Binary serialization failed: {}", e)))
+        .map_err(|e| CodecError::serialization(format!("Binary serialization failed: {e}")))
 }
 
 /// Deserializes data from binary format (production implementation matching C# Neo exactly)
@@ -21,13 +21,13 @@ pub fn deserialize<T: for<'de> Deserialize<'de>>(data: &[u8]) -> CodecResult<T> 
     }
 
     bincode::deserialize(data)
-        .map_err(|e| CodecError::deserialization(format!("Binary deserialization failed: {}", e)))
+        .map_err(|e| CodecError::deserialization(format!("Binary deserialization failed: {e}")))
 }
 
 /// Serializes data to JSON format (production implementation matching C# Neo exactly)
 pub fn serialize_json<T: Serialize>(data: &T) -> CodecResult<String> {
     serde_json::to_string(data)
-        .map_err(|e| CodecError::serialization(format!("JSON serialization failed: {}", e)))
+        .map_err(|e| CodecError::serialization(format!("JSON serialization failed: {e}")))
 }
 
 /// Deserializes data from JSON format (production implementation matching C# Neo exactly)
@@ -38,7 +38,7 @@ pub fn deserialize_json<T: for<'de> Deserialize<'de>>(data: &str) -> CodecResult
     }
 
     serde_json::from_str(data)
-        .map_err(|e| CodecError::deserialization(format!("JSON deserialization failed: {}", e)))
+        .map_err(|e| CodecError::deserialization(format!("JSON deserialization failed: {e}")))
 }
 
 /// Serializes data using Neo's native binary format (matches C# ISerializable exactly)
@@ -47,7 +47,7 @@ where
     T: Serializable,
 {
     Serializable::serialize(data, writer)
-        .map_err(|e| CodecError::serialization(format!("Neo binary serialization failed: {}", e)))
+        .map_err(|e| CodecError::serialization(format!("Neo binary serialization failed: {e}")))
 }
 
 /// Deserializes data using Neo's native binary format (matches C# ISerializable exactly)
@@ -64,16 +64,15 @@ where
 
     let mut reader = MemoryReader::new(data);
 
-    T::deserialize(&mut reader).map_err(|e| {
-        CodecError::deserialization(format!("Neo binary deserialization failed: {}", e))
-    })
+    T::deserialize(&mut reader)
+        .map_err(|e| CodecError::deserialization(format!("Neo binary deserialization failed: {e}")))
 }
 
 /// Gets the serialized size of data without actually serializing it (production implementation)
 pub fn estimate_serialized_size<T: Serialize>(data: &T) -> CodecResult<usize> {
     bincode::serialized_size(data)
         .map(|size| size as usize)
-        .map_err(|e| CodecError::serialization(format!("Size estimation failed: {}", e)))
+        .map_err(|e| CodecError::serialization(format!("Size estimation failed: {e}")))
 }
 
 /// Validates that data can be serialized and deserialized correctly (production implementation)
@@ -118,7 +117,7 @@ pub fn decompress_data(compressed_data: &[u8]) -> CodecResult<Vec<u8>> {
     }
 
     lz4_flex::decompress_size_prepended(compressed_data)
-        .map_err(|e| CodecError::deserialization(format!("Data decompression failed: {}", e)))
+        .map_err(|e| CodecError::deserialization(format!("Data decompression failed: {e}")))
 }
 
 #[cfg(test)]

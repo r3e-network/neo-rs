@@ -32,7 +32,7 @@ impl PolicyContract {
         let context = engine.get_native_storage_context(&self.hash)?;
         let key = Self::blocked_account_suffix(&account);
         let blocked = engine.get_storage_item(&context, &key).is_some();
-        Ok(vec![if blocked { 1 } else { 0 }])
+        Ok(vec![u8::from(blocked)])
     }
 
     pub(super) fn block_account(
@@ -57,7 +57,7 @@ impl PolicyContract {
         Self::assert_committee(engine)?;
         let blocked = self.block_account_internal(engine, &account)?;
 
-        Ok(vec![if blocked { 1 } else { 0 }])
+        Ok(vec![u8::from(blocked)])
     }
 
     pub(super) fn unblock_account(
@@ -246,7 +246,7 @@ impl PolicyContract {
             &account,
             &token,
             "balanceOf",
-            vec![StackItem::ByteString(account.to_bytes().to_vec())],
+            vec![StackItem::ByteString(account.to_bytes().clone())],
         )?;
 
         let state = engine.execute_until_invocation_stack_depth(original_depth);
@@ -260,8 +260,7 @@ impl PolicyContract {
 
         let stack_len = engine
             .current_evaluation_stack()
-            .map(|stack| stack.len())
-            .unwrap_or(0);
+            .map_or(0, |stack| stack.len());
         let balance_item = if stack_len > 0 {
             engine.pop().native_err()?
         } else {
@@ -279,12 +278,12 @@ impl PolicyContract {
                 &token,
                 "transfer",
                 vec![
-                    StackItem::ByteString(account.to_bytes().to_vec()),
+                    StackItem::ByteString(account.to_bytes().clone()),
                     StackItem::ByteString(
                         crate::native::TreasuryContract::new()
                             .hash()
                             .to_bytes()
-                            .to_vec(),
+                            .clone(),
                     ),
                     StackItem::from_int(balance.clone()),
                     StackItem::Null,
@@ -302,8 +301,7 @@ impl PolicyContract {
 
             let stack_len = engine
                 .current_evaluation_stack()
-                .map(|stack| stack.len())
-                .unwrap_or(0);
+                .map_or(0, |stack| stack.len());
             let transfer_item = if stack_len > 0 {
                 engine.pop().native_err()?
             } else {
@@ -325,7 +323,7 @@ impl PolicyContract {
                 .send_notification(
                     self.hash,
                     "RecoveredFund".to_string(),
-                    vec![StackItem::ByteString(account.to_bytes().to_vec())],
+                    vec![StackItem::ByteString(account.to_bytes().clone())],
                 )
                 .native_err()?;
 

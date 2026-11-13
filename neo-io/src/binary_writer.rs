@@ -222,7 +222,10 @@ impl BinaryWriter {
     ) -> IoResult<()> {
         // Pre-calculate total size to avoid reallocations
         let prefix_size = var_int::encoded_len(values.len() as u64);
-        let items_size: usize = values.iter().map(|v| v.size()).sum();
+        let items_size: usize = values
+            .iter()
+            .map(super::serializable::Serializable::size)
+            .sum();
         self.reserve(prefix_size + items_size);
 
         // Write the data

@@ -37,7 +37,6 @@ neo_native_contract_methods!(
     table = crypto_method_table,
     aliases = [],
     unknown = |method| neo_smart_contract::error::CoreError::native_contract(format!(
-        "Unknown CryptoLib method: {}",
-        method
+        "Unknown CryptoLib method: {method}"
     ))
 );

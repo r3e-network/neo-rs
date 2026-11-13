@@ -680,7 +680,7 @@ mod tests {
             StorageItem::from_bytes(vec![0xAA]),
         );
 
-        let debug = format!("{:?}", cache);
+        let debug = format!("{cache:?}");
         assert!(debug.contains("DataCache"));
         assert!(debug.contains("entries"));
     }

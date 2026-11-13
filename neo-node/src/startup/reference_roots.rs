@@ -175,7 +175,7 @@ fn fetch_reference_root_batch(
                             return Ok(roots);
                         }
                         Err(error) => {
-                            errors.push(format!("attempt {} {endpoint}: {error}", attempt + 1))
+                            errors.push(format!("attempt {} {endpoint}: {error}", attempt + 1));
                         }
                     }
                 }

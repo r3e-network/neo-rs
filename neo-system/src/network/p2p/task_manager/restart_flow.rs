@@ -47,7 +47,7 @@ impl TaskManager {
             return;
         }
 
-        for hash in hashes.iter() {
+        for hash in &hashes {
             self.forget_hash(hash);
             self.decrement_inv_task(hash);
         }
@@ -59,7 +59,7 @@ impl TaskManager {
         let inventory_type = payload.inventory_type;
         let hashes: Vec<UInt256> = payload.hashes.clone();
 
-        for hash in hashes.iter() {
+        for hash in &hashes {
             self.forget_hash(hash);
             while self.global_inv_tasks.is_tracked(hash) {
                 self.decrement_inv_task(hash);

@@ -489,7 +489,7 @@ fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     for value in values {
         match value {
             StackItem::Struct(structure) => {
-                values_out.push(StackItem::Struct(structure.clone_with_limits(&limits)?))
+                values_out.push(StackItem::Struct(structure.clone_with_limits(&limits)?));
             }
             other => values_out.push(other),
         }

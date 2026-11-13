@@ -21,7 +21,7 @@ const MAX_COLLECTION_ITEMS: usize = 2 * 1024;
 pub fn collection_index_value(value: &StackValue) -> Result<i64, String> {
     match value {
         StackValue::Integer(value) => Ok(*value),
-        StackValue::Boolean(value) => Ok(if *value { 1 } else { 0 }),
+        StackValue::Boolean(value) => Ok(i64::from(*value)),
         StackValue::ByteString(value) | StackValue::BigInteger(value) => {
             numeric::decode_signed_le_bytes_i64(value)
         }

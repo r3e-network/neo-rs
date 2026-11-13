@@ -113,12 +113,12 @@ pub fn is_internal_ip(ip: IpAddr) -> bool {
 /// Validates a URL for SSRF protection.
 /// Returns Ok(()) if the URL is safe, Err with reason otherwise.
 pub fn validate_url_for_ssrf(url: &str) -> Result<(), String> {
-    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {e}"))?;
 
     // Validate scheme
     let scheme = parsed.scheme();
     if !matches!(scheme, "http" | "https") {
-        return Err(format!("Unsupported scheme: {}", scheme));
+        return Err(format!("Unsupported scheme: {scheme}"));
     }
 
     // Check for credentials in URL (potential security risk)

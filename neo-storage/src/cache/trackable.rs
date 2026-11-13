@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn test_trackable_debug() {
         let trackable = Trackable::added(StorageItem::from_bytes(vec![0x01]));
-        let debug = format!("{:?}", trackable);
+        let debug = format!("{trackable:?}");
         assert!(debug.contains("Trackable"));
         assert!(debug.contains("Added"));
     }

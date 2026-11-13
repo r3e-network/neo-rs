@@ -675,7 +675,7 @@ where
     /// ```
     #[inline]
     pub fn clear_no_dealloc(&mut self) {
-        for slot in self.buckets.iter_mut() {
+        for slot in &mut self.buckets {
             *slot = None;
         }
         self.filled_count = 0;

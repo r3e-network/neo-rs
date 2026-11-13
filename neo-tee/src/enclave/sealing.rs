@@ -71,7 +71,7 @@ pub fn derive_key_hkdf(params: KeyDerivationParams) -> TeeResult<[u8; 32]> {
 
     let mut derived_key = [0u8; 32];
     hkdf.expand(params.context.as_bytes(), &mut derived_key)
-        .map_err(|e| TeeError::KeyDerivationFailed(format!("HKDF expansion failed: {}", e)))?;
+        .map_err(|e| TeeError::KeyDerivationFailed(format!("HKDF expansion failed: {e}")))?;
 
     Ok(derived_key)
 }
@@ -83,7 +83,7 @@ pub fn derive_key_hkdf(params: KeyDerivationParams) -> TeeResult<[u8; 32]> {
 pub fn derive_sealing_key(base_sealing_key: &[u8; 32], context: &str) -> TeeResult<[u8; 32]> {
     let params = KeyDerivationParams {
         base_key: base_sealing_key,
-        context: &format!("neo-tee-sealing:{}", context),
+        context: &format!("neo-tee-sealing:{context}"),
         salt: Some(b"neo-tee-sealing-salt"),
     };
 
@@ -129,7 +129,7 @@ pub fn seal_data_with_context(
 
     // Create cipher with derived key
     let cipher = Aes256Gcm::new_from_slice(&derived_key)
-        .map_err(|e| TeeError::CryptoError(format!("Failed to create cipher: {}", e)))?;
+        .map_err(|e| TeeError::CryptoError(format!("Failed to create cipher: {e}")))?;
 
     // Encrypt with AAD
     let ciphertext = cipher
@@ -140,7 +140,7 @@ pub fn seal_data_with_context(
                 aad: &bound_aad,
             },
         )
-        .map_err(|e| TeeError::SealingFailed(format!("Encryption failed: {}", e)))?;
+        .map_err(|e| TeeError::SealingFailed(format!("Encryption failed: {e}")))?;
 
     // Zeroize derived key after use
     let mut key_copy = derived_key;
@@ -187,7 +187,7 @@ pub fn unseal_data(
 
     // Create cipher with derived key
     let cipher = Aes256Gcm::new_from_slice(&derived_key)
-        .map_err(|e| TeeError::CryptoError(format!("Failed to create cipher: {}", e)))?;
+        .map_err(|e| TeeError::CryptoError(format!("Failed to create cipher: {e}")))?;
 
     // Recompute the counter-bound AAD (see `seal_data_with_context`): the
     // counter participates in the AEAD tag, so a tampered counter field fails
@@ -205,7 +205,7 @@ pub fn unseal_data(
                 aad: &bound_aad,
             },
         )
-        .map_err(|e| TeeError::UnsealingFailed(format!("Decryption failed: {}", e)))?;
+        .map_err(|e| TeeError::UnsealingFailed(format!("Decryption failed: {e}")))?;
 
     // Zeroize derived key after use
     let mut key_copy = derived_key;

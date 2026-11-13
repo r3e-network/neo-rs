@@ -17,7 +17,7 @@ fn random_data(size: usize) -> Vec<u8> {
 fn bench_sha256(c: &mut Criterion) {
     let mut group = c.benchmark_group("crypto_sha256");
 
-    for size in [32, 64, 256, 1024, 4096, 65536].iter() {
+    for size in &[32, 64, 256, 1024, 4096, 65536] {
         let data = random_data(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
@@ -34,7 +34,7 @@ fn bench_sha256(c: &mut Criterion) {
 fn bench_sha512(c: &mut Criterion) {
     let mut group = c.benchmark_group("crypto_sha512");
 
-    for size in [32, 64, 256, 1024, 4096, 65536].iter() {
+    for size in &[32, 64, 256, 1024, 4096, 65536] {
         let data = random_data(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
@@ -51,7 +51,7 @@ fn bench_sha512(c: &mut Criterion) {
 fn bench_ripemd160(c: &mut Criterion) {
     let mut group = c.benchmark_group("crypto_ripemd160");
 
-    for size in [32, 64, 256, 1024, 4096].iter() {
+    for size in &[32, 64, 256, 1024, 4096] {
         let data = random_data(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
@@ -68,7 +68,7 @@ fn bench_ripemd160(c: &mut Criterion) {
 fn bench_hash160(c: &mut Criterion) {
     let mut group = c.benchmark_group("crypto_hash160");
 
-    for size in [32, 64, 256, 1024, 4096].iter() {
+    for size in &[32, 64, 256, 1024, 4096] {
         let data = random_data(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
@@ -85,7 +85,7 @@ fn bench_hash160(c: &mut Criterion) {
 fn bench_hash256(c: &mut Criterion) {
     let mut group = c.benchmark_group("crypto_hash256");
 
-    for size in [32, 64, 256, 1024, 4096, 65536].iter() {
+    for size in &[32, 64, 256, 1024, 4096, 65536] {
         let data = random_data(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
@@ -102,7 +102,7 @@ fn bench_hash256(c: &mut Criterion) {
 fn bench_keccak256(c: &mut Criterion) {
     let mut group = c.benchmark_group("crypto_keccak256");
 
-    for size in [32, 64, 256, 1024, 4096].iter() {
+    for size in &[32, 64, 256, 1024, 4096] {
         let data = random_data(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
@@ -119,7 +119,7 @@ fn bench_keccak256(c: &mut Criterion) {
 fn bench_blake2b(c: &mut Criterion) {
     let mut group = c.benchmark_group("crypto_blake2b");
 
-    for size in [32, 64, 256, 1024, 4096, 65536].iter() {
+    for size in &[32, 64, 256, 1024, 4096, 65536] {
         let data = random_data(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
@@ -138,7 +138,7 @@ fn bench_secp256r1_sign(c: &mut Criterion) {
 
     let private_key = Secp256r1Crypto::generate_private_key();
 
-    for size in [32, 256, 1024].iter() {
+    for size in &[32, 256, 1024] {
         let message = random_data(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
@@ -159,7 +159,7 @@ fn bench_secp256r1_verify(c: &mut Criterion) {
     let private_key = Secp256r1Crypto::generate_private_key();
     let public_key = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
 
-    for size in [32, 256, 1024].iter() {
+    for size in &[32, 256, 1024] {
         let message = random_data(*size);
         let signature = Secp256r1Crypto::sign(&message, &private_key).unwrap();
         group.throughput(Throughput::Bytes(*size as u64));
@@ -184,7 +184,7 @@ fn bench_secp256k1_sign(c: &mut Criterion) {
 
     let private_key = Secp256k1Crypto::generate_private_key().unwrap();
 
-    for size in [32, 256, 1024].iter() {
+    for size in &[32, 256, 1024] {
         let message = random_data(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
@@ -205,7 +205,7 @@ fn bench_secp256k1_verify(c: &mut Criterion) {
     let private_key = Secp256k1Crypto::generate_private_key().unwrap();
     let public_key = Secp256k1Crypto::derive_public_key(&private_key).unwrap();
 
-    for size in [32, 256, 1024].iter() {
+    for size in &[32, 256, 1024] {
         let message = random_data(*size);
         let signature = Secp256k1Crypto::sign(&message, &private_key).unwrap();
         group.throughput(Throughput::Bytes(*size as u64));
@@ -230,7 +230,7 @@ fn bench_ed25519_sign(c: &mut Criterion) {
 
     let private_key = Ed25519Crypto::generate_private_key();
 
-    for size in [32, 256, 1024].iter() {
+    for size in &[32, 256, 1024] {
         let message = random_data(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
@@ -251,7 +251,7 @@ fn bench_ed25519_verify(c: &mut Criterion) {
     let private_key = Ed25519Crypto::generate_private_key();
     let public_key = Ed25519Crypto::derive_public_key(&private_key).unwrap();
 
-    for size in [32, 256, 1024].iter() {
+    for size in &[32, 256, 1024] {
         let message = random_data(*size);
         let signature = Ed25519Crypto::sign(&message, &private_key).unwrap();
         group.throughput(Throughput::Bytes(*size as u64));
@@ -303,7 +303,7 @@ fn bench_base58(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("crypto_base58");
 
-    for size in [20, 32, 64, 256].iter() {
+    for size in &[20, 32, 64, 256] {
         let data = random_data(*size);
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::new("encode", size), size, |b, _| {
@@ -314,7 +314,7 @@ fn bench_base58(c: &mut Criterion) {
         });
     }
 
-    for size in [20, 32, 64, 256].iter() {
+    for size in &[20, 32, 64, 256] {
         let data = random_data(*size);
         let encoded = Base58::encode(&data);
         group.throughput(Throughput::Bytes(*size as u64));

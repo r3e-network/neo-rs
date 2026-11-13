@@ -198,7 +198,12 @@ impl Array {
 
     /// Creates a deep copy of the array.
     pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> VmResult<Self> {
-        let items = self.with_items(|items| items.iter().map(|item| item.deep_clone()).collect());
+        let items = self.with_items(|items| {
+            items
+                .iter()
+                .map(super::stack_item::StackItem::deep_clone)
+                .collect()
+        });
         let copy = Self::new(items, reference_counter)?;
         copy.set_read_only(true);
         Ok(copy)

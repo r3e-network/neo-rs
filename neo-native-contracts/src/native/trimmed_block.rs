@@ -61,15 +61,17 @@ impl TrimmedBlock {
     }
 
     fn u64_stack_integer(value: u64) -> StackValue {
-        i64::try_from(value)
-            .map(StackValue::Integer)
-            .unwrap_or_else(|_| StackValue::BigInteger(BigInt::from(value).to_signed_bytes_le()))
+        i64::try_from(value).map_or_else(
+            |_| StackValue::BigInteger(BigInt::from(value).to_signed_bytes_le()),
+            StackValue::Integer,
+        )
     }
 
     fn usize_stack_integer(value: usize) -> StackValue {
-        i64::try_from(value)
-            .map(StackValue::Integer)
-            .unwrap_or_else(|_| StackValue::BigInteger(BigInt::from(value).to_signed_bytes_le()))
+        i64::try_from(value).map_or_else(
+            |_| StackValue::BigInteger(BigInt::from(value).to_signed_bytes_le()),
+            StackValue::Integer,
+        )
     }
 
     /// Converts to a neo-vm-rs stack value.

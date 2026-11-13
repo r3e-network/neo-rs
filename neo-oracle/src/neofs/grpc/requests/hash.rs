@@ -33,7 +33,7 @@ impl OracleNeoFsProtocol {
                 let hash =
                     UInt256::from_bytes(&checksum.sum).map_err(|_| OracleResponseCode::Error);
                 match hash {
-                    Ok(hash) => (OracleResponseCode::Success, format!("\"{}\"", hash)),
+                    Ok(hash) => (OracleResponseCode::Success, format!("\"{hash}\"")),
                     Err(code) => (code, String::new()),
                 }
             }
@@ -82,7 +82,7 @@ impl OracleNeoFsProtocol {
                 let hash =
                     UInt256::from_bytes(&body.hash_list[0]).map_err(|_| OracleResponseCode::Error);
                 match hash {
-                    Ok(hash) => (OracleResponseCode::Success, format!("\"{}\"", hash)),
+                    Ok(hash) => (OracleResponseCode::Success, format!("\"{hash}\"")),
                     Err(code) => (code, String::new()),
                 }
             }

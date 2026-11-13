@@ -597,8 +597,7 @@ pub enum RemoteNodeCommand {
 fn current_unix_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
+        .map_or(0, |duration| duration.as_secs())
 }
 
 #[cfg(test)]
@@ -734,11 +733,11 @@ mod tests {
 
         let handler = Arc::new(TestHandler::default());
         let subscription = register_message_received_handler(handler.clone());
-        let count = message_handlers::with_handlers(|handlers| handlers.len());
+        let count = message_handlers::with_handlers(<[_]>::len);
         assert_eq!(count, 1);
 
         drop(subscription);
-        let count = message_handlers::with_handlers(|handlers| handlers.len());
+        let count = message_handlers::with_handlers(<[_]>::len);
         assert_eq!(count, 0);
     }
 
@@ -756,7 +755,7 @@ mod tests {
         });
 
         assert_eq!(seen, 1);
-        let count = message_handlers::with_handlers(|handlers| handlers.len());
+        let count = message_handlers::with_handlers(<[_]>::len);
         assert_eq!(count, 0);
     }
 

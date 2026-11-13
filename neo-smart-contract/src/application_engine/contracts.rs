@@ -106,9 +106,7 @@ fn contract_state_cache_enabled() -> bool {
 }
 impl ApplicationEngine {
     pub(crate) fn should_trace_block(block_idx: u32) -> bool {
-        trace_block_range()
-            .map(|(start, end)| block_idx >= start && block_idx <= end)
-            .unwrap_or(false)
+        trace_block_range().is_some_and(|(start, end)| block_idx >= start && block_idx <= end)
     }
     pub(super) fn fetch_contract(&mut self, hash: &UInt160) -> Result<Arc<ContractState>> {
         if let Some(contract) = self.contracts.get(hash) {
@@ -121,7 +119,9 @@ impl ApplicationEngine {
             self.contracts.insert(*hash, Arc::clone(&contract));
             return Ok(contract);
         }
-        let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
+        let block_idx = self
+            .persisting_block()
+            .map_or(0, neo_protocol::payloads::Block::index);
         let diag = Self::should_trace_block(block_idx);
         match self
             .native_state_reader
@@ -266,7 +266,7 @@ impl ApplicationEngine {
             .expect("parsed script cache was just populated")
             .1
             .clone();
-        let rvcount = if has_return_value { 1 } else { 0 };
+        let rvcount = i32::from(has_return_value);
         let offset = method.offset as usize;
         let contract_for_state = Arc::clone(&contract);
         let prev_hash = previous_hash;
@@ -481,12 +481,13 @@ impl ApplicationEngine {
         call_flags: CallFlags,
         args: Vec<StackItem>,
     ) -> Result<()> {
-        let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
+        let block_idx = self
+            .persisting_block()
+            .map_or(0, neo_protocol::payloads::Block::index);
         let diag = Self::should_trace_block(block_idx);
         if method.starts_with('_') {
             return Err(Error::invalid_operation(format!(
-                "Method name '{}' cannot start with underscore.",
-                method
+                "Method name '{method}' cannot start with underscore."
             )));
         }
         let contract = self.fetch_contract(contract_hash)?;
@@ -497,12 +498,10 @@ impl ApplicationEngine {
         if diag {
             let caller = self
                 .get_calling_script_hash()
-                .map(|h| h.to_string())
-                .unwrap_or_else(|| "none".to_string());
+                .map_or_else(|| "none".to_string(), |h| h.to_string());
             let current = self
                 .current_script_hash()
-                .map(|h| h.to_string())
-                .unwrap_or_else(|| "none".to_string());
+                .map_or_else(|| "none".to_string(), |h| h.to_string());
             tracing::warn!(target: "neo", block_index = block_idx, %contract_hash, method, args_len = args.len(), caller, current, "TRACE: call_contract_dynamic");
         }
         let method_descriptor = contract

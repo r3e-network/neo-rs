@@ -44,10 +44,10 @@ impl ApplicationEngine {
         for context in self.invocation_stack().iter().rev() {
             let script_len = context.script().len();
             let ip = context.instruction_pointer();
-            let opcode = context
-                .current_instruction()
-                .map(|instruction| format!("{:?}", instruction.opcode))
-                .unwrap_or_else(|_| "<none>".to_string());
+            let opcode = context.current_instruction().map_or_else(
+                |_| "<none>".to_string(),
+                |instruction| format!("{:?}", instruction.opcode),
+            );
             let script_hash =
                 UInt160::from_bytes(&context.script_hash()).unwrap_or_else(|_| UInt160::zero());
             let contract_suffix = self
@@ -169,8 +169,7 @@ impl ApplicationEngine {
             && state.notification_count >= MAX_NOTIFICATION_COUNT
         {
             return Err(format!(
-                "Maximum number of notifications `{}` is reached.",
-                MAX_NOTIFICATION_COUNT
+                "Maximum number of notifications `{MAX_NOTIFICATION_COUNT}` is reached."
             ));
         }
         state.notification_count = state.notification_count.saturating_add(1);
@@ -190,7 +189,7 @@ impl ApplicationEngine {
         let limits = self.execution_limits();
         let serialized =
             BinarySerializer::serialize(&StackItem::from_array(state.to_vec()), limits)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| e.clone())?;
         if serialized.len() > MAX_NOTIFICATION_SIZE {
             return Err(format!(
                 "Notification size {} exceeds maximum allowed size of {} bytes",
@@ -341,7 +340,7 @@ fn clone_stack_item_as_immutable(
                 return Ok(existing.clone());
             }
             let mut cloned_items = Vec::with_capacity(items.len());
-            for element in items.iter() {
+            for element in items {
                 cloned_items.push(clone_stack_item_as_immutable(&element, seen)?);
             }
             let cloned_item = StackItem::from_array(cloned_items);

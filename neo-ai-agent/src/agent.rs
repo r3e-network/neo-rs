@@ -7,7 +7,7 @@ use crate::evidence::{EvidenceBundle, EvidenceError};
 use crate::provider::{ModelProvider, ModelRequest, ProviderError};
 use crate::stall::{ConsensusObservation, DetectionResult, StallDetector};
 
-const SYSTEM_INSTRUCTION: &str = r#"Return one bare JSON object only. Use diagnosis schema_version=1 and evidence_schema_version=1. Cite only supplied evidence IDs. observed_height must equal the supplied current height. Allowed actions are: observe_only, alert_operator, capture_consensus_snapshot, request_validator_review, enter_safe_maintenance. Do not invent actions, evidence, commands, URLs, files, wallets, signers, or tools. The response is advisory and cannot execute actions."#;
+const SYSTEM_INSTRUCTION: &str = r"Return one bare JSON object only. Use diagnosis schema_version=1 and evidence_schema_version=1. Cite only supplied evidence IDs. observed_height must equal the supplied current height. Allowed actions are: observe_only, alert_operator, capture_consensus_snapshot, request_validator_review, enter_safe_maintenance. Do not invent actions, evidence, commands, URLs, files, wallets, signers, or tools. The response is advisory and cannot execute actions.";
 
 #[derive(Debug)]
 pub struct DiagnosticReport {
@@ -72,7 +72,7 @@ impl<P: ModelProvider, A: AuditLog> DiagnosticAgent<P, A> {
         let evidence_hashes = evidence
             .items
             .iter()
-            .map(|item| item.content_hash())
+            .map(super::evidence::EvidenceItem::content_hash)
             .collect::<Result<Vec<_>, _>>()?;
         self.audit
             .append(AuditInput {

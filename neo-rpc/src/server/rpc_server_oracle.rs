@@ -161,7 +161,7 @@ mod tests {
         handlers
             .iter()
             .find(|handler| handler.descriptor().name.eq_ignore_ascii_case(name))
-            .unwrap_or_else(|| panic!("handler {} not found", name))
+            .unwrap_or_else(|| panic!("handler {name} not found"))
     }
 
     /// Builds an RPC server whose system has a registered-but-unstarted oracle

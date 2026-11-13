@@ -290,8 +290,7 @@ impl Blockchain {
 
         let header_height = header_cache
             .last()
-            .map(|header| header.index())
-            .unwrap_or(current_height);
+            .map_or(current_height, |header| header.index());
         // Convert to payload block for validation
         let payload_block = block.to_payload_block();
         let verified = if block.index() == header_height.saturating_add(1) {
@@ -338,7 +337,7 @@ impl Blockchain {
         };
 
         match system.persist_block((**block).clone()) {
-            Ok(_) => {
+            Ok(()) => {
                 tracing::debug!(
                     target: "neo",
                     index = block.index(),
@@ -359,7 +358,7 @@ impl Blockchain {
                 // a local commit failure, not evidence that the peer is invalid.
                 context.actor_system.event_stream().publish(PersistFailed {
                     block: Arc::clone(block),
-                    error: error.to_string(),
+                    error: error.clone(),
                 });
                 false
             }

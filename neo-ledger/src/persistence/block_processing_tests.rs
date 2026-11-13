@@ -312,11 +312,11 @@ mod tests {
         }
 
         fn record_tip(&self, index: u32) {
-            self.log.lock().push(format!("record_tip:{}", index));
+            self.log.lock().push(format!("record_tip:{index}"));
         }
 
         fn broadcast_block_received(&self, _hash: String, height: u32) {
-            self.log.lock().push(format!("broadcast:{}", height));
+            self.log.lock().push(format!("broadcast:{height}"));
         }
     }
 
@@ -363,7 +363,7 @@ mod tests {
         }
 
         fn record_dropped(&self, dropped: u64) {
-            self.log.lock().push(format!("dropped:{}", dropped));
+            self.log.lock().push(format!("dropped:{dropped}"));
         }
     }
 

@@ -293,7 +293,7 @@ async fn persist_block_stops_before_commit_when_committing_handler_fails() {
         panic!("committing handler should block persistence")
     };
 
-    assert!(err.to_string().contains("injected committing failure"));
+    assert!(err.clone().contains("injected committing failure"));
     assert_eq!(system.ledger_context().current_height(), 0);
     let store_cache = system.store_cache();
     let ledger_contract = LedgerContract::new();

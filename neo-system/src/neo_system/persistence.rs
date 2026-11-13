@@ -804,7 +804,9 @@ impl ExecutionRecorder {
                 .downcast_ref::<neo_protocol::payloads::Transaction>()
                 .cloned()
         });
-        let transaction_hash = transaction.as_ref().map(|transaction| transaction.hash());
+        let transaction_hash = transaction
+            .as_ref()
+            .map(neo_protocol::payloads::Transaction::hash);
         if let Some(hash) = transaction_hash {
             let state = engine.state();
             engine.record_transaction_vm_state(&hash, state);

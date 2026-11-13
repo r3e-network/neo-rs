@@ -90,7 +90,7 @@ impl ApplicationEngine {
         // carried inline as `StackItem::InteropInterface`. For a verifiable
         // container we project it to a structured stack item, matching
         // `System.Runtime.GetScriptContainer`. The historical opaque `Interop(0)`
-        // placeholder is intentionally not reproduced; no in-tree caller needs it.
+        // sentinel is intentionally not reproduced; no in-tree caller needs it.
         if let Some(transaction) = container.as_any().downcast_ref::<Transaction>() {
             let item = crate::protocol_projection::transaction_to_stack_item(transaction)
                 .map_err(|e| e.to_string())?;
@@ -120,7 +120,7 @@ impl ApplicationEngine {
         let iterator = self
             .storage_iterators
             .get_mut(&iterator_id)
-            .ok_or_else(|| format!("Iterator {} not found", iterator_id))?;
+            .ok_or_else(|| format!("Iterator {iterator_id} not found"))?;
         let has_next = iterator.next();
         if Self::should_trace_block(block_index) {
             let (position, len, key) = iterator.trace_position();
@@ -141,7 +141,7 @@ impl ApplicationEngine {
         let iterator = self
             .storage_iterators
             .get(&iterator_id)
-            .ok_or_else(|| format!("Iterator {} not found", iterator_id))?;
+            .ok_or_else(|| format!("Iterator {iterator_id} not found"))?;
         let value = iterator.value();
         if Self::should_trace_block(self.current_block_index()) {
             let (position, _, key) = iterator.trace_position();

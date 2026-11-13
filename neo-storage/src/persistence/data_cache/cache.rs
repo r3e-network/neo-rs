@@ -562,8 +562,7 @@ impl DataCache {
             state
                 .dictionary
                 .get(key)
-                .map(|t| t.state)
-                .unwrap_or(TrackState::NotFound)
+                .map_or(TrackState::NotFound, |t| t.state)
         };
 
         match prev_state {
@@ -627,8 +626,7 @@ impl DataCache {
                 let current_state = state
                     .dictionary
                     .get(key)
-                    .map(|t| t.state)
-                    .unwrap_or(TrackState::NotFound);
+                    .map_or(TrackState::NotFound, |t| t.state);
                 match current_state {
                     TrackState::Added => {
                         state.dictionary.remove(key);

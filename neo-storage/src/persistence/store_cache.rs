@@ -157,7 +157,7 @@ impl StoreCache {
                 self.data_cache
                     .apply_tracked_to_writer(snapshot)
                     .map_err(|e| {
-                        DataCacheError::CommitFailed(format!("storage write failed: {}", e))
+                        DataCacheError::CommitFailed(format!("storage write failed: {e}"))
                     })?;
             }
             snapshot

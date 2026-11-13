@@ -2,6 +2,7 @@
 use super::*;
 use crate::iterators::IteratorInterop;
 use neo_primitives::constants::{MAX_STORAGE_KEY_SIZE, MAX_STORAGE_VALUE_SIZE};
+use std::fmt::Write as _;
 use std::sync::OnceLock;
 
 fn trace_storage_get() -> bool {
@@ -194,12 +195,10 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
     let trace_context_read_only = context.is_read_only;
     let trace_key_len = key.len();
     let trace_key_preview = if trace_enabled {
-        Some(
-            key.iter()
-                .take(24)
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>(),
-        )
+        Some(key.iter().take(24).fold(String::new(), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        }))
     } else {
         None
     };
@@ -214,7 +213,7 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
             trace_key_len,
             trace_key_preview.as_deref().unwrap_or(""),
             value.is_some(),
-            value.as_ref().map(|v| v.len()).unwrap_or(0)
+            value.as_ref().map_or(0, std::vec::Vec::len)
         );
     }
     match value {
@@ -237,11 +236,10 @@ fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
     let key = pop_storage_bytes(app, "System.Storage.Put", "key")?;
     let value = pop_storage_bytes(app, "System.Storage.Put", "value")?;
     if trace_storage_put() {
-        let key_preview = key
-            .iter()
-            .take(16)
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+        let key_preview = key.iter().take(16).fold(String::new(), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        });
         eprintln!(
             "trace storage.put: ctx_id={} readonly={} key_len={} value_len={} key_prefix={} key={} value={}",
             context.id,

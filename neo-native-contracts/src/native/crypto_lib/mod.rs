@@ -149,7 +149,7 @@ impl CryptoLib {
             hash_algorithm,
         );
 
-        Ok(vec![if is_valid { 1 } else { 0 }])
+        Ok(vec![u8::from(is_valid)])
     }
 
     /// Verify Ed25519 signature (Echidna+).
@@ -198,7 +198,7 @@ impl CryptoLib {
         };
 
         let is_valid = Ed25519Crypto::verify(message, &sig_bytes, &pub_bytes).unwrap_or(false);
-        Ok(vec![if is_valid { 1 } else { 0 }])
+        Ok(vec![u8::from(is_valid)])
     }
 
     /// Recover a secp256k1 public key from a message hash and signature.

@@ -200,7 +200,7 @@ fn capacity_exceeded_emits_removed_event() {
         let hashes = args
             .transactions
             .iter()
-            .map(|tx| tx.hash())
+            .map(Transaction::hash)
             .collect::<Vec<_>>();
         removed_ref.lock().unwrap().push((args.reason, hashes));
     }));
@@ -334,7 +334,7 @@ fn conflict_replacement_emits_conflict_reason() {
             args.reason,
             args.transactions
                 .iter()
-                .map(|tx| tx.hash())
+                .map(Transaction::hash)
                 .collect::<Vec<_>>(),
         ));
     }));

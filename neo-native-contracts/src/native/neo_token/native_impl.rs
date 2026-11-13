@@ -135,17 +135,15 @@ impl NativeContract for NeoToken {
         let old_committee_started = profiling.then(std::time::Instant::now);
         let old_committee =
             self.committee_from_cache_with_votes(snapshot.as_ref(), engine.protocol_settings())?;
-        let old_committee_ms = old_committee_started
-            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
-            .unwrap_or(0.0);
+        let old_committee_ms =
+            old_committee_started.map_or(0.0, |started| started.elapsed().as_secs_f64() * 1_000.0);
         let old_keys: Vec<ECPoint> = old_committee.iter().map(|(pk, _)| pk.clone()).collect();
 
         let compute_started = profiling.then(std::time::Instant::now);
         let new_committee =
             self.compute_committee_members(snapshot.as_ref(), engine.protocol_settings())?;
-        let compute_ms = compute_started
-            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
-            .unwrap_or(0.0);
+        let compute_ms =
+            compute_started.map_or(0.0, |started| started.elapsed().as_secs_f64() * 1_000.0);
         if profiling {
             tracing::info!(
                 target: "neo",
@@ -299,8 +297,7 @@ impl NativeContract for NeoToken {
                 let current_reward = snapshot
                     .as_ref()
                     .try_get(&reward_key)
-                    .map(|item| item.to_bigint())
-                    .unwrap_or_else(BigInt::zero);
+                    .map_or_else(BigInt::zero, |item| item.to_bigint());
 
                 // Use safe arithmetic
                 let updated = SafeArithmetic::safe_add(&current_reward, &voter_sum_reward_per_neo)?;

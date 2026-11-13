@@ -114,15 +114,23 @@ impl ContractAbi {
     /// Converts to JSON
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "methods": self.methods.iter().map(|m| m.to_json()).collect::<Vec<_>>(),
-            "events": self.events.iter().map(|e| e.to_json()).collect::<Vec<_>>(),
+            "methods": self.methods.iter().map(super::contract_method_descriptor::ContractMethodDescriptor::to_json).collect::<Vec<_>>(),
+            "events": self.events.iter().map(super::contract_event_descriptor::ContractEventDescriptor::to_json).collect::<Vec<_>>(),
         })
     }
 
     /// Approximate serialized size of the ABI.
     pub fn size(&self) -> usize {
-        let methods_size: usize = self.methods.iter().map(|m| m.size()).sum();
-        let events_size: usize = self.events.iter().map(|e| e.size()).sum();
+        let methods_size: usize = self
+            .methods
+            .iter()
+            .map(super::contract_method_descriptor::ContractMethodDescriptor::size)
+            .sum();
+        let events_size: usize = self
+            .events
+            .iter()
+            .map(super::contract_event_descriptor::ContractEventDescriptor::size)
+            .sum();
         methods_size + events_size
     }
 

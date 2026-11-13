@@ -76,7 +76,7 @@ pub(super) fn parse_neofs_range(raw: &str) -> Result<NeoFsRange, String> {
 
 fn validate_neofs_id(value: &str, kind: &str) -> Result<(), String> {
     if decode_raw_base58(value, Some(32)).is_none() {
-        return Err(format!("invalid neofs {} id", kind));
+        return Err(format!("invalid neofs {kind} id"));
     }
     Ok(())
 }

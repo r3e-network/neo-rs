@@ -10,7 +10,7 @@ use crate::error::{CryptoError, CryptoResult};
 /// This helper reduces duplication of error mapping patterns in encoding functions.
 #[inline]
 pub fn map_encoding_error<E: std::fmt::Display>(error: E, context: &str) -> CryptoError {
-    CryptoError::encoding_error(format!("{}: {}", context, error))
+    CryptoError::encoding_error(format!("{context}: {error}"))
 }
 
 /// Wraps a Result with consistent encoding error handling.

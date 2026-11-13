@@ -224,16 +224,16 @@ pub fn parse_optional_present_token_array_strict<T>(
     field: &str,
     parse: impl FnMut(&JToken) -> Result<T, String>,
 ) -> Result<Vec<T>, String> {
-    json.get(field)
-        .and_then(JToken::as_array)
-        .map(|entries| {
+    json.get(field).and_then(JToken::as_array).map_or_else(
+        || Ok(Vec::new()),
+        |entries| {
             entries
                 .iter()
                 .filter_map(|entry| entry.as_ref())
                 .map(parse)
                 .collect()
-        })
-        .unwrap_or_else(|| Ok(Vec::new()))
+        },
+    )
 }
 
 /// Parses an optional JSON array where every slot must contain a token.
@@ -247,9 +247,9 @@ pub fn parse_optional_token_array_strict<T>(
     entry_error: &str,
     mut parse: impl FnMut(&JToken) -> Result<T, String>,
 ) -> Result<Vec<T>, String> {
-    json.get(field)
-        .and_then(JToken::as_array)
-        .map(|entries| {
+    json.get(field).and_then(JToken::as_array).map_or_else(
+        || Ok(Vec::new()),
+        |entries| {
             entries
                 .iter()
                 .map(|entry| {
@@ -257,8 +257,8 @@ pub fn parse_optional_token_array_strict<T>(
                     parse(token)
                 })
                 .collect()
-        })
-        .unwrap_or_else(|| Ok(Vec::new()))
+        },
+    )
 }
 
 /// Parses an optional string array where every slot must contain a string token.
@@ -267,9 +267,9 @@ pub fn parse_optional_string_array_strict(
     field: &str,
     entry_error: &str,
 ) -> Result<Vec<String>, String> {
-    json.get(field)
-        .and_then(JToken::as_array)
-        .map(|entries| {
+    json.get(field).and_then(JToken::as_array).map_or_else(
+        || Ok(Vec::new()),
+        |entries| {
             entries
                 .iter()
                 .map(|entry| {
@@ -279,8 +279,8 @@ pub fn parse_optional_string_array_strict(
                         .ok_or_else(|| entry_error.to_string())
                 })
                 .collect()
-        })
-        .unwrap_or_else(|| Ok(Vec::new()))
+        },
+    )
 }
 
 /// Parses a base64-encoded string token.

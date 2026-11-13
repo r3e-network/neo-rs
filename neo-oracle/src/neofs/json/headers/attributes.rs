@@ -22,7 +22,7 @@ fn build_neofs_attribute_headers(
 ) -> Option<Vec<(String, String)>> {
     const PREFIX: &str = "X-Attribute-";
     let mut attrs = Vec::new();
-    for (name, value) in headers.iter() {
+    for (name, value) in headers {
         if let Some(key) = name.as_str().strip_prefix(PREFIX)
             && let Ok(value) = value.to_str()
         {

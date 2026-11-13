@@ -154,7 +154,7 @@ mod tests {
             },
             TestSerializable {
                 value1: -1,
-                value2: "".to_string(),
+                value2: String::new(),
                 value3: true,
                 bytes: vec![],
             },
@@ -301,6 +301,9 @@ mod tests {
         assert_eq!(bytes, vec![0x03, 0xAA, 0xBB, 0xCC]);
 
         let mut reader = MemoryReader::new(&bytes);
+        // Keep the closure: the suggested bare `MemoryReader::read_u8` path fails the
+        // higher-ranked lifetime bound because `MemoryReader<'a>` is lifetime-parameterized.
+        #[allow(clippy::redundant_closure_for_method_calls)]
         let decoded = deserialize_array_with(&mut reader, 3, |reader| reader.read_u8()).unwrap();
 
         assert_eq!(decoded, items);
@@ -347,7 +350,7 @@ mod tests {
                 if version > 1 {
                     return Err(IoError::InvalidData {
                         context: "version check".to_string(),
-                        value: format!("version {}", version),
+                        value: format!("version {version}"),
                     });
                 }
                 let data = reader.read_var_bytes(1000)?;

@@ -228,11 +228,15 @@ impl CuckooSyscallTable {
     }
 
     fn find_empty_slot_in_bucket_a(&self, bucket_idx: usize) -> Option<usize> {
-        self.buckets_a[bucket_idx].iter().position(|e| e.is_none())
+        self.buckets_a[bucket_idx]
+            .iter()
+            .position(std::option::Option::is_none)
     }
 
     fn find_empty_slot_in_bucket_b(&self, bucket_idx: usize) -> Option<usize> {
-        self.buckets_b[bucket_idx].iter().position(|e| e.is_none())
+        self.buckets_b[bucket_idx]
+            .iter()
+            .position(std::option::Option::is_none)
     }
 
     /// Lookup syscall by full 32-byte hash (constant time: max 2 probes)
@@ -346,7 +350,7 @@ mod tests {
         }
         let elapsed = start.elapsed();
 
-        println!("100k lookups took {:?}", elapsed);
+        println!("100k lookups took {elapsed:?}");
         assert!(elapsed.as_nanos() / 100_000 < 200, "Lookup too slow");
     }
 }

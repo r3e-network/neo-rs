@@ -81,7 +81,7 @@ impl NativeContract for ContractManagement {
                     ));
                 }
                 let hash = UInt160::from_bytes(&args[0])
-                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
+                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {e}")))?;
                 let cache_enabled = contract_query_cache_enabled();
                 if cache_enabled && let Some(cached) = engine.cached_contract_query_result(&hash) {
                     return Ok(cached.unwrap_or_default());
@@ -96,8 +96,7 @@ impl NativeContract for ContractManagement {
                             BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
                                 .map_err(|e| {
                                 Error::serialization(format!(
-                                    "Failed to serialize contract state: {}",
-                                    e
+                                    "Failed to serialize contract state: {e}"
                                 ))
                             })?;
                         Some(bytes)
@@ -129,7 +128,7 @@ impl NativeContract for ContractManagement {
                 let item = contract.to_stack_item()?;
                 let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
                     .map_err(|e| {
-                    Error::serialization(format!("Failed to serialize contract state: {}", e))
+                    Error::serialization(format!("Failed to serialize contract state: {e}"))
                 })?;
                 Ok(bytes)
             }
@@ -201,10 +200,9 @@ impl NativeContract for ContractManagement {
                     ));
                 }
                 let hash = UInt160::from_bytes(&args[0])
-                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
-                let method = String::from_utf8(args[1].clone()).map_err(|e| {
-                    Error::invalid_argument(format!("Invalid method string: {}", e))
-                })?;
+                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {e}")))?;
+                let method = String::from_utf8(args[1].clone())
+                    .map_err(|e| Error::invalid_argument(format!("Invalid method string: {e}")))?;
                 let pcount = Self::decode_storage_i32(&args[2]).ok_or_else(|| {
                     Error::invalid_argument("Invalid parameter count".to_string())
                 })?;
@@ -214,7 +212,7 @@ impl NativeContract for ContractManagement {
                     &method,
                     pcount,
                 )?;
-                Ok(vec![if result { 1 } else { 0 }])
+                Ok(vec![u8::from(result)])
             }
             "isContract" => {
                 if args.len() != 1 {
@@ -223,9 +221,9 @@ impl NativeContract for ContractManagement {
                     ));
                 }
                 let hash = UInt160::from_bytes(&args[0])
-                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
+                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {e}")))?;
                 let result = Self::is_contract(engine.snapshot_cache().as_ref(), &hash)?;
-                Ok(vec![if result { 1 } else { 0 }])
+                Ok(vec![u8::from(result)])
             }
             "getContractById" => {
                 if args.len() != 1 {
@@ -243,8 +241,7 @@ impl NativeContract for ContractManagement {
                             BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
                                 .map_err(|e| {
                                 Error::serialization(format!(
-                                    "Failed to serialize contract state: {}",
-                                    e
+                                    "Failed to serialize contract state: {e}"
                                 ))
                             })?;
                         Ok(bytes)
@@ -261,10 +258,7 @@ impl NativeContract for ContractManagement {
                 let iterator_id = self.get_contract_hashes_iterator(engine)?;
                 Ok(iterator_id.to_le_bytes().to_vec())
             }
-            _ => Err(Error::native_contract(format!(
-                "Method {} not found",
-                method
-            ))),
+            _ => Err(Error::native_contract(format!("Method {method} not found"))),
         }
     }
 

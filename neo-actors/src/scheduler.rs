@@ -40,12 +40,12 @@ impl Scheduler {
             }
 
             tokio::select! {
-                _ = time::sleep(delay) => {
+                () = time::sleep(delay) => {
                     if !cancel.is_cancelled() {
                         let _ = target.tell_from(message, sender);
                     }
                 }
-                _ = cancel.cancelled() => {}
+                () = cancel.cancelled() => {}
             }
         });
 
@@ -71,8 +71,8 @@ impl Scheduler {
         self.runtime.spawn(async move {
             if !initial_delay.is_zero() {
                 tokio::select! {
-                    _ = time::sleep(initial_delay) => {},
-                    _ = cancel.cancelled() => return,
+                    () = time::sleep(initial_delay) => {},
+                    () = cancel.cancelled() => return,
                 }
             }
 
@@ -93,8 +93,8 @@ impl Scheduler {
                 }
 
                 tokio::select! {
-                    _ = time::sleep(interval) => {},
-                    _ = cancel.cancelled() => break,
+                    () = time::sleep(interval) => {},
+                    () = cancel.cancelled() => break,
                 }
             }
         });

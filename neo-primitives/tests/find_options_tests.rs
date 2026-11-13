@@ -163,7 +163,7 @@ fn find_options_clone_and_copy() {
 #[test]
 fn find_options_debug_format() {
     let options = FindOptions::KeysOnly | FindOptions::Backwards;
-    let debug_str = format!("{:?}", options);
+    let debug_str = format!("{options:?}");
     assert!(debug_str.contains("KeysOnly"));
     assert!(debug_str.contains("Backwards"));
 }

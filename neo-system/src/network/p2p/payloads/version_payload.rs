@@ -60,8 +60,7 @@ impl VersionPayload {
             version: PROTOCOL_VERSION,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0)
+                .map_or(0, |d| d.as_secs())
                 .min(u32::MAX as u64) as u32,
             nonce,
             user_agent,

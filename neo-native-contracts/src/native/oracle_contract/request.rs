@@ -36,8 +36,7 @@ impl OracleContract {
         // See application_engine/contract.rs NativeArgNullMask.
         let filter_was_null = engine
             .get_state::<neo_smart_contract::application_engine_contract::NativeArgNullMask>()
-            .map(|m| (m.0 >> 1) & 1 == 1)
-            .unwrap_or(false);
+            .is_some_and(|m| (m.0 >> 1) & 1 == 1);
         let filter = if filter_was_null {
             None
         } else {
@@ -104,7 +103,7 @@ impl OracleContract {
                 container
                     .as_any()
                     .downcast_ref::<neo_protocol::payloads::Transaction>()
-                    .map(|tx| tx.hash())
+                    .map(neo_protocol::payloads::Transaction::hash)
             })
             .ok_or_else(|| {
                 Error::invalid_operation(

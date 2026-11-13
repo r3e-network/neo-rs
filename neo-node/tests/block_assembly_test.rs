@@ -108,7 +108,7 @@ async fn assemble_test_block(block_data: BlockData) -> anyhow::Result<Block> {
     let pubkey_bytes: Vec<Vec<u8>> = block_data
         .validator_pubkeys
         .iter()
-        .map(|pk| pk.encoded().to_vec())
+        .map(|pk| pk.encoded().clone())
         .collect();
 
     let verification =

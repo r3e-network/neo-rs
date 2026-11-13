@@ -71,7 +71,7 @@ impl RemoteNode {
                     self.local_node
                         .address_book()
                         .into_iter()
-                        .filter(|addr| addr.endpoint().map(|e| e.port() > 0).unwrap_or(false))
+                        .filter(|addr| addr.endpoint().is_some_and(|e| e.port() > 0))
                         .choose_multiple(&mut rng, MAX_COUNT_TO_SEND)
                 };
                 if addresses.is_empty() {

@@ -99,7 +99,7 @@ impl PeerState {
     /// Applies the runtime configuration and starts the periodic maintenance
     /// timer exactly like `Peer.OnStart`.
     pub fn configure(&mut self, config: ChannelsConfig, ctx: &mut ActorContext) {
-        self.listener_tcp_port = config.tcp.map(|endpoint| endpoint.port()).unwrap_or(0);
+        self.listener_tcp_port = config.tcp.map_or(0, |endpoint| endpoint.port());
         self.config = config;
         self.configured = true;
         self.configure_upnp();
@@ -190,7 +190,7 @@ impl PeerState {
         let count = self
             .connected_addresses
             .get(&endpoint.ip())
-            .cloned()
+            .copied()
             .unwrap_or_default();
         if !is_trusted && count >= self.config.max_connections_per_address {
             return false;
@@ -532,11 +532,9 @@ fn collect_local_addresses() -> HashSet<IpAddr> {
 
 fn normalize_endpoint(endpoint: SocketAddr) -> SocketAddr {
     match endpoint {
-        SocketAddr::V6(v6) => v6
-            .ip()
-            .to_ipv4()
-            .map(|ipv4| SocketAddr::new(IpAddr::V4(ipv4), v6.port()))
-            .unwrap_or(SocketAddr::V6(v6)),
+        SocketAddr::V6(v6) => v6.ip().to_ipv4().map_or(SocketAddr::V6(v6), |ipv4| {
+            SocketAddr::new(IpAddr::V4(ipv4), v6.port())
+        }),
         _ => endpoint,
     }
 }

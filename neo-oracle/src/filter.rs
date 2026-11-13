@@ -12,7 +12,7 @@ pub const FILTER_MAX_NEST: usize = 64;
 /// Otherwise parses the input as JSON, applies the JSONPath expression,
 /// and serializes the result back to bytes.
 pub fn filter_json(input: &str, filter: Option<&str>) -> Result<Vec<u8>, OracleServiceError> {
-    if filter.map(|value| value.is_empty()).unwrap_or(true) {
+    if filter.is_none_or(str::is_empty) {
         return Ok(input.as_bytes().to_vec());
     }
 

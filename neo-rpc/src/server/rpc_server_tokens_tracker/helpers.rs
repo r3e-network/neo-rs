@@ -276,6 +276,5 @@ pub(super) fn emit_contract_call_with_arg(
 pub(super) fn current_time_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
+        .map_or(0, |duration| duration.as_millis() as u64)
 }

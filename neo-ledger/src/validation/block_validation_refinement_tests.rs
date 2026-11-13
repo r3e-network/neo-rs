@@ -226,7 +226,7 @@ fn test_invalid_block_version_rejection() {
             assert_eq!(version, 1);
         }
         Ok(()) => panic!("Should reject version 1"),
-        Err(other) => panic!("Unexpected error: {:?}", other),
+        Err(other) => panic!("Unexpected error: {other:?}"),
     }
 }
 

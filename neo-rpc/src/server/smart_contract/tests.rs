@@ -572,7 +572,10 @@ async fn invokescript_transfer_returns_false() {
         .expect("stack");
     let first = stack.first().expect("stack entry");
     assert_eq!(first.get("type").and_then(|v| v.as_str()), Some("Boolean"));
-    assert_eq!(first.get("value").and_then(|v| v.as_bool()), Some(false));
+    assert_eq!(
+        first.get("value").and_then(serde_json::Value::as_bool),
+        Some(false)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

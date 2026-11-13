@@ -81,14 +81,12 @@ impl Contract {
         }
         if n > 1024 {
             return Err(CoreError::invalid_operation(format!(
-                "Too many public keys: {} (max 1024)",
-                n
+                "Too many public keys: {n} (max 1024)"
             )));
         }
         if !(1..=n).contains(&m) {
             return Err(CoreError::invalid_operation(format!(
-                "Invalid multi-sig parameters: m={}, n={}",
-                m, n
+                "Invalid multi-sig parameters: m={m}, n={n}"
             )));
         }
 
@@ -97,7 +95,7 @@ impl Contract {
 
         let mut sorted_keys = public_keys.to_vec();
         sorted_keys.sort();
-        for key in sorted_keys.iter() {
+        for key in &sorted_keys {
             let encoded = key.encode_point(true).unwrap_or_else(|_| key.to_bytes());
             builder.emit_push(&encoded);
         }
@@ -106,7 +104,7 @@ impl Contract {
         builder
             .emit_syscall("System.Crypto.CheckMultisig")
             .map_err(|err| {
-                CoreError::invalid_operation(format!("Failed to build contract script: {}", err))
+                CoreError::invalid_operation(format!("Failed to build contract script: {err}"))
             })?;
 
         Ok(builder.to_array())

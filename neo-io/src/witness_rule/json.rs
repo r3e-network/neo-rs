@@ -20,11 +20,11 @@ impl WitnessCondition {
             }),
             WitnessCondition::And { conditions } => json!({
                 "type": "And",
-                "expressions": conditions.iter().map(|c| c.to_json()).collect::<Vec<_>>(),
+                "expressions": conditions.iter().map(super::WitnessCondition::to_json).collect::<Vec<_>>(),
             }),
             WitnessCondition::Or { conditions } => json!({
                 "type": "Or",
-                "expressions": conditions.iter().map(|c| c.to_json()).collect::<Vec<_>>(),
+                "expressions": conditions.iter().map(super::WitnessCondition::to_json).collect::<Vec<_>>(),
             }),
             WitnessCondition::ScriptHash { hash } => json!({
                 "type": "ScriptHash",

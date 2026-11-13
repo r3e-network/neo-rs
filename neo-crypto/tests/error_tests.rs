@@ -65,7 +65,7 @@ fn test_crypto_error_clone() {
 #[test]
 fn test_crypto_error_debug() {
     let err = CryptoError::invalid_key("test key");
-    let debug_str = format!("{:?}", err);
+    let debug_str = format!("{err:?}");
     assert!(debug_str.contains("InvalidKey"));
 }
 

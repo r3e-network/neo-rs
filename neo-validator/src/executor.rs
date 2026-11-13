@@ -225,7 +225,7 @@ impl NeoExecutor {
             if executions.len() != blocks.len() {
                 bail!("empty-block batch returned the wrong receipt count");
             }
-            if self.height()? != blocks.last().map(|block| block.index()) {
+            if self.height()? != blocks.last().map(neo_ledger::Block::index) {
                 bail!("empty-block batch did not advance persistent height to its final block");
             }
 

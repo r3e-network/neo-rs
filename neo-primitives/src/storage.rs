@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn test_storage_value_error_debug() {
         let err = StorageValueError::deserialization("test");
-        let debug_str = format!("{:?}", err);
+        let debug_str = format!("{err:?}");
         assert!(debug_str.contains("DeserializationFailed"));
     }
 

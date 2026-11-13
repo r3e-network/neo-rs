@@ -154,7 +154,7 @@ impl ContractParametersContext {
         let item = self
             .items
             .get_mut(&hash)
-            .ok_or_else(|| format!("Contract not found: {}", hash))?;
+            .ok_or_else(|| format!("Contract not found: {hash}"))?;
 
         // Reject duplicate signatures after context is complete
         if item.is_completed() && item.signatures.contains_key(public_key) {
@@ -236,7 +236,7 @@ impl SignItem {
     fn new(contract: Contract, key_pairs: Vec<KeyPair>) -> Result<Self, RpcError> {
         let public_keys = key_pairs
             .iter()
-            .map(|kp| kp.get_public_key_point())
+            .map(neo_wallets::KeyPair::get_public_key_point)
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {

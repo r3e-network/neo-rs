@@ -193,7 +193,7 @@ mod tests {
         assert_eq!(value, 7.0);
         let value = token_as_number(JToken::Boolean(false), "ctx").expect("bool");
         assert_eq!(value, 0.0);
-        let value = token_as_number(JToken::String("".into()), "ctx").expect("empty");
+        let value = token_as_number(JToken::String(String::new()), "ctx").expect("empty");
         assert_eq!(value, 0.0);
         let value = token_as_number(JToken::String("nope".into()), "ctx").expect("nan");
         assert!(value.is_nan());
@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn token_as_boolean_accepts_string_number_and_container() {
         assert!(token_as_boolean(JToken::String("x".into()), "ctx").unwrap());
-        assert!(!token_as_boolean(JToken::String("".into()), "ctx").unwrap());
+        assert!(!token_as_boolean(JToken::String(String::new()), "ctx").unwrap());
         assert!(token_as_boolean(JToken::Number(1.0), "ctx").unwrap());
         assert!(!token_as_boolean(JToken::Number(0.0), "ctx").unwrap());
         assert!(token_as_boolean(JToken::Array(JArray::new()), "ctx").unwrap());

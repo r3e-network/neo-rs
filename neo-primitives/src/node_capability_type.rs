@@ -37,7 +37,7 @@ impl NodeCapabilityType {
 impl std::fmt::Display for NodeCapabilityType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unknown(value) => write!(f, "Unknown(0x{:02x})", value),
+            Self::Unknown(value) => write!(f, "Unknown(0x{value:02x})"),
             _ => write!(f, "{}", self.as_str()),
         }
     }

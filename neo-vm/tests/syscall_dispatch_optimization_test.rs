@@ -29,14 +29,10 @@ fn test_builtin_syscall_fast_path() {
 
         // Verify fast path lookup works
         let entry = syscalls::get_syscall_entry_by_u32(hash_u32);
-        assert!(entry.is_some(), "Built-in syscall {} should be found", name);
+        assert!(entry.is_some(), "Built-in syscall {name} should be found");
 
         let entry = entry.unwrap();
-        assert!(
-            entry.gas_price > 0,
-            "Syscall {} should have gas price",
-            name
-        );
+        assert!(entry.gas_price > 0, "Syscall {name} should have gas price");
 
         // Verify method name matches
         let method_name = syscalls::get_method_name(entry.method_id);
@@ -80,9 +76,7 @@ fn test_all_builtin_syscalls_present() {
         let entry = syscalls::find_by_method_name(name);
         assert!(
             entry.is_some(),
-            "Built-in syscall {} (id={}) should be present",
-            name,
-            method_id
+            "Built-in syscall {name} (id={method_id}) should be present"
         );
     }
 }
@@ -110,18 +104,15 @@ fn test_syscall_gas_costs_consistency() {
         // Verify consistency
         assert_eq!(
             entry_by_name.gas_price, entry_by_u32.gas_price,
-            "Gas price mismatch for {}",
-            name
+            "Gas price mismatch for {name}"
         );
         assert_eq!(
             entry_by_name.call_flags, entry_by_u32.call_flags,
-            "Call flags mismatch for {}",
-            name
+            "Call flags mismatch for {name}"
         );
         assert_eq!(
             entry_by_name.method_id, entry_by_u32.method_id,
-            "Method ID mismatch for {}",
-            name
+            "Method ID mismatch for {name}"
         );
     }
 }

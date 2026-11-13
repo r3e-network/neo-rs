@@ -499,7 +499,7 @@ impl TeeMempool {
     ///   data key, and the payload AEAD tag verifies. For the
     ///   [`FairOrderingPolicy::ThresholdEncryption`] policy the definitive
     ///   post-decryption ordering key is assigned here, replacing the
-    ///   pre-decryption placeholder, so ordering happens strictly after
+    ///   pre-decryption provisional key, so ordering happens strictly after
     ///   decryption.
     /// * `Encrypted -> Rejected`: any envelope/KEM/AEAD (or rollback-floor)
     ///   failure marks the entry `Rejected` and removes it from the ordering
@@ -529,11 +529,11 @@ impl TeeMempool {
                     ) {
                         // Threshold-encryption policy: assign the real
                         // ordering key only now that the content is decrypted.
-                        let placeholder = std::mem::replace(
+                        let intake_key = std::mem::replace(
                             &mut entry.ordering_key,
                             compute_threshold_decrypted_ordering_key(&entry.timing, &entry.hash),
                         );
-                        ordered.remove(&placeholder);
+                        ordered.remove(&intake_key);
                         ordered.insert(entry.ordering_key.clone(), entry.hash);
                     }
                     entry.resolved_data = Some(plaintext);

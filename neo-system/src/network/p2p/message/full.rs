@@ -54,9 +54,7 @@ impl Message {
         T: Serializable,
     {
         // Estimate capacity for the BinaryWriter to avoid reallocations
-        let estimated_capacity = payload
-            .map(|p| p.size().max(DEFAULT_MESSAGE_CAPACITY))
-            .unwrap_or(0);
+        let estimated_capacity = payload.map_or(0, |p| p.size().max(DEFAULT_MESSAGE_CAPACITY));
 
         let payload_bytes = if let Some(payload) = payload {
             let mut writer = BinaryWriter::with_capacity(estimated_capacity);

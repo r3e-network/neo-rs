@@ -305,8 +305,7 @@ impl NeoToken {
         let current_voters = snapshot
             .as_ref()
             .try_get(&voters_key)
-            .map(|item| item.to_bigint())
-            .unwrap_or_else(BigInt::zero);
+            .map_or_else(BigInt::zero, |item| item.to_bigint());
         let updated_voters = current_voters + amount;
         let voters_suffix = voters_key.suffix().to_vec();
         engine.put_storage_item(

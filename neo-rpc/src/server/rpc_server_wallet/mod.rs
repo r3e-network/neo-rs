@@ -255,7 +255,7 @@ impl ContractParametersContext {
         // Add signature for this public key
         let pk_bytes = public_key
             .encode_point(true)
-            .map_err(|e| format!("Failed to encode public key: {}", e))?;
+            .map_err(|e| format!("Failed to encode public key: {e}"))?;
         contract_sigs.signatures.insert(pk_bytes, signature);
 
         // Return true if this contract now has enough signatures

@@ -306,13 +306,7 @@ pub(super) fn execute(
                         // a compound value is picked from them.
                         let index = match key_or_index {
                             StackValue::Integer(v) if v >= 0 => v as usize,
-                            StackValue::Boolean(v) => {
-                                if v {
-                                    1
-                                } else {
-                                    0
-                                }
-                            }
+                            StackValue::Boolean(v) => usize::from(v),
                             StackValue::Null => 0,
                             _ => {
                                 return Err(

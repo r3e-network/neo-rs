@@ -132,24 +132,21 @@ impl OracleServiceSettings {
         if self
             .neofs_bearer_token
             .as_ref()
-            .map(|value| value.trim().is_empty())
-            .unwrap_or(false)
+            .is_some_and(|value| value.trim().is_empty())
         {
             self.neofs_bearer_token = None;
         }
         if self
             .neofs_bearer_signature
             .as_ref()
-            .map(|value| value.trim().is_empty())
-            .unwrap_or(false)
+            .is_some_and(|value| value.trim().is_empty())
         {
             self.neofs_bearer_signature = None;
         }
         if self
             .neofs_bearer_signature_key
             .as_ref()
-            .map(|value| value.trim().is_empty())
-            .unwrap_or(false)
+            .is_some_and(|value| value.trim().is_empty())
         {
             self.neofs_bearer_signature_key = None;
         }

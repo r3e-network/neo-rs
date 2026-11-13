@@ -17,10 +17,7 @@ pub(super) struct CommandBitSet(BitArray<[u8; 32], Lsb0>);
 
 impl CommandBitSet {
     pub(super) fn contains(&self, command: MessageCommand) -> bool {
-        self.0
-            .get(Self::slot(command))
-            .map(|bit| *bit)
-            .unwrap_or(false)
+        self.0.get(Self::slot(command)).is_some_and(|bit| *bit)
     }
 
     pub(super) fn insert(&mut self, command: MessageCommand) {
@@ -235,7 +232,7 @@ fn estimate_message_size(message: &NetworkMessage) -> usize {
         ProtocolMessage::Headers(headers) => headers
             .headers
             .iter()
-            .map(|header| header.size())
+            .map(Serializable::size)
             .sum::<usize>(),
         ProtocolMessage::Transaction(tx) => tx.size(),
         ProtocolMessage::Inv(inv) => inv.hashes.len() * 32,

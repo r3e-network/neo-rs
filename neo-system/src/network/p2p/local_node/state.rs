@@ -289,10 +289,7 @@ impl LocalNode {
         let mut capabilities = self.capabilities.read().clone();
 
         let context = self.system_context();
-        let current_height = context
-            .as_ref()
-            .map(|ctx| ctx.current_block_index())
-            .unwrap_or(0);
+        let current_height = context.as_ref().map_or(0, |ctx| ctx.current_block_index());
 
         let mut has_full_node = false;
         for capability in &mut capabilities {
@@ -367,7 +364,7 @@ impl LocalNode {
     pub fn apply_channels_config(&self, config: &ChannelsConfig) {
         *self.config.write() = config.clone();
 
-        let listener_port = config.tcp.map(|endpoint| endpoint.port()).unwrap_or(0);
+        let listener_port = config.tcp.map_or(0, |endpoint| endpoint.port());
         self.set_port(listener_port);
 
         let mut capabilities = self.capabilities.write();
@@ -443,8 +440,7 @@ impl LocalNode {
                 .peers_by_ip
                 .read()
                 .get(&remote_ip)
-                .map(|addrs| addrs.len())
-                .unwrap_or(0);
+                .map_or(0, std::collections::HashSet::len);
 
             if per_address >= config.max_connections_per_address {
                 return false;
@@ -467,8 +463,7 @@ impl LocalNode {
             SocketAddr::V6(v6) => v6
                 .ip()
                 .to_ipv4()
-                .map(IpAddr::V4)
-                .unwrap_or_else(|| IpAddr::V6(*v6.ip())),
+                .map_or_else(|| IpAddr::V6(*v6.ip()), IpAddr::V4),
             SocketAddr::V4(v4) => IpAddr::V4(*v4.ip()),
         }
     }

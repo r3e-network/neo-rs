@@ -331,7 +331,7 @@ async fn test_full_node_error_recovery() -> Result<()> {
     // Try to access non-existent blocks
     for height in 1..10 {
         let hash = context.block_hash_at(height);
-        assert!(hash.is_none(), "no block should exist at height {}", height);
+        assert!(hash.is_none(), "no block should exist at height {height}");
     }
 
     // System should remain operational

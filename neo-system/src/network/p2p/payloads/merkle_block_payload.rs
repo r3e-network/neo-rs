@@ -15,7 +15,7 @@ use neo_io_crate::serializable::helper::{
 };
 use neo_io_crate::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt256;
-use neo_protocol::payloads::{Block, Header};
+use neo_protocol::payloads::{Block, Header, Transaction};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
@@ -60,7 +60,7 @@ impl MerkleBlockPayload {
         let tx_hashes: Vec<UInt256> = block
             .transactions
             .iter()
-            .map(|tx| tx.try_hash())
+            .map(Transaction::try_hash)
             .collect::<IoResult<Vec<_>>>()?;
 
         let mut tree = MerkleTree::new(&tx_hashes);
@@ -179,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn pad_flags_single_depth_adds_placeholder() {
+    fn pad_flags_single_depth_adds_padding_flag() {
         assert_eq!(pad_flags(Vec::new(), 1), vec![false]);
         assert_eq!(pad_flags(vec![true], 1), vec![true]);
     }

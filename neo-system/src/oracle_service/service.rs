@@ -139,12 +139,12 @@ impl OracleService {
 
     /// Marks a request as completed and removes it from in-flight.
     pub fn mark_request_completed(&self, request_id: u64, url: &str) {
-        self.inner.mark_request_completed(request_id, url)
+        self.inner.mark_request_completed(request_id, url);
     }
 
     /// Cleans up in-flight requests (call on error/timeout).
     pub fn cleanup_in_flight(&self, url: &str) {
-        self.inner.cleanup_in_flight(url)
+        self.inner.cleanup_in_flight(url);
     }
 
     /// Validates a URL against security policies.

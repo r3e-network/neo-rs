@@ -74,9 +74,7 @@ fn test_consensus_payload_header_size_is_7_bytes() {
         assert_eq!(
             bytes.len(),
             COQ_HEADER_BYTES + body_len,
-            "Test case {}: total length = 7 (Coq constant) + body len ({})",
-            i,
-            body_len
+            "Test case {i}: total length = 7 (Coq constant) + body len ({body_len})"
         );
     }
 }
@@ -317,8 +315,7 @@ fn test_all_message_types_use_seven_byte_header() {
         assert_eq!(
             bytes.len(),
             COQ_HEADER_BYTES + 16,
-            "Message type {:?} uses incorrect header size",
-            msg_type
+            "Message type {msg_type:?} uses incorrect header size"
         );
 
         // First byte must match the message type

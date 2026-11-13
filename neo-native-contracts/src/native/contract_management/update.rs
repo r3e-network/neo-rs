@@ -86,8 +86,8 @@ impl ContractManagement {
             ));
         }
 
-        let nef_len = nef_file.as_ref().map(|v| v.len()).unwrap_or(0);
-        let manifest_len = manifest_bytes.as_ref().map(|v| v.len()).unwrap_or(0);
+        let nef_len = nef_file.as_ref().map_or(0, std::vec::Vec::len);
+        let manifest_len = manifest_bytes.as_ref().map_or(0, std::vec::Vec::len);
         let payload_size = nef_len.saturating_add(manifest_len);
         if payload_size > 0 {
             let storage_fee = (engine.storage_price() as u64).saturating_mul(payload_size as u64);
@@ -100,7 +100,7 @@ impl ContractManagement {
         if let Some(nef_bytes) = nef_file {
             let mut reader = MemoryReader::new(&nef_bytes);
             let nef = <NefFile as neo_io::Serializable>::deserialize(&mut reader)
-                .map_err(|e| Error::deserialization(format!("Invalid NEF file: {}", e)))?;
+                .map_err(|e| Error::deserialization(format!("Invalid NEF file: {e}")))?;
 
             Self::validate_nef_file(&nef)?;
             contract.nef = nef;
@@ -112,9 +112,9 @@ impl ContractManagement {
         // Update manifest if provided
         if let Some(manifest_payload) = manifest_bytes {
             let manifest_json = String::from_utf8(manifest_payload)
-                .map_err(|e| Error::deserialization(format!("Invalid manifest encoding: {}", e)))?;
+                .map_err(|e| Error::deserialization(format!("Invalid manifest encoding: {e}")))?;
             let manifest: ContractManifest = serde_json::from_str(&manifest_json)
-                .map_err(|e| Error::deserialization(format!("Invalid manifest: {}", e)))?;
+                .map_err(|e| Error::deserialization(format!("Invalid manifest: {e}")))?;
 
             if manifest.name != contract.manifest.name {
                 return Err(Error::invalid_operation(

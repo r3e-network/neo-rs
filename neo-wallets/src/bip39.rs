@@ -134,7 +134,7 @@ fn parse_mnemonic_phrase(phrase: &str) -> Result<Mnemonic, String> {
 }
 
 fn unknown_word_error(word: &str) -> String {
-    format!("The word '{}' is not in the BIP-39 wordlist.", word)
+    format!("The word '{word}' is not in the BIP-39 wordlist.")
 }
 
 fn normalize_language_code(language: &str) -> String {

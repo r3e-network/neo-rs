@@ -238,8 +238,7 @@ impl ApplicationEngine {
         match self.storage_iterators.get_mut(&iterator_id) {
             Some(iterator) => Ok(iterator.next()),
             None => Err(Error::not_found(format!(
-                "Iterator {} not found",
-                iterator_id
+                "Iterator {iterator_id} not found"
             ))),
         }
     }
@@ -248,8 +247,7 @@ impl ApplicationEngine {
         match self.storage_iterators.get(&iterator_id) {
             Some(iterator) => Ok(iterator.value()),
             None => Err(Error::not_found(format!(
-                "Iterator {} not found",
-                iterator_id
+                "Iterator {iterator_id} not found"
             ))),
         }
     }
@@ -330,7 +328,7 @@ impl ApplicationEngine {
                     .map(|native| native.id())
             })
             .ok_or_else(|| {
-                Error::not_found(format!("Native contract not found: {}", contract_hash))
+                Error::not_found(format!("Native contract not found: {contract_hash}"))
             })?;
         Ok(StorageContext {
             id: contract_id,
@@ -372,7 +370,7 @@ impl ApplicationEngine {
         self.add_cpu_fee(fee)?;
         let script = Helper::signature_redeem_script(public_key);
         let hash = UInt160::from_bytes(&Crypto::hash160(&script))
-            .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {}", e)))?;
+            .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
         Ok(hash)
     }
     /// Creates the script hash of an m-of-n multisig account
@@ -419,7 +417,7 @@ impl ApplicationEngine {
         self.add_cpu_fee(fee)?;
         let script = Helper::multi_sig_redeem_script(m, &public_keys);
         let hash = UInt160::from_bytes(&Crypto::hash160(&script))
-            .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {}", e)))?;
+            .map_err(|e| Error::invalid_operation(format!("Invalid script hash: {e}")))?;
         Ok(hash)
     }
     /// Deletes a storage item (legacy API for native contracts).

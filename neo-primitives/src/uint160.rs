@@ -274,7 +274,7 @@ mod tests {
 
         #[test]
         fn test_parse_hex_string(hex in "[0-9a-fA-F]{40}") {
-            let uint = UInt160::parse(&format!("0x{}", hex)).unwrap();
+            let uint = UInt160::parse(&format!("0x{hex}")).unwrap();
             let uint2 = UInt160::parse(&uint.to_hex_string()).unwrap();
             prop_assert_eq!(uint, uint2);
         }

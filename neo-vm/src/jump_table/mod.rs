@@ -246,8 +246,7 @@ mod tests {
         for opcode in OpCode::ALL {
             assert!(
                 jump_table.get(opcode).is_some(),
-                "No handler for opcode: {:?}",
-                opcode
+                "No handler for opcode: {opcode:?}"
             );
         }
     }
@@ -307,8 +306,7 @@ mod tests {
         for opcode in OpCode::ALL {
             assert!(
                 jump_table.get(opcode).is_some(),
-                "No handler for opcode: {:?}",
-                opcode
+                "No handler for opcode: {opcode:?}"
             );
         }
     }

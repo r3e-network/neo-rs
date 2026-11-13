@@ -384,7 +384,7 @@ impl CoreResponseTxBuilder {
         let hashes = tx.signer_accounts();
         let mut witnesses = Vec::with_capacity(hashes.len());
 
-        for hash in hashes.iter() {
+        for hash in &hashes {
             let witness = witness_map
                 .get(hash)
                 .cloned()

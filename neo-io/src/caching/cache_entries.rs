@@ -20,8 +20,7 @@ pub(crate) fn check_copy_range(
         return Err(crate::IoError::InvalidData {
             context: context.to_string(),
             value: format!(
-                "start_index ({}) exceeds destination length ({})",
-                start_index, destination_len
+                "start_index ({start_index}) exceeds destination length ({destination_len})"
             ),
         });
     }
@@ -36,8 +35,7 @@ pub(crate) fn check_copy_range(
         return Err(crate::IoError::InvalidData {
             context: context.to_string(),
             value: format!(
-                "start_index ({}) + count ({}) > destination length ({})",
-                start_index, count, destination_len
+                "start_index ({start_index}) + count ({count}) > destination length ({destination_len})"
             ),
         });
     }

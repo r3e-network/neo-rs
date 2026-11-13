@@ -93,10 +93,9 @@ impl TransactionState {
 
             self.state = items
                 .get(2)
-                .and_then(|item| item.to_i128())
+                .and_then(neo_vm::StackValue::to_i128)
                 .and_then(|value| u8::try_from(value).ok())
-                .map(Self::decode_vm_state)
-                .unwrap_or(VMState::NONE);
+                .map_or(VMState::NONE, Self::decode_vm_state);
         }
 
         Ok(())

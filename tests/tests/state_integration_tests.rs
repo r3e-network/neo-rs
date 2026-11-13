@@ -271,7 +271,6 @@ fn test_state_trie_performance_1000_keys() {
     let elapsed = start.elapsed();
     assert!(
         elapsed.as_secs() < 1,
-        "1000 keys took too long: {:?}",
-        elapsed
+        "1000 keys took too long: {elapsed:?}"
     );
 }

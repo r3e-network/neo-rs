@@ -100,7 +100,7 @@ impl<T: Interoperable + Clone + Default + 'static> Interoperable for Interoperab
         let items: Vec<StackItem> = self
             .items
             .iter()
-            .map(|item| item.to_stack_item())
+            .map(neo_vm::Interoperable::to_stack_item)
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(StackItem::from_array(items))

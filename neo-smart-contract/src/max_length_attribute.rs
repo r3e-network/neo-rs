@@ -23,10 +23,9 @@ impl MaxLengthAttribute {
 impl ValidatorAttribute for MaxLengthAttribute {
     fn validate(&self, item: &StackValue) -> Result<(), String> {
         let length = match item {
-            StackValue::Boolean(_) | StackValue::Integer(_) | StackValue::BigInteger(_) => item
-                .to_byte_string_bytes()
-                .map(|bytes| bytes.len())
-                .unwrap_or(0),
+            StackValue::Boolean(_) | StackValue::Integer(_) | StackValue::BigInteger(_) => {
+                item.to_byte_string_bytes().map_or(0, |bytes| bytes.len())
+            }
             StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => bytes.len(),
             StackValue::Array(array) | StackValue::Struct(array) => array.len(),
             StackValue::Map(map) => map.len(),

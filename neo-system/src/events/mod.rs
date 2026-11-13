@@ -106,22 +106,22 @@ impl std::fmt::Display for PluginEvent {
                 block_hash,
                 block_height,
             } => {
-                write!(f, "BlockReceived({}, height={})", block_hash, block_height)
+                write!(f, "BlockReceived({block_hash}, height={block_height})")
             }
             PluginEvent::TransactionReceived { tx_hash } => {
-                write!(f, "TransactionReceived({})", tx_hash)
+                write!(f, "TransactionReceived({tx_hash})")
             }
             PluginEvent::MempoolTransactionAdded { tx_hash } => {
-                write!(f, "MempoolTransactionAdded({})", tx_hash)
+                write!(f, "MempoolTransactionAdded({tx_hash})")
             }
             PluginEvent::MempoolTransactionRemoved { tx_hashes, reason } => {
-                write!(f, "MempoolTransactionRemoved({:?}, {})", tx_hashes, reason)
+                write!(f, "MempoolTransactionRemoved({tx_hashes:?}, {reason})")
             }
             PluginEvent::ServiceAdded { service_name } => {
-                write!(f, "ServiceAdded({})", service_name)
+                write!(f, "ServiceAdded({service_name})")
             }
             PluginEvent::WalletChanged { wallet_name } => {
-                write!(f, "WalletChanged({})", wallet_name)
+                write!(f, "WalletChanged({wallet_name})")
             }
         }
     }

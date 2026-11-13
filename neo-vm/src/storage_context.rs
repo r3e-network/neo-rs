@@ -47,7 +47,7 @@ impl StorageContext {
     pub fn to_bytes(&self) -> [u8; 5] {
         let mut data = [0u8; 5];
         data[..4].copy_from_slice(&self.id.to_le_bytes());
-        data[4] = if self.is_read_only { 1 } else { 0 };
+        data[4] = u8::from(self.is_read_only);
         data
     }
 

@@ -156,9 +156,9 @@ impl Notary {
                 .map_err(|_| Error::native_contract("Invalid deposit recipient"))?
         };
 
-        let till_value = items[1].as_int().map_err(|err| {
-            Error::native_contract(format!("Invalid deposit expiration: {}", err))
-        })?;
+        let till_value = items[1]
+            .as_int()
+            .map_err(|err| Error::native_contract(format!("Invalid deposit expiration: {err}")))?;
         let till = till_value
             .to_u32()
             .ok_or_else(|| Error::native_contract("Deposit expiration must fit in u32"))?;
@@ -329,13 +329,12 @@ impl Notary {
                     TransactionAttributeType::NotaryAssisted as u8,
                 )
                 .map_err(|err| {
-                    Error::native_contract(format!("Failed to read Notary attribute fee: {}", err))
+                    Error::native_contract(format!("Failed to read Notary attribute fee: {err}"))
                 })?;
             let min_required = BigInt::from(2) * BigInt::from(fee_per_key);
             if amount < min_required {
                 return Err(Error::native_contract(format!(
-                    "first deposit can not be less than {}, got {}",
-                    min_required, amount
+                    "first deposit can not be less than {min_required}, got {amount}"
                 )));
             }
 
@@ -454,8 +453,8 @@ impl Notary {
         // Perform GAS transfer from Notary contract hash to destination
         let contract_hash = self.hash();
         let mut transfer_args = Vec::with_capacity(3);
-        transfer_args.push(contract_hash.to_bytes().to_vec());
-        transfer_args.push(to.to_bytes().to_vec());
+        transfer_args.push(contract_hash.to_bytes().clone());
+        transfer_args.push(to.to_bytes().clone());
         let mut amount_bytes = deposit.amount.to_signed_bytes_le();
         if amount_bytes.is_empty() {
             amount_bytes.push(0);
@@ -467,8 +466,7 @@ impl Notary {
         // Temporarily mark the current native caller so GAS transfer authorizes Notary
         let state_arc = engine.current_execution_state().map_err(|err| {
             Error::native_contract(format!(
-                "Failed to access execution state for withdraw: {}",
-                err
+                "Failed to access execution state for withdraw: {err}"
             ))
         })?;
         let (prev_native_caller, prev_flags) = {
@@ -494,8 +492,7 @@ impl Notary {
         let transfer_result = call_result?;
         if transfer_result.first().copied() != Some(1) {
             return Err(Error::native_contract(format!(
-                "Transfer to {} has failed",
-                to
+                "Transfer to {to} has failed"
             )));
         }
 
@@ -536,8 +533,7 @@ impl Notary {
             )
             .map_err(|err| {
                 Error::native_contract(format!(
-                    "Failed to read MaxValidUntilBlock increment: {}",
-                    err
+                    "Failed to read MaxValidUntilBlock increment: {err}"
                 ))
             })?;
         let min_allowed =
@@ -546,8 +542,7 @@ impl Notary {
 
         if value < min_allowed || value > max_allowed {
             return Err(Error::native_contract(format!(
-                "MaxNotValidBeforeDelta cannot be more than {} or less than {}",
-                max_allowed, min_allowed
+                "MaxNotValidBeforeDelta cannot be more than {max_allowed} or less than {min_allowed}"
             )));
         }
 
@@ -632,19 +627,15 @@ impl Notary {
             .unwrap_or_else(|_| NativeHelpers::current_index(engine.chain_queries().as_deref()));
         let notaries = RoleManagement::new()
             .get_designated_by_role_at(snapshot.as_ref(), Role::P2PNotary, current_height + 1)
-            .map_err(|err| {
-                Error::native_contract(format!("Failed to read notary nodes: {}", err))
-            })?;
+            .map_err(|err| Error::native_contract(format!("Failed to read notary nodes: {err}")))?;
         let sign_data = neo_protocol::get_sign_data_vec(tx, engine.protocol_settings().network)
-            .map_err(|err| {
-                Error::native_contract(format!("Failed to compute sign data: {}", err))
-            })?;
+            .map_err(|err| Error::native_contract(format!("Failed to compute sign data: {err}")))?;
 
         let valid = notaries
             .iter()
             .any(|notary| Crypto::verify_signature_bytes(&sign_data, signature, notary.as_bytes()));
 
-        Ok(vec![if valid { 1 } else { 0 }])
+        Ok(vec![u8::from(valid)])
     }
 
     /// Reads the designated P2P notary nodes for the height after the current one.

@@ -102,16 +102,14 @@ impl JsonSerializer {
                 {
                     let cp = c as u32;
                     if cp <= 0xFFFF {
-                        let _ = std::io::Write::write_fmt(out, format_args!("\\u{:04X}", cp));
+                        let _ = std::io::Write::write_fmt(out, format_args!("\\u{cp:04X}"));
                     } else {
                         // Encode supplementary chars as UTF-16 surrogate pair.
                         let v = cp - 0x10000;
                         let hi = 0xD800 + (v >> 10);
                         let lo = 0xDC00 + (v & 0x3FF);
-                        let _ = std::io::Write::write_fmt(
-                            out,
-                            format_args!("\\u{:04X}\\u{:04X}", hi, lo),
-                        );
+                        let _ =
+                            std::io::Write::write_fmt(out, format_args!("\\u{hi:04X}\\u{lo:04X}"));
                     }
                 }
                 c => {
@@ -174,7 +172,7 @@ impl JsonSerializer {
         }
 
         let mut result = Vec::with_capacity(array.len());
-        for element in array.iter() {
+        for element in array {
             result.push(Self::serialize_internal(&element, seen)?);
         }
 
@@ -320,7 +318,7 @@ mod tests {
                     assert_eq!(item.as_int().unwrap(), exp, "mismatch for {json_str}");
                 }
                 None => {
-                    assert!(res.is_err(), "expected error for {json_str}, got {:?}", res);
+                    assert!(res.is_err(), "expected error for {json_str}, got {res:?}");
                 }
             }
         }

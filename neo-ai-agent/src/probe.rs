@@ -683,8 +683,11 @@ fn hash_serializable(value: &impl Serialize) -> Result<String, ProbeContractErro
 fn hex_sha256(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+        .fold(String::new(), |mut output, byte| {
+            use std::fmt::Write as _;
+            write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
+            output
+        })
 }
 
 fn valid_hash(hash: &str) -> bool {

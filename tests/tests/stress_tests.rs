@@ -48,12 +48,11 @@ impl StressMetrics {
 fn stress_duration(default_seconds: u64) -> Duration {
     let seconds = std::env::var("NEO_STRESS_DURATION_SECS")
         .ok()
-        .map(|value| {
+        .map_or(default_seconds, |value| {
             value
                 .parse::<u64>()
                 .unwrap_or_else(|_| panic!("NEO_STRESS_DURATION_SECS must be a positive integer"))
-        })
-        .unwrap_or(default_seconds);
+        });
     assert!(seconds > 0, "stress duration must be greater than zero");
     Duration::from_secs(seconds)
 }
@@ -187,7 +186,7 @@ async fn stress_test_sustained_load() {
 
     let mut metrics = StressMetrics::default();
     let start_time = Instant::now();
-    let mut last_batch = Instant::now() - batch_interval;
+    let mut last_batch = Instant::now().checked_sub(batch_interval).unwrap();
     let mut memory_samples = Vec::new();
 
     info!(

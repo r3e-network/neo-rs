@@ -10,7 +10,7 @@ use thiserror::Error;
 /// Represents a JSON-RPC error returned by the RPC server (matches the C#
 /// `RpcError` class semantics).
 #[derive(Error, Clone, Debug, PartialEq, Eq)]
-#[error("{message} ({code}){}", .data.as_ref().map(|d| format!(" - {}", d)).unwrap_or_default())]
+#[error("{message} ({code}){}", .data.as_ref().map(|d| format!(" - {d}")).unwrap_or_default())]
 pub struct RpcError {
     code: i32,
     message: String,
@@ -235,7 +235,10 @@ mod tests {
     fn rpc_error_access_denied_json() {
         let json = RpcError::access_denied().to_json().to_string();
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse json");
-        assert_eq!(parsed.get("code").and_then(|v| v.as_f64()), Some(-600.0));
+        assert_eq!(
+            parsed.get("code").and_then(serde_json::Value::as_f64),
+            Some(-600.0)
+        );
         assert_eq!(
             parsed.get("message").and_then(|v| v.as_str()),
             Some("Access denied")
@@ -290,7 +293,7 @@ mod tests {
             RpcError::session_capacity_exceeded(),
         ];
 
-        for error in errors.iter() {
+        for error in &errors {
             if error.code() == RpcError::wallet_fee_limit().code() {
                 assert!(error.data().is_some());
             } else {

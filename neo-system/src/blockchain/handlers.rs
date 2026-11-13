@@ -219,8 +219,7 @@ impl Blockchain {
         let current_height = context.ledger().current_height();
         let mut header_height = header_cache
             .last()
-            .map(|header| header.index())
-            .unwrap_or(current_height);
+            .map_or(current_height, |header| header.index());
 
         for block in headers.into_iter() {
             let header = block.to_payload_block().header;
@@ -415,7 +414,7 @@ impl Blockchain {
                 payload => {
                     self.handle_reverify_payload(payload, ctx).await;
                 }
-            };
+            }
         }
     }
 

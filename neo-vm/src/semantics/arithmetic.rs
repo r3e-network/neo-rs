@@ -25,7 +25,7 @@ pub(crate) fn numeric_stack_value(
 pub(crate) fn numeric_bigint(value: StackValue) -> Result<BigInt, String> {
     match value {
         StackValue::Integer(value) => Ok(BigInt::from(value)),
-        StackValue::Boolean(value) => Ok(BigInt::from(if value { 1 } else { 0 })),
+        StackValue::Boolean(value) => Ok(BigInt::from(i32::from(value))),
         StackValue::ByteString(value) | StackValue::BigInteger(value) => {
             numeric::decode_signed_le_bytes_bigint(&value)
         }
@@ -281,7 +281,7 @@ fn bitwise_operand_bytes(value: &StackValue) -> Result<Vec<u8>, String> {
     match value {
         StackValue::Integer(value) => Ok(encode_integer(*value)),
         StackValue::BigInteger(value) | StackValue::ByteString(value) => Ok(value.clone()),
-        StackValue::Boolean(value) => Ok(encode_integer(if *value { 1 } else { 0 })),
+        StackValue::Boolean(value) => Ok(encode_integer(i64::from(*value))),
         StackValue::Null
         | StackValue::Buffer(_)
         | StackValue::Pointer(_)

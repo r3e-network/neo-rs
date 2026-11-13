@@ -44,8 +44,7 @@ impl Blockchain {
         let current_height = context.ledger().current_height();
         let header_height = header_cache
             .last()
-            .map(|header| header.index())
-            .unwrap_or(current_height);
+            .map_or(current_height, |header| header.index());
 
         if block_index.is_multiple_of(10000) {
             tracing::info!(

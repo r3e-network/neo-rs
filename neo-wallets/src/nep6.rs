@@ -305,8 +305,7 @@ impl Wallet for Nep6Wallet {
     fn contains(&self, script_hash: &UInt160) -> bool {
         self.accounts
             .read()
-            .map(|a| a.contains_key(script_hash))
-            .unwrap_or(false)
+            .is_ok_and(|a| a.contains_key(script_hash))
     }
 
     fn create_account(&self, private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>> {
@@ -626,7 +625,7 @@ fn contract_to_file(contract: &Contract) -> Nep6ContractFile {
                     ContractParameterType::Void => "Void",
                 };
                 Nep6ContractParameterFile {
-                    name: format!("parameter{}", i),
+                    name: format!("parameter{i}"),
                     param_type: type_name.to_string(),
                 }
             })

@@ -245,8 +245,7 @@ impl ContractManagement {
                 }
                 None => {
                     return Err(Error::invalid_data(format!(
-                        "corrupted ContractManagement state: missing contract id mapping for id {}",
-                        id
+                        "corrupted ContractManagement state: missing contract id mapping for id {id}"
                     )));
                 }
             }

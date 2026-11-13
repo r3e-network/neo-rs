@@ -55,5 +55,5 @@ pub(crate) fn header_str(headers: &reqwest::header::HeaderMap, name: &str) -> Op
     headers
         .get(name)
         .and_then(|value| value.to_str().ok())
-        .map(|value| value.to_string())
+        .map(std::string::ToString::to_string)
 }

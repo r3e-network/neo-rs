@@ -54,12 +54,7 @@ fn test_message_command_byte_conversion() {
         let byte = cmd.to_byte();
         let restored = MessageCommand::from_byte(byte);
         assert!(restored.is_ok());
-        assert_eq!(
-            restored.unwrap(),
-            cmd,
-            "Command {:?} should round-trip",
-            cmd
-        );
+        assert_eq!(restored.unwrap(), cmd, "Command {cmd:?} should round-trip");
     }
 }
 
@@ -88,8 +83,7 @@ fn test_verify_result_variants() {
         assert_eq!(
             restored,
             Some(result),
-            "VerifyResult {:?} should round-trip",
-            result
+            "VerifyResult {result:?} should round-trip"
         );
     }
 }

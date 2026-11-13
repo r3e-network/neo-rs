@@ -104,7 +104,7 @@ fn integer_value(value: &StackValue, type_error: &'static str) -> Result<BigInt,
         StackValue::BigInteger(value) | StackValue::ByteString(value) => {
             numeric::decode_signed_le_bytes_bigint(value)
         }
-        StackValue::Boolean(value) => Ok(BigInt::from(if *value { 1 } else { 0 })),
+        StackValue::Boolean(value) => Ok(BigInt::from(i32::from(*value))),
         StackValue::Null
         | StackValue::Buffer(_)
         | StackValue::Pointer(_)

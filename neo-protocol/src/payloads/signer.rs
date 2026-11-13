@@ -121,7 +121,11 @@ impl Signer {
             );
         }
         if self.scopes.contains(WitnessScope::WITNESS_RULES) {
-            let rules: Vec<_> = self.rules.iter().map(|r| r.to_json()).collect();
+            let rules: Vec<_> = self
+                .rules
+                .iter()
+                .map(neo_io::WitnessRule::to_json)
+                .collect();
             json.insert("rules".to_string(), serde_json::Value::Array(rules));
         }
         serde_json::Value::Object(json)

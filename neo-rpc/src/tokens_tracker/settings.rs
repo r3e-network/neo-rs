@@ -50,15 +50,21 @@ impl TokensTrackerSettings {
             settings.db_path = db_path.trim().to_string();
         }
 
-        if let Some(track_history) = section.get("TrackHistory").and_then(|v| v.as_bool()) {
+        if let Some(track_history) = section
+            .get("TrackHistory")
+            .and_then(serde_json::Value::as_bool)
+        {
             settings.track_history = track_history;
         }
 
-        if let Some(max_results) = section.get("MaxResults").and_then(|v| v.as_u64()) {
+        if let Some(max_results) = section
+            .get("MaxResults")
+            .and_then(serde_json::Value::as_u64)
+        {
             settings.max_results = max_results as u32;
         }
 
-        if let Some(network) = section.get("Network").and_then(|v| v.as_u64()) {
+        if let Some(network) = section.get("Network").and_then(serde_json::Value::as_u64) {
             settings.network = network as u32;
         }
 
@@ -66,9 +72,9 @@ impl TokensTrackerSettings {
             settings.enabled_trackers = trackers
                 .iter()
                 .filter_map(|v| v.as_str())
-                .map(|s| s.trim())
+                .map(str::trim)
                 .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .collect();
         }
 

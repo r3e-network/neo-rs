@@ -164,7 +164,7 @@ impl CommittingHandler for TokensTracker {
                 break;
             }
             if !self.run_tracker_action(&track_name, "on_persist", || {
-                tracker.on_persist(system, block, snapshot, application_executed_list)
+                tracker.on_persist(system, block, snapshot, application_executed_list);
             }) {
                 break;
             }

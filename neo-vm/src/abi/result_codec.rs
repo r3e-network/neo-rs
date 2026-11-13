@@ -19,7 +19,7 @@ pub fn encode_execution_result(result: &Result<ExecutionResult, String>) -> Vec<
             let fault_bytes = execution
                 .fault_message
                 .as_ref()
-                .map(|message| message.as_bytes())
+                .map(std::string::String::as_bytes)
                 .unwrap_or_default();
 
             let mut out = Vec::with_capacity(
@@ -96,7 +96,8 @@ pub fn decode_execution_result(bytes: &[u8]) -> Result<Result<ExecutionResult, S
             };
             let stack_len = cursor.read_u32()? as usize;
             let stack_bytes = cursor.read_exact(stack_len)?;
-            let stack = fast_codec::decode_stack(stack_bytes).map_err(|e| e.to_string())?;
+            let stack =
+                fast_codec::decode_stack(stack_bytes).map_err(std::string::ToString::to_string)?;
             // Trailing fault_ip is optional for forward-compat with older guest payloads
             // that predate this field. If absent, treat as None.
             let fault_ip = if cursor.is_eof() {

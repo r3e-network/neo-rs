@@ -212,7 +212,7 @@ async fn test_concurrent_transaction_processing() {
     for i in 0u8..10 {
         let account = UInt160::from([i; 20]);
         let retrieved = state.get_account(&account).unwrap();
-        assert!(retrieved.is_some(), "Account {} should exist", i);
+        assert!(retrieved.is_some(), "Account {i} should exist");
     }
 }
 

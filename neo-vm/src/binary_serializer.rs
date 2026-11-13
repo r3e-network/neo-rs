@@ -116,7 +116,7 @@ impl BinarySerializer {
                     let bytes = reader
                         .read_var_bytes(max_size as usize)
                         .map_err(Self::io_error_to_string)?;
-                    let buffer = bytes.to_vec();
+                    let buffer = bytes.clone();
                     pending.push(PendingItem::Value(StackItem::from_buffer(buffer)));
                 }
                 StackItemType::Array | StackItemType::Struct => {
@@ -396,7 +396,7 @@ impl BinarySerializer {
                 }
                 StackItem::Boolean(value) => {
                     writer.push(StackItemType::Boolean.to_byte());
-                    writer.push(if *value { 1 } else { 0 });
+                    writer.push(u8::from(*value));
                 }
                 StackItem::Integer(integer) => {
                     writer.push(StackItemType::Integer.to_byte());

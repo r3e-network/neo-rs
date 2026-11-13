@@ -73,7 +73,11 @@ mod integration_tests {
                     + neo_io::serializable::helper::get_var_size(self.script.len() as u64)
                     + self.script.len()
                     + neo_io::serializable::helper::get_var_size(self.witnesses.len() as u64)
-                    + self.witnesses.iter().map(|w| w.size()).sum::<usize>()
+                    + self
+                        .witnesses
+                        .iter()
+                        .map(neo_io::Serializable::size)
+                        .sum::<usize>()
             }
 
             fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {

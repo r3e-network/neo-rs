@@ -37,7 +37,6 @@ neo_native_contract_methods!(
     table = ledger_method_table,
     aliases = [],
     unknown = |method| neo_smart_contract::error::CoreError::native_contract(format!(
-        "Method {} not found",
-        method
+        "Method {method} not found"
     ))
 );

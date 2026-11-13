@@ -15,7 +15,7 @@ static PROVIDERS: LazyLock<RwLock<HashMap<String, Arc<dyn StoreProvider>>>> = La
     // Register default memory provider
     let mem_provider = Arc::new(MemoryStoreProvider::new()) as Arc<dyn StoreProvider>;
     providers.insert("Memory".to_string(), mem_provider.clone());
-    providers.insert("".to_string(), mem_provider); // Default case
+    providers.insert(String::new(), mem_provider); // Default case
 
     RwLock::new(providers)
 });

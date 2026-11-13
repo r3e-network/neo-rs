@@ -984,8 +984,7 @@ impl TryFrom<crate::StackValue> for StackItem {
             crate::StackValue::Pointer(_)
             | crate::StackValue::Interop(_)
             | crate::StackValue::Iterator(_) => Err(VmError::invalid_operation_msg(format!(
-                "Cannot convert {:?} into neo-vm StackItem without host runtime identity",
-                value
+                "Cannot convert {value:?} into neo-vm StackItem without host runtime identity"
             ))),
         }
     }

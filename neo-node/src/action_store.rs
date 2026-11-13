@@ -423,7 +423,7 @@ impl DurableActionStore {
         }
         record.state = next;
         record.updated_at_unix_ms = now_unix_ms;
-        record.outcome_code = outcome_code.to_owned();
+        outcome_code.clone_into(&mut record.outcome_code);
         append(&mut state, record.clone())?;
         Ok(record)
     }
@@ -477,7 +477,7 @@ fn append(state: &mut StoreState, record: ActionRecord) -> Result<(), ActionStor
     state.file_bytes += encoded.len() as u64 + 1;
     state.file_entries += 1;
     state.total_entries = sequence + 1;
-    state.tail_hash = entry.entry_hash.clone();
+    state.tail_hash.clone_from(&entry.entry_hash);
     state.operations.insert(
         operation_id,
         entry.record.expect("record entries carry a record"),
@@ -566,7 +566,7 @@ fn verify_entries(
             }
             operations.insert(id, record.clone());
         }
-        *tail_hash = entry.entry_hash.clone();
+        tail_hash.clone_from(&entry.entry_hash);
         *total_entries = entry.sequence + 1;
     }
     Ok(())
@@ -640,7 +640,7 @@ fn write_rotation_checkpoint(state: &mut StoreState) -> Result<(), ActionStoreEr
     state.file_bytes = encoded.len() as u64 + 1;
     state.file_entries = 1;
     state.total_entries = sequence + 1;
-    state.tail_hash = entry.entry_hash.clone();
+    state.tail_hash.clone_from(&entry.entry_hash);
     Ok(())
 }
 
@@ -736,10 +736,11 @@ fn entry_hash(entry: &JournalEntry) -> Result<String, ActionStoreError> {
 fn hash_value(value: &impl Serialize) -> Result<String, ActionStoreError> {
     let bytes = serde_json::to_vec(value).map_err(|_| ActionStoreError::Serialization)?;
     let digest = Sha256::digest(bytes);
-    let hash = digest
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let hash = digest.iter().fold(String::new(), |mut output, byte| {
+        use std::fmt::Write as _;
+        write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
+        output
+    });
     if !valid_hash(&hash) {
         return Err(ActionStoreError::Serialization);
     }
@@ -782,8 +783,9 @@ fn repair_unterminated_tail(path: &Path) -> Result<(), ActionStoreError> {
 fn unix_time_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or(1)
+        .map_or(1, |duration| {
+            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+        })
         .max(1)
 }
 

@@ -229,7 +229,7 @@ pub fn new_array_default_value_for_neovm_type_tag(type_tag: u8) -> StackValue {
 /// representation, because syscall argument validation is type based.
 pub fn pop_byte_arg(stack: &mut Vec<StackValue>, context: &str) -> Result<Vec<u8>, String> {
     match stack.pop() {
-        Some(StackValue::ByteString(bytes)) | Some(StackValue::Buffer(bytes)) => Ok(bytes),
+        Some(StackValue::ByteString(bytes) | StackValue::Buffer(bytes)) => Ok(bytes),
         Some(other) => Err(format!(
             "{context} expects ByteString or Buffer, got {other:?}"
         )),

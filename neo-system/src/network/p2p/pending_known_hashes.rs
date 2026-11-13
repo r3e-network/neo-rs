@@ -132,10 +132,21 @@ mod tests {
         let now = Instant::now();
         let mut cache = PendingKnownHashes::new(4);
 
-        cache.try_add(make_hash(1), now - Duration::from_secs(55));
-        cache.try_add(make_hash(2), now - Duration::from_secs(5));
+        cache.try_add(
+            make_hash(1),
+            now.checked_sub(Duration::from_secs(55))
+                .expect("clock history"),
+        );
+        cache.try_add(
+            make_hash(2),
+            now.checked_sub(Duration::from_secs(5))
+                .expect("clock history"),
+        );
 
-        let removed = cache.prune_older_than(now - Duration::from_secs(30));
+        let removed = cache.prune_older_than(
+            now.checked_sub(Duration::from_secs(30))
+                .expect("clock history"),
+        );
         assert_eq!(removed, 1);
         assert!(!cache.contains(&make_hash(1)));
         assert!(cache.contains(&make_hash(2)));

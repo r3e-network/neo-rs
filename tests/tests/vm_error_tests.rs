@@ -111,7 +111,7 @@ fn test_item_size_exceeded() {
 fn test_contract_not_found() {
     let missing_contract = UInt160::from([0xAB; 20]);
     let error = VmError::ContractNotFound {
-        hash: format!("{}", missing_contract),
+        hash: format!("{missing_contract}"),
     };
     assert!(error.to_string().contains("not found") || error.to_string().contains("Contract"));
 }
@@ -131,7 +131,7 @@ fn test_invalid_parameter_count() {
         expected: "3 parameters".to_string(),
         actual: "2 parameters".to_string(),
     };
-    assert!(error.to_string().contains("3") || error.to_string().contains("parameter"));
+    assert!(error.to_string().contains('3') || error.to_string().contains("parameter"));
 }
 
 // ============================================================================

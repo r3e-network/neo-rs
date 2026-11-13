@@ -66,7 +66,7 @@ impl ActorPath {
     pub fn parse(path: &str) -> Option<Self> {
         let mut parts = path.split('/').filter(|p| !p.is_empty());
         let system = parts.next()?.to_string();
-        let segments: Vec<String> = parts.map(|p| p.to_string()).collect();
+        let segments: Vec<String> = parts.map(std::string::ToString::to_string).collect();
         if segments.is_empty() {
             return None;
         }
@@ -172,8 +172,7 @@ impl ActorSystemInner {
         match self.registry.entry(key) {
             Entry::Occupied(_) => {
                 return Err(ActorRuntimeError::system(format!(
-                    "Actor {} already exists",
-                    path
+                    "Actor {path} already exists"
                 )));
             }
             Entry::Vacant(entry) => {

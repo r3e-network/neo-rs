@@ -469,7 +469,7 @@ mod tests {
     #[test]
     fn test_storage_key_display_empty() {
         let key = StorageKey::new(-1, vec![]);
-        let display = format!("{}", key);
+        let display = format!("{key}");
         assert!(display.contains("Id = -1"));
         assert!(display.contains("Key = {}"));
     }
@@ -477,7 +477,7 @@ mod tests {
     #[test]
     fn test_storage_key_display_with_prefix() {
         let key = StorageKey::new(-1, vec![0x14, 0xAA, 0xBB]);
-        let display = format!("{}", key);
+        let display = format!("{key}");
         assert!(display.contains("Id = -1"));
         assert!(display.contains("Prefix = 0x14"));
     }
@@ -485,7 +485,7 @@ mod tests {
     #[test]
     fn test_storage_key_debug() {
         let key = StorageKey::new(-1, vec![0x01]);
-        let debug_str = format!("{:?}", key);
+        let debug_str = format!("{key:?}");
         assert!(debug_str.contains("StorageKey"));
     }
 

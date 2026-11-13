@@ -103,8 +103,8 @@ fn contract_call_handler(
         if hash_bytes.len() != 20 {
             return Err("Contract hash must be 20 bytes".to_string());
         }
-        let contract_hash = UInt160::from_bytes(&hash_bytes)
-            .map_err(|e| format!("Invalid contract hash: {}", e))?;
+        let contract_hash =
+            UInt160::from_bytes(&hash_bytes).map_err(|e| format!("Invalid contract hash: {e}"))?;
         if call_flags_value < 0 || call_flags_value > u8::MAX as i64 {
             return Err("Invalid call flags value".to_string());
         }
@@ -141,7 +141,6 @@ fn contract_create_standard_account_handler(
                 service: "System.Contract.CreateStandardAccount".to_string(),
                 error: e,
             })
-            .map(|_| ())
             .map_err(|e| e.to_string()),
         Err(err) => Err(err.to_string()),
     };
@@ -170,8 +169,7 @@ fn contract_create_multisig_account_handler(
         let account = app
             .create_multisig_account(m as i32, public_keys_items)
             .map_err(|e| e.to_string())?;
-        app.push_bytes(account.to_bytes())
-            .map_err(|e| e.to_string())?;
+        app.push_bytes(account.to_bytes()).map_err(|e| e.clone())?;
         Ok(())
     })();
     map_contract_result("System.Contract.CreateMultisigAccount", result)
@@ -184,10 +182,7 @@ fn contract_call_native_handler(
         let version_item = engine.pop().map_err(|e| e.to_string())?;
         let version_big = version_item.as_int().map_err(|e| e.to_string())?;
         if !version_big.is_zero() {
-            return Err(format!(
-                "Unsupported native contract version {}",
-                version_big
-            ));
+            return Err(format!("Unsupported native contract version {version_big}"));
         }
         let (state_arc, stack_len) = {
             let context = engine
@@ -222,14 +217,12 @@ fn contract_call_native_handler(
             let caller_hash = app.get_calling_script_hash().unwrap_or_else(UInt160::zero);
             let current_hash = app.current_script_hash().unwrap_or_else(UInt160::zero);
             eprintln!(
-                "call_native begin contract={} method={} arg_count={} param_types={:?} current={} caller={}",
-                script_hash, method_name, arg_count, parameter_types, current_hash, caller_hash
+                "call_native begin contract={script_hash} method={method_name} arg_count={arg_count} param_types={parameter_types:?} current={current_hash} caller={caller_hash}"
             );
         }
         if arg_count > stack_len {
             return Err(format!(
-                "Native contract expected {} argument(s) but stack contains {}",
-                arg_count, stack_len
+                "Native contract expected {arg_count} argument(s) but stack contains {stack_len}"
             ));
         }
         let mut args = Vec::with_capacity(arg_count);
@@ -249,7 +242,7 @@ fn contract_call_native_handler(
             let bytes = match parameter_types.get(index) {
                 Some(ContractParameterType::Any) => {
                     BinarySerializer::serialize(&item, app.execution_limits())
-                        .map_err(|e| e.to_string())?
+                        .map_err(|e| e.clone())?
                 }
                 Some(ContractParameterType::InteropInterface) => stack_item_to_interop_bytes(item)?,
                 _ => ApplicationEngine::stack_item_to_bytes(item)?,

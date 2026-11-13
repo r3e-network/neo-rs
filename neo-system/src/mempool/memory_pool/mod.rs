@@ -63,9 +63,10 @@ fn resolve_time_per_block(snapshot: &DataCache, settings: &ProtocolSettings) -> 
         return settings.time_per_block();
     }
 
-    PolicyContract::get_milliseconds_per_block_snapshot(snapshot)
-        .map(|ms| Duration::from_millis(ms as u64))
-        .unwrap_or_else(|| settings.time_per_block())
+    PolicyContract::get_milliseconds_per_block_snapshot(snapshot).map_or_else(
+        || settings.time_per_block(),
+        |ms| Duration::from_millis(ms as u64),
+    )
 }
 
 /// In-memory pool of transactions awaiting inclusion in a block, mirroring the

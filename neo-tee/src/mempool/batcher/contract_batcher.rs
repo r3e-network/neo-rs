@@ -169,7 +169,7 @@ impl ContractBatchScheduler {
 
         let contracted_batches = contract_queues.len();
         let default_pending = default_queue.len();
-        let total_from_queues: usize = contract_queues.values().map(|q| q.len()).sum();
+        let total_from_queues: usize = contract_queues.values().map(PriorityQ::len).sum();
 
         SchedulingMetrics {
             total_pending: total_from_queues + default_pending,
@@ -194,7 +194,8 @@ impl ContractBatchScheduler {
     /// - Scans bytecode for opcode 0x41 (SYSCALL)
     /// - Extracts 4-byte descriptor following opcode
     /// - Converts descriptor to UInt160 using Neo interop hash algorithm
-    /// - For CALLT (opcode 0x4E), returns None for now (requires token table lookup)
+    /// - For CALLT (opcode 0x4E), returns None because resolution requires a
+    ///   token table lookup
     #[allow(clippy::collapsible_match)]
     fn extract_contract_hash(&self, data: &[u8]) -> Option<UInt160> {
         if data.is_empty() {
@@ -367,7 +368,7 @@ impl ContractBatchScheduler {
         let contract_queues = self.contract_queues.read();
         let default_queue = self.default_queue.read();
 
-        let queued_count: usize = contract_queues.values().map(|q| q.len()).sum();
+        let queued_count: usize = contract_queues.values().map(PriorityQ::len).sum();
         queued_count + default_queue.len()
     }
 
@@ -469,7 +470,11 @@ pub fn estimate_gas_cost(tx: &TeeMempoolEntry) -> u64 {
     let size_bonus = tx.data.len().saturating_sub(100).min(50); // Cap at 50 extra gas
 
     // Count certain opcodes as indicators of computational intensity
-    let syscall_count = tx.data.iter().filter(|&&b| b == 0x41).count();
+    let syscall_count = tx
+        .data
+        .iter()
+        .map(|byte| usize::from(*byte == 0x41))
+        .sum::<usize>();
     let op_multiplier = (syscall_count as u64).max(1); // Minimal overhead for syscalls
 
     base_gas
@@ -479,7 +484,7 @@ pub fn estimate_gas_cost(tx: &TeeMempoolEntry) -> u64 {
 
 /// Priority queue implementation for contract-ordered transactions
 ///
-/// Simpler than full heap - just uses insertion order for now
+/// Simpler than full heap - uses insertion order by design
 /// Can be extended later for fee-based prioritization
 struct PriorityQ<T> {
     items: VecDeque<T>,

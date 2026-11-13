@@ -71,7 +71,7 @@ impl TransactionAttributesBuilder {
     pub fn add_not_valid_before(&mut self, height: u32) -> &mut Self {
         assert!(
             !self.attributes.iter().any(|attr| matches!(attr, TransactionAttribute::NotValidBefore(existing) if existing.height == height)),
-            "NotValidBefore attribute for block {} already exists", height
+            "NotValidBefore attribute for block {height} already exists"
         );
         self.attributes
             .push(TransactionAttribute::NotValidBefore(NotValidBefore::new(

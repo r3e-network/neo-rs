@@ -52,7 +52,7 @@ impl RemoteNode {
         if let Err(err) = connection.flush().await {
             drop(connection);
             let network_error =
-                NetworkError::ConnectionError(format!("Failed to flush version: {}", err));
+                NetworkError::ConnectionError(format!("Failed to flush version: {err}"));
             return self.fail(ctx, network_error).await;
         }
 
@@ -76,7 +76,7 @@ impl RemoteNode {
         drop(self.reader_tasks.spawn(async move {
             loop {
                 let result = tokio::select! {
-                    _ = cancellation.cancelled() => break,
+                    () = cancellation.cancelled() => break,
                     result = async {
                         // R11: receive in short steps and RELEASE the
                         // connection lock between steps, so outbound sends
@@ -93,7 +93,7 @@ impl RemoteNode {
                                 Ok(ReceiveStep::Message(message)) => {
                                     return Ok((message, done));
                                 }
-                                Ok(ReceiveStep::Pending) | Ok(ReceiveStep::Idle) => {
+                                Ok(ReceiveStep::Pending | ReceiveStep::Idle) => {
                                     // Yield the lock window to writers before
                                     // the next read step.
                                     tokio::time::sleep(RECEIVE_STEP_YIELD).await;
@@ -108,7 +108,7 @@ impl RemoteNode {
                     Ok((message, _done)) => {
                         let command = message.command();
                         let delivered = tokio::select! {
-                            _ = cancellation.cancelled() => break,
+                            () = cancellation.cancelled() => break,
                             delivered = actor.tell_async(RemoteNodeCommand::Inbound(message)) => delivered,
                         };
                         if let Err(err) = delivered {
@@ -159,8 +159,8 @@ impl RemoteNode {
                 }
 
                 tokio::select! {
-                    _ = cancellation.cancelled() => break,
-                    _ = yield_now() => {}
+                    () = cancellation.cancelled() => break,
+                    () = yield_now() => {}
                 }
             }
         }));

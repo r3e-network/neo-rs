@@ -101,7 +101,7 @@ fn add_contract_to_snapshot(snapshot: &DataCache, contract: &ContractState) {
     );
     snapshot.add(
         id_key,
-        StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
+        StorageItem::from_bytes(contract.hash.to_bytes().clone()),
     );
 }
 

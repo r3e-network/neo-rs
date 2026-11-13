@@ -40,14 +40,14 @@ impl Actor for Blockchain {
             Ok(message) => {
                 match *message {
                     BlockchainCommand::PersistCompleted(persist) => {
-                        self.handle_persist_completed(persist).await
+                        self.handle_persist_completed(persist).await;
                     }
                     BlockchainCommand::Import(import) => self.handle_import(import, ctx).await,
                     BlockchainCommand::FillMemoryPool(fill) => {
-                        self.handle_fill_memory_pool(fill, ctx).await
+                        self.handle_fill_memory_pool(fill, ctx).await;
                     }
                     BlockchainCommand::Reverify(reverify) => {
-                        self.handle_reverify(reverify, ctx).await
+                        self.handle_reverify(reverify, ctx).await;
                     }
                     BlockchainCommand::InventoryBlock {
                         block,
@@ -55,14 +55,14 @@ impl Actor for Blockchain {
                         pre_verified,
                     } => {
                         self.handle_block_inventory(block, relay, pre_verified, ctx)
-                            .await?
+                            .await?;
                     }
                     BlockchainCommand::InventoryExtensible { payload, relay } => {
                         self.handle_extensible_inventory(payload, relay, ctx)
-                            .await?
+                            .await?;
                     }
                     BlockchainCommand::PreverifyCompleted(preverify) => {
-                        self.handle_preverify_completed(preverify, ctx).await
+                        self.handle_preverify_completed(preverify, ctx).await;
                     }
                     BlockchainCommand::Headers(headers) => {
                         self.handle_headers(headers);
@@ -71,7 +71,7 @@ impl Actor for Blockchain {
                     BlockchainCommand::DrainUnverified => self.handle_drain_unverified(ctx).await,
                     BlockchainCommand::FillCompleted(_) => {}
                     BlockchainCommand::RelayResult(result) => {
-                        self.handle_relay_result(result).await
+                        self.handle_relay_result(result).await;
                     }
                     BlockchainCommand::Initialize => self.initialize().await,
                 }
@@ -84,7 +84,7 @@ impl Actor for Blockchain {
                 Ok(message) => {
                     match *message {
                         BlockchainSystemCommand::AttachSystem(context) => {
-                            self.system_context = Some(context)
+                            self.system_context = Some(context);
                         }
                     }
                     Ok(())

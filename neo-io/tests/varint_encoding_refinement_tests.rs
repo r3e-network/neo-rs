@@ -11,15 +11,15 @@ fn test_single_byte_range_0_to_252_exhaustive() {
         let mut buf = Vec::with_capacity(1);
         write_var_int(n, &mut buf);
 
-        assert_eq!(buf.len(), 1, "Value {} should be single byte", n);
-        assert_eq!(buf[0], n as u8, "Byte value mismatch for {}", n);
+        assert_eq!(buf.len(), 1, "Value {n} should be single byte");
+        assert_eq!(buf[0], n as u8, "Byte value mismatch for {n}");
 
         let result = read_var_int_prefix(&buf);
-        assert!(result.is_some(), "Failed to decode {}", n);
+        assert!(result.is_some(), "Failed to decode {n}");
 
         let (decoded, width) = result.unwrap();
-        assert_eq!(decoded, n, "Round-trip failed for {}", n);
-        assert_eq!(width, 1, "Width should be 1 for {}", n);
+        assert_eq!(decoded, n, "Round-trip failed for {n}");
+        assert_eq!(width, 1, "Width should be 1 for {n}");
     }
 
     eprintln!("✓ Exhausted single-byte range 0-252 ({} encodings)", 253u64);
@@ -34,12 +34,12 @@ fn test_three_byte_range_253_to_65535() {
         let mut buf = Vec::new();
         write_var_int(n, &mut buf);
 
-        assert_eq!(buf.len(), 3, "Value {} should be 3 bytes", n);
-        assert_eq!(buf[0], 0xFD, "Marker should be FD for {}", n);
+        assert_eq!(buf.len(), 3, "Value {n} should be 3 bytes");
+        assert_eq!(buf[0], 0xFD, "Marker should be FD for {n}");
 
         let (decoded, width) = read_var_int_prefix(&buf).unwrap();
-        assert_eq!(decoded, n, "Decode mismatch for {}", n);
-        assert_eq!(width, 3, "Width should be 3 for {}", n);
+        assert_eq!(decoded, n, "Decode mismatch for {n}");
+        assert_eq!(width, 3, "Width should be 3 for {n}");
 
         eprintln!("  ✓ {} → [FD, {}, {}]", n, buf[1], buf[2]);
     }
@@ -61,16 +61,16 @@ fn test_five_byte_range_65536_to_u32_max() {
         let mut buf = Vec::with_capacity(5);
         write_var_int(n, &mut buf);
 
-        assert_eq!(buf.len(), 5, "Value {} should be 5 bytes", n);
-        assert_eq!(buf[0], 0xFE, "Marker should be FE for {}", n);
+        assert_eq!(buf.len(), 5, "Value {n} should be 5 bytes");
+        assert_eq!(buf[0], 0xFE, "Marker should be FE for {n}");
 
         let (decoded, width) = read_var_int_prefix(&buf).unwrap();
-        assert_eq!(decoded, n, "Decode mismatch for {}", n);
-        assert_eq!(width, 5, "Width should be 5 for {}", n);
+        assert_eq!(decoded, n, "Decode mismatch for {n}");
+        assert_eq!(width, 5, "Width should be 5 for {n}");
 
         // Verify little-endian reconstruction
         let reconstructed = u32::from_le_bytes([buf[1], buf[2], buf[3], buf[4]]) as u64;
-        assert_eq!(reconstructed, n, "LE reconstruction failed for {}", n);
+        assert_eq!(reconstructed, n, "LE reconstruction failed for {n}");
 
         eprintln!("  ✓ {} → [FE, {:?} (LE)]", n, &buf[1..5]);
     }
@@ -92,12 +92,12 @@ fn test_nine_byte_range_u32_max_plus() {
         let mut buf = Vec::with_capacity(9);
         write_var_int(n, &mut buf);
 
-        assert_eq!(buf.len(), 9, "Value {} should be 9 bytes", n);
-        assert_eq!(buf[0], 0xFF, "Marker should be FF for {}", n);
+        assert_eq!(buf.len(), 9, "Value {n} should be 9 bytes");
+        assert_eq!(buf[0], 0xFF, "Marker should be FF for {n}");
 
         let (decoded, width) = read_var_int_prefix(&buf).unwrap();
-        assert_eq!(decoded, n, "Decode mismatch for {}", n);
-        assert_eq!(width, 9, "Width should be 9 for {}", n);
+        assert_eq!(decoded, n, "Decode mismatch for {n}");
+        assert_eq!(width, 9, "Width should be 9 for {n}");
 
         // Verify full u64 LE reconstruction
         let reconstructed = u64::from_le_bytes([
@@ -105,11 +105,10 @@ fn test_nine_byte_range_u32_max_plus() {
         ]);
         assert_eq!(
             reconstructed, n,
-            "Full u64 LE reconstruction failed for {}",
-            n
+            "Full u64 LE reconstruction failed for {n}"
         );
 
-        eprintln!("  ✓ {} → [FF, ...] (verified)", n);
+        eprintln!("  ✓ {n} → [FF, ...] (verified)");
     }
 }
 
@@ -192,7 +191,7 @@ fn test_maximum_value_stays_in_five_byte() {
     // Verify next value requires more bytes
     assert_eq!(encoded_len(u32_max + 1), 9, "u32::MAX + 1 requires 9 bytes");
 
-    eprintln!("✓ Maximum 5-byte value: {} encoded compactly", u32_max);
+    eprintln!("✓ Maximum 5-byte value: {u32_max} encoded compactly");
 }
 
 /// Known Sequences Verification Against Existing Unit Tests
@@ -286,8 +285,7 @@ fn test_length_calculations_match_definitions() {
         let actual_len = encoded_len(*value);
         assert_eq!(
             actual_len, *expected_len,
-            "Length calculation failed for {}",
-            value
+            "Length calculation failed for {value}"
         );
 
         let mut buf = Vec::new();
@@ -295,8 +293,7 @@ fn test_length_calculations_match_definitions() {
         assert_eq!(
             buf.len(),
             *expected_len,
-            "Actual encoding size mismatch for {}",
-            value
+            "Actual encoding size mismatch for {value}"
         );
 
         let (_, width) = read_var_int_prefix(&buf).unwrap();
@@ -339,10 +336,7 @@ fn test_comprehensive_roundtrip_all_ranges() {
     roundtrip_check(2u64.pow(50), &mut total_tests);
     roundtrip_check(2u64.pow(63), &mut total_tests);
 
-    eprintln!(
-        "✓ Comprehensive roundtrip verified across {} test points",
-        total_tests
-    );
+    eprintln!("✓ Comprehensive roundtrip verified across {total_tests} test points");
 }
 
 /// Helper for roundtrip testing
@@ -351,10 +345,10 @@ fn roundtrip_check(n: u64, counter: &mut usize) {
     write_var_int(n, &mut buf);
 
     let result = read_var_int_prefix(&buf);
-    assert!(result.is_some(), "Failed for {}", n);
+    assert!(result.is_some(), "Failed for {n}");
 
     let (decoded, width) = result.unwrap();
-    assert_eq!(decoded, n, "Roundtrip failed for {}", n);
+    assert_eq!(decoded, n, "Roundtrip failed for {n}");
     assert_eq!(width, buf.len());
 
     *counter += 1;

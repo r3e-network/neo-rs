@@ -50,8 +50,7 @@ fn test_script_hash_always_uint160_size() {
         assert_eq!(
             hash.to_bytes().len(),
             20,
-            "Test {}: Script hash must always be exactly 20 bytes",
-            i
+            "Test {i}: Script hash must always be exactly 20 bytes"
         );
         // Verify it's a valid UInt160 value
         let _uint160_val: UInt160 = hash;
@@ -148,7 +147,7 @@ fn test_signature_extraction_from_invocation_script() {
         0x40, // Length byte (64 decimal)
     ]
     .into_iter()
-    .chain((0..64).map(|_| 0x01)) // 64-byte signature placeholder
+    .chain((0..64).map(|_| 0x01)) // 64-byte signature fixture
     .collect::<Vec<u8>>();
     let witness = Witness::new_with_scripts(valid_invocation.clone(), vec![]);
     // Test via reflection on internal structure
@@ -190,8 +189,7 @@ fn test_public_key_extraction_from_verification_script() {
     for i in 0..33 {
         assert_eq!(
             extracted_pk[i], TEST_PUBLIC_KEY_1[i],
-            "Byte {} mismatch in extracted public key",
-            i
+            "Byte {i} mismatch in extracted public key"
         );
     }
     // Verify compression format

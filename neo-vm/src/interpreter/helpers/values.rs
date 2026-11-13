@@ -39,7 +39,7 @@ pub(crate) fn pop_shift_count(stack: &mut Vec<StackValue>) -> Result<i64, String
 fn stack_value_i64(value: &StackValue, accept_buffer: bool) -> Result<Option<i64>, String> {
     match value {
         StackValue::Integer(value) => Ok(Some(*value)),
-        StackValue::Boolean(value) => Ok(Some(if *value { 1 } else { 0 })),
+        StackValue::Boolean(value) => Ok(Some(i64::from(*value))),
         _ => {
             let bytes = match value {
                 StackValue::ByteString(bytes) | StackValue::BigInteger(bytes) => {

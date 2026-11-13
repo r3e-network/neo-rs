@@ -64,7 +64,7 @@ impl NeoAccountState {
         let value = item.value_bytes();
         let bytes = value.as_ref();
         let stack_value = BinarySerializer::deserialize_stack_value(bytes)
-            .map_err(|err| format!("failed to deserialize NeoAccountState: {}", err))?;
+            .map_err(|err| format!("failed to deserialize NeoAccountState: {err}"))?;
         Self::from_stack_value(stack_value)
     }
 
@@ -76,10 +76,10 @@ impl NeoAccountState {
                 }
 
                 let balance = stack_value_to_bigint(&entries[0])
-                    .map_err(|err| format!("invalid balance: {}", err))?;
+                    .map_err(|err| format!("invalid balance: {err}"))?;
 
                 let balance_height_big = stack_value_to_bigint(&entries[1])
-                    .map_err(|err| format!("invalid balance height: {}", err))?;
+                    .map_err(|err| format!("invalid balance height: {err}"))?;
                 let balance_height = balance_height_big
                     .to_u32()
                     .ok_or_else(|| "balance height out of range".to_string())?;
@@ -98,12 +98,12 @@ impl NeoAccountState {
                     };
                     Some(
                         ECPoint::from_bytes(&bytes)
-                            .map_err(|err| format!("invalid vote public key: {}", err))?,
+                            .map_err(|err| format!("invalid vote public key: {err}"))?,
                     )
                 };
 
                 let last_gas_per_vote = stack_value_to_bigint(&entries[3])
-                    .map_err(|err| format!("invalid last gas per vote: {}", err))?;
+                    .map_err(|err| format!("invalid last gas per vote: {err}"))?;
 
                 Ok(Self {
                     balance,
@@ -170,7 +170,7 @@ impl CandidateState {
         }
 
         let stack_value = BinarySerializer::deserialize_stack_value(bytes)
-            .map_err(|err| format!("failed to deserialize CandidateState: {}", err))?;
+            .map_err(|err| format!("failed to deserialize CandidateState: {err}"))?;
         Self::from_stack_value(stack_value)
     }
 

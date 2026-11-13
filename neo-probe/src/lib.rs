@@ -387,7 +387,11 @@ fn update_length_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
 }
 
 fn hex_digest(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    bytes.iter().fold(String::new(), |mut output, byte| {
+        use std::fmt::Write as _;
+        write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
+        output
+    })
 }
 
 fn valid_hash(hash: &str) -> bool {

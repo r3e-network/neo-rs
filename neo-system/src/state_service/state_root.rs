@@ -227,8 +227,7 @@ impl Serializable for StateRoot {
             Some(<Witness as Serializable>::deserialize(reader)?)
         } else {
             return Err(IoError::invalid_data(format!(
-                "Expected 0 or 1 witness, got {}",
-                witness_count
+                "Expected 0 or 1 witness, got {witness_count}"
             )));
         };
 

@@ -53,7 +53,7 @@ fn test_too_short_signature_rejected() {
             assert_eq!(got, 32);
         }
         Err(_) => panic!("Expected InvalidSignatureLength error"),
-        Ok(_) => panic!("Should not accept too-short signature"),
+        Ok(()) => panic!("Should not accept too-short signature"),
     }
 }
 
@@ -74,7 +74,7 @@ fn test_too_long_signature_rejected() {
             assert_eq!(got, 128);
         }
         Err(_) => panic!("Expected InvalidSignatureLength error"),
-        Ok(_) => panic!("Should not accept too-long signature"),
+        Ok(()) => panic!("Should not accept too-long signature"),
     }
 }
 
@@ -123,7 +123,7 @@ fn test_serialization_returns_signature_only() {
 fn test_serialization_matches_coq_model() {
     // Create multiple commits with different signature content
     let signatures = [
-        vec![0u8; 64],   // All zeros (placeholder for real ECDSA)
+        vec![0u8; 64],   // All zeros (stand-in for real ECDSA bytes)
         vec![255u8; 64], // All ones
         (0..64).map(|i| (i % 256) as u8).collect::<Vec<_>>(), // Sequential pattern
     ];
@@ -221,7 +221,7 @@ fn test_validation_enforces_binary_gatekeeping() {
 /// **Test Category: Edge Cases and Boundaries**
 #[test]
 fn test_zero_values_with_valid_length() {
-    // Zero-filled signature (common placeholder in testing)
+    // Zero-filled signature (common test fixture)
     let zero_sig = vec![0u8; 64];
     let commit = CommitMessage::new(0, 0, 0, zero_sig);
 
@@ -327,7 +327,7 @@ fn test_comprehensive_coverage_summary() {
         let commit = CommitMessage::new(1, 0, 1, sig);
 
         match commit.validate() {
-            Ok(_) => {
+            Ok(()) => {
                 pass_lengths.insert(len);
             }
             Err(_) => {

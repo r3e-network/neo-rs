@@ -365,7 +365,7 @@ impl BaseNativeContract {
     /// Validates that a method exists and can be called.
     pub fn validate_method_call(&self, method: &str) -> Result<&NativeMethod> {
         self.find_method(method)
-            .ok_or_else(|| Error::native_contract(format!("Method not found: {}", method)))
+            .ok_or_else(|| Error::native_contract(format!("Method not found: {method}")))
     }
 }
 

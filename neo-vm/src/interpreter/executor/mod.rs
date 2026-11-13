@@ -83,8 +83,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
             if let Some(frame_index) = try_frames.find_uncaught_index() {
                 let frame_call_depth = try_frames
                     .get_mut(frame_index)
-                    .map(|frame| frame.call_depth)
-                    .unwrap_or(call_stack.len());
+                    .map_or(call_stack.len(), |frame| frame.call_depth);
                 while call_stack.len() > frame_call_depth {
                     if let Some((_, mut saved_locals, mut saved_args, saved_init)) =
                         call_stack.pop_and_restore()?
@@ -382,10 +381,10 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                     StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
                         match alloc::string::String::from_utf8(bytes.clone()) {
                             Ok(text) => format!("THROW: {text}"),
-                            Err(_) => format!("THROW: {:?}", msg),
+                            Err(_) => format!("THROW: {msg:?}"),
                         }
                     }
-                    _ => format!("THROW: {:?}", msg),
+                    _ => format!("THROW: {msg:?}"),
                 };
                 if try_frames.is_empty() {
                     return Ok(result_ops::fault_result(&stack, &locals, ip, err_msg));
@@ -512,7 +511,7 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
             ABORTMSG => {
                 let msg = pop_bytes(&mut stack)?;
                 let msg_str = String::from_utf8_lossy(&msg);
-                let err_msg = format!("ABORTMSG is executed. Reason: {}", msg_str);
+                let err_msg = format!("ABORTMSG is executed. Reason: {msg_str}");
                 // ABORTMSG is uncatchable — always FAULT
                 return Ok(result_ops::fault_result(&stack, &locals, ip, err_msg));
             }
@@ -521,10 +520,8 @@ pub(super) fn interpret_with_stack_and_syscalls_at_internal<H: SyscallProvider>(
                 let condition = pop_boolean(&mut stack)?;
                 if !condition {
                     let msg_str = String::from_utf8_lossy(&msg);
-                    let err_msg = format!(
-                        "ASSERTMSG is executed with false result. Reason: {}",
-                        msg_str
-                    );
+                    let err_msg =
+                        format!("ASSERTMSG is executed with false result. Reason: {msg_str}");
                     // ASSERTMSG is uncatchable — always FAULT
                     return Ok(result_ops::fault_result(&stack, &locals, ip, err_msg));
                 }

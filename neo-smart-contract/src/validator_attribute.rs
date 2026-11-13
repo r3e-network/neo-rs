@@ -123,7 +123,7 @@ mod tests {
         let validator = MaxLengthValidator::new(5);
         let item = StackValue::ByteString(vec![1, 2, 3, 4, 5, 6]);
         let err = validator.validate(&item).unwrap_err();
-        assert!(err.contains("5"));
+        assert!(err.contains('5'));
     }
 
     #[test]

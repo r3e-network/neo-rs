@@ -38,15 +38,15 @@ impl NeoToken {
                 })?
         };
         let snapshot = engine.snapshot_cache();
-        let expect_end = engine
-            .persisting_block()
-            .map(|block| block.index())
-            .unwrap_or_else(|| {
+        let expect_end = engine.persisting_block().map_or_else(
+            || {
                 LedgerContract::new()
                     .current_index(snapshot.as_ref())
                     .unwrap_or(0)
                     + 1
-            });
+            },
+            neo_protocol::payloads::Block::index,
+        );
         if end != expect_end {
             return Err(CoreError::native_contract(
                 "end height must equal current height + 1".to_string(),
@@ -249,9 +249,8 @@ impl NeoToken {
         let blocked_started = profiling.then(std::time::Instant::now);
         let policy = PolicyContract::new();
         let blocked_accounts = policy.blocked_accounts_snapshot(snapshot);
-        let blocked_ms = blocked_started
-            .map(|started| started.elapsed().as_secs_f64() * 1_000.0)
-            .unwrap_or(0.0);
+        let blocked_ms =
+            blocked_started.map_or(0.0, |started| started.elapsed().as_secs_f64() * 1_000.0);
         let has_blocked_accounts = !blocked_accounts.is_empty();
         let scan_started = profiling.then(std::time::Instant::now);
         let mut scanned_entries = 0usize;
@@ -376,19 +375,17 @@ impl NeoToken {
         let records = self.get_sorted_gas_records(snapshot, index);
         records
             .first()
-            .map(|(_, gas)| gas.clone())
-            .unwrap_or_else(|| BigInt::from(5_00000000i64)) // Default 5 GAS per block
+            .map_or_else(|| BigInt::from(5_00000000i64), |(_, gas)| gas.clone()) // Default 5 GAS per block
     }
 
     /// getRegisterPrice - returns current candidate registration price
     pub(super) fn get_register_price(&self, engine: &mut ApplicationEngine) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         let key = StorageKey::create(Self::ID, Self::PREFIX_REGISTER_PRICE);
-        let price = snapshot
-            .as_ref()
-            .try_get(&key)
-            .map(|item| item.to_bigint())
-            .unwrap_or_else(|| BigInt::from(Self::DEFAULT_REGISTER_PRICE));
+        let price = snapshot.as_ref().try_get(&key).map_or_else(
+            || BigInt::from(Self::DEFAULT_REGISTER_PRICE),
+            |item| item.to_bigint(),
+        );
         Ok(Self::encode_amount(&price))
     }
 
@@ -417,16 +414,14 @@ impl NeoToken {
 
         let snapshot = engine.snapshot_cache();
         let register_price_key = StorageKey::create(Self::ID, Self::PREFIX_REGISTER_PRICE);
-        let expected_price = snapshot
-            .as_ref()
-            .try_get(&register_price_key)
-            .map(|item| item.to_bigint())
-            .unwrap_or_else(|| BigInt::from(Self::DEFAULT_REGISTER_PRICE));
+        let expected_price = snapshot.as_ref().try_get(&register_price_key).map_or_else(
+            || BigInt::from(Self::DEFAULT_REGISTER_PRICE),
+            |item| item.to_bigint(),
+        );
 
         if amount != expected_price {
             return Err(CoreError::native_contract(format!(
-                "Incorrect GAS amount. Expected {} but received {}",
-                expected_price, amount
+                "Incorrect GAS amount. Expected {expected_price} but received {amount}"
             )));
         }
 
@@ -465,11 +460,10 @@ impl NeoToken {
         // Charge registration fee as execution fee (matches C# AddFee).
         let snapshot = engine.snapshot_cache();
         let key = StorageKey::create(Self::ID, Self::PREFIX_REGISTER_PRICE);
-        let price = snapshot
-            .as_ref()
-            .try_get(&key)
-            .map(|item| item.to_bigint())
-            .unwrap_or_else(|| BigInt::from(Self::DEFAULT_REGISTER_PRICE));
+        let price = snapshot.as_ref().try_get(&key).map_or_else(
+            || BigInt::from(Self::DEFAULT_REGISTER_PRICE),
+            |item| item.to_bigint(),
+        );
         if price.is_negative() {
             return Err(CoreError::native_contract(
                 "Registration price cannot be negative".to_string(),
@@ -482,11 +476,7 @@ impl NeoToken {
             engine.add_runtime_fee(fee)?;
         }
 
-        Ok(vec![if self.register_internal(engine, &pubkey)? {
-            1
-        } else {
-            0
-        }])
+        Ok(vec![u8::from(self.register_internal(engine, &pubkey)?)])
     }
 
     pub(super) fn register_internal(
@@ -600,11 +590,9 @@ impl NeoToken {
             return Ok(vec![0]);
         }
 
-        Ok(vec![if self.vote_internal(engine, &account, vote_to)? {
-            1
-        } else {
-            0
-        }])
+        Ok(vec![u8::from(
+            self.vote_internal(engine, &account, vote_to)?,
+        )])
     }
 
     /// voteInternal - actual voting logic (bypasses witness check)
@@ -652,8 +640,7 @@ impl NeoToken {
             let voters_key = StorageKey::create(Self::ID, Self::PREFIX_VOTERS_COUNT);
             let current_voters = snapshot_ref
                 .try_get(&voters_key)
-                .map(|item| item.to_bigint())
-                .unwrap_or_else(BigInt::zero);
+                .map_or_else(BigInt::zero, |item| item.to_bigint());
 
             // Validate voters count
             StateValidator::validate_voters_count(&current_voters, &current_voters)?;
@@ -711,7 +698,7 @@ impl NeoToken {
             }
         }
 
-        state_account.vote_to = vote_to.clone();
+        state_account.vote_to.clone_from(&vote_to);
 
         // C# Vote updates LastGasPerVote based on the new vote target:
         // - Voting for a candidate: set to latest accumulated reward for that candidate
@@ -732,13 +719,12 @@ impl NeoToken {
                 "Vote".to_string(),
                 vec![
                     StackItem::from_byte_string(account.to_bytes()),
-                    from.as_ref()
-                        .map(|pk| StackItem::from_byte_string(pk.as_bytes().to_vec()))
-                        .unwrap_or_else(StackItem::null),
-                    vote_to
-                        .as_ref()
-                        .map(|pk| StackItem::from_byte_string(pk.as_bytes().to_vec()))
-                        .unwrap_or_else(StackItem::null),
+                    from.as_ref().map_or_else(StackItem::null, |pk| {
+                        StackItem::from_byte_string(pk.as_bytes().to_vec())
+                    }),
+                    vote_to.as_ref().map_or_else(StackItem::null, |pk| {
+                        StackItem::from_byte_string(pk.as_bytes().to_vec())
+                    }),
                     StackItem::from_int(state_account.balance.clone()),
                 ],
             )
@@ -786,8 +772,7 @@ impl NeoToken {
             .saturating_add(1);
         let index = engine
             .persisting_block()
-            .map(|b| b.index().saturating_add(1))
-            .unwrap_or(fallback_index);
+            .map_or(fallback_index, |b| b.index().saturating_add(1));
 
         let context = engine.get_native_storage_context(&self.hash())?;
         // Create key with block index suffix

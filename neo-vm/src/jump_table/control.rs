@@ -409,8 +409,7 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         let eval_stack_len = context.evaluation_stack().len();
         if rvcount >= 0 && eval_stack_len != rvcount as usize {
             return Err(VmError::invalid_operation_msg(format!(
-                "Return value count mismatch: expected {}, but got {} items on the evaluation stack",
-                rvcount, eval_stack_len
+                "Return value count mismatch: expected {rvcount}, but got {eval_stack_len} items on the evaluation stack"
             )));
         }
 

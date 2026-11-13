@@ -235,7 +235,7 @@ impl ApplicationEngine {
         } else {
             self.native_state_reader
                 .contract(self.snapshot_cache.as_ref(), &contract_hash)?
-                .ok_or_else(|| Error::not_found(format!("Contract not found: {}", contract_hash)))?
+                .ok_or_else(|| Error::not_found(format!("Contract not found: {contract_hash}")))?
                 .id
         };
         // 3. Create storage context (matches C# StorageContext creation)

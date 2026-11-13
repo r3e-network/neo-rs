@@ -63,13 +63,17 @@ impl ContractEventDescriptor {
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "name": self.name,
-            "parameters": self.parameters.iter().map(|p| p.to_json()).collect::<Vec<_>>(),
+            "parameters": self.parameters.iter().map(super::contract_parameter_definition::ContractParameterDefinition::to_json).collect::<Vec<_>>(),
         })
     }
 
     /// Approximate serialized size of the event descriptor.
     pub fn size(&self) -> usize {
-        let params_size: usize = self.parameters.iter().map(|p| p.size()).sum();
+        let params_size: usize = self
+            .parameters
+            .iter()
+            .map(super::contract_parameter_definition::ContractParameterDefinition::size)
+            .sum();
         1 + self.name.len() + params_size
     }
 

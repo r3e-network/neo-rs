@@ -176,8 +176,7 @@ impl TaskManager {
                     target: "neo",
                     actor = %actor.path(),
                     start_height = plan
-                        .map(|plan| plan.start_height)
-                        .unwrap_or_else(|| current_height.saturating_add(1)),
+                        .map_or_else(|| current_height.saturating_add(1), |plan| plan.start_height),
                     limit_height = block_index_window_limit(current_height),
                     peer_height = session.last_block_index,
                     current_height = current_height,

@@ -238,7 +238,7 @@ pub fn estimate_message_size(message: &NetworkMessage) -> usize {
         ProtocolMessage::Headers(headers) => headers
             .headers
             .iter()
-            .map(|header| header.size())
+            .map(Serializable::size)
             .sum::<usize>(),
         ProtocolMessage::Transaction(tx) => tx.size(),
         ProtocolMessage::Inv(inv) => inv.hashes.len() * 32,

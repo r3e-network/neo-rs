@@ -128,7 +128,10 @@ mod tests {
             port: 20333,
         };
         let json = peer.to_json();
-        assert_eq!(json.get("port").and_then(|v| v.as_number()), Some(20333.0));
+        assert_eq!(
+            json.get("port").and_then(neo_json::JToken::as_number),
+            Some(20333.0)
+        );
 
         let parsed = RpcPeer::from_json(&json).expect("peer");
         assert_eq!(parsed.address, peer.address);

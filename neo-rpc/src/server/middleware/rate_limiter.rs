@@ -460,8 +460,7 @@ mod tests {
         let result = limiter.check(ip);
         assert!(
             result.is_blocked(),
-            "Expected blocked after burst exhausted, got {:?}",
-            result
+            "Expected blocked after burst exhausted, got {result:?}"
         );
     }
 
@@ -520,7 +519,9 @@ mod tests {
             max_rps: 10,
             burst: 10,
         });
-        let stale_at = Instant::now() - Duration::from_secs(11 * 60);
+        let stale_at = Instant::now()
+            .checked_sub(Duration::from_secs(11 * 60))
+            .unwrap();
         for index in 0..=4096u32 {
             let ip = IpAddr::from([
                 10,

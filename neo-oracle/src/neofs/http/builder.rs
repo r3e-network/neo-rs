@@ -24,7 +24,7 @@ impl OracleNeoFsProtocol {
             let value = if strip_bearer_prefix(token) != token {
                 token.to_string()
             } else {
-                format!("Bearer {}", token)
+                format!("Bearer {token}")
             };
             builder = builder.header(reqwest::header::AUTHORIZATION, value);
         }

@@ -728,7 +728,10 @@ mod tests {
 
         slot.clear_references();
         assert_eq!(slot.len(), 3);
-        assert!(slot.iter().all(|item| item.is_null()));
+        assert!(
+            slot.iter()
+                .all(crate::stack_item::stack_item::StackItem::is_null)
+        );
     }
 
     #[test]

@@ -258,13 +258,13 @@ mod tests {
         let err = StorageError::KeyNotFound {
             key: "some_key".to_string(),
         };
-        assert_eq!(format!("{}", err), "Key not found: some_key");
+        assert_eq!(format!("{err}"), "Key not found: some_key");
     }
 
     #[test]
     fn storage_error_read_only_display() {
         let err = StorageError::ReadOnly;
-        assert_eq!(format!("{}", err), "Storage is read-only");
+        assert_eq!(format!("{err}"), "Storage is read-only");
     }
 
     #[test]
@@ -272,6 +272,6 @@ mod tests {
         let err = StorageError::InvalidOperation {
             message: "custom error".to_string(),
         };
-        assert_eq!(format!("{}", err), "Invalid operation: custom error");
+        assert_eq!(format!("{err}"), "Invalid operation: custom error");
     }
 }

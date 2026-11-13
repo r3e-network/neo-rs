@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn test_key_builder_error_debug() {
         let err = KeyBuilderError::InvalidMaxLength;
-        let debug_str = format!("{:?}", err);
+        let debug_str = format!("{err:?}");
         assert!(debug_str.contains("InvalidMaxLength"));
     }
 

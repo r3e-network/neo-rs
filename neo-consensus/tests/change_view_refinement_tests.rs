@@ -61,11 +61,7 @@ fn test_all_reason_variants_validate() {
 
     for reason in reasons {
         let msg = ChangeViewMessage::new(100, 0, 1, 1_000_000, reason);
-        assert!(
-            msg.validate().is_ok(),
-            "Reason {:?} should be valid",
-            reason
-        );
+        assert!(msg.validate().is_ok(), "Reason {reason:?} should be valid");
     }
 }
 
@@ -223,7 +219,7 @@ fn test_reason_bounds_verification() {
         ChangeViewReason::TxInvalid,
         ChangeViewReason::BlockRejectedByPolicy,
     ] {
-        assert!(reason.to_byte() <= 5, "{:?} should be <= 5", reason);
+        assert!(reason.to_byte() <= 5, "{reason:?} should be <= 5");
     }
 }
 

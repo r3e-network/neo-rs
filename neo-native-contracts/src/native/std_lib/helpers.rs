@@ -13,8 +13,7 @@ const MAX_INPUT_LENGTH: usize = 1024;
 fn validate_args_not_empty(args: &[Vec<u8>], method: &str) -> Result<()> {
     if args.is_empty() {
         return Err(Error::native_contract(format!(
-            "{} requires at least one argument",
-            method
+            "{method} requires at least one argument"
         )));
     }
     Ok(())
@@ -41,7 +40,7 @@ fn extract_first_arg<'a>(args: &'a [Vec<u8>], method: &str) -> Result<&'a [u8]> 
 fn extract_first_arg_as_string(args: &[Vec<u8>], method: &str) -> Result<String> {
     let data = extract_first_arg(args, method)?;
     String::from_utf8(data.to_vec())
-        .map_err(|_| Error::native_contract(format!("{} requires valid UTF-8 string", method)))
+        .map_err(|_| Error::native_contract(format!("{method} requires valid UTF-8 string")))
 }
 
 impl StdLib {
@@ -81,7 +80,7 @@ impl StdLib {
         }
         let base = BigInt::from_signed_bytes_le(&args[index]);
         base.to_i32()
-            .ok_or_else(|| Error::native_contract(format!("Invalid base argument for {}", method)))
+            .ok_or_else(|| Error::native_contract(format!("Invalid base argument for {method}")))
     }
 
     pub(super) fn parse_hex_twos_complement(&self, input: &str) -> Result<BigInt> {
@@ -147,7 +146,7 @@ impl StdLib {
         let mut hex = unsigned.to_str_radix(16);
         if hex.len() < nibbles {
             let padding = "0".repeat(nibbles - hex.len());
-            hex = format!("{}{}", padding, hex);
+            hex = format!("{padding}{hex}");
         }
         hex
     }

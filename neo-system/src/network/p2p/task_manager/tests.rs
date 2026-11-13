@@ -183,8 +183,9 @@ fn stalled_frontier_is_released_and_directly_requested_after_persistence_timeout
     );
     let path = insert_session(&mut manager, &actor);
     manager.last_seen_persisted_index = 8;
-    manager.last_persisted_at =
-        std::time::Instant::now() - manager.task_timeout - Duration::from_secs(1);
+    manager.last_persisted_at = std::time::Instant::now()
+        .checked_sub(manager.task_timeout + Duration::from_secs(1))
+        .unwrap();
     let session = &mut manager.sessions.get_mut(&path).expect("session").session;
     session.store_received_block(9, block_with_index_and_nonce(9, 1));
     session.register_index_task(9);
@@ -206,8 +207,9 @@ fn stalled_frontier_is_released_and_directly_requested_after_persistence_timeout
 fn saturated_frontier_retry_does_not_evict_other_peer_caches() {
     let mut manager = TaskManager::new();
     manager.last_seen_persisted_index = 8;
-    manager.last_persisted_at =
-        std::time::Instant::now() - manager.task_timeout - Duration::from_secs(1);
+    manager.last_persisted_at = std::time::Instant::now()
+        .checked_sub(manager.task_timeout + Duration::from_secs(1))
+        .unwrap();
     for _ in 0..MAX_CONCURRENT_TASKS {
         assert!(manager.increment_index_task(9));
     }
@@ -322,7 +324,9 @@ async fn timed_out_block_peer_does_not_reclaim_batch_before_other_peers() {
         .session;
     timed_out_session.index_tasks.insert(
         9,
-        std::time::Instant::now() - manager.task_timeout - Duration::from_secs(1),
+        std::time::Instant::now()
+            .checked_sub(manager.task_timeout + Duration::from_secs(1))
+            .unwrap(),
     );
     assert!(manager.increment_index_task(9));
 

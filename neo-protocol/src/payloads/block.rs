@@ -168,7 +168,7 @@ impl SerializablePayload for Block {
         1 + self
             .transactions
             .iter()
-            .map(|t| t.witness_count())
+            .map(neo_primitives::SerializablePayload::witness_count)
             .sum::<usize>()
     }
     fn invocation_script(&self, index: usize) -> &[u8] {

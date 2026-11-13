@@ -184,6 +184,10 @@ impl Serializable for BlockHeader {
     fn size(&self) -> usize {
         Self::UNSIGNED_WIRE_SIZE
             + get_var_size(self.witnesses.len() as u64)
-            + self.witnesses.iter().map(|w| w.size()).sum::<usize>()
+            + self
+                .witnesses
+                .iter()
+                .map(super::super::witness::Witness::size)
+                .sum::<usize>()
     }
 }

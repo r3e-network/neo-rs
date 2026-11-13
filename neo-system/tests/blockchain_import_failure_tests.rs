@@ -73,7 +73,7 @@ async fn persist_block_reports_fee_burn_failure_for_unfunded_sender() {
     let Err(err) = system.persist_block(neo_protocol::execution::Block::from(&block)) else {
         panic!("persist should fail when sender cannot pay GAS fees")
     };
-    let message = err.to_string();
+    let message = err.clone();
     assert!(
         message.contains("GasToken burn failed")
             || message.contains("Insufficient balance for burn"),

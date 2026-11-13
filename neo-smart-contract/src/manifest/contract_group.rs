@@ -62,7 +62,7 @@ impl ContractGroup {
         let public_key_bytes = self
             .pub_key
             .encode_compressed()
-            .map_err(|e| Error::invalid_data(format!("Failed to encode public key: {}", e)))?;
+            .map_err(|e| Error::invalid_data(format!("Failed to encode public key: {e}")))?;
 
         // Convert signature to array format
         let signature_array: [u8; 64] = <[u8; 64]>::try_from(self.signature.as_slice())
@@ -111,7 +111,7 @@ impl ContractGroup {
             .ok_or_else(|| Error::invalid_data("ContractGroup signature must be byte string"))?;
 
         let pub_key = ECPoint::from_bytes(&pub_key_bytes)
-            .map_err(|e| Error::invalid_data(format!("Failed to decode ECPoint: {}", e)))?;
+            .map_err(|e| Error::invalid_data(format!("Failed to decode ECPoint: {e}")))?;
 
         Ok(Self {
             pub_key,
@@ -219,13 +219,13 @@ impl<'de> Deserialize<'de> for ContractGroup {
         let helper = ContractGroupSerde::deserialize(deserializer)?;
 
         let pubkey_bytes = hex::decode(helper.pubkey)
-            .map_err(|e| serde::de::Error::custom(format!("Invalid group pubkey: {}", e)))?;
+            .map_err(|e| serde::de::Error::custom(format!("Invalid group pubkey: {e}")))?;
         let pub_key = ECPoint::decode(&pubkey_bytes, ECCurve::secp256r1())
-            .map_err(|e| serde::de::Error::custom(format!("Invalid group pubkey: {}", e)))?;
+            .map_err(|e| serde::de::Error::custom(format!("Invalid group pubkey: {e}")))?;
 
         let signature = general_purpose::STANDARD
             .decode(helper.signature.as_bytes())
-            .map_err(|e| serde::de::Error::custom(format!("Invalid group signature: {}", e)))?;
+            .map_err(|e| serde::de::Error::custom(format!("Invalid group signature: {e}")))?;
 
         Ok(Self { pub_key, signature })
     }

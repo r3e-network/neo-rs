@@ -26,11 +26,7 @@ mod tests {
         for (bytes, expected) in test_cases {
             let mut reader = MemoryReader::new(&bytes);
             let result = reader.read_int32().unwrap();
-            assert_eq!(
-                result, expected,
-                "Failed to read i32 from bytes: {:?}",
-                bytes
-            );
+            assert_eq!(result, expected, "Failed to read i32 from bytes: {bytes:?}");
         }
     }
 
@@ -47,11 +43,7 @@ mod tests {
         for (bytes, expected) in test_cases {
             let mut reader = MemoryReader::new(&bytes);
             let result = reader.read_uint32().unwrap();
-            assert_eq!(
-                result, expected,
-                "Failed to read u32 from bytes: {:?}",
-                bytes
-            );
+            assert_eq!(result, expected, "Failed to read u32 from bytes: {bytes:?}");
         }
     }
 
@@ -75,11 +67,7 @@ mod tests {
         for (bytes, expected) in test_cases {
             let mut reader = MemoryReader::new(&bytes);
             let result = reader.read_int64().unwrap();
-            assert_eq!(
-                result, expected,
-                "Failed to read i64 from bytes: {:?}",
-                bytes
-            );
+            assert_eq!(result, expected, "Failed to read i64 from bytes: {bytes:?}");
         }
     }
 
@@ -124,8 +112,7 @@ mod tests {
             let result = reader.read_var_int(u64::MAX).unwrap();
             assert_eq!(
                 result, expected,
-                "Failed to read var_int from bytes: {:?}",
-                bytes
+                "Failed to read var_int from bytes: {bytes:?}"
             );
         }
     }
@@ -147,8 +134,7 @@ mod tests {
             let result = reader.read_var_string(1000).unwrap();
             assert_eq!(
                 result, expected,
-                "Failed to read var_string from bytes: {:?}",
-                bytes
+                "Failed to read var_string from bytes: {bytes:?}"
             );
         }
     }
@@ -167,8 +153,7 @@ mod tests {
             let result = reader.read_boolean().unwrap();
             assert_eq!(
                 result, expected,
-                "Failed to read boolean from bytes: {:?}",
-                bytes
+                "Failed to read boolean from bytes: {bytes:?}"
             );
         }
     }

@@ -84,7 +84,7 @@ pub fn verify_witness<V: VerifiableExt>(
     if witness.verification_script.is_empty() {
         let mut contract = ContractManagement::get_contract_from_snapshot(snapshot, hash)?
             .ok_or_else(|| {
-                CoreError::invalid_operation(format!("Contract not found for hash {}", hash))
+                CoreError::invalid_operation(format!("Contract not found for hash {hash}"))
             })?;
         let verify_method = contract
             .manifest
@@ -141,9 +141,9 @@ pub fn verify_witness<V: VerifiableExt>(
             result_stack.len(),
         )));
     }
-    let result = result_stack.peek(0).map_err(|error| {
-        CoreError::invalid_operation(format!("Failed to peek result: {}", error))
-    })?;
+    let result = result_stack
+        .peek(0)
+        .map_err(|error| CoreError::invalid_operation(format!("Failed to peek result: {error}")))?;
     if !result.as_bool().unwrap_or(false) {
         return Err(CoreError::invalid_operation(
             "Verification returned false".to_string(),

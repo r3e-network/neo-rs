@@ -261,7 +261,7 @@ fn test_murmur32_distribution() {
     let mut hashes = Vec::new();
 
     for i in 0..100 {
-        let data = format!("item_{}", i);
+        let data = format!("item_{i}");
         let hash = murmur32(data.as_bytes(), seed);
         hashes.push(hash);
     }

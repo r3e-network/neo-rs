@@ -58,7 +58,9 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
         .as_ref()
         .map(|path| path.to_string_lossy().to_string())
         .or_else(|| node_config.storage_path());
-    let backend_name = node_config.storage_backend().map(|name| name.to_string());
+    let backend_name = node_config
+        .storage_backend()
+        .map(std::string::ToString::to_string);
 
     let protocol_settings: ProtocolSettings = node_config.protocol_settings();
     let read_only_storage = node_config.storage.read_only.unwrap_or(false);
@@ -123,10 +125,7 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     }
     if store_provider.is_some() && storage_path.is_none() {
         let backend = backend_name.unwrap_or_else(|| "unknown".to_string());
-        bail!(
-            "storage backend '{}' requires a data path (--storage or [storage.path])",
-            backend
-        );
+        bail!("storage backend '{backend}' requires a data path (--storage or [storage.path])");
     }
 
     let state_service_settings =
@@ -135,8 +134,7 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     // Save auto_verify flag before moving state_service_settings
     let state_service_auto_verify = state_service_settings
         .as_ref()
-        .map(|s| s.auto_verify)
-        .unwrap_or(false);
+        .is_some_and(|s| s.auto_verify);
 
     let dbft_settings = node_config.dbft_settings(&protocol_settings)?;
 
@@ -469,8 +467,8 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
 
     if let Some(stop_height) = live_stop_height {
         tokio::select! {
-            _ = wait_for_shutdown_signal() => {}
-            _ = wait_for_live_stop_height(system.clone(), stop_height) => {}
+            () = wait_for_shutdown_signal() => {}
+            () = wait_for_live_stop_height(system.clone(), stop_height) => {}
         }
     } else {
         wait_for_shutdown_signal().await;
@@ -521,7 +519,7 @@ pub(crate) async fn run(cli: NodeCli) -> Result<()> {
     info!(target: "neo", "storage flush complete");
 
     match shutdown_result {
-        Ok(Ok(_)) => info!(target: "neo", "system shutdown complete"),
+        Ok(Ok(())) => info!(target: "neo", "system shutdown complete"),
         Ok(Err(e)) => {
             return Err(anyhow::anyhow!(e.to_string())).context("failed to shut down NeoSystem");
         }
@@ -547,10 +545,7 @@ async fn run_migration(cli: &NodeCli) -> Result<()> {
         match type_str.to_lowercase().as_str() {
             "neo-cli" | "neocli" => NodeImplementation::NeoCli,
             "neo-go" | "neogo" => NodeImplementation::NeoGo,
-            _ => bail!(
-                "Invalid migration type: {}. Use 'neo-cli' or 'neo-go'",
-                type_str
-            ),
+            _ => bail!("Invalid migration type: {type_str}. Use 'neo-cli' or 'neo-go'"),
         }
     } else {
         info!("Auto-detecting implementation type...");

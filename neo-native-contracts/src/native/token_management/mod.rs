@@ -250,7 +250,7 @@ impl TokenManagement {
 
         self.emit_created_event(engine, &asset_id, &token_type)?;
 
-        Ok(asset_id.to_bytes().to_vec())
+        Ok(asset_id.to_bytes().clone())
     }
 
     fn invoke_mint(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {

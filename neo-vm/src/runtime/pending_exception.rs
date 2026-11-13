@@ -40,14 +40,14 @@ impl<V: core::fmt::Debug> PendingException<V> {
     pub(crate) fn fault_message(&self) -> String {
         match self {
             Self::Message(message) => message.clone(),
-            Self::ThrownValue(value) => format!("exception: {:?}", value),
+            Self::ThrownValue(value) => format!("exception: {value:?}"),
         }
     }
 
     pub(crate) fn into_fault_message(self) -> String {
         match self {
             Self::Message(message) => message,
-            Self::ThrownValue(value) => format!("THROW: {:?}", value),
+            Self::ThrownValue(value) => format!("THROW: {value:?}"),
         }
     }
 }

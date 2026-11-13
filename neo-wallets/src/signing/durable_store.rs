@@ -762,7 +762,14 @@ mod tests {
         }
         let bytes = fs::read(&path).expect("read repaired journal");
         assert!(bytes.ends_with(b"\n"));
-        assert_eq!(bytes.iter().filter(|byte| **byte == b'\n').count(), 2);
+        // Not the naive filter-count idiom: the workspace has no bytecount dep.
+        assert_eq!(
+            bytes
+                .iter()
+                .map(|byte| usize::from(*byte == b'\n'))
+                .sum::<usize>(),
+            2
+        );
         let store = DurableSigningStore::open(&path).expect("repaired journal replays");
         assert!(store.load("first").await.expect("first load").is_some());
         assert!(store.load("second").await.expect("second load").is_some());

@@ -98,7 +98,7 @@ fn primitive_result_err() {
 #[test]
 fn primitive_error_debug_format() {
     let err = PrimitiveError::invalid_format("test");
-    let debug = format!("{:?}", err);
+    let debug = format!("{err:?}");
     assert!(debug.contains("InvalidFormat"));
 }
 

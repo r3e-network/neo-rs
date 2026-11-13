@@ -220,7 +220,7 @@ impl MptStoreSnapshot for TrieNodeStore {
         } else {
             self.store_cache.data_cache().try_add(storage_key, item)
         };
-        result.map_err(|e| MptError::storage(format!("failed to persist MPT node: {}", e)))
+        result.map_err(|e| MptError::storage(format!("failed to persist MPT node: {e}")))
     }
 
     fn delete(&self, key: Vec<u8>) -> MptResult<()> {
@@ -229,7 +229,7 @@ impl MptStoreSnapshot for TrieNodeStore {
             self.store_cache
                 .data_cache()
                 .try_delete(&storage_key)
-                .map_err(|e| MptError::storage(format!("failed to delete MPT node: {}", e)))?;
+                .map_err(|e| MptError::storage(format!("failed to delete MPT node: {e}")))?;
         }
         Ok(())
     }
@@ -271,7 +271,7 @@ impl MptStoreSnapshot for BlockTrieNodeStore {
         } else {
             self.snapshot.try_add(storage_key, item)
         };
-        result.map_err(|e| MptError::storage(format!("failed to stage MPT node: {}", e)))
+        result.map_err(|e| MptError::storage(format!("failed to stage MPT node: {e}")))
     }
 
     fn put_with_hint(
@@ -292,7 +292,7 @@ impl MptStoreSnapshot for BlockTrieNodeStore {
                 TrieNodeStore::node_key(&key),
                 StorageItem::from_bytes(value),
             )
-            .map_err(|e| MptError::storage(format!("failed to stage new MPT node: {}", e)))
+            .map_err(|e| MptError::storage(format!("failed to stage new MPT node: {e}")))
     }
 
     fn put_full_state(&self, key: Vec<u8>, value: Vec<u8>) -> MptResult<()> {
@@ -304,7 +304,7 @@ impl MptStoreSnapshot for BlockTrieNodeStore {
                 TrieNodeStore::node_key(&key),
                 StorageItem::from_bytes(value),
             )
-            .map_err(|e| MptError::storage(format!("failed to stage full-state MPT node: {}", e)))
+            .map_err(|e| MptError::storage(format!("failed to stage full-state MPT node: {e}")))
     }
 
     fn delete(&self, key: Vec<u8>) -> MptResult<()> {
@@ -312,7 +312,7 @@ impl MptStoreSnapshot for BlockTrieNodeStore {
         if self.get_item(&storage_key).is_some() {
             self.snapshot
                 .try_delete(&storage_key)
-                .map_err(|e| MptError::storage(format!("failed to stage MPT deletion: {}", e)))?;
+                .map_err(|e| MptError::storage(format!("failed to stage MPT deletion: {e}")))?;
         }
         Ok(())
     }
@@ -442,7 +442,7 @@ impl StateServiceCommitHandlers {
             .lock()
             .unwrap()
             .as_ref()
-            .map_or((0, 0), |root| root.resolved_retention_stats());
+            .map_or((0, 0), neo_crypto::Node::resolved_retention_stats);
         StateRootNodeCacheStats {
             enabled: cache.is_some() && self.node_cache_enabled.load(Ordering::Relaxed),
             capacity: cache.as_ref().map_or(0, |cache| cache.capacity()),
@@ -633,11 +633,11 @@ impl StateServiceCommitHandlers {
         for (key, value) in changes {
             match value {
                 Some(value) => trie.put(key, value).map_err(|e| {
-                    StateServiceError::new(format!("MPT put failed for storage key: {}", e))
+                    StateServiceError::new(format!("MPT put failed for storage key: {e}"))
                 })?,
                 None => {
                     trie.delete(key).map_err(|e| {
-                        StateServiceError::new(format!("MPT delete failed for storage key: {}", e))
+                        StateServiceError::new(format!("MPT delete failed for storage key: {e}"))
                     })?;
                 }
             }
@@ -646,7 +646,7 @@ impl StateServiceCommitHandlers {
         // Flush the new/changed nodes into the shared node store so they commit
         // atomically with this block.
         trie.commit_with_parallelism(parallel_hash)
-            .map_err(|e| StateServiceError::new(format!("MPT commit failed: {}", e)))?;
+            .map_err(|e| StateServiceError::new(format!("MPT commit failed: {e}")))?;
 
         let root_hash = trie.root_hash().ok_or_else(|| {
             StateServiceError::new(
@@ -713,8 +713,7 @@ impl StateServiceCommitHandlers {
                     .map(|record| record.root_hash)
                     .ok_or_else(|| {
                         StateServiceError::new(format!(
-                            "failed to re-read persisted state root at index {}",
-                            index
+                            "failed to re-read persisted state root at index {index}"
                         ))
                     })?;
                 *self.current_root.lock().unwrap() = Some(root);
@@ -972,7 +971,7 @@ impl crate::events::handlers::CommittingHandler for StateServiceCommitHandlers {
 
         match self
             .commit_block_with_parallelism(height, snapshot, !block.transactions.is_empty())
-            .and_then(|_| self.stage_local_root_progress(system, snapshot))
+            .and_then(|()| self.stage_local_root_progress(system, snapshot))
         {
             Ok(()) => {
                 debug!(
@@ -1009,7 +1008,7 @@ impl crate::events::handlers::CommittingHandler for StateServiceCommitHandlers {
 
         let height = block.index();
         self.commit_block_with_parallelism(height, snapshot, !block.transactions.is_empty())
-            .and_then(|_| self.stage_local_root_progress(system, snapshot))
+            .and_then(|()| self.stage_local_root_progress(system, snapshot))
             .map_err(|e| {
                 error!(
                     target: "neo::state_service",
@@ -1726,7 +1725,7 @@ mod tests {
         let handlers = StateServiceCommitHandlers::new(cache, true)
             .unwrap()
             .with_event_sink(Arc::new(move |event| {
-                sink_capture.lock().unwrap().push(event)
+                sink_capture.lock().unwrap().push(event);
             }));
 
         // First compute state root

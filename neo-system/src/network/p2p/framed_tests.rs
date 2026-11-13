@@ -72,7 +72,7 @@ async fn silent_pair() -> Option<(TcpStream, TcpStream)> {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return None,
-        Err(err) => panic!("bind listener: {}", err),
+        Err(err) => panic!("bind listener: {err}"),
     };
     let addr = listener.local_addr().expect("listener addr");
 
@@ -121,8 +121,7 @@ async fn read_frame_times_out_when_peer_silent() {
     let result = read_frame(&mut client_stream, &cfg, false).await;
     assert!(
         matches!(result, Err(NetworkError::Timeout { .. })),
-        "expected timeout error, got: {:?}",
-        result
+        "expected timeout error, got: {result:?}"
     );
 }
 
@@ -136,8 +135,7 @@ async fn read_frame_times_out_in_active_session_when_peer_silent() {
     let result = read_frame(&mut client_stream, &cfg, true).await;
     assert!(
         matches!(result, Err(NetworkError::Timeout { .. })),
-        "expected active timeout error, got: {:?}",
-        result
+        "expected active timeout error, got: {result:?}"
     );
 }
 
@@ -156,8 +154,7 @@ async fn read_frame_times_out_when_partial_frame_stalls() {
     let result = read_frame(&mut client_stream, &cfg, false).await;
     assert!(
         matches!(result, Err(NetworkError::Timeout { .. })),
-        "expected partial-frame timeout, got: {:?}",
-        result
+        "expected partial-frame timeout, got: {result:?}"
     );
 }
 
@@ -178,10 +175,9 @@ async fn read_frame_rejects_partial_frame_eof() {
     assert!(
         matches!(
             result,
-            Err(NetworkError::ConnectionError(_)) | Err(NetworkError::InvalidMessage { .. })
+            Err(NetworkError::ConnectionError(_) | NetworkError::InvalidMessage { .. })
         ),
-        "expected partial-frame EOF to fail closed, got: {:?}",
-        result
+        "expected partial-frame EOF to fail closed, got: {result:?}"
     );
 }
 
@@ -215,8 +211,7 @@ async fn write_all_vectored_with_timeout_rejects_zero_byte_write() {
 
     assert!(
         matches!(result, Err(NetworkError::ConnectionError(ref message)) if message.contains("wrote zero bytes")),
-        "expected zero-write connection error, got: {:?}",
-        result
+        "expected zero-write connection error, got: {result:?}"
     );
 }
 

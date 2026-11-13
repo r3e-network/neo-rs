@@ -74,7 +74,7 @@ impl RpcServerApplicationLogs {
             })
             .and_then(|text| {
                 UInt256::from_str(text)
-                    .map_err(|e| invalid_params(format!("invalid hash '{}': {}", text, e)))
+                    .map_err(|e| invalid_params(format!("invalid hash '{text}': {e}")))
             })
     }
 }

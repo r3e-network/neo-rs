@@ -158,7 +158,7 @@ pub fn parse_uint160(
 ) -> Result<UInt160, RpcException> {
     let text = expect_string_param(params, index, method)?;
     UInt160::from_str(&text)
-        .map_err(|err| invalid_params(format!("invalid UInt160 '{}': {}", text, err)))
+        .map_err(|err| invalid_params(format!("invalid UInt160 '{text}': {err}")))
 }
 
 /// Parses a UInt256 from JSON-RPC params.
@@ -170,7 +170,7 @@ pub fn parse_uint256(
 ) -> Result<UInt256, RpcException> {
     let text = expect_string_param(params, index, method)?;
     UInt256::from_str(&text)
-        .map_err(|err| invalid_params(format!("invalid UInt256 '{}': {}", text, err)))
+        .map_err(|err| invalid_params(format!("invalid UInt256 '{text}': {err}")))
 }
 
 /// Parses a hash (UInt256) parameter, accepting both hex and base64.
@@ -206,7 +206,7 @@ pub fn parse_verbose(param: Option<&Value>) -> Result<bool, RpcException> {
     match param {
         None | Some(Value::Null) => Ok(false),
         Some(Value::Bool(b)) => Ok(*b),
-        Some(Value::Number(n)) => Ok(n.as_i64().map(|v| v != 0).unwrap_or(false)),
+        Some(Value::Number(n)) => Ok(n.as_i64().is_some_and(|v| v != 0)),
         Some(_) => Err(invalid_params("verbose must be a boolean")),
     }
 }

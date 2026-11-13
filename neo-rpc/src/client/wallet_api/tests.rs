@@ -38,7 +38,7 @@ fn load_rpc_case_result(name: &str) -> Option<JObject> {
         let obj = token.as_object().expect("case object");
         let case_name = obj
             .get("Name")
-            .and_then(|value| value.as_string())
+            .and_then(neo_json::JToken::as_string)
             .unwrap_or_default();
         if case_name.eq_ignore_ascii_case(name) {
             let response = obj
@@ -781,7 +781,7 @@ async fn wallet_api_wait_transaction_returns_confirmed_tx() {
         rpc_tx.block_hash,
         result_json
             .get("blockhash")
-            .and_then(|v| v.as_string())
+            .and_then(neo_json::JToken::as_string)
             .and_then(|s| UInt256::parse(&s).ok())
     );
 }

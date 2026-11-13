@@ -26,9 +26,7 @@ pub(super) async fn handle_post_request(
     auth_header: Option<String>,
     body: Bytes,
 ) -> Result<HttpResponse, Infallible> {
-    let client_ip = remote
-        .map(|addr| addr.ip())
-        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let client_ip = remote.map_or(IpAddr::V4(Ipv4Addr::LOCALHOST), |addr| addr.ip());
 
     // A11: do not pre-charge Standard here — process_object charges the method tier once.
     let (response, unauthorized) = process_body(
@@ -52,9 +50,7 @@ pub(super) async fn handle_get_request(
     raw_query: String,
     max_query_len: u64,
 ) -> Result<HttpResponse, Infallible> {
-    let client_ip = remote
-        .map(|addr| addr.ip())
-        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let client_ip = remote.map_or(IpAddr::V4(Ipv4Addr::LOCALHOST), |addr| addr.ip());
 
     // A11: charge only inside process_object (method tier). Pre-charging doubled GET cost.
     // Oversized / unparsable queries still pay Standard so they cannot bypass the limiter.

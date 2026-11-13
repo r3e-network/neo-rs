@@ -114,7 +114,10 @@ pub fn validate_merkle_root(
         }
         return Ok(());
     }
-    let tx_hashes: Vec<UInt256> = transactions.iter().map(|tx| tx.hash()).collect();
+    let tx_hashes: Vec<UInt256> = transactions
+        .iter()
+        .map(neo_protocol::payloads::Transaction::hash)
+        .collect();
     match MerkleTree::compute_root(&tx_hashes) {
         Some(computed_root) => {
             if computed_root != *merkle_root {
@@ -261,7 +264,7 @@ mod tests {
         );
         assert_eq!(
             BlockValidationError::TransactionVerificationFailed { index: 3, hash }.to_string(),
-            format!("Transaction {} at index 3 failed verification", hash)
+            format!("Transaction {hash} at index 3 failed verification")
         );
         assert_eq!(
             BlockValidationError::InvalidWitnessScript {
