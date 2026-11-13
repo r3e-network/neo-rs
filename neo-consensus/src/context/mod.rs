@@ -35,6 +35,19 @@ pub const MAX_PREPARE_REQUEST_FUTURE_MS_FACTOR: u64 = 8;
 /// Matches C# `DBFTPlugin`'s message caching behavior
 pub const MAX_MESSAGE_CACHE_SIZE: usize = 10_000;
 
+/// Maximum number of verification-rejected message hashes retained at once.
+/// Deliberately far smaller than [`MAX_MESSAGE_CACHE_SIZE`]: rejected hashes
+/// are attacker-supplied, so the cache they populate must stay cheap.
+pub const MAX_REJECTED_MESSAGE_CACHE_SIZE: usize = 1_024;
+
+/// How long (ms) a verification-rejected message hash suppresses replays of
+/// that payload. The hash covers only the unsigned payload bytes, so a longer
+/// TTL would also suppress a legitimate retransmission carrying a different
+/// (valid) signature over the same unsigned data; this window bounds that
+/// availability cost while still capping replays to one secp256r1
+/// verification per interval per hash.
+pub const REJECTED_MESSAGE_TTL_MS: u64 = 10_000;
+
 /// Consensus state enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConsensusState {
@@ -256,6 +269,10 @@ pub struct ConsensusContext {
     // Message deduplication (replay attack prevention)
     /// Cache of seen message hashes to prevent duplicate processing
     seen_message_hashes: LruCache<UInt256, ()>,
+    /// Verification-rejected message hashes (`hash` -> rejection timestamp in
+    /// ms). Replay guard for payloads whose signature verification failed, so
+    /// retransmitting them cannot force repeated secp256r1 work.
+    rejected_message_hashes: LruCache<UInt256, u64>,
     /// Payload hashes for which this node already sent a recovery response.
     /// C# keeps these hashes for the whole block, including stale ChangeView payloads.
     recovery_response_hashes: LruCache<UInt256, ()>,
@@ -319,9 +336,17 @@ impl ConsensusContext {
             last_change_view_timestamps: HashMap::new(),
             last_seen_messages: HashMap::new(),
             seen_message_hashes: Self::new_seen_message_cache(),
+            rejected_message_hashes: Self::new_rejected_message_cache(),
             recovery_response_hashes: Self::new_seen_message_cache(),
             local_commit_persistence: None,
         }
+    }
+
+    fn new_rejected_message_cache() -> LruCache<UInt256, u64> {
+        LruCache::new(
+            NonZeroUsize::new(MAX_REJECTED_MESSAGE_CACHE_SIZE)
+                .expect("rejected message cache capacity must be non-zero"),
+        )
     }
 
     fn new_seen_message_cache() -> LruCache<UInt256, ()> {
@@ -794,6 +819,37 @@ impl ConsensusContext {
         self.seen_message_hashes.put(*hash, ());
     }
 
+    /// Returns whether `hash` failed signature verification within
+    /// [`REJECTED_MESSAGE_TTL_MS`] of `now`.
+    ///
+    /// Security: this is the CPU-amplification guard for replayed consensus
+    /// messages that carry invalid signatures. `peek` (not `get`) is used so a
+    /// lookup never refreshes LRU recency and eviction order stays insertion
+    /// time (oldest rejection first).
+    #[must_use]
+    pub fn has_recently_rejected_message(&self, hash: &UInt256, now: u64) -> bool {
+        match self.rejected_message_hashes.peek(hash) {
+            Some(&rejected_at) => now.saturating_sub(rejected_at) < REJECTED_MESSAGE_TTL_MS,
+            None => false,
+        }
+    }
+
+    /// Marks `hash` as verification-rejected at timestamp `now` (ms).
+    ///
+    /// Fail-closed capacity behavior: the cache is hard-bounded by LRU
+    /// eviction at [`MAX_REJECTED_MESSAGE_CACHE_SIZE`]. An evicted hash merely
+    /// degrades to the pre-fix behavior of one extra secp256r1 verification
+    /// per replay — an attacker can never turn eviction into acceptance of an
+    /// invalid message, and memory remains bounded under flood.
+    pub fn mark_message_rejected(&mut self, hash: &UInt256, now: u64) {
+        if let Some(timestamp) = self.rejected_message_hashes.get_mut(hash) {
+            // Rejected again after the TTL expired: slide the window forward.
+            *timestamp = now;
+        } else {
+            self.rejected_message_hashes.put(*hash, now);
+        }
+    }
+
     /// Returns whether a recovery response was already sent for this payload.
     #[must_use]
     pub fn has_sent_recovery_response(&self, hash: &UInt256) -> bool {
@@ -1177,6 +1233,7 @@ impl ConsensusContext {
             last_change_view_timestamps: state.change_view_timestamps,
             last_seen_messages: HashMap::new(), // Not persisted
             seen_message_hashes: Self::new_seen_message_cache(), // Not persisted
+            rejected_message_hashes: Self::new_rejected_message_cache(), // Not persisted
             recovery_response_hashes: Self::new_seen_message_cache(), // Not persisted
             local_commit_persistence,
         })

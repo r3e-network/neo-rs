@@ -118,18 +118,18 @@ pub(crate) fn check_storage_access<T>(
     if path.exists() {
         // Validate it's a directory
         if !path.is_dir() {
-            anyhow::bail!("Storage path exists but is not a directory: {}", path_str);
+            anyhow::bail!("Storage path exists but is not a directory: {path_str}");
         }
 
         // Check read permissions
         if let Err(e) = std::fs::read_dir(path) {
-            anyhow::bail!("Storage directory is not readable: {} - {}", path_str, e);
+            anyhow::bail!("Storage directory is not readable: {path_str} - {e}");
         }
 
         // Check write permissions with actual file operation
         let test_file = path.join(".write_test");
         if let Err(e) = std::fs::write(&test_file, b"test") {
-            anyhow::bail!("Storage directory is not writable: {} - {}", path_str, e);
+            anyhow::bail!("Storage directory is not writable: {path_str} - {e}");
         }
 
         // Clean up test file
@@ -141,7 +141,7 @@ pub(crate) fn check_storage_access<T>(
     } else {
         // Try to create directory with parents
         std::fs::create_dir_all(path)
-            .with_context(|| format!("Failed to create storage directory: {}", path_str))?;
+            .with_context(|| format!("Failed to create storage directory: {path_str}"))?;
 
         info!("Created storage directory: {}", path_str);
     }
@@ -335,9 +335,8 @@ pub(crate) fn select_store_provider(
         }
         other => {
             anyhow::bail!(
-                "unknown storage backend: '{}'. Supported backends: memory, rocksdb \
-                 (requires the 'full' feature)",
-                other
+                "unknown storage backend: '{other}'. Supported backends: memory, rocksdb \
+                 (requires the 'full' feature)"
             );
         }
     }
@@ -396,9 +395,7 @@ pub(crate) fn validate_node_config(
         if let Some(network) = state_service.network {
             if network != expected_network {
                 anyhow::bail!(
-                    "State service network ({}) doesn't match protocol network ({})",
-                    network,
-                    expected_network
+                    "State service network ({network}) doesn't match protocol network ({expected_network})"
                 );
             }
         }
@@ -408,9 +405,7 @@ pub(crate) fn validate_node_config(
         if let Some(network) = app_logs.network {
             if network != expected_network {
                 anyhow::bail!(
-                    "Application logs network ({}) doesn't match protocol network ({})",
-                    network,
-                    expected_network
+                    "Application logs network ({network}) doesn't match protocol network ({expected_network})"
                 );
             }
         }
@@ -420,9 +415,7 @@ pub(crate) fn validate_node_config(
         if let Some(network) = tokens_tracker.network {
             if network != expected_network {
                 anyhow::bail!(
-                    "Tokens tracker network ({}) doesn't match protocol network ({})",
-                    network,
-                    expected_network
+                    "Tokens tracker network ({network}) doesn't match protocol network ({expected_network})"
                 );
             }
         }
@@ -474,7 +467,7 @@ pub(crate) fn validate_node_config(
                 .unlock_wallet
                 .path
                 .as_ref()
-                .is_none_or(|p| p.is_empty())
+                .is_none_or(std::string::String::is_empty)
             {
                 anyhow::bail!(
                     "Consensus auto-start enabled but no wallet unlock configuration found. \
@@ -507,7 +500,7 @@ pub(crate) fn validate_node_config(
                 .unlock_wallet
                 .path
                 .as_ref()
-                .is_none_or(|p| p.is_empty())
+                .is_none_or(std::string::String::is_empty)
         {
             anyhow::bail!(
                 "Oracle service auto-start enabled but no wallet unlock configuration found."
@@ -701,15 +694,14 @@ mod tests {
     #[cfg(not(feature = "full"))]
     #[test]
     fn rocksdb_backend_fails_closed_without_full_feature() {
-        let err = match select_store_provider(
+        // A silent Ok would reintroduce the production bug this function
+        // exists to fix: a node configured for persistent storage quietly
+        // running on an ephemeral store.
+        let Err(err) = select_store_provider(
             Some("rocksdb"),
             test_storage_config(PathBuf::from("./data")),
-        ) {
-            Err(err) => err,
-            // A silent Ok would reintroduce the production bug this function
-            // exists to fix: a node configured for persistent storage quietly
-            // running on an ephemeral store.
-            Ok(_) => panic!("rocksdb without the full feature must fail closed"),
+        ) else {
+            panic!("rocksdb without the full feature must fail closed")
         };
         let message = format!("{err:#}");
         assert!(
@@ -726,12 +718,11 @@ mod tests {
     fn leveldb_backend_fails_closed() {
         // No LevelDB StoreProvider implementation exists in neo-storage; the
         // option must be rejected instead of silently degrading to memory.
-        let err = match select_store_provider(
+        let Err(err) = select_store_provider(
             Some("leveldb"),
             test_storage_config(PathBuf::from("./data")),
-        ) {
-            Err(err) => err,
-            Ok(_) => panic!("leveldb backend must fail closed"),
+        ) else {
+            panic!("leveldb backend must fail closed")
         };
         let message = format!("{err:#}");
         assert!(
@@ -742,12 +733,10 @@ mod tests {
 
     #[test]
     fn unknown_backend_fails_closed() {
-        let err = match select_store_provider(
-            Some("sqlite"),
-            test_storage_config(PathBuf::from("./data")),
-        ) {
-            Err(err) => err,
-            Ok(_) => panic!("unknown backend must fail closed"),
+        let Err(err) =
+            select_store_provider(Some("sqlite"), test_storage_config(PathBuf::from("./data")))
+        else {
+            panic!("unknown backend must fail closed")
         };
         let message = format!("{err:#}");
         assert!(

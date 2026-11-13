@@ -186,9 +186,8 @@ impl BloomFilterState {
 
     /// Whether a transaction matches the filter by hash or any signer account.
     fn matches_transaction(filter: &BloomFilter, tx: &Transaction) -> bool {
-        let hash = match tx.try_hash() {
-            Ok(hash) => hash,
-            Err(_) => return false,
+        let Ok(hash) = tx.try_hash() else {
+            return false;
         };
         if filter.check(&hash.to_array()) {
             return true;

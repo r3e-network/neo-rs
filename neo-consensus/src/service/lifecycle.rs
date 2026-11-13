@@ -1,4 +1,5 @@
 use super::ConsensusService;
+use super::helpers::current_timestamp;
 use crate::messages::ConsensusPayload;
 use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusResult};
 use neo_primitives::UInt256;
@@ -82,6 +83,24 @@ impl ConsensusService {
         // C# DBFTPlugin caches messages by ExtensiblePayload.Hash (SHA256 of unsigned payload).
         let msg_hash = self.dbft_payload_hash(&payload)?;
 
+        // CPU-amplification guard: a payload whose signature verification
+        // recently failed is dropped before any secp256r1 work is redone, so an
+        // attacker replaying invalid-signature messages cannot force repeated
+        // verifications. Only hashes that actually failed verification land in
+        // the rejected cache, and the TTL bounds how long a legitimate
+        // retransmission with a valid signature over the same unsigned data
+        // could be suppressed.
+        let now = current_timestamp();
+        if self.context.has_recently_rejected_message(&msg_hash, now) {
+            debug!(
+                block_index = payload.block_index,
+                validator = payload.validator_index,
+                msg_type = ?payload.message_type,
+                "Ignoring replayed message rejected earlier (invalid signature)"
+            );
+            return Ok(());
+        }
+
         // Check if we've already seen this message (replay attack prevention)
         if self.context.has_seen_message(&msg_hash) {
             debug!(
@@ -125,25 +144,28 @@ impl ConsensusService {
             return Ok(());
         }
 
-        match payload.message_type {
-            ConsensusMessageType::PrepareRequest => {
-                self.on_prepare_request(&payload)?;
+        let dispatch = match payload.message_type {
+            ConsensusMessageType::PrepareRequest => self.on_prepare_request(&payload),
+            ConsensusMessageType::PrepareResponse => self.on_prepare_response(&payload),
+            ConsensusMessageType::Commit => self.on_commit(&payload),
+            ConsensusMessageType::ChangeView => self.on_change_view(&payload),
+            ConsensusMessageType::RecoveryRequest => self.on_recovery_request(&payload),
+            ConsensusMessageType::RecoveryMessage => self.on_recovery_message(&payload),
+        };
+        if let Err(err) = dispatch {
+            // Only signature-verification failures populate the rejected cache:
+            // other handler errors can be state-dependent, and their retry
+            // semantics must remain unchanged. The gate on a non-empty witness
+            // further restricts the cache to payloads that actually presented
+            // a signature — i.e. the expensive secp256r1 path. Empty-witness
+            // failures are O(1) and stay uncached so malformed payloads keep
+            // erroring on every replay (the pre-fix contract).
+            if matches!(err, ConsensusError::SignatureVerificationFailed { .. })
+                && !payload.witness.is_empty()
+            {
+                self.context.mark_message_rejected(&msg_hash, now);
             }
-            ConsensusMessageType::PrepareResponse => {
-                self.on_prepare_response(&payload)?;
-            }
-            ConsensusMessageType::Commit => {
-                self.on_commit(&payload)?;
-            }
-            ConsensusMessageType::ChangeView => {
-                self.on_change_view(&payload)?;
-            }
-            ConsensusMessageType::RecoveryRequest => {
-                self.on_recovery_request(&payload)?;
-            }
-            ConsensusMessageType::RecoveryMessage => {
-                self.on_recovery_message(&payload)?;
-            }
+            return Err(err);
         }
 
         // Record liveness only after routing and handler validation succeed.

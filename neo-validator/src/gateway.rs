@@ -289,16 +289,13 @@ impl AdminApi {
                         "explicit recovery confirmation is required",
                     );
                 }
-                let hash = match UInt256::parse(&resume.block_hash) {
-                    Ok(hash) => hash,
-                    Err(_) => {
-                        return error_response(
-                            StatusCode::BAD_REQUEST,
-                            Value::Null,
-                            -32600,
-                            "invalid baseline block hash",
-                        );
-                    }
+                let Ok(hash) = UInt256::parse(&resume.block_hash) else {
+                    return error_response(
+                        StatusCode::BAD_REQUEST,
+                        Value::Null,
+                        -32600,
+                        "invalid baseline block hash",
+                    );
                 };
                 let local_height = match self.executor.height() {
                     Ok(height) => height,

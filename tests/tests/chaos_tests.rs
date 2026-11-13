@@ -6,10 +6,13 @@
 //! - State corruption detection
 //! - Concurrent access stress tests
 //!
-//! NOTE: The dBFT consensus service implementation was removed from the
-//! workspace (see neo-node `maybe_enable_dbft_consensus` TODO stub), so the
-//! consensus timeout chaos scenarios that exercised `neo_consensus` are no
-//! longer representable and were retired with that subsystem.
+//! NOTE: `neo_consensus` is a workspace member and dBFT is wired into the
+//! node through `maybe_enable_dbft_consensus` (it registers the
+//! `DbftConsensusController` service and its wallet-change handler). The
+//! consensus-timeout chaos scenarios were retired while that wiring was being
+//! reworked and have not yet been reintroduced against the current service
+//! API; this suite covers state-trie recovery, corruption detection, and
+//! concurrency stress.
 
 use neo_primitives::{UInt160, UInt256};
 use neo_tests::state::{
@@ -169,7 +172,6 @@ fn test_state_with_many_contracts() {
     assert_ne!(root, UInt256::zero());
     assert!(
         elapsed.as_millis() < 500,
-        "1000 keys across 100 contracts took too long: {:?}",
-        elapsed
+        "1000 keys across 100 contracts took too long: {elapsed:?}"
     );
 }

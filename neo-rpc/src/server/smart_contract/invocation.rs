@@ -317,9 +317,8 @@ fn sign_transaction_with_wallet(
     network: u32,
 ) -> Vec<PendingSignatureItem> {
     let mut pending = Vec::new();
-    let sign_data = match get_sign_data_vec(tx, network) {
-        Ok(data) => data,
-        Err(_) => return pending,
+    let Ok(sign_data) = get_sign_data_vec(tx, network) else {
+        return pending;
     };
     for signer in signers {
         match wallet.get_account(&signer.account) {

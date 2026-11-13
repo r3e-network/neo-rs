@@ -1,6 +1,7 @@
 use super::helpers::{create_test_validators, create_validators_with_keys, sign_payload};
 use crate::ConsensusService;
 use crate::messages::{ConsensusPayload, PrepareRequestMessage};
+use crate::service::helpers::current_timestamp;
 use crate::{ConsensusError, ConsensusMessageType};
 use neo_primitives::UInt256;
 use tokio::sync::mpsc;
@@ -177,6 +178,85 @@ async fn test_replay_attack_prevention() {
 
     assert!(result.is_err());
     assert!(!service.context().has_seen_message(&msg_hash));
+}
+
+#[tokio::test]
+async fn replayed_rejected_signature_message_skips_reverification() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(7);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service
+        .start(100, 1000, UInt256::zero(), 0)
+        .expect("consensus service should start");
+
+    // Primary for block 100, view 0 is validator 2.
+    let msg = PrepareRequestMessage::new(100, 0, 2, 0, UInt256::zero(), 1234, 5678, vec![]);
+    let mut payload = ConsensusPayload::new(
+        network,
+        100,
+        2,
+        0,
+        ConsensusMessageType::PrepareRequest,
+        msg.serialize(),
+    );
+    // Sign with the wrong validator's key: a real 64-byte secp256r1 signature
+    // that fails verification (a length error would skip the crypto path and
+    // not exercise the amplification guard).
+    sign_payload(&service, &mut payload, &keys[3]);
+    let msg_hash = service.dbft_payload_hash(&payload).expect("payload hash");
+
+    // First delivery actually executes the secp256r1 verification (non-zero
+    // executed count) and fails.
+    let result = service.process_message(payload.clone());
+    assert!(matches!(
+        result,
+        Err(ConsensusError::SignatureVerificationFailed { .. })
+    ));
+    let executed_after_first = service.signature_verification_count.get();
+    assert_eq!(
+        executed_after_first, 1,
+        "first delivery must execute exactly one secp256r1 verification"
+    );
+    assert!(
+        service
+            .context()
+            .has_recently_rejected_message(&msg_hash, current_timestamp())
+    );
+
+    // Replaying the identical rejected payload must be dropped before any
+    // secp256r1 work: Ok(()) with zero additional verifications.
+    service
+        .process_message(payload)
+        .expect("rejected replay is dropped, not an error");
+    assert_eq!(
+        service.signature_verification_count.get(),
+        executed_after_first,
+        "rejected replay must not trigger another secp256r1 verification"
+    );
+
+    // A fresh payload (different data, therefore a different hash) is still
+    // verified, proving the cache suppresses only previously rejected hashes.
+    let other = PrepareRequestMessage::new(100, 0, 2, 0, UInt256::zero(), 4321, 8765, vec![]);
+    let mut fresh_payload = ConsensusPayload::new(
+        network,
+        100,
+        2,
+        0,
+        ConsensusMessageType::PrepareRequest,
+        other.serialize(),
+    );
+    sign_payload(&service, &mut fresh_payload, &keys[3]);
+    assert!(matches!(
+        service.process_message(fresh_payload),
+        Err(ConsensusError::SignatureVerificationFailed { .. })
+    ));
+    assert_eq!(
+        service.signature_verification_count.get(),
+        executed_after_first + 1,
+        "fresh payloads must still reach secp256r1 verification"
+    );
 }
 
 #[tokio::test]

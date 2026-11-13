@@ -5,6 +5,10 @@ edition = "2021"
 publish = false
 license = "MIT"
 
+# Intentionally a standalone workspace: the empty `[workspace]` table opts
+# this crate out of the repository root workspace (whose `members` list only
+# includes tools/validation-diff and tools/state-root-diff), so it keeps its
+# own lockfile and edition. Do not remove this table.
 [workspace]
 
 [lib]

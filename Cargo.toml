@@ -113,10 +113,10 @@ msrv = "1.99"
 # CARGO_BUILD_WARNINGS=deny, so every `warn` here is a hard gate in CI.
 # Policy: docs/TOOLCHAIN.md#lint-policy.
 [workspace.lints.clippy]
-# `match` with an early return remains supported for protocol error paths.
-manual_let_else = "allow"
-
 # Style lints that do not fit this codebase (moved from the CI command line).
+# `manual_let_else` is no longer warn-by-default in clippy 1.99, so it must be
+# listed explicitly to keep the let-else style a hard CI gate (warn = CI error).
+manual_let_else = "warn"
 doc_overindented_list_items = "allow"
 doc_lazy_continuation = "allow"
 large_enum_variant = "allow"

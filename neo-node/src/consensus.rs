@@ -528,7 +528,7 @@ impl ConsensusActor {
         let signer = Arc::new(WalletConsensusSigner::new(self.wallet.clone()));
 
         self.validators = validators;
-        self.validator_infos = validator_infos.clone();
+        self.validator_infos.clone_from(&validator_infos);
         self.my_index = my_index;
 
         let Some(my_index) = my_index else {
@@ -701,8 +701,7 @@ impl ConsensusActor {
         let reason = if self
             .missing_transactions
             .as_ref()
-            .map(|missing| !missing.is_empty())
-            .unwrap_or(false)
+            .is_some_and(|missing| !missing.is_empty())
         {
             ChangeViewReason::TxNotFound
         } else {
@@ -1146,7 +1145,10 @@ impl ConsensusActor {
 
         let required_signatures = consensus_m_threshold(self.validators.len());
         let header_size = estimate_header_size(&self.validators, required_signatures);
-        let total_tx_size = transactions.values().map(|tx| tx.size()).sum::<usize>();
+        let total_tx_size = transactions
+            .values()
+            .map(neo_io::Serializable::size)
+            .sum::<usize>();
         let block_size = header_size + var_size(transactions.len() as u64) + total_tx_size;
         if block_size > self.settings.max_block_size as usize {
             let _ = service.request_change_view(ChangeViewReason::BlockRejectedByPolicy, now);
@@ -1201,8 +1203,24 @@ impl ConsensusActor {
             return;
         };
 
-        let merkle_root =
-            MerkleTree::compute_root(&block_data.transaction_hashes).unwrap_or_default();
+        // `compute_root` yields `None` only for an empty hash set. Handle that
+        // case explicitly instead of silently defaulting the root: an empty
+        // proposal keeps the zero merkle root, matching the consensus-side
+        // block builder and `Block::try_rebuild_merkle_root`. The debug
+        // assertion pins the invariant so a future non-empty `None` path fails
+        // loudly instead of persisting a header with a fabricated root.
+        let merkle_root = match MerkleTree::compute_root(&block_data.transaction_hashes) {
+            Some(root) => root,
+            None => {
+                debug_assert!(block_data.transaction_hashes.is_empty());
+                debug!(
+                    target: "neo",
+                    block_index = block_data.block_index,
+                    "finalizing an empty-proposal block with the zero merkle root"
+                );
+                UInt256::zero()
+            }
+        };
         let next_consensus = NativeHelpers::get_bft_address(&block_data.validator_pubkeys);
 
         let mut header = Header::new();

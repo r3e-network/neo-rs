@@ -198,6 +198,12 @@ impl ConsensusService {
         // Get public key bytes
         let pub_key_bytes = validator.public_key.encoded();
 
+        // Test hook: count actual secp256r1 executions so replay-protection
+        // tests can assert rejected replays never reach this point.
+        #[cfg(test)]
+        self.signature_verification_count
+            .set(self.signature_verification_count.get() + 1);
+
         match Secp256r1Crypto::verify_prehash(&Crypto::sha256(data), &sig_bytes, &pub_key_bytes) {
             Ok(valid) => valid,
             Err(e) => {

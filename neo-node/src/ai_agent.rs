@@ -829,7 +829,9 @@ impl AiAgentRuntime {
         if entry.rule_version != self.inner.config.rule_version {
             // A rule-version change invalidates previously accumulated
             // evidence: the failure counter restarts under the new rules.
-            entry.rule_version = self.inner.config.rule_version.clone();
+            entry
+                .rule_version
+                .clone_from(&self.inner.config.rule_version);
             entry.deterministic_failures = 0;
             entry.heights.clear();
         }
@@ -1034,10 +1036,14 @@ impl AiAgentRuntime {
             .block_hash_at(height)
             .map(|hash| canonical_block_hash(&hash))?;
         let now = unix_time_ms().max(1);
-        let fingerprint = Sha256::digest(candidate.id.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+        let fingerprint = Sha256::digest(candidate.id.as_bytes()).iter().fold(
+            String::new(),
+            |mut output, byte| {
+                use std::fmt::Write as _;
+                write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
+                output
+            },
+        );
         let operation_id =
             OperationId::new(format!("probe-candidate-{}", &fingerprint[..24])).ok()?;
         let run_id = RunId::new(format!("probe-run-{}", &fingerprint[24..40])).ok()?;
@@ -1060,8 +1066,12 @@ impl AiAgentRuntime {
             .map(|bytes| {
                 Sha256::digest(&bytes)
                     .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>()
+                    .fold(String::new(), |mut output, byte| {
+                        use std::fmt::Write as _;
+                        write!(output, "{byte:02x}")
+                            .expect("formatting hex into a String cannot fail");
+                        output
+                    })
             })
             .filter(|hash| valid_sha256(hash))?;
         ProbeJob::new(
@@ -1138,14 +1148,11 @@ impl AiAgentRuntime {
             return;
         };
         let snapshot = SnapshotInput::from_job(&job, Vec::new());
-        let frame = match ProbeRequestFrame::new(job, snapshot) {
-            Ok(frame) => frame,
-            Err(_) => {
-                self.inner
-                    .probe_submission_failures
-                    .fetch_add(1, Ordering::Relaxed);
-                return;
-            }
+        let Ok(frame) = ProbeRequestFrame::new(job, snapshot) else {
+            self.inner
+                .probe_submission_failures
+                .fetch_add(1, Ordering::Relaxed);
+            return;
         };
         if controller.try_submit(frame).is_err() {
             // A full queue, admission cooldown, or closed controller is an
@@ -1340,9 +1347,8 @@ impl AiAgentRuntime {
         }
 
         let operation_id = if let Some(store) = &self.inner.action_store {
-            let binding = match self.durable_action_binding(&validated_request, &records) {
-                Ok(binding) => binding,
-                Err(()) => return ActionResult::Failed,
+            let Ok(binding) = self.durable_action_binding(&validated_request, &records) else {
+                return ActionResult::Failed;
             };
             let operation_id = binding.operation_id.clone();
             match store.admit(binding, unix_time_ms()) {
@@ -1464,8 +1470,11 @@ impl AiAgentRuntime {
         let bytes = serde_json::to_vec(&material).map_err(|_| ())?;
         let hash = Sha256::digest(bytes)
             .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+            .fold(String::new(), |mut output, byte| {
+                use std::fmt::Write as _;
+                write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
+                output
+            });
         let operation_id = OperationId::new(format!("action-{}", &hash[..40])).map_err(|_| ())?;
         ActionBinding::new(
             operation_id,
@@ -1689,8 +1698,7 @@ impl AiAgentRuntime {
             .mempool()
             .lock()
             .quarantine_transaction(metadata, now)
-            .map(|()| ActionResult::Executed)
-            .unwrap_or(ActionResult::Failed)
+            .map_or(ActionResult::Failed, |()| ActionResult::Executed)
     }
 
     fn release(&self, request: &OperationalActionRequest) -> ActionResult {
@@ -1726,9 +1734,8 @@ impl AiAgentRuntime {
         let restart = Arc::clone(&self.inner.worker_restart);
         let weak: Weak<RuntimeInner> = Arc::downgrade(&self.inner);
         let task = tokio::spawn(async move {
-            let detector = match StallDetector::new(StallPolicy::default()) {
-                Ok(detector) => detector,
-                Err(_) => return,
+            let Ok(detector) = StallDetector::new(StallPolicy::default()) else {
+                return;
             };
             let provider = SharedModelProvider(model_provider);
             let mut agent = DiagnosticAgent::new(
@@ -2253,8 +2260,11 @@ fn canonical_block_hash(hash: &UInt256) -> String {
     hash.as_ref()
         .iter()
         .rev()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+        .fold(String::new(), |mut output, byte| {
+            use std::fmt::Write as _;
+            write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
+            output
+        })
 }
 
 fn unix_time_ms() -> u64 {
@@ -2705,7 +2715,7 @@ mod tests {
             let binding = ActionBinding::new(
                 operation_id.clone(),
                 OperationalAction::StartProbeRequest,
-                Some(format!("{}:{binding_hash}", run_id)),
+                Some(format!("{run_id}:{binding_hash}")),
                 vec![format!("task36-authorizer-{seed}")],
                 vec!["cd".repeat(32)],
                 authorizer_rule_version.to_owned(),
@@ -3168,9 +3178,8 @@ mod tests {
         section.restricted_probe_worker_path = executable.to_string_lossy().into_owned();
         let system = NeoSystem::new(ProtocolSettings::default(), None, None).expect("system");
 
-        let error = match AiAgentRuntime::new(&section, system.clone()) {
-            Ok(_) => panic!("native probe must fail closed"),
-            Err(error) => error,
+        let Err(error) = AiAgentRuntime::new(&section, system.clone()) else {
+            panic!("native probe must fail closed")
         };
         assert!(
             error.to_string().contains("unsupported"),

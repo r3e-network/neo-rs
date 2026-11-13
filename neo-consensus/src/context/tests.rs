@@ -915,3 +915,57 @@ fn durable_recovery_write_failure_is_reported() {
     let _ = std::fs::remove_dir_all(&path);
     let _ = std::fs::remove_file(path.with_extension("tmp"));
 }
+
+#[test]
+fn rejected_message_suppression_lapses_at_ttl_boundary() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(0, validators, None, None);
+    let hash = message_hash(1);
+
+    // Nothing is suppressed before a rejection is recorded.
+    assert!(!ctx.has_recently_rejected_message(&hash, 1_000));
+
+    ctx.mark_message_rejected(&hash, 1_000);
+    assert!(ctx.has_recently_rejected_message(&hash, 1_000));
+    assert!(
+        ctx.has_recently_rejected_message(&hash, 1_000 + REJECTED_MESSAGE_TTL_MS - 1),
+        "suppression must hold for the whole TTL window"
+    );
+    // Exactly at the TTL the suppression lapses so a retransmission carrying
+    // a valid signature over the same unsigned data is verifiable again.
+    assert!(
+        !ctx.has_recently_rejected_message(&hash, 1_000 + REJECTED_MESSAGE_TTL_MS),
+        "suppression must not outlive the TTL"
+    );
+
+    // Rejection after expiry slides the window forward from the new time.
+    ctx.mark_message_rejected(&hash, 5_000 + REJECTED_MESSAGE_TTL_MS);
+    assert!(
+        ctx.has_recently_rejected_message(&hash, 5_000 + 2 * REJECTED_MESSAGE_TTL_MS - 1),
+        "renewed rejection restarts the TTL window"
+    );
+}
+
+#[test]
+fn rejected_message_cache_is_bounded_and_fail_closed() {
+    let validators = create_test_validators(4);
+    let mut ctx = ConsensusContext::new(0, validators, None, None);
+
+    // Insert one hash more than the capacity: the LRU must evict the oldest
+    // rejection, never grow beyond the hard bound.
+    let evicted = message_hash(0);
+    ctx.mark_message_rejected(&evicted, 1_000);
+    for i in 1..=MAX_REJECTED_MESSAGE_CACHE_SIZE {
+        ctx.mark_message_rejected(&message_hash(i as u32), 1_000);
+    }
+
+    assert_eq!(
+        ctx.rejected_message_hashes.len(),
+        MAX_REJECTED_MESSAGE_CACHE_SIZE,
+        "rejected-message cache must never exceed its capacity"
+    );
+    // Fail-closed on eviction: the evicted hash degrades to a single extra
+    // secp256r1 verification if replayed — it can never be accepted.
+    assert!(!ctx.has_recently_rejected_message(&evicted, 1_000));
+    assert!(ctx.has_recently_rejected_message(&message_hash(1), 1_000));
+}

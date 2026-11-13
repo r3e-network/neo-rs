@@ -139,9 +139,8 @@ pub fn on_transaction(
         return;
     }
 
-    let hash = match transaction.try_hash() {
-        Ok(hash) => hash,
-        Err(_) => return,
+    let Ok(hash) = transaction.try_hash() else {
+        return;
     };
 
     if !state.known_hashes.try_add(hash) {
@@ -187,9 +186,8 @@ pub fn on_block(
     fast_sync: bool,
 ) {
     let block_idx = block.index();
-    let hash = match block.try_hash() {
-        Ok(hash) => hash,
-        Err(_) => return,
+    let Ok(hash) = block.try_hash() else {
+        return;
     };
     let current_height = ports.ledger_query.current_index();
 
@@ -238,9 +236,8 @@ pub fn on_extensible(
     peer: PeerHandle,
     mut payload: Extensible,
 ) {
-    let hash = match payload.try_hash() {
-        Ok(hash) => hash,
-        Err(_) => return,
+    let Ok(hash) = payload.try_hash() else {
+        return;
     };
     if !state.known_hashes.try_add(hash) {
         return;

@@ -25,6 +25,12 @@ pub struct ConsensusService {
     pub(super) running: bool,
     /// True only while replaying a RecoveryMessage payload set.
     pub(super) is_recovering: bool,
+    /// Test-only count of secp256r1 verifications executed by
+    /// `verify_signature`. Lets replay-protection tests prove that a
+    /// rejected replay skips verification while fresh traffic still hits it
+    /// (non-zero executed counts on both sides of the assertion).
+    #[cfg(test)]
+    pub(super) signature_verification_count: std::cell::Cell<usize>,
     /// Current-view commits received before the proposal block hash is known.
     ///
     /// C# stores these payloads and re-verifies them once the header exists
@@ -55,6 +61,8 @@ impl ConsensusService {
             event_tx,
             running: false,
             is_recovering: false,
+            #[cfg(test)]
+            signature_verification_count: std::cell::Cell::new(0),
             pending_commits: HashMap::new(),
         }
     }
@@ -78,6 +86,8 @@ impl ConsensusService {
             event_tx,
             running: false,
             is_recovering: false,
+            #[cfg(test)]
+            signature_verification_count: std::cell::Cell::new(0),
             pending_commits: HashMap::new(),
         }
     }

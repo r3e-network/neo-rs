@@ -236,14 +236,13 @@ impl TaskManagerState {
         self.last_persisted_at = Some(Instant::now());
         let index = block.index();
 
-        let hash = match persisted_block_hash(block) {
-            Ok(hash) => hash,
-            // Unhashable persisted block: skip matching but keep the frontier.
-            Err(_) => return self.all_peers(),
+        // Unhashable persisted block: skip matching but keep the frontier.
+        let Ok(hash) = persisted_block_hash(block) else {
+            return self.all_peers();
         };
 
         let mut to_disconnect = Vec::new();
-        for (peer, session) in self.sessions.iter_mut() {
+        for (peer, session) in &mut self.sessions {
             if let Some(stored) = session.remove_received_block(index) {
                 match match_persisted_block(stored, &hash) {
                     PersistedBlockMatch::Matches => {}
@@ -302,7 +301,7 @@ impl TaskManagerState {
     ) -> Vec<PeerHandle> {
         let mut offenders = Vec::new();
 
-        for (peer, session) in self.sessions.iter() {
+        for (peer, session) in &self.sessions {
             let mut matches = false;
             if let Some(index) = block_index {
                 if let Some(stored) = session.received_block.get(&index) {

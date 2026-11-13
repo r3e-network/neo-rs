@@ -174,7 +174,7 @@ pub(crate) enum ProbeStartupError {
 fn validate_worker_path(path: &Path) -> Result<PathBuf, ProbeStartupError> {
     let raw = path.to_string_lossy();
     if raw.trim().is_empty()
-        || raw.contains("\0")
+        || raw.contains('\0')
         || raw.to_ascii_lowercase().contains("://")
         || !path.is_absolute()
         || path
@@ -383,7 +383,7 @@ impl ProbeController {
         &self,
         request: ProbeRequestFrame,
     ) -> Result<ProbeSubmission, ProbeSubmitError> {
-        validate_request_envelope(&request).map_err(|_| ProbeSubmitError::Invalid)?;
+        validate_request_envelope(&request).map_err(|()| ProbeSubmitError::Invalid)?;
         match self
             .inner
             .admission
@@ -521,12 +521,9 @@ async fn execute_item(
         return uncertain(ProbeUncertainReason::ActionStore);
     }
 
-    let framed = match encode_frame(&item.request) {
-        Ok(framed) => framed,
-        Err(_) => {
-            mark_uncertain(action_log, &job.operation_id);
-            return uncertain(ProbeUncertainReason::Protocol);
-        }
+    let Ok(framed) = encode_frame(&item.request) else {
+        mark_uncertain(action_log, &job.operation_id);
+        return uncertain(ProbeUncertainReason::Protocol);
     };
     let suite_deadline = Instant::now() + config.suite_timeout;
     let cancellation = RunCancellation {
@@ -561,12 +558,9 @@ async fn execute_item(
             mark_uncertain(action_log, &job.operation_id);
             return uncertain(ProbeUncertainReason::ProcessFailed);
         }
-        let outcome = match decode_frame::<ProbeOutcome>(&output.stdout) {
-            Ok(outcome) => outcome,
-            Err(_) => {
-                mark_uncertain(action_log, &job.operation_id);
-                return uncertain(ProbeUncertainReason::Protocol);
-            }
+        let Ok(outcome) = decode_frame::<ProbeOutcome>(&output.stdout) else {
+            mark_uncertain(action_log, &job.operation_id);
+            return uncertain(ProbeUncertainReason::Protocol);
         };
         if outcome.status != ProbeOutcomeStatus::Succeeded {
             mark_uncertain(action_log, &job.operation_id);
@@ -579,25 +573,19 @@ async fn execute_item(
         mark_uncertain(action_log, &job.operation_id);
         return uncertain(ProbeUncertainReason::ReplayMismatch);
     }
-    let identity = match TrustedLocalDiagnosticsIdentity::from_job(job) {
-        Ok(identity) => identity,
-        Err(_) => {
-            mark_uncertain(action_log, &job.operation_id);
-            return uncertain(ProbeUncertainReason::BindingMismatch);
-        }
+    let Ok(identity) = TrustedLocalDiagnosticsIdentity::from_job(job) else {
+        mark_uncertain(action_log, &job.operation_id);
+        return uncertain(ProbeUncertainReason::BindingMismatch);
     };
-    let validated = match ProbeResultValidator.validate_double_replay(
+    let Ok(validated) = ProbeResultValidator.validate_double_replay(
         &identity,
         job,
         outcomes.remove(0),
         outcomes.remove(0),
         unix_time_ms(),
-    ) {
-        Ok(validated) => validated,
-        Err(_) => {
-            mark_uncertain(action_log, &job.operation_id);
-            return uncertain(ProbeUncertainReason::BindingMismatch);
-        }
+    ) else {
+        mark_uncertain(action_log, &job.operation_id);
+        return uncertain(ProbeUncertainReason::BindingMismatch);
     };
     if complete_action(action_log, &job.operation_id).is_err() {
         return uncertain(ProbeUncertainReason::ActionStore);
@@ -648,8 +636,9 @@ fn mark_uncertain(action_log: &DurableActionStore, operation_id: &OperationId) {
 fn unix_time_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or(1)
+        .map_or(1, |duration| {
+            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+        })
         .max(1)
 }
 
@@ -906,14 +895,11 @@ impl ProcessLauncher for CommandProcessLauncher {
         // spawned worker, and treat every Job API failure as a launch
         // rejection with the already-spawned child reaped below - the worker
         // must never keep running outside a fully configured job.
-        let _job = match WindowsJob::create(memory_limit_bytes, replay_timeout)
+        let Ok(_job) = WindowsJob::create(memory_limit_bytes, replay_timeout)
             .and_then(|job| job.assign(&child).map(|()| job))
-        {
-            Ok(job) => job,
-            Err(_) => {
-                terminate_and_reap(&mut child).await;
-                return Err(LaunchError::Containment);
-            }
+        else {
+            terminate_and_reap(&mut child).await;
+            return Err(LaunchError::Containment);
         };
         #[cfg(not(windows))]
         let _ = memory_limit_bytes;
@@ -1165,8 +1151,11 @@ mod tests {
     fn hash(bytes: &[u8]) -> String {
         Sha256::digest(bytes)
             .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
+            .fold(String::new(), |mut output, byte| {
+                use std::fmt::Write as _;
+                write!(output, "{byte:02x}").expect("formatting hex into a String cannot fail");
+                output
+            })
     }
 
     fn request(id: usize) -> ProbeRequestFrame {
